@@ -41,9 +41,9 @@ I cleaned up and re-organized the code base, removed the controversial PixelPerf
 2. Extract to `Interface\AddOns\QUI`
 3. Enable in-game and reload UI (`/rl` or `/reload`)
 
-### License
+## License
 
-GPL-3.0 (same as most major WoW UI addons). Feel free to fork, contribute, or use any part of the code – just give credit where due.
+This project is licensed under the GNU General Public License v3.0 (same as most major WoW UI addons and libraries) - see the [LICENSE](LICENSE) file for details.
 
 ### Contributing
 
