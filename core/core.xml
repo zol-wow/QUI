@@ -1,0 +1,9 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <!-- Shared helpers must load first - provides common utilities for all modules -->
+    <Script file="shared_helpers.lua"/>
+    <Script file="media.lua"/>
+    <Script file="backwards.lua"/>
+    <Script file="scaling.lua"/>
+    <Script file="quicore_main.lua"/>
+</Ui>

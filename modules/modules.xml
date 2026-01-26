@@ -1,0 +1,14 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <!-- Load order matters: cooldowns first, then frames that depend on them -->
+    <Include file="cooldowns\cooldowns.xml"/>
+    <Include file="display\display.xml"/>
+    <Include file="frames\frames.xml"/>
+    <Include file="data\data.xml"/>
+    <Include file="utility\utility.xml"/>
+    <Include file="combat\combat.xml"/>
+    <Include file="character\character.xml"/>
+    <Include file="trackers\trackers.xml"/>
+    <Include file="qol\qol.xml"/>
+    <Include file="dungeon\dungeon.xml"/>
+</Ui>

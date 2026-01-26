@@ -1,0 +1,31 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <!-- Module-specific options files (load before coordinators) -->
+    <Script file="qol.lua"/>
+    <Script file="hud_visibility.lua"/>
+    <Script file="crosshair.lua"/>
+    <Script file="buffdebuff.lua"/>
+    <Script file="chat.lua"/>
+    <Script file="tooltips.lua"/>
+    <Script file="character.lua"/>
+    <Script file="skyriding.lua"/>
+    <Script file="raidbuffs.lua"/>
+    <Script file="autohide.lua"/>
+    <Script file="skinning.lua"/>
+    <Script file="minimap.lua"/>
+    <Script file="cdm_effects.lua"/>
+    <Script file="keybinds.lua"/>
+    <Script file="castbar.lua"/>
+    <Script file="hudlayering.lua"/>
+    <Script file="profiles.lua"/>
+    <Script file="import.lua"/>
+    <Script file="ncdm.lua"/>
+    <Script file="customtrackers.lua"/>
+    <Script file="unitframes.lua"/>
+    <Script file="actionbars.lua"/>
+    <Script file="anchoring.lua"/>
+    <!-- Page coordinators (load after subtab files) -->
+    <Script file="general.lua"/>
+    <Script file="autohides.lua"/>
+    <Script file="minimap_page.lua"/>
+</Ui>

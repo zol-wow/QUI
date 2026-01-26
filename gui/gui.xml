@@ -1,0 +1,12 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <!-- GUI framework must load first -->
+    <Script file="framework.lua"/>
+    <!-- Options shared infrastructure (must load after framework) -->
+    <Script file="options_shared.lua"/>
+    <!-- All options pages -->
+    <Include file="pages\pages.xml"/>
+    <!-- Options coordinator (loads last, imports all pages) -->
+    <Script file="options.lua"/>
+    <Script file="blizzard_options.lua"/>
+</Ui>

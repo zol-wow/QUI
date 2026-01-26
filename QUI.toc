@@ -1,0 +1,17 @@
+## Interface: 120000, 120001
+## Title: |cFF30D1FFQUI (Midnight)|r
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## AddonCompartmentFunc: QUI_CompartmentClick
+## AddonCompartmentFuncOnEnter: QUI_CompartmentOnEnter
+## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
+## Notes: Comprehensive UI customization addon
+## Author: Zol
+## Version: 2.00
+## DefaultState: Enabled
+## LoadOnDemand: 0
+## SavedVariables: QUI_DB, QUIDB
+
+## X-Contributors: Zol, Mondo, LiQiudGG, Quazii (original creator)
+## X-License: GPLv3
+
+load.xml

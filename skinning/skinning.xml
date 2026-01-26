@@ -1,0 +1,16 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <Script file="keystone.lua"/>
+    <Script file="alerts.lua"/>
+    <Script file="loot.lua"/>
+    <Script file="mplus_timer.lua"/>
+    <Script file="character.lua"/>
+    <Script file="inspect.lua"/>
+    <Script file="powerbaralt.lua"/>
+    <Script file="readycheck.lua"/>
+    <Script file="gamemenu.lua"/>
+    <Script file="overrideactionbar.lua"/>
+    <Script file="objectivetracker.lua"/>
+    <Script file="instanceframes.lua"/>
+    <Script file="tooltips.lua"/>
+</Ui>

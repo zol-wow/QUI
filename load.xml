@@ -1,0 +1,17 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <!-- Load Libs First -->
+    <Include file="libs\libs.xml"/>
+    <!-- Addon Init -->
+    <Script file="init.lua"/>
+    <!-- Core Foundation -->
+    <Include file="core\core.xml"/>
+    <!-- Feature Modules -->
+    <Include file="modules\modules.xml"/>
+    <!-- Options GUI -->
+    <Include file="gui\gui.xml"/>
+    <!-- Skinning Modules -->
+    <Include file="skinning\skinning.xml"/>
+    <!-- Load Edit Mode Profiles -->
+    <Include file="imports\imports.xml"/>
+</Ui>
