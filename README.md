@@ -17,7 +17,8 @@ After the recent drama involving code disputes, monetization concerns, and Quazi
 - Keep the UI as a free resource for the community that Quazii once built it for
 
 This is done **in the spirit of Quazii** – not to compete, not to profit, but to honor the passion he put into UI customization for over 20 years of WoW.
-I cleaned up and re-organized the code base, and merged some open feature branches from before Quazii's exit. The rest is basically the state of **QuaziiUI v1.99b**.
+
+I cleaned up and re-organized the code base, removed the controversial PixelPerfect code snippets likely copied from ElvUI, and merged some of the open feature branches from before Quazii's exit. The rest is basically the state of **QuaziiUI v1.99b**.
 
 ### Credits & Thanks
 
