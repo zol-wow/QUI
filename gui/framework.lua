@@ -87,6 +87,10 @@ GUI.SettingsRegistryKeys = {}
 -- Widget instance tracking for cross-widget synchronization (search results <-> original tabs)
 GUI.WidgetInstances = {}
 
+-- Section header registry for scroll-to-section navigation
+-- Key format: "tabIndex_subTabIndex_sectionName" -> {frame = sectionFrame, scrollParent = scrollFrame}
+GUI.SectionRegistry = {}
+
 -- Generate unique key for widget instance tracking
 local function GetWidgetKey(dbTable, dbKey)
     if not dbTable or not dbKey then return nil end
@@ -446,6 +450,12 @@ end
 -- Auto-detects if first element in panel (no top margin) vs subsequent (12px margin)
 ---------------------------------------------------------------------------
 function GUI:CreateSectionHeader(parent, text)
+    -- Automatically set search section so widgets created after this header
+    -- are associated with this section (no need for manual SetSearchSection calls)
+    if text and not self._suppressSearchRegistration then
+        self._searchContext.sectionName = text
+    end
+
     -- Auto-detect if this is the first element (for compact spacing at top of panels)
     local isFirstElement = (parent._hasContent == false)
     if parent._hasContent ~= nil then
@@ -489,6 +499,30 @@ function GUI:CreateSectionHeader(parent, text)
                 underline:SetPoint("RIGHT", container, "RIGHT", 0, 0)
                 underline:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.6)
                 container.underline = underline
+            end
+
+            -- Register section header for scroll-to-section navigation (after positioning)
+            if not GUI._suppressSearchRegistration and GUI._searchContext.tabIndex and text then
+                local tabIndex = GUI._searchContext.tabIndex
+                local subTabIndex = GUI._searchContext.subTabIndex or 0
+                local regKey = tabIndex .. "_" .. subTabIndex .. "_" .. text
+
+                -- Find scroll parent by walking up the hierarchy
+                local scrollParent = nil
+                local current = parent
+                while current do
+                    if current.GetVerticalScroll and current.SetVerticalScroll then
+                        scrollParent = current
+                        break
+                    end
+                    current = current:GetParent()
+                end
+
+                GUI.SectionRegistry[regKey] = {
+                    frame = container,
+                    scrollParent = scrollParent,
+                    contentParent = parent,
+                }
             end
         end
     end
@@ -3249,31 +3283,89 @@ function GUI:RenderSearchResults(content, results, searchTerm)
 
             local targetTabIndex = groupData.tabIndex
             local targetSubTabIndex = groupData.subTabIndex
+            local targetSectionName = groupData.sectionName
             goBtn:SetScript("OnClick", function()
                 local frame = GUI.MainFrame
                 if not frame then return end
                 GUI:SelectTab(frame, targetTabIndex)
+
+                -- Recursive helper to find subtab container at any depth
+                local function FindSubTabContainer(parentFrame, depth)
+                    if depth > 5 then return nil end  -- Prevent infinite recursion
+
+                    -- Check if this frame is a subtab container
+                    if parentFrame.SelectTab and parentFrame.tabButtons then
+                        return parentFrame
+                    end
+
+                    -- Check scroll child if this is a scroll frame
+                    if parentFrame.GetScrollChild then
+                        local scrollChild = parentFrame:GetScrollChild()
+                        if scrollChild then
+                            local found = FindSubTabContainer(scrollChild, depth + 1)
+                            if found then return found end
+                        end
+                    end
+
+                    -- Check regular children
+                    if parentFrame.GetChildren then
+                        for _, child in ipairs({parentFrame:GetChildren()}) do
+                            local found = FindSubTabContainer(child, depth + 1)
+                            if found then return found end
+                        end
+                    end
+
+                    return nil
+                end
+
+                -- Helper to scroll to a section
+                local function ScrollToSection()
+                    local subTabIdx = targetSubTabIndex or 0
+                    local regKey = targetTabIndex .. "_" .. subTabIdx .. "_" .. (targetSectionName or "")
+                    local sectionInfo = GUI.SectionRegistry[regKey]
+
+                    if sectionInfo and sectionInfo.scrollParent and sectionInfo.frame then
+                        local scrollFrame = sectionInfo.scrollParent
+                        local sectionFrame = sectionInfo.frame
+                        local contentParent = sectionInfo.contentParent
+
+                        -- Calculate the section's position relative to the scroll content
+                        if contentParent and sectionFrame:IsVisible() then
+                            local sectionTop = sectionFrame:GetTop()
+                            local contentTop = contentParent:GetTop()
+
+                            if sectionTop and contentTop then
+                                -- Get section's offset from top of content
+                                local sectionOffset = contentTop - sectionTop
+                                -- Add some padding above the section (20px)
+                                local scrollPos = math.max(0, sectionOffset - 20)
+                                -- Clamp to valid scroll range
+                                local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
+                                scrollPos = math.min(scrollPos, maxScroll)
+                                scrollFrame:SetVerticalScroll(scrollPos)
+                            end
+                        end
+                    end
+                end
+
+                -- Navigate to subtab if specified, then scroll to section
                 if targetSubTabIndex then
                     C_Timer.After(0, function()
                         local page = frame.pages and frame.pages[targetTabIndex]
                         if page and page.frame then
-                            for _, child in ipairs({page.frame:GetChildren()}) do
-                                if child.SelectTab and child.tabButtons then
-                                    child:SelectTab(targetSubTabIndex)
-                                    break
-                                end
-                                -- Check one level deeper (scroll frame content)
-                                if child.GetChildren then
-                                    for _, subChild in ipairs({child:GetChildren()}) do
-                                        if subChild.SelectTab and subChild.tabButtons then
-                                            subChild:SelectTab(targetSubTabIndex)
-                                            return
-                                        end
-                                    end
-                                end
+                            local subTabContainer = FindSubTabContainer(page.frame, 0)
+                            if subTabContainer then
+                                subTabContainer.SelectTab(targetSubTabIndex)  -- Use dot, not colon - SelectTab expects index as first arg
                             end
                         end
+                        -- Scroll to section after subtab selection (with small delay for layout)
+                        if targetSectionName then
+                            C_Timer.After(0.05, ScrollToSection)
+                        end
                     end)
+                elseif targetSectionName then
+                    -- No subtab, just scroll to section
+                    C_Timer.After(0.05, ScrollToSection)
                 end
             end)
         end
