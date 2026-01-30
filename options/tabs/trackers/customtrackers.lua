@@ -286,8 +286,20 @@ local function CreateCustomTrackersPage(parent)
         end)
         y = y - FORM_ROW
 
-        -- Delete Bar button
+        -- Export This Bar button
         y = y - 10
+        local actualBarIndex = barIndex - 1  -- barIndex is subTabIndex (Spell Scanner is tab 1), actual bar index is -1
+        local exportBarBtn = GUI:CreateButton(tabContent, "Export This Bar", 130, 26, function()
+            local exportStr, err = QUICore:ExportSingleTrackerBar(actualBarIndex)
+            if not exportStr then
+                print("|cffff0000QuaziiUI:|r " .. (err or "Export failed"))
+                return
+            end
+            GUI:ShowExportPopup("Export Tracker Bar", exportStr)
+        end)
+        exportBarBtn:SetPoint("TOPLEFT", PAD, y)
+
+        -- Delete Bar button
         local deleteBtn = GUI:CreateButton(tabContent, "Delete Bar", 120, 26, function()
             GUI:ShowConfirmation({
                 title = "Delete Tracker Bar?",
@@ -319,8 +331,7 @@ local function CreateCustomTrackersPage(parent)
                 end,
             })
         end)
-        deleteBtn:SetPoint("TOPLEFT", PAD, y)
-        deleteBtn:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        deleteBtn:SetPoint("LEFT", exportBarBtn, "RIGHT", 10, 0)
         y = y - 36
 
         -----------------------------------------------------------------------
@@ -1729,7 +1740,48 @@ local function CreateCustomTrackersPage(parent)
             end)
             clearBtn:SetPoint("TOPLEFT", 0, 0)
 
-            tabContent:SetHeight(500)
+            -- Import/Export section for learned spells
+            local importExportHeader = GUI:CreateSectionHeader(lowerContainer, "Import / Export Learned Spells")
+            importExportHeader:SetPoint("TOPLEFT", 0, -40)
+
+            -- Export button
+            local exportBtn = GUI:CreateButton(lowerContainer, "Export Learned Spells", 160, 24, function()
+                local exportStr, err = QUICore:ExportSpellScanner()
+                if not exportStr then
+                    print("|cffff0000QuaziiUI:|r " .. (err or "Export failed"))
+                    return
+                end
+                GUI:ShowExportPopup("Export Learned Spells", exportStr)
+            end)
+            exportBtn:SetPoint("TOPLEFT", 0, -40 - importExportHeader.gap)
+
+            -- Import button
+            local importBtn = GUI:CreateButton(lowerContainer, "Import Learned Spells", 160, 24, function()
+                GUI:ShowImportPopup({
+                    title = "Import Learned Spells",
+                    hint = "Paste the export string below. 'Merge' adds to existing, 'Replace All' overwrites.",
+                    hasMerge = true,
+                    onImport = function(str)
+                        return QUICore:ImportSpellScanner(str, false)  -- merge
+                    end,
+                    onReplace = function(str)
+                        return QUICore:ImportSpellScanner(str, true)  -- replace
+                    end,
+                    onSuccess = function()
+                        RefreshScannedList()
+                        GUI:ShowConfirmation({
+                            title = "Reload UI?",
+                            message = "Learned spells imported. Reload UI to apply changes?",
+                            acceptText = "Reload",
+                            cancelText = "Later",
+                            onAccept = function() QUI:SafeReload() end,
+                        })
+                    end,
+                })
+            end)
+            importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 10, 0)
+
+            tabContent:SetHeight(550)
         end,
     })
 
@@ -1864,7 +1916,72 @@ local function CreateCustomTrackersPage(parent)
                     })
                 end)
                 addBtn:SetPoint("TOPLEFT", PAD, y)
-                tabContent:SetHeight(150)
+                y = y - 50
+
+                -- Import/Export All Bars section
+                local ieHeader = GUI:CreateSectionHeader(tabContent, "Import / Export All Tracker Bars")
+                ieHeader:SetPoint("TOPLEFT", PAD, y)
+                y = y - ieHeader.gap
+
+                -- Export All Bars button
+                local exportAllBtn = GUI:CreateButton(tabContent, "Export All Bars", 140, 26, function()
+                    local exportStr, err = QUICore:ExportAllTrackerBars()
+                    if not exportStr then
+                        print("|cffff0000QuaziiUI:|r " .. (err or "Export failed"))
+                        return
+                    end
+                    GUI:ShowExportPopup("Export All Tracker Bars", exportStr)
+                end)
+                exportAllBtn:SetPoint("TOPLEFT", PAD, y)
+
+                -- Import Bars button
+                local importBarsBtn = GUI:CreateButton(tabContent, "Import Bars", 140, 26, function()
+                    GUI:ShowImportPopup({
+                        title = "Import Tracker Bars",
+                        hint = "Paste the export string below. 'Merge' adds to existing bars, 'Replace All' overwrites.",
+                        hasMerge = true,
+                        onImport = function(str)
+                            return QUICore:ImportAllTrackerBars(str, false)  -- merge
+                        end,
+                        onReplace = function(str)
+                            return QUICore:ImportAllTrackerBars(str, true)  -- replace
+                        end,
+                        onSuccess = function()
+                            GUI:ShowConfirmation({
+                                title = "Reload UI?",
+                                message = "Tracker bars imported. Reload UI to see changes?",
+                                acceptText = "Reload",
+                                cancelText = "Later",
+                                onAccept = function() QUI:SafeReload() end,
+                            })
+                        end,
+                    })
+                end)
+                importBarsBtn:SetPoint("LEFT", exportAllBtn, "RIGHT", 10, 0)
+
+                -- Import Single Bar button
+                local importSingleBtn = GUI:CreateButton(tabContent, "Import Single Bar", 140, 26, function()
+                    GUI:ShowImportPopup({
+                        title = "Import Single Tracker Bar",
+                        hint = "Paste a single bar export string below",
+                        hasMerge = false,
+                        onImport = function(str)
+                            return QUICore:ImportSingleTrackerBar(str)
+                        end,
+                        onSuccess = function()
+                            GUI:ShowConfirmation({
+                                title = "Reload UI?",
+                                message = "Tracker bar imported. Reload UI to see changes?",
+                                acceptText = "Reload",
+                                cancelText = "Later",
+                                onAccept = function() QUI:SafeReload() end,
+                            })
+                        end,
+                    })
+                end)
+                importSingleBtn:SetPoint("LEFT", importBarsBtn, "RIGHT", 10, 0)
+
+                tabContent:SetHeight(250)
             end,
         })
 

@@ -4021,6 +4021,306 @@ function GUI:Hide()
 end
 
 ---------------------------------------------------------------------------
+-- SCROLLBAR STYLING (hides default Blizzard chrome, mint accent thumb)
+---------------------------------------------------------------------------
+local function StyleScrollBar(scrollFrame)
+    local scrollBar = scrollFrame.ScrollBar or _G[scrollFrame:GetName() .. "ScrollBar"]
+    if not scrollBar then return end
+
+    -- Hide default track texture
+    if scrollBar.Track then
+        scrollBar.Track:SetAlpha(0)
+    end
+
+    -- Style thumb to mint accent
+    local thumb = scrollBar.ThumbTexture or scrollBar:GetThumbTexture()
+    if thumb then
+        thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.7)
+        thumb:SetSize(8, 40)
+    end
+
+    -- Hide up/down buttons
+    local upBtn = scrollBar.ScrollUpButton or _G[scrollFrame:GetName() .. "ScrollBarScrollUpButton"]
+    local downBtn = scrollBar.ScrollDownButton or _G[scrollFrame:GetName() .. "ScrollBarScrollDownButton"]
+    if upBtn then upBtn:SetAlpha(0) upBtn:SetSize(1, 1) end
+    if downBtn then downBtn:SetAlpha(0) downBtn:SetSize(1, 1) end
+end
+
+---------------------------------------------------------------------------
+-- EXPORT POPUP (QUI-styled popup for export strings)
+---------------------------------------------------------------------------
+local ExportPopup = nil  -- Reusable popup frame
+
+function GUI:ShowExportPopup(title, exportString)
+    -- Create popup frame if it doesn't exist
+    if not ExportPopup then
+        local popup = CreateFrame("Frame", "QUI_ExportPopup", UIParent, "BackdropTemplate")
+        popup:SetSize(500, 220)
+        popup:SetPoint("CENTER")
+        popup:SetFrameStrata("FULLSCREEN_DIALOG")
+        popup:SetFrameLevel(500)
+        popup:SetMovable(true)
+        popup:EnableMouse(true)
+        popup:RegisterForDrag("LeftButton")
+        popup:SetScript("OnDragStart", popup.StartMoving)
+        popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+        CreateBackdrop(popup, {0.08, 0.10, 0.14, 0.98}, {C.accent[1], C.accent[2], C.accent[3], 1})
+
+        -- Title
+        popup.title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        popup.title:SetPoint("TOP", 0, -12)
+        popup.title:SetTextColor(1, 1, 1, 1)
+
+        -- Hint text
+        popup.hint = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        popup.hint:SetPoint("TOP", popup.title, "BOTTOM", 0, -4)
+        SetFont(popup.hint, 11, "", C.textMuted)
+        popup.hint:SetText("Select all (Ctrl+A) then copy (Ctrl+C)")
+
+        -- Background for edit area
+        local editBg = CreateFrame("Frame", nil, popup, "BackdropTemplate")
+        editBg:SetPoint("TOPLEFT", 12, -55)
+        editBg:SetPoint("BOTTOMRIGHT", -12, 45)
+        CreateBackdrop(editBg, {0.04, 0.05, 0.07, 1}, nil)
+
+        -- Scroll frame for edit box
+        local scrollFrame = CreateFrame("ScrollFrame", "QUI_ExportPopupScroll", editBg, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 8, -8)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -26, 8)
+        StyleScrollBar(scrollFrame)
+
+        -- Edit box
+        local editBox = CreateFrame("EditBox", nil, scrollFrame)
+        editBox:SetMultiLine(true)
+        editBox:SetAutoFocus(false)
+        editBox:SetFont(GetFontPath(), 11, "")
+        editBox:SetTextColor(0.85, 0.88, 0.92, 1)
+        editBox:SetWidth(scrollFrame:GetWidth() - 10)
+        editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
+        scrollFrame:SetScrollChild(editBox)
+        popup.editBox = editBox
+        popup.scrollFrame = scrollFrame
+
+        -- Update editbox width when scroll frame sizes
+        scrollFrame:SetScript("OnSizeChanged", function(self)
+            editBox:SetWidth(self:GetWidth() - 10)
+        end)
+
+        -- Select All button
+        local selectBtn = self:CreateButton(popup, "Select All", 100, 26, function()
+            popup.editBox:SetFocus()
+            popup.editBox:HighlightText()
+        end)
+        selectBtn:SetPoint("BOTTOMLEFT", 12, 10)
+
+        -- Close button
+        local closeBtn = self:CreateButton(popup, "Close", 80, 26, function()
+            popup:Hide()
+        end)
+        closeBtn:SetPoint("BOTTOMRIGHT", -12, 10)
+
+        -- X button in corner
+        local xBtn = CreateFrame("Button", nil, popup, "BackdropTemplate")
+        xBtn:SetSize(22, 22)
+        xBtn:SetPoint("TOPRIGHT", -6, -6)
+        CreateBackdrop(xBtn, {0.12, 0.12, 0.12, 1}, nil)
+        local xText = xBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        xText:SetPoint("CENTER", 0, 0)
+        xText:SetText("x")
+        xText:SetTextColor(0.6, 0.6, 0.6, 1)
+        xBtn:SetScript("OnEnter", function(self)
+            pcall(self.SetBackdropBorderColor, self, 1, 0.3, 0.3, 1)
+            xText:SetTextColor(1, 0.3, 0.3, 1)
+        end)
+        xBtn:SetScript("OnLeave", function(self)
+            pcall(self.SetBackdropBorderColor, self, C.border[1], C.border[2], C.border[3], 1)
+            xText:SetTextColor(0.6, 0.6, 0.6, 1)
+        end)
+        xBtn:SetScript("OnClick", function() popup:Hide() end)
+
+        popup:Hide()
+        ExportPopup = popup
+    end
+
+    -- Set content and show
+    ExportPopup.title:SetText(title or "Export")
+    ExportPopup.editBox:SetText(exportString or "")
+    ExportPopup:Show()
+    ExportPopup:Raise()
+    ExportPopup.editBox:SetFocus()
+    ExportPopup.editBox:HighlightText()
+end
+
+---------------------------------------------------------------------------
+-- IMPORT POPUP (QUI-styled popup for import strings)
+---------------------------------------------------------------------------
+local ImportPopup = nil  -- Reusable popup frame
+
+-- config = {
+--     title = "Import Title",
+--     hint = "Paste string below",
+--     hasMerge = true/false,  -- if true, shows Merge + Replace All buttons; if false, just Import button
+--     onImport = function(str) end,  -- called for single import or merge
+--     onReplace = function(str) end, -- called for replace all (only if hasMerge)
+--     onSuccess = function() end,     -- called after successful import (for reload prompt)
+-- }
+function GUI:ShowImportPopup(config)
+    -- Create popup frame if it doesn't exist
+    if not ImportPopup then
+        local popup = CreateFrame("Frame", "QUI_ImportPopup", UIParent, "BackdropTemplate")
+        popup:SetSize(500, 250)
+        popup:SetPoint("CENTER")
+        popup:SetFrameStrata("FULLSCREEN_DIALOG")
+        popup:SetFrameLevel(500)
+        popup:SetMovable(true)
+        popup:EnableMouse(true)
+        popup:RegisterForDrag("LeftButton")
+        popup:SetScript("OnDragStart", popup.StartMoving)
+        popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+        CreateBackdrop(popup, {0.08, 0.10, 0.14, 0.98}, {C.accent[1], C.accent[2], C.accent[3], 1})
+
+        -- Title
+        popup.title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        popup.title:SetPoint("TOP", 0, -12)
+        popup.title:SetTextColor(1, 1, 1, 1)
+
+        -- Hint text
+        popup.hint = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        popup.hint:SetPoint("TOP", popup.title, "BOTTOM", 0, -4)
+        SetFont(popup.hint, 11, "", C.textMuted)
+
+        -- Background for edit area
+        local editBg = CreateFrame("Frame", nil, popup, "BackdropTemplate")
+        editBg:SetPoint("TOPLEFT", 12, -55)
+        editBg:SetPoint("BOTTOMRIGHT", -12, 50)
+        CreateBackdrop(editBg, {0.04, 0.05, 0.07, 1}, nil)
+
+        -- Scroll frame for edit box
+        local scrollFrame = CreateFrame("ScrollFrame", "QUI_ImportPopupScroll", editBg, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 8, -8)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -26, 8)
+        StyleScrollBar(scrollFrame)
+
+        -- Edit box
+        local editBox = CreateFrame("EditBox", nil, scrollFrame)
+        editBox:SetMultiLine(true)
+        editBox:SetAutoFocus(false)
+        editBox:SetFont(GetFontPath(), 11, "")
+        editBox:SetTextColor(0.85, 0.88, 0.92, 1)
+        editBox:SetWidth(scrollFrame:GetWidth() - 10)
+        editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
+        scrollFrame:SetScrollChild(editBox)
+        popup.editBox = editBox
+        popup.scrollFrame = scrollFrame
+
+        scrollFrame:SetScript("OnSizeChanged", function(self)
+            editBox:SetWidth(self:GetWidth() - 10)
+        end)
+
+        -- Button container (buttons are created/updated dynamically)
+        popup.buttons = {}
+
+        -- X button in corner
+        local xBtn = CreateFrame("Button", nil, popup, "BackdropTemplate")
+        xBtn:SetSize(22, 22)
+        xBtn:SetPoint("TOPRIGHT", -6, -6)
+        CreateBackdrop(xBtn, {0.12, 0.12, 0.12, 1}, nil)
+        local xText = xBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        xText:SetPoint("CENTER", 0, 0)
+        xText:SetText("x")
+        xText:SetTextColor(0.6, 0.6, 0.6, 1)
+        xBtn:SetScript("OnEnter", function(self)
+            pcall(self.SetBackdropBorderColor, self, 1, 0.3, 0.3, 1)
+            xText:SetTextColor(1, 0.3, 0.3, 1)
+        end)
+        xBtn:SetScript("OnLeave", function(self)
+            pcall(self.SetBackdropBorderColor, self, C.border[1], C.border[2], C.border[3], 1)
+            xText:SetTextColor(0.6, 0.6, 0.6, 1)
+        end)
+        xBtn:SetScript("OnClick", function() popup:Hide() end)
+
+        popup:Hide()
+        ImportPopup = popup
+    end
+
+    -- Clear existing buttons
+    for _, btn in pairs(ImportPopup.buttons) do
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(ImportPopup.buttons)
+
+    -- Create buttons based on config
+    local guiRef = self
+    local function DoImport(replaceAll)
+        local str = ImportPopup.editBox:GetText()
+        if not str or str == "" then
+            print("|cffff0000QuaziiUI:|r No import string provided")
+            return
+        end
+
+        local ok, msg
+        if replaceAll and config.onReplace then
+            ok, msg = config.onReplace(str)
+        elseif config.onImport then
+            ok, msg = config.onImport(str)
+        end
+
+        if ok then
+            print("|cff34D399QuaziiUI:|r " .. (msg or "Import successful"))
+            ImportPopup:Hide()
+            if config.onSuccess then
+                config.onSuccess()
+            end
+        else
+            print("|cffff0000QuaziiUI:|r " .. (msg or "Import failed"))
+        end
+    end
+
+    if config.hasMerge then
+        -- Merge + Replace All + Cancel layout
+        local mergeBtn = guiRef:CreateButton(ImportPopup, "Merge", 100, 26, function()
+            DoImport(false)
+        end)
+        mergeBtn:SetPoint("BOTTOMLEFT", 12, 12)
+        table.insert(ImportPopup.buttons, mergeBtn)
+
+        local replaceBtn = guiRef:CreateButton(ImportPopup, "Replace All", 100, 26, function()
+            DoImport(true)
+        end)
+        replaceBtn:SetPoint("LEFT", mergeBtn, "RIGHT", 10, 0)
+        table.insert(ImportPopup.buttons, replaceBtn)
+
+        local cancelBtn = guiRef:CreateButton(ImportPopup, "Cancel", 80, 26, function()
+            ImportPopup:Hide()
+        end)
+        cancelBtn:SetPoint("BOTTOMRIGHT", -12, 12)
+        table.insert(ImportPopup.buttons, cancelBtn)
+    else
+        -- Import + Cancel layout
+        local importBtn = guiRef:CreateButton(ImportPopup, "Import", 100, 26, function()
+            DoImport(false)
+        end)
+        importBtn:SetPoint("BOTTOMLEFT", 12, 12)
+        table.insert(ImportPopup.buttons, importBtn)
+
+        local cancelBtn = guiRef:CreateButton(ImportPopup, "Cancel", 80, 26, function()
+            ImportPopup:Hide()
+        end)
+        cancelBtn:SetPoint("BOTTOMRIGHT", -12, 12)
+        table.insert(ImportPopup.buttons, cancelBtn)
+    end
+
+    -- Set content and show
+    ImportPopup.title:SetText(config.title or "Import")
+    ImportPopup.hint:SetText(config.hint or "Paste the import string below")
+    ImportPopup.editBox:SetText("")
+    ImportPopup:Show()
+    ImportPopup:Raise()
+    ImportPopup.editBox:SetFocus()
+end
+
+---------------------------------------------------------------------------
 -- TOGGLE FUNCTION
 ---------------------------------------------------------------------------
 function GUI:Toggle()
