@@ -1,12 +1,8 @@
-# QUI 2.0 – A QuaziiUI Community Legacy Edition
-
-**A community-maintained fork / continuation of QuaziiUI (QUI) in the spirit of its original creator.**
-
-This project is **not** an official continuation from Quazii. It is a heartfelt community effort to keep the clean, performant, and beautiful UI design alive after the unfortunate events that led to Quazii stepping away from the WoW addon scene.
+# QUI 2.0 – QuaziiUI continued and kept alive
 
 ### Why This Exists
 
-Quazii created one of the most loved and polished UI packages for World of Warcraft – especially in the Midnight era. Many players (myself included) still rely on its design philosophy: minimalism, performance in high-end content (Mythic+, Raiding), and pixel-perfect scaling without the bloat.
+Quazii created one of the most loved and polished UI packages for World of Warcraft – especially in the pre-Midnight era. Many players (myself included) still rely on its design philosophy: minimalism, performance in high-end content (Mythic+, Raiding), and pixel-perfect scaling without the bloat.
 
 After the recent drama involving code disputes, monetization concerns, and Quazii's decision to retire from the scene, the original QUI is no longer being updated or supported. This repo aims to:
 
@@ -16,13 +12,13 @@ After the recent drama involving code disputes, monetization concerns, and Quazi
 - Use public, community-approved libraries to avoid any past controversies (e.g., pixel-perfect scaling via MIT-licensed sources)
 - Keep the UI as a free resource for the community that Quazii once built it for
 
-This is done **in the spirit of Quazii** – not to compete, not to profit, but to honor the passion he put into UI customization for over 20 years of WoW.
+For the base of this I cleaned up and re-organized the code base, removed the controversial PixelPerfect code snippets, in part likely copied from ElvUI, and merged some of the open feature branches from before Quazii's exit. The rest of the base is basically the state of **QuaziiUI v1.99b**.
 
-I cleaned up and re-organized the code base, removed the controversial PixelPerfect code snippets likely copied from ElvUI, and merged some of the open feature branches from before Quazii's exit. The rest is basically the state of **QuaziiUI v1.99b**.
+Since then I added a few features and fixes important to me, and I will continue doing that for at least until a while into Midnight.
 
 ### Credits & Thanks
 
-- **Original Creator**: Quazii – for the vision, the clean design, the performance optimizations, and the countless hours of work that made QUI special. Thank you for inspiring so many of us.
+- **Original Creator**: Quazii – for the vision, the clean design, the performance optimizations, and the countless hours of work that made QUI special.
 - **Original Co-Developers & Contributors**: All the people who helped shape QUI behind the scenes (you know who you are, let me know if you want to be mentioned). Your code, ideas, and testing live on here.
 - **Community Libraries**
 - **Special Thanks**: To everyone who reached out after the fallout, shared ideas, or simply kept using the UI. This repo exists because of you.
@@ -44,13 +40,3 @@ I cleaned up and re-organized the code base, removed the controversial PixelPerf
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (same as most major WoW UI addons and libraries) - see the [LICENSE](LICENSE) file for details.
-
-### Contributing
-
-Issues, PRs, and feedback are very welcome. Let's keep it drama-free, transparent, and focused on making a great free UI for everyone.
-
-If you enjoy this project, consider starring the repo or sharing it with friends who miss the original QUI.
-
-Rest in peace, QuaziiUI – long live the spirit.
-
-Made with ❤️ by the community for the community.
