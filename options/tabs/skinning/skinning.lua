@@ -17,7 +17,7 @@ local function BuildSkinningTab(tabContent)
     local FORM_ROW = 32
     local db = Shared.GetDB()
 
-    GUI:SetSearchContext({tabIndex = 8, tabName = "Skinning & Autohide", subTabIndex = 2, subTabName = "Skinning"})
+    GUI:SetSearchContext({tabIndex = 6, tabName = "Skinning & Autohide", subTabIndex = 2, subTabName = "Skinning"})
 
     if db and db.general then
         local general = db.general

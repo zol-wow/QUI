@@ -1,6 +1,6 @@
 --[[
-    QUI Options - CDM GCD & Effects Page
-    CreateCDEffectsPage for CDM GCD & Effects tab
+    QUI Options - CDM Effects Sub-Tab
+    BuildEffectsTab for Cooldown Manager > Effects sub-tab
 ]]
 
 local ADDON_NAME, ns = ...
@@ -11,15 +11,14 @@ local C = GUI.Colors
 -- Import shared utilities
 local Shared = ns.QUI_Options
 
-local function CreateCDEffectsPage(parent)
-    local scroll, content = Shared.CreateScrollableContent(parent)
+local function BuildEffectsTab(tabContent)
     local db = Shared.GetDB()
-    local y = -15
+    local y = -10
     local FORM_ROW = 32
-    local PADDING = Shared.PADDING
+    local PAD = 10
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 3, tabName = "CDM Effects"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Cooldown Manager", subTabIndex = 5, subTabName = "Effects"})
 
     -- Refresh functions
     local function RefreshSwipe()
@@ -42,64 +41,64 @@ local function CreateCDEffectsPage(parent)
     -- =====================================================
     -- COOLDOWN SWIPE
     -- =====================================================
-    local swipeHeader = GUI:CreateSectionHeader(content, "COOLDOWN SWIPE")
-    swipeHeader:SetPoint("TOPLEFT", PADDING, y)
+    local swipeHeader = GUI:CreateSectionHeader(tabContent, "COOLDOWN SWIPE")
+    swipeHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - swipeHeader.gap
 
-    local swipeDesc = GUI:CreateLabel(content, "Control which animations appear on CDM icons. Quazii's personal setup is to turn OFF all the below.", 11, C.textMuted)
-    swipeDesc:SetPoint("TOPLEFT", PADDING, y)
-    swipeDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+    local swipeDesc = GUI:CreateLabel(tabContent, "Control which animations appear on CDM icons. Quazii's personal setup is to turn OFF all the below.", 11, C.textMuted)
+    swipeDesc:SetPoint("TOPLEFT", PAD, y)
+    swipeDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     swipeDesc:SetJustifyH("LEFT")
     y = y - 24
 
     if db and db.cooldownSwipe then
-        local showCooldownSwipe = GUI:CreateFormCheckbox(content, "Radial Darkening", "showCooldownSwipe", db.cooldownSwipe, RefreshSwipe)
-        showCooldownSwipe:SetPoint("TOPLEFT", PADDING, y)
-        showCooldownSwipe:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local showCooldownSwipe = GUI:CreateFormCheckbox(tabContent, "Radial Darkening", "showCooldownSwipe", db.cooldownSwipe, RefreshSwipe)
+        showCooldownSwipe:SetPoint("TOPLEFT", PAD, y)
+        showCooldownSwipe:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
-        local cdDesc = GUI:CreateLabel(content, "The radial darkening of icons to signify how long more before a spell is ready again.", 10, C.textMuted)
-        cdDesc:SetPoint("TOPLEFT", PADDING, y + 4)
-        cdDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local cdDesc = GUI:CreateLabel(tabContent, "The radial darkening of icons to signify how long more before a spell is ready again.", 10, C.textMuted)
+        cdDesc:SetPoint("TOPLEFT", PAD, y + 4)
+        cdDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         cdDesc:SetJustifyH("LEFT")
         y = y - 14
 
-        local showGCDSwipe = GUI:CreateFormCheckbox(content, "GCD Swipe", "showGCDSwipe", db.cooldownSwipe, RefreshSwipe)
-        showGCDSwipe:SetPoint("TOPLEFT", PADDING, y)
-        showGCDSwipe:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local showGCDSwipe = GUI:CreateFormCheckbox(tabContent, "GCD Swipe", "showGCDSwipe", db.cooldownSwipe, RefreshSwipe)
+        showGCDSwipe:SetPoint("TOPLEFT", PAD, y)
+        showGCDSwipe:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
-        local gcdDesc = GUI:CreateLabel(content, "The quick ~1.5 second animation after pressing any ability (Global Cooldown)", 10, C.textMuted)
-        gcdDesc:SetPoint("TOPLEFT", PADDING, y + 4)
-        gcdDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local gcdDesc = GUI:CreateLabel(tabContent, "The quick ~1.5 second animation after pressing any ability (Global Cooldown)", 10, C.textMuted)
+        gcdDesc:SetPoint("TOPLEFT", PAD, y + 4)
+        gcdDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         gcdDesc:SetJustifyH("LEFT")
         y = y - 14
 
-        local showBuffSwipe = GUI:CreateFormCheckbox(content, "Buff Swipe on Essential/Utility", "showBuffSwipe", db.cooldownSwipe, RefreshSwipe)
-        showBuffSwipe:SetPoint("TOPLEFT", PADDING, y)
-        showBuffSwipe:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local showBuffSwipe = GUI:CreateFormCheckbox(tabContent, "Buff Swipe on Essential/Utility", "showBuffSwipe", db.cooldownSwipe, RefreshSwipe)
+        showBuffSwipe:SetPoint("TOPLEFT", PAD, y)
+        showBuffSwipe:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
-        local buffDesc = GUI:CreateLabel(content, "Yellow radial overlay showing duration of aura on Essential and Utility icons", 10, C.textMuted)
-        buffDesc:SetPoint("TOPLEFT", PADDING, y + 4)
-        buffDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local buffDesc = GUI:CreateLabel(tabContent, "Yellow radial overlay showing duration of aura on Essential and Utility icons", 10, C.textMuted)
+        buffDesc:SetPoint("TOPLEFT", PAD, y + 4)
+        buffDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         buffDesc:SetJustifyH("LEFT")
         y = y - 14
 
-        local showBuffIconSwipe = GUI:CreateFormCheckbox(content, "Buff Swipe on Buff Icons Bar", "showBuffIconSwipe", db.cooldownSwipe, RefreshSwipe)
-        showBuffIconSwipe:SetPoint("TOPLEFT", PADDING, y)
-        showBuffIconSwipe:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local showBuffIconSwipe = GUI:CreateFormCheckbox(tabContent, "Buff Swipe on Buff Icons Bar", "showBuffIconSwipe", db.cooldownSwipe, RefreshSwipe)
+        showBuffIconSwipe:SetPoint("TOPLEFT", PAD, y)
+        showBuffIconSwipe:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
-        local buffIconDesc = GUI:CreateLabel(content, "Duration swipe on BuffIcon viewer only (procs, short buffs)", 10, C.textMuted)
-        buffIconDesc:SetPoint("TOPLEFT", PADDING, y + 4)
-        buffIconDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local buffIconDesc = GUI:CreateLabel(tabContent, "Duration swipe on BuffIcon viewer only (procs, short buffs)", 10, C.textMuted)
+        buffIconDesc:SetPoint("TOPLEFT", PAD, y + 4)
+        buffIconDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         buffIconDesc:SetJustifyH("LEFT")
         y = y - 14
 
-        local showRechargeEdge = GUI:CreateFormCheckbox(content, "Recharge Edge", "showRechargeEdge", db.cooldownSwipe, RefreshSwipe)
-        showRechargeEdge:SetPoint("TOPLEFT", PADDING, y)
-        showRechargeEdge:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local showRechargeEdge = GUI:CreateFormCheckbox(tabContent, "Recharge Edge", "showRechargeEdge", db.cooldownSwipe, RefreshSwipe)
+        showRechargeEdge:SetPoint("TOPLEFT", PAD, y)
+        showRechargeEdge:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
-        local rechargeEdgeDesc = GUI:CreateLabel(content, "Yellow radial line that shows cooldown recharge time. Note: This comes with a faint GCD swipe too.", 10, C.textMuted)
-        rechargeEdgeDesc:SetPoint("TOPLEFT", PADDING, y + 4)
-        rechargeEdgeDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local rechargeEdgeDesc = GUI:CreateLabel(tabContent, "Yellow radial line that shows cooldown recharge time. Note: This comes with a faint GCD swipe too.", 10, C.textMuted)
+        rechargeEdgeDesc:SetPoint("TOPLEFT", PAD, y + 4)
+        rechargeEdgeDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         rechargeEdgeDesc:SetJustifyH("LEFT")
         y = y - 14
     end
@@ -107,13 +106,13 @@ local function CreateCDEffectsPage(parent)
     -- =====================================================
     -- COOLDOWN EFFECTS
     -- =====================================================
-    local effectsHeader = GUI:CreateSectionHeader(content, "COOLDOWN EFFECTS")
-    effectsHeader:SetPoint("TOPLEFT", PADDING, y)
+    local effectsHeader = GUI:CreateSectionHeader(tabContent, "COOLDOWN EFFECTS")
+    effectsHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - effectsHeader.gap
 
-    local effectsDesc = GUI:CreateLabel(content, "Hides intrusive Blizzard effects: red flashes, golden proc glows, spell activation alerts.", 11, C.textMuted)
-    effectsDesc:SetPoint("TOPLEFT", PADDING, y)
-    effectsDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+    local effectsDesc = GUI:CreateLabel(tabContent, "Hides intrusive Blizzard effects: red flashes, golden proc glows, spell activation alerts.", 11, C.textMuted)
+    effectsDesc:SetPoint("TOPLEFT", PAD, y)
+    effectsDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     effectsDesc:SetJustifyH("LEFT")
     y = y - 24
 
@@ -128,41 +127,66 @@ local function CreateCDEffectsPage(parent)
             })
         end
 
-        local hideEssentialEffects = GUI:CreateFormCheckbox(content, "Hide on Essential Cooldowns", "hideEssential", db.cooldownEffects, PromptEffectsReload)
-        hideEssentialEffects:SetPoint("TOPLEFT", PADDING, y)
-        hideEssentialEffects:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local hideEssentialEffects = GUI:CreateFormCheckbox(tabContent, "Hide on Essential Cooldowns", "hideEssential", db.cooldownEffects, PromptEffectsReload)
+        hideEssentialEffects:SetPoint("TOPLEFT", PAD, y)
+        hideEssentialEffects:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local hideUtilityEffects = GUI:CreateFormCheckbox(content, "Hide on Utility Cooldowns", "hideUtility", db.cooldownEffects, PromptEffectsReload)
-        hideUtilityEffects:SetPoint("TOPLEFT", PADDING, y)
-        hideUtilityEffects:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local hideUtilityEffects = GUI:CreateFormCheckbox(tabContent, "Hide on Utility Cooldowns", "hideUtility", db.cooldownEffects, PromptEffectsReload)
+        hideUtilityEffects:SetPoint("TOPLEFT", PAD, y)
+        hideUtilityEffects:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local effectsWarning = GUI:CreateLabel(content, "Note: When toggled off, Blizzard's default effects will appear on top of your custom glows below.", 11, C.warning)
-        effectsWarning:SetPoint("TOPLEFT", PADDING, y)
-        effectsWarning:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local effectsWarning = GUI:CreateLabel(tabContent, "Note: When toggled off, Blizzard's default effects will appear on top of your custom glows below.", 11, C.warning)
+        effectsWarning:SetPoint("TOPLEFT", PAD, y)
+        effectsWarning:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         effectsWarning:SetJustifyH("LEFT")
         y = y - 24
     end
 
-    -- =====================================================
-    -- CUSTOM GLOW - ESSENTIAL
-    -- =====================================================
-    local essentialGlowHeader = GUI:CreateSectionHeader(content, "ESSENTIAL COOLDOWNS - CUSTOM GLOW")
-    essentialGlowHeader:SetPoint("TOPLEFT", PADDING, y)
-    y = y - essentialGlowHeader.gap
+    local function CreateGlowSection(tabContent, sectionTitle, prefix, dbTable, y, refreshFn)
+        local sectionHeader = GUI:CreateSectionHeader(tabContent, sectionTitle)
+        sectionHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - sectionHeader.gap
 
-    local essentialGlowDesc = GUI:CreateLabel(content, "Replace Blizzard's glow with a custom glow effect when abilities proc.", 11, C.textMuted)
-    essentialGlowDesc:SetPoint("TOPLEFT", PADDING, y)
-    essentialGlowDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-    essentialGlowDesc:SetJustifyH("LEFT")
-    y = y - 24
+        local sectionDesc = GUI:CreateLabel(tabContent, "Replace Blizzard's glow with a custom glow effect when abilities proc.", 11, C.textMuted)
+        sectionDesc:SetPoint("TOPLEFT", PAD, y)
+        sectionDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        sectionDesc:SetJustifyH("LEFT")
+        y = y - 24
 
-    if db and db.customGlow then
+        if not dbTable then
+            return y
+        end
+
+        local enabledKey = prefix .. "Enabled"
+        local glowTypeKey = prefix .. "GlowType"
+        local colorKey = prefix .. "Color"
+        local linesKey = prefix .. "Lines"
+        local thicknessKey = prefix .. "Thickness"
+        local scaleKey = prefix .. "Scale"
+        local frequencyKey = prefix .. "Frequency"
+        local xOffsetKey = prefix .. "XOffset"
+        local yOffsetKey = prefix .. "YOffset"
+
+        local function UpdateWidgetState(widgets)
+            local glowType = dbTable[glowTypeKey] or "Pixel Glow"
+            local isPixel = glowType == "Pixel Glow"
+            local isAutocast = glowType == "Autocast Shine"
+            local isButton = glowType == "Button Glow"
+
+            if widgets.lines then widgets.lines:SetEnabled(isPixel or isAutocast) end
+            if widgets.thickness then widgets.thickness:SetEnabled(isPixel) end
+            if widgets.scale then widgets.scale:SetEnabled(isAutocast) end
+            if widgets.speed then widgets.speed:SetEnabled(true) end
+            if widgets.xOffset then widgets.xOffset:SetEnabled(not isButton) end
+            if widgets.yOffset then widgets.yOffset:SetEnabled(not isButton) end
+        end
+
         -- Enable toggle
-        local essentialGlowEnable = GUI:CreateFormCheckbox(content, "Enable Custom Glow", "essentialEnabled", db.customGlow, RefreshGlows)
-        essentialGlowEnable:SetPoint("TOPLEFT", PADDING, y)
-        essentialGlowEnable:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local glowEnable = GUI:CreateFormCheckbox(tabContent, "Enable Custom Glow", enabledKey, dbTable, refreshFn)
+        glowEnable:SetPoint("TOPLEFT", PAD, y)
+        glowEnable:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         -- Glow Type dropdown
@@ -172,201 +196,84 @@ local function CreateCDEffectsPage(parent)
         }
 
         -- Store references to conditional widgets for visibility updates
-        local essentialWidgets = {}
+        local widgets = {}
 
-        local essentialGlowType = GUI:CreateFormDropdown(content, "Glow Type", glowTypeOptions, "essentialGlowType", db.customGlow, function()
-            RefreshGlows()
-            local glowType = db.customGlow.essentialGlowType or "Pixel Glow"
-            local isPixel = glowType == "Pixel Glow"
-            local isAutocast = glowType == "Autocast Shine"
-            local isButton = glowType == "Button Glow"
-
-            if essentialWidgets.lines then essentialWidgets.lines:SetEnabled(isPixel or isAutocast) end
-            if essentialWidgets.thickness then essentialWidgets.thickness:SetEnabled(isPixel) end
-            if essentialWidgets.scale then essentialWidgets.scale:SetEnabled(isAutocast) end
-            if essentialWidgets.speed then essentialWidgets.speed:SetEnabled(true) end
-            if essentialWidgets.xOffset then essentialWidgets.xOffset:SetEnabled(not isButton) end
-            if essentialWidgets.yOffset then essentialWidgets.yOffset:SetEnabled(not isButton) end
+        local glowTypeDropdown = GUI:CreateFormDropdown(tabContent, "Glow Type", glowTypeOptions, glowTypeKey, dbTable, function()
+            if refreshFn then refreshFn() end
+            UpdateWidgetState(widgets)
         end)
-        essentialGlowType:SetPoint("TOPLEFT", PADDING, y)
-        essentialGlowType:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        glowTypeDropdown:SetPoint("TOPLEFT", PAD, y)
+        glowTypeDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         -- Color picker
-        local essentialGlowColor = GUI:CreateFormColorPicker(content, "Glow Color", "essentialColor", db.customGlow, RefreshGlows)
-        essentialGlowColor:SetPoint("TOPLEFT", PADDING, y)
-        essentialGlowColor:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        local glowColor = GUI:CreateFormColorPicker(tabContent, "Glow Color", colorKey, dbTable, refreshFn)
+        glowColor:SetPoint("TOPLEFT", PAD, y)
+        glowColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         -- Lines
-        local essentialLines = GUI:CreateFormSlider(content, "Lines", 1, 30, 1, "essentialLines", db.customGlow, RefreshGlows)
-        essentialLines:SetPoint("TOPLEFT", PADDING, y)
-        essentialLines:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        essentialWidgets.lines = essentialLines
+        local lines = GUI:CreateFormSlider(tabContent, "Lines", 1, 30, 1, linesKey, dbTable, refreshFn)
+        lines:SetPoint("TOPLEFT", PAD, y)
+        lines:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgets.lines = lines
         y = y - FORM_ROW
 
         -- Thickness
-        local essentialThickness = GUI:CreateFormSlider(content, "Thickness", 1, 10, 1, "essentialThickness", db.customGlow, RefreshGlows)
-        essentialThickness:SetPoint("TOPLEFT", PADDING, y)
-        essentialThickness:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        essentialWidgets.thickness = essentialThickness
+        local thickness = GUI:CreateFormSlider(tabContent, "Thickness", 1, 10, 1, thicknessKey, dbTable, refreshFn)
+        thickness:SetPoint("TOPLEFT", PAD, y)
+        thickness:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgets.thickness = thickness
         y = y - FORM_ROW
 
         -- Scale
-        local essentialScale = GUI:CreateFormSlider(content, "Shine Scale", 0.5, 3.0, 0.1, "essentialScale", db.customGlow, RefreshGlows)
-        essentialScale:SetPoint("TOPLEFT", PADDING, y)
-        essentialScale:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        essentialWidgets.scale = essentialScale
+        local scale = GUI:CreateFormSlider(tabContent, "Shine Scale", 0.5, 3.0, 0.1, scaleKey, dbTable, refreshFn)
+        scale:SetPoint("TOPLEFT", PAD, y)
+        scale:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgets.scale = scale
         y = y - FORM_ROW
 
         -- Animation Speed
-        local essentialSpeed = GUI:CreateFormSlider(content, "Animation Speed", 0.1, 2.0, 0.05, "essentialFrequency", db.customGlow, RefreshGlows)
-        essentialSpeed:SetPoint("TOPLEFT", PADDING, y)
-        essentialSpeed:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        essentialWidgets.speed = essentialSpeed
+        local speed = GUI:CreateFormSlider(tabContent, "Animation Speed", 0.1, 2.0, 0.05, frequencyKey, dbTable, refreshFn)
+        speed:SetPoint("TOPLEFT", PAD, y)
+        speed:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgets.speed = speed
         y = y - FORM_ROW
 
         -- X Offset
-        local essentialXOffset = GUI:CreateFormSlider(content, "X Offset", -20, 20, 1, "essentialXOffset", db.customGlow, RefreshGlows)
-        essentialXOffset:SetPoint("TOPLEFT", PADDING, y)
-        essentialXOffset:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        essentialWidgets.xOffset = essentialXOffset
+        local xOffset = GUI:CreateFormSlider(tabContent, "X Offset", -20, 20, 1, xOffsetKey, dbTable, refreshFn)
+        xOffset:SetPoint("TOPLEFT", PAD, y)
+        xOffset:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgets.xOffset = xOffset
         y = y - FORM_ROW
 
         -- Y Offset
-        local essentialYOffset = GUI:CreateFormSlider(content, "Y Offset", -20, 20, 1, "essentialYOffset", db.customGlow, RefreshGlows)
-        essentialYOffset:SetPoint("TOPLEFT", PADDING, y)
-        essentialYOffset:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        essentialWidgets.yOffset = essentialYOffset
+        local yOffset = GUI:CreateFormSlider(tabContent, "Y Offset", -20, 20, 1, yOffsetKey, dbTable, refreshFn)
+        yOffset:SetPoint("TOPLEFT", PAD, y)
+        yOffset:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgets.yOffset = yOffset
         y = y - FORM_ROW
 
         -- Initial enable/disable state based on glow type
-        local glowType = db.customGlow.essentialGlowType or "Pixel Glow"
-        local isPixel = glowType == "Pixel Glow"
-        local isAutocast = glowType == "Autocast Shine"
-        local isButton = glowType == "Button Glow"
+        UpdateWidgetState(widgets)
 
-        essentialWidgets.lines:SetEnabled(isPixel or isAutocast)
-        essentialWidgets.thickness:SetEnabled(isPixel)
-        essentialWidgets.scale:SetEnabled(isAutocast)
-        essentialWidgets.speed:SetEnabled(true)
-        essentialWidgets.xOffset:SetEnabled(not isButton)
-        essentialWidgets.yOffset:SetEnabled(not isButton)
+        return y
     end
+
+    -- =====================================================
+    -- CUSTOM GLOW - ESSENTIAL
+    -- =====================================================
+    y = CreateGlowSection(tabContent, "ESSENTIAL COOLDOWNS - CUSTOM GLOW", "essential", db.customGlow, y, RefreshGlows)
 
     -- =====================================================
     -- CUSTOM GLOW - UTILITY
     -- =====================================================
-    local utilityGlowHeader = GUI:CreateSectionHeader(content, "UTILITY COOLDOWNS - CUSTOM GLOW")
-    utilityGlowHeader:SetPoint("TOPLEFT", PADDING, y)
-    y = y - utilityGlowHeader.gap
+    y = CreateGlowSection(tabContent, "UTILITY COOLDOWNS - CUSTOM GLOW", "utility", db.customGlow, y, RefreshGlows)
 
-    local utilityGlowDesc = GUI:CreateLabel(content, "Replace Blizzard's glow with a custom glow effect when abilities proc.", 11, C.textMuted)
-    utilityGlowDesc:SetPoint("TOPLEFT", PADDING, y)
-    utilityGlowDesc:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-    utilityGlowDesc:SetJustifyH("LEFT")
-    y = y - 24
-
-    if db and db.customGlow then
-        -- Enable toggle
-        local utilityGlowEnable = GUI:CreateFormCheckbox(content, "Enable Custom Glow", "utilityEnabled", db.customGlow, RefreshGlows)
-        utilityGlowEnable:SetPoint("TOPLEFT", PADDING, y)
-        utilityGlowEnable:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        y = y - FORM_ROW
-
-        -- Glow Type dropdown
-        local utilityGlowTypeOptions = {
-            {value = "Pixel Glow", text = "Pixel Glow"},
-            {value = "Autocast Shine", text = "Autocast Shine"},
-        }
-
-        -- Store references to conditional widgets for visibility updates
-        local utilityWidgets = {}
-
-        local utilityGlowType = GUI:CreateFormDropdown(content, "Glow Type", utilityGlowTypeOptions, "utilityGlowType", db.customGlow, function()
-            RefreshGlows()
-            local glowType = db.customGlow.utilityGlowType or "Pixel Glow"
-            local isPixel = glowType == "Pixel Glow"
-            local isAutocast = glowType == "Autocast Shine"
-            local isButton = glowType == "Button Glow"
-
-            if utilityWidgets.lines then utilityWidgets.lines:SetEnabled(isPixel or isAutocast) end
-            if utilityWidgets.thickness then utilityWidgets.thickness:SetEnabled(isPixel) end
-            if utilityWidgets.scale then utilityWidgets.scale:SetEnabled(isAutocast) end
-            if utilityWidgets.speed then utilityWidgets.speed:SetEnabled(true) end
-            if utilityWidgets.xOffset then utilityWidgets.xOffset:SetEnabled(not isButton) end
-            if utilityWidgets.yOffset then utilityWidgets.yOffset:SetEnabled(not isButton) end
-        end)
-        utilityGlowType:SetPoint("TOPLEFT", PADDING, y)
-        utilityGlowType:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        y = y - FORM_ROW
-
-        -- Color picker
-        local utilityGlowColor = GUI:CreateFormColorPicker(content, "Glow Color", "utilityColor", db.customGlow, RefreshGlows)
-        utilityGlowColor:SetPoint("TOPLEFT", PADDING, y)
-        utilityGlowColor:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        y = y - FORM_ROW
-
-        -- Lines
-        local utilityLines = GUI:CreateFormSlider(content, "Lines", 1, 30, 1, "utilityLines", db.customGlow, RefreshGlows)
-        utilityLines:SetPoint("TOPLEFT", PADDING, y)
-        utilityLines:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        utilityWidgets.lines = utilityLines
-        y = y - FORM_ROW
-
-        -- Thickness
-        local utilityThickness = GUI:CreateFormSlider(content, "Thickness", 1, 10, 1, "utilityThickness", db.customGlow, RefreshGlows)
-        utilityThickness:SetPoint("TOPLEFT", PADDING, y)
-        utilityThickness:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        utilityWidgets.thickness = utilityThickness
-        y = y - FORM_ROW
-
-        -- Scale
-        local utilityScale = GUI:CreateFormSlider(content, "Shine Scale", 0.5, 3.0, 0.1, "utilityScale", db.customGlow, RefreshGlows)
-        utilityScale:SetPoint("TOPLEFT", PADDING, y)
-        utilityScale:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        utilityWidgets.scale = utilityScale
-        y = y - FORM_ROW
-
-        -- Animation Speed
-        local utilitySpeed = GUI:CreateFormSlider(content, "Animation Speed", 0.1, 2.0, 0.05, "utilityFrequency", db.customGlow, RefreshGlows)
-        utilitySpeed:SetPoint("TOPLEFT", PADDING, y)
-        utilitySpeed:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        utilityWidgets.speed = utilitySpeed
-        y = y - FORM_ROW
-
-        -- X Offset
-        local utilityXOffset = GUI:CreateFormSlider(content, "X Offset", -20, 20, 1, "utilityXOffset", db.customGlow, RefreshGlows)
-        utilityXOffset:SetPoint("TOPLEFT", PADDING, y)
-        utilityXOffset:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        utilityWidgets.xOffset = utilityXOffset
-        y = y - FORM_ROW
-
-        -- Y Offset
-        local utilityYOffset = GUI:CreateFormSlider(content, "Y Offset", -20, 20, 1, "utilityYOffset", db.customGlow, RefreshGlows)
-        utilityYOffset:SetPoint("TOPLEFT", PADDING, y)
-        utilityYOffset:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-        utilityWidgets.yOffset = utilityYOffset
-        y = y - FORM_ROW
-
-        -- Initial enable/disable state based on glow type
-        local glowType = db.customGlow.utilityGlowType or "Pixel Glow"
-        local isPixel = glowType == "Pixel Glow"
-        local isAutocast = glowType == "Autocast Shine"
-        local isButton = glowType == "Button Glow"
-
-        utilityWidgets.lines:SetEnabled(isPixel or isAutocast)
-        utilityWidgets.thickness:SetEnabled(isPixel)
-        utilityWidgets.scale:SetEnabled(isAutocast)
-        utilityWidgets.speed:SetEnabled(true)
-        utilityWidgets.xOffset:SetEnabled(not isButton)
-        utilityWidgets.yOffset:SetEnabled(not isButton)
-    end
-
-    content:SetHeight(math.abs(y) + 50)
+    tabContent:SetHeight(math.abs(y) + 60)
 end
 
 -- Export
 ns.QUI_CDMEffectsOptions = {
-    CreateCDEffectsPage = CreateCDEffectsPage
+    BuildEffectsTab = BuildEffectsTab
 }

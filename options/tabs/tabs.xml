@@ -19,7 +19,7 @@
     <Script file="ui/hudlayering.lua"/>
     <Script file="core/profiles.lua"/>
     <Script file="core/import.lua"/>
-    <Script file="cooldowns/ncdm.lua"/>
+    <Script file="cooldowns/cdm.lua"/>
     <Script file="trackers/customtrackers.lua"/>
     <Script file="frames/unitframes.lua"/>
     <Script file="frames/actionbars.lua"/>

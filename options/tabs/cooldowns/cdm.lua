@@ -80,10 +80,53 @@ local function EnsureNCDMDefaults(db)
         end
     end
 
-    -- Ensure buff exists
+    -- Ensure buff exists with required defaults
     if not db.ncdm.buff then
-        db.ncdm.buff = { enabled = false }
+        db.ncdm.buff = {}
     end
+    local buffData = db.ncdm.buff
+    if buffData.enabled == nil then buffData.enabled = true end
+    if buffData.iconSize == nil then buffData.iconSize = 32 end
+    if buffData.borderSize == nil then buffData.borderSize = 1 end
+    if buffData.shape == nil then buffData.shape = "square" end -- deprecated
+    if buffData.aspectRatioCrop == nil then buffData.aspectRatioCrop = 1.0 end
+    if buffData.growthDirection == nil then buffData.growthDirection = "CENTERED_HORIZONTAL" end
+    if buffData.zoom == nil then buffData.zoom = 0 end
+    if buffData.padding == nil then buffData.padding = 4 end
+    if buffData.durationSize == nil then buffData.durationSize = 14 end
+    if buffData.durationOffsetX == nil then buffData.durationOffsetX = 0 end
+    if buffData.durationOffsetY == nil then buffData.durationOffsetY = 8 end
+    if buffData.durationAnchor == nil then buffData.durationAnchor = "TOP" end
+    if buffData.stackSize == nil then buffData.stackSize = 14 end
+    if buffData.stackOffsetX == nil then buffData.stackOffsetX = 0 end
+    if buffData.stackOffsetY == nil then buffData.stackOffsetY = -8 end
+    if buffData.stackAnchor == nil then buffData.stackAnchor = "BOTTOM" end
+    if buffData.opacity == nil then buffData.opacity = 1.0 end
+
+    -- Ensure trackedBar exists with required defaults
+    if not db.ncdm.trackedBar then
+        db.ncdm.trackedBar = {}
+    end
+    local trackedData = db.ncdm.trackedBar
+    if trackedData.enabled == nil then trackedData.enabled = true end
+    if trackedData.hideIcon == nil then trackedData.hideIcon = false end
+    if trackedData.barHeight == nil then trackedData.barHeight = 25 end
+    if trackedData.barWidth == nil then trackedData.barWidth = 215 end
+    if trackedData.texture == nil then trackedData.texture = "Quazii v5" end
+    if trackedData.useClassColor == nil then trackedData.useClassColor = true end
+    if trackedData.barColor == nil then trackedData.barColor = {0.204, 0.827, 0.6, 1} end
+    if trackedData.barOpacity == nil then trackedData.barOpacity = 1.0 end
+    if trackedData.borderSize == nil then trackedData.borderSize = 2 end
+    if trackedData.bgColor == nil then trackedData.bgColor = {0, 0, 0, 1} end
+    if trackedData.bgOpacity == nil then trackedData.bgOpacity = 0.5 end
+    if trackedData.textSize == nil then trackedData.textSize = 14 end
+    if trackedData.spacing == nil then trackedData.spacing = 2 end
+    if trackedData.growUp == nil then trackedData.growUp = true end
+    if trackedData.hideText == nil then trackedData.hideText = false end
+    if trackedData.orientation == nil then trackedData.orientation = "horizontal" end
+    if trackedData.fillDirection == nil then trackedData.fillDirection = "UP" end
+    if trackedData.iconPosition == nil then trackedData.iconPosition = "top" end
+    if trackedData.showTextOnVertical == nil then trackedData.showTextOnVertical = false end
 end
 
 --------------------------------------------------------------------------------
@@ -310,7 +353,7 @@ local function CreateCDMSetupPage(parent)
         local y = tabContent._currentY
 
         -- Set search context for auto-registration
-        GUI:SetSearchContext({tabIndex = 2, tabName = "CDM Setup", subTabIndex = 1, subTabName = "Essential"})
+        GUI:SetSearchContext({tabIndex = 2, tabName = "Cooldown Manager", subTabIndex = 1, subTabName = "Essential"})
 
         if db and db.ncdm and db.ncdm.essential then
             local ess = db.ncdm.essential
@@ -319,11 +362,52 @@ local function CreateCDMSetupPage(parent)
             local function rebuildEssential()
                 -- Clear and rebuild the tab content
                 for _, child in pairs({tabContent:GetChildren()}) do
-                    child:Hide()
-                    child:SetParent(nil)
+                    if child.Release then
+                        child:Release()
+                    elseif child.Recycle then
+                        child:Recycle()
+                    else
+                        if child.UnregisterAllEvents then
+                            child:UnregisterAllEvents()
+                        end
+                        if child.SetScript then
+                            child:SetScript("OnUpdate", nil)
+                            child:SetScript("OnClick", nil)
+                            child:SetScript("OnEnter", nil)
+                            child:SetScript("OnLeave", nil)
+                            child:SetScript("OnEvent", nil)
+                        end
+                        if child.EnableMouse then
+                            child:EnableMouse(false)
+                        end
+                        if child.ClearAllPoints then
+                            child:ClearAllPoints()
+                        end
+                        child:Hide()
+                        child:SetParent(nil)
+                    end
                 end
                 for _, region in pairs({tabContent:GetRegions()}) do
-                    region:Hide()
+                    if region.SetTexture and region.GetObjectType and region:GetObjectType() == "Texture" then
+                        region:SetTexture(nil)
+                    elseif region.SetText and region.GetObjectType and region:GetObjectType() == "FontString" then
+                        region:SetText("")
+                    end
+                    if region.SetScript then
+                        region:SetScript("OnUpdate", nil)
+                        region:SetScript("OnEnter", nil)
+                        region:SetScript("OnLeave", nil)
+                        region:SetScript("OnEvent", nil)
+                    end
+                    if region.ClearAllPoints then
+                        region:ClearAllPoints()
+                    end
+                    if region.Hide then
+                        region:Hide()
+                    end
+                    if region.SetParent then
+                        region:SetParent(nil)
+                    end
                 end
                 BuildEssentialTab(tabContent)
             end
@@ -385,7 +469,7 @@ local function CreateCDMSetupPage(parent)
         local y = tabContent._currentY
 
         -- Set search context for auto-registration
-        GUI:SetSearchContext({tabIndex = 2, tabName = "CDM Setup", subTabIndex = 2, subTabName = "Utility"})
+        GUI:SetSearchContext({tabIndex = 2, tabName = "Cooldown Manager", subTabIndex = 2, subTabName = "Utility"})
 
         if db and db.ncdm and db.ncdm.utility then
             local util = db.ncdm.utility
@@ -483,7 +567,7 @@ local function CreateCDMSetupPage(parent)
         local y = -10
 
         -- Set search context for widget auto-registration
-        GUI:SetSearchContext({tabIndex = 2, tabName = "CDM Setup", subTabIndex = 3, subTabName = "Buff"})
+        GUI:SetSearchContext({tabIndex = 2, tabName = "Cooldown Manager", subTabIndex = 3, subTabName = "Buff"})
 
         -- Ensure buff settings exist with all required fields
         if not db.ncdm then db.ncdm = {} end
@@ -858,102 +942,14 @@ local function CreateCDMSetupPage(parent)
         tabContent:SetHeight(math.abs(y) + 20)
     end
 
-    -- Build Powerbar sub-tab
-    local function BuildPowerbarTab(tabContent)
-        local PAD = 10
-        local y = -10
 
-        -- Set search context for widget auto-registration
-        GUI:SetSearchContext({tabIndex = 2, tabName = "CDM Setup", subTabIndex = 4, subTabName = "Class Resource Bar"})
-
-        -- Ensure powerBar settings exist
-        if not db.powerBar then db.powerBar = {} end
-        if not db.secondaryPowerBar then db.secondaryPowerBar = {} end
-
-        -- Ensure all fields exist with defaults
-        local primary = db.powerBar
-        if primary.enabled == nil then primary.enabled = true end
-        if primary.autoAttach == nil then primary.autoAttach = true end
-        if primary.width == nil then primary.width = 310 end
-        if primary.height == nil then primary.height = 8 end
-        if primary.offsetX == nil then primary.offsetX = 0 end
-        if primary.offsetY == nil then primary.offsetY = 25 end
-        if primary.texture == nil then primary.texture = "Solid" end
-        if primary.colorMode == nil then primary.colorMode = "power" end  -- "power", "class", or "custom"
-        if primary.usePowerColor == nil then primary.usePowerColor = true end  -- Default to power type color
-        if primary.useClassColor == nil then primary.useClassColor = false end
-        if primary.useCustomColor == nil then primary.useCustomColor = false end
-        if primary.customColor == nil then primary.customColor = {0.2, 0.6, 1.0, 1} end
-        if primary.bgColor == nil then primary.bgColor = {0.1, 0.1, 0.1, 0.8} end
-        if primary.showText == nil then primary.showText = true end
-        if primary.showPercent == nil then primary.showPercent = true end
-        if primary.textSize == nil then primary.textSize = 14 end
-        if primary.textX == nil then primary.textX = 0 end
-        if primary.textY == nil then primary.textY = 2 end
-        if primary.borderSize == nil then primary.borderSize = 1 end
-        if primary.orientation == nil then primary.orientation = "AUTO" end
-        if primary.snapGap == nil then primary.snapGap = 5 end
-
-        local secondary = db.secondaryPowerBar
-        if secondary.enabled == nil then secondary.enabled = true end
-        if secondary.autoAttach == nil then secondary.autoAttach = true end
-        if secondary.width == nil then secondary.width = 310 end
-        if secondary.height == nil then secondary.height = 8 end
-        if secondary.lockedBaseX == nil then secondary.lockedBaseX = 0 end
-        if secondary.lockedBaseY == nil then secondary.lockedBaseY = 0 end
-        if secondary.offsetX == nil then secondary.offsetX = 0 end
-        if secondary.offsetY == nil then secondary.offsetY = 0 end
-        if secondary.texture == nil then secondary.texture = "Solid" end
-        if secondary.colorMode == nil then secondary.colorMode = "power" end  -- "power", "class", or "custom"
-        if secondary.usePowerColor == nil then secondary.usePowerColor = true end  -- Default to power type color
-        if secondary.useClassColor == nil then secondary.useClassColor = false end
-        if secondary.useCustomColor == nil then secondary.useCustomColor = false end
-        if secondary.customColor == nil then secondary.customColor = {1.0, 0.8, 0.2, 1} end
-        if secondary.bgColor == nil then secondary.bgColor = {0.1, 0.1, 0.1, 0.8} end
-        if secondary.showText == nil then secondary.showText = true end
-        if secondary.showPercent == nil then secondary.showPercent = false end
-        if secondary.showFragmentedPowerBarText == nil then secondary.showFragmentedPowerBarText = true end
-        if secondary.textSize == nil then secondary.textSize = 14 end
-        if secondary.textX == nil then secondary.textX = 0 end
-        if secondary.textY == nil then secondary.textY = 2 end
-        if secondary.borderSize == nil then secondary.borderSize = 1 end
-        if secondary.orientation == nil then secondary.orientation = "AUTO" end
-        if secondary.snapGap == nil then secondary.snapGap = 5 end
-
-        -- Callback to refresh power bars
-        local function RefreshPowerBars()
-            if _G.QUI and _G.QUI.QUICore then
-                local QUICore = _G.QUI.QUICore
-                if QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
-                if QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
-            end
-        end
-
-        -- Get texture options from LSM
-        local function GetTextureOptions()
-            local options = {}
-            local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
-            if LSM then
-                local textures = LSM:HashTable("statusbar")
-                for name, _ in pairs(textures) do
-                    table.insert(options, {value = name, text = name})
-                end
-                table.sort(options, function(a, b) return a.text < b.text end)
-            else
-                options = {
-                    {value = "Quazii", text = "Quazii"},
-                    {value = "Smooth", text = "Smooth"},
-                    {value = "Flat", text = "Flat"},
-                }
-            end
-            return options
-        end
-
-        -- Forward declare slider references
-        local widthPrimarySlider, widthSecondarySlider
-        local yOffsetPrimarySlider, yOffsetSecondarySlider
-
-        local FORM_ROW = 32
+    -- Build Powerbar general settings sub-section
+    local function BuildPowerbarGeneralSettings(tabContent, ctx, y)
+        local PAD = ctx.PAD
+        local FORM_ROW = ctx.FORM_ROW
+        local primary = ctx.primary
+        local secondary = ctx.secondary
+        local RefreshPowerBars = ctx.RefreshPowerBars
 
         -- =====================================================
         -- GENERAL SETTINGS
@@ -1019,8 +1015,20 @@ local function CreateCDMSetupPage(parent)
         unthrottledDesc:SetJustifyH("LEFT")
         y = y - 25
 
-        -- Spacer before Primary section
-        y = y - 10
+        return y
+    end
+
+    -- Build Primary power bar configuration sub-section
+    local function BuildPrimaryPowerbarConfig(tabContent, ctx, y)
+        local PAD = ctx.PAD
+        local FORM_ROW = ctx.FORM_ROW
+        local primary = ctx.primary
+        local RefreshPowerBars = ctx.RefreshPowerBars
+        local CalculateSnapPosition = ctx.CalculateSnapPosition
+
+        -- Forward declare slider references
+        local widthPrimarySlider
+        local yOffsetPrimarySlider
 
         -- =====================================================
         -- PRIMARY POWER BAR SECTION
@@ -1089,67 +1097,24 @@ local function CreateCDMSetupPage(parent)
             if _G.QUI_RefreshNCDM then
                 _G.QUI_RefreshNCDM()
             end
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, primary, "essential", primary.orientation)
+            if err then
+                print(err)
+                return
+            end
 
-            local essentialViewer = _G.EssentialCooldownViewer
+            primary.offsetX = offsetX
+            primary.offsetY = offsetY
+            primary.width = width
+            primary.autoAttach = false
+            primary.useRawPixels = true
+            RefreshPowerBars()
 
-            if essentialViewer and essentialViewer:IsShown() then
-                local rawCenterX, rawCenterY = essentialViewer:GetCenter()
-                local rawScreenX, rawScreenY = UIParent:GetCenter()
-
-                if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                    local essentialCenterX = math.floor(rawCenterX + 0.5)
-                    local essentialCenterY = math.floor(rawCenterY + 0.5)
-                    local screenCenterX = math.floor(rawScreenX + 0.5)
-                    local screenCenterY = math.floor(rawScreenY + 0.5)
-                    local barBorderSize = primary.borderSize or 1
-                    local isVertical = primary.orientation == "VERTICAL"
-
-                    if isVertical then
-                        -- Vertical bar: goes to the RIGHT of Essential, length matches total height
-                        local totalHeight = essentialViewer.__cdmTotalHeight or essentialViewer:GetHeight() or 100
-                        local topBottomBorderSize = essentialViewer.__cdmRow1BorderSize or 0
-                        local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-
-                        local totalWidth = essentialViewer.__cdmIconWidth or essentialViewer:GetWidth()
-                        local barThickness = primary.height or 8
-                        local rightColBorderSize = essentialViewer.__cdmBottomRowBorderSize or 0
-
-                        local cdmVisualRight = essentialCenterX + (totalWidth / 2) + rightColBorderSize
-                        local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
-
-                        primary.offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) - 4
-                        primary.offsetY = math.floor(essentialCenterY - screenCenterY + 0.5)
-                        primary.width = math.floor(targetWidth + 0.5)
-                    else
-                        -- Horizontal bar: goes ABOVE Essential, width matches row width
-                        local rowWidth = essentialViewer.__cdmRow1Width or essentialViewer.__cdmIconWidth or 300
-                        local totalHeight = essentialViewer.__cdmTotalHeight or essentialViewer:GetHeight() or 100
-                        local row1BorderSize = essentialViewer.__cdmRow1BorderSize or 2
-                        local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
-                        local barHeight = primary.height or 8
-                        local cdmVisualTop = essentialCenterY + (totalHeight / 2) + row1BorderSize
-                        local powerBarCenterY = cdmVisualTop + (barHeight / 2) + barBorderSize
-
-                        primary.offsetY = math.floor(powerBarCenterY - screenCenterY + 0.5) - 1
-                        primary.offsetX = math.floor(essentialCenterX - screenCenterX + 0.5)
-                        primary.width = math.floor(targetWidth + 0.5)
-                    end
-
-                    primary.autoAttach = false
-                    primary.useRawPixels = true
-                    RefreshPowerBars()
-
-                    if widthPrimarySlider and widthPrimarySlider.SetValue then
-                        widthPrimarySlider.SetValue(primary.width, true)
-                    end
-                    if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
-                        yOffsetPrimarySlider.SetValue(primary.offsetY, true)
-                    end
-                else
-                    print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                end
-            else
-                print("|cFF56D1FFQUI:|r Essential Cooldowns viewer not found or not visible.")
+            if widthPrimarySlider and widthPrimarySlider.SetValue then
+                widthPrimarySlider.SetValue(primary.width, true)
+            end
+            if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
+                yOffsetPrimarySlider.SetValue(primary.offsetY, true)
             end
         end)
 
@@ -1181,67 +1146,24 @@ local function CreateCDMSetupPage(parent)
             if _G.QUI_RefreshNCDM then
                 _G.QUI_RefreshNCDM()
             end
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, primary, "utility", primary.orientation)
+            if err then
+                print(err)
+                return
+            end
 
-            local utilityViewer = _G.UtilityCooldownViewer
+            primary.offsetX = offsetX
+            primary.offsetY = offsetY
+            primary.width = width
+            primary.autoAttach = false
+            primary.useRawPixels = true
+            RefreshPowerBars()
 
-            if utilityViewer and utilityViewer:IsShown() then
-                local rawCenterX, rawCenterY = utilityViewer:GetCenter()
-                local rawScreenX, rawScreenY = UIParent:GetCenter()
-
-                if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                    local utilityCenterX = math.floor(rawCenterX + 0.5)
-                    local utilityCenterY = math.floor(rawCenterY + 0.5)
-                    local screenCenterX = math.floor(rawScreenX + 0.5)
-                    local screenCenterY = math.floor(rawScreenY + 0.5)
-                    local barBorderSize = primary.borderSize or 1
-                    local isVertical = primary.orientation == "VERTICAL"
-
-                    if isVertical then
-                        -- Vertical bar: goes to the LEFT of Utility, length matches total height
-                        local totalHeight = utilityViewer.__cdmTotalHeight or utilityViewer:GetHeight() or 100
-                        local topBottomBorderSize = utilityViewer.__cdmRow1BorderSize or 0
-                        local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-
-                        local totalWidth = utilityViewer.__cdmIconWidth or utilityViewer:GetWidth()
-                        local barThickness = primary.height or 8
-                        local row1BorderSize = utilityViewer.__cdmRow1BorderSize or 0
-
-                        local cdmVisualLeft = utilityCenterX - (totalWidth / 2) - row1BorderSize
-                        local powerBarCenterX = cdmVisualLeft - (barThickness / 2) - barBorderSize
-
-                        primary.offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) + 1
-                        primary.offsetY = math.floor(utilityCenterY - screenCenterY + 0.5)
-                        primary.width = math.floor(targetWidth + 0.5)
-                    else
-                        -- Horizontal bar: goes BELOW Utility, width matches row width
-                        local rowWidth = utilityViewer.__cdmBottomRowWidth or utilityViewer.__cdmIconWidth or 300
-                        local totalHeight = utilityViewer.__cdmTotalHeight or utilityViewer:GetHeight() or 100
-                        local bottomRowBorderSize = utilityViewer.__cdmBottomRowBorderSize or 2
-                        local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
-                        local barHeight = primary.height or 8
-                        local cdmVisualBottom = utilityCenterY - (totalHeight / 2) - bottomRowBorderSize
-                        local powerBarCenterY = cdmVisualBottom - (barHeight / 2) - barBorderSize
-
-                        primary.offsetY = math.floor(powerBarCenterY - screenCenterY + 0.5) + 1
-                        primary.offsetX = math.floor(utilityCenterX - screenCenterX + 0.5)
-                        primary.width = math.floor(targetWidth + 0.5)
-                    end
-
-                    primary.autoAttach = false
-                    primary.useRawPixels = true
-                    RefreshPowerBars()
-
-                    if widthPrimarySlider and widthPrimarySlider.SetValue then
-                        widthPrimarySlider.SetValue(primary.width, true)
-                    end
-                    if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
-                        yOffsetPrimarySlider.SetValue(primary.offsetY, true)
-                    end
-                else
-                    print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                end
-            else
-                print("|cFF56D1FFQUI:|r Utility Cooldowns viewer not found or not visible.")
+            if widthPrimarySlider and widthPrimarySlider.SetValue then
+                widthPrimarySlider.SetValue(primary.width, true)
+            end
+            if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
+                yOffsetPrimarySlider.SetValue(primary.offsetY, true)
             end
         end)
         y = y - FORM_ROW
@@ -1342,66 +1264,28 @@ local function CreateCDMSetupPage(parent)
                 if _G.QUI_RefreshNCDM then
                     _G.QUI_RefreshNCDM()
                 end
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, primary, "essential", primary.orientation)
+                if err then
+                    print(err)
+                    return
+                end
 
-                local essentialViewer = _G.EssentialCooldownViewer
-                if essentialViewer and essentialViewer:IsShown() then
-                    local rawCenterX, rawCenterY = essentialViewer:GetCenter()
-                    local rawScreenX, rawScreenY = UIParent:GetCenter()
+                primary.offsetX = offsetX
+                primary.offsetY = offsetY
+                primary.width = width
+                primary.autoAttach = false
+                primary.useRawPixels = true
+                primary.lockedToEssential = true
+                primary.lockedToUtility = false  -- Mutually exclusive
 
-                    if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                        local essentialCenterX = math.floor(rawCenterX + 0.5)
-                        local essentialCenterY = math.floor(rawCenterY + 0.5)
-                        local screenCenterX = math.floor(rawScreenX + 0.5)
-                        local screenCenterY = math.floor(rawScreenY + 0.5)
+                RefreshPowerBars()
+                UpdateLockButtonStates()
 
-                        local barBorderSize = primary.borderSize or 1
-                        local isVertical = primary.orientation == "VERTICAL"
-
-                        if isVertical then
-                            -- Vertical bar: goes to the RIGHT of Essential
-                            local totalHeight = essentialViewer.__cdmTotalHeight or essentialViewer:GetHeight() or 100
-                            local topBottomBorderSize = essentialViewer.__cdmRow1BorderSize or 0
-                            local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-                            local totalWidth = essentialViewer.__cdmIconWidth or essentialViewer:GetWidth()
-                            local barThickness = primary.height or 8
-                            local rightColBorderSize = essentialViewer.__cdmBottomRowBorderSize or 0
-                            local cdmVisualRight = essentialCenterX + (totalWidth / 2) + rightColBorderSize
-                            local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
-                            primary.offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) - 4
-                            primary.offsetY = math.floor(essentialCenterY - screenCenterY + 0.5)
-                            primary.width = math.floor(targetWidth + 0.5)
-                        else
-                            -- Horizontal bar: goes ABOVE Essential
-                            local rowWidth = essentialViewer.__cdmRow1Width or essentialViewer.__cdmIconWidth or 300
-                            local totalHeight = essentialViewer.__cdmTotalHeight or essentialViewer:GetHeight() or 100
-                            local row1BorderSize = essentialViewer.__cdmRow1BorderSize or 2
-                            local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
-                            local barHeight = primary.height or 8
-                            local cdmVisualTop = essentialCenterY + (totalHeight / 2) + row1BorderSize
-                            local powerBarCenterY = cdmVisualTop + (barHeight / 2) + barBorderSize
-                            primary.offsetY = math.floor(powerBarCenterY - screenCenterY + 0.5) - 1
-                            primary.offsetX = math.floor(essentialCenterX - screenCenterX + 0.5)
-                            primary.width = math.floor(targetWidth + 0.5)
-                        end
-                        primary.autoAttach = false
-                        primary.useRawPixels = true
-                        primary.lockedToEssential = true
-                        primary.lockedToUtility = false  -- Mutually exclusive
-
-                        RefreshPowerBars()
-                        UpdateLockButtonStates()
-
-                        if widthPrimarySlider and widthPrimarySlider.SetValue then
-                            widthPrimarySlider.SetValue(primary.width, true)
-                        end
-                        if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
-                            yOffsetPrimarySlider.SetValue(primary.offsetY, true)
-                        end
-                    else
-                        print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                    end
-                else
-                    print("|cFF56D1FFQUI:|r Essential Cooldowns viewer not found or not visible.")
+                if widthPrimarySlider and widthPrimarySlider.SetValue then
+                    widthPrimarySlider.SetValue(primary.width, true)
+                end
+                if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
+                    yOffsetPrimarySlider.SetValue(primary.offsetY, true)
                 end
             end
         end)
@@ -1417,66 +1301,28 @@ local function CreateCDMSetupPage(parent)
                 if _G.QUI_RefreshNCDM then
                     _G.QUI_RefreshNCDM()
                 end
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, primary, "utility", primary.orientation)
+                if err then
+                    print(err)
+                    return
+                end
 
-                local utilityViewer = _G.UtilityCooldownViewer
-                if utilityViewer and utilityViewer:IsShown() then
-                    local rawCenterX, rawCenterY = utilityViewer:GetCenter()
-                    local rawScreenX, rawScreenY = UIParent:GetCenter()
+                primary.offsetX = offsetX
+                primary.offsetY = offsetY
+                primary.width = width
+                primary.autoAttach = false
+                primary.useRawPixels = true
+                primary.lockedToUtility = true
+                primary.lockedToEssential = false  -- Mutually exclusive
 
-                    if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                        local utilityCenterX = math.floor(rawCenterX + 0.5)
-                        local utilityCenterY = math.floor(rawCenterY + 0.5)
-                        local screenCenterX = math.floor(rawScreenX + 0.5)
-                        local screenCenterY = math.floor(rawScreenY + 0.5)
+                RefreshPowerBars()
+                UpdateLockButtonStates()
 
-                        local barBorderSize = primary.borderSize or 1
-                        local isVertical = primary.orientation == "VERTICAL"
-
-                        if isVertical then
-                            -- Vertical bar: goes to the LEFT of Utility
-                            local totalHeight = utilityViewer.__cdmTotalHeight or utilityViewer:GetHeight() or 100
-                            local topBottomBorderSize = utilityViewer.__cdmRow1BorderSize or 0
-                            local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-                            local totalWidth = utilityViewer.__cdmIconWidth or utilityViewer:GetWidth()
-                            local barThickness = primary.height or 8
-                            local row1BorderSize = utilityViewer.__cdmRow1BorderSize or 0
-                            local cdmVisualLeft = utilityCenterX - (totalWidth / 2) - row1BorderSize
-                            local powerBarCenterX = cdmVisualLeft - (barThickness / 2) - barBorderSize
-                            primary.offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) + 1
-                            primary.offsetY = math.floor(utilityCenterY - screenCenterY + 0.5)
-                            primary.width = math.floor(targetWidth + 0.5)
-                        else
-                            -- Horizontal bar: goes BELOW Utility
-                            local rowWidth = utilityViewer.__cdmBottomRowWidth or utilityViewer.__cdmIconWidth or 300
-                            local totalHeight = utilityViewer.__cdmTotalHeight or utilityViewer:GetHeight() or 100
-                            local bottomRowBorderSize = utilityViewer.__cdmBottomRowBorderSize or 2
-                            local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
-                            local barHeight = primary.height or 8
-                            local cdmVisualBottom = utilityCenterY - (totalHeight / 2) - bottomRowBorderSize
-                            local powerBarCenterY = cdmVisualBottom - (barHeight / 2) - barBorderSize
-                            primary.offsetY = math.floor(powerBarCenterY - screenCenterY + 0.5) + 1
-                            primary.offsetX = math.floor(utilityCenterX - screenCenterX + 0.5)
-                            primary.width = math.floor(targetWidth + 0.5)
-                        end
-                        primary.autoAttach = false
-                        primary.useRawPixels = true
-                        primary.lockedToUtility = true
-                        primary.lockedToEssential = false  -- Mutually exclusive
-
-                        RefreshPowerBars()
-                        UpdateLockButtonStates()
-
-                        if widthPrimarySlider and widthPrimarySlider.SetValue then
-                            widthPrimarySlider.SetValue(primary.width, true)
-                        end
-                        if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
-                            yOffsetPrimarySlider.SetValue(primary.offsetY, true)
-                        end
-                    else
-                        print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                    end
-                else
-                    print("|cFF56D1FFQUI:|r Utility Cooldowns viewer not found or not visible.")
+                if widthPrimarySlider and widthPrimarySlider.SetValue then
+                    widthPrimarySlider.SetValue(primary.width, true)
+                end
+                if yOffsetPrimarySlider and yOffsetPrimarySlider.SetValue then
+                    yOffsetPrimarySlider.SetValue(primary.offsetY, true)
                 end
             end
         end)
@@ -1663,8 +1509,20 @@ local function CreateCDMSetupPage(parent)
         texturePrimary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        -- Spacer between sections
-        y = y - 15
+        return y
+    end
+
+    -- Build Secondary power bar configuration sub-section
+    local function BuildSecondaryPowerbarConfig(tabContent, ctx, y)
+        local PAD = ctx.PAD
+        local FORM_ROW = ctx.FORM_ROW
+        local secondary = ctx.secondary
+        local RefreshPowerBars = ctx.RefreshPowerBars
+        local CalculateSnapPosition = ctx.CalculateSnapPosition
+
+        -- Forward declare slider references
+        local widthSecondarySlider
+        local yOffsetSecondarySlider
 
         -- =====================================================
         -- SECONDARY POWER BAR SECTION
@@ -1731,58 +1589,22 @@ local function CreateCDMSetupPage(parent)
         end)
         snapSecEssentialBtn:SetScript("OnClick", function()
             if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-            local essentialViewer = _G.EssentialCooldownViewer
-            if essentialViewer and essentialViewer:IsShown() then
-                local rawCenterX, rawCenterY = essentialViewer:GetCenter()
-                local rawScreenX, rawScreenY = UIParent:GetCenter()
-                if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                    local essentialCenterX = math.floor(rawCenterX + 0.5)
-                    local essentialCenterY = math.floor(rawCenterY + 0.5)
-                    local screenCenterX = math.floor(rawScreenX + 0.5)
-                    local screenCenterY = math.floor(rawScreenY + 0.5)
-                    local barBorderSize = secondary.borderSize or 1
-                    local isVertical = secondary.orientation == "VERTICAL"
-
-                    if isVertical then
-                        -- Vertical bar: goes to the RIGHT of Essential
-                        local totalHeight = essentialViewer.__cdmTotalHeight or essentialViewer:GetHeight() or 100
-                        local topBottomBorderSize = essentialViewer.__cdmRow1BorderSize or 0
-                        local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-                        local totalWidth = essentialViewer.__cdmIconWidth or essentialViewer:GetWidth()
-                        local barThickness = secondary.height or 8
-                        local rightColBorderSize = essentialViewer.__cdmBottomRowBorderSize or 0
-                        local cdmVisualRight = essentialCenterX + (totalWidth / 2) + rightColBorderSize
-                        local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
-                        secondary.lockedBaseX = math.floor(powerBarCenterX - screenCenterX + 0.5) - 4
-                        secondary.lockedBaseY = math.floor(essentialCenterY - screenCenterY + 0.5)
-                        secondary.width = math.floor(targetWidth + 0.5)
-                    else
-                        -- Horizontal bar: goes ABOVE Essential
-                        local rowWidth = essentialViewer.__cdmRow1Width or essentialViewer.__cdmIconWidth or 300
-                        local totalHeight = essentialViewer.__cdmTotalHeight or essentialViewer:GetHeight() or 100
-                        local row1BorderSize = essentialViewer.__cdmRow1BorderSize or 2
-                        local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
-                        local barHeight = secondary.height or 8
-                        local cdmVisualTop = essentialCenterY + (totalHeight / 2) + row1BorderSize
-                        local powerBarCenterY = cdmVisualTop + (barHeight / 2) + barBorderSize
-                        secondary.lockedBaseY = math.floor(powerBarCenterY - screenCenterY + 0.5) - 1
-                        secondary.lockedBaseX = math.floor(essentialCenterX - screenCenterX + 0.5)
-                        secondary.width = math.floor(targetWidth + 0.5)
-                    end
-
-                    secondary.offsetX = 0  -- Reset user adjustment
-                    secondary.offsetY = 0
-                    secondary.autoAttach = false
-                    secondary.useRawPixels = true
-                    RefreshPowerBars()
-                    if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
-                    if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
-                else
-                    print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                end
-            else
-                print("|cFF56D1FFQUI:|r Essential Cooldowns viewer not found or not visible.")
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, secondary, "essential", secondary.orientation)
+            if err then
+                print(err)
+                return
             end
+
+            secondary.lockedBaseX = offsetX
+            secondary.lockedBaseY = offsetY
+            secondary.width = width
+            secondary.offsetX = 0  -- Reset user adjustment
+            secondary.offsetY = 0
+            secondary.autoAttach = false
+            secondary.useRawPixels = true
+            RefreshPowerBars()
+            if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
+            if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
         end)
 
         -- Snap to Utility button
@@ -1810,57 +1632,22 @@ local function CreateCDMSetupPage(parent)
         end)
         snapSecUtilityBtn:SetScript("OnClick", function()
             if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-            local utilityViewer = _G.UtilityCooldownViewer
-            if utilityViewer and utilityViewer:IsShown() then
-                local rawCenterX, rawCenterY = utilityViewer:GetCenter()
-                local rawScreenX, rawScreenY = UIParent:GetCenter()
-                if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                    local utilityCenterX = math.floor(rawCenterX + 0.5)
-                    local utilityCenterY = math.floor(rawCenterY + 0.5)
-                    local screenCenterX = math.floor(rawScreenX + 0.5)
-                    local screenCenterY = math.floor(rawScreenY + 0.5)
-                    local barBorderSize = secondary.borderSize or 1
-                    local isVertical = secondary.orientation == "VERTICAL"
-
-                    if isVertical then
-                        -- Vertical bar: goes to the LEFT of Utility
-                        local totalHeight = utilityViewer.__cdmTotalHeight or utilityViewer:GetHeight() or 100
-                        local topBottomBorderSize = utilityViewer.__cdmRow1BorderSize or 0
-                        local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-                        local totalWidth = utilityViewer.__cdmIconWidth or utilityViewer:GetWidth()
-                        local barThickness = secondary.height or 8
-                        local cdmVisualLeft = utilityCenterX - (totalWidth / 2)
-                        local powerBarCenterX = cdmVisualLeft - (barThickness / 2)
-                        secondary.lockedBaseX = math.floor(powerBarCenterX - screenCenterX + 0.5)
-                        secondary.lockedBaseY = math.floor(utilityCenterY - screenCenterY + 0.5)
-                        secondary.width = math.floor(targetWidth + 0.5)
-                    else
-                        -- Horizontal bar: goes BELOW Utility
-                        local rowWidth = utilityViewer.__cdmBottomRowWidth or utilityViewer.__cdmIconWidth or 300
-                        local totalHeight = utilityViewer.__cdmTotalHeight or utilityViewer:GetHeight() or 100
-                        local bottomRowBorderSize = utilityViewer.__cdmBottomRowBorderSize or 2
-                        local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
-                        local barHeight = secondary.height or 8
-                        local cdmVisualBottom = utilityCenterY - (totalHeight / 2) - bottomRowBorderSize
-                        local powerBarCenterY = cdmVisualBottom - (barHeight / 2) - barBorderSize
-                        secondary.lockedBaseY = math.floor(powerBarCenterY - screenCenterY + 0.5) + 1
-                        secondary.lockedBaseX = math.floor(utilityCenterX - screenCenterX + 0.5)
-                        secondary.width = math.floor(targetWidth + 0.5)
-                    end
-
-                    secondary.offsetX = 0  -- Reset user adjustment
-                    secondary.offsetY = 0
-                    secondary.autoAttach = false
-                    secondary.useRawPixels = true
-                    RefreshPowerBars()
-                    if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
-                    if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
-                else
-                    print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                end
-            else
-                print("|cFF56D1FFQUI:|r Utility Cooldowns viewer not found or not visible.")
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, secondary, "utility", secondary.orientation)
+            if err then
+                print(err)
+                return
             end
+
+            secondary.lockedBaseX = offsetX
+            secondary.lockedBaseY = offsetY
+            secondary.width = width
+            secondary.offsetX = 0  -- Reset user adjustment
+            secondary.offsetY = 0
+            secondary.autoAttach = false
+            secondary.useRawPixels = true
+            RefreshPowerBars()
+            if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
+            if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
         end)
 
         -- Snap to Primary button
@@ -2064,60 +1851,26 @@ local function CreateCDMSetupPage(parent)
                 UpdateSecLockButtonStates()
             else
                 if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-                local essentialViewer = _G.EssentialCooldownViewer
-                if essentialViewer and essentialViewer:IsShown() then
-                    local rawCenterX, rawCenterY = essentialViewer:GetCenter()
-                    local rawScreenX, rawScreenY = UIParent:GetCenter()
-                    if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                        local essentialCenterX = math.floor(rawCenterX + 0.5)
-                        local essentialCenterY = math.floor(rawCenterY + 0.5)
-                        local screenCenterX = math.floor(rawScreenX + 0.5)
-                        local screenCenterY = math.floor(rawScreenY + 0.5)
-                        local totalHeight = essentialViewer.__cdmTotalHeight or essentialViewer:GetHeight() or 100
-                        local row1BorderSize = essentialViewer.__cdmRow1BorderSize or 2
-                        local barBorderSize = secondary.borderSize or 1
-                        local isVertical = secondary.orientation == "VERTICAL"
-
-                        if isVertical then
-                            -- Vertical bar: goes to the RIGHT of Essential
-                            local topBottomBorderSize = essentialViewer.__cdmRow1BorderSize or 0
-                            local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-                            local totalWidth = essentialViewer.__cdmIconWidth or essentialViewer:GetWidth()
-                            local barThickness = secondary.height or 8
-                            local rightColBorderSize = essentialViewer.__cdmBottomRowBorderSize or 0
-                            local cdmVisualRight = essentialCenterX + (totalWidth / 2) + rightColBorderSize
-                            local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
-                            secondary.lockedBaseX = math.floor(powerBarCenterX - screenCenterX + 0.5) - 4
-                            secondary.lockedBaseY = math.floor(essentialCenterY - screenCenterY + 0.5)
-                            secondary.width = math.floor(targetWidth + 0.5)
-                        else
-                            -- Horizontal bar: goes ABOVE Essential
-                            local rowWidth = essentialViewer.__cdmRow1Width or essentialViewer.__cdmIconWidth or 300
-                            local barHeight = secondary.height or 8
-                            local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
-                            local cdmVisualTop = essentialCenterY + (totalHeight / 2) + row1BorderSize
-                            local powerBarCenterY = cdmVisualTop + (barHeight / 2) + barBorderSize
-                            secondary.lockedBaseY = math.floor(powerBarCenterY - screenCenterY + 0.5) - 1
-                            secondary.lockedBaseX = math.floor(essentialCenterX - screenCenterX + 0.5)
-                            secondary.width = math.floor(targetWidth + 0.5)
-                        end
-                        secondary.offsetX = 0  -- Reset user adjustment
-                        secondary.offsetY = 0
-                        secondary.autoAttach = false
-                        secondary.useRawPixels = true
-                        secondary.lockedToEssential = true
-                        secondary.lockedToUtility = false
-                        secondary.lockedToPrimary = false
-                        RefreshPowerBars()
-                        UpdateSecLockButtonStates()
-                        if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
-                        if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
-                    else
-                        print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                    end
-                else
-                    print("|cFF56D1FFQUI:|r Essential Cooldowns viewer not found or not visible.")
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, secondary, "essential", secondary.orientation)
+                if err then
+                    print(err)
+                    return
                 end
+
+                secondary.lockedBaseX = offsetX
+                secondary.lockedBaseY = offsetY
+                secondary.width = width
+                secondary.offsetX = 0  -- Reset user adjustment
+                secondary.offsetY = 0
+                secondary.autoAttach = false
+                secondary.useRawPixels = true
+                secondary.lockedToEssential = true
+                secondary.lockedToUtility = false
+                secondary.lockedToPrimary = false
+                RefreshPowerBars()
+                UpdateSecLockButtonStates()
+                if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
+                if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
             end
         end)
 
@@ -2128,59 +1881,26 @@ local function CreateCDMSetupPage(parent)
                 UpdateSecLockButtonStates()
             else
                 if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-                local utilityViewer = _G.UtilityCooldownViewer
-                if utilityViewer and utilityViewer:IsShown() then
-                    local rawCenterX, rawCenterY = utilityViewer:GetCenter()
-                    local rawScreenX, rawScreenY = UIParent:GetCenter()
-                    if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-                        local utilityCenterX = math.floor(rawCenterX + 0.5)
-                        local utilityCenterY = math.floor(rawCenterY + 0.5)
-                        local screenCenterX = math.floor(rawScreenX + 0.5)
-                        local screenCenterY = math.floor(rawScreenY + 0.5)
-                        local totalHeight = utilityViewer.__cdmTotalHeight or utilityViewer:GetHeight() or 100
-                        local bottomRowBorderSize = utilityViewer.__cdmBottomRowBorderSize or 2
-                        local barBorderSize = secondary.borderSize or 1
-                        local isVertical = secondary.orientation == "VERTICAL"
-
-                        if isVertical then
-                            -- Vertical bar: goes to the LEFT of Utility
-                            local row1BorderSize = utilityViewer.__cdmRow1BorderSize or 0
-                            local targetWidth = totalHeight + (2 * row1BorderSize) - (2 * barBorderSize)
-                            local totalWidth = utilityViewer.__cdmIconWidth or utilityViewer:GetWidth()
-                            local barThickness = secondary.height or 8
-                            local cdmVisualLeft = utilityCenterX - (totalWidth / 2)
-                            local powerBarCenterX = cdmVisualLeft - (barThickness / 2)
-                            secondary.lockedBaseX = math.floor(powerBarCenterX - screenCenterX + 0.5)
-                            secondary.lockedBaseY = math.floor(utilityCenterY - screenCenterY + 0.5)
-                            secondary.width = math.floor(targetWidth + 0.5)
-                        else
-                            -- Horizontal bar: goes BELOW Utility
-                            local rowWidth = utilityViewer.__cdmBottomRowWidth or utilityViewer.__cdmIconWidth or 300
-                            local barHeight = secondary.height or 8
-                            local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
-                            local cdmVisualBottom = utilityCenterY - (totalHeight / 2) - bottomRowBorderSize
-                            local powerBarCenterY = cdmVisualBottom - (barHeight / 2) - barBorderSize
-                            secondary.lockedBaseY = math.floor(powerBarCenterY - screenCenterY + 0.5) + 1
-                            secondary.lockedBaseX = math.floor(utilityCenterX - screenCenterX + 0.5)
-                            secondary.width = math.floor(targetWidth + 0.5)
-                        end
-                        secondary.offsetX = 0  -- Reset user adjustment
-                        secondary.offsetY = 0
-                        secondary.autoAttach = false
-                        secondary.useRawPixels = true
-                        secondary.lockedToUtility = true
-                        secondary.lockedToEssential = false
-                        secondary.lockedToPrimary = false
-                        RefreshPowerBars()
-                        UpdateSecLockButtonStates()
-                        if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
-                        if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
-                    else
-                        print("|cFF56D1FFQUI:|r Could not get screen positions. Try again.")
-                    end
-                else
-                    print("|cFF56D1FFQUI:|r Utility Cooldowns viewer not found or not visible.")
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, secondary, "utility", secondary.orientation)
+                if err then
+                    print(err)
+                    return
                 end
+
+                secondary.lockedBaseX = offsetX
+                secondary.lockedBaseY = offsetY
+                secondary.width = width
+                secondary.offsetX = 0  -- Reset user adjustment
+                secondary.offsetY = 0
+                secondary.autoAttach = false
+                secondary.useRawPixels = true
+                secondary.lockedToUtility = true
+                secondary.lockedToEssential = false
+                secondary.lockedToPrimary = false
+                RefreshPowerBars()
+                UpdateSecLockButtonStates()
+                if widthSecondarySlider and widthSecondarySlider.SetValue then widthSecondarySlider.SetValue(secondary.width, true) end
+                if yOffsetSecondarySlider and yOffsetSecondarySlider.SetValue then yOffsetSecondarySlider.SetValue(secondary.offsetY, true) end
             end
         end)
 
@@ -2206,16 +1926,8 @@ local function CreateCDMSetupPage(parent)
                         local primaryBorderSize = primaryCfg.borderSize or 1
                         local secondaryHeight = secondary.height or 8
                         local secondaryBorderSize = secondary.borderSize or 1
-                        local isVertical = secondary.orientation == "VERTICAL"
-
-                        if isVertical then
-                            local primaryActualWidth = primaryBar:GetWidth()
-                            local targetWidth = primaryWidth + (2 * primaryBorderSize) - (2 * secondaryBorderSize)
-                            secondary.width = math.floor(targetWidth + 0.5)
-                        else
-                            local targetWidth = primaryWidth + (2 * primaryBorderSize) - (2 * secondaryBorderSize)
-                            secondary.width = math.floor(targetWidth + 0.5)
-                        end
+                        local targetWidth = primaryWidth + (2 * primaryBorderSize) - (2 * secondaryBorderSize)
+                        secondary.width = math.floor(targetWidth + 0.5)
                     end
 
                     -- Reset user adjustment (base position is calculated live from primary bar)
@@ -2426,6 +2138,16 @@ local function CreateCDMSetupPage(parent)
         textureSecondary:SetPoint("TOPLEFT", PAD, y)
         textureSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
+
+        return y
+    end
+
+    -- Build Powerbar color settings sub-section
+    local function BuildPowerbarColorSettings(tabContent, ctx, y)
+        local PAD = ctx.PAD
+        local FORM_ROW = ctx.FORM_ROW
+        local db = ctx.db
+        local RefreshPowerBars = ctx.RefreshPowerBars
 
         -- =====================================================
         -- POWER COLORS (Global - affects both bars)
@@ -2722,17 +2444,211 @@ local function CreateCDMSetupPage(parent)
         table.insert(powerColorWidgets, unholyRunesColor)
         y = y - FORM_ROW
 
+        return y
+    end
+
+    -- Build Powerbar sub-tab (orchestrator)
+    local function BuildPowerbarTab(tabContent)
+        local PAD = 10
+        local y = -10
+
+        -- Set search context for widget auto-registration
+        GUI:SetSearchContext({tabIndex = 2, tabName = "Cooldown Manager", subTabIndex = 4, subTabName = "Class Resource Bar"})
+
+        -- Ensure powerBar settings exist
+        if not db.powerBar then db.powerBar = {} end
+        if not db.secondaryPowerBar then db.secondaryPowerBar = {} end
+
+        -- Ensure all fields exist with defaults
+        local primary = db.powerBar
+        if primary.enabled == nil then primary.enabled = true end
+        if primary.autoAttach == nil then primary.autoAttach = true end
+        if primary.width == nil then primary.width = 310 end
+        if primary.height == nil then primary.height = 8 end
+        if primary.offsetX == nil then primary.offsetX = 0 end
+        if primary.offsetY == nil then primary.offsetY = 25 end
+        if primary.texture == nil then primary.texture = "Solid" end
+        if primary.colorMode == nil then primary.colorMode = "power" end  -- "power", "class", or "custom"
+        if primary.usePowerColor == nil then primary.usePowerColor = true end  -- Default to power type color
+        if primary.useClassColor == nil then primary.useClassColor = false end
+        if primary.useCustomColor == nil then primary.useCustomColor = false end
+        if primary.customColor == nil then primary.customColor = {0.2, 0.6, 1.0, 1} end
+        if primary.bgColor == nil then primary.bgColor = {0.1, 0.1, 0.1, 0.8} end
+        if primary.showText == nil then primary.showText = true end
+        if primary.showPercent == nil then primary.showPercent = true end
+        if primary.textSize == nil then primary.textSize = 14 end
+        if primary.textX == nil then primary.textX = 0 end
+        if primary.textY == nil then primary.textY = 2 end
+        if primary.borderSize == nil then primary.borderSize = 1 end
+        if primary.orientation == nil then primary.orientation = "AUTO" end
+        if primary.snapGap == nil then primary.snapGap = 5 end
+
+        local secondary = db.secondaryPowerBar
+        if secondary.enabled == nil then secondary.enabled = true end
+        if secondary.autoAttach == nil then secondary.autoAttach = true end
+        if secondary.width == nil then secondary.width = 310 end
+        if secondary.height == nil then secondary.height = 8 end
+        if secondary.lockedBaseX == nil then secondary.lockedBaseX = 0 end
+        if secondary.lockedBaseY == nil then secondary.lockedBaseY = 0 end
+        if secondary.offsetX == nil then secondary.offsetX = 0 end
+        if secondary.offsetY == nil then secondary.offsetY = 0 end
+        if secondary.texture == nil then secondary.texture = "Solid" end
+        if secondary.colorMode == nil then secondary.colorMode = "power" end  -- "power", "class", or "custom"
+        if secondary.usePowerColor == nil then secondary.usePowerColor = true end  -- Default to power type color
+        if secondary.useClassColor == nil then secondary.useClassColor = false end
+        if secondary.useCustomColor == nil then secondary.useCustomColor = false end
+        if secondary.customColor == nil then secondary.customColor = {1.0, 0.8, 0.2, 1} end
+        if secondary.bgColor == nil then secondary.bgColor = {0.1, 0.1, 0.1, 0.8} end
+        if secondary.showText == nil then secondary.showText = true end
+        if secondary.showPercent == nil then secondary.showPercent = false end
+        if secondary.showFragmentedPowerBarText == nil then secondary.showFragmentedPowerBarText = true end
+        if secondary.textSize == nil then secondary.textSize = 14 end
+        if secondary.textX == nil then secondary.textX = 0 end
+        if secondary.textY == nil then secondary.textY = 2 end
+        if secondary.borderSize == nil then secondary.borderSize = 1 end
+        if secondary.orientation == nil then secondary.orientation = "AUTO" end
+        if secondary.snapGap == nil then secondary.snapGap = 5 end
+
+        -- Callback to refresh power bars
+        local function RefreshPowerBars()
+            if _G.QUI and _G.QUI.QUICore then
+                local QUICore = _G.QUI.QUICore
+                if QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
+                if QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
+            end
+        end
+
+        local function CalculateSnapPosition(viewer, barConfig, targetType, orientation)
+            local viewerLabel = targetType == "essential" and "Essential Cooldowns" or "Utility Cooldowns"
+            if targetType ~= "essential" and targetType ~= "utility" then
+                return nil, nil, nil, "|cFF56D1FFQUI:|r Invalid snap target."
+            end
+
+            if not viewer or not viewer.IsShown or not viewer:IsShown() then
+                return nil, nil, nil, ("|cFF56D1FFQUI:|r " .. viewerLabel .. " viewer not found or not visible.")
+            end
+
+            local rawCenterX, rawCenterY = viewer:GetCenter()
+            local rawScreenX, rawScreenY = UIParent:GetCenter()
+            if not rawCenterX or not rawCenterY or not rawScreenX or not rawScreenY then
+                return nil, nil, nil, "|cFF56D1FFQUI:|r Could not get screen positions. Try again."
+            end
+
+            local viewerCenterX = math.floor(rawCenterX + 0.5)
+            local viewerCenterY = math.floor(rawCenterY + 0.5)
+            local screenCenterX = math.floor(rawScreenX + 0.5)
+            local screenCenterY = math.floor(rawScreenY + 0.5)
+            local barBorderSize = barConfig.borderSize or 1
+            local isVertical = (orientation or barConfig.orientation) == "VERTICAL"
+
+            local offsetX
+            local offsetY
+            local width
+
+            if targetType == "essential" then
+                if isVertical then
+                    -- Vertical bar: goes to the RIGHT of Essential, length matches total height
+                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
+                    local topBottomBorderSize = viewer.__cdmRow1BorderSize or 0
+                    local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
+                    local totalWidth = viewer.__cdmIconWidth or viewer:GetWidth()
+                    local barThickness = barConfig.height or 8
+                    local rightColBorderSize = viewer.__cdmBottomRowBorderSize or 0
+                    local cdmVisualRight = viewerCenterX + (totalWidth / 2) + rightColBorderSize
+                    local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
+                    offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) - 4
+                    offsetY = math.floor(viewerCenterY - screenCenterY + 0.5)
+                    width = math.floor(targetWidth + 0.5)
+                else
+                    -- Horizontal bar: goes ABOVE Essential, width matches row width
+                    local rowWidth = viewer.__cdmRow1Width or viewer.__cdmIconWidth or 300
+                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
+                    local row1BorderSize = viewer.__cdmRow1BorderSize or 2
+                    local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
+                    local barHeight = barConfig.height or 8
+                    local cdmVisualTop = viewerCenterY + (totalHeight / 2) + row1BorderSize
+                    local powerBarCenterY = cdmVisualTop + (barHeight / 2) + barBorderSize
+                    offsetY = math.floor(powerBarCenterY - screenCenterY + 0.5) - 1
+                    offsetX = math.floor(viewerCenterX - screenCenterX + 0.5)
+                    width = math.floor(targetWidth + 0.5)
+                end
+            else
+                if isVertical then
+                    -- Vertical bar: goes to the LEFT of Utility, length matches total height
+                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
+                    local topBottomBorderSize = viewer.__cdmRow1BorderSize or 0
+                    local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
+                    local totalWidth = viewer.__cdmIconWidth or viewer:GetWidth()
+                    local barThickness = barConfig.height or 8
+                    local row1BorderSize = viewer.__cdmRow1BorderSize or 0
+                    local cdmVisualLeft = viewerCenterX - (totalWidth / 2) - row1BorderSize
+                    local powerBarCenterX = cdmVisualLeft - (barThickness / 2) - barBorderSize
+                    offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) + 1
+                    offsetY = math.floor(viewerCenterY - screenCenterY + 0.5)
+                    width = math.floor(targetWidth + 0.5)
+                else
+                    -- Horizontal bar: goes BELOW Utility, width matches row width
+                    local rowWidth = viewer.__cdmBottomRowWidth or viewer.__cdmIconWidth or 300
+                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
+                    local bottomRowBorderSize = viewer.__cdmBottomRowBorderSize or 2
+                    local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
+                    local barHeight = barConfig.height or 8
+                    local cdmVisualBottom = viewerCenterY - (totalHeight / 2) - bottomRowBorderSize
+                    local powerBarCenterY = cdmVisualBottom - (barHeight / 2) - barBorderSize
+                    offsetY = math.floor(powerBarCenterY - screenCenterY + 0.5) + 1
+                    offsetX = math.floor(viewerCenterX - screenCenterX + 0.5)
+                    width = math.floor(targetWidth + 0.5)
+                end
+            end
+
+            return offsetX, offsetY, width
+        end
+
+        local FORM_ROW = 32
+
+        -- Shared context for powerbar builders
+        local ctx = {
+            PAD = PAD,
+            FORM_ROW = FORM_ROW,
+            primary = primary,
+            secondary = secondary,
+            db = db,
+            RefreshPowerBars = RefreshPowerBars,
+            CalculateSnapPosition = CalculateSnapPosition,
+        }
+
+        y = BuildPowerbarGeneralSettings(tabContent, ctx, y)
+        y = y - 10  -- Spacer before Primary section
+        y = BuildPrimaryPowerbarConfig(tabContent, ctx, y)
+        y = y - 15  -- Spacer between sections
+        y = BuildSecondaryPowerbarConfig(tabContent, ctx, y)
+        y = BuildPowerbarColorSettings(tabContent, ctx, y)
+
         -- Extra padding at bottom for dropdown menus to expand into
         tabContent:SetHeight(math.abs(y) + 60)
     end
 
     -- Create sub-tabs
-    GUI:CreateSubTabs(content, {
+    local subTabs = {
         {name = "Essential", builder = BuildEssentialTab},
         {name = "Utility", builder = BuildUtilityTab},
         {name = "Buff", builder = BuildBuffTab},
         {name = "Class Resource Bar", builder = BuildPowerbarTab},
-    })
+    }
+
+    if ns.QUI_CDMEffectsOptions and ns.QUI_CDMEffectsOptions.BuildEffectsTab then
+        table.insert(subTabs, {name = "Effects", builder = ns.QUI_CDMEffectsOptions.BuildEffectsTab, isSeparator = true})
+    end
+
+    if ns.QUI_KeybindsOptions and ns.QUI_KeybindsOptions.BuildKeybindsTab then
+        table.insert(subTabs, {name = "Keybinds", builder = ns.QUI_KeybindsOptions.BuildKeybindsTab})
+    end
+
+    if ns.QUI_KeybindsOptions and ns.QUI_KeybindsOptions.BuildRotationAssistTab then
+        table.insert(subTabs, {name = "Rotation Assist", builder = ns.QUI_KeybindsOptions.BuildRotationAssistTab})
+    end
+
+    GUI:CreateSubTabs(content, subTabs)
 
     content:SetHeight(700)
 end
