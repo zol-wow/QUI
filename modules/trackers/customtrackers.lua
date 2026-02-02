@@ -798,24 +798,28 @@ local function CreateTrackerIcon(parent)
     -- Cooldown state persistence (prevents false "ready" states from bad API reads)
     icon.lastKnownCDEnd = 0
 
-    -- Tooltip on mouseover (skip if icon is hidden via alpha for showOnlyOnCooldown mode)
-    icon:SetScript("OnEnter", function(self)
-        if self:GetAlpha() == 0 then return end  -- Don't show tooltip when visually hidden
-        if self.entry then
+    local function SetupIconTooltip(iconFrame)
+        if iconFrame:GetAlpha() == 0 then return end  -- Don't show tooltip when visually hidden
+        if iconFrame.entry then
             -- Respect tooltip anchor setting
             local tooltipSettings = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.tooltip
             if tooltipSettings and tooltipSettings.anchorToCursor then
-                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                GameTooltip:SetOwner(iconFrame, "ANCHOR_CURSOR")
             else
-                GameTooltip_SetDefaultAnchor(GameTooltip, self)
+                GameTooltip_SetDefaultAnchor(GameTooltip, iconFrame)
             end
-            if self.entry.type == "spell" then
-                GameTooltip:SetSpellByID(self.entry.id)
-            elseif self.entry.type == "item" then
+            if iconFrame.entry.type == "spell" then
+                GameTooltip:SetSpellByID(iconFrame.entry.id)
+            elseif iconFrame.entry.type == "item" then
                 -- pcall to handle Blizzard MoneyFrame secret value bug in Midnight beta
-                pcall(GameTooltip.SetItemByID, GameTooltip, self.entry.id)
+                pcall(GameTooltip.SetItemByID, GameTooltip, iconFrame.entry.id)
             end
         end
+    end
+
+    -- Tooltip on mouseover (skip if icon is hidden via alpha for showOnlyOnCooldown mode)
+    icon:SetScript("OnEnter", function(self)
+        SetupIconTooltip(self)
     end)
 
     icon:SetScript("OnLeave", function()
@@ -842,7 +846,120 @@ local function CreateTrackerIcon(parent)
         end
     end)
 
+    -- Secure click button for item/spell usage (hidden by default, enabled per-bar)
+    icon.clickButton = CreateFrame("Button", nil, icon, "SecureActionButtonTemplate")
+    icon.clickButton:SetAllPoints()
+    icon.clickButton:RegisterForClicks("AnyUp", "AnyDown")
+    icon.clickButton:EnableMouse(true)
+    icon.clickButton:Hide()
+
+    -- Forward drag events to parent bar (preserve bar dragging when clickable)
+    icon.clickButton:RegisterForDrag("LeftButton")
+    icon.clickButton:SetScript("OnDragStart", function(self)
+        local bar = self:GetParent():GetParent()
+        if bar and bar.config and not bar.config.locked and not bar.config.lockedToPlayer and not bar.config.lockedToTarget then
+            bar:StartMoving()
+        end
+    end)
+    icon.clickButton:SetScript("OnDragStop", function(self)
+        local bar = self:GetParent():GetParent()
+        if bar then
+            bar:StopMovingOrSizing()
+            local dragStopHandler = bar:GetScript("OnDragStop")
+            if dragStopHandler then
+                dragStopHandler(bar)
+            end
+        end
+    end)
+
+    -- Forward tooltip events through the secure button
+    icon.clickButton:SetScript("OnEnter", function(self)
+        SetupIconTooltip(self:GetParent())
+    end)
+    icon.clickButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
     return icon
+end
+
+---------------------------------------------------------------------------
+-- SECURE BUTTON ATTRIBUTES (for clickable icons)
+---------------------------------------------------------------------------
+
+-- Update secure button attributes for item/spell usage
+-- Must be called outside combat; queues update if in combat
+local function UpdateIconSecureAttributes(icon, entry, config)
+    if not icon or not icon.clickButton then return end
+
+    -- Can't modify secure attributes during combat
+    if InCombatLockdown() then
+        icon._pendingSecureUpdate = true
+        return
+    end
+
+    local function ClearClickButtonAttributes()
+        icon.clickButton:SetAttribute("type", nil)
+        icon.clickButton:SetAttribute("spell", nil)
+        icon.clickButton:SetAttribute("item", nil)
+    end
+
+    -- Hide if feature disabled or no config
+    if not config or not config.clickableIcons then
+        ClearClickButtonAttributes()
+        icon.clickButton:Hide()
+        return
+    end
+
+    -- Hide if no entry assigned
+    if not entry then
+        ClearClickButtonAttributes()
+        icon.clickButton:Hide()
+        return
+    end
+
+    -- Set up secure attributes based on entry type
+    if entry.type == "spell" then
+        local info = GetCachedSpellInfo(entry.id)
+        if info and info.name then
+            icon.clickButton:SetAttribute("type", "spell")
+            icon.clickButton:SetAttribute("spell", info.name)
+            icon.clickButton:Show()
+        else
+            ClearClickButtonAttributes()
+            icon.clickButton:Hide()
+        end
+    elseif entry.type == "item" then
+        local info = GetCachedItemInfo(entry.id)
+        if info and info.name then
+            icon.clickButton:SetAttribute("type", "item")
+            icon.clickButton:SetAttribute("item", info.name)
+            icon.clickButton:Show()
+        else
+            ClearClickButtonAttributes()
+            icon.clickButton:Hide()
+        end
+    else
+        ClearClickButtonAttributes()
+        icon.clickButton:Hide()
+    end
+
+    icon._pendingSecureUpdate = nil
+end
+
+-- Process any pending secure attribute updates after combat ends
+local function ProcessPendingSecureUpdates()
+    if InCombatLockdown() then return end
+
+    for _, bar in pairs(CustomTrackers.activeBars or {}) do
+        if bar and bar.icons and bar.config then
+            for _, icon in ipairs(bar.icons) do
+                if icon._pendingSecureUpdate then
+                    UpdateIconSecureAttributes(icon, icon.entry, bar.config)
+                end
+            end
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1225,6 +1342,9 @@ function CustomTrackers:UpdateBarIcons(bar)
         else
             icon.tex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         end
+
+        -- Set up secure button for clickable icons (if enabled)
+        UpdateIconSecureAttributes(icon, entry, config)
 
         table.insert(bar.icons, icon)
     end
@@ -2544,6 +2664,10 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event)
             SetupCustomTrackersMouseoverDetector()
             UpdateCustomTrackersVisibility()
         end)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended: update visibility and process any pending secure button updates
+        UpdateCustomTrackersVisibility()
+        ProcessPendingSecureUpdates()
     else
         UpdateCustomTrackersVisibility()
     end

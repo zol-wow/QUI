@@ -720,6 +720,11 @@ local function CreateCustomTrackersPage(parent)
         hideNonUsableCheck:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local clickableIconsCheck = GUI:CreateFormCheckbox(lowerContainer, "Clickable Icons", "clickableIcons", barConfig, RefreshThisBar)
+        clickableIconsCheck:SetPoint("TOPLEFT", 0, y)
+        clickableIconsCheck:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         -----------------------------------------------------------------------
         -- POSITIONING SECTION (moved to lowerContainer for better flow)
         -----------------------------------------------------------------------
