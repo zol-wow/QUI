@@ -300,9 +300,17 @@ local function BuildKeybindsTab(tabContent)
                         iconID = spellInfo and spellInfo.iconID
                         displayName = spellInfo and spellInfo.name or ("Spell " .. tostring(entry.id))
                     else -- item
-                        local itemInfo = C_Item.GetItemInfo(entry.id)
-                        iconID = itemInfo and itemInfo.iconFileID
-                        displayName = itemInfo and itemInfo.name or ("Item " .. tostring(entry.id))
+                        -- C_Item.GetItemInfo returns multiple values, not an object
+                        local itemName, _, _, _, _, _, _, _, _, itemIcon = C_Item.GetItemInfo(entry.id)
+                        if itemName then
+                            iconID = itemIcon
+                            displayName = itemName
+                        else
+                            -- Item not cached yet, request it
+                            C_Item.RequestLoadItemDataByID(entry.id)
+                            iconID = nil
+                            displayName = "Item " .. tostring(entry.id)
+                        end
                     end
                     
                     iconTex:SetTexture(iconID or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -318,7 +326,7 @@ local function BuildKeybindsTab(tabContent)
 
                     -- Keybind text input box
                     local keybindInputBg = CreateFrame("Frame", nil, entryFrame, "BackdropTemplate")
-                    keybindInputBg:SetPoint("LEFT", spellNameLabel, "RIGHT", 6, 0)
+                    keybindInputBg:SetPoint("LEFT", nameLabel, "RIGHT", 6, 0)
                     keybindInputBg:SetSize(100, 22)
                     keybindInputBg:SetBackdrop({
                         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -576,6 +584,23 @@ local function BuildKeybindsTab(tabContent)
             entryListFrame = CreateFrame("Frame", nil, tabContent)
             entryListFrame:SetPoint("TOPLEFT", trackedHeader, "BOTTOMLEFT", 0, -8)
             entryListFrame:SetSize(400, 20)
+            
+            -- Listen for item info loading to refresh the list
+            local itemInfoListener = CreateFrame("Frame")
+            itemInfoListener:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+            itemInfoListener:SetScript("OnEvent", function(self, event, itemID)
+                if event == "GET_ITEM_INFO_RECEIVED" and itemID then
+                    -- Check if this item is in our overrides list
+                    local overrides = QUICore.db.profile.keybindOverrides
+                    if overrides and overrides[-itemID] then
+                        -- Refresh the list to update the item name/icon
+                        C_Timer.After(0.1, function()
+                            RefreshOverrideList()
+                        end)
+                    end
+                end
+            end)
+            
             RefreshOverrideList()
 
             y = y - 50 -- Space for header and initial list
