@@ -92,6 +92,22 @@ local function GetOverrideKeybind(viewerName, spellID, baseSpellID, spellName)
     return nil
 end
 
+-- Helper: get an override keybind for an item (shared across viewers)
+-- Uses negative itemID as key (since spellIDs are always positive)
+local function GetOverrideKeybindForItem(itemID)
+    if not itemID then return nil end
+    local overrides = GetSharedOverrides()
+    if not overrides then return nil end
+    
+    -- Use negative itemID as key to avoid conflicts with spellIDs
+    local key = -tonumber(itemID)
+    if overrides[key] and overrides[key] ~= "" then
+        return overrides[key]
+    end
+    
+    return nil
+end
+
 -- Format keybind text for display (shorten modifiers, max 4 chars)
 local function FormatKeybind(keybind)
     if not keybind then return nil end
@@ -1057,6 +1073,11 @@ local function SetKeybindOverride(viewerName, spellID, keybindText)
         -- Fallback: direct update if global refresh not yet defined
         UpdateAllKeybinds()
     end
+    
+    -- Also refresh custom tracker keybinds (in case spell is also tracked there)
+    if _G.QUI_RefreshCustomTrackerKeybinds then
+        _G.QUI_RefreshCustomTrackerKeybinds()
+    end
 end
 
 local function ClearAllKeybindOverrides(viewerName)
@@ -1070,6 +1091,51 @@ local function ClearAllKeybindOverrides(viewerName)
         _G.QUI_RefreshKeybinds()
     else
         UpdateAllKeybinds()
+    end
+    
+    -- Also refresh custom tracker keybinds
+    if _G.QUI_RefreshCustomTrackerKeybinds then
+        _G.QUI_RefreshCustomTrackerKeybinds()
+    end
+end
+
+-- Set or clear a keybind override for an itemID (shared across all viewers)
+-- Uses negative itemID as key to avoid conflicts with spellIDs
+local function SetKeybindOverrideForItem(itemID, keybindText)
+    if not itemID then return end
+    
+    -- Ensure itemID is a number (convert from string if needed)
+    itemID = tonumber(itemID)
+    if not itemID or itemID <= 0 then return end
+
+    local QUICore = _G.QUI and _G.QUI.QUICore
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return end
+
+    -- Initialize shared overrides table if needed
+    if not QUICore.db.profile.keybindOverrides then
+        QUICore.db.profile.keybindOverrides = {}
+    end
+
+    local overrides = QUICore.db.profile.keybindOverrides
+    local key = -itemID -- Use negative itemID as key
+
+    if keybindText == nil then
+        -- Explicitly remove override
+        overrides[key] = nil
+    else
+        -- Store exactly what the user wants to see (no auto-formatting)
+        -- Empty string "" is allowed - it means "added to list but no binding set yet"
+        overrides[key] = keybindText
+    end
+
+    -- Immediately refresh custom tracker keybinds to reflect changes
+    if _G.QUI_RefreshCustomTrackerKeybinds then
+        _G.QUI_RefreshCustomTrackerKeybinds()
+    end
+    
+    -- Also refresh CDM keybinds (in case there are any spell overrides)
+    if _G.QUI_RefreshKeybinds then
+        _G.QUI_RefreshKeybinds()
     end
 end
 
@@ -1964,6 +2030,8 @@ QUI.Keybinds = {
     RebuildCache = RebuildCache,
     DebugPrintCache = DebugPrintCache,
     SetOverride = SetKeybindOverride,
+    SetOverrideForItem = SetKeybindOverrideForItem,
+    GetOverrideForItem = GetOverrideKeybindForItem,
     ClearAllOverrides = ClearAllKeybindOverrides,
     RefreshRotationHelper = RefreshRotationHelper,
     UpdateAllRotationHelpers = UpdateAllRotationHelpers,
@@ -1972,4 +2040,5 @@ QUI.Keybinds = {
 -- Global refresh function for config panel
 _G.QUI_RefreshKeybinds = UpdateAllKeybinds
 _G.QUI_RefreshRotationHelper = RefreshRotationHelper
+_G.QUI_SetKeybindOverrideForItem = SetKeybindOverrideForItem
 

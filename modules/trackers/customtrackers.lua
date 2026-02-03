@@ -1114,6 +1114,7 @@ local function ApplyKeybindToTrackerIcon(icon)
     end
 
     -- Get keybind based on entry type
+    -- Priority: User override > Auto-detected cache
     local keybind = nil
     local entry = icon.entry
 
@@ -1127,8 +1128,18 @@ local function ApplyKeybindToTrackerIcon(icon)
     end
 
     if entry.type == "spell" and entry.id then
-        keybind = QUIKeybinds.GetKeybindForSpell(entry.id)
-        -- Try spell name fallback if no keybind found
+        -- Step 1: Check for user override (highest priority)
+        local overrides = db and db.keybindOverrides
+        if overrides and overrides[entry.id] and overrides[entry.id] ~= "" then
+            keybind = overrides[entry.id]
+        end
+        
+        -- Step 2: Try auto-detected cache by spell ID
+        if not keybind then
+            keybind = QUIKeybinds.GetKeybindForSpell(entry.id)
+        end
+        
+        -- Step 3: Try spell name fallback (for macros)
         if not keybind and QUIKeybinds.GetKeybindForSpellName then
             local spellInfo = C_Spell.GetSpellInfo(entry.id)
             if spellInfo and spellInfo.name then
@@ -1136,8 +1147,22 @@ local function ApplyKeybindToTrackerIcon(icon)
             end
         end
     elseif entry.type == "item" and entry.id then
-        keybind = QUIKeybinds.GetKeybindForItem(entry.id)
-        -- Try item name fallback if no keybind found
+        -- Step 1: Check for user override (highest priority)
+        -- Items use negative itemID as key to avoid conflicts with spellIDs
+        local overrides = db and db.keybindOverrides
+        if overrides then
+            local overrideKey = -entry.id
+            if overrides[overrideKey] and overrides[overrideKey] ~= "" then
+                keybind = overrides[overrideKey]
+            end
+        end
+        
+        -- Step 2: Try auto-detected cache by item ID
+        if not keybind then
+            keybind = QUIKeybinds.GetKeybindForItem(entry.id)
+        end
+        
+        -- Step 3: Try item name fallback (for macros)
         if not keybind and QUIKeybinds.GetKeybindForItemName then
             local itemName = C_Item.GetItemInfo(entry.id)
             if itemName then
