@@ -191,7 +191,7 @@ local function BuildKeybindsTab(tabContent)
         overrideHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - overrideHeader.gap
 
-        local overrideInfo = GUI:CreateLabel(tabContent, "Override the auto-detected keybind for specific spells and items. Drag spells from your spellbook or items from your bags into the box below, or add by spell/item ID.", 11, C.textMuted)
+        local overrideInfo = GUI:CreateLabel(tabContent, "Override the auto-detected keybind for specific spells and items. Drag spells from your spellbook or items from your bags into the box below.", 11, C.textMuted)
         overrideInfo:SetPoint("TOPLEFT", PAD, y)
         overrideInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         overrideInfo:SetJustifyH("LEFT")
