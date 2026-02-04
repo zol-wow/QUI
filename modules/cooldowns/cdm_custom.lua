@@ -401,6 +401,37 @@ function CustomCDM:MoveEntry(trackerKey, fromIndex, direction)
     if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
 end
 
+function CustomCDM:TransferEntry(fromTrackerKey, entryIndex, toTrackerKey)
+    if fromTrackerKey == toTrackerKey then return false end
+
+    local fromData = GetCustomData(fromTrackerKey)
+    if not fromData or not fromData.entries then return false end
+    if entryIndex < 1 or entryIndex > #fromData.entries then return false end
+
+    local toData = GetCustomData(toTrackerKey)
+    if not toData then return false end
+    if not toData.entries then toData.entries = {} end
+
+    local entry = fromData.entries[entryIndex]
+
+    -- Duplicate check in destination
+    for _, existing in ipairs(toData.entries) do
+        if existing.type == entry.type and existing.id == entry.id then
+            return false -- already exists in destination
+        end
+    end
+
+    -- Clear position (slot numbers are bar-relative)
+    entry.position = nil
+
+    -- Insert into destination first, then remove from source
+    table.insert(toData.entries, entry)
+    table.remove(fromData.entries, entryIndex)
+
+    if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
+    return true
+end
+
 function CustomCDM:SetEntryPosition(trackerKey, entryIndex, position)
     local customData = GetCustomData(trackerKey)
     if not customData or not customData.entries or not customData.entries[entryIndex] then return end
