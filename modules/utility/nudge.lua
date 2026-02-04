@@ -505,10 +505,11 @@ local function CreateViewerOverlay(viewerName)
     local overlay = CreateFrame("Frame", nil, viewer, "BackdropTemplate")
     overlay:SetAllPoints()
     overlay:SetFrameStrata("TOOLTIP")
+    local px = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = px,
     })
     overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
     overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
@@ -562,10 +563,11 @@ local function CreateBlizzardFrameOverlay(frameInfo)
     local overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     overlay:SetAllPoints()
     overlay:SetFrameStrata("TOOLTIP")
+    local px = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = px,
     })
     overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
     overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
@@ -615,10 +617,11 @@ local function CreateMinimapOverlay()
     local overlay = CreateFrame("Frame", nil, Minimap, "BackdropTemplate")
     overlay:SetAllPoints()
     overlay:SetFrameStrata("TOOLTIP")
+    local px = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = px,
     })
     overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
     overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
@@ -804,11 +807,13 @@ function QUICore:ShowMinimapOverlay()
         end)
         minimapOverlay:SetScript("OnMouseUp", function(self, button)
             Minimap:StopMovingOrSizing()
-            -- Save position to DB
+            -- Save position to DB (snapped to pixel grid)
             local settings = QUICore.db and QUICore.db.profile and QUICore.db.profile.minimap
             if settings then
-                local point, _, relPoint, x, y = Minimap:GetPoint()
-                settings.position = {point, relPoint, x, y}
+                local point, _, relPoint, x, y = QUICore:SnapFramePosition(Minimap)
+                if point then
+                    settings.position = {point, relPoint, x, y}
+                end
             end
             -- Update info text
             if minimapOverlay and minimapOverlay.infoText and settings and settings.position then

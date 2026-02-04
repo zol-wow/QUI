@@ -5,6 +5,7 @@
 local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
+local QUICore = ns.Addon
 
 local LSM = LibStub("LibSharedMedia-3.0")
 local Helpers = ns.Helpers
@@ -62,14 +63,6 @@ local DOT_TEXTURE = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_reticle_dot"
 ---------------------------------------------------------------------------
 local function GetSettings()
     return Helpers.GetModuleDB("skyriding")
-end
-
-local function Scale(x)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.Scale then
-        return QUICore:Scale(x)
-    end
-    return x
 end
 
 ---------------------------------------------------------------------------
@@ -214,13 +207,9 @@ local function CreateSkyridingFrame()
 
     -- Border
     skyridingFrame.border = CreateFrame("Frame", nil, skyridingFrame, "BackdropTemplate")
-    skyridingFrame.border:SetPoint("TOPLEFT", -1, 1)
-    skyridingFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
-    skyridingFrame.border:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = Scale(1),
-    })
-    skyridingFrame.border:SetBackdropBorderColor(0, 0, 0, 1)
+    QUICore:SetPixelPerfectPoint(skyridingFrame.border, "TOPLEFT", skyridingFrame, "TOPLEFT", -1, 1)
+    QUICore:SetPixelPerfectPoint(skyridingFrame.border, "BOTTOMRIGHT", skyridingFrame, "BOTTOMRIGHT", 1, -1)
+    QUICore:SetPixelPerfectBackdrop(skyridingFrame.border, 1, nil, 0, 0, 0, 1)
     if skyridingFrame.border.Center then skyridingFrame.border.Center:Hide() end
 
     -- Vigor text (left side)
@@ -247,7 +236,7 @@ local function CreateSkyridingFrame()
         local marker = vigorBar:CreateTexture(nil, "ARTWORK", nil, 3)
         marker:SetTexture("Interface\\Buttons\\WHITE8x8")
         marker:SetVertexColor(0, 0, 0, 0.5)
-        marker:SetWidth(Scale(1))
+        marker:SetWidth(QUICore:Pixels(1, vigorBar))
         marker:SetHeight(height)
         marker:Hide()
         segmentMarkers[i] = marker
@@ -288,20 +277,17 @@ local function CreateSkyridingFrame()
 
     -- Second Wind border
     swBorder = CreateFrame("Frame", nil, secondWindMiniBar, "BackdropTemplate")
-    swBorder:SetPoint("TOPLEFT", -1, 1)
-    swBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-    swBorder:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = Scale(1),
-    })
-    swBorder:SetBackdropBorderColor(0, 0, 0, 1)
+    QUICore:SetPixelPerfectPoint(swBorder, "TOPLEFT", secondWindMiniBar, "TOPLEFT", -1, 1)
+    QUICore:SetPixelPerfectPoint(swBorder, "BOTTOMRIGHT", secondWindMiniBar, "BOTTOMRIGHT", 1, -1)
+    QUICore:SetPixelPerfectBackdrop(swBorder, 1, nil, 0, 0, 0, 1)
+    if swBorder.Center then swBorder.Center:Hide() end
 
     -- Second Wind segment markers (up to 5)
     for i = 1, 5 do
         local marker = secondWindMiniBar:CreateTexture(nil, "ARTWORK", nil, 3)
         marker:SetTexture("Interface\\Buttons\\WHITE8x8")
         marker:SetVertexColor(0, 0, 0, 0.5)
-        marker:SetWidth(Scale(1))
+        marker:SetWidth(QUICore:Pixels(1, secondWindMiniBar))
         marker:Hide()
         swSegmentMarkers[i] = marker
     end
@@ -327,13 +313,10 @@ local function CreateSkyridingFrame()
 
     -- Border (1px black, extends beyond icon)
     abilityIcon.border = CreateFrame("Frame", nil, abilityIcon, "BackdropTemplate")
-    abilityIcon.border:SetPoint("TOPLEFT", -1, 1)
-    abilityIcon.border:SetPoint("BOTTOMRIGHT", 1, -1)
-    abilityIcon.border:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = Scale(1),
-    })
-    abilityIcon.border:SetBackdropBorderColor(0, 0, 0, 1)
+    QUICore:SetPixelPerfectPoint(abilityIcon.border, "TOPLEFT", abilityIcon, "TOPLEFT", -1, 1)
+    QUICore:SetPixelPerfectPoint(abilityIcon.border, "BOTTOMRIGHT", abilityIcon, "BOTTOMRIGHT", 1, -1)
+    QUICore:SetPixelPerfectBackdrop(abilityIcon.border, 1, nil, 0, 0, 0, 1)
+    if abilityIcon.border.Center then abilityIcon.border.Center:Hide() end
 
     -- Cooldown overlay
     abilityIconCooldown = CreateFrame("Cooldown", nil, abilityIcon, "CooldownFrameTemplate")
@@ -366,8 +349,8 @@ local function CreateSkyridingFrame()
             local centerX, centerY = self:GetCenter()
             local uiCenterX, uiCenterY = UIParent:GetCenter()
             local scale = self:GetEffectiveScale() / UIParent:GetEffectiveScale()
-            settings.offsetX = math.floor((centerX - uiCenterX) * scale + 0.5)
-            settings.offsetY = math.floor((centerY - uiCenterY) * scale + 0.5)
+            settings.offsetX = QUICore:PixelRound((centerX - uiCenterX) * scale)
+            settings.offsetY = QUICore:PixelRound((centerY - uiCenterY) * scale)
         end
     end)
 
@@ -385,7 +368,7 @@ local function UpdateSegmentMarkers(maxCharges)
     local barWidth = skyridingFrame:GetWidth()
     local barHeight = skyridingFrame:GetHeight()
     local segmentWidth = barWidth / maxCharges
-    local thickness = Scale(settings.segmentThickness or 1)
+    local thickness = QUICore:Pixels(settings.segmentThickness or 1, vigorBar)
 
     -- Use soft colors: 30% of bar color instead of harsh black
     local barColor = settings.barColor or {0.2, 0.8, 1.0, 1}
@@ -401,8 +384,8 @@ local function UpdateSegmentMarkers(maxCharges)
         if showSegments and i < maxCharges then
             local xPos = i * segmentWidth
             marker:ClearAllPoints()
-            marker:SetPoint("LEFT", vigorBar, "LEFT", Scale(xPos - (thickness / 2)), 0)
-            marker:SetWidth(math.max(Scale(1), thickness))
+            marker:SetPoint("LEFT", vigorBar, "LEFT", QUICore:PixelRound(xPos - (thickness / 2), vigorBar), 0)
+            marker:SetWidth(math.max(QUICore:Pixels(1, vigorBar), thickness))
             marker:SetHeight(barHeight)
             marker:SetVertexColor(softColor[1], softColor[2], softColor[3], softColor[4])
             marker:Show()
@@ -523,7 +506,7 @@ local function UpdateSecondWind()
 
         -- Position segment markers for Second Wind
         local segmentWidth = barWidth / max
-        local thickness = Scale(settings.segmentThickness or 1)
+        local thickness = QUICore:Pixels(settings.segmentThickness or 1, secondWindMiniBar)
         local softColor = {
             color[1] * 0.25,
             color[2] * 0.25,
@@ -536,8 +519,8 @@ local function UpdateSecondWind()
             if i < max then
                 local xPos = i * segmentWidth
                 marker:ClearAllPoints()
-                marker:SetPoint("LEFT", secondWindMiniBar, "LEFT", Scale(xPos - (thickness / 2)), 0)
-                marker:SetWidth(math.max(Scale(1), thickness))
+                marker:SetPoint("LEFT", secondWindMiniBar, "LEFT", QUICore:PixelRound(xPos - (thickness / 2), secondWindMiniBar), 0)
+                marker:SetWidth(math.max(QUICore:Pixels(1, secondWindMiniBar), thickness))
                 marker:SetHeight(swHeight)
                 marker:SetVertexColor(softColor[1], softColor[2], softColor[3], softColor[4])
                 marker:Show()
@@ -885,7 +868,6 @@ local function ApplySettings()
     skyridingFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
 
     -- Apply HUD layer priority
-    local QUICore = _G.QUI and _G.QUI.QUICore
     local db = QUICore and QUICore.db and QUICore.db.profile
     local layerPriority = db and db.hudLayering and db.hudLayering.skyridingHUD or 5
     if QUICore and QUICore.GetHUDFrameLevel then
@@ -932,11 +914,7 @@ local function ApplySettings()
     -- Border
     local borderSize = settings.borderSize or 1
     local borderColor = settings.borderColor or {0, 0, 0, 1}
-    skyridingFrame.border:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = borderSize,
-    })
-    skyridingFrame.border:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+    QUICore:SetPixelPerfectBackdrop(skyridingFrame.border, borderSize, nil, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
     if skyridingFrame.border.Center then skyridingFrame.border.Center:Hide() end
 
     -- Recharge overlay height

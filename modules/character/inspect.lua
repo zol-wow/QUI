@@ -6,6 +6,11 @@
 local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
+local QUICore = ns.Addon
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 ---------------------------------------------------------------------------
 -- Module State
@@ -313,9 +318,11 @@ local function SkinInspectEquipmentSlot(slot)
         slot._quiBorderFrame = CreateFrame("Frame", nil, slot, "BackdropTemplate")
         slot._quiBorderFrame:SetFrameLevel(slot:GetFrameLevel() + 10)
         slot._quiBorderFrame:SetAllPoints(slot)
+        local core = GetCore()
+        local px = (core and core.GetPixelSize and core:GetPixelSize(slot._quiBorderFrame)) or 1
         slot._quiBorderFrame:SetBackdrop({
             edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
+            edgeSize = px,
         })
     end
 end
@@ -647,12 +654,12 @@ local function CreateInspectSettingsButton()
     local GUI = _G.QUI and _G.QUI.GUI
     if not GUI then return end
 
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not (QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.character) then
+    local core = GetCore()
+    if not (core and core.db and core.db.profile and core.db.profile.character) then
         C_Timer.After(0.5, CreateInspectSettingsButton)
         return
     end
-    local charDB = QUICore.db.profile.character
+    local charDB = core.db.profile.character
 
     -- Initialize inspect color defaults if not set (ensures color pickers show correct values)
     if charDB.inspectEnchantTextColor == nil then
@@ -675,10 +682,11 @@ local function CreateInspectSettingsButton()
     local gearBtn = CreateFrame("Button", "QUI_InspectSettingsBtn", InspectFrame, "BackdropTemplate")
     gearBtn:SetSize(70, 20)
     gearBtn:SetPoint("TOPRIGHT", InspectFrame, "TOPRIGHT", -5, -28)
+    local gearPx = (core and core.GetPixelSize and core:GetPixelSize(gearBtn)) or 1
     gearBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = gearPx,
     })
     gearBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
     gearBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -708,10 +716,11 @@ local function CreateInspectSettingsButton()
     inspectSettingsPanel = CreateFrame("Frame", "QUI_InspectSettingsPanel", InspectFrame, "BackdropTemplate")
     inspectSettingsPanel:SetSize(450, 600)
     inspectSettingsPanel:SetPoint("TOPLEFT", InspectFrame, "TOPRIGHT", 5, 0)
+    local settingsPx = (core and core.GetPixelSize and core:GetPixelSize(inspectSettingsPanel)) or 1
     inspectSettingsPanel:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = settingsPx,
     })
     inspectSettingsPanel:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.98)
     inspectSettingsPanel:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -804,7 +813,7 @@ local function CreateInspectSettingsButton()
     y = y - FORM_ROW
 
     -- Background color (uses shared skinning background color)
-    local generalDB = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local generalDB = core and core.db and core.db.profile and core.db.profile.general
     local bgColorPicker = nil
     if generalDB then
         bgColorPicker = GUI:CreateFormColorPicker(scrollChild, "Background Color", "skinBgColor", generalDB, function()

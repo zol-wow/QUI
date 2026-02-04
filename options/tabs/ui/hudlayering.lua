@@ -8,6 +8,10 @@ local Shared = ns.QUI_Options
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 --------------------------------------------------------------------------------
 -- HUD LAYERING PAGE
 --------------------------------------------------------------------------------
@@ -17,8 +21,8 @@ local function CreateHUDLayeringPage(parent)
     local PAD = PADDING
     local FORM_ROW = 32
 
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local db = QUICore and QUICore.db and QUICore.db.profile
+    local core = GetCore()
+    local db = core and core.db and core.db.profile
 
     -- Helper to get hudLayering table (with fallback initialization)
     local function GetLayeringDB()
@@ -49,11 +53,14 @@ local function CreateHUDLayeringPage(parent)
     end
 
     local function RefreshPowerBars()
-        if QUICore and QUICore.UpdatePowerBar then
-            QUICore:UpdatePowerBar()
+        local core = GetCore()
+        local db = core and core.db and core.db.profile
+        if not core or not db then return end
+        if core.UpdatePowerBar then
+            core:UpdatePowerBar()
         end
-        if QUICore and QUICore.UpdateSecondaryPowerBar then
-            QUICore:UpdateSecondaryPowerBar()
+        if core.UpdateSecondaryPowerBar then
+            core:UpdateSecondaryPowerBar()
         end
     end
 

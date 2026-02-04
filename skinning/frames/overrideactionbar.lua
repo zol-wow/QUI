@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local QUICore = ns.Addon
 
 ---------------------------------------------------------------------------
 -- OVERRIDE ACTION BAR SKINNING (Compact style)
@@ -54,11 +55,12 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, b
         button.quiBackdrop:EnableMouse(false)
     end
 
+    local px = QUICore:GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
     button.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
     button.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -125,7 +127,7 @@ end
 
 -- Main skinning function
 local function SkinOverrideActionBar()
-    local QUICore = _G.QUI and _G.QUI.QUICore
+    if not QUICore or type(QUICore.GetPixelSize) ~= "function" then return end
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
     if not settings or not settings.skinOverrideActionBar then return end
 
@@ -153,11 +155,12 @@ local function SkinOverrideActionBar()
         bar.quiBackdrop:EnableMouse(false)
     end
 
+    local barPx = QUICore:GetPixelSize(bar.quiBackdrop)
     bar.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = barPx,
+        insets = { left = barPx, right = barPx, top = barPx, bottom = barPx }
     })
     bar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     bar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -185,11 +188,12 @@ local function SkinOverrideActionBar()
             leaveBtn.quiBackdrop:EnableMouse(false)
         end
 
+        local lbPx = QUICore:GetPixelSize(leaveBtn.quiBackdrop)
         leaveBtn.quiBackdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            edgeSize = lbPx,
+            insets = { left = lbPx, right = lbPx, top = lbPx, bottom = lbPx }
         })
         leaveBtn.quiBackdrop:SetBackdropColor(0.6, 0.1, 0.1, 0.9)  -- Reddish for exit
         leaveBtn.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -216,11 +220,12 @@ local function SkinOverrideActionBar()
             healthBar.quiBackdrop:EnableMouse(false)
         end
 
+        local hbPx = QUICore:GetPixelSize(healthBar.quiBackdrop)
         healthBar.quiBackdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            edgeSize = hbPx,
+            insets = { left = hbPx, right = hbPx, top = hbPx, bottom = hbPx }
         })
         healthBar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
         healthBar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -247,11 +252,12 @@ local function SkinOverrideActionBar()
             powerBar.quiBackdrop:EnableMouse(false)
         end
 
+        local pbPx = QUICore:GetPixelSize(powerBar.quiBackdrop)
         powerBar.quiBackdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            edgeSize = pbPx,
+            insets = { left = pbPx, right = pbPx, top = pbPx, bottom = pbPx }
         })
         powerBar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
         powerBar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)

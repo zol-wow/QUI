@@ -12,6 +12,10 @@ local Helpers = ns.Helpers
 -- Cache LibSharedMedia reference
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- SECRET VALUE UTILITIES (Patch 12.0+)
 -- Combat-related APIs can return "secret values" in restricted contexts.
@@ -172,20 +176,16 @@ end
 function Helpers.GetModuleSettings(moduleName, defaults)
     defaults = defaults or {}
     -- Try namespace first (preferred)
-    local core = Helpers.GetQUICore()
+    local core = GetCore()
+    if not (core and core.db and core.db.profile) then
+        -- Explicit global fallback if core isn't fully ready
+        core = (_G.QUI and _G.QUI.QUICore) or Helpers.GetQUICore() or ns.Addon
+    end
     if core and core.db and core.db.profile then
         if not core.db.profile[moduleName] then
             core.db.profile[moduleName] = defaults
         end
         return core.db.profile[moduleName]
-    end
-    -- Fallback to global QUI.QUICore
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile then
-        if not QUICore.db.profile[moduleName] then
-            QUICore.db.profile[moduleName] = defaults
-        end
-        return QUICore.db.profile[moduleName]
     end
     return defaults
 end

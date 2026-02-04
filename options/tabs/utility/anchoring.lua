@@ -6,6 +6,19 @@
 
 local ADDON_NAME, ns = ...
 
+local QUICore = ns.Addon
+
+local function GetPixelSizeOrDefault(frame, default)
+    local fallback = default or 1
+    if QUICore and QUICore.GetPixelSize then
+        local px = QUICore:GetPixelSize(frame)
+        if type(px) == "number" and px > 0 then
+            return px
+        end
+    end
+    return fallback
+end
+
 local QUI_Anchoring_Options = {}
 ns.QUI_Anchoring_Options = QUI_Anchoring_Options
 
@@ -99,10 +112,11 @@ function QUI_Anchoring_Options:CreateSnapButton(parent, text, x, y, width, heigh
         button:SetPoint("TOPLEFT", x, y)
     end
     
+    local pxBtn = GetPixelSizeOrDefault(button, 1)
     button:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1
+        edgeSize = pxBtn
     })
     button:SetBackdropColor(0.15, 0.15, 0.15, 1)
     button:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -290,11 +304,12 @@ function QUI_Anchoring_Options:CreateAnchorPointSelector(parent, label, settings
     local grid = CreateFrame("Frame", nil, container, "BackdropTemplate")
     grid:SetSize(gridSize, gridSize)
     grid:SetPoint("TOPLEFT", 0, -25)
+    local px = GetPixelSizeOrDefault(grid, 1)
     grid:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = {left = 1, right = 1, top = 1, bottom = 1}
+        edgeSize = px,
+        insets = {left = px, right = px, top = px, bottom = px}
     })
     grid:SetBackdropColor(0.1, 0.1, 0.1, 1)
     grid:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
@@ -314,11 +329,12 @@ function QUI_Anchoring_Options:CreateAnchorPointSelector(parent, label, settings
             local cell = CreateFrame("Button", nil, grid, "BackdropTemplate")
             cell:SetSize(cellSize - 2, cellSize - 2)
             cell:SetPoint("TOPLEFT", grid, "TOPLEFT", (col - 1) * cellSize + 1, -(row - 1) * cellSize - 1)
-            
+
+            local pxCell = GetPixelSizeOrDefault(cell, 1)
             cell:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = pxCell,
             })
             cell:SetBackdropColor(0.15, 0.15, 0.15, 1)
             cell:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.3)
@@ -469,11 +485,12 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
     popover:SetPoint("TOPLEFT", anchorButton, "BOTTOMLEFT", 0, -5)
     popover:SetFrameStrata("FULLSCREEN_DIALOG")
     popover:SetFrameLevel(500)
+    local pxPopover = GetPixelSizeOrDefault(popover, 1)
     popover:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = {left = 2, right = 2, top = 2, bottom = 2}
+        edgeSize = pxPopover,
+        insets = {left = 2 * pxPopover, right = 2 * pxPopover, top = 2 * pxPopover, bottom = 2 * pxPopover}
     })
     popover:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.98)
     popover:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
@@ -543,11 +560,12 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
             rowFrame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
             
             -- Background for list item
+            local pxRow = GetPixelSizeOrDefault(rowFrame, 1)
             rowFrame:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
-                insets = {left = 2, right = 2, top = 2, bottom = 2}
+                edgeSize = pxRow,
+                insets = {left = 2 * pxRow, right = 2 * pxRow, top = 2 * pxRow, bottom = 2 * pxRow}
             })
             rowFrame:SetBackdropColor(C.bg[1] * 1.2, C.bg[2] * 1.2, C.bg[3] * 1.2, 0.5)
             rowFrame:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.3)
@@ -617,11 +635,12 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
                 addButtonFrame:SetPoint("TOPLEFT", PAD, currentY)
                 addButtonFrame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
                 
+                local pxAdd = GetPixelSizeOrDefault(addButtonFrame, 1)
                 addButtonFrame:SetBackdrop({
                     bgFile = "Interface\\Buttons\\WHITE8x8",
                     edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = 1,
-                    insets = {left = 2, right = 2, top = 2, bottom = 2}
+                    edgeSize = pxAdd,
+                    insets = {left = 2 * pxAdd, right = 2 * pxAdd, top = 2 * pxAdd, bottom = 2 * pxAdd}
                 })
                 addButtonFrame:SetBackdropColor(C.bg[1] * 1.1, C.bg[2] * 1.1, C.bg[3] * 1.1, 0.3)
                 addButtonFrame:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
@@ -957,11 +976,12 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
     dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     dialog:SetFrameStrata("DIALOG")
     dialog:SetFrameLevel(100)
+    local pxDialog = GetPixelSizeOrDefault(dialog, 1)
     dialog:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
-        insets = {left = 4, right = 4, top = 4, bottom = 4}
+        edgeSize = 2 * pxDialog,
+        insets = {left = 4 * pxDialog, right = 4 * pxDialog, top = 4 * pxDialog, bottom = 4 * pxDialog}
     })
     dialog:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], C.bg[4] or 0.98)
     dialog:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)

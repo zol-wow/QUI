@@ -18,7 +18,7 @@ local function BuildEffectsTab(tabContent)
     local PAD = 10
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 2, tabName = "Cooldown Manager", subTabIndex = 5, subTabName = "Effects"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Cooldown Manager", subTabIndex = 6, subTabName = "Effects"})
 
     -- Refresh functions
     local function RefreshSwipe()

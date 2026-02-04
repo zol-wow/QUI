@@ -12,6 +12,10 @@ local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local GetDB = Helpers.CreateDBGetter("quiUnitFrames")
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- MODULE TABLE
 ---------------------------------------------------------------------------
@@ -152,9 +156,9 @@ end
 ---------------------------------------------------------------------------
 -- HELPER: Pixel-perfect scaling (uses QUICore:Scale if available)
 ---------------------------------------------------------------------------
-local function Scale(x)
+local function Scale(x, frame)
     if QUICore and QUICore.Scale then
-        return QUICore:Scale(x)
+        return QUICore:Scale(x, frame)
     end
     return x
 end
@@ -1303,20 +1307,16 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     frame.unit = unit  -- "boss1", "boss2", etc.
     frame.unitKey = "boss"  -- Settings key
     
-    -- Size and position (pixel-perfect)
-    local width = Scale(settings.width or 220)
-    local height = Scale(settings.height or 35)
-    frame:SetSize(width, height)
-    
-    -- Position relative to UIParent CENTER (pixel-perfect)
-    local offsetX = Scale(settings.offsetX or 0)
-    local offsetY = Scale(settings.offsetY or 0)
-    frame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
-    
+    -- Size and position (config values are virtual coords, snap to pixel grid)
+    frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
+
+    -- Position relative to UIParent CENTER (config offsets are virtual coords)
+    QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+
     -- Make it movable in Edit Mode
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
-    
+
     -- Secure unit attributes for click targeting
     frame:SetAttribute("unit", unit)
     frame:SetAttribute("*type1", "target")
@@ -1344,8 +1344,9 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     if general and general.darkMode then
         bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
     end
-    
-    local borderSize = Scale(settings.borderSize or 1)
+
+    local borderPx = settings.borderSize or 1
+    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
 
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1358,8 +1359,8 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     end
 
     -- Health bar
-    local powerHeight = settings.showPowerBar and Scale(settings.powerBarHeight or 4) or 0
-    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and 1 or 0
+    local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
+    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
     local healthBar = CreateFrame("StatusBar", nil, frame)
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
@@ -1428,7 +1429,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
         -- Power bar separator (1px black line above power bar)
         if settings.powerBarBorder ~= false then
             local separator = powerBar:CreateTexture(nil, "OVERLAY")
-            separator:SetHeight(1)
+            separator:SetHeight(QUICore:GetPixelSize(powerBar))
             separator:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
             separator:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
             separator:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -1440,8 +1441,8 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     -- Name text
     if settings.showName then
         local nameAnchorInfo = GetTextAnchorInfo(settings.nameAnchor or "LEFT")
-        local nameOffsetX = Scale(settings.nameOffsetX or 4)
-        local nameOffsetY = Scale(settings.nameOffsetY or 0)
+        local nameOffsetX = QUICore:PixelRound(settings.nameOffsetX or 4, healthBar)
+        local nameOffsetY = QUICore:PixelRound(settings.nameOffsetY or 0, healthBar)
         local nameText = healthBar:CreateFontString(nil, "OVERLAY")
         nameText:SetFont(GetFontPath(), settings.nameFontSize or 12, GetFontOutline())
         nameText:SetShadowOffset(0, 0)
@@ -1454,8 +1455,8 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     -- Health text
     if settings.showHealth then
         local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
-        local healthOffsetX = Scale(settings.healthOffsetX or -4)
-        local healthOffsetY = Scale(settings.healthOffsetY or 0)
+        local healthOffsetX = QUICore:PixelRound(settings.healthOffsetX or -4, healthBar)
+        local healthOffsetY = QUICore:PixelRound(settings.healthOffsetY or 0, healthBar)
         local healthText = healthBar:CreateFontString(nil, "OVERLAY")
         healthText:SetFont(GetFontPath(), settings.healthFontSize or 11, GetFontOutline())
         healthText:SetShadowOffset(0, 0)
@@ -1470,8 +1471,8 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     local powerText = healthBar:CreateFontString(nil, "OVERLAY")
     powerText:SetFont(GetFontPath(), settings.powerTextFontSize or 10, GetFontOutline())
     powerText:SetShadowOffset(0, 0)
-    local pOffX = Scale(settings.powerTextOffsetX or -4)
-    local pOffY = Scale(settings.powerTextOffsetY or 2)
+    local pOffX = QUICore:PixelRound(settings.powerTextOffsetX or -4, healthBar)
+    local pOffY = QUICore:PixelRound(settings.powerTextOffsetY or 2, healthBar)
     powerText:SetPoint(powerAnchorInfo.point, healthBar, powerAnchorInfo.point, pOffX, pOffY)
     powerText:SetJustifyH(powerAnchorInfo.justify)
     powerText:Hide()  -- Hidden by default, UpdatePowerText will show if enabled
@@ -1591,16 +1592,12 @@ local function CreateUnitFrame(unit, unitKey)
     frame.unit = unit
     frame.unitKey = unitKey
     
-    -- Size and position (pixel-perfect)
-    local width = Scale(settings.width or 220)
-    local height = Scale(settings.height or 35)
-    frame:SetSize(width, height)
-    
-    -- Position relative to UIParent CENTER (pixel-perfect)
-    local offsetX = Scale(settings.offsetX or 0)
-    local offsetY = Scale(settings.offsetY or 0)
-    frame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
-    
+    -- Size and position (config values are virtual coords, snap to pixel grid)
+    frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
+
+    -- Position relative to UIParent CENTER (config offsets are virtual coords)
+    QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+
     -- Make it movable in Edit Mode (we'll handle this later)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
@@ -1646,7 +1643,8 @@ local function CreateUnitFrame(unit, unitKey)
     end
     
     -- Pixel-perfect border size
-    local borderSize = Scale(settings.borderSize or 1)
+    local borderPx = settings.borderSize or 1
+    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
 
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1659,8 +1657,8 @@ local function CreateUnitFrame(unit, unitKey)
     end
 
     -- Health bar (pixel-perfect insets)
-    local powerHeight = settings.showPowerBar and Scale(settings.powerBarHeight or 4) or 0
-    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and 1 or 0
+    local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
+    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
     local healthBar = CreateFrame("StatusBar", nil, frame)
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
@@ -1730,7 +1728,7 @@ local function CreateUnitFrame(unit, unitKey)
         -- Power bar separator (1px black line above power bar)
         if settings.powerBarBorder ~= false then
             local separator = powerBar:CreateTexture(nil, "OVERLAY")
-            separator:SetHeight(1)
+            separator:SetHeight(QUICore:GetPixelSize(powerBar))
             separator:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
             separator:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
             separator:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -1742,13 +1740,13 @@ local function CreateUnitFrame(unit, unitKey)
     -- Portrait (optional, side-attached)
     if settings.showPortrait then
         local portrait = CreateFrame("Button", nil, frame, "SecureUnitButtonTemplate, BackdropTemplate")
-        local portraitSize = Scale(settings.portraitSize or 40)
-        local portraitBorderSize = Scale(settings.portraitBorderSize or 1)
-        portrait:SetSize(portraitSize, portraitSize)
+        local portraitSizePx = settings.portraitSize or 40
+        local portraitBorderSize = QUICore:Pixels(settings.portraitBorderSize or 1, portrait)
+        portrait:SetSize(QUICore:PixelRound(portraitSizePx, portrait), QUICore:PixelRound(portraitSizePx, portrait))
 
-        local portraitGap = Scale(settings.portraitGap or 0)
-        local portraitOffsetX = Scale(settings.portraitOffsetX or 0)
-        local portraitOffsetY = Scale(settings.portraitOffsetY or 0)
+        local portraitGap = QUICore:PixelRound(settings.portraitGap or 0, portrait)
+        local portraitOffsetX = QUICore:PixelRound(settings.portraitOffsetX or 0, portrait)
+        local portraitOffsetY = QUICore:PixelRound(settings.portraitOffsetY or 0, portrait)
         local side = settings.portraitSide or "LEFT"
         if side == "LEFT" then
             portrait:SetPoint("RIGHT", frame, "LEFT", -portraitGap + portraitOffsetX, portraitOffsetY)
@@ -1812,9 +1810,9 @@ local function CreateUnitFrame(unit, unitKey)
     local fontOutline = general and general.fontOutline or "OUTLINE"
     local nameFontSize = settings.nameFontSize or 12
     local nameAnchorInfo = GetTextAnchorInfo(settings.nameAnchor or "LEFT")
-    local nameOffsetX = settings.nameOffsetX or 4
-    local nameOffsetY = settings.nameOffsetY or 0
-    
+    local nameOffsetX = QUICore:PixelRound(settings.nameOffsetX or 4, frame)
+    local nameOffsetY = QUICore:PixelRound(settings.nameOffsetY or 0, frame)
+
     local nameText = textFrame:CreateFontString(nil, "OVERLAY")
     nameText:SetFont(fontPath, nameFontSize, fontOutline)
     nameText:SetPoint(nameAnchorInfo.point, frame, nameAnchorInfo.point, nameOffsetX, nameOffsetY)
@@ -1825,8 +1823,8 @@ local function CreateUnitFrame(unit, unitKey)
     -- Health text
     local healthFontSize = settings.healthFontSize or 12
     local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
-    local healthOffsetX = settings.healthOffsetX or -4
-    local healthOffsetY = settings.healthOffsetY or 0
+    local healthOffsetX = QUICore:PixelRound(settings.healthOffsetX or -4, frame)
+    local healthOffsetY = QUICore:PixelRound(settings.healthOffsetY or 0, frame)
 
     local healthText = textFrame:CreateFontString(nil, "OVERLAY")
     healthText:SetFont(fontPath, healthFontSize, fontOutline)
@@ -1838,8 +1836,8 @@ local function CreateUnitFrame(unit, unitKey)
     -- Power text (separate from power bar, for displaying power %)
     local powerTextFontSize = settings.powerTextFontSize or 12
     local powerAnchorInfo = GetTextAnchorInfo(settings.powerTextAnchor or "BOTTOMRIGHT")
-    local powerTextOffsetX = settings.powerTextOffsetX or -4
-    local powerTextOffsetY = settings.powerTextOffsetY or 2
+    local powerTextOffsetX = QUICore:PixelRound(settings.powerTextOffsetX or -4, frame)
+    local powerTextOffsetY = QUICore:PixelRound(settings.powerTextOffsetY or 2, frame)
 
     local powerText = textFrame:CreateFontString(nil, "OVERLAY")
     powerText:SetFont(fontPath, powerTextFontSize, fontOutline)
@@ -2237,8 +2235,9 @@ local function CreateAuraIcon(parent, index, size, auraSettings, isDebuff)
     -- Border (using BACKGROUND texture to avoid secret value errors during combat)
     local border = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
     border:SetColorTexture(0, 0, 0, 1)
-    border:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
-    border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+    local iconPx = QUICore:GetPixelSize(icon)
+    border:SetPoint("TOPLEFT", icon, "TOPLEFT", -iconPx, iconPx)
+    border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", iconPx, -iconPx)
     icon.border = border
 
     -- Icon texture
@@ -2247,7 +2246,7 @@ local function CreateAuraIcon(parent, index, size, auraSettings, isDebuff)
     tex:SetPoint("BOTTOMRIGHT", 0, 0)
     tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     icon.icon = tex
-    
+
     -- Cooldown swipe
     local cd = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     cd:SetAllPoints(icon)
@@ -2258,10 +2257,10 @@ local function CreateAuraIcon(parent, index, size, auraSettings, isDebuff)
     cd.noOCC = true
     -- noCooldownCount removed to enable Blizzard countdown text (styled via ApplyAuraIconSettings)
     icon.cooldown = cd
-    
+
     -- Stack count (position/font set by ApplyAuraIconSettings)
     local count = icon:CreateFontString(nil, "OVERLAY")
-    count:SetPoint("BOTTOMRIGHT", -1, 1)  -- default, will be updated by settings
+    count:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)  -- default, will be updated by settings
     count:SetTextColor(1, 1, 1, 1)
     icon.count = count
     icon._showStack = true  -- default
@@ -3019,8 +3018,9 @@ function QUI_UF:ShowAuraPreviewForFrame(frame, unitKey, auraType)
             -- Border
             local border = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
             border:SetColorTexture(0, 0, 0, 1)
-            border:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
-            border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+            local prevIconPx = QUICore:GetPixelSize(icon)
+            border:SetPoint("TOPLEFT", icon, "TOPLEFT", -prevIconPx, prevIconPx)
+            border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", prevIconPx, -prevIconPx)
             icon.border = border
 
             -- Icon texture
@@ -3208,9 +3208,7 @@ function QUI_UF:RefreshFrame(unitKey)
             return
         end
         
-        local borderSize = Scale(settings.borderSize or 1)
-        local powerHeight = settings.showPowerBar and Scale(settings.powerBarHeight or 4) or 0
-        local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and 1 or 0
+        local borderPx = settings.borderSize or 1
         local texturePath = GetTexturePath(settings.texture)
 
         -- Get HUD layer priority for boss frames
@@ -3230,13 +3228,18 @@ function QUI_UF:RefreshFrame(unitKey)
                     frame:SetFrameLevel(bossFrameLevel)
                 end
 
-                -- Update size
-                frame:SetSize(settings.width or 220, settings.height or 35)
+                -- Pixel-perfect values per frame
+                local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
+                local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
+                local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
+
+                -- Update size (config values are virtual coords, snap to pixel grid)
+                frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
 
                 -- Position: first boss at configured position, rest stacked below
                 frame:ClearAllPoints()
                 if i == 1 then
-                    frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+                    QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
                 else
                     local prevFrame = self.frames["boss" .. (i - 1)]
                     if prevFrame then
@@ -3310,8 +3313,8 @@ function QUI_UF:RefreshFrame(unitKey)
                     end
                     frame.nameText:SetFont(GetFontPath(), settings.nameFontSize or 11, GetFontOutline())
                     local nameAnchorInfo = GetTextAnchorInfo(settings.nameAnchor or "LEFT")
-                    local nameOffsetX = Scale(settings.nameOffsetX or 4)
-                    local nameOffsetY = Scale(settings.nameOffsetY or 0)
+                    local nameOffsetX = QUICore:PixelRound(settings.nameOffsetX or 4, frame.healthBar)
+                    local nameOffsetY = QUICore:PixelRound(settings.nameOffsetY or 0, frame.healthBar)
                     frame.nameText:ClearAllPoints()
                     frame.nameText:SetPoint(nameAnchorInfo.point, frame.healthBar, nameAnchorInfo.point, nameOffsetX, nameOffsetY)
                     frame.nameText:SetJustifyH(nameAnchorInfo.justify)
@@ -3335,8 +3338,8 @@ function QUI_UF:RefreshFrame(unitKey)
                     end
                     frame.healthText:SetFont(GetFontPath(), settings.healthFontSize or 11, GetFontOutline())
                     local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
-                    local healthOffsetX = Scale(settings.healthOffsetX or -4)
-                    local healthOffsetY = Scale(settings.healthOffsetY or 0)
+                    local healthOffsetX = QUICore:PixelRound(settings.healthOffsetX or -4, frame.healthBar)
+                    local healthOffsetY = QUICore:PixelRound(settings.healthOffsetY or 0, frame.healthBar)
                     frame.healthText:ClearAllPoints()
                     frame.healthText:SetPoint(healthAnchorInfo.point, frame.healthBar, healthAnchorInfo.point, healthOffsetX, healthOffsetY)
                     frame.healthText:SetJustifyH(healthAnchorInfo.justify)
@@ -3364,8 +3367,8 @@ function QUI_UF:RefreshFrame(unitKey)
                     frame.powerText:SetFont(fontPath, settings.powerTextFontSize or 12, fontOutline)
                     frame.powerText:ClearAllPoints()
                     local powerAnchorInfo = GetTextAnchorInfo(settings.powerTextAnchor or "BOTTOMRIGHT")
-                    local powerOffsetX = Scale(settings.powerTextOffsetX or -4)
-                    local powerOffsetY = Scale(settings.powerTextOffsetY or 2)
+                    local powerOffsetX = QUICore:PixelRound(settings.powerTextOffsetX or -4, frame.healthBar)
+                    local powerOffsetY = QUICore:PixelRound(settings.powerTextOffsetY or 2, frame.healthBar)
                     frame.powerText:SetPoint(powerAnchorInfo.point, frame.healthBar, powerAnchorInfo.point, powerOffsetX, powerOffsetY)
                     frame.powerText:SetJustifyH(powerAnchorInfo.justify)
                     frame.powerText:Show()
@@ -3445,9 +3448,9 @@ function QUI_UF:RefreshFrame(unitKey)
         frame:SetFrameLevel(frameLevel)
     end
 
-    -- Update size
-    frame:SetSize(settings.width or 220, settings.height or 35)
-    
+    -- Update size (config values are virtual coords, snap to pixel grid)
+    frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
+
     -- Update position
     frame:ClearAllPoints()
     local isAnchored = settings.anchorTo and settings.anchorTo ~= "disabled"
@@ -3455,8 +3458,8 @@ function QUI_UF:RefreshFrame(unitKey)
         -- Anchored to another frame: defer to the global callback
         _G.QUI_UpdateAnchoredUnitFrames()
     else
-        -- Standard positioning
-        frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        -- Standard positioning (config offsets are virtual coords)
+        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
     end
     
     -- Get colors and separate opacity values based on dark mode state
@@ -3473,7 +3476,8 @@ function QUI_UF:RefreshFrame(unitKey)
     local bgAlpha = (bgColor[4] or 1) * bgOpacity
 
     -- Pixel-perfect border size
-    local borderSize = Scale(settings.borderSize or 1)
+    local borderPx = settings.borderSize or 1
+    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
 
     -- Update backdrop (including border size)
     frame:SetBackdrop({
@@ -3490,9 +3494,9 @@ function QUI_UF:RefreshFrame(unitKey)
     frame.healthBar:SetAlpha(healthOpacity)
     if frame.powerBar then frame.powerBar:SetAlpha(healthOpacity) end
 
-    -- Update power bar height (pixel-perfect)
-    local powerHeight = settings.showPowerBar and Scale(settings.powerBarHeight or 4) or 0
-    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and 1 or 0
+    -- Update power bar height (config value is virtual coords, snap to pixel grid)
+    local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
+    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
 
     -- Update health bar texture
     local texturePath = GetTexturePath(settings.texture)
@@ -3535,7 +3539,7 @@ function QUI_UF:RefreshFrame(unitKey)
         if not frame.powerBarSeparator then
             -- Create separator dynamically
             local separator = frame.powerBar:CreateTexture(nil, "OVERLAY")
-            separator:SetHeight(1)
+            separator:SetHeight(QUICore:GetPixelSize(frame.powerBar))
             separator:SetPoint("BOTTOMLEFT", frame.powerBar, "TOPLEFT", 0, 0)
             separator:SetPoint("BOTTOMRIGHT", frame.powerBar, "TOPRIGHT", 0, 0)
             separator:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -3549,11 +3553,7 @@ function QUI_UF:RefreshFrame(unitKey)
 
     -- Update portrait (create dynamically if needed)
     if settings.showPortrait then
-        local portraitSize = Scale(settings.portraitSize or 40)
-        local portraitBorderSize = Scale(settings.portraitBorderSize or 1)
-        local portraitGap = Scale(settings.portraitGap or 0)
-        local portraitOffsetX = Scale(settings.portraitOffsetX or 0)
-        local portraitOffsetY = Scale(settings.portraitOffsetY or 0)
+        local portraitSizePx = settings.portraitSize or 40
         local side = settings.portraitSide or "LEFT"
 
         if not frame.portrait then
@@ -3575,8 +3575,14 @@ function QUI_UF:RefreshFrame(unitKey)
             portrait:HookScript("OnLeave", HideUnitTooltip)
         end
 
-        -- Update size and position
-        frame.portrait:SetSize(portraitSize, portraitSize)
+        -- Pixel-perfect portrait values
+        local portraitBorderSize = QUICore:Pixels(settings.portraitBorderSize or 1, frame.portrait)
+        local portraitGap = QUICore:PixelRound(settings.portraitGap or 0, frame.portrait)
+        local portraitOffsetX = QUICore:PixelRound(settings.portraitOffsetX or 0, frame.portrait)
+        local portraitOffsetY = QUICore:PixelRound(settings.portraitOffsetY or 0, frame.portrait)
+
+        -- Update size and position (config value is virtual coords, snap to pixel grid)
+        frame.portrait:SetSize(QUICore:PixelRound(portraitSizePx, frame.portrait), QUICore:PixelRound(portraitSizePx, frame.portrait))
         frame.portrait:ClearAllPoints()
         if side == "LEFT" then
             frame.portrait:SetPoint("RIGHT", frame, "LEFT", -portraitGap + portraitOffsetX, portraitOffsetY)
@@ -3631,7 +3637,7 @@ function QUI_UF:RefreshFrame(unitKey)
         frame.nameText:SetFont(fontPath, settings.nameFontSize or 12, fontOutline)
         frame.nameText:ClearAllPoints()
         local nameAnchorInfo = GetTextAnchorInfo(settings.nameAnchor or "LEFT")
-        frame.nameText:SetPoint(nameAnchorInfo.point, frame, nameAnchorInfo.point, Scale(settings.nameOffsetX or 4), Scale(settings.nameOffsetY or 0))
+        frame.nameText:SetPoint(nameAnchorInfo.point, frame, nameAnchorInfo.point, QUICore:PixelRound(settings.nameOffsetX or 4, frame), QUICore:PixelRound(settings.nameOffsetY or 0, frame))
         frame.nameText:SetJustifyH(nameAnchorInfo.justify)
         if settings.showName then
             frame.nameText:Show()
@@ -3644,7 +3650,7 @@ function QUI_UF:RefreshFrame(unitKey)
         frame.healthText:SetFont(fontPath, settings.healthFontSize or 12, fontOutline)
         frame.healthText:ClearAllPoints()
         local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
-        frame.healthText:SetPoint(healthAnchorInfo.point, frame, healthAnchorInfo.point, Scale(settings.healthOffsetX or -4), Scale(settings.healthOffsetY or 0))
+        frame.healthText:SetPoint(healthAnchorInfo.point, frame, healthAnchorInfo.point, QUICore:PixelRound(settings.healthOffsetX or -4, frame), QUICore:PixelRound(settings.healthOffsetY or 0, frame))
         frame.healthText:SetJustifyH(healthAnchorInfo.justify)
         -- Show/hide health text based on showHealth toggle first
         if settings.showHealth == false then
@@ -3672,7 +3678,7 @@ function QUI_UF:RefreshFrame(unitKey)
         frame.powerText:SetFont(fontPath, settings.powerTextFontSize or 12, fontOutline)
         frame.powerText:ClearAllPoints()
         local powerAnchorInfo = GetTextAnchorInfo(settings.powerTextAnchor or "BOTTOMRIGHT")
-        frame.powerText:SetPoint(powerAnchorInfo.point, frame, powerAnchorInfo.point, Scale(settings.powerTextOffsetX or -4), Scale(settings.powerTextOffsetY or 2))
+        frame.powerText:SetPoint(powerAnchorInfo.point, frame, powerAnchorInfo.point, QUICore:PixelRound(settings.powerTextOffsetX or -4, frame), QUICore:PixelRound(settings.powerTextOffsetY or 2, frame))
         frame.powerText:SetJustifyH(powerAnchorInfo.justify)
         -- Show/hide handled by UpdatePowerText based on settings.showPowerText
     end
@@ -3934,10 +3940,11 @@ function QUI_UF:EnableEditMode()
         exitBtn:SetSize(180, 40)
         exitBtn:SetPoint("TOP", UIParent, "TOP", 0, -100)
         exitBtn:SetFrameStrata("TOOLTIP")
+        local exitBtnPx = QUICore:GetPixelSize(exitBtn)
         exitBtn:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 2,
+            edgeSize = exitBtnPx * 2,
         })
         exitBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
         exitBtn:SetBackdropBorderColor(0.34, 0.82, 1, 1)  -- Blue accent
@@ -3967,10 +3974,11 @@ function QUI_UF:EnableEditMode()
             if EditModeManagerFrame and EditModeManagerFrame:IsShown() then
                 -- Save changes first
                 if EditModeManagerFrame.SaveLayoutChanges then
-                    EditModeManagerFrame:SaveLayoutChanges()
+                    pcall(EditModeManagerFrame.SaveLayoutChanges, EditModeManagerFrame)
                 end
-                -- Then exit
-                HideUIPanel(EditModeManagerFrame)
+                -- Then exit (pcall: Blizzard's exit path can trigger secret value
+                -- errors in CompactUnitFrame_UpdateInRange via party frame refresh)
+                pcall(HideUIPanel, EditModeManagerFrame)
             else
                 -- Fallback for /qui editmode case
                 QUI_UF:DisableEditMode()
@@ -3987,10 +3995,11 @@ function QUI_UF:EnableEditMode()
             local overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
             overlay:SetAllPoints()
             overlay:SetFrameLevel(frame:GetFrameLevel() + 10)
+            local overlayPx = QUICore:GetPixelSize(overlay)
             overlay:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 2,
+                edgeSize = overlayPx * 2,
             })
             overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
             overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
@@ -4068,9 +4077,9 @@ function QUI_UF:EnableEditMode()
         -- Click handler to select this element and show its arrows
         frame:SetScript("OnMouseDown", function(self, button)
             if button == "LeftButton" and QUI_UF.editModeActive then
-                local QUICore = _G.QUI and _G.QUI.QUICore
-                if QUICore and QUICore.SelectEditModeElement then
-                    QUICore:SelectEditModeElement("unitframe", self._editModeUnitKey)
+                local core = GetCore()
+                if core and core.SelectEditModeElement then
+                    core:SelectEditModeElement("unitframe", self._editModeUnitKey)
                 end
             end
         end)
@@ -4100,8 +4109,9 @@ function QUI_UF:EnableEditMode()
                     local selfX, selfY = self:GetCenter()
                     local parentX, parentY = UIParent:GetCenter()
                     if selfX and selfY and parentX and parentY then
-                        local offsetX = math.floor(selfX - parentX + 0.5)
-                        local offsetY = math.floor(selfY - parentY + 0.5)
+                        local rawX, rawY = selfX - parentX, selfY - parentY
+                        local offsetX = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
+                        local offsetY = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
 
                         -- Update database in real-time
                         local settingsKey = self.unitKey
@@ -4130,8 +4140,9 @@ function QUI_UF:EnableEditMode()
             local selfX, selfY = self:GetCenter()
             local parentX, parentY = UIParent:GetCenter()
             if selfX and selfY and parentX and parentY then
-                local offsetX = math.floor(selfX - parentX + 0.5)
-                local offsetY = math.floor(selfY - parentY + 0.5)
+                local rawX, rawY = selfX - parentX, selfY - parentY
+                local offsetX = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
+                local offsetY = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
 
                 -- Boss frames: all boss frames save to "boss" settings
                 local settingsKey = self.unitKey
@@ -4204,9 +4215,9 @@ function QUI_UF:DisableEditMode()
     self.editModeActive = false
 
     -- Clear Edit Mode selection (hides arrows on selected element)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.ClearEditModeSelection then
-        QUICore:ClearEditModeSelection()
+    local core = GetCore()
+    if core and core.ClearEditModeSelection then
+        core:ClearEditModeSelection()
     end
 
     -- Hide the exit button
@@ -4812,11 +4823,11 @@ local function GetAnchorFrame(anchorType)
     elseif anchorType == "utility" then
         return _G["UtilityCooldownViewer"]
     elseif anchorType == "primary" then
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        return QUICore and QUICore.powerBar
+        local core = GetCore()
+        return core and core.powerBar
     elseif anchorType == "secondary" then
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        return QUICore and QUICore.secondaryPowerBar
+        local core = GetCore()
+        return core and core.secondaryPowerBar
     end
     return nil
 end
@@ -4871,8 +4882,8 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
                 local frame = QUI_UF.frames.player
                 local frameWidth = frame:GetWidth()
                 local frameHeight = frame:GetHeight()
-                local gap = Scale(playerSettings.anchorGap or 10)
-                local yOffset = Scale(playerSettings.anchorYOffset or 0)
+                local gap = QUICore:PixelRound(playerSettings.anchorGap or 10, frame)
+                local yOffset = QUICore:PixelRound(playerSettings.anchorYOffset or 0, frame)
 
                 -- X: Anchor left edge - gap - half frame width
                 local frameX = anchor.left - gap - (frameWidth / 2) - screenCenterX
@@ -4886,9 +4897,9 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
             -- Fallback: anchor target doesn't exist, use standard offset positioning
             local frame = QUI_UF.frames.player
             frame:ClearAllPoints()
-            frame:SetPoint("CENTER", UIParent, "CENTER",
-                Scale(playerSettings.offsetX or 0),
-                Scale(playerSettings.offsetY or 0))
+            QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER",
+                playerSettings.offsetX or 0,
+                playerSettings.offsetY or 0)
         end
     end
 
@@ -4903,8 +4914,8 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
                 local frame = QUI_UF.frames.target
                 local frameWidth = frame:GetWidth()
                 local frameHeight = frame:GetHeight()
-                local gap = Scale(targetSettings.anchorGap or 10)
-                local yOffset = Scale(targetSettings.anchorYOffset or 0)
+                local gap = QUICore:PixelRound(targetSettings.anchorGap or 10, frame)
+                local yOffset = QUICore:PixelRound(targetSettings.anchorYOffset or 0, frame)
 
                 -- X: Anchor right edge + gap + half frame width
                 local frameX = anchor.right + gap + (frameWidth / 2) - screenCenterX
@@ -4918,9 +4929,9 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
             -- Fallback: anchor target doesn't exist, use standard offset positioning
             local frame = QUI_UF.frames.target
             frame:ClearAllPoints()
-            frame:SetPoint("CENTER", UIParent, "CENTER",
-                Scale(targetSettings.offsetX or 0),
-                Scale(targetSettings.offsetY or 0))
+            QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER",
+                targetSettings.offsetX or 0,
+                targetSettings.offsetY or 0)
         end
     end
 end

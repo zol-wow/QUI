@@ -7,6 +7,11 @@ local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
 local Helpers = ns.Helpers
+local QUICore = ns.Addon
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 ---------------------------------------------------------------------------
 -- Constants
@@ -68,13 +73,14 @@ end
 ---------------------------------------------------------------------------
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
-local function GetBackdropInfo(borderTextureName, borderSize)
+local function GetBackdropInfo(borderTextureName, borderSize, frame)
     local edgeFile = nil
     local edgeSize = 0
+    local px = QUICore:GetPixelSize(frame)
 
     if borderTextureName and borderTextureName ~= "None" and LSM then
         edgeFile = LSM:Fetch("border", borderTextureName)
-        edgeSize = borderSize or 1
+        edgeSize = (borderSize or 1) * px
     end
 
     return {
@@ -83,7 +89,7 @@ local function GetBackdropInfo(borderTextureName, borderSize)
         tile = false,
         tileSize = 0,
         edgeSize = edgeSize,
-        insets = { left = 0, right = 1, top = 0, bottom = 1 },
+        insets = { left = 0, right = px, top = 0, bottom = px },
     }
 end
 
@@ -154,9 +160,9 @@ local function GetFontPath(fontName)
 end
 
 local function GetGlobalFont()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general and QUICore.db.profile.general.font then
-        return QUICore.db.profile.general.font
+    local core = GetCore()
+    if core and core.db and core.db.profile and core.db.profile.general and core.db.profile.general.font then
+        return core.db.profile.general.font
     end
     return "Quazii"
 end
@@ -223,12 +229,13 @@ local function CreateBrezFrame()
     frame:SetClampedToScreen(true)
 
     -- Set up backdrop
-    frame:SetBackdrop(GetBackdropInfo())
+    frame:SetBackdrop(GetBackdropInfo(nil, nil, frame))
     frame:SetBackdropColor(0, 0, 0, 0.6)
 
     -- Create border lines
+    local px = QUICore:GetPixelSize(frame)
     CreateBorderLines(frame)
-    UpdateBorderLines(frame, 1, 0, 0, 0, 1)
+    UpdateBorderLines(frame, px, 0, 0, 0, 1)
 
     -- Spell icon texture
     local icon = frame:CreateTexture(nil, "BACKGROUND")
@@ -268,8 +275,8 @@ local function CreateBrezFrame()
         local settings = GetSettings()
         if settings then
             local _, _, _, xOfs, yOfs = self:GetPoint()
-            settings.xOffset = math.floor(xOfs + 0.5)
-            settings.yOffset = math.floor(yOfs + 0.5)
+            settings.xOffset = QUICore:PixelRound(xOfs)
+            settings.yOffset = QUICore:PixelRound(yOfs)
         end
     end)
 
@@ -469,7 +476,7 @@ local function UpdateAppearance()
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder
 
     if showBackdrop or effectiveUseLSMBorder then
-        frame:SetBackdrop(GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize))
+        frame:SetBackdrop(GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame))
 
         if showBackdrop then
             local bgColor = settings.backdropColor or { 0, 0, 0, 0.6 }
@@ -486,8 +493,9 @@ local function UpdateAppearance()
     end
 
     -- Update manual border lines
+    local px = QUICore:GetPixelSize(frame)
     CreateBorderLines(frame)
-    UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
+    UpdateBorderLines(frame, borderSize * px, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
 
     -- Update display immediately
     UpdateDisplay()

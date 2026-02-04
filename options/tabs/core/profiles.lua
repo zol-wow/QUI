@@ -3,10 +3,15 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
+local QUICore = ns.Addon
 
 -- Local references for shared infrastructure
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 --------------------------------------------------------------------------------
 -- SPEC PROFILES PAGE
@@ -16,9 +21,6 @@ local function CreateSpecProfilesPage(parent)
     local y = -15
     local PAD = PADDING
     local FORM_ROW = 32
-
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local db = QUICore and QUICore.db
 
     local info = GUI:CreateLabel(content, "Manage profiles and auto-switch based on specialization", 11, C.textMuted)
     info:SetPoint("TOPLEFT", PAD, y)
@@ -58,8 +60,8 @@ local function CreateSpecProfilesPage(parent)
     -- Function to refresh profile display - called on show and via timer
     -- Note: This gets replaced later after profileDropdown is created
     local function RefreshProfileDisplay()
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        local freshDB = QUICore and QUICore.db
+        local core = GetCore()
+        local freshDB = core and core.db
         if freshDB then
             local currentName = freshDB:GetCurrentProfile()
             currentProfileName:SetText(currentName or "Unknown")
@@ -91,7 +93,8 @@ local function CreateSpecProfilesPage(parent)
     local resetBtn = CreateFrame("Button", nil, resetContainer, "BackdropTemplate")
     resetBtn:SetSize(120, 24)
     resetBtn:SetPoint("LEFT", resetContainer, "LEFT", 180, 0)
-    resetBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+    local pxReset = GetCore():GetPixelSize(resetBtn)
+    resetBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxReset})
     resetBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
     resetBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
     local resetBtnText = resetBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -101,7 +104,9 @@ local function CreateSpecProfilesPage(parent)
     resetBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
     resetBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end)
     resetBtn:SetScript("OnClick", function()
-        if db then
+        local core = GetCore()
+        local dbRef = core and core.db
+        if dbRef then
             GUI:ShowConfirmation({
                 title = "Reset Profile?",
                 message = "Reset current profile to defaults?",
@@ -110,8 +115,8 @@ local function CreateSpecProfilesPage(parent)
                 cancelText = "Cancel",
                 isDestructive = true,
                 onAccept = function()
-                    local QUICore = _G.QUI and _G.QUI.QUICore
-                    local dbRef = QUICore and QUICore.db
+                    local core = GetCore()
+                    local dbRef = core and core.db
                     if dbRef then
                         dbRef:ResetProfile()
                         print("|cff34D399QUI:|r Profile reset to defaults.")
@@ -133,8 +138,10 @@ local function CreateSpecProfilesPage(parent)
     -- Get existing profiles
     local function GetProfileList()
         local profiles = {}
-        if db then
-            local profileList = db:GetProfiles()
+        local core = GetCore()
+        local dbRef = core and core.db
+        if dbRef then
+            local profileList = dbRef:GetProfiles()
             for _, name in ipairs(profileList) do
                 table.insert(profiles, {value = name, text = name})
             end
@@ -145,7 +152,9 @@ local function CreateSpecProfilesPage(parent)
     -- Refresh all profile-dependent dropdowns with the current profile list
     local function RefreshProfileDropdowns()
         local allProfiles = GetProfileList()
-        local currentProfile = db and db:GetCurrentProfile() or ""
+        local core = GetCore()
+        local dbRef = core and core.db
+        local currentProfile = dbRef and dbRef:GetCurrentProfile() or ""
         -- Filtered list excludes the current profile (for copy/delete)
         local filtered = {}
         for _, opt in ipairs(allProfiles) do
@@ -182,10 +191,11 @@ local function CreateSpecProfilesPage(parent)
     profileDropdown:SetHeight(24)
     profileDropdown:SetPoint("LEFT", profileDropdownContainer, "LEFT", 180, 0)
     profileDropdown:SetPoint("RIGHT", profileDropdownContainer, "RIGHT", 0, 0)
+    local px = GetCore():GetPixelSize(profileDropdown)
     profileDropdown:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     profileDropdown:SetBackdropColor(0.08, 0.08, 0.08, 1)
     profileDropdown:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
@@ -246,10 +256,11 @@ local function CreateSpecProfilesPage(parent)
     local profileMenu = CreateFrame("Frame", nil, profileDropdown, "BackdropTemplate")
     profileMenu:SetPoint("TOPLEFT", profileDropdown, "BOTTOMLEFT", 0, -2)
     profileMenu:SetPoint("TOPRIGHT", profileDropdown, "BOTTOMRIGHT", 0, -2)
+    local pxMenu = GetCore():GetPixelSize(profileMenu)
     profileMenu:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = pxMenu,
     })
     profileMenu:SetBackdropColor(0.1, 0.1, 0.1, 0.98)
     profileMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
@@ -263,8 +274,8 @@ local function CreateSpecProfilesPage(parent)
             child:SetParent(nil)
         end
 
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        local freshDB = QUICore and QUICore.db
+        local core = GetCore()
+        local freshDB = core and core.db
         if not freshDB then return end
 
         local profiles = freshDB:GetProfiles()
@@ -320,7 +331,7 @@ local function CreateSpecProfilesPage(parent)
     end)
 
     -- Set initial text
-    local initCore = _G.QUI and _G.QUI.QUICore
+    local initCore = GetCore()
     local initDB = initCore and initCore.db
     local initProfile = initDB and initDB:GetCurrentProfile() or "Default"
     profileDropdownText:SetText(initProfile)
@@ -328,8 +339,8 @@ local function CreateSpecProfilesPage(parent)
     -- Update RefreshProfileDisplay to use our custom dropdown
     local oldRefresh = RefreshProfileDisplay
     RefreshProfileDisplay = function()
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        local freshDB = QUICore and QUICore.db
+        local core = GetCore()
+        local freshDB = core and core.db
         if freshDB then
             local currentName = freshDB:GetCurrentProfile()
             currentProfileName:SetText(currentName or "Unknown")
@@ -342,11 +353,11 @@ local function CreateSpecProfilesPage(parent)
     content:SetScript("OnShow", RefreshProfileDisplay)
     scroll:SetScript("OnShow", RefreshProfileDisplay)
 
-    -- Refresh display after a short delay to ensure everything is loaded
+    -- Staggered C_Timer.After calls ensure RefreshProfileDisplay catches async profile updates.
     C_Timer.After(0.2, RefreshProfileDisplay)
     C_Timer.After(0.5, RefreshProfileDisplay)
 
-    -- Expose refresh function for profile change callbacks
+    -- Expose RefreshProfileDisplay via _G.QUI_RefreshSpecProfilesTab for external profile-change callbacks.
     _G.QUI_RefreshSpecProfilesTab = RefreshProfileDisplay
 
     y = y - FORM_ROW - 10
@@ -373,10 +384,11 @@ local function CreateSpecProfilesPage(parent)
     local newProfileBoxBg = CreateFrame("Frame", nil, newProfileContainer, "BackdropTemplate")
     newProfileBoxBg:SetPoint("LEFT", newProfileContainer, "LEFT", 180, 0)
     newProfileBoxBg:SetSize(200, 24)
+    local pxBox = GetCore():GetPixelSize(newProfileBoxBg)
     newProfileBoxBg:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = pxBox,
     })
     newProfileBoxBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
     newProfileBoxBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
@@ -401,7 +413,8 @@ local function CreateSpecProfilesPage(parent)
     local createBtn = CreateFrame("Button", nil, newProfileContainer, "BackdropTemplate")
     createBtn:SetSize(80, 24)
     createBtn:SetPoint("LEFT", newProfileBoxBg, "RIGHT", 10, 0)
-    createBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+    local pxCreate = GetCore():GetPixelSize(createBtn)
+    createBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxCreate})
     createBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
     createBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
     local createBtnText = createBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -411,9 +424,11 @@ local function CreateSpecProfilesPage(parent)
     createBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
     createBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end)
     createBtn:SetScript("OnClick", function()
+        local core = GetCore()
+        local dbRef = core and core.db
         local newName = newProfileBox:GetText()
-        if newName and newName ~= "" and db then
-            db:SetProfile(newName)
+        if newName and newName ~= "" and dbRef then
+            dbRef:SetProfile(newName)
             currentProfileName:SetText(newName)
             profileDropdownText:SetText(newName)
             newProfileBox:SetText("")
@@ -439,8 +454,10 @@ local function CreateSpecProfilesPage(parent)
     -- Copy from dropdown (form style)
     local copyWrapper = { selected = "" }
     local copyDropdown = GUI:CreateFormDropdown(content, "Copy From", GetProfileList(), "selected", copyWrapper, function(value)
-        if db and value and value ~= "" then
-            db:CopyProfile(value)
+        local core = GetCore()
+        local dbRef = core and core.db
+        if dbRef and value and value ~= "" then
+            dbRef:CopyProfile(value)
             print("|cff34D399QUI:|r Copied settings from: " .. value)
             copyWrapper.selected = ""
             RefreshProfileDropdowns()
@@ -467,8 +484,10 @@ local function CreateSpecProfilesPage(parent)
     -- Delete dropdown (form style)
     local deleteWrapper = { selected = "" }
     local deleteDropdown = GUI:CreateFormDropdown(content, "Delete Profile", GetProfileList(), "selected", deleteWrapper, function(value)
-        if db and value and value ~= "" then
-            local current = db:GetCurrentProfile()
+        local core = GetCore()
+        local dbRef = core and core.db
+        if dbRef and value and value ~= "" then
+            local current = dbRef:GetCurrentProfile()
             if value == current then
                 print("|cffff0000QUI:|r Cannot delete the active profile!")
                 deleteWrapper.selected = ""
@@ -483,7 +502,10 @@ local function CreateSpecProfilesPage(parent)
                     cancelText = "Cancel",
                     isDestructive = true,
                     onAccept = function()
-                        db:DeleteProfile(profileToDelete, true)
+                        local core = GetCore()
+                        local dbRef = core and core.db
+                        if not dbRef then return end
+                        dbRef:DeleteProfile(profileToDelete, true)
                         print("|cff34D399QUI:|r Deleted profile: " .. profileToDelete)
                         deleteWrapper.selected = ""
                         RefreshProfileDropdowns()
@@ -505,12 +527,17 @@ local function CreateSpecProfilesPage(parent)
     y = y - specHeader.gap
 
     -- Check if LibDualSpec methods are available on db (added by EnhanceDatabase)
-    if db and db.IsDualSpecEnabled and db.SetDualSpecEnabled and db.GetDualSpecProfile and db.SetDualSpecProfile then
+    local specCore = GetCore()
+    local specDB = specCore and specCore.db
+    if specDB and specDB.IsDualSpecEnabled and specDB.SetDualSpecEnabled and specDB.GetDualSpecProfile and specDB.SetDualSpecProfile then
         -- Enable checkbox (form style)
-        local enableWrapper = { enabled = db:IsDualSpecEnabled() }
+        local enableWrapper = { enabled = specDB:IsDualSpecEnabled() }
         local enableCheckbox = GUI:CreateFormCheckbox(content, "Enable Spec Profiles", "enabled", enableWrapper,
             function()
-                db:SetDualSpecEnabled(enableWrapper.enabled)
+                local core = GetCore()
+                local dbRef = core and core.db
+                if not dbRef or not dbRef.SetDualSpecEnabled then return end
+                dbRef:SetDualSpecEnabled(enableWrapper.enabled)
                 print("|cff34D399QUI:|r Spec auto-switch " .. (enableWrapper.enabled and "enabled" or "disabled"))
             end)
         enableCheckbox:SetPoint("TOPLEFT", PAD, y)
@@ -537,13 +564,15 @@ local function CreateSpecProfilesPage(parent)
                 end
 
                 -- Get current profile for this spec using LibDualSpec method
-                local currentSpecProfile = db:GetDualSpecProfile(i) or ""
+                local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""
                 local specWrapper = { selected = currentSpecProfile }
 
                 -- Dropdown for this spec (form style)
                 local specDropdown = GUI:CreateFormDropdown(content, displayName, GetProfileList(), "selected", specWrapper, function(value)
-                    if value and value ~= "" then
-                        db:SetDualSpecProfile(value, i)
+                    local core = GetCore()
+                    local dbRef = core and core.db
+                    if dbRef and dbRef.SetDualSpecProfile and value and value ~= "" then
+                        dbRef:SetDualSpecProfile(value, i)
                         print("|cff34D399QUI:|r " .. specName .. " will use profile: " .. value)
                     end
                 end)

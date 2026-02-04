@@ -5,6 +5,7 @@
 local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
+local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
@@ -30,23 +31,25 @@ end
 ---------------------------------------------------------------------------
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
-local function GetBackdropInfo(borderTextureName, borderSize)
+local function GetBackdropInfo(borderTextureName, borderSize, frame)
     local edgeFile = nil
     local edgeSize = 0
 
     -- Use LSM border texture if specified and not "None"
     if borderTextureName and borderTextureName ~= "None" and LSM then
         edgeFile = LSM:Fetch("border", borderTextureName)
-        edgeSize = borderSize or 1
+        local rawSize = borderSize or 1
+        edgeSize = QUICore and QUICore:Pixels(rawSize, frame) or rawSize
     end
 
+    local px = QUICore and QUICore:GetPixelSize(frame) or 1
     return {
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = edgeFile,
         tile = false,
         tileSize = 0,
         edgeSize = edgeSize,
-        insets = { left = 0, right = 1, top = 0, bottom = 1 },
+        insets = { left = 0, right = px, top = 0, bottom = px },
     }
 end
 
@@ -95,11 +98,12 @@ local function UpdateBorderLines(frame, size, r, g, b, a, hide)
         return
     end
 
-    -- Set size and color
-    borders.top:SetHeight(size)
-    borders.bottom:SetHeight(size)
-    borders.left:SetWidth(size)
-    borders.right:SetWidth(size)
+    -- Convert pixel count to virtual coords for pixel-perfect borders
+    local pxSize = QUICore and QUICore:Pixels(size, frame) or size
+    borders.top:SetHeight(pxSize)
+    borders.bottom:SetHeight(pxSize)
+    borders.left:SetWidth(pxSize)
+    borders.right:SetWidth(pxSize)
 
     borders.top:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
     borders.bottom:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
@@ -135,7 +139,7 @@ local function CreateTimerFrame()
     frame:SetFrameLevel(50)
 
     -- Set up backdrop (background only)
-    frame:SetBackdrop(GetBackdropInfo())
+    frame:SetBackdrop(GetBackdropInfo(nil, nil, frame))
     frame:SetBackdropColor(0, 0, 0, 0.6)
 
     -- Create manual border lines for uniform edges
@@ -182,7 +186,6 @@ end
 -- Get global addon font setting
 ---------------------------------------------------------------------------
 local function GetGlobalFont()
-    local QUICore = _G.QUI and _G.QUI.QUICore
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general and QUICore.db.profile.general.font then
         return QUICore.db.profile.general.font
     end
@@ -266,7 +269,7 @@ local function UpdateTimerAppearance()
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder
     
     if showBackdrop or effectiveUseLSMBorder then
-        frame:SetBackdrop(GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize))
+        frame:SetBackdrop(GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame))
 
         if showBackdrop then
             local bgColor = settings.backdropColor or {0, 0, 0, 0.6}

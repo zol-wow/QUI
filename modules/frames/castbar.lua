@@ -11,6 +11,10 @@ local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- MODULE TABLE
 ---------------------------------------------------------------------------
@@ -31,10 +35,6 @@ end
 -- Helper function wrappers (with fallbacks)
 local function GetUnitSettings(unit)
     return Helpers.GetUnitSettings and Helpers.GetUnitSettings(unit) or nil
-end
-
-local function Scale(x)
-    return Helpers.Scale and Helpers.Scale(x) or x
 end
 
 local function GetFontPath()
@@ -186,10 +186,10 @@ local function InitializeDefaultSettings(castSettings)
     end
 end
 
-local function GetSizingValues(castSettings)
-    local barHeight = Scale(castSettings.height or 25)
-    barHeight = math.max(barHeight, Scale(4))
-    local iconSize = Scale((castSettings.iconSize and castSettings.iconSize > 0) and castSettings.iconSize or 25)
+local function GetSizingValues(castSettings, frame)
+    local barHeight = QUICore:PixelRound(castSettings.height or 25, frame)
+    barHeight = math.max(barHeight, QUICore:Pixels(4, frame))
+    local iconSize = QUICore:PixelRound((castSettings.iconSize and castSettings.iconSize > 0) and castSettings.iconSize or 25, frame)
     local iconScale = castSettings.iconScale or 1.0
     return barHeight, iconSize, iconScale
 end
@@ -340,9 +340,9 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
     anchorFrame:ClearAllPoints()
     
     if anchor == "essential" then
-        local offsetX = Scale(castSettings.offsetX or 0)
-        local offsetY = math.floor(Scale(castSettings.offsetY or -25) + 0.5)
-        local widthAdj = Scale(castSettings.widthAdjustment or 0)
+        local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
+        local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
+        local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
         local viewer = _G["EssentialCooldownViewer"]
         if viewer then
             anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
@@ -351,9 +351,9 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
             anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
         end
     elseif anchor == "utility" then
-        local offsetX = Scale(castSettings.offsetX or 0)
-        local offsetY = math.floor(Scale(castSettings.offsetY or -25) + 0.5)
-        local widthAdj = Scale(castSettings.widthAdjustment or 0)
+        local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
+        local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
+        local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
         local viewer = _G["UtilityCooldownViewer"]
         if viewer then
             anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
@@ -362,9 +362,9 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
             anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
         end
     elseif anchor == "unitframe" then
-        local offsetX = Scale(castSettings.offsetX or 0)
-        local offsetY = math.floor(Scale(castSettings.offsetY or -25) + 0.5)
-        local widthAdj = Scale(castSettings.widthAdjustment or 0)
+        local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
+        local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
+        local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
         anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
         anchorFrame:SetPoint("TOPRIGHT", unitFrame, "BOTTOMRIGHT", offsetX + widthAdj, offsetY)
     else
@@ -382,11 +382,13 @@ local function SetCastbarSize(anchorFrame, castSettings, unitFrame, barHeight)
         anchorFrame:SetSize(1, barHeight)
     elseif anchor == "none" then
         local frameWidth = unitFrame:GetWidth() or 250
-        local castWidth = Scale((castSettings.width and castSettings.width > 0) and castSettings.width or frameWidth)
+        local widthValue = (type(castSettings.width) == "number" and castSettings.width > 0) and castSettings.width or frameWidth
+        local castWidth = QUICore:PixelRound(widthValue, anchorFrame)
         anchorFrame:SetSize(castWidth, barHeight)
     else
         local frameWidth = unitFrame:GetWidth() or 250
-        local castWidth = Scale((castSettings.width > 0) and castSettings.width or frameWidth)
+        local widthValue = (type(castSettings.width) == "number" and castSettings.width > 0) and castSettings.width or frameWidth
+        local castWidth = QUICore:PixelRound(widthValue, anchorFrame)
         anchorFrame:SetSize(castWidth, barHeight)
     end
 end
@@ -453,7 +455,7 @@ local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, ico
     -- Inset statusBar by borderSize so border is visible around it (like unit frames)
     if ShouldShowIcon(anchorFrame, castSettings) then
         local iconSizePx = iconSize * iconScale
-        local iconSpacing = Scale(castSettings.iconSpacing or 0)
+        local iconSpacing = QUICore:PixelRound(castSettings.iconSpacing or 0, anchorFrame)
         local iconAnchor = castSettings.iconAnchor or "TOPLEFT"
         if iconAnchor:find("LEFT") then
             statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", iconSizePx + iconSpacing + borderSize, -borderSize)
@@ -497,7 +499,7 @@ local function UpdateTextPosition(textElement, statusBar, anchor, offsetX, offse
     
     if show then
         textElement:ClearAllPoints()
-        textElement:SetPoint(anchor, statusBar, anchor, Scale(offsetX), Scale(offsetY))
+        textElement:SetPoint(anchor, statusBar, anchor, QUICore:PixelRound(offsetX, textElement), QUICore:PixelRound(offsetY, textElement))
         textElement:Show()
     else
         textElement:Hide()
@@ -511,9 +513,9 @@ local function UpdateCastbarElements(anchorFrame, unitKey, castSettings)
     local currentSettings = GetUnitSettings(unitKey)
     local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
     
-    local barHeight, iconSize, iconScale = GetSizingValues(currentCastSettings)
-    local borderSize = Scale(currentCastSettings.borderSize or 1)
-    local iconBorderSize = Scale(currentCastSettings.iconBorderSize or 1)
+    local barHeight, iconSize, iconScale = GetSizingValues(currentCastSettings, anchorFrame)
+    local borderSize = QUICore:Pixels(currentCastSettings.borderSize or 1, anchorFrame)
+    local iconBorderSize = QUICore:Pixels(currentCastSettings.iconBorderSize or 1, anchorFrame)
     
     anchorFrame:SetHeight(barHeight)
     
@@ -684,10 +686,10 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
             self:StopMovingOrSizing()
             local screenX, screenY = UIParent:GetCenter()
             local castbarX, castbarY = self:GetCenter()
-            
+
             if screenX and screenY and castbarX and castbarY then
-                local offsetX = castbarX - screenX
-                local offsetY = castbarY - screenY
+                local offsetX = QUICore:PixelRound(castbarX - screenX)
+                local offsetY = QUICore:PixelRound(castbarY - screenY)
                 castSettings.offsetX = offsetX
                 castSettings.offsetY = offsetY
                 -- Also save to freeOffset for mode switching (drag only works in "none" mode)
@@ -960,17 +962,18 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     local castSettings = settings.castbar
     InitializeDefaultSettings(castSettings)
     
-    local barHeight, iconSize, iconScale = GetSizingValues(castSettings)
-    local borderSize = Scale(castSettings.borderSize or 1)
-    local iconBorderSize = Scale(castSettings.iconBorderSize or 1)
     local fontSize = castSettings.fontSize or 12
-    
+
     local anchorFrame = CreateAnchorFrame(nil, UIParent)
+
+    local barHeight, iconSize, iconScale = GetSizingValues(castSettings, anchorFrame)
+    local borderSize = QUICore:Pixels(castSettings.borderSize or 1, anchorFrame)
+    local iconBorderSize = QUICore:Pixels(castSettings.iconBorderSize or 1, anchorFrame)
     anchorFrame:SetSize(1, barHeight)
 
     -- Apply HUD layer priority
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
+    local core = GetCore()
+    local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
     local layerPriority
     if unitKey == "player" then
         layerPriority = hudLayering and hudLayering.playerCastbar or 5
@@ -979,8 +982,8 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     else
         layerPriority = 5  -- Default for any other castbar
     end
-    if QUICore and QUICore.GetHUDFrameLevel then
-        local frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
+    if core and core.GetHUDFrameLevel then
+        local frameLevel = core:GetHUDFrameLevel(layerPriority)
         anchorFrame:SetFrameLevel(frameLevel)
     end
 
@@ -1931,21 +1934,20 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     local castSettings = settings.castbar
     InitializeDefaultSettings(castSettings)
     
-    local frameWidth = unitFrame:GetWidth()
-    local castWidth = Scale((castSettings.width and castSettings.width > 0) and castSettings.width or frameWidth)
-    local barHeight, iconSize, iconScale = GetSizingValues(castSettings)
-    local borderSize = Scale(castSettings.borderSize or 1)
-    local iconBorderSize = Scale(castSettings.iconBorderSize or 1)
     local fontSize = castSettings.fontSize or 12
-    
+
     -- Create anchor frame (outer frame for positioning/sizing)
     local anchorFrame = CreateAnchorFrame("QUI_Boss" .. bossIndex .. "_Castbar", UIParent)
+
+    local frameWidth = unitFrame:GetWidth()
+    local castWidth = QUICore:PixelRound((castSettings.width and castSettings.width > 0) and castSettings.width or frameWidth, anchorFrame)
+    local barHeight, iconSize, iconScale = GetSizingValues(castSettings, anchorFrame)
+    local borderSize = QUICore:Pixels(castSettings.borderSize or 1, anchorFrame)
+    local iconBorderSize = QUICore:Pixels(castSettings.iconBorderSize or 1, anchorFrame)
     anchorFrame:SetSize(castWidth, barHeight)
-    
+
     -- Anchor to boss unit frame
-    local offsetX = Scale(castSettings.offsetX or 0)
-    local offsetY = Scale(castSettings.offsetY or -25)
-    anchorFrame:SetPoint("TOP", unitFrame, "BOTTOM", offsetX, offsetY)
+    QUICore:SetSnappedPoint(anchorFrame, "TOP", unitFrame, "BOTTOM", castSettings.offsetX or 0, castSettings.offsetY or -25)
     
     -- Create UI elements (icon with integrated border) - parented to anchorFrame
     CreateIcon(anchorFrame, iconSize, iconBorderSize, castSettings.iconBorderColor)
@@ -1958,7 +1960,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     anchorFrame.bgBar = bgBar
     
     local spellText = CreateTextElement(statusBar, fontSize)
-    spellText:SetPoint("LEFT", statusBar, "LEFT", Scale(4), 0)
+    spellText:SetPoint("LEFT", statusBar, "LEFT", QUICore:Pixels(4, spellText), 0)
     spellText:SetJustifyH("LEFT")
     anchorFrame.spellText = spellText
     

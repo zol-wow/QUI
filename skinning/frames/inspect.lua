@@ -2,6 +2,10 @@ local addonName, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- INSPECT FRAME SKINNING
 -- Skins InspectFrame to match CharacterFrame appearance
@@ -33,8 +37,8 @@ end
 -- This is separate from character.inspectEnabled which controls overlays/stats
 ---------------------------------------------------------------------------
 local function IsSkinningEnabled()
-    local coreRef = _G.QUI and _G.QUI.QUICore
-    local settings = coreRef and coreRef.db and coreRef.db.profile and coreRef.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     -- Default to true if not explicitly set
     if settings and settings.skinInspectFrame == nil then
         return true
@@ -48,8 +52,8 @@ end
 -- This is separate from general.skinInspectFrame which controls visual skinning
 ---------------------------------------------------------------------------
 local function IsInspectOverlaysEnabled()
-    local coreRef = _G.QUI and _G.QUI.QUICore
-    local settings = coreRef and coreRef.db and coreRef.db.profile and coreRef.db.profile.character
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.character
     -- Default to true if not explicitly set
     if settings and settings.inspectEnabled == nil then
         return true
@@ -67,11 +71,12 @@ local function CreateOrUpdateBackground()
 
     if not customBg then
         customBg = CreateFrame("Frame", "QUI_InspectFrameBg_Skin", InspectFrame, "BackdropTemplate")
+        local px = QUICore:GetPixelSize(customBg)
         customBg:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            edgeSize = px,
+            insets = { left = px, right = px, top = px, bottom = px }
         })
         customBg:SetFrameStrata("BACKGROUND")
         customBg:SetFrameLevel(0)

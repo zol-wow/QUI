@@ -5,6 +5,7 @@
 local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
+local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
@@ -85,10 +86,11 @@ local function CreateGlassBackdrop(chatFrame)
         backdrop:SetFrameLevel(math.max(1, chatFrame:GetFrameLevel() - 1))
         backdrop:SetPoint("TOPLEFT", -8, 2)
         backdrop:SetPoint("BOTTOMRIGHT", 8, -8)
+        local px = QUICore and QUICore:GetPixelSize(backdrop) or 1
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = px,
         })
         chatFrame.__quiChatBackdrop = backdrop
     end
@@ -210,10 +212,11 @@ local function CreateCopyPopup()
     urlPopup:SetSize(420, 90)
     urlPopup:SetPoint("CENTER")
     urlPopup:SetFrameStrata("DIALOG")
+    local px = QUICore and QUICore:GetPixelSize(urlPopup) or 1
     urlPopup:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = 2 * px,
     })
     -- QUI color scheme
     urlPopup:SetBackdropColor(QUI_COLORS.bg[1], QUI_COLORS.bg[2], QUI_COLORS.bg[3], QUI_COLORS.bg[4])
@@ -342,10 +345,11 @@ local function CreateChatCopyFrame()
     chatCopyFrame:SetSize(500, 400)
     chatCopyFrame:SetPoint("CENTER")
     chatCopyFrame:SetFrameStrata("DIALOG")
+    local px = QUICore and QUICore:GetPixelSize(chatCopyFrame) or 1
     chatCopyFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = 2 * px,
     })
     chatCopyFrame:SetBackdropColor(QUI_COLORS.bg[1], QUI_COLORS.bg[2], QUI_COLORS.bg[3], QUI_COLORS.bg[4])
     chatCopyFrame:SetBackdropBorderColor(QUI_COLORS.accent[1], QUI_COLORS.accent[2], QUI_COLORS.accent[3], QUI_COLORS.accent[4])
@@ -746,10 +750,11 @@ local function StyleEditBox(chatFrame)
     -- Parent to chatFrame (not editBox) so we can control visibility independently
     if not chatFrame.__quiEditBoxBackdrop then
         local backdrop = CreateFrame("Frame", nil, chatFrame, "BackdropTemplate")
+        local ebPx = QUICore and QUICore:GetPixelSize(backdrop) or 1
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = ebPx,
         })
         chatFrame.__quiEditBoxBackdrop = backdrop
     end
@@ -892,10 +897,11 @@ local function StyleChatTab(tab)
         backdrop:SetFrameLevel(math.max(1, tab:GetFrameLevel() - 1))
         backdrop:SetPoint("TOPLEFT", 2, -4)
         backdrop:SetPoint("BOTTOMRIGHT", -2, 2)
+        local tabPx = QUICore and QUICore:GetPixelSize(backdrop) or 1
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = tabPx,
         })
         tab.__quiBackdrop = backdrop
     end

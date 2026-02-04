@@ -6,6 +6,10 @@
 local ADDON_NAME, ns = ...
 local LSM = LibStub("LibSharedMedia-3.0")
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- MIDNIGHT (12.0+) DETECTION
 ---------------------------------------------------------------------------
@@ -134,6 +138,20 @@ end
 local function GetFadeSettings()
     local db = GetDB()
     return db and db.fade
+end
+
+local function GetFontSettings()
+    local fontPath = "Fonts\\FRIZQT__.TTF"
+    local outline = "OUTLINE"
+    local core = GetCore()
+    if core and core.db and core.db.profile and core.db.profile.general then
+        local general = core.db.profile.general
+        if general.font and LSM then
+            fontPath = LSM:Fetch("font", general.font) or fontPath
+        end
+        outline = general.fontOutline or outline
+    end
+    return fontPath, outline
 end
 
 -- Determine bar key from button name
@@ -334,10 +352,10 @@ local extraButtonMoversVisible = false
 
 -- Get settings for a specific extra button type
 local function GetExtraButtonDB(buttonType)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.profile then return nil end
-    return QUICore.db.profile.actionBars and QUICore.db.profile.actionBars.bars
-        and QUICore.db.profile.actionBars.bars[buttonType]
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return nil end
+    return core.db.profile.actionBars and core.db.profile.actionBars.bars
+        and core.db.profile.actionBars.bars[buttonType]
 end
 
 -- Create holder frame and mover overlay for an extra button type
@@ -367,10 +385,13 @@ local function CreateExtraButtonHolder(buttonType, displayName)
     -- Create mover overlay (visible only when toggled)
     local mover = CreateFrame("Frame", "QUI_" .. buttonType .. "Mover", holder, "BackdropTemplate")
     mover:SetAllPoints(holder)
+    local core = GetCore()
+    local px = (core and core.GetPixelSize and core:GetPixelSize(mover)) or 1
+    local edge2 = 2 * px
     mover:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = edge2,
     })
     mover:SetBackdropColor(0.2, 0.8, 0.6, 0.5)  -- QUI mint color
     mover:SetBackdropBorderColor(0.2, 1.0, 0.6, 1)
@@ -393,9 +414,11 @@ local function CreateExtraButtonHolder(buttonType, displayName)
 
     mover:SetScript("OnDragStop", function(self)
         holder:StopMovingOrSizing()
-        local point, _, relPoint, x, y = holder:GetPoint()
+        local core = GetCore()
+        if not core or not core.SnapFramePosition then return end
+        local point, _, relPoint, x, y = core:SnapFramePosition(holder)
         local db = GetExtraButtonDB(buttonType)
-        if db then
+        if db and point then
             db.position = { point = point, relPoint = relPoint, x = x, y = y }
         end
     end)
@@ -821,16 +844,7 @@ local function UpdateKeybindText(button, settings)
     hotkey:SetAlpha(1)
 
     -- Apply styling
-    local fontPath = "Fonts\\FRIZQT__.TTF"
-    local outline = "OUTLINE"
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-        local general = QUICore.db.profile.general
-        if general.font and LSM then
-            fontPath = LSM:Fetch("font", general.font) or fontPath
-        end
-        outline = general.fontOutline or outline
-    end
+    local fontPath, outline = GetFontSettings()
 
     hotkey:SetFont(fontPath, settings.keybindFontSize or 11, outline)
 
@@ -860,16 +874,7 @@ local function UpdateMacroText(button, settings)
     name:SetAlpha(1)
 
     -- Apply styling
-    local fontPath = "Fonts\\FRIZQT__.TTF"
-    local outline = "OUTLINE"
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-        local general = QUICore.db.profile.general
-        if general.font and LSM then
-            fontPath = LSM:Fetch("font", general.font) or fontPath
-        end
-        outline = general.fontOutline or outline
-    end
+    local fontPath, outline = GetFontSettings()
 
     name:SetFont(fontPath, settings.macroNameFontSize or 10, outline)
 
@@ -899,16 +904,7 @@ local function UpdateCountText(button, settings)
     count:SetAlpha(1)
 
     -- Apply styling
-    local fontPath = "Fonts\\FRIZQT__.TTF"
-    local outline = "OUTLINE"
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-        local general = QUICore.db.profile.general
-        if general.font and LSM then
-            fontPath = LSM:Fetch("font", general.font) or fontPath
-        end
-        outline = general.fontOutline or outline
-    end
+    local fontPath, outline = GetFontSettings()
 
     count:SetFont(fontPath, settings.countFontSize or 14, outline)
 
@@ -1983,7 +1979,7 @@ C_Timer.After(1, SetupEditModeHooks)
 -- EXPOSE MODULE
 ---------------------------------------------------------------------------
 
-local QUICore = _G.QUI and _G.QUI.QUICore
-if QUICore then
-    QUICore.ActionBars = ActionBars
+local core = GetCore()
+if core then
+    core.ActionBars = ActionBars
 end

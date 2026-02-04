@@ -2,6 +2,10 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- QUI Buff Bar Manager
 -- Handles dynamic centering of BuffIconCooldownViewer and BuffBarCooldownViewer
@@ -23,11 +27,6 @@ local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 ---------------------------------------------------------------------------
 
 local floor = math.floor
-
-local function roundPixel(value)
-    if not value then return 0 end
-    return floor(value + 0.5)
-end
 
 -- Tolerance-based position check: skip repositioning if within tolerance
 -- Prevents jitter from floating-point drift
@@ -433,9 +432,9 @@ local function ApplyIconStyle(icon, settings)
         cooldown:SetSwipeColor(0, 0, 0, 0.8)
 
         -- Show cooldown swipe based on showBuffIconSwipe setting (opt-in, default OFF)
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        local showBuffIconSwipe = QUICore and QUICore.db and QUICore.db.profile.cooldownSwipe
-            and QUICore.db.profile.cooldownSwipe.showBuffIconSwipe or false
+        local core = GetCore()
+        local showBuffIconSwipe = core and core.db and core.db.profile.cooldownSwipe
+            and core.db.profile.cooldownSwipe.showBuffIconSwipe or false
         if cooldown.SetDrawSwipe then
             cooldown:SetDrawSwipe(showBuffIconSwipe)
         end
@@ -942,11 +941,11 @@ LayoutBuffIcons = function()
     end
 
     -- Apply HUD layer priority
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
+    local core = GetCore()
+    local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
     local layerPriority = hudLayering and hudLayering.buffIcon or 5
-    if QUICore and QUICore.GetHUDFrameLevel then
-        local frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
+    if core and core.GetHUDFrameLevel then
+        local frameLevel = core:GetHUDFrameLevel(layerPriority)
         BuffIconCooldownViewer:SetFrameLevel(frameLevel)
     end
 
@@ -989,10 +988,10 @@ LayoutBuffIcons = function()
     if isVertical then
         totalWidth = iconWidth
         totalHeight = (targetCount * iconHeight) + ((targetCount - 1) * padding)
-        totalHeight = roundPixel(totalHeight)
+        totalHeight = QUICore:PixelRound(totalHeight)
     else
         totalWidth = (targetCount * iconWidth) + ((targetCount - 1) * padding)
-        totalWidth = roundPixel(totalWidth)
+        totalWidth = QUICore:PixelRound(totalWidth)
         totalHeight = iconHeight
     end
 
@@ -1007,11 +1006,11 @@ LayoutBuffIcons = function()
             -- Grow down: icon 1 at top, icons stack downward
             startY = totalHeight / 2 - iconHeight / 2
         end
-        startY = roundPixel(startY)
+        startY = QUICore:PixelRound(startY)
     else
         -- Horizontal (centered)
         startX = -totalWidth / 2 + iconWidth / 2
-        startX = roundPixel(startX)
+        startX = QUICore:PixelRound(startX)
         startY = 0
     end
 
@@ -1023,9 +1022,9 @@ LayoutBuffIcons = function()
         if isVertical then
             expectedX = 0
             if growthDirection == "UP" then
-                expectedY = roundPixel(startY + (i - 1) * (iconHeight + padding))
+                expectedY = QUICore:PixelRound(startY + (i - 1) * (iconHeight + padding))
             else -- DOWN
-                expectedY = roundPixel(startY - (i - 1) * (iconHeight + padding))
+                expectedY = QUICore:PixelRound(startY - (i - 1) * (iconHeight + padding))
             end
             -- Check Y position for vertical layout
             local point, _, _, xOfs, yOfs = icon:GetPoint(1)
@@ -1034,7 +1033,7 @@ LayoutBuffIcons = function()
                 break
             end
         else
-            expectedX = roundPixel(startX + (i - 1) * (iconWidth + padding))
+            expectedX = QUICore:PixelRound(startX + (i - 1) * (iconWidth + padding))
             if not PositionMatchesTolerance(icon, expectedX, 2) then
                 needsReposition = true
                 break
@@ -1059,10 +1058,10 @@ LayoutBuffIcons = function()
                 else -- DOWN
                     y = startY - (i - 1) * (iconHeight + padding)
                 end
-                icon:SetPoint("CENTER", BuffIconCooldownViewer, "CENTER", 0, roundPixel(y))
+                icon:SetPoint("CENTER", BuffIconCooldownViewer, "CENTER", 0, QUICore:PixelRound(y))
             else
                 local x = startX + (i - 1) * (iconWidth + padding)
-                icon:SetPoint("CENTER", BuffIconCooldownViewer, "CENTER", roundPixel(x), 0)
+                icon:SetPoint("CENTER", BuffIconCooldownViewer, "CENTER", QUICore:PixelRound(x), 0)
             end
         end
     else
@@ -1076,7 +1075,7 @@ LayoutBuffIcons = function()
     -- Wrap with suppression to prevent OnSizeChanged from triggering recursive layouts
     if not InCombatLockdown() then
         SuppressLayout()
-        BuffIconCooldownViewer:SetSize(roundPixel(totalWidth), roundPixel(totalHeight))
+        BuffIconCooldownViewer:SetSize(QUICore:PixelRound(totalWidth), QUICore:PixelRound(totalHeight))
         UnsuppressLayout()
 
         -- Also resize Selection child if it exists
@@ -1110,12 +1109,12 @@ LayoutBuffBars = function()
     isBarLayoutRunning = true
 
     -- Apply HUD layer priority (strata + level)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
+    local core = GetCore()
+    local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
     local layerPriority = hudLayering and hudLayering.buffBar or 5
     local frameLevel = 200  -- Default fallback
-    if QUICore and QUICore.GetHUDFrameLevel then
-        frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
+    if core and core.GetHUDFrameLevel then
+        frameLevel = core:GetHUDFrameLevel(layerPriority)
     end
     -- Set strata to MEDIUM to match power bars, then apply frame level
     BuffBarCooldownViewer:SetFrameStrata("MEDIUM")
@@ -1191,7 +1190,7 @@ LayoutBuffBars = function()
     else
         totalSize = (count * effectiveBarHeight) + ((count - 1) * spacing)
     end
-    totalSize = roundPixel(totalSize)
+    totalSize = QUICore:PixelRound(totalSize)
 
     -- POSITION VERIFICATION: Check if bars are already in correct positions (within 2px tolerance)
     -- This mirrors the icon layout's self-correcting behavior - if Blizzard moves a bar,
@@ -1204,9 +1203,9 @@ LayoutBuffBars = function()
             -- Check X position for vertical layout
             local expectedX
             if growFromBottom then
-                expectedX = roundPixel(offsetIndex * (effectiveBarWidth + spacing))
+                expectedX = QUICore:PixelRound(offsetIndex * (effectiveBarWidth + spacing))
             else
-                expectedX = roundPixel(-offsetIndex * (effectiveBarWidth + spacing))
+                expectedX = QUICore:PixelRound(-offsetIndex * (effectiveBarWidth + spacing))
             end
             local point, _, _, xOfs = bar:GetPoint(1)
             if not point or abs((xOfs or 0) - expectedX) > 2 then
@@ -1217,9 +1216,9 @@ LayoutBuffBars = function()
             -- Check Y position for horizontal layout
             local expectedY
             if growFromBottom then
-                expectedY = roundPixel(offsetIndex * (effectiveBarHeight + spacing))
+                expectedY = QUICore:PixelRound(offsetIndex * (effectiveBarHeight + spacing))
             else
-                expectedY = roundPixel(-offsetIndex * (effectiveBarHeight + spacing))
+                expectedY = QUICore:PixelRound(-offsetIndex * (effectiveBarHeight + spacing))
             end
             local point, _, _, _, yOfs = bar:GetPoint(1)
             if not point or abs((yOfs or 0) - expectedY) > 2 then
@@ -1245,12 +1244,12 @@ LayoutBuffBars = function()
                 if growFromBottom then
                     -- Grow Right: bar 1 at LEFT edge, stacks rightward
                     x = offsetIndex * (effectiveBarWidth + spacing)
-                    x = roundPixel(x)
+                    x = QUICore:PixelRound(x)
                     bar:SetPoint("LEFT", BuffBarCooldownViewer, "LEFT", x, 0)
                 else
                     -- Grow Left: bar 1 at RIGHT edge, stacks leftward
                     x = -offsetIndex * (effectiveBarWidth + spacing)
-                    x = roundPixel(x)
+                    x = QUICore:PixelRound(x)
                     bar:SetPoint("RIGHT", BuffBarCooldownViewer, "RIGHT", x, 0)
                 end
             else
@@ -1258,11 +1257,11 @@ LayoutBuffBars = function()
                 local y
                 if growFromBottom then
                     y = offsetIndex * (effectiveBarHeight + spacing)
-                    y = roundPixel(y)
+                    y = QUICore:PixelRound(y)
                     bar:SetPoint("BOTTOM", BuffBarCooldownViewer, "BOTTOM", 0, y)
                 else
                     y = -offsetIndex * (effectiveBarHeight + spacing)
-                    y = roundPixel(y)
+                    y = QUICore:PixelRound(y)
                     bar:SetPoint("TOP", BuffBarCooldownViewer, "TOP", 0, y)
                 end
             end
@@ -1295,7 +1294,7 @@ LayoutBuffBars = function()
 
         -- Only set HEIGHT, leave width alone so bars overflow horizontally
         local currentWidth = BuffBarCooldownViewer:GetWidth()
-        BuffBarCooldownViewer:SetSize(currentWidth, roundPixel(effectiveBarHeight))
+        BuffBarCooldownViewer:SetSize(currentWidth, QUICore:PixelRound(effectiveBarHeight))
 
         -- Ensure isHorizontal flag stays correct for subsequent Layout() calls
         BuffBarCooldownViewer.isHorizontal = false
@@ -1308,7 +1307,7 @@ LayoutBuffBars = function()
         SuppressLayout()
 
         -- Set both dimensions to single bar size - bars overflow, edges stay fixed
-        BuffBarCooldownViewer:SetSize(roundPixel(effectiveBarWidth), roundPixel(effectiveBarHeight))
+        BuffBarCooldownViewer:SetSize(QUICore:PixelRound(effectiveBarWidth), QUICore:PixelRound(effectiveBarHeight))
 
         -- Ensure Blizzard's Layout() uses correct flags
         BuffBarCooldownViewer.isHorizontal = true
@@ -1420,13 +1419,11 @@ local function ForcePopulateBuffIcons()
     end
 
     -- Method 3: Force a rescan via QUICore if available
-    if _G.QUI and _G.QUI.QUICore then
-        local QUICore = _G.QUI.QUICore
-        if QUICore.ForceRefreshBuffIcons then
+    local core = GetCore()
+    if core and core.ForceRefreshBuffIcons then
             C_Timer.After(0.2, function()
-                pcall(function() QUICore:ForceRefreshBuffIcons() end)
+                pcall(function() core:ForceRefreshBuffIcons() end)
             end)
-        end
     end
 end
 

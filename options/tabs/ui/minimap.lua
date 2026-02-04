@@ -10,6 +10,7 @@ local C = GUI.Colors
 
 -- Import shared utilities
 local Shared = ns.QUI_Options
+local QUICore = ns.Addon
 
 -- Refresh callbacks
 local function RefreshMinimap()
@@ -658,10 +659,11 @@ local function BuildDatatextTab(tabContent)
                 panelFrame:SetHeight(60)
                 panelFrame:SetPoint("TOPLEFT", PAD, y)
                 panelFrame:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+                local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(panelFrame)) or 1
                 panelFrame:SetBackdrop({
                     bgFile = "Interface\\Buttons\\WHITE8x8",
                     edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = 1,
+                    edgeSize = px,
                 })
                 panelFrame:SetBackdropColor(C.bgLight[1], C.bgLight[2], C.bgLight[3], 0.8)
                 panelFrame:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)

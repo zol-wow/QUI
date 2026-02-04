@@ -5,6 +5,14 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
+-- Safe pixel size helper (guards against QUICore being nil during early init)
+local function SafeGetPixelSize(frame)
+    if QUICore and QUICore.GetPixelSize then
+        return QUICore:GetPixelSize(frame)
+    end
+    return 1
+end
+
 -- Module reference
 local Alerts = {}
 QUICore.Alerts = Alerts
@@ -60,10 +68,11 @@ local function CreateAlertBackdrop(frame, xOffset1, yOffset1, xOffset2, yOffset2
     backdrop:SetFrameLevel(frame:GetFrameLevel())
     backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", xOffset1 or 0, yOffset1 or 0)
     backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", xOffset2 or 0, yOffset2 or 0)
+    local px = SafeGetPixelSize(backdrop)
     backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -102,10 +111,11 @@ local function CreateIconBorder(icon, parent, qualityColor)
     border:SetFrameLevel(parent:GetFrameLevel() + 1)
     border:SetPoint("TOPLEFT", icon, "TOPLEFT", -2, 2)
     border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 2, -2)
+    local px = SafeGetPixelSize(border)
     border:SetBackdrop({
         bgFile = nil,
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
 
     -- Use quality color if provided, otherwise use skin accent
@@ -256,10 +266,11 @@ local function SkinLootWonAlert(frame)
         backdrop:SetFrameLevel(frame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", lootItem.Icon.quiBorder, "TOPLEFT", -4, 4)
         backdrop:SetPoint("BOTTOMRIGHT", lootItem.Icon.quiBorder, "BOTTOMRIGHT", 180, -4)
+        local bdPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = bdPx,
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -308,10 +319,11 @@ local function SkinLootUpgradeAlert(frame)
         backdrop:SetFrameLevel(frame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", frame.Icon.quiBorder, "TOPLEFT", -8, 8)
         backdrop:SetPoint("BOTTOMRIGHT", frame.Icon.quiBorder, "BOTTOMRIGHT", 180, -8)
+        local luPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = luPx,
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -342,10 +354,11 @@ local function SkinMoneyWonAlert(frame)
         backdrop:SetFrameLevel(frame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, -5)
         backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -5, 5)
+        local achPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = achPx,
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -377,10 +390,11 @@ local function SkinHonorAwardedAlert(frame)
         backdrop:SetFrameLevel(frame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", frame.Icon.quiBorder, "TOPLEFT", -4, 4)
         backdrop:SetPoint("BOTTOMRIGHT", frame.Icon.quiBorder, "BOTTOMRIGHT", 180, -4)
+        local haPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = haPx,
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -623,10 +637,11 @@ local function SkinMiscAlert(frame)
             backdrop:SetFrameLevel(frame:GetFrameLevel())
             backdrop:SetPoint("TOPLEFT", border, "TOPLEFT", -8, 8)
             backdrop:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 180, -8)
+            local rcPx = SafeGetPixelSize(backdrop)
             backdrop:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = rcPx,
             })
             backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
             backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -783,10 +798,11 @@ local function SkinBonusRollFrames()
         backdrop:SetFrameLevel(moneyFrame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", moneyFrame.Icon.quiBorder, "TOPLEFT", -4, 4)
         backdrop:SetPoint("BOTTOMRIGHT", moneyFrame.Icon.quiBorder, "BOTTOMRIGHT", 180, -4)
+        local mfPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = mfPx,
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -816,10 +832,11 @@ local function SkinBonusRollFrames()
         backdrop:SetFrameLevel(lootFrame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", border, "TOPLEFT", -4, 4)
         backdrop:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 180, -4)
+        local lfPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = lfPx,
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -943,10 +960,11 @@ local function CreateAlertMover()
         -- Create mover overlay
         alertMover = CreateFrame("Frame", "QUI_AlertFrameMover", alertHolder, "BackdropTemplate")
         alertMover:SetAllPoints(alertHolder)
+        local amPx = SafeGetPixelSize(alertMover)
         alertMover:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = amPx,
         })
         alertMover:SetBackdropColor(0.2, 0.8, 0.8, 0.5)
         alertMover:SetBackdropBorderColor(0.2, 0.8, 0.8, 1)
@@ -969,10 +987,12 @@ local function CreateAlertMover()
 
         alertMover:SetScript("OnDragStop", function(self)
             alertHolder:StopMovingOrSizing()
-            -- Save position to database
-            local point, _, relPoint, x, y = alertHolder:GetPoint()
-            local alertDB = GetAlertSettings()
-            alertDB.alertPosition = { point = point, relPoint = relPoint, x = x, y = y }
+            -- Save position to database (snapped to pixel grid)
+            local point, _, relPoint, x, y = QUICore:SnapFramePosition(alertHolder)
+            if point then
+                local alertDB = GetAlertSettings()
+                alertDB.alertPosition = { point = point, relPoint = relPoint, x = x, y = y }
+            end
         end)
     end
 
@@ -1032,10 +1052,11 @@ local function CreateEventToastMover()
         -- Create mover overlay
         toastMover = CreateFrame("Frame", "QUI_EventToastMover", toastHolder, "BackdropTemplate")
         toastMover:SetAllPoints(toastHolder)
+        local tmPx = SafeGetPixelSize(toastMover)
         toastMover:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = tmPx,
         })
         toastMover:SetBackdropColor(0.8, 0.6, 0.2, 0.5)
         toastMover:SetBackdropBorderColor(0.8, 0.6, 0.2, 1)
@@ -1058,10 +1079,12 @@ local function CreateEventToastMover()
 
         toastMover:SetScript("OnDragStop", function(self)
             toastHolder:StopMovingOrSizing()
-            -- Save position to database
-            local point, _, relPoint, x, y = toastHolder:GetPoint()
-            local alertDB = GetAlertSettings()
-            alertDB.toastPosition = { point = point, relPoint = relPoint, x = x, y = y }
+            -- Save position to database (snapped to pixel grid)
+            local point, _, relPoint, x, y = QUICore:SnapFramePosition(toastHolder)
+            if point then
+                local alertDB = GetAlertSettings()
+                alertDB.toastPosition = { point = point, relPoint = relPoint, x = x, y = y }
+            end
             -- Reposition toast frame
             EventToastManagerFrame:ClearAllPoints()
             EventToastManagerFrame:SetPoint("TOP", toastHolder, "TOP")

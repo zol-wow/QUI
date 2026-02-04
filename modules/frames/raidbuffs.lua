@@ -485,18 +485,19 @@ local function CreateBuffIcon(parent, index)
     button:SetSize(ICON_SIZE, ICON_SIZE)
 
     -- Background/border using backdrop (border settings applied in ApplyIconBorderSettings)
+    local px = QUICore:GetPixelSize(button)
     button:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
     button:SetBackdropColor(0, 0, 0, 0.8)
 
     -- Icon texture (inset dynamically based on border width)
     button.icon = button:CreateTexture(nil, "ARTWORK")
-    button.icon:SetPoint("TOPLEFT", 1, -1)
-    button.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+    button.icon:SetPoint("TOPLEFT", px, -px)
+    button.icon:SetPoint("BOTTOMRIGHT", -px, px)
     button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     -- Buff count text (e.g., "11/18")
@@ -561,12 +562,13 @@ local function ApplyIconBorderSettings()
     end
 
     for _, icon in ipairs(buffIcons) do
-        -- Update backdrop with new border width
+        -- Update backdrop with new border width (pixel-perfect)
+        local bpx = QUICore:Pixels(borderWidth, icon)
         icon:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = borderSettings.show and "Interface\\Buttons\\WHITE8x8" or nil,
-            edgeSize = borderWidth,
-            insets = { left = borderWidth, right = borderWidth, top = borderWidth, bottom = borderWidth }
+            edgeSize = bpx,
+            insets = { left = bpx, right = bpx, top = bpx, bottom = bpx }
         })
         icon:SetBackdropColor(0, 0, 0, 0.8)
 
@@ -576,8 +578,8 @@ local function ApplyIconBorderSettings()
 
         -- Update icon inset based on border width
         icon.icon:ClearAllPoints()
-        icon.icon:SetPoint("TOPLEFT", borderWidth, -borderWidth)
-        icon.icon:SetPoint("BOTTOMRIGHT", -borderWidth, borderWidth)
+        icon.icon:SetPoint("TOPLEFT", bpx, -bpx)
+        icon.icon:SetPoint("BOTTOMRIGHT", -bpx, bpx)
     end
 end
 
@@ -664,7 +666,9 @@ local function CreateMainFrame()
                 end
             end
 
-            -- Re-anchor with desired point and save
+            -- Snap to pixel grid and save
+            newX = QUICore:PixelRound(newX)
+            newY = QUICore:PixelRound(newY)
             self:ClearAllPoints()
             self:SetPoint(desiredAnchor, UIParent, relPoint, newX, newY)
             settings.position = { point = desiredAnchor, relPoint = relPoint, x = newX, y = newY }
@@ -680,11 +684,12 @@ local function CreateMainFrame()
     mainFrame.labelBar = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
     mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -2)
     mainFrame.labelBar:SetSize(100, 18)
+    local labelPx = QUICore:GetPixelSize(mainFrame.labelBar)
     mainFrame.labelBar:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = labelPx,
+        insets = { left = labelPx, right = labelPx, top = labelPx, bottom = labelPx }
     })
     mainFrame.labelBar:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
 

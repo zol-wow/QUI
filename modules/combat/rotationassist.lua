@@ -5,6 +5,10 @@
 local ADDON_NAME, QUI = ...
 local LSM = LibStub("LibSharedMedia-3.0")
 
+local function GetCore()
+    return (QUI and QUI.QUICore) or (_G.QUI and _G.QUI.QUICore)
+end
+
 -- Locals for performance
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
@@ -151,9 +155,9 @@ end
 --------------------------------------------------------------------------------
 
 local function GetDB()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile then
-        return QUICore.db.profile.rotationAssistIcon
+    local core = GetCore()
+    if core and core.db and core.db.profile then
+        return core.db.profile.rotationAssistIcon
     end
     return nil
 end
@@ -215,8 +219,14 @@ CreateIconFrame = function()
             local selfX, selfY = self:GetCenter()
             local parentX, parentY = UIParent:GetCenter()
             if selfX and selfY and parentX and parentY then
-                db.positionX = selfX - parentX
-                db.positionY = selfY - parentY
+                local core = GetCore()
+                if core and core.PixelRound then
+                    db.positionX = core:PixelRound(selfX - parentX)
+                    db.positionY = core:PixelRound(selfY - parentY)
+                else
+                    db.positionX = math.floor(selfX - parentX + 0.5)
+                    db.positionY = math.floor(selfY - parentY + 0.5)
+                end
             end
         end
     end)
@@ -440,8 +450,8 @@ RefreshIconFrame = function()
 
     -- Border (uses SafeSetBackdrop to avoid secret value errors during combat)
     local inset = 0
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local SafeSetBackdrop = QUICore and QUICore.SafeSetBackdrop
+    local core = GetCore()
+    local SafeSetBackdrop = core and core.SafeSetBackdrop
 
     if db.showBorder then
         local borderColor = db.borderColor or { 0, 0, 0, 1 }
@@ -499,9 +509,8 @@ RefreshIconFrame = function()
         -- Get font: use keybindFont if set, otherwise fall back to general.font
         local fontName = db.keybindFont
         if not fontName then
-            local QUICore = _G.QUI and _G.QUI.QUICore
-            if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-                fontName = QUICore.db.profile.general.font
+            if core and core.db and core.db.profile and core.db.profile.general then
+                fontName = core.db.profile.general.font
             end
         end
         local fontPath = LSM:Fetch("font", fontName) or STANDARD_TEXT_FONT

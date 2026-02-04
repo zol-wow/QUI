@@ -6,6 +6,7 @@
 
 local ADDON_NAME, ns = ...
 local QUI = QUI
+local QUICore = ns.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Create GUI namespace
@@ -235,10 +236,11 @@ end
 -- UTILITY FUNCTIONS
 ---------------------------------------------------------------------------
 local function CreateBackdrop(frame, bgColor, borderColor)
+    local px = QUICore:GetPixelSize(frame)
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     frame:SetBackdropColor(unpack(bgColor or C.bg))
     frame:SetBackdropBorderColor(unpack(borderColor or C.border))
@@ -276,10 +278,11 @@ function GUI:CreateButton(parent, text, width, height, onClick)
     btn:SetSize(width or 120, height or 26)
 
     -- Normal state: dark background with grey border (neutral)
+    local px = QUICore:GetPixelSize(btn)
     btn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
     btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -348,10 +351,11 @@ function GUI:ShowConfirmation(options)
         confirmDialog:Hide()
 
         -- Backdrop
+        local px = QUICore:GetPixelSize(confirmDialog)
         confirmDialog:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = px,
         })
         confirmDialog:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.98)
         confirmDialog:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -380,7 +384,7 @@ function GUI:ShowConfirmation(options)
         confirmDialog.acceptBtn:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = px,
         })
         confirmDialog.acceptBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
         confirmDialog.acceptBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -403,7 +407,7 @@ function GUI:ShowConfirmation(options)
         confirmDialog.cancelBtn:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = px,
         })
         confirmDialog.cancelBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
         confirmDialog.cancelBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -564,10 +568,11 @@ end
 ---------------------------------------------------------------------------
 function GUI:CreateSectionBox(parent, title)
     local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    local px = QUICore:GetPixelSize(box)
     box:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     box:SetBackdropColor(0.05, 0.05, 0.08, 0.8)
     box:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
@@ -621,10 +626,11 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     header:SetHeight(28)
     header:SetPoint("TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", 0, 0)
+    local px = QUICore:GetPixelSize(header)
     header:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     header:SetBackdropColor(C.bgLight[1], C.bgLight[2], C.bgLight[3], 0.6)
     header:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
@@ -649,7 +655,7 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
         badge:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = px,
         })
         badge:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.2)
         badge:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
@@ -751,13 +757,14 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange)
     local swatch = CreateFrame("Button", nil, container, "BackdropTemplate")
     swatch:SetSize(16, 16)
     swatch:SetPoint("LEFT", 0, 0)
+    local px = QUICore:GetPixelSize(swatch)
     swatch:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    
+
     -- Label (same font size as checkbox: 12)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)
@@ -855,10 +862,11 @@ function GUI:CreateSubTabs(parent, tabs)
         local btn = CreateFrame("Button", nil, buttonGroup, "BackdropTemplate")
         btn:SetSize(90, 24)
         btn:SetPoint("TOPLEFT", 10 + (i-1) * (90 + spacing), -3)
+        local px = QUICore:GetPixelSize(btn)
         btn:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = px,
         })
         btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
         btn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
@@ -994,14 +1002,15 @@ end
 function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(300, 20)
-    
+
     local box = CreateFrame("Button", nil, container, "BackdropTemplate")
     box:SetSize(16, 16)
     box:SetPoint("LEFT", 0, 0)
+    local px = QUICore:GetPixelSize(box)
     box:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     box:SetBackdropColor(0.1, 0.1, 0.1, 1)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
@@ -1077,10 +1086,11 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange)
     local box = CreateFrame("Button", nil, container, "BackdropTemplate")
     box:SetSize(16, 16)
     box:SetPoint("TOP", text, "BOTTOM", 0, -4)
+    local px = QUICore:GetPixelSize(box)
     box:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     box:SetBackdropColor(0.1, 0.1, 0.1, 1)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
@@ -1151,10 +1161,11 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange)
     local swatch = CreateFrame("Button", nil, container, "BackdropTemplate")
     swatch:SetSize(16, 16)
     swatch:SetPoint("TOP", text, "BOTTOM", 0, -4)
+    local px = QUICore:GetPixelSize(swatch)
     swatch:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     
@@ -1226,14 +1237,15 @@ end
 function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(300, 20)
-    
+
     local box = CreateFrame("Button", nil, container, "BackdropTemplate")
     box:SetSize(16, 16)
     box:SetPoint("LEFT", 0, 0)
+    local px = QUICore:GetPixelSize(box)
     box:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     box:SetBackdropColor(0.1, 0.1, 0.1, 1)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
@@ -1327,18 +1339,19 @@ function GUI:CreateSlider(parent, label, min, max, step, dbKey, dbTable, onChang
     -- Unfilled track (background)
     local trackBg = CreateFrame("Frame", nil, trackContainer, "BackdropTemplate")
     trackBg:SetAllPoints()
+    local px = QUICore:GetPixelSize(trackBg)
     trackBg:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     trackBg:SetBackdropColor(C.sliderTrack[1], C.sliderTrack[2], C.sliderTrack[3], 1)
     trackBg:SetBackdropBorderColor(0.1, 0.12, 0.15, 1)
 
     -- Filled track (mint portion from left to thumb)
     local trackFill = CreateFrame("Frame", nil, trackContainer, "BackdropTemplate")
-    trackFill:SetPoint("TOPLEFT", 1, -1)
-    trackFill:SetPoint("BOTTOMLEFT", 1, 1)
+    trackFill:SetPoint("TOPLEFT", px, -px)
+    trackFill:SetPoint("BOTTOMLEFT", px, px)
     trackFill:SetWidth(1)
     trackFill:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1358,7 +1371,7 @@ function GUI:CreateSlider(parent, label, min, max, step, dbKey, dbTable, onChang
     thumbFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     thumbFrame:SetBackdropColor(C.sliderThumb[1], C.sliderThumb[2], C.sliderThumb[3], 1)
     thumbFrame:SetBackdropBorderColor(C.sliderThumbBorder[1], C.sliderThumbBorder[2], C.sliderThumbBorder[3], 1)
@@ -1390,7 +1403,7 @@ function GUI:CreateSlider(parent, label, min, max, step, dbKey, dbTable, onChang
     editBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     editBox:SetBackdropColor(0.08, 0.08, 0.08, 1)
     editBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
@@ -1580,10 +1593,11 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
     dropdown:SetHeight(24)  -- Increased from 20 for better tap target
     dropdown:SetPoint("TOPLEFT", container, "TOPLEFT", 35, -16)
     dropdown:SetPoint("RIGHT", container, "RIGHT", -35, 0)
+    local px = QUICore:GetPixelSize(dropdown)
     dropdown:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     dropdown:SetBackdropColor(0.08, 0.08, 0.08, 1)
     dropdown:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)  -- Increased from 0.25 for better visibility
@@ -1698,7 +1712,7 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
     menuFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     menuFrame:SetBackdropColor(0.08, 0.08, 0.08, 0.98)
     menuFrame:SetBackdropBorderColor(unpack(C.accent))
@@ -1833,10 +1847,11 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
     dropdown:SetHeight(24)
     dropdown:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -18)
     dropdown:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+    local px = QUICore:GetPixelSize(dropdown)
     dropdown:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     dropdown:SetBackdropColor(0.08, 0.08, 0.08, 1)
     dropdown:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)  -- Increased from 0.25
@@ -1947,7 +1962,7 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
     menuFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     menuFrame:SetBackdropColor(0.08, 0.08, 0.08, 0.98)
     menuFrame:SetBackdropBorderColor(unpack(C.accent))
@@ -2052,10 +2067,11 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     local track = CreateFrame("Button", nil, container, "BackdropTemplate")
     track:SetSize(40, 20)
     track:SetPoint("LEFT", container, "LEFT", 180, 0)
+    local px = QUICore:GetPixelSize(track)
     track:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
 
     -- Thumb (the sliding circle)
@@ -2064,7 +2080,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     thumb:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     thumb:SetBackdropColor(C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], 1)
     thumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
@@ -2182,10 +2198,11 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
     local track = CreateFrame("Button", nil, container, "BackdropTemplate")
     track:SetSize(40, 20)
     track:SetPoint("LEFT", container, "LEFT", 180, 0)
+    local px = QUICore:GetPixelSize(track)
     track:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
 
     -- Thumb
@@ -2194,7 +2211,7 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
     thumb:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     thumb:SetBackdropColor(C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], 1)
     thumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
@@ -2297,10 +2314,11 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
     local box = CreateFrame("Button", nil, container, "BackdropTemplate")
     box:SetSize(18, 18)
     box:SetPoint("LEFT", container, "LEFT", 180, 0)
+    local px = QUICore:GetPixelSize(box)
     box:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     box:SetBackdropColor(0.1, 0.1, 0.1, 1)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
@@ -2397,10 +2415,11 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Unfilled track (background) - rounded appearance via backdrop
     local trackBg = CreateFrame("Frame", nil, trackContainer, "BackdropTemplate")
     trackBg:SetAllPoints()
+    local px = QUICore:GetPixelSize(trackBg)
     trackBg:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
         insets = {left = 0, right = 0, top = 0, bottom = 0},
     })
     trackBg:SetBackdropColor(C.sliderTrack[1], C.sliderTrack[2], C.sliderTrack[3], 1)
@@ -2408,8 +2427,8 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
 
     -- Filled track (mint portion from left to thumb)
     local trackFill = CreateFrame("Frame", nil, trackContainer, "BackdropTemplate")
-    trackFill:SetPoint("TOPLEFT", 1, -1)
-    trackFill:SetPoint("BOTTOMLEFT", 1, 1)
+    trackFill:SetPoint("TOPLEFT", px, -px)
+    trackFill:SetPoint("BOTTOMLEFT", px, px)
     trackFill:SetWidth(1)  -- Will be updated dynamically
     trackFill:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -2428,7 +2447,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     thumbFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     thumbFrame:SetBackdropColor(C.sliderThumb[1], C.sliderThumb[2], C.sliderThumb[3], 1)
     thumbFrame:SetBackdropBorderColor(C.sliderThumbBorder[1], C.sliderThumbBorder[2], C.sliderThumbBorder[3], 1)
@@ -2456,7 +2475,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     editBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     editBox:SetBackdropColor(0.08, 0.08, 0.08, 1)
     editBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
@@ -2658,10 +2677,11 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     dropdown:SetHeight(24)  -- Increased from 22
     dropdown:SetPoint("LEFT", container, "LEFT", 180, 0)
     dropdown:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+    local px = QUICore:GetPixelSize(dropdown)
     dropdown:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     dropdown:SetBackdropColor(0.08, 0.08, 0.08, 1)
     dropdown:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)  -- Increased from 0.25
@@ -2731,7 +2751,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     menuFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     menuFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.98)
     menuFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
@@ -2920,10 +2940,11 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     local swatch = CreateFrame("Button", nil, container, "BackdropTemplate")
     swatch:SetSize(50, 18)
     swatch:SetPoint("LEFT", container, "LEFT", 180, 0)
+    local px = QUICore:GetPixelSize(swatch)
     swatch:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 
@@ -3016,10 +3037,11 @@ GUI._searchTimer = nil
 function GUI:CreateSearchBox(parent)
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     container:SetSize(160, 20)
+    local px = QUICore:GetPixelSize(container)
     container:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     container:SetBackdropColor(0.08, 0.10, 0.14, 1)
     container:SetBackdropBorderColor(0.25, 0.28, 0.32, 1)
@@ -3299,10 +3321,11 @@ function GUI:RenderSearchResults(content, results, searchTerm)
             local goBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
             goBtn:SetSize(36, 16)
             goBtn:SetPoint("LEFT", header, "RIGHT", 8, 0)
+            local goPx = QUICore:GetPixelSize(goBtn)
             goBtn:SetBackdrop({
                 bgFile = "Interface\\BUTTONS\\WHITE8X8",
                 edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-                edgeSize = 1,
+                edgeSize = goPx,
             })
             goBtn:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
             goBtn:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
@@ -3484,9 +3507,9 @@ function GUI:CreateMainFrame()
     -- Version text (accent colored, to the left of close button)
     local version = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(version, 11, "", C.accentLight)
-    local versionText = (QUI and QUI.versionString) or C_AddOns.GetAddOnMetadata("QUI", "Version") or "2.00"
+    local versionText = (QUI and QUI.versionString) or C_AddOns.GetAddOnMetadata("QUI", "Version") or "2.xx"
     version:SetText("v" .. versionText)
-    version:SetPoint("TOPRIGHT", -30, -10)
+    version:SetPoint("TOPRIGHT", -40, -10)
 
     -- Forward-declare thumb (created with scale slider below, but referenced in accent callbacks)
     local thumb
@@ -3674,10 +3697,11 @@ function GUI:CreateMainFrame()
     local scaleEditBox = CreateFrame("EditBox", nil, scaleContainer, "BackdropTemplate")
     scaleEditBox:SetSize(38, 16)
     scaleEditBox:SetPoint("LEFT", scaleLabel, "RIGHT", 5, 0)
+    local px = QUICore:GetPixelSize(scaleEditBox)
     scaleEditBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     scaleEditBox:SetBackdropColor(0.08, 0.08, 0.08, 1)
     scaleEditBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
@@ -3768,10 +3792,45 @@ function GUI:CreateMainFrame()
         end
     end)
 
-    -- Close button (X)
-    local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -3, -3)
+    -- Close button [x]
+    local close = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    close:SetSize(22, 22)
+    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -5)
+    close:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    close:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+    close:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+
+    -- X drawn with two rotated lines
+    local LINE_LEN, LINE_W = 10, 1.5
+    local xLine1 = close:CreateTexture(nil, "OVERLAY")
+    xLine1:SetSize(LINE_LEN, LINE_W)
+    xLine1:SetPoint("CENTER")
+    xLine1:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
+    xLine1:SetRotation(math.rad(45))
+
+    local xLine2 = close:CreateTexture(nil, "OVERLAY")
+    xLine2:SetSize(LINE_LEN, LINE_W)
+    xLine2:SetPoint("CENTER")
+    xLine2:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
+    xLine2:SetRotation(math.rad(-45))
+
     close:SetScript("OnClick", function() frame:Hide() end)
+    close:SetScript("OnEnter", function(self)
+        pcall(self.SetBackdropBorderColor, self, C.accent[1], C.accent[2], C.accent[3], 1)
+        self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
+        xLine1:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+        xLine2:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+    end)
+    close:SetScript("OnLeave", function(self)
+        pcall(self.SetBackdropBorderColor, self, C.border[1], C.border[2], C.border[3], 1)
+        self:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+        xLine1:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
+        xLine2:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
+    end)
 
     -- Separator line below title
     local titleSep = frame:CreateTexture(nil, "ARTWORK")

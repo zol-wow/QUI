@@ -13,15 +13,16 @@ local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local GetDB = Helpers.CreateDBGetter("customTrackers")
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- MODULE NAMESPACE
 ---------------------------------------------------------------------------
 local CustomTrackers = {}
 CustomTrackers.activeBars = {}   -- Runtime bar frames indexed by barID
 CustomTrackers.infoCache = {}    -- Cached spell/item info
-
--- Will be set during initialization when QUICore is available
-local QUICore
 
 ---------------------------------------------------------------------------
 -- CONSTANTS
@@ -65,7 +66,7 @@ end
 
 -- Helper: Get recharge edge setting from global cooldownSwipe settings
 local function GetRechargeEdgeSetting()
-    local core = _G.QUI and _G.QUI.QUICore
+    local core = GetCore()
     if core and core.db and core.db.profile and core.db.profile.cooldownSwipe then
         return core.db.profile.cooldownSwipe.showRechargeEdge
     end
@@ -181,8 +182,9 @@ end
 -- GetDB is imported from utils.lua via Helpers at the top of this file
 
 local function GetGlobalDB()
-    if QUICore and QUICore.db and QUICore.db.global then
-        return QUICore.db.global
+    local core = GetCore()
+    if core and core.db and core.db.global then
+        return core.db.global
     end
     return nil
 end
@@ -802,7 +804,8 @@ local function CreateTrackerIcon(parent)
         if iconFrame:GetAlpha() == 0 then return end  -- Don't show tooltip when visually hidden
         if iconFrame.entry then
             -- Respect tooltip anchor setting
-            local tooltipSettings = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.tooltip
+            local core = GetCore()
+            local tooltipSettings = core and core.db and core.db.profile and core.db.profile.tooltip
             if tooltipSettings and tooltipSettings.anchorToCursor then
                 GameTooltip:SetOwner(iconFrame, "ANCHOR_CURSOR")
             else
@@ -1081,7 +1084,8 @@ local function StyleTrackerIcon(icon, config)
 
     -- Keybind text style (uses global settings from customTrackers.keybinds)
     if icon.keybindText then
-        local db = QUICore and QUICore.db and QUICore.db.profile
+        local core = GetCore()
+        local db = core and core.db and core.db.profile
         local keybindSettings = db and db.customTrackers and db.customTrackers.keybinds
         if keybindSettings then
             icon.keybindText:SetFont(GetGeneralFont(), keybindSettings.keybindTextSize or 10, fontOutline)
@@ -1102,7 +1106,8 @@ end
 local function ApplyKeybindToTrackerIcon(icon)
     if not icon or not icon.entry then return end
 
-    local db = QUICore and QUICore.db and QUICore.db.profile
+    local core = GetCore()
+    local db = core and core.db and core.db.profile
     local keybindSettings = db and db.customTrackers and db.customTrackers.keybinds
 
     if not keybindSettings or not keybindSettings.showKeybinds then
@@ -1949,6 +1954,7 @@ function CustomTrackers:SetupDragging(bar)
 
         -- Save the ANCHOR EDGE position based on growth direction
         -- This ensures icons don't shift when new ones are added
+        local core = GetCore()
         local screenX, screenY = UIParent:GetCenter()
         local growDir = self.config.growDirection or "RIGHT"
 
@@ -1957,39 +1963,39 @@ function CustomTrackers:SetupDragging(bar)
             local left = self:GetLeft()
             local centerY = select(2, self:GetCenter())
             if left and screenX and centerY and screenY then
-                self.config.offsetX = math.floor(left - screenX + 0.5)
-                self.config.offsetY = math.floor(centerY - screenY + 0.5)
+                self.config.offsetX = core:PixelRound(left - screenX)
+                self.config.offsetY = core:PixelRound(centerY - screenY)
             end
         elseif growDir == "LEFT" then
             -- Anchor at RIGHT edge, Y stays center-based
             local right = self:GetRight()
             local centerY = select(2, self:GetCenter())
             if right and screenX and centerY and screenY then
-                self.config.offsetX = math.floor(right - screenX + 0.5)
-                self.config.offsetY = math.floor(centerY - screenY + 0.5)
+                self.config.offsetX = core:PixelRound(right - screenX)
+                self.config.offsetY = core:PixelRound(centerY - screenY)
             end
         elseif growDir == "DOWN" then
             -- Anchor at TOP edge, X stays center-based
             local centerX = self:GetCenter()
             local top = self:GetTop()
             if centerX and screenX and top and screenY then
-                self.config.offsetX = math.floor(centerX - screenX + 0.5)
-                self.config.offsetY = math.floor(top - screenY + 0.5)
+                self.config.offsetX = core:PixelRound(centerX - screenX)
+                self.config.offsetY = core:PixelRound(top - screenY)
             end
         elseif growDir == "UP" then
             -- Anchor at BOTTOM edge, X stays center-based
             local centerX = self:GetCenter()
             local bottom = self:GetBottom()
             if centerX and screenX and bottom and screenY then
-                self.config.offsetX = math.floor(centerX - screenX + 0.5)
-                self.config.offsetY = math.floor(bottom - screenY + 0.5)
+                self.config.offsetX = core:PixelRound(centerX - screenX)
+                self.config.offsetY = core:PixelRound(bottom - screenY)
             end
         else
             -- Fallback to center
             local barX, barY = self:GetCenter()
             if barX and screenX and barY and screenY then
-                self.config.offsetX = math.floor(barX - screenX + 0.5)
-                self.config.offsetY = math.floor(barY - screenY + 0.5)
+                self.config.offsetX = core:PixelRound(barX - screenX)
+                self.config.offsetY = core:PixelRound(barY - screenY)
             end
         end
 
@@ -2039,12 +2045,12 @@ function CustomTrackers:CreateBar(barID, config)
     bar:SetFrameStrata("MEDIUM")
 
     -- Apply HUD layer priority
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
+    local core = GetCore()
+    local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
     local layerPriority = hudLayering and hudLayering.customBars or 5
     local frameLevel = 50  -- Default fallback
-    if QUICore and QUICore.GetHUDFrameLevel then
-        frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
+    if core and core.GetHUDFrameLevel then
+        frameLevel = core:GetHUDFrameLevel(layerPriority)
     end
     bar:SetFrameLevel(frameLevel)
 
@@ -2485,10 +2491,9 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
     end
 
     if event == "PLAYER_ENTERING_WORLD" then
-        -- Set QUICore reference now that it's available
-        QUICore = QUI.QUICore
-        if QUICore then
-            QUICore.CustomTrackers = CustomTrackers
+        local core = GetCore()
+        if core then
+            core.CustomTrackers = CustomTrackers
         end
 
         C_Timer.After(0.6, function()
@@ -2530,9 +2535,9 @@ local CustomTrackersVisibility = {
 }
 
 local function GetCustomTrackersVisibilitySettings()
-    local db = QUI.QUICore and QUI.QUICore.db
-    if not db or not db.profile then return nil end
-    return db.profile.customTrackersVisibility
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return nil end
+    return core.db.profile.customTrackersVisibility
 end
 
 local function GetCustomTrackerFrames()

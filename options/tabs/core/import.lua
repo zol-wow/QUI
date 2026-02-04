@@ -3,9 +3,14 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
+local QUICore = ns.Addon
 
 -- Local references for shared infrastructure
 local CreateScrollableContent = Shared.CreateScrollableContent
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 --------------------------------------------------------------------------------
 -- Helper: Create a scrollable text box container
@@ -13,10 +18,11 @@ local CreateScrollableContent = Shared.CreateScrollableContent
 local function CreateScrollableTextBox(parent, height, text)
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     container:SetHeight(height)
+    local px = QUICore:GetPixelSize(container)
     container:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     container:SetBackdropColor(0.1, 0.1, 0.1, 1)
     container:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
@@ -106,17 +112,18 @@ local function BuildImportExportTab(tabContent)
     local exportBorder = CreateFrame("Frame", nil, tabContent, "BackdropTemplate")
     exportBorder:SetPoint("TOPLEFT", exportScroll, -6, 6)
     exportBorder:SetPoint("BOTTOMRIGHT", exportScroll, 26, -6)
+    local pxExport = QUICore:GetPixelSize(exportBorder)
     exportBorder:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = pxExport,
     })
     exportBorder:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
 
     -- Populate export string
     local function RefreshExportString()
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        if QUICore and QUICore.ExportProfileToString then
-            local str = QUICore:ExportProfileToString()
+        local core = GetCore()
+        if core and core.ExportProfileToString then
+            local str = core:ExportProfileToString()
             exportEditBox:SetText(str or "Error generating export string")
         else
             exportEditBox:SetText("QUICore not available")
@@ -184,9 +191,10 @@ local function BuildImportExportTab(tabContent)
     local importBorder = CreateFrame("Frame", nil, tabContent, "BackdropTemplate")
     importBorder:SetPoint("TOPLEFT", importScroll, -6, 6)
     importBorder:SetPoint("BOTTOMRIGHT", importScroll, 26, -6)
+    local pxImport = QUICore:GetPixelSize(importBorder)
     importBorder:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = pxImport,
     })
     importBorder:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
 
@@ -199,9 +207,9 @@ local function BuildImportExportTab(tabContent)
             print("|cffff0000QUI: No import string provided.|r")
             return
         end
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        if QUICore and QUICore.ImportProfileFromString then
-            local ok, err = QUICore:ImportProfileFromString(str)
+        local core = GetCore()
+        if core and core.ImportProfileFromString then
+            local ok, err = core:ImportProfileFromString(str)
             if ok then
                 print("|cff34D399QUI:|r Profile imported successfully!")
                 print("|cff34D399QUI:|r Please type |cFFFFD700/reload|r to apply changes.")

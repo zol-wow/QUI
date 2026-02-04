@@ -1,4 +1,19 @@
 local addonName, ns = ...
+local Addon = ns.Addon
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
+local function GetPixelSize(frame, default)
+    if Addon and type(Addon.GetPixelSize) == "function" then
+        local px = Addon:GetPixelSize(frame)
+        if type(px) == "number" and px > 0 then
+            return px
+        end
+    end
+    return default or 1
+end
 
 ---------------------------------------------------------------------------
 -- READY CHECK FRAME SKINNING
@@ -15,9 +30,9 @@ local readyCheckMover = nil
 ---------------------------------------------------------------------------
 
 local function GetSettings()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-        return QUICore.db.profile.general
+    local core = GetCore()
+    if core and core.db and core.db.profile and core.db.profile.general then
+        return core.db.profile.general
     end
     return nil
 end
@@ -83,10 +98,12 @@ local function CreateMover()
     -- Create mover overlay
     readyCheckMover = CreateFrame("Frame", "QUI_ReadyCheckMover", UIParent, "BackdropTemplate")
     readyCheckMover:SetSize(frame:GetWidth() + 4, frame:GetHeight() + 4)
+    local mvPx = GetPixelSize(readyCheckMover, 1)
+    local mvEdge2 = 2 * mvPx
     readyCheckMover:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = mvEdge2,
     })
     readyCheckMover:SetBackdropColor(sr, sg, sb, 0.3)
     readyCheckMover:SetBackdropBorderColor(sr, sg, sb, 1)
@@ -118,9 +135,18 @@ local function CreateMover()
 
     readyCheckMover:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        -- Save position
-        local point, _, relPoint, x, y = self:GetPoint()
-        SaveReadyCheckPosition(point, nil, relPoint, x, y)
+        -- Save position (snapped to pixel grid)
+        if not Addon or not Addon.SnapFramePosition then
+            local point, _, relPoint, x, y = self:GetPoint()
+            if point then
+                SaveReadyCheckPosition(point, nil, relPoint, x, y)
+            end
+            return
+        end
+        local point, _, relPoint, x, y = Addon:SnapFramePosition(self)
+        if point then
+            SaveReadyCheckPosition(point, nil, relPoint, x, y)
+        end
     end)
 end
 
@@ -177,11 +203,12 @@ local function CreateQUIBackdrop(frame)
     backdrop:SetFrameLevel(frame:GetFrameLevel())
     backdrop:EnableMouse(false)  -- Don't steal clicks
 
+    local px = GetPixelSize(backdrop, 1)
     backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
 
     frame.quiBackdrop = backdrop
@@ -320,8 +347,8 @@ end
 ---------------------------------------------------------------------------
 
 local function SkinReadyCheckFrame()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or not settings.skinReadyCheck then return end
 
     local frame = _G.ReadyCheckFrame
@@ -398,9 +425,18 @@ local function SkinReadyCheckFrame()
     frame:SetScript("OnDragStop", function(self)
         if self.quiUnlocked then
             self:StopMovingOrSizing()
-            -- Save position
-            local point, _, relativePoint, x, y = self:GetPoint()
-            SaveReadyCheckPosition(point, nil, relativePoint, x, y)
+            -- Save position (snapped to pixel grid)
+            if not Addon or not Addon.SnapFramePosition then
+                local point, _, relPoint, x, y = self:GetPoint()
+                if point then
+                    SaveReadyCheckPosition(point, nil, relPoint, x, y)
+                end
+                return
+            end
+            local point, _, relativePoint, x, y = Addon:SnapFramePosition(self)
+            if point then
+                SaveReadyCheckPosition(point, nil, relativePoint, x, y)
+            end
         end
     end)
 

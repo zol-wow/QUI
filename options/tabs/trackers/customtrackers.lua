@@ -87,10 +87,11 @@ local function CreateCustomTrackersPage(parent)
         dropZone:SetHeight(68)  -- 50% taller than original 45
         dropZone:SetPoint("TOPLEFT", 0, 0)
         dropZone:SetPoint("RIGHT", container, "RIGHT", 0, 0)  -- Full width
+        local pxDrop = QUICore:GetPixelSize(dropZone)
         dropZone:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = pxDrop,
         })
         dropZone:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.8)
         dropZone:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
@@ -246,10 +247,11 @@ local function CreateCustomTrackersPage(parent)
         local nameInputBg = CreateFrame("Frame", nil, nameContainer, "BackdropTemplate")
         nameInputBg:SetPoint("LEFT", nameContainer, "LEFT", 180, 0)
         nameInputBg:SetSize(200, 24)
+        local pxName = QUICore:GetPixelSize(nameInputBg)
         nameInputBg:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = pxName,
         })
         nameInputBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
         nameInputBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
@@ -443,10 +445,11 @@ local function CreateCustomTrackersPage(parent)
                 local nameInputBg = CreateFrame("Frame", nil, entryFrame, "BackdropTemplate")
                 nameInputBg:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
                 nameInputBg:SetSize(176, 22)
+                local pxEntry = QUICore:GetPixelSize(nameInputBg)
                 nameInputBg:SetBackdrop({
                     bgFile = "Interface\\Buttons\\WHITE8x8",
                     edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = 1,
+                    edgeSize = pxEntry,
                 })
                 nameInputBg:SetBackdropColor(0.05, 0.05, 0.05, 0.4)
                 nameInputBg:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.6)
@@ -563,10 +566,11 @@ local function CreateCustomTrackersPage(parent)
                 local function CreateChevronButton(parent, direction, onClick)
                     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
                     btn:SetSize(22, 22)
+                    local pxChevron = QUICore:GetPixelSize(btn)
                     btn:SetBackdrop({
                         bgFile = "Interface\\Buttons\\WHITE8x8",
                         edgeFile = "Interface\\Buttons\\WHITE8x8",
-                        edgeSize = 1,
+                        edgeSize = pxChevron,
                     })
                     btn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
                     btn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
@@ -638,10 +642,11 @@ local function CreateCustomTrackersPage(parent)
                 -- Remove button (styled to match chevrons)
                 local removeBtn = CreateFrame("Button", nil, entryFrame, "BackdropTemplate")
                 removeBtn:SetSize(22, 22)
+                local pxRemove = QUICore:GetPixelSize(removeBtn)
                 removeBtn:SetBackdrop({
                     bgFile = "Interface\\Buttons\\WHITE8x8",
                     edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = 1,
+                    edgeSize = pxRemove,
                 })
                 removeBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
                 removeBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
@@ -839,10 +844,11 @@ local function CreateCustomTrackersPage(parent)
         local function CreateLockButton(parent, label, corner)
             local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
             btn:SetSize(75, 22)
+            local pxLock = QUICore:GetPixelSize(btn)
             btn:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = pxLock,
             })
             btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
             btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -966,10 +972,11 @@ local function CreateCustomTrackersPage(parent)
         local function CreateTargetLockButton(parent, label, corner)
             local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
             btn:SetSize(75, 22)
+            local pxTLock = QUICore:GetPixelSize(btn)
             btn:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = pxTLock,
             })
             btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
             btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -1637,10 +1644,11 @@ local function CreateCustomTrackersPage(parent)
                     local nameBg = CreateFrame("Frame", nil, entryFrame, "BackdropTemplate")
                     nameBg:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
                     nameBg:SetSize(200, 22)
+                    local pxNameBg = QUICore:GetPixelSize(nameBg)
                     nameBg:SetBackdrop({
                         bgFile = "Interface\\Buttons\\WHITE8x8",
                         edgeFile = "Interface\\Buttons\\WHITE8x8",
-                        edgeSize = 1,
+                        edgeSize = pxNameBg,
                     })
                     nameBg:SetBackdropColor(0.05, 0.05, 0.05, 0.4)
                     nameBg:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.6)
@@ -1658,10 +1666,11 @@ local function CreateCustomTrackersPage(parent)
                     local removeBtn = CreateFrame("Button", nil, entryFrame, "BackdropTemplate")
                     removeBtn:SetSize(22, 22)
                     removeBtn:SetPoint("LEFT", nameBg, "RIGHT", 6, 0)
+                    local pxDelBtn = QUICore:GetPixelSize(removeBtn)
                     removeBtn:SetBackdrop({
                         bgFile = "Interface\\Buttons\\WHITE8x8",
                         edgeFile = "Interface\\Buttons\\WHITE8x8",
-                        edgeSize = 1,
+                        edgeSize = pxDelBtn,
                     })
                     removeBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
                     removeBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)

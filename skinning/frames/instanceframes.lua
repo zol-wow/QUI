@@ -1,5 +1,11 @@
 local addonName, ns = ...
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
+local QUICore = GetCore()
+
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)
 ---------------------------------------------------------------------------
@@ -29,11 +35,12 @@ local function CreateQUIBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         frame.quiBackdrop:EnableMouse(false)
     end
 
+    local px = QUICore:GetPixelSize(frame.quiBackdrop)
     frame.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
     frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -62,11 +69,12 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         button.quiBackdrop:EnableMouse(false)
     end
 
+    local sbPx = QUICore:GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = sbPx,
+        insets = { left = sbPx, right = sbPx, top = sbPx, bottom = sbPx }
     })
 
     local btnBgR = math.min(bgr + 0.07, 1)
@@ -129,11 +137,12 @@ local function StyleDropdown(dropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga, width
         dropdown.quiBackdrop:EnableMouse(false)
     end
 
+    local ddPx = QUICore:GetPixelSize(dropdown.quiBackdrop)
     dropdown.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = ddPx,
+        insets = { left = ddPx, right = ddPx, top = ddPx, bottom = ddPx }
     })
 
     local btnBgR = math.min(bgr + 0.07, 1)
@@ -194,11 +203,12 @@ local function StyleTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         tab.quiBackdrop:EnableMouse(false)
     end
 
+    local tabPx = QUICore:GetPixelSize(tab.quiBackdrop)
     tab.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = tabPx,
+        insets = { left = tabPx, right = tabPx, top = tabPx, bottom = tabPx }
     })
     tab.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.9)
     tab.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -294,11 +304,12 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         button.quiBackdrop:EnableMouse(false)
     end
 
+    local dbPx = QUICore:GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = dbPx,
+        insets = { left = dbPx, right = dbPx, top = dbPx, bottom = dbPx }
     })
 
     local btnBgR = math.min(bgr + 0.07, 1)
@@ -321,10 +332,11 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
             button.icon.quiBackdrop:SetPoint("BOTTOMRIGHT", button.icon, 1, -1)
             button.icon.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
             button.icon.quiBackdrop:EnableMouse(false)
+            local ibPx = QUICore:GetPixelSize(button.icon.quiBackdrop)
             button.icon.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = ibPx,
             })
             button.icon.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
         end
@@ -774,10 +786,11 @@ local function StyleDungeonIcon(icon, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             icon.Icon.quiBackdrop:SetPoint("BOTTOMRIGHT", icon.Icon, 1, -1)
             icon.Icon.quiBackdrop:SetFrameLevel(icon:GetFrameLevel())
             icon.Icon.quiBackdrop:EnableMouse(false)
+            local iiPx = QUICore:GetPixelSize(icon.Icon.quiBackdrop)
             icon.Icon.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = iiPx,
             })
             icon.Icon.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
         end
@@ -806,10 +819,11 @@ local function StyleAffixIcon(affix, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             affix.Portrait.quiBackdrop:SetPoint("BOTTOMRIGHT", affix.Portrait, 1, -1)
             affix.Portrait.quiBackdrop:SetFrameLevel(affix:GetFrameLevel())
             affix.Portrait.quiBackdrop:EnableMouse(false)
+            local apPx = QUICore:GetPixelSize(affix.Portrait.quiBackdrop)
             affix.Portrait.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = apPx,
             })
             affix.Portrait.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
         end
@@ -954,11 +968,12 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         button.quiBackdrop:EnableMouse(false)
     end
 
+    local cdPx = QUICore:GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = cdPx,
+        insets = { left = cdPx, right = cdPx, top = cdPx, bottom = cdPx }
     })
 
     local btnBgR = math.min(bgr + 0.07, 1)
@@ -985,10 +1000,11 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
                 reward.Icon.quiBackdrop:SetPoint("BOTTOMRIGHT", reward.Icon, 1, -1)
                 reward.Icon.quiBackdrop:SetFrameLevel(reward:GetFrameLevel())
                 reward.Icon.quiBackdrop:EnableMouse(false)
+                local riPx = QUICore:GetPixelSize(reward.Icon.quiBackdrop)
                 reward.Icon.quiBackdrop:SetBackdrop({
                     bgFile = nil,
                     edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = 1,
+                    edgeSize = riPx,
                 })
                 reward.Icon.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
             end
@@ -1043,11 +1059,12 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         button.quiBackdrop:EnableMouse(false)
     end
 
+    local dvPx = QUICore:GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = dvPx,
+        insets = { left = dvPx, right = dvPx, top = dvPx, bottom = dvPx }
     })
 
     local btnBgR = math.min(bgr + 0.05, 1)
@@ -1071,10 +1088,11 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             button.Icon.quiBackdrop:SetPoint("BOTTOMRIGHT", button.Icon, 1, -1)
             button.Icon.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
             button.Icon.quiBackdrop:EnableMouse(false)
+            local biPx = QUICore:GetPixelSize(button.Icon.quiBackdrop)
             button.Icon.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = biPx,
             })
             button.Icon.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
         end
@@ -1110,11 +1128,12 @@ local function StyleConquestBar(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         bar.quiBackdrop:EnableMouse(false)
     end
 
+    local wcPx = QUICore:GetPixelSize(bar.quiBackdrop)
     bar.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = wcPx,
+        insets = { left = wcPx, right = wcPx, top = wcPx, bottom = wcPx }
     })
     bar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
     bar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -1342,8 +1361,8 @@ end
 
 -- Main skinning function
 local function SkinInstanceFrames()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or not settings.skinInstanceFrames then return end
 
     SkinPVEFrame()

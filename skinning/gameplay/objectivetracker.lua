@@ -1,5 +1,20 @@
 local addonName, ns = ...
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
+local function GetPixelSize(frame, default)
+    local core = GetCore()
+    if core and type(core.GetPixelSize) == "function" then
+        local px = core:GetPixelSize(frame)
+        if type(px) == "number" and px > 0 then
+            return px
+        end
+    end
+    return default or 1
+end
+
 ---------------------------------------------------------------------------
 -- OBJECTIVE TRACKER SKINNING
 -- Applies QUI color scheme with dynamic content-height backdrop
@@ -12,8 +27,8 @@ local pendingBackdropUpdate = false
 
 -- Get settings
 local function GetSettings()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     return settings
 end
 
@@ -524,11 +539,12 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     local settings = GetSettings()
     local hideBorder = settings and settings.hideObjectiveTrackerBorder
 
+    local otPx = GetPixelSize(trackerFrame.quiBackdrop, 1)
     trackerFrame.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = hideBorder and 0 or 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = hideBorder and 0 or otPx,
+        insets = { left = otPx, right = otPx, top = otPx, bottom = otPx }
     })
     trackerFrame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, opacity)
     if hideBorder then
@@ -812,12 +828,13 @@ local function RefreshObjectiveTracker()
             opacity = bga or 0.95
         end
 
-        -- Apply backdrop (edgeSize 0 hides border, 1 shows it)
+        -- Apply backdrop (edgeSize 0 hides border, px shows it)
+        local updPx = GetPixelSize(TrackerFrame.quiBackdrop, 1)
         TrackerFrame.quiBackdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = hideBorder and 0 or 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            edgeSize = hideBorder and 0 or updPx,
+            insets = { left = updPx, right = updPx, top = updPx, bottom = updPx }
         })
         TrackerFrame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, opacity)
         if hideBorder then

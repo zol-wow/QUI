@@ -1,5 +1,20 @@
 local addonName, ns = ...
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
+local function GetPixelSize(frame, default)
+    local core = GetCore()
+    if core and type(core.GetPixelSize) == "function" then
+        local px = core:GetPixelSize(frame)
+        if type(px) == "number" and px > 0 then
+            return px
+        end
+    end
+    return default or 1
+end
+
 ---------------------------------------------------------------------------
 -- PLAYER POWER BAR ALT SKINNING
 ---------------------------------------------------------------------------
@@ -33,8 +48,8 @@ local isEnabled = false
 ---------------------------------------------------------------------------
 
 local function GetDB()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    return QUICore and QUICore.db and QUICore.db.profile or {}
+    local core = GetCore()
+    return core and core.db and core.db.profile or {}
 end
 
 local function GetBarPosition()
@@ -179,12 +194,17 @@ local function CreateQUIAltPowerBar()
     bar.backdrop = CreateFrame("Frame", nil, bar, "BackdropTemplate")
     bar.backdrop:SetPoint("TOPLEFT", -2, 2)
     bar.backdrop:SetPoint("BOTTOMRIGHT", 2, -2)
-    bar.backdrop:SetFrameLevel(bar:GetFrameLevel() - 1)
+    local safeLevel = bar:GetFrameLevel() - 1
+    if safeLevel < 0 then
+        safeLevel = 0
+    end
+    bar.backdrop:SetFrameLevel(safeLevel)
+    local px = GetPixelSize(bar.backdrop, 1)
     bar.backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
     bar.backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     bar.backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -298,10 +318,11 @@ local function CreateMover()
     powerBarMover = CreateFrame("Frame", "QUI_AltPowerBarMover", UIParent, "BackdropTemplate")
     powerBarMover:SetSize(BAR_WIDTH + 4, BAR_HEIGHT + 4)
     powerBarMover:SetPoint("CENTER", QUIAltPowerBar, "CENTER")
+    local mvPx = GetPixelSize(powerBarMover, 1)
     powerBarMover:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = mvPx,
     })
     powerBarMover:SetBackdropColor(sr, sg, sb, 0.3)
     powerBarMover:SetBackdropBorderColor(sr, sg, sb, 1)
@@ -325,9 +346,12 @@ local function CreateMover()
 
     powerBarMover:SetScript("OnDragStop", function(self)
         QUIAltPowerBar:StopMovingOrSizing()
-        -- Save position
-        local point, _, relPoint, x, y = QUIAltPowerBar:GetPoint()
-        SaveBarPosition(point, relPoint, x, y)
+        -- Save position (snapped to pixel grid)
+        local core = GetCore()
+        local point, _, relPoint, x, y = core:SnapFramePosition(QUIAltPowerBar)
+        if point then
+            SaveBarPosition(point, relPoint, x, y)
+        end
         -- Re-anchor mover to bar
         self:ClearAllPoints()
         self:SetPoint("CENTER", QUIAltPowerBar, "CENTER")
@@ -381,8 +405,8 @@ _G.QUI_TogglePowerBarAltMover = ToggleMover
 ---------------------------------------------------------------------------
 
 local function Initialize()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
 
     if not settings or not settings.skinPowerBarAlt then return end
     if isEnabled then return end

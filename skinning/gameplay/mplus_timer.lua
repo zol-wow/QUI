@@ -4,6 +4,9 @@
 -- Frame created in utils/qui_mplus_timer.lua
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 ---------------------------------------------------------------------------
 -- Utility: Calculate luminance to determine if color is "dark"
@@ -39,9 +42,9 @@ end
 -- Get M+ Timer Settings
 ---------------------------------------------------------------------------
 local function GetMPlusTimerSettings()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.mplusTimer then
-        return QUICore.db.profile.mplusTimer
+    local core = GetCore()
+    if core and core.db and core.db.profile and core.db.profile.mplusTimer then
+        return core.db.profile.mplusTimer
     end
     return { showBorder = true }
 end
@@ -90,11 +93,14 @@ local function ApplyBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, showBord
         frame.quiBackdrop:EnableMouse(false)
     end
 
+    local core = GetCore()
+    if not core then return end
+    local px = core:GetPixelSize(frame.quiBackdrop)
     frame.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
     frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
 
@@ -113,10 +119,13 @@ local function ApplyBarSkin(bar, sr, sg, sb, colors, isTimerBar, barIndex, showB
     local borderMult = colors.barBorder
 
     -- Bar container backdrop - use contrast-aware background
+    local core = GetCore()
+    if not core then return end
+    local barPx = core:GetPixelSize(bar.frame)
     bar.frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = barPx,
     })
     bar.frame:SetBackdropColor(barBg[1], barBg[2], barBg[3], barBg[4])
 
@@ -243,11 +252,12 @@ local function ApplyMPlusTimerSkin()
         local barBg = colors.barBg
         local borderMult = colors.barBorder
         local borderAlpha = showBorder and 1 or 0
-
+        local core = GetCore()
+        local slkPx = core and core:GetPixelSize(MPlusTimer.frames.sleekBar) or 1
         MPlusTimer.frames.sleekBar:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = slkPx,
         })
         MPlusTimer.frames.sleekBar:SetBackdropColor(barBg[1], barBg[2], barBg[3], barBg[4])
         MPlusTimer.frames.sleekBar:SetBackdropBorderColor(sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha)

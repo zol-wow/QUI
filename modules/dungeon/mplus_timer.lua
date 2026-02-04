@@ -7,6 +7,10 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- Module Constants
 ---------------------------------------------------------------------------
@@ -190,9 +194,9 @@ end
 local function GetPosition()
     local defaults = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -100, y = -200 }
 
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.mplusTimer then
-        local pos = QUICore.db.profile.mplusTimer.position
+    local core = GetCore()
+    if core and core.db and core.db.profile and core.db.profile.mplusTimer then
+        local pos = core.db.profile.mplusTimer.position
         if pos then
             return {
                 point = pos.point or defaults.point,
@@ -206,12 +210,12 @@ local function GetPosition()
 end
 
 local function SavePosition(point, relPoint, x, y)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile then
-        if not QUICore.db.profile.mplusTimer then
-            QUICore.db.profile.mplusTimer = {}
+    local core = GetCore()
+    if core and core.db and core.db.profile then
+        if not core.db.profile.mplusTimer then
+            core.db.profile.mplusTimer = {}
         end
-        QUICore.db.profile.mplusTimer.position = {
+        core.db.profile.mplusTimer.position = {
             point = point,
             relPoint = relPoint,
             x = x,
@@ -479,8 +483,11 @@ function MPlusTimer:CreateFrames()
 
     root:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
-        SavePosition(point, relPoint, x, y)
+        local core = GetCore()
+        local point, _, relPoint, x, y = core:SnapFramePosition(self)
+        if point then
+            SavePosition(point, relPoint, x, y)
+        end
     end)
 end
 

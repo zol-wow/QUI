@@ -21,7 +21,7 @@ local TotemBar = {}
 TotemBar.hooked = false
 TotemBar.ticker = nil
 
-local QUICore
+local QUICore = ns.Addon
 local BASE_CROP = 0.08
 
 ---------------------------------------------------------------------------
@@ -152,10 +152,11 @@ local function ReskinTotemButton(button)
     end
     local bs = db.borderSize or 2
     if bs > 0 then
+        local bpx = (QUICore and QUICore.Pixels) and QUICore:Pixels(bs, button) or bs
         button.quiBorder:Show()
         button.quiBorder:ClearAllPoints()
-        button.quiBorder:SetPoint("TOPLEFT", -bs, bs)
-        button.quiBorder:SetPoint("BOTTOMRIGHT", bs, -bs)
+        button.quiBorder:SetPoint("TOPLEFT", -bpx, bpx)
+        button.quiBorder:SetPoint("BOTTOMRIGHT", bpx, -bpx)
     else
         button.quiBorder:Hide()
     end
@@ -365,8 +366,13 @@ local function HookTotemFrame()
         local anchorX, anchorY = GetAnchorPosition(self, anchor)
         local screenX, screenY = UIParent:GetCenter()
         if anchorX and anchorY and screenX and screenY then
-            db.offsetX = math.floor(anchorX - screenX + 0.5)
-            db.offsetY = math.floor(anchorY - screenY + 0.5)
+            if QUICore and QUICore.PixelRound then
+                db.offsetX = QUICore:PixelRound(anchorX - screenX)
+                db.offsetY = QUICore:PixelRound(anchorY - screenY)
+            else
+                db.offsetX = math.floor(anchorX - screenX + 0.5)
+                db.offsetY = math.floor(anchorY - screenY + 0.5)
+            end
         end
         PositionTotemFrame()
     end)
@@ -469,8 +475,13 @@ local function CreatePreviewFrame()
         local anchorX, anchorY = GetAnchorPosition(self, anchor)
         local screenX, screenY = UIParent:GetCenter()
         if anchorX and anchorY and screenX and screenY then
-            db.offsetX = math.floor(anchorX - screenX + 0.5)
-            db.offsetY = math.floor(anchorY - screenY + 0.5)
+            if QUICore and QUICore.PixelRound then
+                db.offsetX = QUICore:PixelRound(anchorX - screenX)
+                db.offsetY = QUICore:PixelRound(anchorY - screenY)
+            else
+                db.offsetX = math.floor(anchorX - screenX + 0.5)
+                db.offsetY = math.floor(anchorY - screenY + 0.5)
+            end
         end
 
         -- Reposition to snap to saved offset
@@ -540,10 +551,11 @@ local function StylePreviewFrame()
 
         -- Border
         if bs > 0 then
+            local bpx = QUICore:Pixels(bs, icon)
             icon.border:Show()
             icon.border:ClearAllPoints()
-            icon.border:SetPoint("TOPLEFT", -bs, bs)
-            icon.border:SetPoint("BOTTOMRIGHT", bs, -bs)
+            icon.border:SetPoint("TOPLEFT", -bpx, bpx)
+            icon.border:SetPoint("BOTTOMRIGHT", bpx, -bpx)
         else
             icon.border:Hide()
         end
@@ -645,7 +657,6 @@ local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
-        QUICore = QUI.QUICore
         if QUICore then
             QUICore.TotemBar = TotemBar
         end

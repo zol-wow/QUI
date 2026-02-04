@@ -1,5 +1,10 @@
 local addonName, ns = ...
+local QUICore = ns.Addon
 local Helpers = ns.Helpers
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 ---------------------------------------------------------------------------
 -- TOOLTIP SKINNING
@@ -13,8 +18,8 @@ end
 
 -- Get tooltip settings
 local function GetSettings()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    return QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
+    local core = GetCore()
+    return core and core.db and core.db.profile and core.db.profile.tooltip
 end
 
 -- Check if tooltip skinning is enabled
@@ -39,14 +44,17 @@ local function GetPlayerClassColor()
     return 0.2, 1.0, 0.6, 1 -- fallback to mint
 end
 
--- Build a backdrop table with the given edge size
-local function BuildTooltipBackdrop(edgeSize)
+-- Build a backdrop table with the given edge size (pixel-perfect)
+local function BuildTooltipBackdrop(edgeSize, frame)
     edgeSize = edgeSize or 1
+    local core = GetCore()
+    local px = core and core.GetPixelSize and core:GetPixelSize(frame) or 1
+    local edge = edgeSize * px
     return {
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = edgeSize,
-        insets = { left = edgeSize, right = edgeSize, top = edgeSize, bottom = edgeSize }
+        edgeSize = edge,
+        insets = { left = edge, right = edge, top = edge, bottom = edge }
     }
 end
 
@@ -125,7 +133,7 @@ local function SkinTooltip(tooltip)
     end
 
     -- Set the QUI backdrop
-    tooltip:SetBackdrop(BuildTooltipBackdrop(thickness))
+    tooltip:SetBackdrop(BuildTooltipBackdrop(thickness, tooltip))
     tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
     tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
 
@@ -167,7 +175,7 @@ local function ReskinTooltip(tooltip)
     end
 
     -- Rebuild backdrop with current thickness
-    tooltip:SetBackdrop(BuildTooltipBackdrop(thickness))
+    tooltip:SetBackdrop(BuildTooltipBackdrop(thickness, tooltip))
     tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
     tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
 

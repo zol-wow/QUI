@@ -114,7 +114,8 @@ local function CreateLootSlot(parent, index)
     slot.iconBorder = CreateFrame("Frame", nil, slot, "BackdropTemplate")
     slot.iconBorder:SetSize(ICON_BORDER_SIZE, ICON_BORDER_SIZE)
     slot.iconBorder:SetPoint("CENTER", slot.icon, "CENTER")
-    slot.iconBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    local px = QUICore:GetPixelSize(slot.iconBorder)
+    slot.iconBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = px })
 
     -- Item name
     slot.name = slot:CreateFontString(nil, "OVERLAY")
@@ -187,10 +188,11 @@ local function CreateLootWindow()
     frame:Hide()
 
     -- QUI backdrop
+    local px = QUICore:GetPixelSize(frame)
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     frame:SetBackdropColor(unpack(bgColor))
     frame:SetBackdropBorderColor(unpack(borderColor))
@@ -213,8 +215,10 @@ local function CreateLootWindow()
         self:StopMovingOrSizing()
         local db = GetDB()
         if db.loot then
-            local point, _, relPoint, x, y = self:GetPoint()
-            db.loot.position = { point = point, relPoint = relPoint, x = x, y = y }
+            local point, _, relPoint, x, y = QUICore:SnapFramePosition(self)
+            if point then
+                db.loot.position = { point = point, relPoint = relPoint, x = x, y = y }
+            end
         end
     end)
 
@@ -411,10 +415,11 @@ local function CreateRollFrame(index)
     frame:SetToplevel(true)
 
     -- Minimal backdrop (very subtle border)
+    local px = QUICore:GetPixelSize(frame)
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = px,
     })
     frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.95)
     frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], 0.3)  -- Very subtle border
@@ -435,7 +440,9 @@ local function CreateRollFrame(index)
     frame.iconBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.iconBorder:SetSize(ROLL_ICON_SIZE + 4, ROLL_ICON_SIZE + 4)
     frame.iconBorder:SetPoint("CENTER", frame.icon, "CENTER")
-    frame.iconBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2 })
+    local iconPx = QUICore:GetPixelSize(frame.iconBorder)
+    local iconEdge2 = 2 * iconPx
+    frame.iconBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = iconEdge2 })
 
     -- Item name (larger font) - aligned with icon
     frame.name = frame:CreateFontString(nil, "OVERLAY")
@@ -751,7 +758,8 @@ local function SkinLootHistoryElement(button)
                 item.quiBorder = CreateFrame("Frame", nil, item, "BackdropTemplate")
                 item.quiBorder:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
                 item.quiBorder:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
-                item.quiBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+                local qbPx = QUICore:GetPixelSize(item.quiBorder)
+                item.quiBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = qbPx })
                 item.quiBorder:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
             end
 
@@ -802,10 +810,11 @@ local function SkinGroupLootHistoryFrame()
         HistoryFrame.quiBackdrop = CreateFrame("Frame", nil, HistoryFrame, "BackdropTemplate")
         HistoryFrame.quiBackdrop:SetAllPoints()
         HistoryFrame.quiBackdrop:SetFrameLevel(HistoryFrame:GetFrameLevel())
+        local hfPx = QUICore:GetPixelSize(HistoryFrame.quiBackdrop)
         HistoryFrame.quiBackdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = hfPx,
         })
     end
     HistoryFrame.quiBackdrop:SetBackdropColor(unpack(bgColor))
@@ -854,10 +863,11 @@ local function SkinGroupLootHistoryFrame()
         if not ResizeButton.quiBackdrop then
             ResizeButton.quiBackdrop = CreateFrame("Frame", nil, ResizeButton, "BackdropTemplate")
             ResizeButton.quiBackdrop:SetAllPoints()
+            local rbPx = QUICore:GetPixelSize(ResizeButton.quiBackdrop)
             ResizeButton.quiBackdrop:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = rbPx,
             })
             ResizeButton.quiBackdrop:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
             ResizeButton.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
@@ -1373,8 +1383,9 @@ function Loot:ShowRollPreview()
             end)
             frame:SetScript("OnDragStop", function(self)
                 self:StopMovingOrSizing()
-                -- Save position to rollAnchor position
-                local point, _, relPoint, x, y = self:GetPoint()
+                -- Save position to rollAnchor position (snapped to pixel grid)
+                local point, _, relPoint, x, y = QUICore:SnapFramePosition(self)
+                if not point then return end
                 local db = GetDB()
                 if db.lootRoll then
                     db.lootRoll.position = { point = point, relPoint = relPoint, x = x, y = y }

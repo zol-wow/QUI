@@ -11,6 +11,10 @@ local C = GUI.Colors
 -- Import shared utilities
 local Shared = ns.QUI_Options
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 local function BuildSkinningTab(tabContent)
     local y = -10
     local PAD = 10
@@ -369,9 +373,9 @@ local function BuildSkinningTab(tabContent)
 
         -- Toggle movers button
         local moverBtn = GUI:CreateButton(tabContent, "Toggle Position Movers", 200, 28, function()
-            local QUICore = _G.QUI and _G.QUI.QUICore
-            if QUICore and QUICore.Alerts then
-                QUICore.Alerts:ToggleMovers()
+            local core = GetCore()
+            if core and core.Alerts then
+                core.Alerts:ToggleMovers()
             end
         end)
         moverBtn:SetPoint("TOPLEFT", PAD, y)
@@ -479,10 +483,10 @@ local function BuildSkinningTab(tabContent)
 
         -- Helper to refresh roll preview live when settings change
         local function RefreshRollPreview()
-            local QUICore = _G.QUI and _G.QUI.QUICore
-            if QUICore and QUICore.Loot and QUICore.Loot:IsRollPreviewActive() then
-                QUICore.Loot:HideRollPreview()
-                QUICore.Loot:ShowRollPreview()
+            local core = GetCore()
+            if core and core.Loot and core.Loot:IsRollPreviewActive() then
+                core.Loot:HideRollPreview()
+                core.Loot:ShowRollPreview()
             end
         end
 
@@ -507,9 +511,9 @@ local function BuildSkinningTab(tabContent)
 
         -- Toggle movers button
         local rollMoverBtn = GUI:CreateButton(tabContent, "Toggle Position Movers", 200, 28, function()
-            local QUICore = _G.QUI and _G.QUI.QUICore
-            if QUICore and QUICore.Loot then
-                QUICore.Loot:ToggleMovers()
+            local core = GetCore()
+            if core and core.Loot then
+                core.Loot:ToggleMovers()
             end
         end)
         rollMoverBtn:SetPoint("TOPLEFT", PAD, y)

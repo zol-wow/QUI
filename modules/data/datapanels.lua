@@ -133,11 +133,13 @@ function Datapanels:SetupDragging(panel)
     
     panel:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        
-        -- Save position
-        local point, _, relPoint, x, y = self:GetPoint()
-        self.config.position = {point, relPoint, x, y}
-        
+
+        -- Save position (snapped to pixel grid)
+        local point, _, relPoint, x, y = QUICore:SnapFramePosition(self)
+        if point then
+            self.config.position = {point, relPoint, x, y}
+        end
+
         -- Update saved variables
         local db = QUICore.db.profile.quiDatatexts
         if db and db.panels then
@@ -230,10 +232,12 @@ function Datapanels:UpdateSlots(panel)
         end)
         slot:SetScript("OnDragStop", function()
             panel:StopMovingOrSizing()
-            
-            -- Save position
-            local point, _, relPoint, x, y = panel:GetPoint()
-            panel.config.position = {point, relPoint, x, y}
+
+            -- Save position (snapped to pixel grid)
+            local point, _, relPoint, x, y = QUICore:SnapFramePosition(panel)
+            if point then
+                panel.config.position = {point, relPoint, x, y}
+            end
         end)
         
         -- Attach datatext if configured

@@ -6,6 +6,11 @@ local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
 local Helpers = ns.Helpers
+local QUICore = ns.Addon
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 ---------------------------------------------------------------------------
 -- Module Constants
@@ -959,9 +964,10 @@ local function HideBlizzardDecorations()
             slot._quiBorderFrame = CreateFrame("Frame", nil, slot, "BackdropTemplate")
             slot._quiBorderFrame:SetFrameLevel(slot:GetFrameLevel() + 10)
             slot._quiBorderFrame:SetAllPoints(slot)
+            local px = QUICore:GetPixelSize(slot._quiBorderFrame)
             slot._quiBorderFrame:SetBackdrop({
                 edgeFile = "Interface\\Buttons\\WHITE8X8",
-                edgeSize = 1,
+                edgeSize = px,
             })
         end
     end
@@ -1071,10 +1077,11 @@ local function CreateCustomBackground()
 
         if not customBg then
             customBg = CreateFrame("Frame", "QUI_CharacterFrameBg_CharPane", CharacterFrame, "BackdropTemplate")
+            local px = QUICore:GetPixelSize(customBg)
             customBg:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8X8",
                 edgeFile = "Interface\\Buttons\\WHITE8X8",
-                edgeSize = 1,
+                edgeSize = px,
             })
             customBg:SetFrameStrata("BACKGROUND")
             customBg:SetFrameLevel(0)
@@ -2811,10 +2818,11 @@ local function HookCharacterFrame()
         gearBtn = CreateFrame("Button", "QUI_CharacterSettingsBtn", CharacterFrame, "BackdropTemplate")
         gearBtn:SetSize(70, 20)
         gearBtn:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 20, -5)
+        local gearPx = QUICore:GetPixelSize(gearBtn)
         gearBtn:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = gearPx,
         })
         gearBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
         gearBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -2847,10 +2855,11 @@ local function HookCharacterFrame()
         settingsPanel = CreateFrame("Frame", "QUI_CharSettingsPanel", CharacterFrame, "BackdropTemplate")
         settingsPanel:SetSize(450, 600)
         settingsPanel:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 53, 0)
+        local settingsPx = QUICore:GetPixelSize(settingsPanel)
         settingsPanel:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = settingsPx,
         })
         settingsPanel:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.98)
         settingsPanel:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -2928,8 +2937,8 @@ local function HookCharacterFrame()
         y = y - FORM_ROW
 
         -- Background color (uses shared skinning background color)
-        local QUICore = _G.QUI and _G.QUI.QUICore
-        local generalDB = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+        local core = GetCore()
+        local generalDB = core and core.db and core.db.profile and core.db.profile.general
         local bgColorPicker = nil
         if generalDB then
             bgColorPicker = GUI:CreateFormColorPicker(scrollChild, "Background Color", "skinBgColor", generalDB, function()

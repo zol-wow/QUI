@@ -1,5 +1,20 @@
 local addonName, ns = ...
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
+local function GetPixelSize(frame, default)
+    local core = GetCore()
+    if core and type(core.GetPixelSize) == "function" then
+        local px = core:GetPixelSize(frame)
+        if type(px) == "number" and px > 0 then
+            return px
+        end
+    end
+    return default or 1
+end
+
 ---------------------------------------------------------------------------
 -- GAME MENU (ESC MENU) SKINNING + QUAZII UI BUTTON
 ---------------------------------------------------------------------------
@@ -13,8 +28,8 @@ local FONT_FLAGS = "OUTLINE"
 
 -- Get game menu font size from settings
 local function GetGameMenuFontSize()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     return settings and settings.gameMenuFontSize or 12
 end
 
@@ -43,11 +58,12 @@ local function CreateQUIBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         frame.quiBackdrop:EnableMouse(false)
     end
 
+    local px = GetPixelSize(frame.quiBackdrop, 1)
     frame.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
     frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -65,11 +81,12 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         button.quiBackdrop:EnableMouse(false)
     end
 
+    local btnPx = GetPixelSize(button.quiBackdrop, 1)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = btnPx,
+        insets = { left = btnPx, right = btnPx, top = btnPx, bottom = btnPx }
     })
 
     -- Button bg slightly lighter than main bg
@@ -109,8 +126,8 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     button.quiSkinColor = { sr, sg, sb, sa }
     button.quiBgColor = { btnBgR, btnBgG, btnBgB, 1 }
 
-    -- Set hover scripts directly (game menu buttons don't need original handlers)
-    button:SetScript("OnEnter", function(self)
+    -- Set hover scripts without replacing existing handlers
+    button:HookScript("OnEnter", function(self)
         if self.quiBackdrop then
             if self.quiBgColor then
                 local r, g, b, a = unpack(self.quiBgColor)
@@ -125,7 +142,7 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if txt then txt:SetTextColor(1, 1, 1, 1) end
     end)
 
-    button:SetScript("OnLeave", function(self)
+    button:HookScript("OnLeave", function(self)
         if self.quiBackdrop then
             if self.quiBgColor then
                 self.quiBackdrop:SetBackdropColor(unpack(self.quiBgColor))
@@ -182,8 +199,8 @@ local function CreateDimFrame()
 end
 
 local function ShowDimBehindGameMenu()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or not settings.skinGameMenu or not settings.gameMenuDim then return end
 
     local dim = CreateDimFrame()
@@ -200,8 +217,8 @@ end
 
 -- Expose for settings toggle
 _G.QUI_RefreshGameMenuDim = function()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
 
     if settings and settings.gameMenuDim and GameMenuFrame:IsShown() then
         ShowDimBehindGameMenu()
@@ -212,8 +229,8 @@ end
 
 -- Main skinning function
 local function SkinGameMenu()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or not settings.skinGameMenu then return end
 
     if not GameMenuFrame then return end
@@ -300,8 +317,8 @@ _G.QUI_RefreshGameMenuFontSize = RefreshGameMenuFontSize
 
 -- Inject button on every InitButtons call (buttonPool gets reset each time)
 local function InjectQUIButton()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or settings.addQUIButton == false then return end
 
     if not GameMenuFrame or not GameMenuFrame.buttonPool then return end

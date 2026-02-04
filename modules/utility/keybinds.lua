@@ -5,6 +5,10 @@
 local _, QUI = ...
 local LSM = LibStub("LibSharedMedia-3.0")
 
+local function GetCore()
+    return (QUI and QUI.QUICore) or (_G.QUI and _G.QUI.QUICore)
+end
+
 -- Cache for spell ID to keybind mapping
 local spellToKeybind = {}
 -- Cache for spell NAME to keybind mapping (fallback for macros)
@@ -40,10 +44,10 @@ local KEYBIND_DEBUG = false
 -- Performance: Check if ANY keybind display feature is enabled across all viewers
 -- This gates expensive operations to prevent CPU spikes when features are disabled
 local function IsAnyKeybindFeatureEnabled()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.profile then return false end
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return false end
 
-    local viewers = QUICore.db.profile.viewers
+    local viewers = core.db.profile.viewers
     if not viewers then return false end
 
     for viewerName, settings in pairs(viewers) do
@@ -58,15 +62,6 @@ end
 local Helpers = QUI.Helpers
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
-
--- Helper: get viewer settings safely
-local function GetViewerSettings(viewerName)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.profile then return nil end
-    local viewers = QUICore.db.profile.viewers
-    if not viewers then return nil end
-    return viewers[viewerName]
-end
 
 -- Helper: get shared keybind overrides from DB (shared across all viewers)
 local function GetSharedOverrides()
@@ -852,10 +847,10 @@ end
 
 -- Apply keybind text to a cooldown icon
 local function ApplyKeybindToIcon(icon, viewerName)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.profile then return end
-
-    local settings = GetViewerSettings(viewerName)
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return end
+    
+    local settings = core.db.profile.viewers[viewerName]
     if not settings then return end
     
     -- Check if keybinds should be shown
@@ -1856,10 +1851,10 @@ end
 
 -- Apply rotation helper overlay to a single icon
 local function ApplyRotationHelperToIcon(icon, viewerName, nextSpellID)
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.profile then return end
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return end
     
-    local settings = QUICore.db.profile.viewers[viewerName]
+    local settings = core.db.profile.viewers[viewerName]
     if not settings or not settings.showRotationHelper then
         -- Hide overlay if disabled
         if icon._rotationHelperOverlay then
@@ -1965,10 +1960,10 @@ end
 
 -- Check if rotation helper should be running
 local function ShouldRunRotationHelper()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.profile then return false end
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return false end
     
-    local viewers = QUICore.db.profile.viewers
+    local viewers = core.db.profile.viewers
     if not viewers then return false end
     
     local essential = viewers.EssentialCooldownViewer

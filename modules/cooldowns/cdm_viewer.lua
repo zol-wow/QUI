@@ -128,7 +128,9 @@ local function StripBlizzardOverlay(icon)
             if ok and atlas == "UI-HUD-CoolDownManager-IconOverlay" then
                 region:SetTexture("")
                 region:Hide()
-                region.Show = function() end
+                hooksecurefunc(region, "Show", function(self)
+                    self:Hide()
+                end)
             end
         end
     end
@@ -245,12 +247,21 @@ local function SkinIcon(icon, size, aspectRatioCrop, zoom, borderSize, borderCol
     local width = size
     local height = size / aspectRatio
 
+    -- Pixel-snap icon dimensions to prevent sub-pixel edge rounding
+    if QUICore and QUICore.PixelRound then
+        width = QUICore:PixelRound(width, icon)
+        height = QUICore:PixelRound(height, icon)
+    end
+
     -- Set icon frame size
     icon:SetSize(width, height)
 
     -- Border (BACKGROUND texture approach)
     borderSize = borderSize or 0
     if borderSize > 0 then
+        -- Convert border pixel count to exact virtual coordinates
+        local bs = (QUICore and QUICore.Pixels) and QUICore:Pixels(borderSize, icon) or borderSize
+
         if not icon._ncdmBorder then
             icon._ncdmBorder = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
         end
@@ -258,12 +269,12 @@ local function SkinIcon(icon, size, aspectRatioCrop, zoom, borderSize, borderCol
         icon._ncdmBorder:SetColorTexture(bc[1], bc[2], bc[3], bc[4])
 
         icon._ncdmBorder:ClearAllPoints()
-        icon._ncdmBorder:SetPoint("TOPLEFT", icon, "TOPLEFT", -borderSize, borderSize)
-        icon._ncdmBorder:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", borderSize, -borderSize)
+        icon._ncdmBorder:SetPoint("TOPLEFT", icon, "TOPLEFT", -bs, bs)
+        icon._ncdmBorder:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", bs, -bs)
         icon._ncdmBorder:Show()
 
         -- Expand hit area to include border for mouseover detection
-        icon:SetHitRectInsets(-borderSize, -borderSize, -borderSize, -borderSize)
+        icon:SetHitRectInsets(-bs, -bs, -bs, -bs)
     else
         if icon._ncdmBorder then
             icon._ncdmBorder:Hide()
@@ -512,30 +523,92 @@ local function ApplyIconTextSizes(icon, durationSize, stackSize, durationOffsetX
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: Get custom entries data for a tracker
+---------------------------------------------------------------------------
+local function GetCustomData(trackerKey)
+    if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm
+        and QUICore.db.char.ncdm[trackerKey] and QUICore.db.char.ncdm[trackerKey].customEntries then
+        return QUICore.db.char.ncdm[trackerKey].customEntries
+    end
+    return nil
+end
+
+---------------------------------------------------------------------------
 -- HELPER: Collect visible icons from viewer (stable order using layoutIndex)
 ---------------------------------------------------------------------------
-local function CollectIcons(viewer)
+local function CollectIcons(viewer, trackerKey)
     local icons = {}
     if not viewer or not viewer.GetNumChildren then return icons end
-    
+
     local numChildren = viewer:GetNumChildren()
     for i = 1, numChildren do
         local child = select(i, viewer:GetChildren())
-        if child and child ~= viewer.Selection and IsIconFrame(child) then
+        -- Skip custom CDM icons from child enumeration (we inject them separately)
+        if child and child ~= viewer.Selection and not child._isCustomCDMIcon and IsIconFrame(child) then
             -- Collect shown icons OR icons we previously hid
             if child:IsShown() or child._ncdmHidden then
                 table.insert(icons, child)
             end
         end
     end
-    
+
     -- Sort by Blizzard's layoutIndex (stable order)
     table.sort(icons, function(a, b)
         local indexA = a.layoutIndex or 9999
         local indexB = b.layoutIndex or 9999
         return indexA < indexB
     end)
-    
+
+    -- Inject custom CDM icons: positioned entries at specific slots,
+    -- unpositioned entries via before/after placement logic
+    if ns.CustomCDM and trackerKey then
+        local viewerName = (viewer == _G[VIEWER_ESSENTIAL]) and VIEWER_ESSENTIAL or VIEWER_UTILITY
+        local customIcons = ns.CustomCDM:GetIcons(viewerName)
+        if #customIcons > 0 then
+            local customData = GetCustomData(trackerKey)
+            local placement = customData and customData.placement or "after"
+
+            -- Phase 1: Separate into positioned and unpositioned
+            local positioned = {}
+            local unpositioned = {}
+            for idx, ci in ipairs(customIcons) do
+                local entry = ci._customCDMEntry
+                if entry and entry.position and entry.position > 0 then
+                    table.insert(positioned, { icon = ci, origIndex = idx })
+                else
+                    table.insert(unpositioned, ci)
+                end
+            end
+
+            -- Phase 2: Insert unpositioned using existing before/after logic
+            if #unpositioned > 0 then
+                if placement == "before" then
+                    local merged = {}
+                    for _, ci in ipairs(unpositioned) do table.insert(merged, ci) end
+                    for _, bi in ipairs(icons) do table.insert(merged, bi) end
+                    icons = merged
+                else
+                    for _, ci in ipairs(unpositioned) do table.insert(icons, ci) end
+                end
+            end
+
+            -- Phase 3: Insert positioned entries at their specified slots
+            -- Sort by descending position so earlier inserts don't shift later ones
+            -- Tie-break by original array order (ascending) for stable results
+            table.sort(positioned, function(a, b)
+                local posA = a.icon._customCDMEntry and a.icon._customCDMEntry.position or 0
+                local posB = b.icon._customCDMEntry and b.icon._customCDMEntry.position or 0
+                if posA ~= posB then return posA > posB end
+                return a.origIndex < b.origIndex
+            end)
+            for _, item in ipairs(positioned) do
+                local pos = item.icon._customCDMEntry.position
+                local insertAt = math.min(pos, #icons + 1)
+                table.insert(icons, insertAt, item.icon)
+            end
+        end
+    end
+
     return icons
 end
 
@@ -571,7 +644,7 @@ local function LayoutViewer(viewerName, trackerKey)
     -- Store layout direction on viewer for power bar snap detection
     viewer.__cdmLayoutDirection = layoutDirection
 
-    local allIcons = CollectIcons(viewer)
+    local allIcons = CollectIcons(viewer, trackerKey)
     local totalCapacity = GetTotalIconCapacity(settings)
     
     -- Icons to layout
@@ -797,6 +870,11 @@ local function LayoutViewer(viewerName, trackerKey)
             end
 
             -- Position using CENTER anchor (more stable than TOPLEFT)
+            -- Pixel-snap position so icon/border edges land on pixel boundaries
+            if QUICore and QUICore.PixelRound then
+                x = QUICore:PixelRound(x, viewer)
+                y = QUICore:PixelRound(y, viewer)
+            end
             icon:ClearAllPoints()
             icon:SetPoint("CENTER", viewer, "CENTER", x, y)
             icon:Show()
@@ -1003,11 +1081,12 @@ local function HookViewer(viewerName, trackerKey)
         end
         lastBlizzardLayoutCount = currentBlizzardCount
 
-        -- Collect visible icons (only when something changed)
+        -- Collect visible Blizzard icons (only when something changed)
+        -- Excludes custom CDM icons to avoid phantom count changes
         local icons = {}
         for i = 1, viewer:GetNumChildren() do
             local child = select(i, viewer:GetChildren())
-            if child and child ~= viewer.Selection and IsIconFrame(child) and child:IsShown() then
+            if child and child ~= viewer.Selection and not child._isCustomCDMIcon and IsIconFrame(child) and child:IsShown() then
                 table.insert(icons, child)
             end
         end
@@ -1103,6 +1182,12 @@ local function RefreshAll()
     UpdateCooldownViewerCVar()
     NCDM.applying["essential"] = false
     NCDM.applying["utility"] = false
+
+    -- Rebuild custom CDM icons before layout
+    if ns.CustomCDM then
+        ns.CustomCDM:RebuildIcons(VIEWER_ESSENTIAL, "essential")
+        ns.CustomCDM:RebuildIcons(VIEWER_UTILITY, "utility")
+    end
 
     -- Increment settings versions to trigger re-layout
     IncrementSettingsVersion()
@@ -1213,15 +1298,22 @@ end
 local function Initialize()
     if NCDM.initialized then return end
     NCDM.initialized = true
-    
+
     if _G[VIEWER_ESSENTIAL] then
         HookViewer(VIEWER_ESSENTIAL, "essential")
     end
-    
+
     if _G[VIEWER_UTILITY] then
         HookViewer(VIEWER_UTILITY, "utility")
     end
-    
+
+    -- Build custom CDM icons and start their update ticker
+    if ns.CustomCDM then
+        ns.CustomCDM:RebuildIcons(VIEWER_ESSENTIAL, "essential")
+        ns.CustomCDM:RebuildIcons(VIEWER_UTILITY, "utility")
+        ns.CustomCDM:StartUpdateTicker()
+    end
+
     -- Single delayed refresh (consolidated from 3 calls at 1s/2s/4s to reduce CPU spike)
     C_Timer.After(2.5, RefreshAll)
 end

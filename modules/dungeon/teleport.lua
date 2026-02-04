@@ -6,13 +6,17 @@ local addonName, ns = ...
 -- Uses shared dungeon data from qui_dungeon_data.lua
 ---------------------------------------------------------------------------
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
 
 local function IsEnabled()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     return settings and settings.mplusTeleportEnabled ~= false
 end
 

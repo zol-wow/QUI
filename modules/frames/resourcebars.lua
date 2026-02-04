@@ -2,10 +2,14 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 -- Pixel-perfect scaling helper
-local function Scale(x)
+local function Scale(x, frame)
     if QUICore and QUICore.Scale then
-        return QUICore:Scale(x)
+        return QUICore:Scale(x, frame)
     end
     return x
 end
@@ -281,8 +285,8 @@ end
 
 local function GetResourceColor(resource)
     -- Check for custom power colors first
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local pc = QUICore and QUICore.db and QUICore.db.profile.powerColors
+    local core = GetCore()
+    local pc = core and core.db and core.db.profile.powerColors
 
     if pc then
         local customColor = nil
@@ -596,10 +600,12 @@ local function CreatePowerBarEditOverlay(bar, barKey)
     local overlay = CreateFrame("Frame", nil, bar, "BackdropTemplate")
     overlay:SetAllPoints()
     overlay:SetFrameLevel(bar:GetFrameLevel() + 10)
+    local overlayPx = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
+        edgeSize = 2 * overlayPx,
+        insets = { left = 2 * overlayPx, right = 2 * overlayPx, top = 2 * overlayPx, bottom = 2 * overlayPx },
     })
     overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
     overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
@@ -704,8 +710,8 @@ function QUICore:EnablePowerBarEditMode()
                         local selfX, selfY = frame:GetCenter()
                         local parentX, parentY = UIParent:GetCenter()
                         if selfX and selfY and parentX and parentY then
-                            local offsetX = math.floor(selfX - parentX + 0.5)
-                            local offsetY = math.floor(selfY - parentY + 0.5)
+                            local offsetX = QUICore:PixelRound(selfX - parentX)
+                            local offsetY = QUICore:PixelRound(selfY - parentY)
 
                             -- Update database in real-time
                             cfg.offsetX = offsetX
@@ -729,8 +735,8 @@ function QUICore:EnablePowerBarEditMode()
                 local selfX, selfY = self:GetCenter()
                 local parentX, parentY = UIParent:GetCenter()
                 if selfX and selfY and parentX and parentY then
-                    local offsetX = math.floor(selfX - parentX + 0.5)
-                    local offsetY = math.floor(selfY - parentY + 0.5)
+                    local offsetX = QUICore:PixelRound(selfX - parentX)
+                    local offsetY = QUICore:PixelRound(selfY - parentY)
 
                     cfg.offsetX = offsetX
                     cfg.offsetY = offsetY
@@ -799,10 +805,8 @@ function QUICore:GetPowerBar()
     local layerPriority = self.db.profile.hudLayering and self.db.profile.hudLayering.primaryPowerBar or 7
     local frameLevel = self:GetHUDFrameLevel(layerPriority)
     bar:SetFrameLevel(frameLevel)
-    bar:SetHeight(cfg.useRawPixels and (cfg.height or 6) or Scale(cfg.height or 6))
-    local offsetX = cfg.useRawPixels and (cfg.offsetX or 0) or Scale(cfg.offsetX or 0)
-    local offsetY = cfg.useRawPixels and (cfg.offsetY or 6) or Scale(cfg.offsetY or 6)
-    bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    bar:SetHeight(QUICore:PixelRound(cfg.height or 6, bar))
+    QUICore:SetSnappedPoint(bar, "CENTER", UIParent, "CENTER", cfg.offsetX or 0, cfg.offsetY or 6)
 
     -- Calculate width - use configured width or fallback
     local width = cfg.width or 0
@@ -817,7 +821,7 @@ function QUICore:GetPowerBar()
         end
     end
 
-    bar:SetWidth(cfg.useRawPixels and width or Scale(width))
+    bar:SetWidth(QUICore:PixelRound(width, bar))
 
 
     -- BACKGROUND
@@ -834,8 +838,9 @@ function QUICore:GetPowerBar()
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
 
-    -- BORDER (pixel-perfect 1px, raw pixels when snapped to CDM)
-    local borderSize = cfg.useRawPixels and (cfg.borderSize or 1) or Scale(cfg.borderSize or 1)
+    -- BORDER (pixel-perfect)
+    local borderPx = cfg.borderSize or 1
+    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, bar) or 0
     bar.Border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
     bar.Border:SetPoint("TOPLEFT", bar, -borderSize, borderSize)
     bar.Border:SetPoint("BOTTOMRIGHT", bar, borderSize, -borderSize)
@@ -852,9 +857,9 @@ function QUICore:GetPowerBar()
     bar.TextFrame:SetFrameLevel(frameLevel + 2)
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", Scale(cfg.textX or 0), Scale(cfg.textY or 0))
+    QUICore:SetSnappedPoint(bar.TextValue, "CENTER", bar.TextFrame, "CENTER", cfg.textX or 0, cfg.textY or 0)
     bar.TextValue:SetJustifyH("CENTER")
-    bar.TextValue:SetFont(GetGeneralFont(), Scale(cfg.textSize or 12), GetGeneralFontOutline())
+    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:SetText("0")
 
@@ -924,9 +929,10 @@ function QUICore:UpdatePowerBar()
         end
     end
     
-    -- Calculate desired position and size
-    local offsetX = cfg.useRawPixels and (cfg.offsetX or 0) or Scale(cfg.offsetX or 0)
-    local offsetY = cfg.useRawPixels and (cfg.offsetY or 0) or Scale(cfg.offsetY or 0)
+    -- Calculate desired position and size (pixel-snapped for crisp borders)
+    local offsetX, offsetY
+    offsetX = QUICore:PixelRound(cfg.offsetX or 0, bar)
+    offsetY = QUICore:PixelRound(cfg.offsetY or 0, bar)
 
     -- Only reposition when offset actually changed (prevents flicker)
     if bar._cachedX ~= offsetX or bar._cachedY ~= offsetY then
@@ -944,12 +950,12 @@ function QUICore:UpdatePowerBar()
     local wantedH, wantedW
     if isVertical then
         -- Vertical bar: cfg.width is the bar length (becomes height), cfg.height is thickness (becomes width)
-        wantedW = cfg.useRawPixels and (cfg.height or 6) or Scale(cfg.height or 6)
-        wantedH = cfg.useRawPixels and width or Scale(width)
+        wantedW = QUICore:PixelRound(cfg.height or 6, bar)
+        wantedH = QUICore:PixelRound(width, bar)
     else
         -- Horizontal bar: normal dimensions
-        wantedH = cfg.useRawPixels and (cfg.height or 6) or Scale(cfg.height or 6)
-        wantedW = cfg.useRawPixels and width or Scale(width)
+        wantedH = QUICore:PixelRound(cfg.height or 6, bar)
+        wantedW = QUICore:PixelRound(width, bar)
     end
 
     -- Only resize when dimensions actually changed (prevents flicker)
@@ -963,7 +969,8 @@ function QUICore:UpdatePowerBar()
     end
 
     -- Update border size only when changed (prevents flicker)
-    local borderSize = cfg.useRawPixels and (cfg.borderSize or 1) or Scale(cfg.borderSize or 1)
+    local borderPxUpdate = cfg.borderSize or 1
+    local borderSize = borderPxUpdate > 0 and QUICore:Pixels(borderPxUpdate, bar) or 0
     if bar.Border and bar._cachedBorderSize ~= borderSize then
         bar.Border:ClearAllPoints()
         bar.Border:SetPoint("TOPLEFT", bar, -borderSize, borderSize)
@@ -1036,7 +1043,7 @@ function QUICore:UpdatePowerBar()
         bar.TextValue:SetText(tostring(displayValue))
     end
 
-    bar.TextValue:SetFont(GetGeneralFont(), Scale(cfg.textSize or 12), GetGeneralFontOutline())
+    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
 
     -- Apply text color
@@ -1052,8 +1059,8 @@ function QUICore:UpdatePowerBar()
     end
 
     -- Only reposition text when offset changed (prevents flicker)
-    local textX = Scale(cfg.textX or 0)
-    local textY = Scale(cfg.textY or 0)
+    local textX = QUICore:PixelRound(cfg.textX or 0, bar.TextValue)
+    local textY = QUICore:PixelRound(cfg.textY or 0, bar.TextValue)
     if bar._cachedTextX ~= textX or bar._cachedTextY ~= textY then
         bar.TextValue:ClearAllPoints()
         bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", textX, textY)
@@ -1105,7 +1112,7 @@ function QUICore:UpdatePowerBarTicks(bar, resource, max)
         end
     end
 
-    local tickThickness = Scale(cfg.tickThickness or 1)
+    local tickThickness = QUICore:Pixels(cfg.tickThickness or 1, bar)
     local tc = cfg.tickColor or { 0, 0, 0, 1 }
     local needed = max - 1
     for i = 1, needed do
@@ -1120,12 +1127,12 @@ function QUICore:UpdatePowerBarTicks(bar, resource, max)
         if isVertical then
             -- Vertical bar: ticks go along height (Y axis)
             local y = (i / max) * height
-            tick:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, Scale(y - (tickThickness / 2)))
+            tick:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, QUICore:PixelRound(y - (tickThickness / 2), bar))
             tick:SetSize(width, tickThickness)
         else
             -- Horizontal bar: ticks go along width (X axis)
             local x = (i / max) * width
-            tick:SetPoint("LEFT", bar.StatusBar, "LEFT", Scale(x - (tickThickness / 2)), 0)
+            tick:SetPoint("LEFT", bar.StatusBar, "LEFT", QUICore:PixelRound(x - (tickThickness / 2), bar), 0)
             tick:SetSize(tickThickness, height)
         end
         tick:Show()
@@ -1141,10 +1148,10 @@ end
 
 -- Global callback for NCDM to update locked power bar width and position
 _G.QUI_UpdateLockedPowerBar = function()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db then return end
+    local core = GetCore()
+    if not core or not core.db then return end
 
-    local cfg = QUICore.db.profile.powerBar
+    local cfg = core.db.profile.powerBar
     if not cfg.enabled or not cfg.lockedToEssential then return end
 
     local essentialViewer = _G.EssentialCooldownViewer
@@ -1217,16 +1224,16 @@ _G.QUI_UpdateLockedPowerBar = function()
     end
 
     if needsUpdate then
-        QUICore:UpdatePowerBar()
+        core:UpdatePowerBar()
     end
 end
 
 -- Global callback for NCDM to update power bar locked to Utility
 _G.QUI_UpdateLockedPowerBarToUtility = function()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db then return end
+    local core = GetCore()
+    if not core or not core.db then return end
 
-    local cfg = QUICore.db.profile.powerBar
+    local cfg = core.db.profile.powerBar
     if not cfg.enabled or not cfg.lockedToUtility then return end
 
     local utilityViewer = _G.UtilityCooldownViewer
@@ -1299,7 +1306,7 @@ _G.QUI_UpdateLockedPowerBarToUtility = function()
     end
 
     if needsUpdate then
-        QUICore:UpdatePowerBar()
+        core:UpdatePowerBar()
     end
 end
 
@@ -1314,10 +1321,10 @@ local cachedPrimaryDimensions = {
 
 -- Global callback for NCDM to update SECONDARY power bar locked to Essential
 _G.QUI_UpdateLockedSecondaryPowerBar = function()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db then return end
+    local core = GetCore()
+    if not core or not core.db then return end
 
-    local cfg = QUICore.db.profile.secondaryPowerBar
+    local cfg = core.db.profile.secondaryPowerBar
     if not cfg.enabled or not cfg.lockedToEssential then return end
 
     local essentialViewer = _G.EssentialCooldownViewer
@@ -1397,16 +1404,16 @@ _G.QUI_UpdateLockedSecondaryPowerBar = function()
     end
 
     if needsUpdate then
-        QUICore:UpdateSecondaryPowerBar()
+        core:UpdateSecondaryPowerBar()
     end
 end
 
 -- Global callback for NCDM to update SECONDARY power bar locked to Utility
 _G.QUI_UpdateLockedSecondaryPowerBarToUtility = function()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db then return end
+    local core = GetCore()
+    if not core or not core.db then return end
 
-    local cfg = QUICore.db.profile.secondaryPowerBar
+    local cfg = core.db.profile.secondaryPowerBar
     if not cfg.enabled or not cfg.lockedToUtility then return end
 
     local utilityViewer = _G.UtilityCooldownViewer
@@ -1503,8 +1510,8 @@ function QUICore:GetSecondaryPowerBar()
     local layerPriority = self.db.profile.hudLayering and self.db.profile.hudLayering.secondaryPowerBar or 6
     local frameLevel = self:GetHUDFrameLevel(layerPriority)
     bar:SetFrameLevel(frameLevel)
-    bar:SetHeight(Scale(cfg.height or 4))
-    bar:SetPoint("CENTER", UIParent, "CENTER", Scale(cfg.offsetX or 0), Scale(cfg.offsetY or 12))
+    bar:SetHeight(QUICore:PixelRound(cfg.height or 4, bar))
+    QUICore:SetSnappedPoint(bar, "CENTER", UIParent, "CENTER", cfg.offsetX or 0, cfg.offsetY or 12)
 
     -- Calculate width - use configured width or fallback
     local width = cfg.width or 0
@@ -1519,7 +1526,7 @@ function QUICore:GetSecondaryPowerBar()
         end
     end
 
-    bar:SetWidth(Scale(width))
+    bar:SetWidth(QUICore:PixelRound(width, bar))
 
     -- BACKGROUND
     bar.Background = bar:CreateTexture(nil, "BACKGROUND")
@@ -1536,7 +1543,8 @@ function QUICore:GetSecondaryPowerBar()
 
 
     -- BORDER (pixel-perfect)
-    local borderSize = Scale(cfg.borderSize or 1)
+    local secBorderPx = cfg.borderSize or 1
+    local borderSize = secBorderPx > 0 and QUICore:Pixels(secBorderPx, bar) or 0
     bar.Border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
     bar.Border:SetPoint("TOPLEFT", bar, -borderSize, borderSize)
     bar.Border:SetPoint("BOTTOMRIGHT", bar, borderSize, -borderSize)
@@ -1553,15 +1561,15 @@ function QUICore:GetSecondaryPowerBar()
     bar.TextFrame:SetFrameLevel(frameLevel + 2)
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", Scale(cfg.textX or 0), Scale(cfg.textY or 0))
+    QUICore:SetSnappedPoint(bar.TextValue, "CENTER", bar.TextFrame, "CENTER", cfg.textX or 0, cfg.textY or 0)
     bar.TextValue:SetJustifyH("CENTER")
-    bar.TextValue:SetFont(GetGeneralFont(), Scale(cfg.textSize or 12), GetGeneralFontOutline())
+    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:SetText("0")
 
     -- Fake decimal for Destro shards
     bar.SoulShardDecimal = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bar.SoulShardDecimal:SetFont(GetGeneralFont(), Scale(cfg.textSize or 12), GetGeneralFontOutline())
+    bar.SoulShardDecimal:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
     bar.SoulShardDecimal:SetShadowOffset(0, 0)
     bar.SoulShardDecimal:SetText(".")
     bar.SoulShardDecimal:Hide()
@@ -1596,9 +1604,9 @@ function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
             
             -- Create text for reload time display (pixel-perfect)
             local text = fragmentBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            text:SetPoint("CENTER", fragmentBar, "CENTER", Scale(cfg.runeTimerTextX or 0), Scale(cfg.runeTimerTextY or 0))
+            QUICore:SetSnappedPoint(text, "CENTER", fragmentBar, "CENTER", cfg.runeTimerTextX or 0, cfg.runeTimerTextY or 0)
             text:SetJustifyH("CENTER")
-            text:SetFont(GetGeneralFont(), Scale(cfg.runeTimerTextSize or 10), GetGeneralFontOutline())
+            text:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, text), GetGeneralFontOutline())
             text:SetShadowOffset(0, 0)
             text:SetText("")
             bar.FragmentedPowerBarTexts[i] = text
@@ -1718,8 +1726,8 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                 -- Update rune timer text position and font size
                 if runeText then
                     runeText:ClearAllPoints()
-                    runeText:SetPoint("CENTER", runeFrame, "CENTER", Scale(cfg.runeTimerTextX or 0), Scale(cfg.runeTimerTextY or 0))
-                    runeText:SetFont(GetGeneralFont(), Scale(cfg.runeTimerTextSize or 10), GetGeneralFontOutline())
+                    QUICore:SetSnappedPoint(runeText, "CENTER", runeFrame, "CENTER", cfg.runeTimerTextX or 0, cfg.runeTimerTextY or 0)
+                    runeText:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, runeText), GetGeneralFontOutline())
                     runeText:SetShadowOffset(0, 0)
                 end
 
@@ -1768,7 +1776,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
         
         -- Add ticks between rune segments if enabled (pixel-perfect)
         if cfg.showTicks then
-            local tickThickness = Scale(cfg.tickThickness or 1)
+            local tickThickness = QUICore:Pixels(cfg.tickThickness or 1, bar)
             local tc = cfg.tickColor or { 0, 0, 0, 1 }
             for i = 1, maxPower - 1 do
                 local tick = bar.ticks[i]
@@ -1781,11 +1789,11 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                 tick:ClearAllPoints()
                 if isVertical then
                     local y = i * fragmentedBarHeight
-                    tick:SetPoint("BOTTOM", bar, "BOTTOM", 0, Scale(y - (tickThickness / 2)))
+                    tick:SetPoint("BOTTOM", bar, "BOTTOM", 0, QUICore:PixelRound(y - (tickThickness / 2), bar))
                     tick:SetSize(barWidth, tickThickness)
                 else
                     local x = i * fragmentedBarWidth
-                    tick:SetPoint("LEFT", bar, "LEFT", Scale(x - (tickThickness / 2)), 0)
+                    tick:SetPoint("LEFT", bar, "LEFT", QUICore:PixelRound(x - (tickThickness / 2), bar), 0)
                     tick:SetSize(tickThickness, barHeight)
                 end
                 tick:Show()
@@ -1892,7 +1900,7 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
         displayMax = UnitPowerMax("player", resource) -- non-fractional max (usually 5)
     end
 
-    local tickThickness = Scale(cfg.tickThickness or 1)
+    local tickThickness = QUICore:Pixels(cfg.tickThickness or 1, bar)
     local tc = cfg.tickColor or { 0, 0, 0, 1 }
     local needed = displayMax - 1
     for i = 1, needed do
@@ -1907,12 +1915,12 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
         if isVertical then
             -- Vertical bar: ticks go along height (Y axis)
             local y = (i / displayMax) * height
-            tick:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, Scale(y - (tickThickness / 2)))
+            tick:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, QUICore:PixelRound(y - (tickThickness / 2), bar))
             tick:SetSize(width, tickThickness)
         else
             -- Horizontal bar: ticks go along width (X axis)
             local x = (i / displayMax) * width
-            tick:SetPoint("LEFT", bar.StatusBar, "LEFT", Scale(x - (tickThickness / 2)), 0)
+            tick:SetPoint("LEFT", bar.StatusBar, "LEFT", QUICore:PixelRound(x - (tickThickness / 2), bar), 0)
             tick:SetSize(tickThickness, height)
         end
         tick:Show()
@@ -2181,7 +2189,7 @@ function QUICore:UpdateSecondaryPowerBar()
             end
 
             -- Only reposition when anchor/offset actually changed (prevents flicker)
-            local wantedOffsetX = Scale(cfg.offsetX or 0)
+            local wantedOffsetX = QUICore:PixelRound(cfg.offsetX or 0, bar)
             local wantedAnchor = (self.powerBar and self.powerBar:IsShown()) and self.powerBar or anchor
 
             -- If no valid anchor available, fall through to manual positioning
@@ -2226,8 +2234,9 @@ function QUICore:UpdateSecondaryPowerBar()
             -- In locked modes, add lockedBase + user adjustment; otherwise just use offset as absolute
             local baseX = (cfg.lockedToEssential or cfg.lockedToUtility) and (cfg.lockedBaseX or 0) or 0
             local baseY = (cfg.lockedToEssential or cfg.lockedToUtility) and (cfg.lockedBaseY or 0) or 0
-            local wantedX = cfg.useRawPixels and (baseX + (cfg.offsetX or 0)) or Scale(baseX + (cfg.offsetX or 0))
-            local wantedY = cfg.useRawPixels and (baseY + (cfg.offsetY or 0)) or Scale(baseY + (cfg.offsetY or 0))
+            local wantedX, wantedY
+            wantedX = QUICore:PixelRound(baseX + (cfg.offsetX or 0), bar)
+            wantedY = QUICore:PixelRound(baseY + (cfg.offsetY or 0), bar)
             if bar._cachedX ~= wantedX or bar._cachedY ~= wantedY or bar._cachedAutoMode ~= false then
                 bar:ClearAllPoints()
                 bar:SetPoint("CENTER", UIParent, "CENTER", wantedX, wantedY)
@@ -2247,12 +2256,12 @@ function QUICore:UpdateSecondaryPowerBar()
     local wantedH, wantedW
     if isVertical then
         -- Vertical bar: cfg.width is the bar length (becomes height), cfg.height is thickness (becomes width)
-        wantedW = cfg.useRawPixels and (cfg.height or 4) or Scale(cfg.height or 4)
-        wantedH = cfg.useRawPixels and width or Scale(width)
+        wantedW = QUICore:PixelRound(cfg.height or 4, bar)
+        wantedH = QUICore:PixelRound(width, bar)
     else
         -- Horizontal bar: normal dimensions
-        wantedH = cfg.useRawPixels and (cfg.height or 4) or Scale(cfg.height or 4)
-        wantedW = cfg.useRawPixels and width or Scale(width)
+        wantedH = QUICore:PixelRound(cfg.height or 4, bar)
+        wantedW = QUICore:PixelRound(width, bar)
     end
 
     -- Only resize when dimensions actually changed (prevents flicker)
@@ -2266,7 +2275,8 @@ function QUICore:UpdateSecondaryPowerBar()
     end
 
     -- Update border size (pixel-perfect)
-    local borderSize = cfg.useRawPixels and (cfg.borderSize or 1) or Scale(cfg.borderSize or 1)
+    local secBorderPxUpdate = cfg.borderSize or 1
+    local borderSize = secBorderPxUpdate > 0 and QUICore:Pixels(secBorderPxUpdate, bar) or 0
     if bar.Border then
         bar.Border:ClearAllPoints()
         bar.Border:SetPoint("TOPLEFT", bar, -borderSize, borderSize)
@@ -2381,10 +2391,10 @@ function QUICore:UpdateSecondaryPowerBar()
     end
 end
 
-    bar.TextValue:SetFont(GetGeneralFont(), Scale(cfg.textSize or 12), GetGeneralFontOutline())
+    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:ClearAllPoints()
-    bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", Scale(cfg.textX or 0), Scale(cfg.textY or 0))
+    QUICore:SetSnappedPoint(bar.TextValue, "CENTER", bar.TextFrame, "CENTER", cfg.textX or 0, cfg.textY or 0)
 
     -- Apply text color
     if cfg.textUseClassColor then
@@ -2399,7 +2409,7 @@ end
     end
 
     if bar.SoulShardDecimal then
-        bar.SoulShardDecimal:SetFont(GetGeneralFont(), Scale(cfg.textSize or 12), GetGeneralFontOutline())
+        bar.SoulShardDecimal:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
         bar.SoulShardDecimal:SetShadowOffset(0, 0)
         -- Apply same text color to soul shard decimal
         if cfg.textUseClassColor then

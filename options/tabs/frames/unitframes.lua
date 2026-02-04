@@ -9,6 +9,7 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
+local QUICore = ns.Addon
 
 -- Local references
 local PADDING = Shared.PADDING
@@ -93,10 +94,11 @@ local function CreateUnitFramesPage(parent)
         local editModeBtn = CreateFrame("Button", nil, editContainer, "BackdropTemplate")
         editModeBtn:SetSize(120, 24)
         editModeBtn:SetPoint("LEFT", editContainer, "LEFT", 180, 0)
+        local px = QUICore:GetPixelSize(editModeBtn)
         editModeBtn:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = px,
         })
         editModeBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
         editModeBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
@@ -402,12 +404,14 @@ local function CreateUnitFramesPage(parent)
         local previewTrack = CreateFrame("Button", nil, previewContainer, "BackdropTemplate")
         previewTrack:SetSize(40, 20)
         previewTrack:SetPoint("LEFT", previewContainer, "LEFT", 180, 0)
-        previewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+        local pxTrack = QUICore:GetPixelSize(previewTrack)
+        previewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxTrack})
 
         -- Thumb (sliding circle)
         local previewThumb = CreateFrame("Frame", nil, previewTrack, "BackdropTemplate")
         previewThumb:SetSize(16, 16)
-        previewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+        local pxThumb = QUICore:GetPixelSize(previewThumb)
+        previewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxThumb})
         previewThumb:SetBackdropColor(0.95, 0.95, 0.95, 1)
         previewThumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
         previewThumb:SetFrameLevel(previewTrack:GetFrameLevel() + 1)
@@ -1066,11 +1070,13 @@ local function CreateUnitFramesPage(parent)
             local debuffPreviewTrack = CreateFrame("Button", nil, debuffPreviewContainer, "BackdropTemplate")
             debuffPreviewTrack:SetSize(40, 20)
             debuffPreviewTrack:SetPoint("LEFT", debuffPreviewContainer, "LEFT", 180, 0)
-            debuffPreviewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+            local pxDebuffTrack = QUICore:GetPixelSize(debuffPreviewTrack)
+            debuffPreviewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxDebuffTrack})
 
             local debuffPreviewThumb = CreateFrame("Frame", nil, debuffPreviewTrack, "BackdropTemplate")
             debuffPreviewThumb:SetSize(16, 16)
-            debuffPreviewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+            local pxDebuffThumb = QUICore:GetPixelSize(debuffPreviewThumb)
+            debuffPreviewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxDebuffThumb})
             debuffPreviewThumb:SetBackdropColor(0.95, 0.95, 0.95, 1)
             debuffPreviewThumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
             debuffPreviewThumb:SetFrameLevel(debuffPreviewTrack:GetFrameLevel() + 1)
@@ -1250,11 +1256,13 @@ local function CreateUnitFramesPage(parent)
             local buffPreviewTrack = CreateFrame("Button", nil, buffPreviewContainer, "BackdropTemplate")
             buffPreviewTrack:SetSize(40, 20)
             buffPreviewTrack:SetPoint("LEFT", buffPreviewContainer, "LEFT", 180, 0)
-            buffPreviewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+            local pxBuffTrack = QUICore:GetPixelSize(buffPreviewTrack)
+            buffPreviewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxBuffTrack})
 
             local buffPreviewThumb = CreateFrame("Frame", nil, buffPreviewTrack, "BackdropTemplate")
             buffPreviewThumb:SetSize(16, 16)
-            buffPreviewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+            local pxBuffThumb = QUICore:GetPixelSize(buffPreviewThumb)
+            buffPreviewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxBuffThumb})
             buffPreviewThumb:SetBackdropColor(0.95, 0.95, 0.95, 1)
             buffPreviewThumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
             buffPreviewThumb:SetFrameLevel(buffPreviewTrack:GetFrameLevel() + 1)

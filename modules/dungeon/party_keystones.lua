@@ -18,9 +18,13 @@ local LSM = LibStub("LibSharedMedia-3.0", true)
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 local function GetSettings()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    return QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local guiQUICore = GetCore()
+    return guiQUICore and guiQUICore.db and guiQUICore.db.profile and guiQUICore.db.profile.general
 end
 
 local function IsEnabled()
@@ -164,11 +168,21 @@ end
 local KeyTrackerFrame = CreateFrame("Frame", "QUIKeyTrackerFrame", UIParent, "BackdropTemplate")
 KeyTrackerFrame:SetFrameStrata("HIGH")
 KeyTrackerFrame:SetSize(GetFrameWidth(), HEADER_HEIGHT)
-KeyTrackerFrame:SetBackdrop({
+local keyTrackerBackdrop = {
     bgFile = "Interface\\Buttons\\WHITE8X8",
     edgeFile = "Interface\\Buttons\\WHITE8X8",
     edgeSize = 1,
-})
+}
+KeyTrackerFrame:SetBackdrop(keyTrackerBackdrop)
+local function UpdateKeyTrackerPixelSize()
+    local core = GetCore()
+    local px = (core and core.GetPixelSize and core:GetPixelSize(KeyTrackerFrame)) or 1
+    if keyTrackerBackdrop.edgeSize ~= px then
+        keyTrackerBackdrop.edgeSize = px
+        KeyTrackerFrame:SetBackdrop(keyTrackerBackdrop)
+    end
+end
+UpdateKeyTrackerPixelSize()
 KeyTrackerFrame:EnableMouse(true)
 KeyTrackerFrame:SetMovable(true)
 KeyTrackerFrame:RegisterForDrag("LeftButton")
@@ -188,6 +202,7 @@ end
 
 -- Apply skin colors (consolidated - called after QUI is loaded)
 local function ApplySkinColors()
+    UpdateKeyTrackerPixelSize()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
     KeyTrackerFrame:SetBackdropColor(bgr, bgg, bgb, bga)
     KeyTrackerFrame:SetBackdropBorderColor(sr, sg, sb, sa)

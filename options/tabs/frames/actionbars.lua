@@ -15,6 +15,10 @@ local RefreshAll = Shared.RefreshAll
 -- Forward declaration for Totem Bar sub-tab (defined below Action Bars page)
 local BuildTotemBarTab
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- PAGE: Action Bars
 ---------------------------------------------------------------------------
@@ -1144,8 +1148,8 @@ BuildTotemBarTab = function(tabContent)
     local PAD = PADDING
     local FORM_ROW = 32
 
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local db = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.totemBar
+    local core = GetCore()
+    local db = core and core.db and core.db.profile and core.db.profile.totemBar
 
     -- Set search context for widget auto-registration
     GUI:SetSearchContext({tabIndex = 4, tabName = "Action Bars", subTabIndex = 5, subTabName = "Totem Bar"})
@@ -1207,11 +1211,14 @@ BuildTotemBarTab = function(tabContent)
     local previewTrack = CreateFrame("Button", nil, previewContainer, "BackdropTemplate")
     previewTrack:SetSize(40, 20)
     previewTrack:SetPoint("LEFT", previewContainer, "LEFT", 180, 0)
-    previewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+    local core = GetCore()
+    local pxTrack = (core and core.GetPixelSize) and core:GetPixelSize(previewTrack) or 1
+    previewTrack:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxTrack})
 
     local previewThumb = CreateFrame("Frame", nil, previewTrack, "BackdropTemplate")
     previewThumb:SetSize(16, 16)
-    previewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1})
+    local pxThumb = (core and core.GetPixelSize) and core:GetPixelSize(previewThumb) or 1
+    previewThumb:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxThumb})
     previewThumb:SetBackdropColor(0.95, 0.95, 0.95, 1)
     previewThumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
     previewThumb:SetFrameLevel(previewTrack:GetFrameLevel() + 1)

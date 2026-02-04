@@ -32,8 +32,45 @@ function QUI_Anchoring:SetHelpers(helpers)
 end
 
 -- Helper function wrappers (with fallbacks)
-local function Scale(x)
-    return Helpers.Scale and Helpers.Scale(x) or (QUICore and QUICore.Scale and QUICore:Scale(x) or x)
+local function Scale(x, frame)
+    return Helpers.Scale and Helpers.Scale(x, frame) or (QUICore and QUICore.Scale and QUICore:Scale(x, frame) or x)
+end
+
+local function PixelRound(frame, value)
+    if value == 0 then return 0 end
+    if QUICore and QUICore.PixelRound then
+        return QUICore:PixelRound(value, frame)
+    end
+    return value
+end
+
+-- frame param reserved for future frame-aware border calculations
+local function GetBorderAdjustment(frame, anchorPoint, borderSize)
+    if not borderSize or borderSize == 0 then return 0, 0 end
+    
+    local adjX, adjY = 0, 0
+    if anchorPoint == "TOPLEFT" then
+        adjX = borderSize
+        adjY = -borderSize
+    elseif anchorPoint == "TOP" then
+        adjY = -borderSize
+    elseif anchorPoint == "TOPRIGHT" then
+        adjX = -borderSize
+        adjY = -borderSize
+    elseif anchorPoint == "LEFT" then
+        adjX = borderSize
+    elseif anchorPoint == "RIGHT" then
+        adjX = -borderSize
+    elseif anchorPoint == "BOTTOMLEFT" then
+        adjX = borderSize
+        adjY = borderSize
+    elseif anchorPoint == "BOTTOM" then
+        adjY = borderSize
+    elseif anchorPoint == "BOTTOMRIGHT" then
+        adjX = -borderSize
+        adjY = borderSize
+    end
+    return adjX, adjY
 end
 
 ---------------------------------------------------------------------------
@@ -369,57 +406,29 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
         local targetBorderSize = GetBorderSize(parentFrame)
         
         -- Calculate border adjustments
-        local function GetBorderAdjustment(anchorPoint, borderSize)
-            if not borderSize or borderSize == 0 then return 0, 0 end
-            
-            local adjX, adjY = 0, 0
-            if anchorPoint == "TOPLEFT" then
-                adjX = borderSize
-                adjY = -borderSize
-            elseif anchorPoint == "TOP" then
-                adjY = -borderSize
-            elseif anchorPoint == "TOPRIGHT" then
-                adjX = -borderSize
-                adjY = -borderSize
-            elseif anchorPoint == "LEFT" then
-                adjX = borderSize
-            elseif anchorPoint == "RIGHT" then
-                adjX = -borderSize
-            elseif anchorPoint == "BOTTOMLEFT" then
-                adjX = borderSize
-                adjY = borderSize
-            elseif anchorPoint == "BOTTOM" then
-                adjY = borderSize
-            elseif anchorPoint == "BOTTOMRIGHT" then
-                adjX = -borderSize
-                adjY = borderSize
-            end
-            return adjX, adjY
-        end
-        
-        local sourceAdjX, sourceAdjY = GetBorderAdjustment(anchorPoint, sourceBorderSize)
-        local targetAdjX, targetAdjY = GetBorderAdjustment(targetAnchorPoint, targetBorderSize)
+        local sourceAdjX, sourceAdjY = GetBorderAdjustment(frame, anchorPoint, sourceBorderSize)
+        local targetAdjX, targetAdjY = GetBorderAdjustment(frame, targetAnchorPoint, targetBorderSize)
         local netAdjX = targetAdjX - sourceAdjX
         local netAdjY = targetAdjY - sourceAdjY
         
-        local scaledOffsetX = Scale(offsetX) + netAdjX
-        local scaledOffsetY = math.floor(Scale(offsetY) + 0.5) + netAdjY
-        
+        local scaledOffsetX = PixelRound(frame, Scale(offsetX, frame)) + netAdjX
+        local scaledOffsetY = PixelRound(frame, Scale(offsetY, frame)) + netAdjY
+
         -- Use explicit dual anchors if provided
         if useExplicitDualAnchors then
-            local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(sourceAnchorPoint2, sourceBorderSize)
-            local targetAdjX2, targetAdjY2 = GetBorderAdjustment(targetAnchorPoint2, targetBorderSize)
+            local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(frame, sourceAnchorPoint2, sourceBorderSize)
+            local targetAdjX2, targetAdjY2 = GetBorderAdjustment(frame, targetAnchorPoint2, targetBorderSize)
             local netAdjX2 = targetAdjX2 - sourceAdjX2
             local netAdjY2 = targetAdjY2 - sourceAdjY2
-            
-            local scaledOffsetX2 = Scale(offsetX) + netAdjX2
-            local scaledOffsetY2 = math.floor(Scale(offsetY) + 0.5) + netAdjY2
-            
+
+            local scaledOffsetX2 = PixelRound(frame, Scale(offsetX, frame)) + netAdjX2
+            local scaledOffsetY2 = PixelRound(frame, Scale(offsetY, frame)) + netAdjY2
+
             frame:SetPoint(anchorPoint, parentFrame, targetAnchorPoint, scaledOffsetX, scaledOffsetY)
             frame:SetPoint(sourceAnchorPoint2, parentFrame, targetAnchorPoint2, scaledOffsetX2, scaledOffsetY2)
             return true
         end
-        
+
         -- Use source and target anchor points for single anchor positioning
         frame:SetPoint(anchorPoint, parentFrame, targetAnchorPoint, scaledOffsetX, scaledOffsetY)
         return true
@@ -440,60 +449,32 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
     local targetBorderSize = GetBorderSize(anchorFrame)
     
     -- Calculate border adjustments
-    local function GetBorderAdjustment(anchorPoint, borderSize)
-        if not borderSize or borderSize == 0 then return 0, 0 end
-        
-        local adjX, adjY = 0, 0
-        if anchorPoint == "TOPLEFT" then
-            adjX = borderSize
-            adjY = -borderSize
-        elseif anchorPoint == "TOP" then
-            adjY = -borderSize
-        elseif anchorPoint == "TOPRIGHT" then
-            adjX = -borderSize
-            adjY = -borderSize
-        elseif anchorPoint == "LEFT" then
-            adjX = borderSize
-        elseif anchorPoint == "RIGHT" then
-            adjX = -borderSize
-        elseif anchorPoint == "BOTTOMLEFT" then
-            adjX = borderSize
-            adjY = borderSize
-        elseif anchorPoint == "BOTTOM" then
-            adjY = borderSize
-        elseif anchorPoint == "BOTTOMRIGHT" then
-            adjX = -borderSize
-            adjY = borderSize
-        end
-        return adjX, adjY
-    end
-    
-    local sourceAdjX, sourceAdjY = GetBorderAdjustment(anchorPoint, sourceBorderSize)
-    local targetAdjX, targetAdjY = GetBorderAdjustment(targetAnchorPoint, targetBorderSize)
+    local sourceAdjX, sourceAdjY = GetBorderAdjustment(frame, anchorPoint, sourceBorderSize)
+    local targetAdjX, targetAdjY = GetBorderAdjustment(frame, targetAnchorPoint, targetBorderSize)
     local netAdjX = targetAdjX - sourceAdjX
     local netAdjY = targetAdjY - sourceAdjY
     
     -- offsetX and offsetY already provide the gap/padding functionality
     -- When the anchor target changes size, the offset maintains that gap
-    local scaledOffsetX = Scale(offsetX) + netAdjX
-    local scaledOffsetY = math.floor(Scale(offsetY) + 0.5) + netAdjY
-    
+    local scaledOffsetX = PixelRound(frame, Scale(offsetX, frame)) + netAdjX
+    local scaledOffsetY = PixelRound(frame, Scale(offsetY, frame)) + netAdjY
+
     -- Use explicit dual anchors if provided
     if useExplicitDualAnchors then
-        local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(sourceAnchorPoint2, sourceBorderSize)
-        local targetAdjX2, targetAdjY2 = GetBorderAdjustment(targetAnchorPoint2, targetBorderSize)
+        local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(frame, sourceAnchorPoint2, sourceBorderSize)
+        local targetAdjX2, targetAdjY2 = GetBorderAdjustment(frame, targetAnchorPoint2, targetBorderSize)
         local netAdjX2 = targetAdjX2 - sourceAdjX2
         local netAdjY2 = targetAdjY2 - sourceAdjY2
-        
+
         -- offsetX and offsetY already provide the gap/padding for both anchor points
-        local scaledOffsetX2 = Scale(offsetX) + netAdjX2
-        local scaledOffsetY2 = math.floor(Scale(offsetY) + 0.5) + netAdjY2
-        
+        local scaledOffsetX2 = PixelRound(frame, Scale(offsetX, frame)) + netAdjX2
+        local scaledOffsetY2 = PixelRound(frame, Scale(offsetY, frame)) + netAdjY2
+
         frame:SetPoint(anchorPoint, anchorFrame, targetAnchorPoint, scaledOffsetX, scaledOffsetY)
         frame:SetPoint(sourceAnchorPoint2, anchorFrame, targetAnchorPoint2, scaledOffsetX2, scaledOffsetY2)
         return true
     end
-    
+
     -- For single anchor point positioning, use direct SetPoint with source and target anchor points
     frame:SetPoint(anchorPoint, anchorFrame, targetAnchorPoint, scaledOffsetX, scaledOffsetY)
     

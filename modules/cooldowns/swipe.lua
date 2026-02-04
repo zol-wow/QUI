@@ -31,6 +31,9 @@ local function HookSetCooldown(icon)
         local parentIcon = self._QUIParentIcon
         if not parentIcon then return end
 
+        -- Skip during combat to avoid taint propagation (secret value errors)
+        if InCombatLockdown() then return end
+
         -- Skip if we're the ones calling SetCooldown (recursion guard)
         if parentIcon._QUI_BypassCDHook then return end
 

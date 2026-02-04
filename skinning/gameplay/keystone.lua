@@ -1,5 +1,20 @@
 local addonName, ns = ...
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
+local function GetPixelSize(frame, default)
+    local core = GetCore()
+    if core and type(core.GetPixelSize) == "function" then
+        local px = core:GetPixelSize(frame)
+        if type(px) == "number" and px > 0 then
+            return px
+        end
+    end
+    return default or 1
+end
+
 ---------------------------------------------------------------------------
 -- KEYSTONE FRAME SKINNING
 ---------------------------------------------------------------------------
@@ -21,11 +36,12 @@ local function CreateQUIBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         frame.quiBackdrop:EnableMouse(false)
     end
 
+    local px = GetPixelSize(frame.quiBackdrop, 1)
     frame.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px }
     })
     frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -42,11 +58,12 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         button.quiBackdrop:EnableMouse(false)
     end
 
+    local btnPx = GetPixelSize(button.quiBackdrop, 1)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = btnPx,
+        insets = { left = btnPx, right = btnPx, top = btnPx, bottom = btnPx }
     })
     -- Button bg slightly lighter than main bg
     local btnBgR = math.min(bgr + 0.07, 1)
@@ -108,11 +125,13 @@ local function StyleKeystoneSlot(slot, sr, sg, sb, sa)
         slot.quiBorder:SetPoint("BOTTOMRIGHT", 4, -4)
         slot.quiBorder:SetFrameLevel(slot:GetFrameLevel() - 1)
         slot.quiBorder:EnableMouse(false)
+        local slotPx = GetPixelSize(slot.quiBorder, 1)
+        local slotEdge2 = 2 * slotPx
         slot.quiBorder:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 2,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 }
+            edgeSize = slotEdge2,
+            insets = { left = slotEdge2, right = slotEdge2, top = slotEdge2, bottom = slotEdge2 }
         })
         slot.quiBorder:SetBackdropColor(0, 0, 0, 0.5)
         slot.quiBorder:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -132,8 +151,8 @@ end
 
 -- Main skinning function
 local function SkinKeystoneFrame()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or not settings.skinKeystoneFrame then return end
 
     local keystoneFrame = _G.ChallengesKeystoneFrame

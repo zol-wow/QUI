@@ -1193,10 +1193,12 @@ local function SetupMinimapDragging()
     
     Minimap:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
-        settings.position = {point, relPoint, x, y}
+        local point, _, relPoint, x, y = QUICore:SnapFramePosition(self)
+        if point then
+            settings.position = {point, relPoint, x, y}
+        end
     end)
-    
+
     -- Apply saved position (handles both array format from drag and keyed format from defaults)
     local pos = settings.position
     if pos then
@@ -1503,10 +1505,12 @@ function Minimap_Module:Refresh()
     
     Minimap:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
-        settings.position = {point, relPoint, x, y}
+        local point, _, relPoint, x, y = QUICore:SnapFramePosition(self)
+        if point then
+            settings.position = {point, relPoint, x, y}
+        end
     end)
-    
+
     -- Restore saved position from profile (validate position data exists)
     if settings.position and settings.position[1] and settings.position[2] then
         Minimap:ClearAllPoints()

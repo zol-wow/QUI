@@ -2,6 +2,10 @@ local addonName, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 ---------------------------------------------------------------------------
 -- CHARACTER FRAME SKINNING
 -- Skins CharacterFrame including Character, Reputation, and Currency tabs
@@ -43,8 +47,8 @@ end
 -- Helper: Check if skinning is enabled
 ---------------------------------------------------------------------------
 local function IsSkinningEnabled()
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
     return settings and settings.skinCharacterFrame
 end
 
@@ -58,11 +62,12 @@ local function CreateOrUpdateBackground()
 
     if not customBg then
         customBg = CreateFrame("Frame", "QUI_CharacterFrameBg_Skin", CharacterFrame, "BackdropTemplate")
+        local px = QUICore:GetPixelSize(customBg)
         customBg:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            edgeSize = px,
+            insets = { left = px, right = px, top = px, bottom = px }
         })
         customBg:SetFrameStrata("BACKGROUND")
         customBg:SetFrameLevel(0)
@@ -158,10 +163,12 @@ local function SkinReputationEntry(child)
             backdrop:SetFrameLevel(ReputationBar:GetFrameLevel())
             backdrop:SetPoint("TOPLEFT", ReputationBar, "TOPLEFT", -2, 2)
             backdrop:SetPoint("BOTTOMRIGHT", ReputationBar, "BOTTOMRIGHT", 2, -2)
+            local repPx = QUICore:GetPixelSize(backdrop)
+            local repEdge2 = 2 * repPx
             backdrop:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 2,
+                edgeSize = repEdge2,
             })
             backdrop:SetBackdropColor(0, 0, 0, 0.9)
             backdrop:SetBackdropBorderColor(sr, sg, sb, 1)
@@ -239,9 +246,10 @@ local function SkinCurrencyEntry(child)
             border:SetFrameLevel((drawLayer == "OVERLAY") and child:GetFrameLevel() + 2 or child:GetFrameLevel() + 1)
             border:SetPoint("TOPLEFT", CurrencyIcon, "TOPLEFT", -1, 1)
             border:SetPoint("BOTTOMRIGHT", CurrencyIcon, "BOTTOMRIGHT", 1, -1)
+            local curPx = QUICore:GetPixelSize(border)
             border:SetBackdrop({
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
+                edgeSize = curPx,
             })
             border:SetBackdropBorderColor(sr, sg, sb, 1)
             CurrencyIcon.quiBorder = border
@@ -338,8 +346,8 @@ local function SetupCharacterFrameSkinning()
         PaperDollFrame:HookScript("OnShow", function()
             if IsSkinningEnabled() then
                 -- Check if character pane customization will handle extension
-                local QUICore = _G.QUI and _G.QUI.QUICore
-                local charSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.character
+                local core = GetCore()
+                local charSettings = core and core.db and core.db.profile and core.db.profile.character
                 -- Default to true if setting not found (matches qui_character.lua defaults)
                 local charPaneEnabled = charSettings and charSettings.enabled
                 if charPaneEnabled == nil then charPaneEnabled = true end
@@ -353,8 +361,8 @@ local function SetupCharacterFrameSkinning()
         end)
         -- Handle if already shown
         if PaperDollFrame:IsShown() then
-            local QUICore = _G.QUI and _G.QUI.QUICore
-            local charSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.character
+            local core = GetCore()
+            local charSettings = core and core.db and core.db.profile and core.db.profile.character
             -- Default to true if setting not found (matches qui_character.lua defaults)
             local charPaneEnabled = charSettings and charSettings.enabled
             if charPaneEnabled == nil then charPaneEnabled = true end
@@ -450,9 +458,10 @@ local function SkinEquipmentSetEntry(entry)
         local border = CreateFrame("Frame", nil, entry, "BackdropTemplate")
         border:SetPoint("TOPLEFT", entry.icon, "TOPLEFT", -1, 1)
         border:SetPoint("BOTTOMRIGHT", entry.icon, "BOTTOMRIGHT", 1, -1)
+        local eqPx = QUICore:GetPixelSize(border)
         border:SetBackdrop({
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = eqPx,
         })
         border:SetBackdropBorderColor(sr, sg, sb, 1)
         entry.icon.quiBorder = border
@@ -489,10 +498,11 @@ local function StyleEquipMgrButton(btn)
     if not btn.SetBackdrop then
         Mixin(btn, BackdropTemplateMixin)
     end
+    local btnPx = QUICore:GetPixelSize(btn)
     btn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+        edgeSize = btnPx,
     })
     btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
     btn:SetBackdropBorderColor(sr, sg, sb, 0.5)
@@ -532,10 +542,11 @@ local function SkinEquipmentManager()
 
     -- Skin popup backdrop
     if not popup.quiCharSkinned then
+        local popPx = QUICore:GetPixelSize(popup)
         popup:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
+            edgeSize = popPx,
         })
         popup.quiCharSkinned = true
     end
@@ -672,11 +683,12 @@ local function SkinTitleManagerPane()
 
     -- Skin popup backdrop (if popup exists)
     if popup and not popup.quiCharSkinned then
+        local pop2Px = QUICore:GetPixelSize(popup)
         popup:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            edgeSize = pop2Px,
+            insets = { left = pop2Px, right = pop2Px, top = pop2Px, bottom = pop2Px }
         })
         popup:SetBackdropColor(bgr, bgg, bgb, bga)
         popup:SetBackdropBorderColor(sr, sg, sb, sa)

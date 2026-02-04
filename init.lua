@@ -19,7 +19,16 @@ QUI.defaults = {
         debug = {
             ---@type boolean
             reload = false
-        }
+        },
+        ---@type table
+        ncdm = {
+            essential = {
+                customEntries = { enabled = true, placement = "after", entries = {} },
+            },
+            utility = {
+                customEntries = { enabled = true, placement = "after", entries = {} },
+            },
+        },
     }
 }
 

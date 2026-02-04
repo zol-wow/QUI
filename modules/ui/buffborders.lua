@@ -4,6 +4,10 @@
 local _, ns = ...
 local Helpers = ns.Helpers
 
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 -- Default settings
 local DEFAULTS = {
     enableBuffs = true,
@@ -123,9 +127,9 @@ local function ApplyFontSettings(button)
     local generalFont = "Fonts\\FRIZQT__.TTF"
     local generalOutline = "OUTLINE"
 
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-        local general = QUICore.db.profile.general
+    local core = GetCore()
+    if core and core.db and core.db.profile and core.db.profile.general then
+        local general = core.db.profile.general
         if general.font and LSM then
             generalFont = LSM:Fetch("font", general.font) or generalFont
         end
@@ -290,7 +294,8 @@ QUI.BuffBorders = {
 
 -- Global function for config panel to call
 _G.QUI_RefreshBuffBorders = function()
-    borderedButtons = {}  -- Clear cache to force re-border
+    borderedButtons = borderedButtons or {}
+    wipe(borderedButtons) -- Clear cache to force re-border
     ApplyBuffBorders()
 end
 
