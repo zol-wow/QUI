@@ -1,0 +1,71 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+    contents: write
+    
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Do the release checkout
+      - name: Clone Project
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Get Tag
+        id: vars
+        run: |
+          echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "oldtag=$(git describe --abbrev=0 --tags $(git rev-list --tags --skip=1 --max-count=1))" >> $GITHUB_ENV
+
+      # Make a zip file for GitHub
+      - name: Archive Release
+        uses: thedoctor0/zip-release@master
+        with:
+          filename: QUI-${{ env.tag }}.zip
+          exclusions: '*.git* *.pkgmeta *.svn*'
+
+      # Generate Changelog
+      - name: Generate Changelog
+        run: |
+          git log ${{ env.oldtag }}...${{ env.tag }} --pretty=format:"%h %s" > CHANGELOG.md
+
+      # Commit Changelog for CurseForge
+      - name: Commit Changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(CHANGELOG): Update changelog for ${{ env.tag }}"
+          git push origin main
+
+      # Create a release on GitHub
+      - name: Create Release
+        id: create_release
+        uses: ncipollo/release-action@v1.20.0
+        with:
+          tag: ${{ env.tag }}
+          name: QUI
+          bodyFile: CHANGELOG.md
+          draft: false
+          prerelease: false
+
+      # Upload the zip to the GitHub release
+      - name: Upload Zip
+        id: upload-zip
+        uses: shogo82148/actions-upload-release-asset@v1.6.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./QUI-${{ env.tag }}.zip
+          asset_name: QUI-${{ env.tag }}.zip
+          asset_content_type: application/zip
