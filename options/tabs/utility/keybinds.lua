@@ -470,6 +470,9 @@ local function BuildKeybindsTab(tabContent)
                 local listHeight = math.max(20, math.abs(listY))
                 entryListFrame:SetHeight(listHeight)
                 entryListFrame:Show()
+
+                -- Update tab content height to accommodate the dynamic list
+                tabContent:SetHeight(math.abs(y) + 60 + listHeight)
             end
 
             -- Helper: Create drop zone for adding spells via drag-and-drop

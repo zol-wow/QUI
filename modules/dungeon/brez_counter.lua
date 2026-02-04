@@ -706,7 +706,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
--- COMBAT_LOG_EVENT_UNFILTERED is restricted in 12.0; use EventRegistry instead
+-- COMBAT_LOG_EVENT_UNFILTERED is restricted in 12.0; use EventRegistry callback instead
 EventRegistry:RegisterCallback("COMBAT_LOG_EVENT_UNFILTERED", OnCombatLogEvent, eventFrame)
 
 ---------------------------------------------------------------------------

@@ -25,6 +25,231 @@ local function RefreshUIHider()
     end
 end
 
+local function RefreshDatapanels()
+    if QUICore and QUICore.Datapanels then
+        QUICore.Datapanels:RefreshAll()
+    end
+end
+
+-- Tab rebuild support for dynamic panel list
+local datatextTabContent = nil
+local BuildDatatextTab  -- forward declaration for rebuild
+
+local function RebuildDatatextTab()
+    if not datatextTabContent or not BuildDatatextTab then return end
+    -- Hide all existing children
+    local children = {datatextTabContent:GetChildren()}
+    for _, child in ipairs(children) do
+        child:Hide()
+        child:ClearAllPoints()
+    end
+    -- Hide all regions (font strings, textures)
+    local regions = {datatextTabContent:GetRegions()}
+    for _, region in ipairs(regions) do
+        region:Hide()
+    end
+    -- Rebuild the tab contents
+    BuildDatatextTab(datatextTabContent)
+end
+
+-- Singleton edit popup for custom datapanels
+local editPopup = nil
+
+local function ShowPanelEditPopup(panelConfig, panelIndex)
+    if not editPopup then
+        editPopup = CreateFrame("Frame", "QUI_DatapanelEditPopup", UIParent, "BackdropTemplate")
+        editPopup:SetSize(440, 520)
+        editPopup:SetPoint("CENTER")
+        editPopup:SetFrameStrata("FULLSCREEN_DIALOG")
+        editPopup:SetFrameLevel(400)
+        editPopup:EnableMouse(true)
+        editPopup:SetMovable(true)
+        editPopup:RegisterForDrag("LeftButton")
+        editPopup:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        editPopup:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        editPopup:SetClampedToScreen(true)
+
+        local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(editPopup)) or 1
+        editPopup:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = px,
+        })
+        editPopup:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.98)
+        editPopup:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+
+        -- Title
+        editPopup.title = editPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        editPopup.title:SetPoint("TOP", 0, -12)
+        editPopup.title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+
+        -- Close button
+        local closeBtn = GUI:CreateButton(editPopup, "Close", 70, 24, function()
+            editPopup:Hide()
+        end)
+        closeBtn:SetPoint("TOPRIGHT", -8, -8)
+
+        -- Scroll frame (mouse wheel only, no scroll bar)
+        editPopup.scrollFrame = CreateFrame("ScrollFrame", nil, editPopup)
+        editPopup.scrollFrame:SetPoint("TOPLEFT", 8, -40)
+        editPopup.scrollFrame:SetPoint("BOTTOMRIGHT", -8, 10)
+        editPopup.scrollFrame:EnableMouseWheel(true)
+        editPopup.scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+            local current = self:GetVerticalScroll()
+            local child = self:GetScrollChild()
+            local maxScroll = math.max(0, (child and child:GetHeight() or 0) - self:GetHeight())
+            local newScroll = math.max(0, math.min(maxScroll, current - delta * 30))
+            self:SetVerticalScroll(newScroll)
+        end)
+
+        editPopup:Hide()
+    end
+
+    -- Hide old content before creating new scroll child
+    local oldChild = editPopup.scrollFrame:GetScrollChild()
+    if oldChild then
+        oldChild:Hide()
+        oldChild:SetParent(nil)
+    end
+
+    -- Create new content frame each time (replaces old scroll child)
+    local content = CreateFrame("Frame", nil, editPopup.scrollFrame)
+    content:SetWidth(440 - 16)  -- popup width minus padding
+    editPopup.scrollFrame:SetScrollChild(content)
+    editPopup.scrollFrame:SetVerticalScroll(0)
+
+    -- Set title
+    editPopup.title:SetText("Edit: " .. (panelConfig.name or ("Panel " .. panelIndex)))
+
+    -- Suppress search registration for popup widgets
+    local prevSuppress = GUI._suppressSearchRegistration
+    GUI._suppressSearchRegistration = true
+
+    local y = -10
+    local PAD = 10
+    local FORM_ROW = 32
+
+    -- Panel Settings
+    local settingsHeader = GUI:CreateSectionHeader(content, "Panel Settings")
+    settingsHeader:SetPoint("TOPLEFT", PAD, y)
+    y = y - settingsHeader.gap
+
+    local widthSlider = GUI:CreateFormSlider(content, "Width", 100, 800, 10, "width", panelConfig, RefreshDatapanels)
+    widthSlider:SetPoint("TOPLEFT", PAD, y)
+    widthSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    local heightSlider = GUI:CreateFormSlider(content, "Height (Per Row)", 18, 50, 1, "height", panelConfig, RefreshDatapanels)
+    heightSlider:SetPoint("TOPLEFT", PAD, y)
+    heightSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    local numSlotsSlider = GUI:CreateFormSlider(content, "Number of Slots", 1, 8, 1, "numSlots", panelConfig, function()
+        RefreshDatapanels()
+        -- Rebuild popup to show correct number of slot configs
+        ShowPanelEditPopup(panelConfig, panelIndex)
+    end)
+    numSlotsSlider:SetPoint("TOPLEFT", PAD, y)
+    numSlotsSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    local bgOpacitySlider = GUI:CreateFormSlider(content, "Background Opacity", 0, 100, 5, "bgOpacity", panelConfig, RefreshDatapanels)
+    bgOpacitySlider:SetPoint("TOPLEFT", PAD, y)
+    bgOpacitySlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    local borderSlider = GUI:CreateFormSlider(content, "Border Size (0=hidden)", 0, 8, 1, "borderSize", panelConfig, RefreshDatapanels)
+    borderSlider:SetPoint("TOPLEFT", PAD, y)
+    borderSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    if not panelConfig.borderColor then
+        panelConfig.borderColor = {0, 0, 0, 1}
+    end
+
+    local borderColorPicker = GUI:CreateFormColorPicker(content, "Border Color", "borderColor", panelConfig, RefreshDatapanels)
+    borderColorPicker:SetPoint("TOPLEFT", PAD, y)
+    borderColorPicker:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    local fontSlider = GUI:CreateFormSlider(content, "Font Size", 9, 18, 1, "fontSize", panelConfig, RefreshDatapanels)
+    fontSlider:SetPoint("TOPLEFT", PAD, y)
+    fontSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    y = y - 10
+
+    -- Slot Configuration
+    local slotsHeader = GUI:CreateSectionHeader(content, "Slot Configuration")
+    slotsHeader:SetPoint("TOPLEFT", PAD, y)
+    y = y - slotsHeader.gap
+
+    -- Build datatext options from registry
+    local dtOptions = {{value = "", text = "(empty)"}}
+    if QUICore and QUICore.Datatexts then
+        local allDatatexts = QUICore.Datatexts:GetAll()
+        for _, datatextDef in ipairs(allDatatexts) do
+            table.insert(dtOptions, {value = datatextDef.id, text = datatextDef.displayName})
+        end
+    end
+
+    -- Ensure slots and slotSettings exist
+    if not panelConfig.slots then panelConfig.slots = {} end
+    if not panelConfig.slotSettings then panelConfig.slotSettings = {} end
+
+    local numSlots = panelConfig.numSlots or 3
+    for s = 1, numSlots do
+        if not panelConfig.slotSettings[s] then
+            panelConfig.slotSettings[s] = { shortLabel = false, noLabel = false }
+        end
+
+        local slotDropdown = GUI:CreateFormDropdown(content, "Slot " .. s, dtOptions, nil, nil, function(val)
+            panelConfig.slots[s] = val
+            RefreshDatapanels()
+        end)
+        slotDropdown:SetPoint("TOPLEFT", PAD, y)
+        slotDropdown:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        if slotDropdown.SetValue then slotDropdown.SetValue(panelConfig.slots[s] or "") end
+        y = y - FORM_ROW
+
+        local noLabelCheck  -- Forward declare for mutual reference
+        local shortLabelCheck = GUI:CreateFormCheckbox(content, "Slot " .. s .. " Short Label", "shortLabel", panelConfig.slotSettings[s], function()
+            if noLabelCheck then noLabelCheck:SetEnabled(not panelConfig.slotSettings[s].shortLabel) end
+            RefreshDatapanels()
+        end)
+        shortLabelCheck:SetPoint("TOPLEFT", PAD, y)
+        shortLabelCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        noLabelCheck = GUI:CreateFormCheckbox(content, "Slot " .. s .. " No Label", "noLabel", panelConfig.slotSettings[s], function()
+            if shortLabelCheck then shortLabelCheck:SetEnabled(not panelConfig.slotSettings[s].noLabel) end
+            RefreshDatapanels()
+        end)
+        noLabelCheck:SetPoint("TOPLEFT", PAD, y)
+        noLabelCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        noLabelCheck:SetEnabled(not panelConfig.slotSettings[s].shortLabel)
+        shortLabelCheck:SetEnabled(not panelConfig.slotSettings[s].noLabel)
+        y = y - FORM_ROW
+
+        y = y - 6  -- Gap between slots
+    end
+
+    -- Hint text
+    local hintText = GUI:CreateLabel(content, "Empty slots are hidden. Panels only appear when at least one slot has a datatext.", 11, C.textMuted)
+    hintText:SetPoint("TOPLEFT", PAD, y)
+    hintText:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    hintText:SetJustifyH("LEFT")
+    y = y - 28
+
+    -- Set content height for scrolling
+    content:SetHeight(math.abs(y) + 20)
+
+    -- Restore search registration state
+    GUI._suppressSearchRegistration = prevSuppress
+
+    editPopup:Show()
+end
+
 local function BuildMinimapTab(tabContent)
     local y = -10
     local PAD = 10
@@ -301,7 +526,8 @@ local function BuildMinimapTab(tabContent)
     tabContent:SetHeight(math.abs(y) + 50)
 end
 
-local function BuildDatatextTab(tabContent)
+BuildDatatextTab = function(tabContent)
+    datatextTabContent = tabContent  -- Store for rebuild
     local y = -10
     local PAD = 10
     local FORM_ROW = 32
@@ -650,9 +876,6 @@ local function BuildDatatextTab(tabContent)
         -- List existing panels
         local panels = db.quiDatatexts.panels
 
-        -- Track all edit frames for mutual exclusion (only one config open at a time)
-        local openEditFrames = {}
-
         if #panels > 0 then
             for i, panelConfig in ipairs(panels) do
                 local panelFrame = CreateFrame("Frame", nil, tabContent, "BackdropTemplate")
@@ -680,8 +903,10 @@ local function BuildDatatextTab(tabContent)
                 statusLabel:SetText(string.format("%d slots", panelConfig.numSlots or 3))
                 statusLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
-                -- Edit button - opens configuration frame
-                local editBtn = GUI:CreateButton(panelFrame, "Edit", 60, 22)
+                -- Edit button - opens configuration popup
+                local editBtn = GUI:CreateButton(panelFrame, "Edit", 60, 22, function()
+                    ShowPanelEditPopup(panelConfig, i)
+                end)
                 editBtn:SetPoint("RIGHT", -140, 0)
 
                 -- Enable toggle
@@ -692,26 +917,30 @@ local function BuildDatatextTab(tabContent)
                 end)
                 enableCheck:SetPoint("RIGHT", -80, 0)
 
-                -- Delete button
+                -- Delete button (with confirmation)
                 local delBtn = GUI:CreateButton(panelFrame, "Delete", 60, 22, function()
-                    table.remove(db.quiDatatexts.panels, i)
-                    if QUICore and QUICore.Datapanels then
-                        QUICore.Datapanels:DeletePanel(panelConfig.id)
-                        QUICore.Datapanels:RefreshAll()
-                    end
-                    -- Rebuild the tab to reflect changes
                     GUI:ShowConfirmation({
-                        title = "Reload UI?",
-                        message = "Panel deleted. Reload UI to see changes?",
-                        acceptText = "Reload",
-                        cancelText = "Later",
-                        onAccept = function() QUI:SafeReload() end,
+                        title = "Delete Panel?",
+                        message = "Delete '" .. (panelConfig.name or ("Panel " .. i)) .. "'?",
+                        warningText = "This cannot be undone.",
+                        acceptText = "Delete",
+                        cancelText = "Cancel",
+                        isDestructive = true,
+                        onAccept = function()
+                            -- Close edit popup if open for this panel
+                            if editPopup and editPopup:IsShown() then
+                                editPopup:Hide()
+                            end
+                            table.remove(db.quiDatatexts.panels, i)
+                            if QUICore and QUICore.Datapanels then
+                                QUICore.Datapanels:DeletePanel(panelConfig.id)
+                                QUICore.Datapanels:RefreshAll()
+                            end
+                            RebuildDatatextTab()
+                        end,
                     })
                 end)
                 delBtn:SetPoint("RIGHT", -10, 0)
-
-                -- Note: Full edit panel configuration is handled inline in the main options file
-                -- This simplified version just shows basic panel info and controls
 
                 y = y - 70
             end
@@ -734,24 +963,15 @@ local function BuildDatatextTab(tabContent)
                 height = 22,
                 bgOpacity = 50,
                 borderSize = 2,
+                borderColor = {0, 0, 0, 1},
                 fontSize = 12,
                 position = {"CENTER", "CENTER", 0, 300},
                 slots = {},
+                slotSettings = {},
             }
             table.insert(db.quiDatatexts.panels, newPanel)
-
-            if QUICore and QUICore.Datapanels then
-                QUICore.Datapanels:RefreshAll()
-            end
-
-            -- Rebuild the tab to show the new panel
-            GUI:ShowConfirmation({
-                title = "Reload UI?",
-                message = "Panel created. Reload UI to configure it?",
-                acceptText = "Reload",
-                cancelText = "Later",
-                onAccept = function() QUI:SafeReload() end,
-            })
+            RefreshDatapanels()
+            RebuildDatatextTab()
         end)
         addPanelBtn:SetPoint("TOPLEFT", PAD, y)
         y = y - 40

@@ -484,7 +484,12 @@ function MPlusTimer:CreateFrames()
     root:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         local core = GetCore()
-        local point, _, relPoint, x, y = core:SnapFramePosition(self)
+        local point, _, relPoint, x, y
+        if core and type(core.SnapFramePosition) == "function" then
+            point, _, relPoint, x, y = core:SnapFramePosition(self)
+        else
+            point, _, relPoint, x, y = self:GetPoint()
+        end
         if point then
             SavePosition(point, relPoint, x, y)
         end

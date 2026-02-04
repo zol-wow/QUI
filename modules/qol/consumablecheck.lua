@@ -1005,9 +1005,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
--- Combat lockdown: hide clickable buttons
+-- Combat lockdown: hide clickable buttons, restore after combat
 local combatFrame = CreateFrame("Frame")
 combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
         for _, button in pairs(ConsumablesFrame.buttons) do
@@ -1015,6 +1016,8 @@ combatFrame:SetScript("OnEvent", function(self, event)
                 button.click:Hide()
             end
         end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        UpdateConsumables()
     end
 end)
 

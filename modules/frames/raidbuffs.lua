@@ -485,7 +485,7 @@ local function CreateBuffIcon(parent, index)
     button:SetSize(ICON_SIZE, ICON_SIZE)
 
     -- Background/border using backdrop (border settings applied in ApplyIconBorderSettings)
-    local px = QUICore:GetPixelSize(button)
+    local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(button)) or 1
     button:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",

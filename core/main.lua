@@ -175,7 +175,8 @@ end
 
 -- Export a single tracker bar (with its spec-specific entries if enabled)
 function QUICore:ExportSingleTrackerBar(barIndex)
-    if not self.db or not self.db.profile or not self.db.profile.customTrackers then
+    if not self.db or not self.db.profile or not self.db.profile.customTrackers
+        or not self.db.profile.customTrackers.bars then
         return nil, "No tracker data loaded."
     end
     if not AceSerializer or not LibDeflate then
@@ -254,6 +255,25 @@ function QUICore:ExportAllTrackerBars()
 end
 
 -- Import a single tracker bar (appends to existing bars)
+-- Generate a collision-safe unique tracker ID
+local function GenerateUniqueTrackerID(self)
+    local used = {}
+    local bars = self.db.profile.customTrackers and self.db.profile.customTrackers.bars or {}
+    for _, b in ipairs(bars) do
+        if b.id then used[b.id] = true end
+    end
+    if self.db.global and self.db.global.specTrackerSpells then
+        for id in pairs(self.db.global.specTrackerSpells) do
+            used[id] = true
+        end
+    end
+    local id
+    repeat
+        id = "tracker" .. time() .. math.random(1000, 9999)
+    until not used[id]
+    return id
+end
+
 function QUICore:ImportSingleTrackerBar(str)
     if not self.db or not self.db.profile then
         return false, "No profile loaded."
@@ -296,9 +316,9 @@ function QUICore:ImportSingleTrackerBar(str)
         self.db.profile.customTrackers.bars = {}
     end
 
-    -- Generate new unique ID for the imported bar
+    -- Generate collision-safe unique ID for the imported bar
     local oldID = data.bar.id
-    local newID = "tracker" .. time() .. math.random(1000, 9999)
+    local newID = GenerateUniqueTrackerID(self)
     data.bar.id = newID
 
     -- Append bar to existing bars
@@ -371,7 +391,7 @@ function QUICore:ImportAllTrackerBars(str, replaceExisting)
 
         for _, bar in ipairs(data.bars) do
             local oldID = bar.id
-            local newID = "tracker" .. time() .. math.random(1000, 9999)
+            local newID = GenerateUniqueTrackerID(self)
             bar.id = newID
             idMapping[oldID] = newID
             table.insert(self.db.profile.customTrackers.bars, bar)

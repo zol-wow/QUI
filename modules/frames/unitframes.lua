@@ -1308,10 +1308,16 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     frame.unitKey = "boss"  -- Settings key
     
     -- Size and position (config values are virtual coords, snap to pixel grid)
-    frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
+    local width = (QUICore.PixelRound and QUICore:PixelRound(settings.width or 220, frame)) or (settings.width or 220)
+    local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
+    frame:SetSize(width, height)
 
     -- Position relative to UIParent CENTER (config offsets are virtual coords)
-    QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    if QUICore.SetSnappedPoint then
+        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    else
+        frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    end
 
     -- Make it movable in Edit Mode
     frame:SetMovable(true)
@@ -1593,10 +1599,16 @@ local function CreateUnitFrame(unit, unitKey)
     frame.unitKey = unitKey
     
     -- Size and position (config values are virtual coords, snap to pixel grid)
-    frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
+    local width = (QUICore.PixelRound and QUICore:PixelRound(settings.width or 220, frame)) or (settings.width or 220)
+    local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
+    frame:SetSize(width, height)
 
     -- Position relative to UIParent CENTER (config offsets are virtual coords)
-    QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    if QUICore.SetSnappedPoint then
+        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    else
+        frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    end
 
     -- Make it movable in Edit Mode (we'll handle this later)
     frame:SetMovable(true)
@@ -3234,12 +3246,18 @@ function QUI_UF:RefreshFrame(unitKey)
                 local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
 
                 -- Update size (config values are virtual coords, snap to pixel grid)
-                frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
+                local width = (QUICore.PixelRound and QUICore:PixelRound(settings.width or 220, frame)) or (settings.width or 220)
+    local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
+    frame:SetSize(width, height)
 
                 -- Position: first boss at configured position, rest stacked below
                 frame:ClearAllPoints()
                 if i == 1 then
-                    QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+                    if QUICore.SetSnappedPoint then
+                        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+                    else
+                        frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+                    end
                 else
                     local prevFrame = self.frames["boss" .. (i - 1)]
                     if prevFrame then
@@ -3449,7 +3467,9 @@ function QUI_UF:RefreshFrame(unitKey)
     end
 
     -- Update size (config values are virtual coords, snap to pixel grid)
-    frame:SetSize(QUICore:PixelRound(settings.width or 220, frame), QUICore:PixelRound(settings.height or 35, frame))
+    local width = (QUICore.PixelRound and QUICore:PixelRound(settings.width or 220, frame)) or (settings.width or 220)
+    local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
+    frame:SetSize(width, height)
 
     -- Update position
     frame:ClearAllPoints()
@@ -3459,7 +3479,11 @@ function QUI_UF:RefreshFrame(unitKey)
         _G.QUI_UpdateAnchoredUnitFrames()
     else
         -- Standard positioning (config offsets are virtual coords)
-        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        if QUICore.SetSnappedPoint then
+            QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        else
+            frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        end
     end
     
     -- Get colors and separate opacity values based on dark mode state

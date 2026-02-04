@@ -5,9 +5,12 @@
 ]]
 
 local ADDON_NAME, ns = ...
-local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local GetDB = Helpers.CreateDBGetter("ncdm")
+
+local function GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
 
 local VIEWER_ESSENTIAL = "EssentialCooldownViewer"
 local VIEWER_UTILITY = "UtilityCooldownViewer"
@@ -28,6 +31,7 @@ ns.CustomCDM = CustomCDM
 -- HELPER: Get custom entries data from DB
 ---------------------------------------------------------------------------
 local function GetCustomData(trackerKey)
+    local QUICore = GetCore()
     if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm
         and QUICore.db.char.ncdm[trackerKey] and QUICore.db.char.ncdm[trackerKey].customEntries then
         return QUICore.db.char.ncdm[trackerKey].customEntries
