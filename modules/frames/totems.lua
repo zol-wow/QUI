@@ -27,13 +27,13 @@ local BASE_CROP = 0.08
 ---------------------------------------------------------------------------
 -- DATABASE ACCESS
 ---------------------------------------------------------------------------
+local Helpers = ns.Helpers
 -- DB accessor using shared helpers
 local GetDB = Helpers.CreateDBGetter("totemBar")
 
 ---------------------------------------------------------------------------
 -- FONT HELPERS (uses shared helpers)
 ---------------------------------------------------------------------------
-local Helpers = ns.Helpers
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 
