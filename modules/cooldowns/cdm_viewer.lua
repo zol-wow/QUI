@@ -932,7 +932,9 @@ local function LayoutViewer(viewerName, trackerKey)
     end
 
     -- Resize viewer (suppress OnSizeChanged triggering another layout)
+    -- Compensate anchor offset so the visual center stays in place when width/height changes
     if maxRowWidth > 0 and totalHeight > 0 then
+        local oldW, oldH = viewer:GetWidth(), viewer:GetHeight()
         viewer.__cdmLayoutSuppressed = (viewer.__cdmLayoutSuppressed or 0) + 1
         pcall(function()
             viewer:SetSize(maxRowWidth, totalHeight)
@@ -940,6 +942,43 @@ local function LayoutViewer(viewerName, trackerKey)
         viewer.__cdmLayoutSuppressed = viewer.__cdmLayoutSuppressed - 1
         if viewer.__cdmLayoutSuppressed <= 0 then
             viewer.__cdmLayoutSuppressed = nil
+        end
+
+        -- If size changed and the frame has a non-CENTER anchor, shift the anchor
+        -- offset so the visual center doesn't drift (fixes off-center after spec switch)
+        local dw, dh = maxRowWidth - oldW, totalHeight - oldH
+        if (dw ~= 0 or dh ~= 0) and not InCombatLockdown() then
+            local point, relativeTo, relativePoint, xOfs, yOfs = viewer:GetPoint(1)
+            if point and point ~= "CENTER" then
+                -- Horizontal: TOPLEFT/LEFT/BOTTOMLEFT → shift left by half delta
+                --             TOPRIGHT/RIGHT/BOTTOMRIGHT → shift right by half delta
+                --             TOP/BOTTOM → no horizontal shift (already centered horizontally)
+                local xAdj = 0
+                if point:find("LEFT") then
+                    xAdj = -dw / 2
+                elseif point:find("RIGHT") then
+                    xAdj = dw / 2
+                end
+                -- Vertical: TOP* → shift up by half delta; BOTTOM* → shift down by half delta
+                local yAdj = 0
+                if point:find("TOP") then
+                    yAdj = dh / 2
+                elseif point:find("BOTTOM") then
+                    yAdj = -dh / 2
+                end
+
+                if xAdj ~= 0 or yAdj ~= 0 then
+                    viewer.__cdmLayoutSuppressed = (viewer.__cdmLayoutSuppressed or 0) + 1
+                    pcall(function()
+                        viewer:ClearAllPoints()
+                        viewer:SetPoint(point, relativeTo, relativePoint, (xOfs or 0) + xAdj, (yOfs or 0) + yAdj)
+                    end)
+                    viewer.__cdmLayoutSuppressed = (viewer.__cdmLayoutSuppressed or 0) - 1
+                    if viewer.__cdmLayoutSuppressed <= 0 then
+                        viewer.__cdmLayoutSuppressed = nil
+                    end
+                end
+            end
         end
         
         if viewer.Selection then
