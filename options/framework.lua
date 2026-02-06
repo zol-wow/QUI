@@ -3715,7 +3715,7 @@ function GUI:CreateMainFrame()
     local profile = db and db.profile
     local general = profile and profile.general
     local accentDB = general and general.addonAccentColor
-    if accentDB then
+    if accentDB and accentDB[1] and accentDB[2] and accentDB[3] then
         GUI:ApplyAccentColor(accentDB[1], accentDB[2], accentDB[3])
     end
 
