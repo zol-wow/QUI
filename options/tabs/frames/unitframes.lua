@@ -703,6 +703,36 @@ local function CreateUnitFramesPage(parent)
         absorbTextureDesc:SetJustifyH("LEFT")
         y = y - 20
 
+        -- HEAL PREDICTION section (player/target only)
+        if unitKey == "player" or unitKey == "target" then
+            local healHeader = GUI:CreateSectionHeader(tabContent, "Heal Prediction")
+            healHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - healHeader.gap
+
+            if not unitDB.healPrediction then
+                unitDB.healPrediction = {
+                    enabled = false,
+                    color = { 0.2, 1, 0.2 },
+                    opacity = 0.5,
+                }
+            end
+
+            local healCheck = GUI:CreateFormCheckbox(tabContent, "Show Incoming Heals", "enabled", unitDB.healPrediction, RefreshUnit)
+            healCheck:SetPoint("TOPLEFT", PAD, y)
+            healCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local healOpacity = GUI:CreateFormSlider(tabContent, "Opacity", 0, 1, 0.05, "opacity", unitDB.healPrediction, RefreshUnit)
+            healOpacity:SetPoint("TOPLEFT", PAD, y)
+            healOpacity:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local healColor = GUI:CreateFormColorPicker(tabContent, "Heal Color", "color", unitDB.healPrediction, RefreshUnit, { noAlpha = true })
+            healColor:SetPoint("TOPLEFT", PAD, y)
+            healColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+        end
+
         -- NAME TEXT section
         local nameHeader = GUI:CreateSectionHeader(tabContent, "Name Text")
         nameHeader:SetPoint("TOPLEFT", PAD, y)

@@ -1847,6 +1847,12 @@ local defaults = {
                     opacity = 0.3,
                     texture = "QUI Stripes",
                 },
+                -- Heal prediction (incoming heals)
+                healPrediction = {
+                    enabled = false,
+                    color = { 0.2, 1, 0.2 },
+                    opacity = 0.5,
+                },
                 -- Castbar
                 castbar = {
                     enabled = true,
@@ -2041,6 +2047,12 @@ local defaults = {
                     color = { 1, 1, 1, 1 },
                     opacity = 0.3,
                     texture = "QUI Stripes",
+                },
+                -- Heal prediction (incoming heals)
+                healPrediction = {
+                    enabled = false,
+                    color = { 0.2, 1, 0.2 },
+                    opacity = 0.5,
                 },
                 -- Castbar
                 castbar = {

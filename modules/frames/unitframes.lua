@@ -840,6 +840,88 @@ local function UpdateAbsorbs(frame)
 end
 
 ---------------------------------------------------------------------------
+-- UPDATE: Incoming heal prediction (clamped to missing health)
+---------------------------------------------------------------------------
+local function UpdateHealPrediction(frame)
+    if not frame or not frame.unit or not frame.healthBar or not frame.healPredictionBar then return end
+
+    local unit = frame.unit
+    local settings = GetUnitSettings(frame.unitKey)
+    local predictionSettings = settings and settings.healPrediction
+
+    if not predictionSettings or predictionSettings.enabled == false then
+        frame.healPredictionBar:Hide()
+        return
+    end
+
+    if not UnitExists(unit) then
+        frame.healPredictionBar:Hide()
+        return
+    end
+
+    local maxHealth = UnitHealthMax(unit)
+    local incomingHeals
+
+    if CreateUnitHealPredictionCalculator then
+        if not frame.healPredictionCalculator then
+            frame.healPredictionCalculator = CreateUnitHealPredictionCalculator()
+            local calc = frame.healPredictionCalculator
+            if calc and calc.SetIncomingHealClampMode then
+                local clampMode = 1
+                if Enum and Enum.UnitIncomingHealClampMode and Enum.UnitIncomingHealClampMode.MissingHealth then
+                    clampMode = Enum.UnitIncomingHealClampMode.MissingHealth
+                end
+                pcall(calc.SetIncomingHealClampMode, calc, clampMode)
+            end
+            if calc and calc.SetIncomingHealOverflowPercent then
+                pcall(calc.SetIncomingHealOverflowPercent, calc, 1.0)
+            end
+        end
+
+        local calc = frame.healPredictionCalculator
+        if calc and UnitGetDetailedHealPrediction then
+            pcall(UnitGetDetailedHealPrediction, unit, nil, calc)
+            local results = { pcall(function() return calc:GetIncomingHeals() end) }
+            if results[1] then
+                incomingHeals = results[2]
+            end
+        end
+    end
+
+    if not incomingHeals then
+        incomingHeals = UnitGetIncomingHeals(unit)
+    end
+
+    if not incomingHeals then
+        frame.healPredictionBar:Hide()
+        return
+    end
+
+    local okZero, isZero = pcall(function()
+        return incomingHeals == 0
+    end)
+    if okZero and isZero then
+        frame.healPredictionBar:Hide()
+        return
+    end
+
+    local healthTexture = frame.healthBar:GetStatusBarTexture()
+    frame.healPredictionBar:ClearAllPoints()
+    frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+    frame.healPredictionBar:SetHeight(frame.healthBar:GetHeight())
+    frame.healPredictionBar:SetWidth(frame.healthBar:GetWidth())
+    frame.healPredictionBar:SetReverseFill(false)
+    frame.healPredictionBar:SetMinMaxValues(0, maxHealth or 1)
+    frame.healPredictionBar:SetValue(incomingHeals)
+    frame.healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+
+    local c = predictionSettings.color or { 0.2, 1, 0.2 }
+    local a = predictionSettings.opacity or 0.5
+    frame.healPredictionBar:SetStatusBarColor(c[1] or 0.2, c[2] or 1, c[3] or 0.2, a)
+    frame.healPredictionBar:Show()
+end
+
+---------------------------------------------------------------------------
 -- UPDATE: Power bar (no comparisons, just pass values directly)
 ---------------------------------------------------------------------------
 local function UpdatePower(frame)
@@ -1272,6 +1354,7 @@ local function UpdateFrame(frame)
 
     UpdateHealth(frame)
     UpdateAbsorbs(frame)
+    UpdateHealPrediction(frame)
     UpdatePower(frame)
     UpdatePowerText(frame)
     UpdateName(frame)
@@ -1306,7 +1389,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     
     frame.unit = unit  -- "boss1", "boss2", etc.
     frame.unitKey = "boss"  -- Settings key
-    
+
     -- Size and position (config values are virtual coords, snap to pixel grid)
     local width = (QUICore.PixelRound and QUICore:PixelRound(settings.width or 220, frame)) or (settings.width or 220)
     local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
@@ -1375,7 +1458,6 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     healthBar:SetValue(100)
     healthBar:EnableMouse(false)
     frame.healthBar = healthBar
-
     -- Absorb bar (StatusBar handles secret values via SetValue)
     -- Use stripe texture directly on StatusBar (no overlay) to avoid 1px sliver at 0 width
     local absorbSettings = settings.absorbs or {}
@@ -1680,6 +1762,23 @@ local function CreateUnitFrame(unit, unitKey)
     healthBar:EnableMouse(false)
     frame.healthBar = healthBar
 
+    -- Heal prediction bar (player/target only)
+    if unitKey == "player" or unitKey == "target" then
+        local predictionSettings = settings.healPrediction or {}
+        local healPredictionBar = CreateFrame("StatusBar", nil, healthBar)
+        healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+        healPredictionBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
+        healPredictionBar:SetPoint("TOP", healthBar, "TOP", 0, 0)
+        healPredictionBar:SetPoint("BOTTOM", healthBar, "BOTTOM", 0, 0)
+        healPredictionBar:SetMinMaxValues(0, 1)
+        healPredictionBar:SetValue(0)
+        local pc = predictionSettings.color or { 0.2, 1, 0.2 }
+        local pa = predictionSettings.opacity or 0.5
+        healPredictionBar:SetStatusBarColor(pc[1] or 0.2, pc[2] or 1, pc[3] or 0.2, pa)
+        healPredictionBar:Hide()
+        frame.healPredictionBar = healPredictionBar
+    end
+
     -- Absorb bar (StatusBar handles secret values via SetValue)
     -- Use stripe texture directly on StatusBar (no overlay) to avoid 1px sliver at 0 width
     local absorbSettings = settings.absorbs or {}
@@ -1959,6 +2058,7 @@ local function CreateUnitFrame(unit, unitKey)
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame:RegisterEvent("UNIT_HEALTH")
     frame:RegisterEvent("UNIT_MAXHEALTH")
+    frame:RegisterEvent("UNIT_HEAL_PREDICTION")
     frame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
     frame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
     frame:RegisterEvent("UNIT_POWER_UPDATE")
@@ -2062,10 +2162,13 @@ local function CreateUnitFrame(unit, unitKey)
             if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
                 UpdateHealth(self)
                 UpdateAbsorbs(self)
+                UpdateHealPrediction(self)
                 -- Force update ToT when target health changes
                 if self.unitKey == "target" then
                     ForceUpdateToT()
                 end
+            elseif event == "UNIT_HEAL_PREDICTION" then
+                UpdateHealPrediction(self)
             elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" or event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
                 UpdateAbsorbs(self)
                 if self.unitKey == "target" then
@@ -2838,6 +2941,31 @@ function QUI_UF:ShowPreview(unitKey)
             frame.powerText:Show()
         else
             frame.powerText:Hide()
+        end
+    end
+
+    -- Set fake heal prediction (player/target only)
+    if frame.healPredictionBar then
+        if settings and settings.healPrediction and settings.healPrediction.enabled then
+            local hpMax = 100
+            local incoming = 15
+            local missing = hpMax - 75
+            local clamped = incoming > missing and missing or incoming
+            local healthTexture = frame.healthBar:GetStatusBarTexture()
+            frame.healPredictionBar:ClearAllPoints()
+            frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+            frame.healPredictionBar:SetHeight(frame.healthBar:GetHeight())
+            frame.healPredictionBar:SetWidth(frame.healthBar:GetWidth())
+            frame.healPredictionBar:SetReverseFill(false)
+            frame.healPredictionBar:SetMinMaxValues(0, hpMax)
+            frame.healPredictionBar:SetValue(clamped)
+            frame.healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+            local c = settings.healPrediction.color or { 0.2, 1, 0.2 }
+            local a = settings.healPrediction.opacity or 0.5
+            frame.healPredictionBar:SetStatusBarColor(c[1] or 0.2, c[2] or 1, c[3] or 0.2, a)
+            frame.healPredictionBar:Show()
+        else
+            frame.healPredictionBar:Hide()
         end
     end
 
@@ -5062,4 +5190,3 @@ _G.QUI_UpdateLockedCastbarToFrame = function()
         _G.QUI_RefreshCastbar("player")
     end
 end
-
