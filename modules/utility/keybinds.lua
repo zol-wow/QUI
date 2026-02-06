@@ -81,23 +81,18 @@ local function GetCurrentSpecID()
 end
 
 -- Helper: get shared keybind overrides from DB (character and spec-specific)
+-- Uses specID as key, falling back to 0 for characters without a spec (below level 10)
 local function GetSharedOverrides()
     local QUICore = _G.QUI and _G.QUI.QUICore
     if not QUICore or not QUICore.db or not QUICore.db.char then return nil end
-    
+
     local specID = GetCurrentSpecID()
-    if specID == 0 then return nil end
-    
-    -- Initialize char.keybindOverrides if needed
-    if not QUICore.db.char.keybindOverrides then
-        QUICore.db.char.keybindOverrides = {}
-    end
-    
-    -- Initialize spec-specific table if needed
+
+    -- Initialize spec-specific table if needed (char.keybindOverrides is guaranteed by AceDB defaults)
     if not QUICore.db.char.keybindOverrides[specID] then
         QUICore.db.char.keybindOverrides[specID] = {}
     end
-    
+
     return QUICore.db.char.keybindOverrides[specID]
 end
 
@@ -1102,28 +1097,13 @@ end
 -- Set or clear a keybind override for a spellID (shared across all viewers).
 local function SetKeybindOverride(spellID, keybindText)
     if not spellID then return end
-    
+
     -- Ensure spellID is a number (convert from string if needed)
     spellID = tonumber(spellID)
     if not spellID or spellID <= 0 then return end
 
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.char then return end
-
-    local specID = GetCurrentSpecID()
-    if specID == 0 then return end
-
-    -- Initialize char.keybindOverrides if needed
-    if not QUICore.db.char.keybindOverrides then
-        QUICore.db.char.keybindOverrides = {}
-    end
-    
-    -- Initialize spec-specific table if needed
-    if not QUICore.db.char.keybindOverrides[specID] then
-        QUICore.db.char.keybindOverrides[specID] = {}
-    end
-
-    local overrides = QUICore.db.char.keybindOverrides[specID]
+    local overrides = GetSharedOverrides()
+    if not overrides then return end
 
     if keybindText == nil then
         -- Explicitly remove override (user clicked X)
@@ -1165,28 +1145,13 @@ end
 -- Uses negative itemID as key to avoid conflicts with spellIDs
 local function SetKeybindOverrideForItem(itemID, keybindText)
     if not itemID then return end
-    
+
     -- Ensure itemID is a number (convert from string if needed)
     itemID = tonumber(itemID)
     if not itemID or itemID <= 0 then return end
 
-    local QUICore = _G.QUI and _G.QUI.QUICore
-    if not QUICore or not QUICore.db or not QUICore.db.char then return end
-
-    local specID = GetCurrentSpecID()
-    if specID == 0 then return end
-
-    -- Initialize char.keybindOverrides if needed
-    if not QUICore.db.char.keybindOverrides then
-        QUICore.db.char.keybindOverrides = {}
-    end
-    
-    -- Initialize spec-specific table if needed
-    if not QUICore.db.char.keybindOverrides[specID] then
-        QUICore.db.char.keybindOverrides[specID] = {}
-    end
-
-    local overrides = QUICore.db.char.keybindOverrides[specID]
+    local overrides = GetSharedOverrides()
+    if not overrides then return end
     local key = -itemID -- Use negative itemID as key
 
     if keybindText == nil then

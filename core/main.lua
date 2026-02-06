@@ -3407,6 +3407,9 @@ local defaults = {
             autoScan = false,  -- Auto-scan setting (off by default)
         },
     },
+    char = {
+        keybindOverrides = {},  -- [specID] = { [spellID] = keybindText, [-itemID] = keybindText }
+    },
 }
 
 function QUICore:OnInitialize()

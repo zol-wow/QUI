@@ -25,8 +25,8 @@ end)
 local specChangeListener = CreateFrame("Frame")
 specChangeListener:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 local specChangeCallback = nil
-specChangeListener:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_SPECIALIZATION_CHANGED" and specChangeCallback then
+specChangeListener:SetScript("OnEvent", function(self, event, unit)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" and unit == "player" and specChangeCallback then
         -- Delay to allow API to update
         C_Timer.After(0.1, specChangeCallback)
     end
@@ -221,7 +221,7 @@ local function BuildKeybindsTab(tabContent)
 
         -- Get shared overrides from DB (character and spec-specific)
         local QUICore = _G.QUI and _G.QUI.QUICore
-        if not QUICore or not QUICore.db or not QUICore.db.profile then
+        if not QUICore or not QUICore.db or not QUICore.db.profile or not QUICore.db.char then
             local noDataLabel = GUI:CreateLabel(tabContent, "Database not available", 12, C.textMuted)
             noDataLabel:SetPoint("TOPLEFT", PAD, y)
             y = y - 24
@@ -250,18 +250,13 @@ local function BuildKeybindsTab(tabContent)
             UpdateSpecInfo()
             
             -- Helper to get current spec's overrides
+            -- Uses specID as key, falling back to 0 for characters without a spec (below level 10)
             local function GetCurrentSpecOverrides()
-                if not QUICore.db.char then return nil end
-                if specID == 0 then return nil end
-                
-                if not QUICore.db.char.keybindOverrides then
-                    QUICore.db.char.keybindOverrides = {}
-                end
-                
+                -- char.keybindOverrides is guaranteed by AceDB defaults
                 if not QUICore.db.char.keybindOverrides[specID] then
                     QUICore.db.char.keybindOverrides[specID] = {}
                 end
-                
+
                 return QUICore.db.char.keybindOverrides[specID]
             end
 
