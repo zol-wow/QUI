@@ -1598,6 +1598,7 @@ local defaults = {
                 usabilityColor = {0.4, 0.4, 0.4, 1},  -- Fallback color if not desaturating
                 manaColor = {0.5, 0.5, 1.0, 1}, -- Out of mana color (blue tint)
                 fastUsabilityUpdates = false, -- 5x faster range/usability checks (50ms vs 250ms)
+                showTooltips = true,        -- Show tooltips when hovering action buttons
             },
             -- Mouseover fade settings
             fade = {

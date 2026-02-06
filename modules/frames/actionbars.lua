@@ -1826,6 +1826,19 @@ function ActionBars:Initialize()
     -- One-time migration for lock setting (preserves user setting after CVar sync fix)
     MigrateLockSetting()
 
+    -- Hook tooltip suppression for action buttons
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        local global = GetGlobalSettings()
+        if not global or global.showTooltips ~= false then return end
+        local name = parent and parent.GetName and parent:GetName()
+        if name and (name:match("^ActionButton") or name:match("^MultiBar") or name:match("^PetActionButton")
+            or name:match("^StanceButton") or name:match("^OverrideActionBar") or name:match("^ExtraActionButton")) then
+            tooltip:Hide()
+            tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+            tooltip:ClearLines()
+        end
+    end)
+
     -- Initial skin pass
     SkinAllBars()
 

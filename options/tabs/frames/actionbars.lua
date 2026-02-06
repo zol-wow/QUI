@@ -309,6 +309,12 @@ local function CreateActionBarsPage(parent)
         bordersCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local tooltipsCheck = GUI:CreateFormCheckbox(tabContent, "Show Tooltips",
+            "showTooltips", global)
+        tooltipsCheck:SetPoint("TOPLEFT", PAD, y)
+        tooltipsCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         ---------------------------------------------------------
         -- Section: Bar Layout
         ---------------------------------------------------------
