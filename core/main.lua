@@ -918,8 +918,7 @@ local defaults = {
             enabled = true,           -- Skin GroupLootHistoryFrame
         },
 
-        -- Keybind Overrides (spell/item ID → custom keybind text, shared across viewers)
-        keybindOverrides = {},
+        -- Keybind Overrides (stored per character/spec in db.char.keybindOverrides[specID])
         keybindOverridesEnabledCDM = true,
         keybindOverridesEnabledTrackers = true,
 

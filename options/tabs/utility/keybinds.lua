@@ -21,6 +21,17 @@ itemInfoListener:SetScript("OnEvent", function(self, event, itemID)
     end
 end)
 
+-- Persistent event listener for specialization changes (created once, callback updated per tab build)
+local specChangeListener = CreateFrame("Frame")
+specChangeListener:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+local specChangeCallback = nil
+specChangeListener:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" and specChangeCallback then
+        -- Delay to allow API to update
+        C_Timer.After(0.1, specChangeCallback)
+    end
+end)
+
 local ANCHOR_OPTIONS = {
     { value = "TOPLEFT", text = "Top Left" },
     { value = "TOPRIGHT", text = "Top Right" },
@@ -208,16 +219,50 @@ local function BuildKeybindsTab(tabContent)
         overrideInfo:SetJustifyH("LEFT")
         y = y - 32
 
-        -- Get shared overrides from DB
+        -- Get shared overrides from DB (character and spec-specific)
         local QUICore = _G.QUI and _G.QUI.QUICore
         if not QUICore or not QUICore.db or not QUICore.db.profile then
             local noDataLabel = GUI:CreateLabel(tabContent, "Database not available", 12, C.textMuted)
             noDataLabel:SetPoint("TOPLEFT", PAD, y)
             y = y - 24
         else
-            -- Initialize if needed
-            if not QUICore.db.profile.keybindOverrides then
-                QUICore.db.profile.keybindOverrides = {}
+            -- Get current character name and specialization (updatable when spec changes)
+            local charName = UnitName("player")
+            local realmName = GetRealmName()
+            local specIndex = GetSpecialization()
+            local specID = 0
+            local specName = "No Spec"
+            
+            -- Function to update spec info
+            local function UpdateSpecInfo()
+                specIndex = GetSpecialization()
+                specID = 0
+                specName = "No Spec"
+                
+                if specIndex then
+                    specID, specName = GetSpecializationInfo(specIndex)
+                    specID = specID or 0
+                    specName = specName or "No Spec"
+                end
+            end
+            
+            -- Initialize spec info
+            UpdateSpecInfo()
+            
+            -- Helper to get current spec's overrides
+            local function GetCurrentSpecOverrides()
+                if not QUICore.db.char then return nil end
+                if specID == 0 then return nil end
+                
+                if not QUICore.db.char.keybindOverrides then
+                    QUICore.db.char.keybindOverrides = {}
+                end
+                
+                if not QUICore.db.char.keybindOverrides[specID] then
+                    QUICore.db.char.keybindOverrides[specID] = {}
+                end
+                
+                return QUICore.db.char.keybindOverrides[specID]
             end
 
             -- Enable toggle: CDM overrides
@@ -261,12 +306,14 @@ local function BuildKeybindsTab(tabContent)
                     return true
                 end
 
-                -- Direct DB access fallback
-                QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
+                -- Direct DB access fallback (character and spec-specific)
+                local overrides = GetCurrentSpecOverrides()
+                if not overrides then return false end
+                
                 if keybindText == nil then
-                    QUICore.db.profile.keybindOverrides[spellID] = nil
+                    overrides[spellID] = nil
                 else
-                    QUICore.db.profile.keybindOverrides[spellID] = keybindText
+                    overrides[spellID] = keybindText
                 end
                 RefreshAllKeybindDisplays()
                 return true
@@ -286,7 +333,7 @@ local function BuildKeybindsTab(tabContent)
                 end
                 wipe(entryFrames)
 
-                local overrides = QUICore.db.profile.keybindOverrides
+                local overrides = GetCurrentSpecOverrides()
                 if not overrides then return end
 
                 -- Convert to sorted array for display (show ALL spells and items in overrides table, even with empty binding)
@@ -400,11 +447,13 @@ local function BuildKeybindsTab(tabContent)
                                 saved = true
                                 RefreshAllKeybindDisplays()
                             else
-                                -- Direct DB access fallback
-                                QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
-                                QUICore.db.profile.keybindOverrides[-entry.id] = newKeybindText
-                                saved = true
-                                RefreshAllKeybindDisplays()
+                                -- Direct DB access fallback (character and spec-specific)
+                                local overrides = GetCurrentSpecOverrides()
+                                if overrides then
+                                    overrides[-entry.id] = newKeybindText
+                                    saved = true
+                                    RefreshAllKeybindDisplays()
+                                end
                             end
                         end
                         if saved then
@@ -453,11 +502,13 @@ local function BuildKeybindsTab(tabContent)
                                 removed = true
                                 RefreshAllKeybindDisplays()
                             else
-                                -- Direct DB access fallback
-                                QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
-                                QUICore.db.profile.keybindOverrides[-entry.id] = nil
-                                removed = true
-                                RefreshAllKeybindDisplays()
+                                -- Direct DB access fallback (character and spec-specific)
+                                local overrides = GetCurrentSpecOverrides()
+                                if overrides then
+                                    overrides[-entry.id] = nil
+                                    removed = true
+                                    RefreshAllKeybindDisplays()
+                                end
                             end
                         end
                         if removed then
@@ -528,8 +579,10 @@ local function BuildKeybindsTab(tabContent)
                             end
                             
                             -- Add to overrides (with empty keybind text initially - store directly to show in list)
-                            QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
-                            QUICore.db.profile.keybindOverrides[spellID] = ""
+                            local overrides = GetCurrentSpecOverrides()
+                            if overrides then
+                                overrides[spellID] = ""
+                            end
                             ClearCursor()
                             
                             -- Refresh the list immediately
@@ -546,8 +599,10 @@ local function BuildKeybindsTab(tabContent)
                         local itemID = id1
                         if itemID then
                             -- Add to overrides using negative itemID as key
-                            QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
-                            QUICore.db.profile.keybindOverrides[-itemID] = ""
+                            local overrides = GetCurrentSpecOverrides()
+                            if overrides then
+                                overrides[-itemID] = ""
+                            end
                             ClearCursor()
                             
                             -- Refresh the list immediately
@@ -598,24 +653,47 @@ local function BuildKeybindsTab(tabContent)
             dropSection:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - 78
 
-            -- Overridden Keybind Spells section
-            local trackedHeader = GUI:CreateSectionHeader(tabContent, "Overridden Keybind Texts For Spells")
-            trackedHeader:SetPoint("TOPLEFT", dropSection, "BOTTOMLEFT", 0, -15)
+            -- Overridden Keybind Spells section (with character and spec info)
+            local trackedHeader = nil
+            local function UpdateHeader()
+                UpdateSpecInfo()
+                local headerText = string.format("Overrides for %s, %s spec", charName or "Unknown", specName or "No Spec")
+                if trackedHeader then
+                    -- Update existing header text using SetText method
+                    trackedHeader:SetText(headerText)
+                else
+                    -- Create header on first call
+                    trackedHeader = GUI:CreateSectionHeader(tabContent, headerText)
+                    trackedHeader:SetPoint("TOPLEFT", dropSection, "BOTTOMLEFT", 0, -15)
+                end
+            end
+            
+            -- Create header initially
+            UpdateHeader()
 
             -- Entry list container
             entryListFrame = CreateFrame("Frame", nil, tabContent)
             entryListFrame:SetPoint("TOPLEFT", trackedHeader, "BOTTOMLEFT", 0, -8)
             entryListFrame:SetSize(400, 20)
             
+            -- Function to handle spec change
+            local function OnSpecChanged()
+                UpdateHeader()
+                RefreshOverrideList()
+            end
+            
             -- Update item info listener callback (frame is reused across tab builds)
             itemInfoListenerCallback = function(itemID)
-                local overrides = QUICore.db.profile.keybindOverrides
+                local overrides = GetCurrentSpecOverrides()
                 if overrides and overrides[-itemID] then
                     C_Timer.After(0.1, function()
                         RefreshOverrideList()
                     end)
                 end
             end
+            
+            -- Update spec change listener callback (frame is reused across tab builds)
+            specChangeCallback = OnSpecChanged
             
             RefreshOverrideList()
             overrideListActive = true
