@@ -760,19 +760,6 @@ local function NavigateMessageHistory(editBox, keyPressed)
     end
 end
 
--- Initialize chat history for a chat frame
-local function InitializeChatFrameHistory(chatFrame)
-    if not chatFrame then return end
-    
-    local frameName = chatFrame:GetName()
-    if frameName then
-        local editBox = chatFrame.editBox or _G[frameName .. "EditBox"]
-        if editBox then
-            InitializeChatHistory(editBox)
-        end
-    end
-end
-
 -- Initialize message history system for an edit box
 local function InitializeChatHistory(editBox)
     if not editBox then return end
@@ -832,6 +819,18 @@ local function InitializeChatHistory(editBox)
     end)
 end
 
+-- Initialize chat history for a chat frame
+local function InitializeChatFrameHistory(chatFrame)
+    if not chatFrame then return end
+    
+    local frameName = chatFrame:GetName()
+    if frameName then
+        local editBox = chatFrame.editBox or _G[frameName .. "EditBox"]
+        if editBox then
+            InitializeChatHistory(editBox)
+        end
+    end
+end
 
 ---------------------------------------------------------------------------
 -- Style edit box (chat input area)
