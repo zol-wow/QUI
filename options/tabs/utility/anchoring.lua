@@ -1047,15 +1047,8 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
         if scrollDown then scrollDown:Hide(); scrollDown:SetAlpha(0) end
     end
     
-    -- Reduce mouse wheel scroll speed for better control
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local currentScroll = self:GetVerticalScroll()
-        local maxScroll = self:GetVerticalScrollRange()
-        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
-        newScroll = math.max(0, math.min(newScroll, maxScroll))
-        self:SetVerticalScroll(newScroll)
-    end)
-    
+    ns.ApplyScrollWheel(scrollFrame)
+
     -- Create multi-anchor controls inside the scrollable content
     local PAD = 10
     local FORM_ROW = 30

@@ -2898,22 +2898,13 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame)
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
-    scrollFrame:EnableMouseWheel(true)
-
     -- Scroll content (child frame)
     local scrollContent = CreateFrame("Frame", nil, scrollFrame)
     scrollContent:SetWidth(menuFrame:GetWidth() or 200)
     scrollFrame:SetScrollChild(scrollContent)
     menuFrame.scrollContent = scrollContent
 
-    -- Mouse wheel scrolling
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local currentScroll = self:GetVerticalScroll()
-        local maxScroll = math.max(0, scrollContent:GetHeight() - menuFrame:GetHeight())
-        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
-        newScroll = math.max(0, math.min(newScroll, maxScroll))
-        self:SetVerticalScroll(newScroll)
-    end)
+    ns.ApplyScrollWheel(scrollFrame)
 
     -- Update scroll content width when menu opens
     menuFrame:SetScript("OnShow", function(self)
@@ -4722,16 +4713,7 @@ function GUI:ShowExportPopup(title, exportString)
         scrollFrame:SetScript("OnSizeChanged", function(self)
             editBox:SetWidth(self:GetWidth() - 10)
         end)
-        
-        -- Reduce mouse wheel scroll speed for better control
-        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-            local currentScroll = self:GetVerticalScroll()
-            local maxScroll = self:GetVerticalScrollRange()
-            local scrollStep = 20  -- Balanced scroll speed
-            local newScroll = currentScroll - (delta * scrollStep)
-            newScroll = math.max(0, math.min(newScroll, maxScroll))
-            self:SetVerticalScroll(newScroll)
-        end)
+        ns.ApplyScrollWheel(scrollFrame)
 
         -- Select All button
         local selectBtn = self:CreateButton(popup, "Select All", 100, 26, function()
@@ -4843,16 +4825,7 @@ function GUI:ShowImportPopup(config)
         scrollFrame:SetScript("OnSizeChanged", function(self)
             editBox:SetWidth(self:GetWidth() - 10)
         end)
-        
-        -- Reduce mouse wheel scroll speed for better control
-        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-            local currentScroll = self:GetVerticalScroll()
-            local maxScroll = self:GetVerticalScrollRange()
-            local scrollStep = 20  -- Balanced scroll speed
-            local newScroll = currentScroll - (delta * scrollStep)
-            newScroll = math.max(0, math.min(newScroll, maxScroll))
-            self:SetVerticalScroll(newScroll)
-        end)
+        ns.ApplyScrollWheel(scrollFrame)
 
         -- Button container (buttons are created/updated dynamically)
         popup.buttons = {}

@@ -19,7 +19,18 @@ local PADDING = 15  -- Standard left/right padding for all content
 local SLIDER_HEIGHT = 65  -- Standard height for slider widgets
 
 -- Mouse wheel scroll speed (pixels per tick)
-QUI_SCROLL_STEP = 60
+local SCROLL_STEP = 60
+ns.SCROLL_STEP = SCROLL_STEP
+
+function ns.ApplyScrollWheel(scrollFrame)
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local currentScroll = self:GetVerticalScroll()
+        local maxScroll = self:GetVerticalScrollRange()
+        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
+        self:SetVerticalScroll(newScroll)
+    end)
+end
 
 -- Nine-point anchor options (used for UI element positioning)
 local NINE_POINT_ANCHOR_OPTIONS = {
@@ -229,14 +240,7 @@ local function CreateScrollableContent(parent)
         end)
     end
     
-    -- Reduce mouse wheel scroll speed for better control
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local currentScroll = self:GetVerticalScroll()
-        local maxScroll = self:GetVerticalScrollRange()
-        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
-        newScroll = math.max(0, math.min(newScroll, maxScroll))
-        self:SetVerticalScroll(newScroll)
-    end)
+    ns.ApplyScrollWheel(scrollFrame)
 
     return scrollFrame, content
 end
