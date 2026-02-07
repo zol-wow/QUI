@@ -11,6 +11,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.26.2 - 2026-02-07
+
+### Changed
+- updated LibCustomGlow
+
+### Fixed
+- fix autocast shine and button glow on CDM
 ## v2.26.1 - 2026-02-07
 
 ### Changed
