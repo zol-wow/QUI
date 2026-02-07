@@ -57,6 +57,14 @@ local function EnsureNCDMDefaults(db)
         db.ncdm = {}
     end
 
+    -- Ensure minimum width defaults exist
+    if db.ncdm.essential.minWidthEnabled == nil then
+        db.ncdm.essential.minWidthEnabled = false
+    end
+    if db.ncdm.essential.minWidth == nil then
+        db.ncdm.essential.minWidth = 200
+    end
+
     -- Ensure essential exists
     if not db.ncdm.essential then
         db.ncdm.essential = { enabled = true }
@@ -94,6 +102,14 @@ local function EnsureNCDMDefaults(db)
                 db.ncdm.utility[rowKey].iconCount = 0
             end
         end
+    end
+
+     -- Ensure minimum width defaults exist
+    if db.ncdm.utility.minWidthEnabled == nil then
+        db.ncdm.utility.minWidthEnabled = false
+    end
+    if db.ncdm.utility.minWidth == nil then
+        db.ncdm.utility.minWidth = 200
     end
 
     -- Ensure char-scope customEntries exist for both trackers + one-time migration from profile
@@ -1381,6 +1397,33 @@ local function CreateCDMSetupPage(parent)
             if ess.row3 then
                 BuildRowSettings(tabContent, 3, ess.row3, "Essential", ess, rebuildEssential)
             end
+            
+            -- Minimum Width section
+            y = tabContent._currentY
+            local minWidthHeader = GUI:CreateSectionHeader(tabContent, "MINIMUM WIDTH")
+            minWidthHeader:SetPoint("TOPLEFT", PAD, y - 10)
+            minWidthHeader:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - 40
+            tabContent._currentY = y
+
+            local minWidthEnabled = GUI:CreateFormCheckbox(tabContent, "Enable Minimum Width", "minWidthEnabled", ess, RefreshNCDM)
+            minWidthEnabled:SetPoint("TOPLEFT", PAD, y)
+            minWidthEnabled:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
+            local minWidthSlider = GUI:CreateFormSlider(tabContent, "Minimum Width (pixels)", 50, 800, 10, "minWidth", ess, RefreshNCDM)
+            minWidthSlider:SetPoint("TOPLEFT", PAD, y)
+            minWidthSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
+            local minWidthHint = GUI:CreateLabel(tabContent, "Set a minimum HUD width for properly sizing anchored elements.", 11, C.textMuted)
+            minWidthHint:SetPoint("TOPLEFT", PAD, y)
+            minWidthHint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            minWidthHint:SetJustifyH("LEFT")
+            y = y - 20
+            tabContent._currentY = y
         else
             local info = GUI:CreateLabel(tabContent, "NCDM Essential settings not found. Please reload UI.", 12, C.accentLight)
             info:SetPoint("TOPLEFT", PAD, y)
@@ -1473,6 +1516,33 @@ local function CreateCDMSetupPage(parent)
             if util.row3 then
                 BuildRowSettings(tabContent, 3, util.row3, "Utility", util, rebuildUtility)
             end
+
+            -- Minimum Width section (feature: 001-hud-min-width)
+            y = tabContent._currentY
+            local minWidthHeader = GUI:CreateSectionHeader(tabContent, "MINIMUM WIDTH")
+            minWidthHeader:SetPoint("TOPLEFT", PAD, y - 10)
+            minWidthHeader:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - 40
+            tabContent._currentY = y
+
+            local minWidthEnabled = GUI:CreateFormCheckbox(tabContent, "Enable Minimum Width", "minWidthEnabled", util, RefreshNCDM)
+            minWidthEnabled:SetPoint("TOPLEFT", PAD, y)
+            minWidthEnabled:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
+            local minWidthSlider = GUI:CreateFormSlider(tabContent, "Minimum Width (pixels)", 50, 800, 10, "minWidth", util, RefreshNCDM)
+            minWidthSlider:SetPoint("TOPLEFT", PAD, y)
+            minWidthSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
+            local minWidthHint = GUI:CreateLabel(tabContent, "Set a minimum HUD width for properly sizing anchored elements.", 11, C.textMuted)
+            minWidthHint:SetPoint("TOPLEFT", PAD, y)
+            minWidthHint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            minWidthHint:SetJustifyH("LEFT")
+            y = y - 20
+            tabContent._currentY = y
         else
             local info = GUI:CreateLabel(tabContent, "NCDM Utility settings not found. Please reload UI.", 12, C.accentLight)
             info:SetPoint("TOPLEFT", PAD, y)
