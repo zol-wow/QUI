@@ -3120,6 +3120,7 @@ local function CreateCDMSetupPage(parent)
             fury = { 0.79, 0.26, 0.99, 1 },
             insanity = { 0.40, 0.00, 0.80, 1 },
             maelstrom = { 0.00, 0.50, 1.00, 1 },
+            maelstromWeapon = { 0.00, 0.69, 1.00, 1 },
             lunarPower = { 0.30, 0.52, 0.90, 1 },
             holyPower = { 0.95, 0.90, 0.60, 1 },
             chi = { 0.00, 1.00, 0.59, 1 },
@@ -3255,6 +3256,13 @@ local function CreateCDMSetupPage(parent)
         maelstromColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         maelstromColor.dbKey = "maelstrom"
         table.insert(powerColorWidgets, maelstromColor)
+        y = y - FORM_ROW
+
+        local maelstromWeaponColor = GUI:CreateFormColorPicker(tabContent, "Maelstrom Weapon", "maelstromWeapon", pc, RefreshPowerBars)
+        maelstromWeaponColor:SetPoint("TOPLEFT", PAD, y)
+        maelstromWeaponColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        maelstromWeaponColor.dbKey = "maelstromWeapon"
+        table.insert(powerColorWidgets, maelstromWeaponColor)
         y = y - FORM_ROW
 
         local lunarPowerColor = GUI:CreateFormColorPicker(tabContent, "Astral Power", "lunarPower", pc, RefreshPowerBars)

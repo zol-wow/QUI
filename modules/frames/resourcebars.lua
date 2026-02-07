@@ -101,6 +101,9 @@ end
 
 --TABLES
 
+-- Custom power type ID for Enhancement Shaman Maelstrom Weapon (aura-based, not a Blizzard PowerType)
+local POWER_TYPE_MAELSTROM_WEAPON = 100
+
 local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
 
@@ -138,6 +141,7 @@ local tickedPowerTypes = {
     [Enum.PowerType.HolyPower] = true,
     [Enum.PowerType.Runes] = true,
     [Enum.PowerType.SoulShards] = true,
+    [POWER_TYPE_MAELSTROM_WEAPON] = true,
 }
 
 local fragmentedPowerTypes = {
@@ -163,6 +167,7 @@ local instantFeedbackTypes = {
     [Enum.PowerType.ArcaneCharges] = true,
     [Enum.PowerType.Essence] = true,
     [Enum.PowerType.SoulShards] = true,
+    [POWER_TYPE_MAELSTROM_WEAPON] = true,
 }
 
 -- Druid utility forms (show spec resource instead of form resource)
@@ -275,6 +280,7 @@ local function GetSecondaryResource()
         ["ROGUE"]       = Enum.PowerType.ComboPoints,
         ["SHAMAN"]      = {
             [262]  = Enum.PowerType.Mana, -- Elemental
+            [263]  = POWER_TYPE_MAELSTROM_WEAPON,  -- Enhancement (aura stacks via C_UnitAuras)
         },
         ["WARLOCK"]     = Enum.PowerType.SoulShards,
         ["WARRIOR"]     = nil,
@@ -369,6 +375,8 @@ local function GetResourceColor(resource)
             customColor = pc.fury
         elseif resource == Enum.PowerType.Maelstrom then
             customColor = pc.maelstrom
+        elseif resource == POWER_TYPE_MAELSTROM_WEAPON then
+            customColor = pc.maelstromWeapon or pc.maelstrom
         elseif resource == Enum.PowerType.LunarPower then
             customColor = pc.lunarPower
         elseif resource == Enum.PowerType.HolyPower then
@@ -471,7 +479,7 @@ local function GetSecondaryResourceValue(resource)
         -- DH souls – get from default Blizzard bar
         local soulBar = _G["DemonHunterSoulFragmentsBar"]
         if not soulBar then return nil, nil, nil, nil end
-        
+
         -- Ensure the bar is shown (even if PlayerFrame is hidden)
         if not soulBar:IsShown() then
             soulBar:Show()
@@ -482,6 +490,13 @@ local function GetSecondaryResourceValue(resource)
         local _, max = soulBar:GetMinMaxValues()
 
         return max, current, current, "number"
+    end
+
+    if resource == POWER_TYPE_MAELSTROM_WEAPON then
+        -- Enhancement Shaman Maelstrom Weapon stacks (aura-based, spell ID 344179)
+        local aura = C_UnitAuras.GetPlayerAuraBySpellID(344179)
+        local current = aura and aura.applications or 0
+        return 10, current, current, "number"
     end
 
     if resource == Enum.PowerType.Runes then
@@ -2537,6 +2552,15 @@ function QUICore:OnUnitPower(_, unit)
 end
 
 
+-- UNIT_AURA handler for aura-based resources (Maelstrom Weapon stacks)
+function QUICore:OnUnitAura(_, unit)
+    if unit and unit ~= "player" then return end
+    local resource = GetSecondaryResource()
+    if resource == POWER_TYPE_MAELSTROM_WEAPON then
+        self:UpdateSecondaryPowerBar()
+    end
+end
+
 -- REFRESH
 
 local oldRefreshAll = QUICore.RefreshAll
@@ -2616,6 +2640,7 @@ local function InitializeResourceBars(self)
     self:RegisterEvent("UNIT_POWER_UPDATE", "OnUnitPower")
     self:RegisterEvent("UNIT_MAXPOWER", "OnUnitPower")
     self:RegisterEvent("RUNE_POWER_UPDATE", "OnRunePowerUpdate")  -- DK rune updates (event-driven, replaces ticker)
+    self:RegisterEvent("UNIT_AURA", "OnUnitAura")  -- Aura-based resources (Maelstrom Weapon stacks)
 
     -- Combat state events - force update on combat transitions
     -- Ensures bars show correct values when entering/exiting combat

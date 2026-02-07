@@ -1366,6 +1366,7 @@ local defaults = {
             fury = { 0.79, 0.26, 0.99, 1 },
             insanity = { 0.40, 0.00, 0.80, 1 },
             maelstrom = { 0.00, 0.50, 1.00, 1 },
+            maelstromWeapon = { 0.00, 0.69, 1.00, 1 },
             lunarPower = { 0.30, 0.52, 0.90, 1 },
 
             -- Builder Resources
