@@ -19,7 +19,7 @@ local PADDING = 15  -- Standard left/right padding for all content
 local SLIDER_HEIGHT = 65  -- Standard height for slider widgets
 
 -- Mouse wheel scroll speed (pixels per tick)
-QUI_SCROLL_STEP = 80
+QUI_SCROLL_STEP = 60
 
 -- Nine-point anchor options (used for UI element positioning)
 local NINE_POINT_ANCHOR_OPTIONS = {
