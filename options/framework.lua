@@ -2910,7 +2910,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local currentScroll = self:GetVerticalScroll()
         local maxScroll = math.max(0, scrollContent:GetHeight() - menuFrame:GetHeight())
-        local newScroll = currentScroll - (delta * 20)
+        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
         newScroll = math.max(0, math.min(newScroll, maxScroll))
         self:SetVerticalScroll(newScroll)
     end)
@@ -4722,6 +4722,16 @@ function GUI:ShowExportPopup(title, exportString)
         scrollFrame:SetScript("OnSizeChanged", function(self)
             editBox:SetWidth(self:GetWidth() - 10)
         end)
+        
+        -- Reduce mouse wheel scroll speed for better control
+        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+            local currentScroll = self:GetVerticalScroll()
+            local maxScroll = self:GetVerticalScrollRange()
+            local scrollStep = 20  -- Balanced scroll speed
+            local newScroll = currentScroll - (delta * scrollStep)
+            newScroll = math.max(0, math.min(newScroll, maxScroll))
+            self:SetVerticalScroll(newScroll)
+        end)
 
         -- Select All button
         local selectBtn = self:CreateButton(popup, "Select All", 100, 26, function()
@@ -4832,6 +4842,16 @@ function GUI:ShowImportPopup(config)
 
         scrollFrame:SetScript("OnSizeChanged", function(self)
             editBox:SetWidth(self:GetWidth() - 10)
+        end)
+        
+        -- Reduce mouse wheel scroll speed for better control
+        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+            local currentScroll = self:GetVerticalScroll()
+            local maxScroll = self:GetVerticalScrollRange()
+            local scrollStep = 20  -- Balanced scroll speed
+            local newScroll = currentScroll - (delta * scrollStep)
+            newScroll = math.max(0, math.min(newScroll, maxScroll))
+            self:SetVerticalScroll(newScroll)
         end)
 
         -- Button container (buttons are created/updated dynamically)

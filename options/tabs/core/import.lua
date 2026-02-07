@@ -61,6 +61,15 @@ local function CreateScrollableTextBox(parent, height, text)
     end)
 
     scrollFrame:SetScrollChild(editBox)
+    
+    -- Reduce mouse wheel scroll speed for better control
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local currentScroll = self:GetVerticalScroll()
+        local maxScroll = self:GetVerticalScrollRange()
+        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
+        newScroll = math.max(0, math.min(newScroll, maxScroll))
+        self:SetVerticalScroll(newScroll)
+    end)
 
     container.editBox = editBox
     container.scrollFrame = scrollFrame
@@ -105,6 +114,15 @@ local function BuildImportExportTab(tabContent)
     -- Set width dynamically when scroll frame is sized
     exportScroll:SetScript("OnSizeChanged", function(self)
         exportEditBox:SetWidth(self:GetWidth() - 10)
+    end)
+    
+    -- Reduce mouse wheel scroll speed for better control
+    exportScroll:SetScript("OnMouseWheel", function(self, delta)
+        local currentScroll = self:GetVerticalScroll()
+        local maxScroll = self:GetVerticalScrollRange()
+        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
+        newScroll = math.max(0, math.min(newScroll, maxScroll))
+        self:SetVerticalScroll(newScroll)
     end)
 
     -- Background for export box
@@ -180,6 +198,15 @@ local function BuildImportExportTab(tabContent)
     -- Set width dynamically when scroll frame is sized
     importScroll:SetScript("OnSizeChanged", function(self)
         importEditBox:SetWidth(self:GetWidth() - 10)
+    end)
+    
+    -- Reduce mouse wheel scroll speed for better control
+    importScroll:SetScript("OnMouseWheel", function(self, delta)
+        local currentScroll = self:GetVerticalScroll()
+        local maxScroll = self:GetVerticalScrollRange()
+        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
+        newScroll = math.max(0, math.min(newScroll, maxScroll))
+        self:SetVerticalScroll(newScroll)
     end)
 
     -- Background for import box - make it clickable to focus the editbox

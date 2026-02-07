@@ -226,6 +226,15 @@ local function CreateScrollableContent(parent)
             end)
         end)
     end
+    
+    -- Reduce mouse wheel scroll speed for better control
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local currentScroll = self:GetVerticalScroll()
+        local maxScroll = self:GetVerticalScrollRange()
+        local newScroll = currentScroll - (delta * QUI_SCROLL_STEP)
+        newScroll = math.max(0, math.min(newScroll, maxScroll))
+        self:SetVerticalScroll(newScroll)
+    end)
 
     return scrollFrame, content
 end
