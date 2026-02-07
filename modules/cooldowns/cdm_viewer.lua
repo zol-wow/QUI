@@ -32,6 +32,11 @@ local ASPECT_RATIOS = {
     rectangle = { w = 4, h = 3 },   -- 4:3 (wider)
 }
 
+-- Minimum width constants for HUD
+local MIN_WIDTH_DEFAULT = 200
+local MIN_WIDTH_MIN = 50
+local MIN_WIDTH_MAX = 800
+
 -- Forward declaration for mouseover hook (defined later in visibility section)
 local HookFrameForMouseover
 
@@ -93,7 +98,28 @@ local function UpdateCooldownViewerCVar()
         pcall(function() SetCVar("cooldownViewerEnabled", 0) end)
     end
 end
+---------------------------------------------------------------------------
+-- HELPER: Apply minimum width to viewer dimensions (feature: 001-hud-min-width)
+---------------------------------------------------------------------------
+local function ApplyMinimumWidth(viewer, trackerKey)
+    if not viewer then return end
 
+    local trackerSettings = GetTrackerSettings(trackerKey)
+    if not trackerSettings then return end
+    if not trackerSettings.minWidthEnabled then return end
+
+    local minWidth = trackerSettings.minWidth or MIN_WIDTH_DEFAULT
+
+    -- Clamp to valid range
+    minWidth = math.max(MIN_WIDTH_MIN, math.min(MIN_WIDTH_MAX, minWidth))
+
+    -- Apply minimum width floor to all width properties
+    viewer.__cdmIconWidth = math.max(viewer.__cdmIconWidth or 0, minWidth)
+    viewer.__cdmRow1Width = math.max(viewer.__cdmRow1Width or 0, minWidth)
+    viewer.__cdmBottomRowWidth = math.max(viewer.__cdmBottomRowWidth or 0, minWidth)
+    viewer.__cdmPotentialRow1Width = math.max(viewer.__cdmPotentialRow1Width or 0, minWidth)
+    viewer.__cdmPotentialBottomRowWidth = math.max(viewer.__cdmPotentialBottomRowWidth or 0, minWidth)
+end
 ---------------------------------------------------------------------------
 -- HELPER: Check if a child frame is a cooldown icon
 ---------------------------------------------------------------------------
@@ -938,6 +964,9 @@ local function LayoutViewer(viewerName, trackerKey)
         viewer.__cdmPotentialRow1Width = potentialRow1Width  -- Based on settings, not actual icons
         viewer.__cdmPotentialBottomRowWidth = potentialBottomRowWidth
     end
+    
+    -- Apply minimum width enforcement
+    ApplyMinimumWidth(viewer, trackerKey)
 
     -- Resize viewer (suppress OnSizeChanged triggering another layout)
     if maxRowWidth > 0 and totalHeight > 0 then
