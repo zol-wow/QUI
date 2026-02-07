@@ -198,7 +198,6 @@ local function BuildChatTab(tabContent)
         hideButtonsInfo:SetPoint("TOPLEFT", PADDING, y)
         hideButtonsInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         hideButtonsInfo:SetJustifyH("LEFT")
-        y = y - 20
 
         y = y - FORM_ROW
 
@@ -222,6 +221,30 @@ local function BuildChatTab(tabContent)
         copyButtonInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         copyButtonInfo:SetJustifyH("LEFT")
         y = y - 20
+
+        -- SECTION: Message History
+        local historyHeader = GUI:CreateSectionHeader(tabContent, "Message History")
+        historyHeader:SetPoint("TOPLEFT", PADDING, y)
+        y = y - historyHeader.gap
+
+        -- Initialize messageHistory if it doesn't exist
+        if not chat.messageHistory then
+            chat.messageHistory = {
+                enabled = true,
+                maxHistory = 50,
+            }
+        end
+
+        local historyCheck = GUI:CreateFormCheckbox(tabContent, "Enable Message History", "enabled", chat.messageHistory, RefreshChat)
+        historyCheck:SetPoint("TOPLEFT", PADDING, y)
+        historyCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local historyInfo = GUI:CreateLabel(tabContent, "Use arrow keys (Up/Down) to navigate through your sent message history while typing.", 10, C.textMuted)
+        historyInfo:SetPoint("TOPLEFT", PADDING, y)
+        historyInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        historyInfo:SetJustifyH("LEFT")
+        y = y - FORM_ROW
     end
 
     tabContent:SetHeight(math.abs(y) + 50)

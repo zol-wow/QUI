@@ -1524,6 +1524,11 @@ local defaults = {
             copyButtonMode = "always",
             -- Intro message on login
             showIntroMessage = true,
+            -- Message history cache for arrow key navigation
+            messageHistory = {
+                enabled = true,
+                maxHistory = 50,  -- Maximum number of messages to store
+            },
         },
 
         -- Tooltip Management

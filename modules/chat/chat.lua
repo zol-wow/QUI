@@ -692,6 +692,147 @@ local function ShowChatButtons(chatFrame)
 end
 
 ---------------------------------------------------------------------------
+-- Chat Message History Navigation System
+---------------------------------------------------------------------------
+-- Store sent message in history
+local function StoreMessageInHistory(editBox, messageText)
+    if not editBox or not messageText then return end
+    
+    local settings = GetSettings()
+    if not settings or not settings.messageHistory or not settings.messageHistory.enabled then
+        return
+    end
+    
+    local fullMessage = editBox:GetText()
+    local historyEntries = QUI_ChatMessageHistory
+    
+    -- Avoid storing duplicates
+    if historyEntries[#historyEntries] ~= messageText then
+        -- Preserve chat type prefix when message matches end of full message
+        if fullMessage:sub(-#messageText) == messageText then
+            messageText = fullMessage
+        end
+        
+        -- Store if still unique
+        if historyEntries[#historyEntries] ~= messageText then
+            tinsert(historyEntries, messageText)
+            editBox.__quiHistoryPosition = #historyEntries
+        end
+    end
+end
+
+-- Navigate through message history with arrow keys
+local function NavigateMessageHistory(editBox, keyPressed)
+    local settings = GetSettings()
+    if not settings or not settings.messageHistory or not settings.messageHistory.enabled then
+        return
+    end
+    
+    -- Don't navigate during chat messaging lockdown
+    if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown() then
+        return
+    end
+    
+    local historyEntries = QUI_ChatMessageHistory
+    local currentPosition = editBox.__quiHistoryPosition or #historyEntries
+    local savedMessage = editBox.__quiSavedMessage
+    
+    if keyPressed == "UP" and currentPosition > 0 then
+        -- Save current message when starting navigation from the end
+        if currentPosition == #historyEntries then
+            editBox.__quiSavedMessage = editBox:GetText()
+        end
+        
+        -- Navigate to older message
+        editBox:SetText(historyEntries[currentPosition])
+        editBox.__quiHistoryPosition = currentPosition - 1
+        
+    elseif keyPressed == "DOWN" then
+        -- Navigate to newer message
+        if currentPosition + 1 < #historyEntries then
+            editBox:SetText(historyEntries[currentPosition + 2])
+            editBox.__quiHistoryPosition = currentPosition + 1
+        -- Return to saved original message
+        elseif savedMessage then
+            editBox:SetText(savedMessage)
+            editBox.__quiSavedMessage = nil
+        end
+    end
+end
+
+-- Initialize message history system for an edit box
+local function InitializeChatHistory(editBox)
+    if not editBox then return end
+    
+    -- Prevent duplicate initialization
+    if editBox.__quiHistoryInitialized then return end
+    editBox.__quiHistoryInitialized = true
+    
+    local settings = GetSettings()
+    if not settings or not settings.messageHistory or not settings.messageHistory.enabled then
+        return
+    end
+    
+    local maxEntries = settings.messageHistory.maxHistory or 50
+    
+    -- Initialize global history storage
+    if not QUI_ChatMessageHistory then
+        QUI_ChatMessageHistory = {}
+    end
+    
+    local historyEntries = QUI_ChatMessageHistory
+    
+    -- Trim history to maximum allowed entries
+    if #historyEntries > maxEntries then
+        local trimmedHistory = {}
+        local startIndex = #historyEntries - maxEntries + 1
+        for i = startIndex, #historyEntries do
+            tinsert(trimmedHistory, historyEntries[i])
+        end
+        QUI_ChatMessageHistory = trimmedHistory
+        historyEntries = QUI_ChatMessageHistory
+    end
+    
+    -- Initialize navigation state
+    editBox.__quiHistoryPosition = #historyEntries
+    editBox.__quiSavedMessage = nil
+    
+    -- Disable Alt arrow key mode to allow normal arrow key navigation
+    editBox:SetAltArrowKeyMode(false)
+    
+    -- Capture messages when they're added to history
+    hooksecurefunc(editBox, "AddHistoryLine", function(self, messageText)
+        StoreMessageInHistory(self, messageText)
+    end)
+    
+    -- Handle arrow key navigation
+    editBox:HookScript("OnKeyDown", function(self, keyPressed)
+        if keyPressed == "UP" or keyPressed == "DOWN" then
+            NavigateMessageHistory(self, keyPressed)
+        end
+    end)
+    
+    -- Reset navigation state when edit box loses focus
+    editBox:HookScript("OnEditFocusLost", function(self)
+        self.__quiSavedMessage = nil
+        self.__quiHistoryPosition = #historyEntries
+    end)
+end
+
+-- Initialize chat history for a chat frame
+local function InitializeChatFrameHistory(chatFrame)
+    if not chatFrame then return end
+    
+    local frameName = chatFrame:GetName()
+    if frameName then
+        local editBox = chatFrame.editBox or _G[frameName .. "EditBox"]
+        if editBox then
+            InitializeChatHistory(editBox)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Style edit box (chat input area)
 ---------------------------------------------------------------------------
 local function StyleEditBox(chatFrame)
@@ -1017,6 +1158,9 @@ local function SkinChatFrame(chatFrame)
         StyleEditBox(chatFrame)
     end
 
+    -- Initialize chat history
+    InitializeChatFrameHistory(chatFrame)
+
     -- Apply message padding
     ApplyMessagePadding(chatFrame)
 
@@ -1155,6 +1299,13 @@ eventFrame:SetScript("OnEvent", function(self, event)
 
             -- Setup URL click handler (once)
             SetupURLClickHandler()
+            
+            -- Hook chat frame opening to ensure edit box gets history initialization
+            hooksecurefunc("ChatFrame_OpenChat", function(text, chatFrame)
+                C_Timer.After(0.1, function()
+                    InitializeChatFrameHistory(chatFrame)
+                end)
+            end)
 
             -- Skin existing chat frames
             SkinAllChatFrames()
