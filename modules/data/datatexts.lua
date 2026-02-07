@@ -137,6 +137,29 @@ local function FormatTimeRemaining(seconds)
     end
 end
 
+-- Get all tracked currencies from the backpack
+-- @return table Array of {id (name), name, quantity, iconFileID, displayOrder}
+-- Returns currencies in default order (as returned by C_CurrencyInfo.GetBackpackCurrencyInfo)
+local function GetTrackedCurrencies()
+    local currencies = {}
+    local i = 1
+    while true do
+        local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
+        if not info then break end
+        if info.quantity then
+            table.insert(currencies, {
+                id = info.name,  -- Use name as unique identifier
+                name = info.name,
+                quantity = info.quantity,
+                iconFileID = info.iconFileID,
+                displayOrder = i,
+            })
+        end
+        i = i + 1
+    end
+    return currencies
+end
+
 ---=================================================================================
 --- REGISTRATION API
 ---=================================================================================
@@ -2532,6 +2555,41 @@ Datatexts:Register("currencies", {
         local iconString = "|T%s:14:14:0:0:64:64:4:60:4:60|t"
         local goldIcon = "|TInterface\\MoneyFrame\\UI-GoldIcon:14:14:0:0|t"
 
+        -- Helper function to get currencies in the configured order
+        local function GetOrderedCurrencies()
+            local allCurrencies = GetTrackedCurrencies()  -- Get all tracked currencies
+            local ordered = {}
+            local seen = {}
+
+            -- Get the configured order from settings
+            local db = QUICore.db and QUICore.db.profile and QUICore.db.profile.datatext
+            local currencyOrder = db and db.currencyOrder or {"none", "none", "none"}
+
+            -- Add currencies in configured order
+            for slotIndex = 1, 3 do
+                local configValue = currencyOrder[slotIndex]
+                if configValue ~= "none" then
+                    -- Find currency by ID
+                    for _, curr in ipairs(allCurrencies) do
+                        if tostring(curr.id) == configValue then
+                            table.insert(ordered, curr)
+                            seen[curr.id] = true
+                            break
+                        end
+                    end
+                end
+            end
+
+            -- Add remaining currencies in default order
+            for _, curr in ipairs(allCurrencies) do
+                if not seen[curr.id] then
+                    table.insert(ordered, curr)
+                end
+            end
+
+            return ordered
+        end
+
         local function Update()
             -- Determine how many currencies to show based on slot width
             local slotWidth = slotFrame:GetWidth() or 0
@@ -2545,21 +2603,19 @@ Datatexts:Register("currencies", {
             end
 
             local displayString = ""
+            local orderedCurrencies = GetOrderedCurrencies()
             local shown = 0
 
-            for i = 1, 3 do
+            for i, currencyInfo in ipairs(orderedCurrencies) do
                 if shown >= maxToShow then break end
-                local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
-                if info and info.quantity then
-                    shown = shown + 1
-                    local icon = format(iconString, info.iconFileID)
-                    local abbr = AbbreviateNumbers or AbbreviateLargeNumbers
-                    local quantity = abbr and abbr(info.quantity) or tostring(info.quantity)
-                    if displayString ~= "" then
-                        displayString = displayString .. " "
-                    end
-                    displayString = displayString .. icon .. " " .. quantity
+                local icon = format(iconString, currencyInfo.iconFileID)
+                local abbr = AbbreviateNumbers or AbbreviateLargeNumbers
+                local quantity = abbr and abbr(currencyInfo.quantity) or tostring(currencyInfo.quantity)
+                if displayString ~= "" then
+                    displayString = displayString .. " "
                 end
+                displayString = displayString .. icon .. " " .. quantity
+                shown = shown + 1
             end
 
             if displayString ~= "" then
@@ -2591,7 +2647,7 @@ Datatexts:Register("currencies", {
             currenciesHookApplied = true
         end
 
-        -- Tooltip: Always shows gold + all currencies
+        -- Tooltip: Shows gold + all currencies in configured order
         slotFrame:EnableMouse(true)
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
@@ -2606,22 +2662,18 @@ Datatexts:Register("currencies", {
             local copper = money % 100
             GameTooltip:AddDoubleLine(goldIcon .. " Gold", format("%dg %ds %dc", gold, silver, copper), 1, 0.82, 0, 1, 1, 1)
 
-            -- All backpack currencies
-            local hasAny = false
-            for i = 1, 3 do
-                local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
-                if info and info.name then
-                    hasAny = true
-                    local icon = format(iconString, info.iconFileID)
-                    local quantityText = tostring(info.quantity)
-                    if info.maxQuantity and info.maxQuantity > 0 then
-                        quantityText = format("%d / %d", info.quantity, info.maxQuantity)
+            -- All backpack currencies in configured order
+            local orderedCurrencies = GetOrderedCurrencies()
+            if #orderedCurrencies > 0 then
+                for _, currencyInfo in ipairs(orderedCurrencies) do
+                    local icon = format(iconString, currencyInfo.iconFileID)
+                    local quantityText = tostring(currencyInfo.quantity)
+                    if currencyInfo.maxQuantity and currencyInfo.maxQuantity > 0 then
+                        quantityText = format("%d / %d", currencyInfo.quantity, currencyInfo.maxQuantity)
                     end
-                    GameTooltip:AddDoubleLine(icon .. " " .. info.name, quantityText, 1, 1, 1, 1, 1, 1)
+                    GameTooltip:AddDoubleLine(icon .. " " .. currencyInfo.name, quantityText, 1, 1, 1, 1, 1, 1)
                 end
-            end
-
-            if not hasAny then
+            else
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("No currencies tracked", 0.7, 0.7, 0.7)
                 GameTooltip:AddLine("Open Currency Panel to add currencies", 0.7, 0.7, 0.7)

@@ -3283,6 +3283,13 @@ local defaults = {
                 controlType = "master",    -- Which volume to control: "master", "music", "sfx", "ambience", "dialog"
                 showIcon = false,          -- Show speaker icon instead of "Vol:" label
             },
+
+            -- Currencies datatext settings
+            currencyOrder = {
+                "none",  -- Slot 1
+                "none",  -- Slot 2
+                "none",  -- Slot 3
+            },  -- Order of currencies to display (IDs or "none")
         },
         
         -- Additional Datapanels (user-created, independent of minimap)

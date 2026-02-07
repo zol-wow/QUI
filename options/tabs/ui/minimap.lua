@@ -841,6 +841,124 @@ BuildDatatextTab = function(tabContent)
 
         y = y - 10
 
+        -- SECTION 5c: Currencies Datatext Settings
+        GUI:SetSearchSection("Currencies Datatext")
+        local currenciesHeader = GUI:CreateSectionHeader(tabContent, "Currencies Datatext")
+        currenciesHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - currenciesHeader.gap
+
+        local currenciesNote = GUI:CreateLabel(tabContent, "Select the order of currencies to display. The datatext will show up to 3 currencies in your chosen order, followed by any remaining tracked currencies.", 11, C.textMuted)
+        currenciesNote:SetPoint("TOPLEFT", PAD, y)
+        currenciesNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        currenciesNote:SetJustifyH("LEFT")
+        y = y - 38
+
+        -- Ensure currencyOrder exists in db
+        if not dt.currencyOrder then
+            dt.currencyOrder = {"none", "none", "none"}
+        end
+
+        -- Helper function to get available currencies for dropdowns
+        local function GetAvailableCurrencies()
+            local currencies = {}
+            if _G.C_CurrencyInfo then
+                local i = 1
+                while true do
+                    local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
+                    if not info then break end
+                    if info.quantity then
+                        table.insert(currencies, {
+                            value = info.name,
+                            text = info.name,
+                        })
+                    end
+                    i = i + 1
+                end
+            end
+            return currencies
+        end
+
+        -- Helper function to refresh currencies dropdowns and prevent duplicates
+        local currencyDropdowns = {}
+        local function RefreshCurrencyDropdowns()
+            local currencies = GetAvailableCurrencies()
+            local options = {{value = "none", text = "None"}}
+            
+            for _, currency in ipairs(currencies) do
+                table.insert(options, currency)
+            end
+
+            for i = 1, 3 do
+                if currencyDropdowns[i] then
+                    -- Update the options
+                    currencyDropdowns[i].options = options
+                    -- Re-set current value to ensure it still displays correctly
+                    local currentValue = dt.currencyOrder[i] or "none"
+                    if currencyDropdowns[i].dropdown and currencyDropdowns[i].dropdown.selected then
+                        local displayText = "None"
+                        for _, opt in ipairs(options) do
+                            if opt.value == currentValue then
+                                displayText = opt.text
+                                break
+                            end
+                        end
+                        currencyDropdowns[i].dropdown.selected:SetText(displayText)
+                    end
+                end
+            end
+        end
+
+        -- Helper function to prevent duplicate selections
+        local function OnCurrencySelected(slotNumber)
+            return function(value)
+                dt.currencyOrder[slotNumber] = value
+                
+                -- Check if this value is now selected in multiple dropdowns
+                if value ~= "none" then
+                    for i = 1, 3 do
+                        if i ~= slotNumber and dt.currencyOrder[i] == value then
+                            -- Reset other slot to none
+                            dt.currencyOrder[i] = "none"
+                            if currencyDropdowns[i] and currencyDropdowns[i].SetValue then
+                                currencyDropdowns[i].SetValue(currencyDropdowns[i], "none", true)
+                            end
+                        end
+                    end
+                end
+                
+                -- Refresh all active currency datatexts
+                if QUICore and QUICore.Datatexts then
+                    QUICore.Datatexts:UpdateAll()
+                end
+            end
+        end
+
+        -- Create 3 currency order dropdowns
+        for slot = 1, 3 do
+            local slotLabel = "Currency " .. slot
+            local currencies = GetAvailableCurrencies()
+            local options = {{value = "none", text = "None"}}
+            
+            for _, currency in ipairs(currencies) do
+                table.insert(options, currency)
+            end
+
+            local dropdown = GUI:CreateFormDropdown(tabContent, slotLabel, options, nil, nil, OnCurrencySelected(slot))
+            dropdown:SetPoint("TOPLEFT", PAD, y)
+            dropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            
+            -- Store reference for later updates
+            currencyDropdowns[slot] = dropdown
+            
+            -- Set initial value
+            local initialValue = dt.currencyOrder[slot] or "none"
+            if dropdown.SetValue then dropdown.SetValue(initialValue, true) end
+            
+            y = y - FORM_ROW
+        end
+
+        y = y - 10
+
         -- SECTION 6: Custom Movable Datapanels
         local customPanelsHeader = GUI:CreateSectionHeader(tabContent, "Custom Movable Panels")
         customPanelsHeader:SetPoint("TOPLEFT", PAD, y)
