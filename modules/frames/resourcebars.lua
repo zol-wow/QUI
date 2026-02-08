@@ -102,7 +102,7 @@ end
 --TABLES
 
 -- Custom power type ID for Enhancement Shaman Maelstrom Weapon (aura-based, not a Blizzard PowerType)
-local POWER_TYPE_MAELSTROM_WEAPON = 100
+Enum.PowerType.MaelstromWeapon = 100
 
 local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
@@ -141,7 +141,7 @@ local tickedPowerTypes = {
     [Enum.PowerType.HolyPower] = true,
     [Enum.PowerType.Runes] = true,
     [Enum.PowerType.SoulShards] = true,
-    [POWER_TYPE_MAELSTROM_WEAPON] = true,
+    [Enum.PowerType.MaelstromWeapon] = true,
 }
 
 local fragmentedPowerTypes = {
@@ -167,7 +167,7 @@ local instantFeedbackTypes = {
     [Enum.PowerType.ArcaneCharges] = true,
     [Enum.PowerType.Essence] = true,
     [Enum.PowerType.SoulShards] = true,
-    [POWER_TYPE_MAELSTROM_WEAPON] = true,
+    [Enum.PowerType.MaelstromWeapon] = true,
 }
 
 -- Druid utility forms (show spec resource instead of form resource)
@@ -280,7 +280,7 @@ local function GetSecondaryResource()
         ["ROGUE"]       = Enum.PowerType.ComboPoints,
         ["SHAMAN"]      = {
             [262]  = Enum.PowerType.Mana, -- Elemental
-            [263]  = POWER_TYPE_MAELSTROM_WEAPON,  -- Enhancement (aura stacks via C_UnitAuras)
+            [263]  = Enum.PowerType.MaelstromWeapon,  -- Enhancement (aura stacks via C_UnitAuras)
         },
         ["WARLOCK"]     = Enum.PowerType.SoulShards,
         ["WARRIOR"]     = nil,
@@ -375,7 +375,7 @@ local function GetResourceColor(resource)
             customColor = pc.fury
         elseif resource == Enum.PowerType.Maelstrom then
             customColor = pc.maelstrom
-        elseif resource == POWER_TYPE_MAELSTROM_WEAPON then
+        elseif resource == Enum.PowerType.MaelstromWeapon then
             customColor = pc.maelstromWeapon or pc.maelstrom
         elseif resource == Enum.PowerType.LunarPower then
             customColor = pc.lunarPower
@@ -492,7 +492,7 @@ local function GetSecondaryResourceValue(resource)
         return max, current, current, "number"
     end
 
-    if resource == POWER_TYPE_MAELSTROM_WEAPON then
+    if resource == Enum.PowerType.MaelstromWeapon then
         -- Enhancement Shaman Maelstrom Weapon stacks (aura-based, spell ID 344179)
         local aura = C_UnitAuras.GetPlayerAuraBySpellID(344179)
         local current = aura and aura.applications or 0
@@ -2556,7 +2556,7 @@ end
 function QUICore:OnUnitAura(_, unit)
     if unit and unit ~= "player" then return end
     local resource = GetSecondaryResource()
-    if resource == POWER_TYPE_MAELSTROM_WEAPON then
+    if resource == Enum.PowerType.MaelstromWeapon then
         self:UpdateSecondaryPowerBar()
     end
 end
