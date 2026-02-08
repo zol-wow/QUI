@@ -417,7 +417,7 @@ function GUI:InitializeOptions()
     GUI:AddTab(frame, "Custom Trackers", ns.QUI_CustomTrackersOptions.CreateCustomTrackersPage)
     GUI:AddTab(frame, "Frame Levels", ns.QUI_HUDLayeringOptions.CreateHUDLayeringPage)
     GUI:AddTab(frame, "Profiles", ns.QUI_ProfilesOptions.CreateSpecProfilesPage)
-    GUI:AddTab(frame, "Import", ns.QUI_ImportOptions.CreateImportExportPage)
+    GUI:AddTab(frame, "Import & Export Strings", ns.QUI_ImportOptions.CreateImportExportPage)
     -- Bottom sidebar items (Search tab + action buttons)
     -- Add separator line between normal tabs and bottom items
     local sepLine = frame.sidebar:CreateTexture(nil, "ARTWORK")
