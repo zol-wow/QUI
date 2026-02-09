@@ -416,9 +416,6 @@ function GUI:InitializeOptions()
     GUI:AddTab(frame, "Skinning & Autohide", ns.QUI_AutohidesOptions.CreateAutohidesPage)
     GUI:AddTab(frame, "Custom Trackers", ns.QUI_CustomTrackersOptions.CreateCustomTrackersPage)
     GUI:AddTab(frame, "Frame Levels", ns.QUI_HUDLayeringOptions.CreateHUDLayeringPage)
-    if C_AddOns.IsAddOnLoaded("DandersFrames") then
-        GUI:AddTab(frame, "DandersFrames", ns.QUI_DandersFramesOptions.CreateDandersFramesPage)
-    end
     GUI:AddTab(frame, "Profiles", ns.QUI_ProfilesOptions.CreateSpecProfilesPage)
     GUI:AddTab(frame, "Import & Export Strings", ns.QUI_ImportOptions.CreateImportExportPage)
     -- Bottom sidebar items (Search tab + action buttons)

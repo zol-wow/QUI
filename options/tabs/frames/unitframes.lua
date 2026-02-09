@@ -1796,7 +1796,7 @@ local function CreateUnitFramesPage(parent)
     end
 
     -- Create sub-tabs
-    GUI:CreateSubTabs(content, {
+    local subTabs = {
         {name = "General", builder = BuildGeneralTab},
         {name = "Player", builder = function(c) BuildUnitTab(c, "player") end},
         {name = "Target", builder = function(c) BuildUnitTab(c, "target") end},
@@ -1804,7 +1804,14 @@ local function CreateUnitFramesPage(parent)
         {name = "Pet", builder = function(c) BuildUnitTab(c, "pet") end},
         {name = "Focus", builder = function(c) BuildUnitTab(c, "focus") end},
         {name = "Boss", builder = function(c) BuildUnitTab(c, "boss") end},
-    })
+    }
+
+    -- Add Party/Raidframes sub-tab when DandersFrames is loaded
+    if C_AddOns.IsAddOnLoaded("DandersFrames") and ns.QUI_DandersFramesOptions then
+        table.insert(subTabs, {name = "Party/Raidframes", builder = ns.QUI_DandersFramesOptions.BuildPartyRaidframesTab})
+    end
+
+    GUI:CreateSubTabs(content, subTabs)
 
     content:SetHeight(600)
 end

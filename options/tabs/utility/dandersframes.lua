@@ -1,5 +1,6 @@
 --[[
-    QUI Options - DandersFrames Integration Tab
+    QUI Options - DandersFrames Integration
+    Sub-tab builder for Unit Frames page
     Anchoring controls for DandersFrames party/raid/pinned containers
 ]]
 
@@ -10,7 +11,6 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 
 local PADDING = Shared.PADDING
-local CreateScrollableContent = Shared.CreateScrollableContent
 
 local function GetCore()
     return (_G.QUI and _G.QUI.QUICore) or ns.Addon
@@ -100,40 +100,29 @@ local function BuildContainerSection(content, containerInfo, y, db, anchorOption
 end
 
 ---------------------------------------------------------------------------
--- PAGE BUILDER
+-- SUB-TAB BUILDER (called by Unit Frames page)
 ---------------------------------------------------------------------------
-local function CreateDandersFramesPage(parent)
-    local scroll, content = CreateScrollableContent(parent)
-    local y = -15
+local function BuildPartyRaidframesTab(tabContent)
+    local y = -10
     local PAD = PADDING
 
-    -- Set search context
-    GUI:SetSearchContext({tabIndex = 9, tabName = "DandersFrames"})
-
-    -- Check if DandersFrames is available
-    local dfAvailable = ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable()
-
-    if not dfAvailable then
-        local info = GUI:CreateLabel(content, "DandersFrames not detected. Install DandersFrames v4.0.0+ to use this feature.", 12, C.textMuted)
-        info:SetPoint("TOPLEFT", PAD, y)
-        info:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        info:SetJustifyH("LEFT")
-        return scroll
-    end
+    -- Set search context for Unit Frames > Party/Raidframes sub-tab
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Unit Frames", subTabIndex = 8, subTabName = "Party/Raidframes"})
 
     -- Description
-    local info = GUI:CreateLabel(content, "Anchor DandersFrames containers to QUI elements. When enabled, QUI controls the container position instead of DandersFrames.", 11, C.textMuted)
+    local info = GUI:CreateLabel(tabContent, "Anchor DandersFrames containers to QUI elements. When enabled, QUI controls the container position instead of DandersFrames.", 11, C.textMuted)
     info:SetPoint("TOPLEFT", PAD, y)
-    info:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    info:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     info:SetJustifyH("LEFT")
     y = y - 28
 
     local core = GetCore()
     local db = core and core.db and core.db.profile and core.db.profile.dandersFrames
     if not db then
-        local errorLabel = GUI:CreateLabel(content, "Database not loaded. Please reload UI.", 12, {1, 0.3, 0.3, 1})
+        local errorLabel = GUI:CreateLabel(tabContent, "Database not loaded. Please reload UI.", 12, {1, 0.3, 0.3, 1})
         errorLabel:SetPoint("TOPLEFT", PAD, y)
-        return scroll
+        tabContent:SetHeight(math.abs(y) + 30)
+        return
     end
 
     -- Build anchor options list
@@ -141,15 +130,15 @@ local function CreateDandersFramesPage(parent)
 
     -- Build a section for each container
     for _, containerInfo in ipairs(CONTAINERS) do
-        y = BuildContainerSection(content, containerInfo, y, db, anchorOptions)
+        y = BuildContainerSection(tabContent, containerInfo, y, db, anchorOptions)
     end
 
-    return scroll
+    tabContent:SetHeight(math.abs(y) + 30)
 end
 
 ---------------------------------------------------------------------------
 -- Export
 ---------------------------------------------------------------------------
 ns.QUI_DandersFramesOptions = {
-    CreateDandersFramesPage = CreateDandersFramesPage
+    BuildPartyRaidframesTab = BuildPartyRaidframesTab
 }
