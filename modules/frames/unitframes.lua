@@ -4144,16 +4144,27 @@ function QUI_UF:EnableEditMode()
         end)
         exitBtn:SetScript("OnClick", function()
             if EditModeManagerFrame and EditModeManagerFrame:IsShown() then
-                -- Save changes first
+                -- Close any open system settings panel before exit. Having a panel
+                -- open (e.g. "Tracked Bars") taints the execution context so that
+                -- Blizzard's OnEditModeExit → ResetPartyFrames → party frame updates
+                -- hit secret values (maxHealth/checkedRange) and error, aborting exit.
+                if EditModeManagerFrame.ClearSelectedSystem then
+                    pcall(EditModeManagerFrame.ClearSelectedSystem, EditModeManagerFrame)
+                end
+                -- Save changes
                 if EditModeManagerFrame.SaveLayoutChanges then
                     pcall(EditModeManagerFrame.SaveLayoutChanges, EditModeManagerFrame)
                 end
-                -- Then exit (pcall: Blizzard's exit path can trigger secret value
-                -- errors in CompactUnitFrame_UpdateInRange via party frame refresh)
+                -- Then exit
                 pcall(HideUIPanel, EditModeManagerFrame)
-            else
-                -- Fallback for /qui editmode case
-                QUI_UF:DisableEditMode()
+            end
+            -- Always clean up QUI edit mode regardless of Blizzard exit success.
+            -- In the success case, the ExitEditMode hook already called DisableEditMode
+            -- (which sets editModeActive=false), so this is a no-op.
+            -- In the failure case, this is the only cleanup path.
+            if QUI_UF.editModeActive then
+                QUI_UF.triggeredByBlizzEditMode = false
+                pcall(QUI_UF.DisableEditMode, QUI_UF)
             end
         end)
 
@@ -4448,11 +4459,12 @@ function QUI_UF:DisableEditMode()
         end
         
         -- Update frame with real data if unit exists
+        -- pcall: UnitHealth/UnitPower can return secret values that error in comparisons
         if UnitExists(frame.unit) or unitKey == "player" then
-            UpdateFrame(frame)
+            pcall(UpdateFrame, frame)
         end
     end
-    
+
     print("|cFF56D1FFQUI|r: Edit Mode |cffff0000DISABLED|r - Positions saved.")
 end
 
@@ -4849,6 +4861,12 @@ function QUI_UF:HookBlizzardEditMode()
     if not EditModeManagerFrame then return end
     if self._blizzEditModeHooked then return end
     self._blizzEditModeHooked = true
+
+    -- NOTE: Do NOT wrap AccountSettings:OnEditModeExit or any Blizzard exit
+    -- functions in addon pcall — this taints the execution context and causes
+    -- ADDON_ACTION_FORBIDDEN for protected functions like ClearTarget().
+    -- The secret value error in ResetPartyFrames is a Blizzard bug; we handle
+    -- it via the safety net in the OnClick handler (always calls DisableEditMode).
 
     -- Track if we triggered from Blizzard Edit Mode (vs /qui editmode)
     self.triggeredByBlizzEditMode = false
