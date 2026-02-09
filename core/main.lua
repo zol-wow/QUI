@@ -5199,6 +5199,25 @@ function QUICore:SetupEncounterWarningsSecretValuePatch()
             error(err, 0)
         end
 
+        -- Also patch the global EncounterWarnings instance directly.
+        -- When the addon loads, XML templates create frame instances via Mixin()
+        -- which copies the ORIGINAL Init onto them before our mixin patch runs.
+        -- Wrapping SetIsEditing on the instance catches the entire call chain:
+        -- SetIsEditing → OnEditingChanged → ShowWarning → view:ShowWarning → Text:Init
+        local ew = _G.EncounterWarnings
+        if ew and type(ew.SetIsEditing) == "function" then
+            local origSetIsEditing = ew.SetIsEditing
+            ew.SetIsEditing = function(ewSelf, ...)
+                local ok2, err2 = pcall(origSetIsEditing, ewSelf, ...)
+                if not ok2 then
+                    if type(err2) == "string" and err2:find("secret value") then
+                        return
+                    end
+                    error(err2, 0)
+                end
+            end
+        end
+
         self.__encounterWarningsPatched = true
         return true
     end
