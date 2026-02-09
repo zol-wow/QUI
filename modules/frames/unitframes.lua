@@ -2373,9 +2373,12 @@ local function CreateAuraIcon(parent, index, size, auraSettings, isDebuff)
     -- noCooldownCount removed to enable Blizzard countdown text (styled via ApplyAuraIconSettings)
     icon.cooldown = cd
 
-    -- Stack count (position/font set by ApplyAuraIconSettings)
-    local count = icon:CreateFontString(nil, "OVERLAY")
-    count:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)  -- default, will be updated by settings
+    -- Stack count — parented to an overlay frame above the cooldown swipe
+    local stackOverlay = CreateFrame("Frame", nil, icon)
+    stackOverlay:SetAllPoints(icon)
+    stackOverlay:SetFrameLevel(cd:GetFrameLevel() + 1)
+    local count = stackOverlay:CreateFontString(nil, "OVERLAY")
+    count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -iconPx, iconPx)  -- default, will be updated by settings
     count:SetTextColor(1, 1, 1, 1)
     icon.count = count
     icon._showStack = true  -- default
@@ -3181,8 +3184,11 @@ function QUI_UF:ShowAuraPreviewForFrame(frame, unitKey, auraType)
             cd.noCooldownCount = true
             icon.cooldown = cd
 
-            -- Stack count
-            local count = icon:CreateFontString(nil, "OVERLAY")
+            -- Stack count — parented above the cooldown swipe
+            local stackOverlay = CreateFrame("Frame", nil, icon)
+            stackOverlay:SetAllPoints(icon)
+            stackOverlay:SetFrameLevel(cd:GetFrameLevel() + 1)
+            local count = stackOverlay:CreateFontString(nil, "OVERLAY")
             count:SetTextColor(1, 1, 1, 1)
             icon.count = count
 
