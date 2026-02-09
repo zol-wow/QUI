@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.29.1 - 2026-02-09
+
+### Fixed
+- attempt to catch Blizzard's errors for them (Edit Mode lua errors)
 ## v2.29.0 - 2026-02-09
 
 ### Added
