@@ -198,6 +198,11 @@ local function BuildDragonridingTab(tabContent)
     swColorPicker:SetAlpha(sr.useClassColorSecondWind and 0.4 or 1)
     y = y - FORM_ROW
 
+    local thrillColorPicker = GUI:CreateFormColorPicker(tabContent, "Thrill of the Skies Color", "thrillOfTheSkiesColor", sr, RefreshSkyriding)
+    thrillColorPicker:SetPoint("TOPLEFT", PADDING, y)
+    thrillColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
     -- SECTION: Background & Effects
     GUI:SetSearchSection("Background & Effects")
     local bgHeader = GUI:CreateSectionHeader(tabContent, "Background & Effects")

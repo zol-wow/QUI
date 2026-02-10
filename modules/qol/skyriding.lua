@@ -16,6 +16,7 @@ local SafeValue = Helpers.SafeValue
 local VIGOR_SPELL_ID = 372608
 local SECOND_WIND_SPELL_ID = 425782
 local WHIRLING_SURGE_SPELL_ID = 361584
+local THRILL_OF_THE_SKIES_BUFF_ID = 377234
 
 -- Frame references
 local skyridingFrame
@@ -103,6 +104,27 @@ end
 local function GetGlidingInfo()
     local gliding, canGlideNow, speed = C_PlayerInfo.GetGlidingInfo()
     return gliding or false, canGlideNow or false, speed or 0
+end
+
+---------------------------------------------------------------------------
+-- Buff Detection Helper
+-- Uses pcall to avoid "secret value" errors when spellId is protected in combat
+---------------------------------------------------------------------------
+local function HasThrillOfTheSkiesBuff()
+    if C_UnitAuras and C_UnitAuras.GetBuffDataByIndex then
+        -- Use modern API if available
+        for i = 1, 40 do
+            local buffData = C_UnitAuras.GetBuffDataByIndex("player", i)
+            if not buffData then break end
+            local ok, matches = pcall(function()
+                return buffData.spellId == THRILL_OF_THE_SKIES_BUFF_ID
+            end)
+            if ok and matches then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 ---------------------------------------------------------------------------
@@ -566,6 +588,16 @@ local function UpdateVigorBar()
             flashTexture:SetPoint("LEFT", vigorBar, "LEFT", segmentStart, 0)
             flashTexture:SetWidth(segmentWidth)
             flashTexture:SetHeight(skyridingFrame:GetHeight())
+            
+            -- Use Thrill of the Skies color for flash if buff is active
+            local hasThrillBuff = HasThrillOfTheSkiesBuff()
+            if hasThrillBuff and settings.thrillOfTheSkiesColor then
+                local thrillColor = settings.thrillOfTheSkiesColor
+                flashTexture:SetVertexColor(thrillColor[1], thrillColor[2], thrillColor[3], 0.5)
+            else
+                flashTexture:SetVertexColor(1, 1, 1, 0.5)  -- Default white flash
+            end
+            
             flashAnim:Play()
         end
     end
@@ -615,7 +647,16 @@ local function UpdateRechargeAnimation()
     local segmentStart = current * segmentWidth
     local fillWidth = math.max(1, progress * segmentWidth)
 
-    local color = settings.rechargeColor or {0.4, 0.9, 1.0, 0.6}
+    -- Use Thrill of the Skies color for recharge if buff is active
+    local hasThrillBuff = HasThrillOfTheSkiesBuff()
+    local color
+    if hasThrillBuff and settings.thrillOfTheSkiesColor then
+        local thrillColor = settings.thrillOfTheSkiesColor
+        -- Use the thrill color but with reduced alpha for recharge overlay
+        color = {thrillColor[1], thrillColor[2], thrillColor[3], (thrillColor[4] or 1) * 0.6}
+    else
+        color = settings.rechargeColor or {0.4, 0.9, 1.0, 0.6}
+    end
 
     rechargeOverlay:ClearAllPoints()
     rechargeOverlay:SetPoint("LEFT", vigorBar, "LEFT", segmentStart, 0)
@@ -886,9 +927,14 @@ local function ApplySettings()
         secondWindMiniBar:SetStatusBarTexture(texturePath)
     end
 
-    -- Bar colors (with class color support)
+    -- Bar colors (with class color support and Thrill of the Skies buff)
     local barColor
-    if settings.useClassColorVigor then
+    local hasThrillBuff = HasThrillOfTheSkiesBuff()
+    
+    if hasThrillBuff and settings.thrillOfTheSkiesColor then
+        -- Use Thrill of the Skies color when buff is active
+        barColor = settings.thrillOfTheSkiesColor
+    elseif settings.useClassColorVigor then
         local _, class = UnitClass("player")
         local classColor = RAID_CLASS_COLORS[class]
         if classColor then
@@ -1040,6 +1086,7 @@ eventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
 eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("UNIT_AURA")  -- For detecting Thrill of the Skies buff
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
@@ -1073,6 +1120,46 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_REGEN_ENABLED" then
         inCombat = false
         UpdateVisibility()
+    elseif event == "UNIT_AURA" and arg1 == "player" then
+        -- Update bar color and animations when buffs change (for Thrill of the Skies)
+        -- Only update colors, not all settings (performance optimization)
+        if skyridingFrame and vigorBar then
+            local settings = GetSettings()
+            if settings then
+                local hasThrillBuff = HasThrillOfTheSkiesBuff()
+                
+                -- Update bar color
+                local barColor
+                if hasThrillBuff and settings.thrillOfTheSkiesColor then
+                    barColor = settings.thrillOfTheSkiesColor
+                elseif settings.useClassColorVigor then
+                    local _, class = UnitClass("player")
+                    local classColor = RAID_CLASS_COLORS[class]
+                    if classColor then
+                        barColor = {classColor.r, classColor.g, classColor.b, 1}
+                    else
+                        barColor = settings.barColor or {0.2, 0.8, 1.0, 1}
+                    end
+                else
+                    barColor = settings.barColor or {0.2, 0.8, 1.0, 1}
+                end
+                vigorBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] or 1)
+                
+                -- Update recharge overlay color if visible
+                if rechargeOverlay and rechargeOverlay:IsShown() then
+                    local color
+                    if hasThrillBuff and settings.thrillOfTheSkiesColor then
+                        local thrillColor = settings.thrillOfTheSkiesColor
+                        color = {thrillColor[1], thrillColor[2], thrillColor[3], (thrillColor[4] or 1) * 0.6}
+                    else
+                        color = settings.rechargeColor or {0.4, 0.9, 1.0, 0.6}
+                    end
+                    local now = GetTime()
+                    local pulse = 0.7 + 0.3 * math.sin(now * 4)
+                    rechargeOverlay:SetVertexColor(color[1], color[2], color[3], (color[4] or 0.6) * pulse)
+                end
+            end
+        end
     end
 end)
 
