@@ -51,7 +51,6 @@ function QUICore:ImportProfileFromString(str)
     end
 
     str = str:gsub("%s+", "")
-    str = str:gsub("^QUI1:", "")  -- QUI prefix
     str = str:gsub("^QUI1:", "")  -- Strip QUI1 prefix
     str = str:gsub("^CDM1:", "")  -- Backwards compatibility
 
@@ -91,14 +90,14 @@ end
 ---=================================================================================
 
 -- Generate a collision-safe unique tracker ID
-local function GenerateUniqueTrackerID(self)
+local function GenerateUniqueTrackerID()
     local used = {}
-    local bars = self.db.profile.customTrackers and self.db.profile.customTrackers.bars or {}
+    local bars = QUICore.db.profile.customTrackers and QUICore.db.profile.customTrackers.bars or {}
     for _, b in ipairs(bars) do
         if b.id then used[b.id] = true end
     end
-    if self.db.global and self.db.global.specTrackerSpells then
-        for id in pairs(self.db.global.specTrackerSpells) do
+    if QUICore.db.global and QUICore.db.global.specTrackerSpells then
+        for id in pairs(QUICore.db.global.specTrackerSpells) do
             used[id] = true
         end
     end
@@ -235,7 +234,7 @@ function QUICore:ImportSingleTrackerBar(str)
 
     -- Generate collision-safe unique ID for the imported bar
     local oldID = data.bar.id
-    local newID = GenerateUniqueTrackerID(self)
+    local newID = GenerateUniqueTrackerID()
     data.bar.id = newID
 
     -- Append bar to existing bars
@@ -308,7 +307,7 @@ function QUICore:ImportAllTrackerBars(str, replaceExisting)
 
         for _, bar in ipairs(data.bars) do
             local oldID = bar.id
-            local newID = GenerateUniqueTrackerID(self)
+            local newID = GenerateUniqueTrackerID()
             bar.id = newID
             idMapping[oldID] = newID
             table.insert(self.db.profile.customTrackers.bars, bar)

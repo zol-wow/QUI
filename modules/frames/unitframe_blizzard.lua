@@ -12,6 +12,7 @@ local QUI = _G.QuaziiUI or _G.QUI
 -- QUI_UF is created in unitframes.lua and exported to ns.QUI_UnitFrames.
 -- This file loads after unitframes.lua, so the reference is available.
 local QUI_UF = ns.QUI_UnitFrames
+if not QUI_UF then return end
 
 ---------------------------------------------------------------------------
 -- LOCAL HELPERS

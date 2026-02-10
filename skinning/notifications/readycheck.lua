@@ -167,27 +167,6 @@ _G.QUI_ToggleReadyCheckMover = ToggleMover
 -- HELPER FUNCTIONS
 ---------------------------------------------------------------------------
 
--- Create QUI-styled backdrop on a frame
-local function CreateQUIBackdrop(frame)
-    if frame.quiBackdrop then return frame.quiBackdrop end
-
-    local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    backdrop:SetAllPoints()
-    backdrop:SetFrameLevel(frame:GetFrameLevel())
-    backdrop:EnableMouse(false)  -- Don't steal clicks
-
-    local px = SkinBase.GetPixelSize(backdrop, 1)
-    backdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-        insets = { left = px, right = px, top = px, bottom = px }
-    })
-
-    frame.quiBackdrop = backdrop
-    return backdrop
-end
-
 -- Style a button with QUI look
 local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     if not button or button.quiSkinned then return end
@@ -213,12 +192,10 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     end
 
     -- Create backdrop
-    local backdrop = CreateQUIBackdrop(button)
     local btnBgr = math.min(bgr + 0.07, 1)  -- Slightly lighter for buttons
     local btnBgg = math.min(bgg + 0.07, 1)
     local btnBgb = math.min(bgb + 0.07, 1)
-    backdrop:SetBackdropColor(btnBgr, btnBgg, btnBgb, bga)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, 1)
+    SkinBase.CreateBackdrop(button, sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
 
     -- Store colors for hover effects
     button.quiNormalBg = { btnBgr, btnBgg, btnBgb, bga }
@@ -336,12 +313,10 @@ local function SkinReadyCheckFrame()
 
     -- Create QUI backdrop on ListenerFrame (where the content is)
     local targetFrame = listenerFrame or frame
-    local backdrop = CreateQUIBackdrop(targetFrame)
-    backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(targetFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Store reference on main frame for refresh
-    frame.quiBackdrop = backdrop
+    frame.quiBackdrop = targetFrame.quiBackdrop
 
     -- Skin Yes/No buttons and re-center them
     local yesButton = _G.ReadyCheckFrameYesButton

@@ -9,6 +9,7 @@ local QUICore = ns.Addon
 -- QUI_UF is created in unitframes.lua and exported to ns.QUI_UnitFrames.
 -- This file loads after unitframes.lua, so the reference is available.
 local QUI_UF = ns.QUI_UnitFrames
+if not QUI_UF then return end
 
 -- Internal helpers exposed by unitframes.lua
 local GetFontPath = QUI_UF._GetFontPath

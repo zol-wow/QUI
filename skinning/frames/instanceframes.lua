@@ -11,26 +11,10 @@ local SkinBase = ns.SkinBase
 local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button or button.quiStyled then return end
 
-    if not button.quiBackdrop then
-        button.quiBackdrop = CreateFrame("Frame", nil, button, "BackdropTemplate")
-        button.quiBackdrop:SetAllPoints()
-        button.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
-        button.quiBackdrop:EnableMouse(false)
-    end
-
-    local sbPx = SkinBase.GetPixelSize(button.quiBackdrop)
-    button.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = sbPx,
-        insets = { left = sbPx, right = sbPx, top = sbPx, bottom = sbPx }
-    })
-
     local btnBgR = math.min(bgr + 0.07, 1)
     local btnBgG = math.min(bgg + 0.07, 1)
     local btnBgB = math.min(bgb + 0.07, 1)
-    button.quiBackdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    button.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(button, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
 
     -- Hide default textures
     if button.Left then button.Left:SetAlpha(0) end
@@ -78,27 +62,13 @@ local function StyleDropdown(dropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga, width
     if dropdown.HighlightTexture then dropdown.HighlightTexture:SetAlpha(0) end
 
     -- Create backdrop
-    if not dropdown.quiBackdrop then
-        dropdown.quiBackdrop = CreateFrame("Frame", nil, dropdown, "BackdropTemplate")
-        dropdown.quiBackdrop:SetPoint("TOPLEFT", 0, -2)
-        dropdown.quiBackdrop:SetPoint("BOTTOMRIGHT", 0, 2)
-        dropdown.quiBackdrop:SetFrameLevel(dropdown:GetFrameLevel())
-        dropdown.quiBackdrop:EnableMouse(false)
-    end
-
-    local ddPx = SkinBase.GetPixelSize(dropdown.quiBackdrop)
-    dropdown.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = ddPx,
-        insets = { left = ddPx, right = ddPx, top = ddPx, bottom = ddPx }
-    })
-
     local btnBgR = math.min(bgr + 0.07, 1)
     local btnBgG = math.min(bgg + 0.07, 1)
     local btnBgB = math.min(bgb + 0.07, 1)
-    dropdown.quiBackdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    dropdown.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(dropdown, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+    dropdown.quiBackdrop:ClearAllPoints()
+    dropdown.quiBackdrop:SetPoint("TOPLEFT", 0, -2)
+    dropdown.quiBackdrop:SetPoint("BOTTOMRIGHT", 0, 2)
 
     -- Store colors for hover
     dropdown.quiSkinColor = { sr, sg, sb, sa }
@@ -144,23 +114,10 @@ local function StyleTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if highlight then highlight:SetAlpha(0) end
 
     -- Create backdrop
-    if not tab.quiBackdrop then
-        tab.quiBackdrop = CreateFrame("Frame", nil, tab, "BackdropTemplate")
-        tab.quiBackdrop:SetPoint("TOPLEFT", 3, -3)
-        tab.quiBackdrop:SetPoint("BOTTOMRIGHT", -3, 0)
-        tab.quiBackdrop:SetFrameLevel(tab:GetFrameLevel())
-        tab.quiBackdrop:EnableMouse(false)
-    end
-
-    local tabPx = SkinBase.GetPixelSize(tab.quiBackdrop)
-    tab.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = tabPx,
-        insets = { left = tabPx, right = tabPx, top = tabPx, bottom = tabPx }
-    })
-    tab.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.9)
-    tab.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
+    tab.quiBackdrop:ClearAllPoints()
+    tab.quiBackdrop:SetPoint("TOPLEFT", 3, -3)
+    tab.quiBackdrop:SetPoint("BOTTOMRIGHT", -3, 0)
 
     tab.quiStyled = true
 end

@@ -70,7 +70,3 @@ function SkinBase.StripTextures(frame)
     end
 end
 
----------------------------------------------------------------------------
--- Common constants
----------------------------------------------------------------------------
-SkinBase.FONT_FLAGS = "OUTLINE"
