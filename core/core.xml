@@ -5,5 +5,6 @@
     <Script file="media.lua"/>
     <Script file="compatibility.lua"/>
     <Script file="main.lua"/>
+    <Script file="profile_io.lua"/>
     <Script file="scaling.lua"/>
 </Ui>
