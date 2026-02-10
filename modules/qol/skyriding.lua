@@ -591,7 +591,7 @@ local function UpdateVigorBar()
             
             -- Use Thrill of the Skies color for flash if buff is active
             local hasThrillBuff = HasThrillOfTheSkiesBuff()
-            if hasThrillBuff and settings.thrillOfTheSkiesColor then
+            if hasThrillBuff and (settings.useThrillOfTheSkiesColor ~= false) and settings.thrillOfTheSkiesColor then
                 local thrillColor = settings.thrillOfTheSkiesColor
                 flashTexture:SetVertexColor(thrillColor[1], thrillColor[2], thrillColor[3], 0.5)
             else
@@ -650,7 +650,7 @@ local function UpdateRechargeAnimation()
     -- Use Thrill of the Skies color for recharge if buff is active
     local hasThrillBuff = HasThrillOfTheSkiesBuff()
     local color
-    if hasThrillBuff and settings.thrillOfTheSkiesColor then
+    if hasThrillBuff and (settings.useThrillOfTheSkiesColor ~= false) and settings.thrillOfTheSkiesColor then
         local thrillColor = settings.thrillOfTheSkiesColor
         -- Use the thrill color but with reduced alpha for recharge overlay
         color = {thrillColor[1], thrillColor[2], thrillColor[3], (thrillColor[4] or 1) * 0.6}
@@ -931,7 +931,7 @@ local function ApplySettings()
     local barColor
     local hasThrillBuff = HasThrillOfTheSkiesBuff()
     
-    if hasThrillBuff and settings.thrillOfTheSkiesColor then
+    if hasThrillBuff and (settings.useThrillOfTheSkiesColor ~= false) and settings.thrillOfTheSkiesColor then
         -- Use Thrill of the Skies color when buff is active
         barColor = settings.thrillOfTheSkiesColor
     elseif settings.useClassColorVigor then
@@ -1130,7 +1130,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 
                 -- Update bar color
                 local barColor
-                if hasThrillBuff and settings.thrillOfTheSkiesColor then
+                if hasThrillBuff and (settings.useThrillOfTheSkiesColor ~= false) and settings.thrillOfTheSkiesColor then
                     barColor = settings.thrillOfTheSkiesColor
                 elseif settings.useClassColorVigor then
                     local _, class = UnitClass("player")
@@ -1148,7 +1148,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 -- Update recharge overlay color if visible
                 if rechargeOverlay and rechargeOverlay:IsShown() then
                     local color
-                    if hasThrillBuff and settings.thrillOfTheSkiesColor then
+                    if hasThrillBuff and (settings.useThrillOfTheSkiesColor ~= false) and settings.thrillOfTheSkiesColor then
                         local thrillColor = settings.thrillOfTheSkiesColor
                         color = {thrillColor[1], thrillColor[2], thrillColor[3], (thrillColor[4] or 1) * 0.6}
                     else
