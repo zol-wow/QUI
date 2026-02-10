@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.29.4 - 2026-02-10
+
+### Fixed
+- fixed keybind scan trying to access forbidden tables
 ## v2.29.3 - 2026-02-09
 
 ### Added
