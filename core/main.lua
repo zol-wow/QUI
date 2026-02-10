@@ -1059,6 +1059,7 @@ local defaults = {
             useClassColorSecondWind = false,
             secondWindColor = { 1.0, 0.8, 0.2, 1 },       -- FFCC33
             secondWindBackgroundColor = { 0.102, 0.102, 0.102, 0.301 }, -- 1A1A1A with lower alpha
+            thrillOfTheSkiesColor = { 1.0, 0.5, 0.0, 1 }, -- FF8000 (orange)
             visibility = "FLYING_ONLY",
             fadeDelay = 1,
             fadeDuration = 0.3,
