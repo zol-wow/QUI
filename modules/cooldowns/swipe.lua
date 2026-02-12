@@ -171,6 +171,24 @@ local function ApplyAllSettings()
     end
 end
 
+-- Queue refreshes to break secure event taint chains (notably PLAYER_TOTEM_UPDATE).
+local queuedRefresh = false
+local pendingCombatRefresh = false
+
+local function QueueApplyAllSettings(delaySeconds)
+    if queuedRefresh then return end
+    queuedRefresh = true
+    C_Timer.After(delaySeconds or 0, function()
+        queuedRefresh = false
+        if InCombatLockdown() then
+            pendingCombatRefresh = true
+            return
+        end
+        pendingCombatRefresh = false
+        ApplyAllSettings()
+    end)
+end
+
 -- Event-driven refresh for cooldown state changes without SetCooldown hooks.
 local refreshEventFrame = CreateFrame("Frame")
 refreshEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
@@ -178,8 +196,22 @@ refreshEventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
 refreshEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 refreshEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 refreshEventFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
-refreshEventFrame:SetScript("OnEvent", function()
-    ApplyAllSettings()
+refreshEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+refreshEventFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if pendingCombatRefresh then
+            QueueApplyAllSettings(0.05)
+        end
+        return
+    end
+
+    if event == "PLAYER_TOTEM_UPDATE" then
+        -- BUG-010: break secure totem update context to avoid taint propagation
+        QueueApplyAllSettings(0)
+        return
+    end
+
+    QueueApplyAllSettings(0)
 end)
 
 -- Keep swipe state responsive while viewers are visible.
@@ -196,7 +228,11 @@ pulseFrame:SetScript("OnUpdate", function(self, elapsed)
         or (utility and utility:IsShown())
         or (buff and buff:IsShown())
     if anyVisible then
-        ApplyAllSettings()
+        if InCombatLockdown() then
+            pendingCombatRefresh = true
+            return
+        end
+        QueueApplyAllSettings(0)
     end
 end)
 

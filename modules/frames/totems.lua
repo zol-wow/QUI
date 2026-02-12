@@ -20,6 +20,7 @@ if playerClass ~= "SHAMAN" then return end
 local TotemBar = {}
 TotemBar.hooked = false
 TotemBar.ticker = nil
+TotemBar.showEnforceQueued = false
 
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
@@ -300,6 +301,20 @@ local function PostUpdate()
     end
 end
 
+-- Enforce enabled/disabled visibility outside secure Show() chains.
+local function QueueShowEnforcement(frame)
+    if TotemBar.showEnforceQueued then return end
+    TotemBar.showEnforceQueued = true
+    C_Timer.After(0, function()
+        TotemBar.showEnforceQueued = false
+        if InCombatLockdown() then return end
+        local db = GetDB()
+        if frame and frame:IsShown() and (not db or not db.enabled) then
+            frame:Hide()
+        end
+    end)
+end
+
 ---------------------------------------------------------------------------
 -- POSITIONING
 ---------------------------------------------------------------------------
@@ -388,12 +403,10 @@ local function HookTotemFrame()
         end
     end)
 
-    -- Override show/hide behavior based on our enabled setting
+    -- Override show/hide behavior based on our enabled setting.
+    -- BUG-011: defer Hide() out of secure Show() chain.
     hooksecurefunc(tf, "Show", function(self)
-        local db = GetDB()
-        if not db or not db.enabled then
-            self:Hide()
-        end
+        QueueShowEnforcement(self)
     end)
 end
 
