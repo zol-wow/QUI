@@ -15,9 +15,7 @@ local RefreshAll = Shared.RefreshAll
 -- Forward declaration for Totem Bar sub-tab (defined below Action Bars page)
 local BuildTotemBarTab
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- PAGE: Action Bars

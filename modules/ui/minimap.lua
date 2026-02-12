@@ -652,6 +652,8 @@ end
 --- ZONE TEXT
 ---=================================================================================
 
+local UpdateZoneTextDisplay  -- forward declaration (defined after CreateZoneText/UpdateZoneText)
+
 local function CreateZoneText()
     if zoneTextFrame then return end
     
@@ -768,7 +770,7 @@ local function UpdateZoneText()
     UpdateZoneTextDisplay()
 end
 
-function UpdateZoneTextDisplay()
+UpdateZoneTextDisplay = function()
     if not zoneTextFrame or not zoneTextFont then return end
     local settings = GetSettings()
     if not settings or not settings.showZoneText then return end

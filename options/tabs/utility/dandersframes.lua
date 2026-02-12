@@ -12,9 +12,7 @@ local Shared = ns.QUI_Options
 
 local PADDING = Shared.PADDING
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 -- 9-point anchor options
 local ANCHOR_POINTS = {

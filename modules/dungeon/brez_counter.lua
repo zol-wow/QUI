@@ -8,10 +8,7 @@ local QUI = ns.QUI or {}
 ns.QUI = QUI
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
-
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local UIKit = ns.UIKit
 
 ---------------------------------------------------------------------------
 -- Constants
@@ -66,105 +63,6 @@ local BrezState = {
 ---------------------------------------------------------------------------
 local function GetSettings()
     return Helpers.GetModuleDB("brzCounter")
-end
-
----------------------------------------------------------------------------
--- Backdrop / border helpers (same pattern as combattimer)
----------------------------------------------------------------------------
-local LSM = LibStub("LibSharedMedia-3.0", true)
-
-local function GetBackdropInfo(borderTextureName, borderSize, frame)
-    local edgeFile = nil
-    local edgeSize = 0
-    local px = QUICore:GetPixelSize(frame)
-
-    if borderTextureName and borderTextureName ~= "None" and LSM then
-        edgeFile = LSM:Fetch("border", borderTextureName)
-        edgeSize = (borderSize or 1) * px
-    end
-
-    return {
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = edgeFile,
-        tile = false,
-        tileSize = 0,
-        edgeSize = edgeSize,
-        insets = { left = 0, right = px, top = 0, bottom = px },
-    }
-end
-
-local function CreateBorderLines(frame)
-    if frame.borderLines then return frame.borderLines end
-
-    local borders = {}
-
-    borders.top = frame:CreateTexture(nil, "OVERLAY")
-    borders.top:SetColorTexture(0, 0, 0, 1)
-    borders.top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    borders.top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, 0)
-
-    borders.bottom = frame:CreateTexture(nil, "OVERLAY")
-    borders.bottom:SetColorTexture(0, 0, 0, 1)
-    borders.bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 1)
-    borders.bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
-
-    borders.left = frame:CreateTexture(nil, "OVERLAY")
-    borders.left:SetColorTexture(0, 0, 0, 1)
-    borders.left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    borders.left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 1)
-
-    borders.right = frame:CreateTexture(nil, "OVERLAY")
-    borders.right:SetColorTexture(0, 0, 0, 1)
-    borders.right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    borders.right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 1)
-
-    frame.borderLines = borders
-    return borders
-end
-
-local function UpdateBorderLines(frame, size, r, g, b, a, hide)
-    local borders = frame.borderLines
-    if not borders then return end
-
-    if hide or size <= 0 then
-        for _, line in pairs(borders) do
-            line:Hide()
-        end
-        return
-    end
-
-    borders.top:SetHeight(size)
-    borders.bottom:SetHeight(size)
-    borders.left:SetWidth(size)
-    borders.right:SetWidth(size)
-
-    borders.top:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-    borders.bottom:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-    borders.left:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-    borders.right:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-
-    for _, line in pairs(borders) do
-        line:Show()
-    end
-end
-
----------------------------------------------------------------------------
--- Font helpers
----------------------------------------------------------------------------
-local function GetFontPath(fontName)
-    if LSM and fontName then
-        local path = LSM:Fetch("font", fontName)
-        if path then return path end
-    end
-    return "Fonts\\FRIZQT__.TTF"
-end
-
-local function GetGlobalFont()
-    local core = GetCore()
-    if core and core.db and core.db.profile and core.db.profile.general and core.db.profile.general.font then
-        return core.db.profile.general.font
-    end
-    return "Quazii"
 end
 
 local function GetClassColor()
@@ -229,13 +127,12 @@ local function CreateBrezFrame()
     frame:SetClampedToScreen(true)
 
     -- Set up backdrop
-    frame:SetBackdrop(GetBackdropInfo(nil, nil, frame))
+    frame:SetBackdrop(UIKit.GetBackdropInfo(nil, nil, frame))
     frame:SetBackdropColor(0, 0, 0, 0.6)
 
     -- Create border lines
-    local px = QUICore:GetPixelSize(frame)
-    CreateBorderLines(frame)
-    UpdateBorderLines(frame, px, 0, 0, 0, 1)
+    UIKit.CreateBorderLines(frame)
+    UIKit.UpdateBorderLines(frame, 1, 0, 0, 0, 1)
 
     -- Spell icon texture
     local icon = frame:CreateTexture(nil, "BACKGROUND")
@@ -247,7 +144,7 @@ local function CreateBrezFrame()
     -- Charges text (bottom-right)
     local chargeText = frame:CreateFontString(nil, "OVERLAY")
     chargeText:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-    chargeText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    chargeText:SetFont(UIKit.ResolveFontPath(), 14, "OUTLINE")
     chargeText:SetTextColor(0.3, 1, 0.3, 1)
     chargeText:SetJustifyH("RIGHT")
     chargeText:SetText("0")
@@ -256,7 +153,7 @@ local function CreateBrezFrame()
     -- Timer text (top-left)
     local timerText = frame:CreateFontString(nil, "OVERLAY")
     timerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
-    timerText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    timerText:SetFont(UIKit.ResolveFontPath(), 12, "OUTLINE")
     timerText:SetTextColor(1, 1, 1, 1)
     timerText:SetJustifyH("LEFT")
     timerText:SetText("")
@@ -430,8 +327,7 @@ local function UpdateAppearance()
     frame:SetPoint("CENTER", UIParent, "CENTER", xOffset, yOffset)
 
     -- Update fonts
-    local fontName = settings.useCustomFont and settings.font or GetGlobalFont()
-    local fontPath = GetFontPath(fontName)
+    local fontPath = UIKit.ResolveFontPath(settings.useCustomFont and settings.font)
 
     local fontSize = settings.fontSize or 14
     frame.chargeText:SetFont(fontPath, fontSize, "OUTLINE")
@@ -475,7 +371,7 @@ local function UpdateAppearance()
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder
 
     if showBackdrop or effectiveUseLSMBorder then
-        frame:SetBackdrop(GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame))
+        frame:SetBackdrop(UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame))
 
         if showBackdrop then
             local bgColor = settings.backdropColor or { 0, 0, 0, 0.6 }
@@ -492,9 +388,8 @@ local function UpdateAppearance()
     end
 
     -- Update manual border lines
-    local px = QUICore:GetPixelSize(frame)
-    CreateBorderLines(frame)
-    UpdateBorderLines(frame, borderSize * px, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
+    UIKit.CreateBorderLines(frame)
+    UIKit.UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
 
     -- Update display immediately
     UpdateDisplay()

@@ -8,9 +8,7 @@ local QUICore = ns.Addon
 -- Local references for shared infrastructure
 local CreateScrollableContent = Shared.CreateScrollableContent
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 --------------------------------------------------------------------------------
 -- Helper: Create a scrollable text box container

@@ -2,9 +2,7 @@ local addonName, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- INSPECT FRAME SKINNING

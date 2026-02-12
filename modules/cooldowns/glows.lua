@@ -225,7 +225,7 @@ local function StartGlow(icon)
 end
 
 -- Stop all glow effects on an icon
-function StopGlow(icon)
+local function StopGlow(icon)
     if not icon then return end
 
     -- Stop all LibCustomGlow effect types

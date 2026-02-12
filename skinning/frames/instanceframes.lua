@@ -1,88 +1,20 @@
 local addonName, ns = ...
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
-
-local QUICore = GetCore()
+local GetCore = ns.Helpers.GetCore
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)
 ---------------------------------------------------------------------------
 
--- Get skinning colors
-local function GetColors()
-    local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
-    local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95
-
-    if QUI and QUI.GetSkinColor then
-        sr, sg, sb, sa = QUI:GetSkinColor()
-    end
-    if QUI and QUI.GetSkinBgColor then
-        bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-    end
-
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
-end
-
--- Create backdrop for a frame
-local function CreateQUIBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not frame.quiBackdrop then
-        frame.quiBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        frame.quiBackdrop:SetAllPoints()
-        frame.quiBackdrop:SetFrameLevel(frame:GetFrameLevel())
-        frame.quiBackdrop:EnableMouse(false)
-    end
-
-    local core = GetCore()
-    local px = core and core:GetPixelSize(frame.quiBackdrop) or 1
-    frame.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-        insets = { left = px, right = px, top = px, bottom = px }
-    })
-    frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-end
-
--- Strip textures from a frame
-local function StripTextures(frame)
-    if not frame then return end
-
-    for i = 1, frame:GetNumRegions() do
-        local region = select(i, frame:GetRegions())
-        if region and region:IsObjectType("Texture") then
-            region:SetAlpha(0)
-        end
-    end
-end
-
 -- Style a button
 local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button or button.quiStyled then return end
 
-    if not button.quiBackdrop then
-        button.quiBackdrop = CreateFrame("Frame", nil, button, "BackdropTemplate")
-        button.quiBackdrop:SetAllPoints()
-        button.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
-        button.quiBackdrop:EnableMouse(false)
-    end
-
-    local sbPx = QUICore:GetPixelSize(button.quiBackdrop)
-    button.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = sbPx,
-        insets = { left = sbPx, right = sbPx, top = sbPx, bottom = sbPx }
-    })
-
     local btnBgR = math.min(bgr + 0.07, 1)
     local btnBgG = math.min(bgg + 0.07, 1)
     local btnBgB = math.min(bgb + 0.07, 1)
-    button.quiBackdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    button.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(button, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
 
     -- Hide default textures
     if button.Left then button.Left:SetAlpha(0) end
@@ -130,27 +62,13 @@ local function StyleDropdown(dropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga, width
     if dropdown.HighlightTexture then dropdown.HighlightTexture:SetAlpha(0) end
 
     -- Create backdrop
-    if not dropdown.quiBackdrop then
-        dropdown.quiBackdrop = CreateFrame("Frame", nil, dropdown, "BackdropTemplate")
-        dropdown.quiBackdrop:SetPoint("TOPLEFT", 0, -2)
-        dropdown.quiBackdrop:SetPoint("BOTTOMRIGHT", 0, 2)
-        dropdown.quiBackdrop:SetFrameLevel(dropdown:GetFrameLevel())
-        dropdown.quiBackdrop:EnableMouse(false)
-    end
-
-    local ddPx = QUICore:GetPixelSize(dropdown.quiBackdrop)
-    dropdown.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = ddPx,
-        insets = { left = ddPx, right = ddPx, top = ddPx, bottom = ddPx }
-    })
-
     local btnBgR = math.min(bgr + 0.07, 1)
     local btnBgG = math.min(bgg + 0.07, 1)
     local btnBgB = math.min(bgb + 0.07, 1)
-    dropdown.quiBackdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    dropdown.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(dropdown, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+    dropdown.quiBackdrop:ClearAllPoints()
+    dropdown.quiBackdrop:SetPoint("TOPLEFT", 0, -2)
+    dropdown.quiBackdrop:SetPoint("BOTTOMRIGHT", 0, 2)
 
     -- Store colors for hover
     dropdown.quiSkinColor = { sr, sg, sb, sa }
@@ -196,23 +114,10 @@ local function StyleTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if highlight then highlight:SetAlpha(0) end
 
     -- Create backdrop
-    if not tab.quiBackdrop then
-        tab.quiBackdrop = CreateFrame("Frame", nil, tab, "BackdropTemplate")
-        tab.quiBackdrop:SetPoint("TOPLEFT", 3, -3)
-        tab.quiBackdrop:SetPoint("BOTTOMRIGHT", -3, 0)
-        tab.quiBackdrop:SetFrameLevel(tab:GetFrameLevel())
-        tab.quiBackdrop:EnableMouse(false)
-    end
-
-    local tabPx = QUICore:GetPixelSize(tab.quiBackdrop)
-    tab.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = tabPx,
-        insets = { left = tabPx, right = tabPx, top = tabPx, bottom = tabPx }
-    })
-    tab.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.9)
-    tab.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
+    tab.quiBackdrop:ClearAllPoints()
+    tab.quiBackdrop:SetPoint("TOPLEFT", 3, -3)
+    tab.quiBackdrop:SetPoint("BOTTOMRIGHT", -3, 0)
 
     tab.quiStyled = true
 end
@@ -226,7 +131,7 @@ local function HidePVEDecorations()
     if PVEFrame.shadows then
         PVEFrame.shadows:Hide()
         -- Also strip all textures inside shadows frame
-        StripTextures(PVEFrame.shadows)
+        SkinBase.StripTextures(PVEFrame.shadows)
     end
 
     -- Blue menu backgrounds and decorations (from PVEFrame.xml)
@@ -284,7 +189,7 @@ local function HidePVEDecorations()
     if _G.PVEFrameNineSlice then _G.PVEFrameNineSlice:Hide() end
 
     -- Strip all remaining textures from main frame
-    StripTextures(PVEFrame)
+    SkinBase.StripTextures(PVEFrame)
 end
 
 -- Style GroupFinder buttons (LFD, Raid Finder, Premade Groups on the left)
@@ -305,7 +210,7 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         button.quiBackdrop:EnableMouse(false)
     end
 
-    local dbPx = QUICore:GetPixelSize(button.quiBackdrop)
+    local dbPx = SkinBase.GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -333,7 +238,7 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
             button.icon.quiBackdrop:SetPoint("BOTTOMRIGHT", button.icon, 1, -1)
             button.icon.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
             button.icon.quiBackdrop:EnableMouse(false)
-            local ibPx = QUICore:GetPixelSize(button.icon.quiBackdrop)
+            local ibPx = SkinBase.GetPixelSize(button.icon.quiBackdrop)
             button.icon.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -372,13 +277,13 @@ local function SkinPVEFrame()
     local PVEFrame = _G.PVEFrame
     if not PVEFrame or PVEFrame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide all Blizzard decorations
     HidePVEDecorations()
 
     -- Create main backdrop
-    CreateQUIBackdrop(PVEFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(PVEFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Style close button (minimal - just hide border per QUI pattern)
     local closeButton = PVEFrame.CloseButton or _G.PVEFrameCloseButton
@@ -436,10 +341,10 @@ local function HideLFDDecorations()
 
     -- LFDParentFrame (the container for LFD content)
     if _G.LFDParentFrame then
-        StripTextures(_G.LFDParentFrame)
+        SkinBase.StripTextures(_G.LFDParentFrame)
     end
     if _G.LFDParentFrameInset then
-        StripTextures(_G.LFDParentFrameInset)
+        SkinBase.StripTextures(_G.LFDParentFrameInset)
         _G.LFDParentFrameInset:Hide()
     end
 
@@ -461,7 +366,7 @@ local function HideLFDDecorations()
         if LFDQueueFrame.Dropdown.Middle then LFDQueueFrame.Dropdown.Middle:SetAlpha(0) end
     end
 
-    StripTextures(LFDQueueFrame)
+    SkinBase.StripTextures(LFDQueueFrame)
 end
 
 -- Hide Raid Finder decorations
@@ -469,7 +374,7 @@ local function HideRaidFinderDecorations()
     local RaidFinderFrame = _G.RaidFinderFrame
     if not RaidFinderFrame then return end
 
-    StripTextures(RaidFinderFrame)
+    SkinBase.StripTextures(RaidFinderFrame)
 
     -- Role background (gradient texture behind role buttons)
     if _G.RaidFinderFrameRoleBackground then
@@ -482,28 +387,28 @@ local function HideRaidFinderDecorations()
     -- Role inset (top inset around role buttons) - hide the entire frame
     local roleInset = _G.RaidFinderFrameRoleInset or (RaidFinderFrame.Inset)
     if roleInset then
-        StripTextures(roleInset)
+        SkinBase.StripTextures(roleInset)
         roleInset:Hide()
     end
 
     -- Bottom inset (around raid selection area) - hide the entire frame
     local bottomInset = _G.RaidFinderFrameBottomInset
     if bottomInset then
-        StripTextures(bottomInset)
+        SkinBase.StripTextures(bottomInset)
         bottomInset:Hide()
     end
 
     -- Queue frame
     local RaidFinderQueueFrame = _G.RaidFinderQueueFrame
     if RaidFinderQueueFrame then
-        StripTextures(RaidFinderQueueFrame)
+        SkinBase.StripTextures(RaidFinderQueueFrame)
         if RaidFinderQueueFrame.Bg then RaidFinderQueueFrame.Bg:Hide() end
         if RaidFinderQueueFrame.Background then RaidFinderQueueFrame.Background:Hide() end
 
         -- Hide scroll frame background if present
         local scrollFrame = _G.RaidFinderQueueFrameScrollFrame
         if scrollFrame then
-            StripTextures(scrollFrame)
+            SkinBase.StripTextures(scrollFrame)
         end
     end
 
@@ -522,7 +427,7 @@ local function SkinLFDFrame()
     local LFDQueueFrame = _G.LFDQueueFrame
     if not LFDQueueFrame or LFDQueueFrame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide Blizzard decorations
     HideLFDDecorations()
@@ -571,7 +476,7 @@ local function SkinRaidFinderFrame()
     local RaidFinderQueueFrame = _G.RaidFinderQueueFrame
     if not RaidFinderQueueFrame or RaidFinderQueueFrame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide Blizzard decorations
     HideRaidFinderDecorations()
@@ -630,7 +535,7 @@ local function HideLFGListDecorations()
             cs.Inset:Hide()
             if cs.Inset.NineSlice then cs.Inset.NineSlice:Hide() end
         end
-        StripTextures(cs)
+        SkinBase.StripTextures(cs)
     end
 
     -- Search panel decorations
@@ -641,9 +546,9 @@ local function HideLFGListDecorations()
             if sp.ResultsInset.NineSlice then sp.ResultsInset.NineSlice:Hide() end
         end
         if sp.AutoCompleteFrame then
-            StripTextures(sp.AutoCompleteFrame)
+            SkinBase.StripTextures(sp.AutoCompleteFrame)
         end
-        StripTextures(sp)
+        SkinBase.StripTextures(sp)
     end
 
     -- Application viewer decorations
@@ -654,7 +559,7 @@ local function HideLFGListDecorations()
             if av.Inset.NineSlice then av.Inset.NineSlice:Hide() end
         end
         if av.InfoBackground then av.InfoBackground:Hide() end
-        StripTextures(av)
+        SkinBase.StripTextures(av)
     end
 
     -- Entry creation decorations
@@ -664,10 +569,10 @@ local function HideLFGListDecorations()
             ec.Inset:Hide()
             if ec.Inset.NineSlice then ec.Inset.NineSlice:Hide() end
         end
-        StripTextures(ec)
+        SkinBase.StripTextures(ec)
     end
 
-    StripTextures(LFGListFrame)
+    SkinBase.StripTextures(LFGListFrame)
 end
 
 -- Skin LFGListFrame (Premade Groups)
@@ -675,7 +580,7 @@ local function SkinLFGListFrame()
     local LFGListFrame = _G.LFGListFrame
     if not LFGListFrame or LFGListFrame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide Blizzard decorations
     HideLFGListDecorations()
@@ -693,7 +598,7 @@ local function SkinLFGListFrame()
         if cs.CategoryButtons then
             for _, catButton in pairs(cs.CategoryButtons) do
                 if catButton and not catButton.quiStyled then
-                    StripTextures(catButton)
+                    SkinBase.StripTextures(catButton)
                     StyleButton(catButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
                 end
             end
@@ -714,8 +619,8 @@ local function SkinLFGListFrame()
         end
         -- Style search box
         if sp.SearchBox then
-            StripTextures(sp.SearchBox)
-            CreateQUIBackdrop(sp.SearchBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            SkinBase.StripTextures(sp.SearchBox)
+            SkinBase.CreateBackdrop(sp.SearchBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
         -- Style filter button
         if sp.FilterButton then
@@ -763,10 +668,10 @@ local function HideChallengesDecorations()
 
     -- Seasonal affix frame
     if ChallengesFrame.SeasonChangeNoticeFrame then
-        StripTextures(ChallengesFrame.SeasonChangeNoticeFrame)
+        SkinBase.StripTextures(ChallengesFrame.SeasonChangeNoticeFrame)
     end
 
-    StripTextures(ChallengesFrame)
+    SkinBase.StripTextures(ChallengesFrame)
 end
 
 -- Style dungeon icon frame for M+
@@ -787,7 +692,7 @@ local function StyleDungeonIcon(icon, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             icon.Icon.quiBackdrop:SetPoint("BOTTOMRIGHT", icon.Icon, 1, -1)
             icon.Icon.quiBackdrop:SetFrameLevel(icon:GetFrameLevel())
             icon.Icon.quiBackdrop:EnableMouse(false)
-            local iiPx = QUICore:GetPixelSize(icon.Icon.quiBackdrop)
+            local iiPx = SkinBase.GetPixelSize(icon.Icon.quiBackdrop)
             icon.Icon.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -820,7 +725,7 @@ local function StyleAffixIcon(affix, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             affix.Portrait.quiBackdrop:SetPoint("BOTTOMRIGHT", affix.Portrait, 1, -1)
             affix.Portrait.quiBackdrop:SetFrameLevel(affix:GetFrameLevel())
             affix.Portrait.quiBackdrop:EnableMouse(false)
-            local apPx = QUICore:GetPixelSize(affix.Portrait.quiBackdrop)
+            local apPx = SkinBase.GetPixelSize(affix.Portrait.quiBackdrop)
             affix.Portrait.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -838,7 +743,7 @@ local function SkinChallengesFrame()
     local ChallengesFrame = _G.ChallengesFrame
     if not ChallengesFrame or ChallengesFrame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide Blizzard decorations
     HideChallengesDecorations()
@@ -871,7 +776,7 @@ local function SkinChallengesFrame()
     if ChallengesFrame.Update and not ChallengesFrame.quiUpdateHooked then
         hooksecurefunc(ChallengesFrame, "Update", function(self)
             if self.DungeonIcons then
-                local sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2 = GetColors()
+                local sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2 = SkinBase.GetSkinColors()
                 for _, icon in pairs(self.DungeonIcons) do
                     StyleDungeonIcon(icon, sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2)
                 end
@@ -930,9 +835,9 @@ local function HidePVPDecorations()
         if hf.BonusFrame then
             if hf.BonusFrame.ShadowOverlay then hf.BonusFrame.ShadowOverlay:Hide() end
             if hf.BonusFrame.WorldBattlesTexture then hf.BonusFrame.WorldBattlesTexture:Hide() end
-            StripTextures(hf.BonusFrame)
+            SkinBase.StripTextures(hf.BonusFrame)
         end
-        StripTextures(hf)
+        SkinBase.StripTextures(hf)
     end
 
     -- Conquest frame decorations
@@ -946,10 +851,10 @@ local function HidePVPDecorations()
             if cf.Inset.NineSlice then cf.Inset.NineSlice:Hide() end
         end
         if cf.ShadowOverlay then cf.ShadowOverlay:Hide() end
-        StripTextures(cf)
+        SkinBase.StripTextures(cf)
     end
 
-    StripTextures(PVPQueueFrame)
+    SkinBase.StripTextures(PVPQueueFrame)
 end
 
 -- Style PVP bonus/activity button (right side activity buttons)
@@ -969,7 +874,7 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         button.quiBackdrop:EnableMouse(false)
     end
 
-    local cdPx = QUICore:GetPixelSize(button.quiBackdrop)
+    local cdPx = SkinBase.GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1001,7 +906,7 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
                 reward.Icon.quiBackdrop:SetPoint("BOTTOMRIGHT", reward.Icon, 1, -1)
                 reward.Icon.quiBackdrop:SetFrameLevel(reward:GetFrameLevel())
                 reward.Icon.quiBackdrop:EnableMouse(false)
-                local riPx = QUICore:GetPixelSize(reward.Icon.quiBackdrop)
+                local riPx = SkinBase.GetPixelSize(reward.Icon.quiBackdrop)
                 reward.Icon.quiBackdrop:SetBackdrop({
                     bgFile = nil,
                     edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1060,7 +965,7 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         button.quiBackdrop:EnableMouse(false)
     end
 
-    local dvPx = QUICore:GetPixelSize(button.quiBackdrop)
+    local dvPx = SkinBase.GetPixelSize(button.quiBackdrop)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1089,7 +994,7 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             button.Icon.quiBackdrop:SetPoint("BOTTOMRIGHT", button.Icon, 1, -1)
             button.Icon.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
             button.Icon.quiBackdrop:EnableMouse(false)
-            local biPx = QUICore:GetPixelSize(button.Icon.quiBackdrop)
+            local biPx = SkinBase.GetPixelSize(button.Icon.quiBackdrop)
             button.Icon.quiBackdrop:SetBackdrop({
                 bgFile = nil,
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1129,7 +1034,7 @@ local function StyleConquestBar(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         bar.quiBackdrop:EnableMouse(false)
     end
 
-    local wcPx = QUICore:GetPixelSize(bar.quiBackdrop)
+    local wcPx = SkinBase.GetPixelSize(bar.quiBackdrop)
     bar.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1177,7 +1082,7 @@ local function SkinPVPFrame()
     local PVPQueueFrame = _G.PVPQueueFrame
     if not PVPQueueFrame or PVPQueueFrame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide Blizzard decorations
     HidePVPDecorations()
@@ -1276,13 +1181,13 @@ local function SkinPVPFrame()
     local TrainingGroundsFrame = _G.TrainingGroundsFrame
     if TrainingGroundsFrame then
         -- Hide decorations
-        StripTextures(TrainingGroundsFrame)
+        SkinBase.StripTextures(TrainingGroundsFrame)
         if TrainingGroundsFrame.Bg then TrainingGroundsFrame.Bg:Hide() end
         if TrainingGroundsFrame.Background then TrainingGroundsFrame.Background:Hide() end
 
         -- Hide Inset frame (InsetFrameTemplate has NineSlice border)
         if TrainingGroundsFrame.Inset then
-            StripTextures(TrainingGroundsFrame.Inset)
+            SkinBase.StripTextures(TrainingGroundsFrame.Inset)
             if TrainingGroundsFrame.Inset.NineSlice then
                 TrainingGroundsFrame.Inset.NineSlice:Hide()
             end
@@ -1345,7 +1250,7 @@ local function SkinPVPFrame()
     local PlunderstormFrame = _G.PlunderstormFrame
     if PlunderstormFrame then
         -- Hide decorations
-        StripTextures(PlunderstormFrame)
+        SkinBase.StripTextures(PlunderstormFrame)
         if PlunderstormFrame.Bg then PlunderstormFrame.Bg:Hide() end
         if PlunderstormFrame.Background then PlunderstormFrame.Background:Hide() end
 
@@ -1460,7 +1365,7 @@ local function RefreshInstanceFramesColors()
     local PVEFrame = _G.PVEFrame
     if not PVEFrame or not PVEFrame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Update PVEFrame backdrop
     if PVEFrame.quiBackdrop then

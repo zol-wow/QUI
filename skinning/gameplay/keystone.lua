@@ -1,19 +1,7 @@
 local addonName, ns = ...
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
-
-local function GetPixelSize(frame, default)
-    local core = GetCore()
-    if core and type(core.GetPixelSize) == "function" then
-        local px = core:GetPixelSize(frame)
-        if type(px) == "number" and px > 0 then
-            return px
-        end
-    end
-    return default or 1
-end
+local GetCore = ns.Helpers.GetCore
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- KEYSTONE FRAME SKINNING
@@ -27,26 +15,6 @@ local COLORS = {
 
 local FONT_FLAGS = "OUTLINE"
 
--- Create a styled backdrop for frames
-local function CreateQUIBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not frame.quiBackdrop then
-        frame.quiBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        frame.quiBackdrop:SetAllPoints()
-        frame.quiBackdrop:SetFrameLevel(frame:GetFrameLevel())
-        frame.quiBackdrop:EnableMouse(false)
-    end
-
-    local px = GetPixelSize(frame.quiBackdrop, 1)
-    frame.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-        insets = { left = px, right = px, top = px, bottom = px }
-    })
-    frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-end
-
 -- Style a button with QUI theme
 local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button then return end
@@ -58,7 +26,7 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         button.quiBackdrop:EnableMouse(false)
     end
 
-    local btnPx = GetPixelSize(button.quiBackdrop, 1)
+    local btnPx = SkinBase.GetPixelSize(button.quiBackdrop, 1)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -125,7 +93,7 @@ local function StyleKeystoneSlot(slot, sr, sg, sb, sa)
         slot.quiBorder:SetPoint("BOTTOMRIGHT", 4, -4)
         slot.quiBorder:SetFrameLevel(slot:GetFrameLevel() - 1)
         slot.quiBorder:EnableMouse(false)
-        local slotPx = GetPixelSize(slot.quiBorder, 1)
+        local slotPx = SkinBase.GetPixelSize(slot.quiBorder, 1)
         local slotEdge2 = 2 * slotPx
         slot.quiBorder:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -174,7 +142,7 @@ local function SkinKeystoneFrame()
     end
 
     -- Create backdrop
-    CreateQUIBackdrop(keystoneFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(keystoneFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Hide Blizzard decorations via hooks
     hooksecurefunc(keystoneFrame, "Reset", HideBlizzardDecorations)

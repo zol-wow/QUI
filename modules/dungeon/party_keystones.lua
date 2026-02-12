@@ -12,15 +12,13 @@ if not openRaidLib then
     return
 end
 
-local LSM = LibStub("LibSharedMedia-3.0", true)
-
 ---------------------------------------------------------------------------
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local Helpers = ns.Helpers
+local UIKit = ns.UIKit
+local GetCore = Helpers.GetCore
 
 local function GetSettings()
     local guiQUICore = GetCore()
@@ -34,11 +32,8 @@ end
 
 local function GetFont()
     local s = GetSettings()
-    local fontName = s and s.keyTrackerFont or "Quazii"
-    if LSM then
-        return LSM:Fetch("font", fontName) or STANDARD_TEXT_FONT
-    end
-    return STANDARD_TEXT_FONT
+    local fontName = s and s.keyTrackerFont
+    return UIKit.ResolveFontPath(fontName)
 end
 
 local function GetFrameWidth()

@@ -11,9 +11,7 @@ local C = GUI.Colors
 -- Import shared utilities
 local Shared = ns.QUI_Options
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 local function BuildSkinningTab(tabContent)
     local y = -10

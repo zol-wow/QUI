@@ -8,9 +8,7 @@ local QUI = ns.QUI or {}
 ns.QUI = QUI
 local QUICore = ns.Addon
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- Module State

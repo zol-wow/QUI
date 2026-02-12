@@ -128,18 +128,11 @@ local function HasThrillOfTheSkiesBuff()
 end
 
 ---------------------------------------------------------------------------
--- Font Helper
----------------------------------------------------------------------------
-local function GetFontPath()
-    return Helpers.GetGeneralFont()
-end
-
----------------------------------------------------------------------------
 -- Cooldown Font Helper
 ---------------------------------------------------------------------------
 local function ApplyCooldownFont(cooldown, fontSize)
     if not cooldown then return end
-    local fontPath = GetFontPath()
+    local fontPath = Helpers.GetGeneralFont()
 
     -- Method 1: Direct text property
     if cooldown.text then
@@ -236,19 +229,19 @@ local function CreateSkyridingFrame()
 
     -- Vigor text (left side)
     vigorText = vigorBar:CreateFontString(nil, "OVERLAY")
-    vigorText:SetFont(GetFontPath(), 11, "OUTLINE")
+    vigorText:SetFont(Helpers.GetGeneralFont(), 11, "OUTLINE")
     vigorText:SetPoint("LEFT", vigorBar, "LEFT", 4, 0)
     vigorText:SetTextColor(1, 1, 1, 1)
 
     -- Speed text (right side)
     speedText = vigorBar:CreateFontString(nil, "OVERLAY")
-    speedText:SetFont(GetFontPath(), 11, "OUTLINE")
+    speedText:SetFont(Helpers.GetGeneralFont(), 11, "OUTLINE")
     speedText:SetPoint("RIGHT", vigorBar, "RIGHT", -4, 0)
     speedText:SetTextColor(1, 1, 1, 1)
 
     -- Second Wind text (alternative display)
     secondWindText = skyridingFrame:CreateFontString(nil, "OVERLAY")
-    secondWindText:SetFont(GetFontPath(), 10, "OUTLINE")
+    secondWindText:SetFont(Helpers.GetGeneralFont(), 10, "OUTLINE")
     secondWindText:SetPoint("TOP", skyridingFrame, "BOTTOM", 0, -2)
     secondWindText:SetTextColor(1, 0.8, 0.2, 1)
     secondWindText:Hide()
@@ -969,7 +962,7 @@ local function ApplySettings()
     -- Font sizes
     local vigorFontSize = settings.vigorFontSize or 11
     local speedFontSize = settings.speedFontSize or 11
-    local fontPath = GetFontPath()
+    local fontPath = Helpers.GetGeneralFont()
     vigorText:SetFont(fontPath, vigorFontSize, "OUTLINE")
     speedText:SetFont(fontPath, speedFontSize, "OUTLINE")
 

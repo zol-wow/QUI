@@ -19,6 +19,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+
+## v2.30.0 - 2026-02-12
+
+### Changed
+- this release is mainly a larger scale refactoring of the existing code base
+
+### Fixed
+- fixed Blizzard castbar randomly showing after zoning
+## v2.29.4 - 2026-02-10
+
+### Fixed
+- fixed keybind scan trying to access forbidden tables
 ## v2.29.3 - 2026-02-09
 
 ### Added

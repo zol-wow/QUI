@@ -36,6 +36,20 @@ Since then I added a few features and fixes important to me, and I will continue
 2. Extract to `Interface\AddOns\QUI`
 3. Enable in-game and reload UI (`/rl` or `/reload`)
 
+### Installation via WowUp
+
+1. Make sure to use the latest BETA(!) version of WowUp (change the update channel in the app settings to beta)
+2. Install Addons > Install from URL > paste this repos URL
+
+### Updating via WowUp
+
+Updating addons that have been installed via URL from public github repos is currently broken. This is an issue with WowUp, not QUI. I already submitted a PR for WowUp to fix this issue - until they merge it or fix it themselves, we'll need to wait. So the recommended way on WowUp's end is to delete and repeat the install workflow.
+
+For everyone who wants a bit more automation: MrMime71 created a little updating tool, you'll find it here: https://github.com/zol-wow/QUI/issues/26#issuecomment-3861104336
+
+Eventually this will go up on CurseForge and Wago, I suppose, but currently bugfixing is my top prio.
+
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (same as most major WoW UI addons and libraries) - see the [LICENSE](LICENSE) file for details.

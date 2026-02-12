@@ -4,6 +4,9 @@
     <Script file="resourcebars.lua"/>
     <Script file="castbar.lua"/>
     <Script file="unitframes.lua"/>
+    <Script file="unitframe_auras.lua"/>
+    <Script file="unitframe_editmode.lua"/>
+    <Script file="unitframe_blizzard.lua"/>
     <Script file="buffbar.lua"/>
     <Script file="raidbuffs.lua"/>
     <Script file="totems.lua"/>

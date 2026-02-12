@@ -1,19 +1,7 @@
 local addonName, ns = ...
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
-
-local function GetPixelSize(frame, default)
-    local core = GetCore()
-    if core and type(core.GetPixelSize) == "function" then
-        local px = core:GetPixelSize(frame)
-        if type(px) == "number" and px > 0 then
-            return px
-        end
-    end
-    return default or 1
-end
+local GetCore = ns.Helpers.GetCore
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- GAME MENU (ESC MENU) SKINNING + QUAZII UI BUTTON
@@ -33,42 +21,6 @@ local function GetGameMenuFontSize()
     return settings and settings.gameMenuFontSize or 12
 end
 
--- Get skinning colors (uses unified color system)
-local function GetGameMenuColors()
-    local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
-    local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95
-
-    if QUI and QUI.GetSkinColor then
-        sr, sg, sb, sa = QUI:GetSkinColor()
-    end
-    if QUI and QUI.GetSkinBgColor then
-        bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-    end
-
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
-end
-
--- Create a styled backdrop for frames
-local function CreateQUIBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not frame.quiBackdrop then
-        frame.quiBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        frame.quiBackdrop:SetAllPoints()
-        frame.quiBackdrop:SetFrameLevel(frame:GetFrameLevel())
-        frame.quiBackdrop:EnableMouse(false)
-    end
-
-    local px = GetPixelSize(frame.quiBackdrop, 1)
-    frame.quiBackdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-        insets = { left = px, right = px, top = px, bottom = px }
-    })
-    frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-end
-
 -- Style a button with QUI theme
 local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button then return end
@@ -81,7 +33,7 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         button.quiBackdrop:EnableMouse(false)
     end
 
-    local btnPx = GetPixelSize(button.quiBackdrop, 1)
+    local btnPx = SkinBase.GetPixelSize(button.quiBackdrop, 1)
     button.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -237,13 +189,13 @@ local function SkinGameMenu()
     if GameMenuFrame.quiSkinned then return end
 
     -- Get colors based on setting
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide Blizzard decorations
     HideBlizzardDecorations()
 
     -- Create backdrop
-    CreateQUIBackdrop(GameMenuFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(GameMenuFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Adjust frame padding for cleaner look
     GameMenuFrame.topPadding = 15
@@ -268,7 +220,7 @@ local function RefreshGameMenuColors()
     if not GameMenuFrame or not GameMenuFrame.quiSkinned then return end
 
     -- Get colors based on setting
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Update main frame backdrop
     if GameMenuFrame.quiBackdrop then
@@ -370,7 +322,7 @@ if GameMenuFrame and GameMenuFrame.InitButtons then
 
             -- Style any new buttons that were added
             if GameMenuFrame.quiSkinned and GameMenuFrame.buttonPool then
-                local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
+                local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
                 for button in GameMenuFrame.buttonPool:EnumerateActive() do
                     if not button.quiStyled then
@@ -390,7 +342,7 @@ if GameMenuFrame and GameMenuFrame.InitButtons then
             if not GameMenuFrame:IsShown() then return end
             if not GameMenuFrame.quiSkinned or not GameMenuFrame.buttonPool then return end
 
-            local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
+            local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
             for button in GameMenuFrame.buttonPool:EnumerateActive() do
                 -- Force full re-styling every time (hooks may be lost on pool recycle)
                 button.quiStyled = nil

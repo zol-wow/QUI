@@ -7,6 +7,7 @@ local QUI = ns.QUI or {}
 ns.QUI = QUI
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local UIKit = ns.UIKit
 
 ---------------------------------------------------------------------------
 -- State tracking
@@ -27,106 +28,6 @@ local function GetSettings()
 end
 
 ---------------------------------------------------------------------------
--- Backdrop template with optional LSM border texture
----------------------------------------------------------------------------
-local LSM = LibStub("LibSharedMedia-3.0", true)
-
-local function GetBackdropInfo(borderTextureName, borderSize, frame)
-    local edgeFile = nil
-    local edgeSize = 0
-
-    -- Use LSM border texture if specified and not "None"
-    if borderTextureName and borderTextureName ~= "None" and LSM then
-        edgeFile = LSM:Fetch("border", borderTextureName)
-        local rawSize = borderSize or 1
-        edgeSize = QUICore and QUICore:Pixels(rawSize, frame) or rawSize
-    end
-
-    local px = QUICore and QUICore:GetPixelSize(frame) or 1
-    return {
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = edgeFile,
-        tile = false,
-        tileSize = 0,
-        edgeSize = edgeSize,
-        insets = { left = 0, right = px, top = 0, bottom = px },
-    }
-end
-
----------------------------------------------------------------------------
--- Create uniform border lines (for solid "None" border)
----------------------------------------------------------------------------
-local function CreateBorderLines(frame)
-    if frame.borderLines then return frame.borderLines end
-
-    local borders = {}
-
-    -- Use OVERLAY layer to render on top of backdrop, avoiding blend artifacts
-    borders.top = frame:CreateTexture(nil, "OVERLAY")
-    borders.top:SetColorTexture(0, 0, 0, 1)
-    borders.top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    borders.top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, 0)
-
-    borders.bottom = frame:CreateTexture(nil, "OVERLAY")
-    borders.bottom:SetColorTexture(0, 0, 0, 1)
-    borders.bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 1)
-    borders.bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
-
-    borders.left = frame:CreateTexture(nil, "OVERLAY")
-    borders.left:SetColorTexture(0, 0, 0, 1)
-    borders.left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    borders.left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 1)
-
-    borders.right = frame:CreateTexture(nil, "OVERLAY")
-    borders.right:SetColorTexture(0, 0, 0, 1)
-    borders.right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    borders.right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 1)
-
-    frame.borderLines = borders
-    return borders
-end
-
-local function UpdateBorderLines(frame, size, r, g, b, a, hide)
-    local borders = frame.borderLines
-    if not borders then return end
-
-    -- Hide all if requested or size is 0
-    if hide or size <= 0 then
-        for _, line in pairs(borders) do
-            line:Hide()
-        end
-        return
-    end
-
-    -- Convert pixel count to virtual coords for pixel-perfect borders
-    local pxSize = QUICore and QUICore:Pixels(size, frame) or size
-    borders.top:SetHeight(pxSize)
-    borders.bottom:SetHeight(pxSize)
-    borders.left:SetWidth(pxSize)
-    borders.right:SetWidth(pxSize)
-
-    borders.top:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-    borders.bottom:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-    borders.left:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-    borders.right:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
-
-    for _, line in pairs(borders) do
-        line:Show()
-    end
-end
-
----------------------------------------------------------------------------
--- Get font path from LibSharedMedia
----------------------------------------------------------------------------
-local function GetFontPath(fontName)
-    if LSM and fontName then
-        local path = LSM:Fetch("font", fontName)
-        if path then return path end
-    end
-    return "Fonts\\FRIZQT__.TTF"
-end
-
----------------------------------------------------------------------------
 -- Create the timer frame (one-time setup)
 ---------------------------------------------------------------------------
 local function CreateTimerFrame()
@@ -139,12 +40,12 @@ local function CreateTimerFrame()
     frame:SetFrameLevel(50)
 
     -- Set up backdrop (background only)
-    frame:SetBackdrop(GetBackdropInfo(nil, nil, frame))
+    frame:SetBackdrop(UIKit.GetBackdropInfo(nil, nil, frame))
     frame:SetBackdropColor(0, 0, 0, 0.6)
 
     -- Create manual border lines for uniform edges
-    CreateBorderLines(frame)
-    UpdateBorderLines(frame, 1, 0, 0, 0, 1)
+    UIKit.CreateBorderLines(frame)
+    UIKit.UpdateBorderLines(frame, 1, 0, 0, 0, 1)
 
     local text = frame:CreateFontString(nil, "OVERLAY")
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
@@ -227,7 +128,7 @@ local function UpdateTimerAppearance()
     -- Update font (using LSM) - check if using custom font or global
     local fontSize = settings.fontSize or 16
     local fontName = settings.useCustomFont and settings.font or GetGlobalFont()
-    local fontPath = GetFontPath(fontName)
+    local fontPath = UIKit.ResolveFontPath(fontName)
     frame.text:SetFont(fontPath, fontSize, "OUTLINE")
 
     -- Update text color (use class color or custom color)
@@ -269,7 +170,7 @@ local function UpdateTimerAppearance()
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder
     
     if showBackdrop or effectiveUseLSMBorder then
-        frame:SetBackdrop(GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame))
+        frame:SetBackdrop(UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame))
 
         if showBackdrop then
             local bgColor = settings.backdropColor or {0, 0, 0, 0.6}
@@ -288,8 +189,8 @@ local function UpdateTimerAppearance()
     -- Update manual border lines (only used when no LSM border is selected)
     -- Hide all borders if hideBorder is enabled
     local hideBorder = settings.hideBorder
-    CreateBorderLines(frame)  -- Ensure borders exist
-    UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
+    UIKit.CreateBorderLines(frame)
+    UIKit.UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
 
     -- Ensure text is always centered
     frame.text:ClearAllPoints()

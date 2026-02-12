@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local QUICore = ns.Addon
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- OVERRIDE ACTION BAR SKINNING (Compact style)
@@ -11,22 +12,6 @@ local BUTTON_SPACING = 3  -- Tight but readable spacing
 local LEAVE_BUTTON_SIZE = 28  -- Visible leave button
 local RESOURCE_BAR_WIDTH = 12  -- Slim vertical bar
 local RESOURCE_BAR_HEIGHT = 40  -- Match button height
-
--- Get skinning colors
-local function GetColors()
-    local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
-    local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95
-
-    if QUI and QUI.GetSkinColor then
-        sr, sg, sb, sa = QUI:GetSkinColor()
-    end
-    if QUI and QUI.GetSkinBgColor then
-        bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-    end
-
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
-end
 
 -- Style action button with QUI theme
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -134,7 +119,7 @@ local function SkinOverrideActionBar()
     local bar = _G.OverrideActionBar
     if not bar or bar.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide all Blizzard decorations
     HideBlizzardElements(bar)
@@ -284,7 +269,7 @@ local function RefreshOverrideActionBarColors()
     local bar = _G.OverrideActionBar
     if not bar or not bar.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Update main backdrop
     if bar.quiBackdrop then

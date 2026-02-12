@@ -4,9 +4,8 @@
 -- Frame created in utils/qui_mplus_timer.lua
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- Utility: Calculate luminance to determine if color is "dark"
@@ -18,24 +17,6 @@ end
 
 local function IsDarkBackground(r, g, b)
     return GetLuminance(r, g, b) < 0.35
-end
-
----------------------------------------------------------------------------
--- Get QUI Skin Colors
----------------------------------------------------------------------------
-local function GetSkinColors()
-    local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1       -- Fallback mint
-    local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95  -- Fallback dark
-
-    if QUI and QUI.GetSkinColor then
-        sr, sg, sb, sa = QUI:GetSkinColor()
-    end
-    if QUI and QUI.GetSkinBgColor then
-        bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-    end
-
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
 end
 
 ---------------------------------------------------------------------------
@@ -179,7 +160,7 @@ local function ApplyMPlusTimerSkin()
         return
     end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
     local colors = GetContrastColors(bgr, bgg, bgb)
     local settings = GetMPlusTimerSettings()
     local showBorder = settings.showBorder ~= false  -- Default true

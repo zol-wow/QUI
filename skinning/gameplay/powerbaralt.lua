@@ -1,19 +1,7 @@
 local addonName, ns = ...
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
-
-local function GetPixelSize(frame, default)
-    local core = GetCore()
-    if core and type(core.GetPixelSize) == "function" then
-        local px = core:GetPixelSize(frame)
-        if type(px) == "number" and px > 0 then
-            return px
-        end
-    end
-    return default or 1
-end
+local GetCore = ns.Helpers.GetCore
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- PLAYER POWER BAR ALT SKINNING
@@ -199,7 +187,7 @@ local function CreateQUIAltPowerBar()
         safeLevel = 0
     end
     bar.backdrop:SetFrameLevel(safeLevel)
-    local px = GetPixelSize(bar.backdrop, 1)
+    local px = SkinBase.GetPixelSize(bar.backdrop, 1)
     bar.backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -318,7 +306,7 @@ local function CreateMover()
     powerBarMover = CreateFrame("Frame", "QUI_AltPowerBarMover", UIParent, "BackdropTemplate")
     powerBarMover:SetSize(BAR_WIDTH + 4, BAR_HEIGHT + 4)
     powerBarMover:SetPoint("CENTER", QUIAltPowerBar, "CENTER")
-    local mvPx = GetPixelSize(powerBarMover, 1)
+    local mvPx = SkinBase.GetPixelSize(powerBarMover, 1)
     powerBarMover:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",

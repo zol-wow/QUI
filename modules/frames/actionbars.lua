@@ -6,9 +6,7 @@
 local ADDON_NAME, ns = ...
 local LSM = LibStub("LibSharedMedia-3.0")
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- MIDNIGHT (12.0+) DETECTION

@@ -1,19 +1,8 @@
 local addonName, ns = ...
 local Addon = ns.Addon
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
-
-local function GetPixelSize(frame, default)
-    if Addon and type(Addon.GetPixelSize) == "function" then
-        local px = Addon:GetPixelSize(frame)
-        if type(px) == "number" and px > 0 then
-            return px
-        end
-    end
-    return default or 1
-end
+local GetCore = ns.Helpers.GetCore
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- READY CHECK FRAME SKINNING
@@ -98,7 +87,7 @@ local function CreateMover()
     -- Create mover overlay
     readyCheckMover = CreateFrame("Frame", "QUI_ReadyCheckMover", UIParent, "BackdropTemplate")
     readyCheckMover:SetSize(frame:GetWidth() + 4, frame:GetHeight() + 4)
-    local mvPx = GetPixelSize(readyCheckMover, 1)
+    local mvPx = SkinBase.GetPixelSize(readyCheckMover, 1)
     local mvEdge2 = 2 * mvPx
     readyCheckMover:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -178,43 +167,6 @@ _G.QUI_ToggleReadyCheckMover = ToggleMover
 -- HELPER FUNCTIONS
 ---------------------------------------------------------------------------
 
--- Get QUI skin colors with fallback
-local function GetSkinColors()
-    local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1  -- Fallback mint
-    local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95  -- Fallback dark
-
-    if QUI and QUI.GetSkinColor then
-        sr, sg, sb, sa = QUI:GetSkinColor()
-    end
-    if QUI and QUI.GetSkinBgColor then
-        bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-    end
-
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
-end
-
--- Create QUI-styled backdrop on a frame
-local function CreateQUIBackdrop(frame)
-    if frame.quiBackdrop then return frame.quiBackdrop end
-
-    local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    backdrop:SetAllPoints()
-    backdrop:SetFrameLevel(frame:GetFrameLevel())
-    backdrop:EnableMouse(false)  -- Don't steal clicks
-
-    local px = GetPixelSize(backdrop, 1)
-    backdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-        insets = { left = px, right = px, top = px, bottom = px }
-    })
-
-    frame.quiBackdrop = backdrop
-    return backdrop
-end
-
 -- Style a button with QUI look
 local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     if not button or button.quiSkinned then return end
@@ -240,12 +192,10 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     end
 
     -- Create backdrop
-    local backdrop = CreateQUIBackdrop(button)
     local btnBgr = math.min(bgr + 0.07, 1)  -- Slightly lighter for buttons
     local btnBgg = math.min(bgg + 0.07, 1)
     local btnBgb = math.min(bgb + 0.07, 1)
-    backdrop:SetBackdropColor(btnBgr, btnBgg, btnBgb, bga)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, 1)
+    SkinBase.CreateBackdrop(button, sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
 
     -- Store colors for hover effects
     button.quiNormalBg = { btnBgr, btnBgg, btnBgb, bga }
@@ -356,19 +306,17 @@ local function SkinReadyCheckFrame()
     if not frame or frame.quiSkinned then return end
 
     -- Get colors
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Hide Blizzard decorations
     HideBlizzardDecorations()
 
     -- Create QUI backdrop on ListenerFrame (where the content is)
     local targetFrame = listenerFrame or frame
-    local backdrop = CreateQUIBackdrop(targetFrame)
-    backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.CreateBackdrop(targetFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Store reference on main frame for refresh
-    frame.quiBackdrop = backdrop
+    frame.quiBackdrop = targetFrame.quiBackdrop
 
     -- Skin Yes/No buttons and re-center them
     local yesButton = _G.ReadyCheckFrameYesButton
@@ -451,7 +399,7 @@ local function RefreshReadyCheckColors()
     local frame = _G.ReadyCheckFrame
     if not frame or not frame.quiSkinned then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Update main frame backdrop
     if frame.quiBackdrop then

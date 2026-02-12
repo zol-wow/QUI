@@ -6,9 +6,7 @@ local addonName, ns = ...
 -- Uses shared dungeon data from qui_dungeon_data.lua
 ---------------------------------------------------------------------------
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- SETTINGS ACCESS

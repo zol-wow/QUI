@@ -8,9 +8,7 @@ local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local GetDB = Helpers.CreateDBGetter("ncdm")
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 local VIEWER_ESSENTIAL = "EssentialCooldownViewer"
 local VIEWER_UTILITY = "UtilityCooldownViewer"

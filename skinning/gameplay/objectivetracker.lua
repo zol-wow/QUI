@@ -1,19 +1,7 @@
 local addonName, ns = ...
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
-
-local function GetPixelSize(frame, default)
-    local core = GetCore()
-    if core and type(core.GetPixelSize) == "function" then
-        local px = core:GetPixelSize(frame)
-        if type(px) == "number" and px > 0 then
-            return px
-        end
-    end
-    return default or 1
-end
+local GetCore = ns.Helpers.GetCore
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- OBJECTIVE TRACKER SKINNING
@@ -30,22 +18,6 @@ local function GetSettings()
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
     return settings
-end
-
--- Get skinning colors
-local function GetColors()
-    local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
-    local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95
-
-    if QUI and QUI.GetSkinColor then
-        sr, sg, sb, sa = QUI:GetSkinColor()
-    end
-    if QUI and QUI.GetSkinBgColor then
-        bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-    end
-
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
 end
 
 -- Safely set text color from a color table with bounds validation
@@ -85,7 +57,7 @@ end
 local function StyleCompletionCheck(check)
     if not check or check.quiStyled then return end
 
-    local sr, sg, sb = GetColors()
+    local sr, sg, sb = SkinBase.GetSkinColors()
     check:SetAtlas("checkmark-minimal")
     check:SetDesaturated(true)
     check:SetVertexColor(sr, sg, sb)
@@ -513,7 +485,7 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
             end
             -- Apply edit mode opacity to our backdrop (get fresh colors)
             if self.quiBackdrop then
-                local _, _, _, _, currBgR, currBgG, currBgB = GetColors()
+                local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
                 self.quiBackdrop:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
             end
         end)
@@ -539,7 +511,7 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     local settings = GetSettings()
     local hideBorder = settings and settings.hideObjectiveTrackerBorder
 
-    local otPx = GetPixelSize(trackerFrame.quiBackdrop, 1)
+    local otPx = SkinBase.GetPixelSize(trackerFrame.quiBackdrop, 1)
     trackerFrame.quiBackdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -696,7 +668,7 @@ local function SkinObjectiveTracker()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Sync Blizzard's height with our max height setting
     SyncBlizzardHeight()
@@ -784,7 +756,7 @@ local function SkinObjectiveTracker()
     if manager and manager.SetOpacity and not manager.quiOpacityHooked then
         hooksecurefunc(manager, "SetOpacity", function(self, opacityPercent)
             local alpha = (opacityPercent or 0) / 100
-            local _, _, _, _, currBgR, currBgG, currBgB = GetColors()
+            local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
             if TrackerFrame.quiBackdrop then
                 TrackerFrame.quiBackdrop:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
             end
@@ -807,7 +779,7 @@ local function RefreshObjectiveTracker()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
     -- Sync Blizzard's height with our max height setting
     SyncBlizzardHeight()
@@ -829,7 +801,7 @@ local function RefreshObjectiveTracker()
         end
 
         -- Apply backdrop (edgeSize 0 hides border, px shows it)
-        local updPx = GetPixelSize(TrackerFrame.quiBackdrop, 1)
+        local updPx = SkinBase.GetPixelSize(TrackerFrame.quiBackdrop, 1)
         TrackerFrame.quiBackdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",

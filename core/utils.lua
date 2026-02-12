@@ -133,6 +133,13 @@ function Helpers.GetQUICore()
     return QUICore
 end
 
+--- Get QUICore reference (with _G.QUI fallback)
+--- Drop-in replacement for the local GetCore() pattern used across 30+ files.
+--- @return table|nil QUICore addon object
+function Helpers.GetCore()
+    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
+end
+
 --- Get the full profile database
 --- @return table|nil The profile table or nil
 function Helpers.GetProfile()
@@ -385,3 +392,4 @@ ns.GetPlayerClassColor = Helpers.GetPlayerClassColor
 ns.GetItemQualityColor = Helpers.GetItemQualityColor
 ns.CreateEventFrame = Helpers.CreateEventFrame
 ns.InCombat = Helpers.InCombat
+ns.GetCore = Helpers.GetCore

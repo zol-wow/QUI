@@ -597,9 +597,10 @@ local function BuildActionButtonCache()
     -- This catches most action bar addons
     for globalName, frame in pairs(_G) do
         if type(globalName) == "string" and type(frame) == "table" then
-            -- Skip non-widget tables (like localization tables that happen to have an "action" key)
-            -- Only real WoW frames have GetObjectType as a method
-            if type(frame.GetObjectType) ~= "function" then
+            -- Fast-path: skip forbidden tables without pcall overhead (12.0.x+)
+            if not Helpers.CanAccessTable(frame) then
+                -- Forbidden table, skip
+            elseif type(frame.GetObjectType) ~= "function" then
                 -- Not a WoW widget, skip
             else
                 -- Check if this looks like an action button
@@ -1396,7 +1397,7 @@ local function DebugPrintCache()
         -- Debug: Look for any action-like buttons
         local foundButtons = {}
         for globalName, frame in pairs(_G) do
-            if type(globalName) == "string" and type(frame) == "table" then
+            if type(globalName) == "string" and type(frame) == "table" and Helpers.CanAccessTable(frame) then
                 if frame.action or (frame.GetAction and type(frame.GetAction) == "function") then
                     table.insert(foundButtons, globalName)
                     if #foundButtons >= 10 then break end
@@ -1483,7 +1484,7 @@ local function DebugFindMacro(macroName)
     local scannedCount = 0
     
     for globalName, frame in pairs(_G) do
-        if type(globalName) == "string" and type(frame) == "table" then
+        if type(globalName) == "string" and type(frame) == "table" and Helpers.CanAccessTable(frame) then
             local action = nil
             -- Safely get action value
             if type(frame.action) == "number" then

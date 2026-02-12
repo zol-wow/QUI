@@ -8,12 +8,11 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 local Helpers = ns.Helpers
+local UIKit = ns.UIKit
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- MODULE TABLE
@@ -212,22 +211,6 @@ local function GetSafeColor(color, fallback)
 end
 
 ---------------------------------------------------------------------------
--- BORDER CREATION
----------------------------------------------------------------------------
-local function CreateStatusBarBorder(statusBar, borderSize, borderColor)
-    local border = CreateFrame("Frame", nil, statusBar, "BackdropTemplate")
-    border:SetFrameLevel(statusBar:GetFrameLevel() - 1)
-    border:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",  -- Solid border texture
-        edgeSize = borderSize,
-    })
-    local r, g, b, a = GetSafeColor(borderColor, {0, 0, 0, 1})
-    border:SetBackdropBorderColor(r, g, b, a)
-    statusBar.Border = border
-    return border
-end
-
----------------------------------------------------------------------------
 -- UI ELEMENT CREATION
 ---------------------------------------------------------------------------
 local function CreateAnchorFrame(name, parent)
@@ -242,31 +225,6 @@ local function CreateCastbarFrame(name, parent)
     return CreateAnchorFrame(name, parent)
 end
 
-local function CreateIcon(anchorFrame, iconSize, iconBorderSize, iconBorderColor)
-    local iconFrame = CreateFrame("Frame", nil, anchorFrame)
-    iconFrame:SetSize(iconSize, iconSize)
-    iconFrame:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
-
-    -- Border fills the iconFrame (background layer)
-    local border = iconFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
-    local r, g, b, a = GetSafeColor(iconBorderColor, {0, 0, 0, 1})
-    border:SetColorTexture(r, g, b, a)
-    border:SetAllPoints(iconFrame)
-    iconFrame.border = border
-
-    -- Icon texture is inset by borderSize so border shows around it
-    local iconTexture = iconFrame:CreateTexture(nil, "ARTWORK")
-    iconTexture:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", iconBorderSize, -iconBorderSize)
-    iconTexture:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -iconBorderSize, iconBorderSize)
-    iconTexture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    iconFrame.texture = iconTexture
-
-    anchorFrame.icon = iconFrame
-    anchorFrame.iconTexture = iconTexture
-    anchorFrame.iconBorder = border
-    return iconFrame
-end
-
 local function CreateStatusBar(anchorFrame)
     local statusBar = CreateFrame("StatusBar", nil, anchorFrame)
     statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
@@ -276,25 +234,11 @@ local function CreateStatusBar(anchorFrame)
     return statusBar
 end
 
-local function CreateBackgroundBar(statusBar)
-    local bgBar = statusBar:CreateTexture(nil, "BACKGROUND")
-    bgBar:SetAllPoints()
-    bgBar:SetTexture("Interface\\Buttons\\WHITE8x8")
-    return bgBar
-end
-
-local function CreateTextElement(statusBar, fontSize, layer)
-    local text = statusBar:CreateFontString(nil, layer or "OVERLAY")
-    text:SetFont(GetFontPath(), fontSize, GetFontOutline())
-    text:SetTextColor(1, 1, 1, 1)
-    text:SetWordWrap(false)
-    return text
-end
 
 local function GetBarColor(unitKey, castSettings)
     if unitKey == "player" and castSettings.useClassColor then
         local _, class = UnitClass("player")
-        if class and RAID_CLASS_COLORS[class] then
+        if not IsSecretValue(class) and class and RAID_CLASS_COLORS[class] then
             local c = RAID_CLASS_COLORS[class]
             return {c.r, c.g, c.b, 1}
         end
@@ -987,7 +931,6 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
 
     local barHeight, iconSize, iconScale = GetSizingValues(castSettings, anchorFrame)
     local borderSize = QUICore:Pixels(castSettings.borderSize or 1, anchorFrame)
-    local iconBorderSize = QUICore:Pixels(castSettings.iconBorderSize or 1, anchorFrame)
     anchorFrame:SetSize(1, barHeight)
 
     -- Apply HUD layer priority
@@ -1006,23 +949,26 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
         anchorFrame:SetFrameLevel(frameLevel)
     end
 
-    CreateIcon(anchorFrame, iconSize, iconBorderSize, castSettings.iconBorderColor)
+    local ir, ig, ib, ia = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
+    UIKit.CreateIcon(anchorFrame, iconSize, castSettings.iconBorderSize or 1, ir, ig, ib, ia)
     local statusBar = CreateStatusBar(anchorFrame)
-    
-    CreateStatusBarBorder(statusBar, borderSize, castSettings.borderColor)
-    
-    local bgBar = CreateBackgroundBar(statusBar)
+
+    local br, bg_, bb, ba = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
+    UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, br, bg_, bb, ba)
+    statusBar.Border:SetFrameLevel(statusBar:GetFrameLevel() - 1)
+
+    local bgBar = UIKit.CreateBackground(statusBar)
     anchorFrame.bgBar = bgBar
-    
-    local spellText = CreateTextElement(statusBar, fontSize)
+
+    local spellText = UIKit.CreateText(statusBar, fontSize, GetFontPath(), GetFontOutline())
     anchorFrame.spellText = spellText
 
-    local timeText = CreateTextElement(statusBar, fontSize)
+    local timeText = UIKit.CreateText(statusBar, fontSize, GetFontPath(), GetFontOutline())
     anchorFrame.timeText = timeText
 
     -- Empowered level text (player only)
     if unitKey == "player" then
-        local empoweredLevelText = CreateTextElement(statusBar, fontSize)
+        local empoweredLevelText = UIKit.CreateText(statusBar, fontSize, GetFontPath(), GetFontOutline())
         anchorFrame.empoweredLevelText = empoweredLevelText
     end
 
@@ -1962,28 +1908,30 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     local castWidth = QUICore:PixelRound((castSettings.width and castSettings.width > 0) and castSettings.width or frameWidth, anchorFrame)
     local barHeight, iconSize, iconScale = GetSizingValues(castSettings, anchorFrame)
     local borderSize = QUICore:Pixels(castSettings.borderSize or 1, anchorFrame)
-    local iconBorderSize = QUICore:Pixels(castSettings.iconBorderSize or 1, anchorFrame)
     anchorFrame:SetSize(castWidth, barHeight)
 
     -- Anchor to boss unit frame
     QUICore:SetSnappedPoint(anchorFrame, "TOP", unitFrame, "BOTTOM", castSettings.offsetX or 0, castSettings.offsetY or -25)
     
     -- Create UI elements (icon with integrated border) - parented to anchorFrame
-    CreateIcon(anchorFrame, iconSize, iconBorderSize, castSettings.iconBorderColor)
+    local ir, ig, ib, ia = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
+    UIKit.CreateIcon(anchorFrame, iconSize, castSettings.iconBorderSize or 1, ir, ig, ib, ia)
     local statusBar = CreateStatusBar(anchorFrame)
-    
+
     -- Create border for status bar (parented to statusBar)
-    CreateStatusBarBorder(statusBar, borderSize, castSettings.borderColor)
-    
-    local bgBar = CreateBackgroundBar(statusBar)
+    local br, bg_, bb, ba = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
+    UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, br, bg_, bb, ba)
+    statusBar.Border:SetFrameLevel(statusBar:GetFrameLevel() - 1)
+
+    local bgBar = UIKit.CreateBackground(statusBar)
     anchorFrame.bgBar = bgBar
-    
-    local spellText = CreateTextElement(statusBar, fontSize)
+
+    local spellText = UIKit.CreateText(statusBar, fontSize, GetFontPath(), GetFontOutline())
     spellText:SetPoint("LEFT", statusBar, "LEFT", QUICore:Pixels(4, spellText), 0)
     spellText:SetJustifyH("LEFT")
     anchorFrame.spellText = spellText
-    
-    local timeText = CreateTextElement(statusBar, fontSize)
+
+    local timeText = UIKit.CreateText(statusBar, fontSize, GetFontPath(), GetFontOutline())
     timeText:SetPoint("RIGHT", statusBar, "RIGHT", -4, 0)
     timeText:SetJustifyH("RIGHT")
     anchorFrame.timeText = timeText

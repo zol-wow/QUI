@@ -2,9 +2,7 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
+local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- QUI Buff Bar Manager
