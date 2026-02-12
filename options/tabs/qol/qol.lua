@@ -697,6 +697,12 @@ local function BuildGeneralTab(tabContent)
         autoCombatLogCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         y = y - FORM_ROW
 
+        -- Auto Combat Log in Raids
+        local autoCombatLogRaidCheck = GUI:CreateFormCheckbox(tabContent, "Auto Combat Log in Raids", "autoCombatLogRaid", generalDB)
+        autoCombatLogRaidCheck:SetPoint("TOPLEFT", PADDING, y)
+        autoCombatLogRaidCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
         -- M+ Dungeon Teleport
         local mplusTeleportCheck = GUI:CreateFormCheckbox(tabContent, "Click-to-Teleport on M+ Tab", "mplusTeleportEnabled", generalDB)
         mplusTeleportCheck:SetPoint("TOPLEFT", PADDING, y)
