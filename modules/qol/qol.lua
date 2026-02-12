@@ -260,6 +260,8 @@ end
 ---------------------------------------------------------------------------
 
 local wasLoggingBeforeChallenge = false
+local raidAutoLoggingActive = false
+local wasInRaidInstance = false
 
 local function OnChallengeModeStart()
     local settings = GetSettings()
@@ -295,6 +297,46 @@ local function CheckResumeLogging()
         LoggingCombat(true)
         print("|cFF30D1FFQUI:|r Combat logging resumed (reconnected to M+)")
     end
+end
+
+local function IsInRaidInstance()
+    local inInstance, instanceType = IsInInstance()
+    return inInstance and instanceType == "raid"
+end
+
+local function UpdateRaidAutoLogging()
+    local settings = GetSettings()
+    local inRaidInstance = IsInRaidInstance()
+
+    if not settings or not settings.autoCombatLogRaid then
+        -- If disabled while active, only stop if QUI started it.
+        if raidAutoLoggingActive and LoggingCombat() then
+            LoggingCombat(false)
+            print("|cFF30D1FFQUI:|r Combat logging stopped")
+        end
+        raidAutoLoggingActive = false
+        wasInRaidInstance = inRaidInstance
+        return
+    end
+
+    if inRaidInstance and not wasInRaidInstance then
+        raidAutoLoggingActive = false
+
+        if not LoggingCombat() then
+            LoggingCombat(true)
+            raidAutoLoggingActive = true
+            print("|cFF30D1FFQUI:|r Combat logging started for raid")
+        end
+    elseif not inRaidInstance and wasInRaidInstance then
+        -- Only stop if QUI started it on raid entry.
+        if raidAutoLoggingActive and LoggingCombat() then
+            LoggingCombat(false)
+            print("|cFF30D1FFQUI:|r Combat logging stopped")
+        end
+        raidAutoLoggingActive = false
+    end
+
+    wasInRaidInstance = inRaidInstance
 end
 
 ---------------------------------------------------------------------------
@@ -349,6 +391,7 @@ qolFrame:RegisterEvent("CHALLENGE_MODE_START")
 qolFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 qolFrame:RegisterEvent("CHALLENGE_MODE_RESET")
 qolFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+qolFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
 qolFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "MERCHANT_SHOW" then
@@ -373,5 +416,8 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
         OnChallengeModeEnd()
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(2, CheckResumeLogging)
+        C_Timer.After(2, UpdateRaidAutoLogging)
+    elseif event == "ZONE_CHANGED_NEW_AREA" then
+        UpdateRaidAutoLogging()
     end
 end)

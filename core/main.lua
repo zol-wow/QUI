@@ -331,6 +331,7 @@ local defaults = {
             fastAutoLoot = true,
             autoSelectGossip = false,  -- Auto-select single gossip options
             autoCombatLog = false,  -- Auto start/stop combat logging in M+ (opt-in)
+            autoCombatLogRaid = false,  -- Auto start/stop combat logging in raids (opt-in)
             autoDeleteConfirm = true,  -- Auto-fill DELETE confirmation text
             -- Pet Warning (pet-spec classes: Hunter, Warlock, DK, Mage)
             petCombatWarning = true,    -- Show combat warning in instances when pet missing/passive
