@@ -149,6 +149,10 @@ end
 -- ======================================================
 -- LibCustomGlow application (supports 3 glow types)
 -- ======================================================
+
+-- Forward declaration (StopGlow is defined after ApplyLibCustomGlow)
+local StopGlow
+
 local function ApplyLibCustomGlow(icon, viewerSettings)
     if not LCG then return false end
     if not icon then return false end
@@ -225,7 +229,7 @@ local function StartGlow(icon)
 end
 
 -- Stop all glow effects on an icon
-local function StopGlow(icon)
+StopGlow = function(icon)
     if not icon then return end
 
     -- Stop all LibCustomGlow effect types
