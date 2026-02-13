@@ -829,6 +829,225 @@ local function BuildGeneralTab(tabContent)
 
     y = y - 10
 
+    -- Focus Cast Alert Section
+    GUI:SetSearchSection("Focus Cast Alert")
+    local focusCastHeader = GUI:CreateSectionHeader(tabContent, "Focus Cast Alert")
+    focusCastHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - focusCastHeader.gap
+
+    local focusCastIntro = GUI:CreateLabel(
+        tabContent,
+        "Shows customizable text when your hostile focus starts casting and your interrupt is ready.",
+        11,
+        C.textMuted
+    )
+    focusCastIntro:SetPoint("TOPLEFT", PADDING, y)
+    focusCastIntro:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    focusCastIntro:SetJustifyH("LEFT")
+    focusCastIntro:SetWordWrap(true)
+    focusCastIntro:SetHeight(20)
+    y = y - 30
+
+    if generalDB then
+        -- Ensure the table exists; GetSettings() in focuscastalert.lua
+        -- backfills missing keys from DEFAULT_SETTINGS on first access.
+        if type(generalDB.focusCastAlert) ~= "table" then
+            generalDB.focusCastAlert = {}
+        end
+        local focusAlertDB = generalDB.focusCastAlert
+
+        local function RefreshFocusCastAlert()
+            if _G.QUI_RefreshFocusCastAlert then
+                _G.QUI_RefreshFocusCastAlert()
+            end
+        end
+
+        local focusPreviewActive = false
+        local focusPreviewBtn -- forward declared, created below
+
+        local focusEnableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Focus Cast Alert", "enabled", focusAlertDB, function()
+            -- Reset preview when disabling.
+            if not focusAlertDB.enabled and focusPreviewActive then
+                focusPreviewActive = false
+                if _G.QUI_ToggleFocusCastAlertPreview then
+                    _G.QUI_ToggleFocusCastAlertPreview(false)
+                end
+                if focusPreviewBtn then
+                    focusPreviewBtn:SetText("Show Preview")
+                end
+            end
+            RefreshFocusCastAlert()
+        end)
+        focusEnableCheck:SetPoint("TOPLEFT", PADDING, y)
+        focusEnableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local textContainer = CreateFrame("Frame", nil, tabContent)
+        textContainer:SetHeight(FORM_ROW)
+        textContainer:SetPoint("TOPLEFT", PADDING, y)
+        textContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+
+        local textLabel = textContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        textLabel:SetPoint("LEFT", 0, 0)
+        textLabel:SetText("Alert Text")
+        textLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+        local textInputBg = CreateFrame("Frame", nil, textContainer, "BackdropTemplate")
+        textInputBg:SetPoint("LEFT", textContainer, "LEFT", 180, 0)
+        textInputBg:SetPoint("RIGHT", textContainer, "RIGHT", 0, 0)
+        textInputBg:SetHeight(24)
+        local pxText = QUICore:GetPixelSize(textInputBg)
+        textInputBg:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = pxText,
+        })
+        textInputBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
+        textInputBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+
+        local textInput = CreateFrame("EditBox", nil, textInputBg)
+        textInput:SetPoint("LEFT", 8, 0)
+        textInput:SetPoint("RIGHT", -8, 0)
+        textInput:SetHeight(22)
+        textInput:SetAutoFocus(false)
+        textInput:SetMaxLetters(200)
+        textInput:SetFont(GUI.FONT_PATH, 11, "")
+        textInput:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+        textInput:SetText(focusAlertDB.text or "")
+
+        local textPlaceholder = textInputBg:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+        textPlaceholder:SetPoint("LEFT", textInput, "LEFT", 0, 0)
+        textPlaceholder:SetText("Example: {unit} is casting {spell}. Kick!")
+        textPlaceholder:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.7)
+        textPlaceholder:SetShown((focusAlertDB.text or "") == "")
+
+        textInput:SetScript("OnEscapePressed", function(self)
+            self:SetText(focusAlertDB.text or "")
+            self:ClearFocus()
+            textPlaceholder:SetShown((focusAlertDB.text or "") == "")
+        end)
+        textInput:SetScript("OnEnterPressed", function(self)
+            self:ClearFocus()
+        end)
+        textInput:SetScript("OnEditFocusGained", function(self)
+            textInputBg:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+            self:HighlightText()
+        end)
+        textInput:SetScript("OnEditFocusLost", function()
+            textInputBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+        end)
+        textInput:SetScript("OnTextChanged", function(self, userInput)
+            if not userInput then return end
+            local value = self:GetText() or ""
+            focusAlertDB.text = value
+            textPlaceholder:SetShown(value == "")
+            RefreshFocusCastAlert()
+        end)
+        y = y - FORM_ROW
+
+        local placeholderHelp = GUI:CreateLabel(
+            tabContent,
+            "Use {unit} for the target's name and {spell} for the spell being cast.",
+            11,
+            C.textMuted
+        )
+        placeholderHelp:SetPoint("TOPLEFT", PADDING, y + 4)
+        placeholderHelp:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        placeholderHelp:SetJustifyH("LEFT")
+        placeholderHelp:SetWordWrap(true)
+        placeholderHelp:SetHeight(20)
+        y = y - 26
+
+        local focusAnchorOptions = {
+            {value = "screen", text = "Screen Center"},
+            {value = "essential", text = "CDM Essentials"},
+            {value = "focus", text = "Focus Target"},
+        }
+        local focusAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Anchor", focusAnchorOptions, "anchorTo", focusAlertDB, RefreshFocusCastAlert)
+        focusAnchorDropdown:SetPoint("TOPLEFT", PADDING, y)
+        focusAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local focusOffsetX = GUI:CreateFormSlider(tabContent, "X Offset", -300, 300, 1, "offsetX", focusAlertDB, RefreshFocusCastAlert)
+        focusOffsetX:SetPoint("TOPLEFT", PADDING, y)
+        focusOffsetX:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local focusOffsetY = GUI:CreateFormSlider(tabContent, "Y Offset", -300, 300, 1, "offsetY", focusAlertDB, RefreshFocusCastAlert)
+        focusOffsetY:SetPoint("TOPLEFT", PADDING, y)
+        focusOffsetY:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local focusFontOptions = {
+            {value = "", text = "Global QUI Font"},
+        }
+        local fontList = Shared.GetFontList()
+        for _, fontOption in ipairs(fontList) do
+            table.insert(focusFontOptions, fontOption)
+        end
+        local focusFontDropdown = GUI:CreateFormDropdown(tabContent, "Font", focusFontOptions, "font", focusAlertDB, RefreshFocusCastAlert)
+        focusFontDropdown:SetPoint("TOPLEFT", PADDING, y)
+        focusFontDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local focusFontSize = GUI:CreateFormSlider(tabContent, "Font Size", 8, 72, 1, "fontSize", focusAlertDB, RefreshFocusCastAlert)
+        focusFontSize:SetPoint("TOPLEFT", PADDING, y)
+        focusFontSize:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local focusOutlineOptions = {
+            {value = "", text = "None"},
+            {value = "OUTLINE", text = "Outline"},
+            {value = "THICKOUTLINE", text = "Thick Outline"},
+        }
+        local focusOutlineDropdown = GUI:CreateFormDropdown(tabContent, "Font Outline", focusOutlineOptions, "fontOutline", focusAlertDB, RefreshFocusCastAlert)
+        focusOutlineDropdown:SetPoint("TOPLEFT", PADDING, y)
+        focusOutlineDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local focusColorPicker
+        local useClassColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color", "useClassColor", focusAlertDB, function()
+            if focusColorPicker and focusColorPicker.SetEnabled then
+                focusColorPicker:SetEnabled(not focusAlertDB.useClassColor)
+            end
+            RefreshFocusCastAlert()
+        end)
+        useClassColorCheck:SetPoint("TOPLEFT", PADDING, y)
+        useClassColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        focusColorPicker = GUI:CreateFormColorPicker(tabContent, "Text Color", "textColor", focusAlertDB, RefreshFocusCastAlert)
+        focusColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        focusColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if focusColorPicker.SetEnabled then
+            focusColorPicker:SetEnabled(not focusAlertDB.useClassColor)
+        end
+        y = y - FORM_ROW
+
+        focusPreviewBtn = GUI:CreateButton(tabContent, "Show Preview", 140, 24)
+        focusPreviewBtn:SetPoint("TOPLEFT", PADDING, y)
+        focusPreviewBtn:SetScript("OnClick", function(self)
+            focusPreviewActive = not focusPreviewActive
+            if _G.QUI_ToggleFocusCastAlertPreview then
+                _G.QUI_ToggleFocusCastAlertPreview(focusPreviewActive)
+            end
+            self:SetText(focusPreviewActive and "Hide Preview" or "Show Preview")
+        end)
+
+        local existingOnHideFocus = tabContent:GetScript("OnHide")
+        tabContent:SetScript("OnHide", function(self)
+            if focusPreviewActive and _G.QUI_ToggleFocusCastAlertPreview then
+                _G.QUI_ToggleFocusCastAlertPreview(false)
+                focusPreviewActive = false
+                focusPreviewBtn:SetText("Show Preview")
+            end
+            if existingOnHideFocus then existingOnHideFocus(self) end
+        end)
+        y = y - 32
+    end
+
+    y = y - 10
+
     -- Consumable Check Section
     GUI:SetSearchSection("Consumable Check")
     local consumableHeader = GUI:CreateSectionHeader(tabContent, "Consumable Check")

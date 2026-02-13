@@ -337,6 +337,19 @@ local defaults = {
             petCombatWarning = true,    -- Show combat warning in instances when pet missing/passive
             petWarningOffsetX = 0,      -- Warning frame X offset from center
             petWarningOffsetY = -200,   -- Warning frame Y offset from center
+            -- Focus Cast Alert (warn when hostile focus is casting and interrupt is ready)
+            focusCastAlert = {
+                enabled = false,
+                text = "Focus is casting. Kick!",
+                anchorTo = "screen", -- "screen", "essential", "focus"
+                offsetX = 0,
+                offsetY = -120,
+                font = "", -- empty = global QUI font
+                fontSize = 26,
+                fontOutline = "OUTLINE", -- "", "OUTLINE", "THICKOUTLINE"
+                textColor = {1, 0.2, 0.2, 1},
+                useClassColor = false,
+            },
             -- Consumable Check (disabled by default)
             consumableCheckEnabled = false,       -- Master toggle
             consumableOnReadyCheck = true,        -- Show on ready check

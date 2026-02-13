@@ -2724,6 +2724,28 @@ end
 -- INITIALIZATION
 
 local function InitializeResourceBars(self)
+    if self._resourceBarsInitialized then
+        return
+    end
+
+    if InCombatLockdown() then
+        -- RegisterEvent itself can be forbidden in combat in tainted flows.
+        -- Retry initialization via timer until combat ends.
+        if not self._resourceBarsInitRetryPending then
+            self._resourceBarsInitRetryPending = true
+            C_Timer.After(1, function()
+                self._resourceBarsInitRetryPending = false
+                if not self._resourceBarsInitialized then
+                    InitializeResourceBars(self)
+                end
+            end)
+        end
+        return
+    end
+
+    self._resourceBarsInitRetryPending = false
+    self._resourceBarsInitialized = true
+
     -- Register additional events
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "OnSpecChanged")
     self:RegisterEvent("UPDATE_SHAPESHIFT_FORM", "OnShapeshiftChanged")

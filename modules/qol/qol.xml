@@ -9,4 +9,5 @@
     <Script file="crosshair.lua"/>
     <Script file="reticle.lua"/>
     <Script file="skyriding.lua"/>
+    <Script file="focuscastalert.lua"/>
 </Ui>
