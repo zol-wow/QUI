@@ -25,6 +25,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.33.0 - 2026-02-13
+
+### Added
+- **added focus target spell interrupt alert feature**
+- added font size option slider to tooltip skinning
+- added option to customize Thrill of the Skies color in the skyriding UI
+
+### Fixed
+- attempt to fix morphing spells freaking out the cdm and keep the rest as combat safe as possible
+- added check for secret values in SafeToNumber and ensure spell text width calculations handle restricted values correctly
 ## v2.32.0 - 2026-02-13
 
 ### Added
