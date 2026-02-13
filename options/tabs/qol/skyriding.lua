@@ -50,6 +50,7 @@ local function BuildDragonridingTab(tabContent)
     if sr.vigorTextFormat == nil then sr.vigorTextFormat = "FRACTION" end
     if sr.useClassColorVigor == nil then sr.useClassColorVigor = false end
     if sr.useClassColorSecondWind == nil then sr.useClassColorSecondWind = false end
+    if sr.useThrillOfTheSkiesColor == nil then sr.useThrillOfTheSkiesColor = true end
 
     -- SECTION: Enable
     GUI:SetSearchSection("Enable")
@@ -196,6 +197,25 @@ local function BuildDragonridingTab(tabContent)
     swColorPicker:SetPoint("TOPLEFT", PADDING, y)
     swColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     swColorPicker:SetAlpha(sr.useClassColorSecondWind and 0.4 or 1)
+    y = y - FORM_ROW
+
+    local thrillColorPicker
+    local function UpdateThrillColorState()
+        if thrillColorPicker then
+            thrillColorPicker:SetAlpha((sr.useThrillOfTheSkiesColor ~= false) and 1 or 0.4)
+        end
+        RefreshSkyriding()
+    end
+
+    local useThrillCheck = GUI:CreateFormCheckbox(tabContent, "Change Color with Thrill of the Skies", "useThrillOfTheSkiesColor", sr, UpdateThrillColorState)
+    useThrillCheck:SetPoint("TOPLEFT", PADDING, y)
+    useThrillCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    thrillColorPicker = GUI:CreateFormColorPicker(tabContent, "Thrill of the Skies Color", "thrillOfTheSkiesColor", sr, RefreshSkyriding)
+    thrillColorPicker:SetPoint("TOPLEFT", PADDING, y)
+    thrillColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    thrillColorPicker:SetAlpha((sr.useThrillOfTheSkiesColor ~= false) and 1 or 0.4)
     y = y - FORM_ROW
 
     -- SECTION: Background & Effects
