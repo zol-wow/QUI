@@ -1494,17 +1494,6 @@ local function GetCDMFrames()
         table.insert(frames, _G.BuffBarCooldownViewer)
     end
 
-    -- QUI power bars - always include in CDM visibility control
-    -- (standalone mode only affects positioning, not visibility)
-    if QUICore then
-        if QUICore.powerBar then
-            table.insert(frames, QUICore.powerBar)
-        end
-        if QUICore.secondaryPowerBar then
-            table.insert(frames, QUICore.secondaryPowerBar)
-        end
-    end
-
     return frames
 end
 
@@ -1599,6 +1588,18 @@ local function UpdateCDMVisibility()
         StartCDMFade(1)  -- Fade in
     else
         StartCDMFade(vis and vis.fadeOutAlpha or 0)  -- Fade to configured alpha
+    end
+
+    -- Resource bars own their positioning/visibility logic in resourcebars.lua.
+    -- Refresh them explicitly so CDM visibility changes apply immediately
+    -- without alpha conflicts that can expose fallback center positions.
+    if QUICore then
+        if QUICore.UpdatePowerBar then
+            QUICore:UpdatePowerBar()
+        end
+        if QUICore.UpdateSecondaryPowerBar then
+            QUICore:UpdateSecondaryPowerBar()
+        end
     end
 end
 
