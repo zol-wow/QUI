@@ -21,6 +21,16 @@ local function IsCDMVisibilityHidden()
     return false
 end
 
+-- Returns configured hidden alpha when CDM visibility is currently hidden.
+-- nil means CDM visibility is not currently hiding the bars.
+local function GetCDMHiddenAlpha()
+    if _G.QUI_ShouldCDMBeVisible and not _G.QUI_ShouldCDMBeVisible() then
+        local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
+        return (vis and vis.fadeOutAlpha) or 0
+    end
+    return nil
+end
+
 -- Visibility check for resource bars ("always", "combat", "hostile")
 local function ShouldShowBar(cfg)
     -- CDM visibility overrides (e.g. hide when mounted) take priority
@@ -976,6 +986,17 @@ function QUICore:UpdatePowerBar()
     if not resource then
         bar:Hide()
         return
+    end
+
+    -- CDM visibility can hide bars independently of bar visibility mode.
+    -- Honor configured CDM fadeOutAlpha instead of forcing fully transparent.
+    if not PowerBarEditMode.active then
+        local cdmHiddenAlpha = GetCDMHiddenAlpha()
+        if cdmHiddenAlpha ~= nil then
+            bar:SetAlpha(cdmHiddenAlpha)
+            bar:Show()
+            return
+        end
     end
 
     -- Visibility mode check (always/combat/hostile)
@@ -2073,6 +2094,17 @@ function QUICore:UpdateSecondaryPowerBar()
     if not resource then
         bar:Hide()
         return
+    end
+
+    -- CDM visibility can hide bars independently of bar visibility mode.
+    -- Honor configured CDM fadeOutAlpha instead of forcing fully transparent.
+    if not PowerBarEditMode.active then
+        local cdmHiddenAlpha = GetCDMHiddenAlpha()
+        if cdmHiddenAlpha ~= nil then
+            bar:SetAlpha(cdmHiddenAlpha)
+            bar:Show()
+            return
+        end
     end
 
     -- Visibility mode check (always/combat/hostile)
