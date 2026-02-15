@@ -137,6 +137,8 @@ function QUI_DandersFrames:GetAnchorFrame(anchorName)
         return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["player"]
     elseif anchorName == "playerFrame" then
         return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.player
+    elseif anchorName == "targetFrame" then
+        return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.target
     end
 
     -- Registry fallback
@@ -159,6 +161,7 @@ function QUI_DandersFrames:BuildAnchorOptions()
         {value = "secondary", text = "Secondary Resource Bar"},
         {value = "playerCastbar", text = "Player Castbar"},
         {value = "playerFrame", text = "Player Frame"},
+        {value = "targetFrame", text = "Target Frame"},
     }
 
     -- Add registered anchor targets from the anchoring system
@@ -167,7 +170,7 @@ function QUI_DandersFrames:BuildAnchorOptions()
             -- Skip targets already in our hardcoded list
             if name ~= "disabled" and name ~= "essential" and name ~= "utility"
                and name ~= "primary" and name ~= "secondary" and name ~= "playerCastbar"
-               and name ~= "playerFrame" then
+               and name ~= "playerFrame" and name ~= "targetFrame" then
                 local displayName = data.options and data.options.displayName or name
                 displayName = displayName:gsub("^%l", string.upper)
                 displayName = displayName:gsub("([a-z])([A-Z])", "%1 %2")
