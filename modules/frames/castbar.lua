@@ -518,16 +518,133 @@ local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, ico
     end
 end
 
+local VALID_TEXT_ANCHORS = {
+    TOPLEFT = true,
+    TOP = true,
+    TOPRIGHT = true,
+    LEFT = true,
+    CENTER = true,
+    RIGHT = true,
+    BOTTOMLEFT = true,
+    BOTTOM = true,
+    BOTTOMRIGHT = true,
+}
+
+local BAR_EDGE_PADDING = 2
+local TIME_TEXT_RESERVE_SAMPLE = "9.9"
+local TIME_TEXT_EXTRA_PADDING = -4
+
+local function NormalizeTextAnchor(anchor)
+    local safeAnchor = string.upper(tostring(anchor or "CENTER"))
+    if not VALID_TEXT_ANCHORS[safeAnchor] then
+        return "CENTER"
+    end
+    return safeAnchor
+end
+
+local function GetTextJustificationFromAnchor(anchor)
+    local safeAnchor = NormalizeTextAnchor(anchor)
+    local justifyH = "CENTER"
+    local justifyV = "MIDDLE"
+
+    if safeAnchor == "LEFT" or safeAnchor == "TOPLEFT" or safeAnchor == "BOTTOMLEFT" then
+        justifyH = "LEFT"
+    elseif safeAnchor == "RIGHT" or safeAnchor == "TOPRIGHT" or safeAnchor == "BOTTOMRIGHT" then
+        justifyH = "RIGHT"
+    end
+
+    if safeAnchor == "TOP" or safeAnchor == "TOPLEFT" or safeAnchor == "TOPRIGHT" then
+        justifyV = "TOP"
+    elseif safeAnchor == "BOTTOM" or safeAnchor == "BOTTOMLEFT" or safeAnchor == "BOTTOMRIGHT" then
+        justifyV = "BOTTOM"
+    end
+
+    return justifyH, justifyV
+end
+
 local function UpdateTextPosition(textElement, statusBar, anchor, offsetX, offsetY, show)
     if not textElement then return end
     
     if show then
+        local normalizedAnchor = NormalizeTextAnchor(anchor)
+        local justifyH, justifyV = GetTextJustificationFromAnchor(anchor)
+        textElement:SetJustifyH(justifyH)
+        textElement:SetJustifyV(justifyV)
         textElement:ClearAllPoints()
-        textElement:SetPoint(anchor, statusBar, anchor, QUICore:PixelRound(offsetX, textElement), QUICore:PixelRound(offsetY, textElement))
+        textElement:SetPoint(normalizedAnchor, statusBar, normalizedAnchor, QUICore:PixelRound(offsetX, textElement), QUICore:PixelRound(offsetY, textElement))
         textElement:Show()
     else
         textElement:Hide()
     end
+end
+
+local function GetFixedTimeTextReserveWidth(anchorFrame, currentCastSettings)
+    if not (anchorFrame and anchorFrame.statusBar and anchorFrame.timeText) then
+        return 0
+    end
+
+    local timeText = anchorFrame.timeText
+    local fontPath, fontSize, fontFlags = timeText:GetFont()
+    local safeFontPath = fontPath or GetFontPath()
+    local safeFontSize = fontSize or currentCastSettings.fontSize or 12
+    local safeFontFlags = fontFlags or GetFontOutline() or ""
+    local fontSignature = tostring(safeFontPath) .. "|" .. tostring(safeFontSize) .. "|" .. tostring(safeFontFlags)
+
+    if anchorFrame._timeTextReserveSignature ~= fontSignature then
+        local probe = anchorFrame._timeTextReserveProbe
+        if not probe then
+            probe = anchorFrame.statusBar:CreateFontString(nil, "OVERLAY")
+            probe:SetWordWrap(false)
+            anchorFrame._timeTextReserveProbe = probe
+        end
+
+        local ok = pcall(probe.SetFont, probe, safeFontPath, safeFontSize, safeFontFlags)
+        if not ok then
+            probe:SetFont(GetFontPath(), currentCastSettings.fontSize or 12, GetFontOutline())
+        end
+        probe:SetText(TIME_TEXT_RESERVE_SAMPLE)
+
+        anchorFrame._timeTextReserveWidth = SafeToNumber(probe:GetStringWidth()) or 0
+        anchorFrame._timeTextReserveSignature = fontSignature
+    end
+
+    local reserveWidth = anchorFrame._timeTextReserveWidth or 0
+    if reserveWidth <= 0 then
+        reserveWidth = SafeToNumber(timeText:GetStringWidth()) or 0
+    end
+    return reserveWidth
+end
+
+local function UpdateSpellTextWidthClamp(anchorFrame, castSettingsOverride, showTimeTextOverride)
+    if not (anchorFrame and anchorFrame.spellText and anchorFrame.statusBar) then return end
+
+    local currentSettings = anchorFrame.unitKey and GetUnitSettings(anchorFrame.unitKey)
+    local currentCastSettings = (currentSettings and currentSettings.castbar) or castSettingsOverride
+    if not currentCastSettings then return end
+
+    local barWidth = SafeToNumber(anchorFrame.statusBar:GetWidth())
+    if not (barWidth and barWidth > 0) then return end
+
+    local showTimeText = showTimeTextOverride
+    if showTimeText == nil then
+        showTimeText = currentCastSettings.showTimeText
+        if showTimeText and currentCastSettings.hideTimeTextOnEmpowered and anchorFrame.isEmpowered then
+            showTimeText = false
+        end
+    end
+
+    local spellPad = math.max(0, math.abs(currentCastSettings.spellTextOffsetX or 4))
+    local reserveForTime = 0
+
+    if showTimeText and anchorFrame.timeText and anchorFrame.timeText:IsShown() then
+        local timePad = math.max(0, math.abs(currentCastSettings.timeTextOffsetX or -4))
+        local fixedReserveWidth = GetFixedTimeTextReserveWidth(anchorFrame, currentCastSettings)
+        if fixedReserveWidth > 0 then
+            reserveForTime = timePad + fixedReserveWidth + TIME_TEXT_EXTRA_PADDING
+        end
+    end
+
+    anchorFrame.spellText:SetWidth(math.max(1, barWidth - spellPad - reserveForTime - BAR_EDGE_PADDING))
 end
 
 ---------------------------------------------------------------------------
@@ -568,25 +685,8 @@ local function UpdateCastbarElements(anchorFrame, unitKey, castSettings)
         showTimeText
     )
 
-    -- Constrain spell text width so it doesn't overflow the status bar
-    if anchorFrame.spellText and anchorFrame.statusBar then
-        local barWidth = SafeToNumber(anchorFrame.statusBar:GetWidth())
-        if barWidth and barWidth > 0 then
-            local spellPad = math.abs(currentCastSettings.spellTextOffsetX or 4)
-            local timePad = math.abs(currentCastSettings.timeTextOffsetX or -4)
-            local timeWidth = 0
-            if showTimeText and anchorFrame.timeText then
-                local measuredWidth = anchorFrame.timeText:GetStringWidth()
-                timeWidth = SafeToNumber(measuredWidth) or 0
-
-                -- If no active cast or restricted value, estimate from font size ("00.0" style text)
-                if timeWidth <= 0 then
-                    timeWidth = (currentCastSettings.fontSize or 10) * 3.5
-                end
-            end
-            anchorFrame.spellText:SetWidth(math.max(1, barWidth - spellPad - timePad - timeWidth - 2))
-        end
-    end
+    -- Constrain spell text width while avoiding over-reserving when time text is empty.
+    UpdateSpellTextWidthClamp(anchorFrame, currentCastSettings, showTimeText)
 
     -- Empowered level text (player only)
     if unitKey == "player" and anchorFrame.empoweredLevelText then
