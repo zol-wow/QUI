@@ -219,7 +219,9 @@ local function CreateScrollableContent(parent)
         -- Auto-hide scrollbar when not needed
         scrollBar:HookScript("OnShow", function(self)
             C_Timer.After(0.066, function()
-                local maxScroll = scrollFrame:GetVerticalScrollRange()
+                local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
+                    and ns.GetSafeVerticalScrollRange(scrollFrame)
+                    or 0
                 if maxScroll <= 1 then
                     self:Hide()
                 end

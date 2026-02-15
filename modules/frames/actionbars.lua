@@ -97,6 +97,7 @@ local ActionBars = {
     skinnedButtons = {},        -- Track which buttons have been skinned
     fadeState = {},             -- Per-bar fade state tracking
     fadeFrame = nil,            -- OnUpdate frame for smooth fading
+    levelSuppressionActive = nil, -- Cached state for below-max-level suppression
 }
 
 ---------------------------------------------------------------------------
@@ -136,6 +137,30 @@ end
 local function GetFadeSettings()
     local db = GetDB()
     return db and db.fade
+end
+
+local function IsPlayerBelowMaxLevel()
+    local level = UnitLevel("player")
+    if not level or level <= 0 then return false end
+
+    local maxLevel = GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion() or MAX_PLAYER_LEVEL or 80
+    if not maxLevel or maxLevel <= 0 then return false end
+
+    return level < maxLevel
+end
+
+local function ShouldSuppressMouseoverHideForLevel()
+    local fadeSettings = GetFadeSettings()
+    return fadeSettings and fadeSettings.disableBelowMaxLevel and IsPlayerBelowMaxLevel()
+end
+
+local function UpdateLevelSuppressionState()
+    local suppress = ShouldSuppressMouseoverHideForLevel()
+    if ActionBars.levelSuppressionActive == suppress then
+        return false
+    end
+    ActionBars.levelSuppressionActive = suppress
+    return true
 end
 
 local function GetFontSettings()
@@ -1393,6 +1418,10 @@ local function ShowLinkedBarDirect(barKey)
     local fadeSettings = GetFadeSettings()
 
     if not barSettings then return end
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
     if barSettings.alwaysShow then return end
 
     local fadeEnabled = barSettings.fadeEnabled
@@ -1422,6 +1451,10 @@ local function FadeLinkedBarDirect(barKey)
     local fadeSettings = GetFadeSettings()
 
     if not barSettings then return end
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
     if barSettings.alwaysShow then return end
 
     local fadeEnabled = barSettings.fadeEnabled
@@ -1458,6 +1491,11 @@ local function OnBarMouseEnter(barKey)
     local state = GetBarFadeState(barKey)
     local fadeSettings = GetFadeSettings()
     local barSettings = GetBarSettings(barKey)
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
 
     -- If bar should always be visible, skip fade logic entirely
     if barSettings and barSettings.alwaysShow then return end
@@ -1498,6 +1536,11 @@ local function OnBarMouseLeave(barKey)
     local state = GetBarFadeState(barKey)
     local fadeSettings = GetFadeSettings()
     local barSettings = GetBarSettings(barKey)
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
 
     -- If bar should always be visible, skip fade logic entirely
     if barSettings and barSettings.alwaysShow then return end
@@ -1601,6 +1644,20 @@ local function SetupBarMouseover(barKey)
 
     local state = GetBarFadeState(barKey)
 
+    if ShouldSuppressMouseoverHideForLevel() then
+        state.isFading = false
+        if state.delayTimer then
+            state.delayTimer:Cancel()
+            state.delayTimer = nil
+        end
+        if state.leaveCheckTimer then
+            state.leaveCheckTimer:Cancel()
+            state.leaveCheckTimer = nil
+        end
+        SetBarAlpha(barKey, 1)
+        return
+    end
+
     -- Check if bar should always be visible (overrides fade)
     if barSettings and barSettings.alwaysShow then
         SetBarAlpha(barKey, 1)
@@ -1676,6 +1733,7 @@ combatFadeFrame:SetScript("OnEvent", function(self, event)
     local fadeSettings = GetFadeSettings()
     if not fadeSettings or not fadeSettings.enabled then return end
     if not fadeSettings.alwaysShowInCombat then return end
+    if ShouldSuppressMouseoverHideForLevel() then return end
 
     if event == "PLAYER_REGEN_DISABLED" then
         -- Entering combat: Force action bars 1-8 to full opacity
@@ -1820,6 +1878,7 @@ function ActionBars:Initialize()
     if not db or not db.enabled then return end
 
     ActionBars.initialized = true
+    ActionBars.levelSuppressionActive = ShouldSuppressMouseoverHideForLevel()
 
     -- One-time migration for lock setting (preserves user setting after CVar sync fix)
     MigrateLockSetting()
@@ -1903,6 +1962,8 @@ eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("CURSOR_CHANGED")
+eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -1962,6 +2023,20 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 end
             end
         end)
+
+    elseif event == "PLAYER_LEVEL_UP" then
+        if UpdateLevelSuppressionState() then
+            if type(_G.QUI_RefreshActionBars) == "function" then
+                _G.QUI_RefreshActionBars()
+            end
+        end
+
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if UpdateLevelSuppressionState() then
+            if type(_G.QUI_RefreshActionBars) == "function" then
+                _G.QUI_RefreshActionBars()
+            end
+        end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Process pending initialization (from /reload during combat)

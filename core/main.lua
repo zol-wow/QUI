@@ -1214,6 +1214,7 @@ local defaults = {
                 fadeOutAlpha = 0.0,         -- Alpha when faded out (0-1)
                 fadeOutDelay = 0.5,         -- Delay before fading out (seconds)
                 alwaysShowInCombat = false, -- Force full opacity during combat
+                disableBelowMaxLevel = false, -- Keep bars visible until character reaches max level
                 linkBars1to8 = false,       -- Link all action bars 1-8 for mouseover
             },
             -- Per-bar settings (nil = use global, value = override)

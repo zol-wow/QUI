@@ -128,6 +128,20 @@ local function CreateActionBarsPage(parent)
         combatCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local maxLevelCheck = GUI:CreateFormCheckbox(tabContent, "Disable Below Max Level",
+            "disableBelowMaxLevel", fade, RefreshActionBars)
+        maxLevelCheck:SetPoint("TOPLEFT", PAD, y)
+        maxLevelCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local maxLevelDesc = GUI:CreateLabel(tabContent,
+            "Keeps action bars visible while leveling. Mouseover hide starts at max level.",
+            11, C.textMuted)
+        maxLevelDesc:SetPoint("TOPLEFT", PAD, y)
+        maxLevelDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        maxLevelDesc:SetJustifyH("LEFT")
+        y = y - 24
+
         local linkBarsCheck = GUI:CreateFormCheckbox(tabContent, "Link Action Bars 1-8 on Mouseover",
             "linkBars1to8", fade, RefreshActionBars)
         linkBarsCheck:SetPoint("TOPLEFT", PAD, y)

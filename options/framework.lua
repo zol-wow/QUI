@@ -3552,7 +3552,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                             if sectionTop and contentTop then
                                 local sectionOffset = contentTop - sectionTop
                                 local scrollPos = math.max(0, sectionOffset - 20)
-                                local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
+                                local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
+                                    and ns.GetSafeVerticalScrollRange(scrollFrame)
+                                    or 0
                                 scrollPos = math.min(scrollPos, maxScroll)
                                 scrollFrame:SetVerticalScroll(scrollPos)
                             end
@@ -3692,7 +3694,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                             if sectionTop and contentTop then
                                 local sectionOffset = contentTop - sectionTop
                                 local scrollPos = math.max(0, sectionOffset - 20)
-                                local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
+                                local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
+                                    and ns.GetSafeVerticalScrollRange(scrollFrame)
+                                    or 0
                                 scrollPos = math.min(scrollPos, maxScroll)
                                 scrollFrame:SetVerticalScroll(scrollPos)
                             end
