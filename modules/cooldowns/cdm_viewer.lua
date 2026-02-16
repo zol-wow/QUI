@@ -957,6 +957,7 @@ local function LayoutViewer(viewerName, trackerKey)
     -- Store dimensions
     viewer.__cdmIconWidth = maxRowWidth
     viewer.__cdmTotalHeight = totalHeight
+    viewer.__cdmRow1IconHeight = rows[1] and (rows[1].size / (rows[1].aspectRatioCrop or 1.0)) or 0
     viewer.__cdmRow1BorderSize = rows[1] and rows[1].borderSize or 0
     viewer.__cdmBottomRowBorderSize = rows[#rows] and rows[#rows].borderSize or 0
     viewer.__cdmBottomRowYOffset = rows[#rows] and rows[#rows].yOffset or 0

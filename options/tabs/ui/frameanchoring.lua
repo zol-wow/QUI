@@ -30,12 +30,16 @@ local NINE_POINT_OPTIONS = {
 }
 
 local DEFAULTS = {
-    enabled  = false,
-    parent   = "screen",
-    point    = "CENTER",
-    relative = "CENTER",
-    offsetX  = 0,
-    offsetY  = 0,
+    enabled      = false,
+    parent       = "screen",
+    point        = "CENTER",
+    relative     = "CENTER",
+    offsetX      = 0,
+    offsetY      = 0,
+    autoWidth    = false,
+    widthAdjust  = 0,
+    autoHeight   = false,
+    heightAdjust = 0,
 }
 
 ---------------------------------------------------------------------------
@@ -56,7 +60,10 @@ local function GetFrameDB(key)
     if not anchoringDB then return nil end
     if not anchoringDB[key] then
         anchoringDB[key] = {}
-        for k, v in pairs(DEFAULTS) do
+    end
+    -- Backfill missing defaults (handles entries created before new fields were added)
+    for k, v in pairs(DEFAULTS) do
+        if anchoringDB[key][k] == nil then
             anchoringDB[key][k] = v
         end
     end
@@ -128,6 +135,32 @@ local function BuildFrameEntry(tabContent, frameDef, y)
     sliderY:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
 
+    -- Auto-width toggle (match anchor target width)
+    if frameDef.autoWidth then
+        local autoWidthToggle = GUI:CreateFormToggle(tabContent, "Auto-Width (Match Anchor Target)", "autoWidth", frameDB, OnChange)
+        autoWidthToggle:SetPoint("TOPLEFT", PAD + 10, y)
+        autoWidthToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local widthAdjust = GUI:CreateFormSlider(tabContent, "Width Adjustment", -20, 20, 1, "widthAdjust", frameDB, OnChange)
+        widthAdjust:SetPoint("TOPLEFT", PAD + 10, y)
+        widthAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+    end
+
+    -- Auto-height toggle (match CDM Essential row 1 icon height)
+    if frameDef.autoHeight then
+        local autoHeightToggle = GUI:CreateFormToggle(tabContent, "Auto-Height (Match CDM Row 1 Icon)", "autoHeight", frameDB, OnChange)
+        autoHeightToggle:SetPoint("TOPLEFT", PAD + 10, y)
+        autoHeightToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local heightAdjust = GUI:CreateFormSlider(tabContent, "Height Adjustment", -20, 20, 1, "heightAdjust", frameDB, OnChange)
+        heightAdjust:SetPoint("TOPLEFT", PAD + 10, y)
+        heightAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+    end
+
     y = y - 8  -- Spacing between frame entries
     return y
 end
@@ -151,8 +184,8 @@ end
 local function BuildResourceBarsTab(tabContent)
     local y = -10
     local frames = {
-        { key = "primaryPower",   name = "Primary Power Bar" },
-        { key = "secondaryPower", name = "Secondary Power Bar" },
+        { key = "primaryPower",   name = "Primary Power Bar",   autoWidth = true },
+        { key = "secondaryPower", name = "Secondary Power Bar", autoWidth = true },
     }
     for _, frameDef in ipairs(frames) do
         y = BuildFrameEntry(tabContent, frameDef, y)
@@ -162,12 +195,12 @@ end
 local function BuildUnitFramesTab(tabContent)
     local y = -10
     local frames = {
-        { key = "playerFrame", name = "Player Frame" },
-        { key = "targetFrame", name = "Target Frame" },
-        { key = "totFrame",    name = "Target of Target" },
-        { key = "focusFrame",  name = "Focus Frame" },
-        { key = "petFrame",    name = "Pet Frame" },
-        { key = "bossFrames",  name = "Boss Frames" },
+        { key = "playerFrame", name = "Player Frame",    autoWidth = true, autoHeight = true },
+        { key = "targetFrame", name = "Target Frame",    autoWidth = true, autoHeight = true },
+        { key = "totFrame",    name = "Target of Target", autoWidth = true },
+        { key = "focusFrame",  name = "Focus Frame",     autoWidth = true },
+        { key = "petFrame",    name = "Pet Frame",       autoWidth = true },
+        { key = "bossFrames",  name = "Boss Frames",     autoWidth = true },
     }
     for _, frameDef in ipairs(frames) do
         y = BuildFrameEntry(tabContent, frameDef, y)
@@ -205,9 +238,9 @@ local function BuildCastbarsTab(tabContent)
     y = y - FORM_ROW - 8
 
     local frames = {
-        { key = "playerCastbar", name = "Player Castbar" },
-        { key = "targetCastbar", name = "Target Castbar" },
-        { key = "focusCastbar",  name = "Focus Castbar" },
+        { key = "playerCastbar", name = "Player Castbar", autoWidth = true },
+        { key = "targetCastbar", name = "Target Castbar", autoWidth = true },
+        { key = "focusCastbar",  name = "Focus Castbar",  autoWidth = true },
     }
     for _, frameDef in ipairs(frames) do
         y = BuildFrameEntry(tabContent, frameDef, y)

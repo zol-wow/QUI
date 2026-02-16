@@ -974,6 +974,8 @@ end
 
 ---------------------------------------------------------------------------
 -- FRAME ANCHORING SYSTEM (centralized override positioning)
+-- Forward declaration (defined below in global callbacks section)
+local DebouncedReapplyOverrides
 ---------------------------------------------------------------------------
 -- Lazy resolver functions for all controllable frames
 local FRAME_RESOLVERS = {
@@ -1122,6 +1124,59 @@ local function SetFrameOverride(frame, active, key)
     end
 end
 
+-- Track which parent frames have been hooked for OnSizeChanged
+local hookedParentFrames = {}
+
+-- Apply auto-width and auto-height to a frame
+local function ApplyAutoSizing(frame, settings, parentFrame, key)
+    if not frame then return end
+
+    -- Auto-width: match anchor target width
+    if settings.autoWidth and parentFrame and parentFrame ~= UIParent then
+        local ok, parentWidth = pcall(function() return parentFrame:GetWidth() end)
+        if ok and parentWidth and parentWidth > 0 then
+            local adjustedWidth = parentWidth + (settings.widthAdjust or 0)
+            if adjustedWidth > 0 then
+                pcall(function() frame:SetWidth(adjustedWidth) end)
+            end
+        end
+
+        -- Hook parent OnSizeChanged so auto-width stays in sync when parent resizes
+        if not hookedParentFrames[parentFrame] then
+            hookedParentFrames[parentFrame] = true
+            pcall(function()
+                parentFrame:HookScript("OnSizeChanged", function()
+                    DebouncedReapplyOverrides()
+                end)
+            end)
+        end
+    end
+
+    -- Auto-height: match CDM Essential row 1 icon height (player/target only)
+    if settings.autoHeight then
+        local viewer = _G["EssentialCooldownViewer"]
+        if viewer then
+            local iconHeight = viewer.__cdmRow1IconHeight
+            if iconHeight and iconHeight > 0 then
+                local adjustedHeight = iconHeight + (settings.heightAdjust or 0)
+                if adjustedHeight > 0 then
+                    pcall(function() frame:SetHeight(adjustedHeight) end)
+                end
+            end
+
+            -- Hook viewer OnSizeChanged so auto-height stays in sync when CDM resizes
+            if not hookedParentFrames[viewer] then
+                hookedParentFrames[viewer] = true
+                pcall(function()
+                    viewer:HookScript("OnSizeChanged", function()
+                        DebouncedReapplyOverrides()
+                    end)
+                end)
+            end
+        end
+    end
+end
+
 -- Apply a single frame anchor override
 function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     if not settings then return end
@@ -1167,6 +1222,11 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
                 frame:SetPoint(point, parentFrame, relative, offsetX, stackOffsetY)
             end)
         end
+        -- Apply auto-sizing to each boss frame
+        ApplyAutoSizing(resolved[1], settings, parentFrame, key)
+        for i = 2, #resolved do
+            ApplyAutoSizing(resolved[i], settings, parentFrame, key)
+        end
         return
     end
 
@@ -1175,6 +1235,9 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         resolved:ClearAllPoints()
         resolved:SetPoint(point, parentFrame, relative, offsetX, offsetY)
     end)
+
+    -- Apply auto-width / auto-height
+    ApplyAutoSizing(resolved, settings, parentFrame, key)
 end
 
 -- Apply all saved frame anchor overrides
@@ -1216,7 +1279,7 @@ end
 -- Debounced reapply of frame anchoring overrides after module repositioning
 local pendingOverrideReapply = nil
 
-local function DebouncedReapplyOverrides()
+DebouncedReapplyOverrides = function()
     if pendingOverrideReapply then return end
     pendingOverrideReapply = true
     C_Timer.After(0.15, function()
