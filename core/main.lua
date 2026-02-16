@@ -2744,7 +2744,7 @@ local defaults = {
             
             -- Button Visibility
             showZoomButtons = false,
-            showMail = false,
+            showMail = true,
             showCraftingOrder = false,
             showAddonCompartment = false,
             showDifficulty = false,
