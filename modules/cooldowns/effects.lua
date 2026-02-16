@@ -36,9 +36,11 @@ local function HideCooldownEffects(child)
                 -- Hook Show to prevent it from showing
                 if frame.Show then
                     hooksecurefunc(frame, "Show", function(self)
-                        if InCombatLockdown() then return end
-                        self:Hide()
-                        self:SetAlpha(0)
+                        C_Timer.After(0, function()
+                            if InCombatLockdown() then return end
+                            self:Hide()
+                            self:SetAlpha(0)
+                        end)
                     end)
                 end
                 

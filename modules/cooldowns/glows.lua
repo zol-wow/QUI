@@ -114,8 +114,11 @@ local function SuppressBlizzardGlow(icon)
             if not alert._QUI_NoShow then
                 alert._QUI_NoShow = true
                 hooksecurefunc(alert, "Show", function(self)
-                    self:Hide()
-                    self:SetAlpha(0)
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then return end
+                        self:Hide()
+                        self:SetAlpha(0)
+                    end)
                 end)
             end
         end
@@ -128,8 +131,11 @@ local function SuppressBlizzardGlow(icon)
             if not icon.OverlayGlow._QUI_NoShow then
                 icon.OverlayGlow._QUI_NoShow = true
                 hooksecurefunc(icon.OverlayGlow, "Show", function(self)
-                    self:Hide()
-                    self:SetAlpha(0)
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then return end
+                        self:Hide()
+                        self:SetAlpha(0)
+                    end)
                 end)
             end
         end

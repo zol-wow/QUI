@@ -147,8 +147,10 @@ local function StripBlizzardOverlay(icon)
                 region:SetTexture("")
                 region:Hide()
                 hooksecurefunc(region, "Show", function(self)
-                    if InCombatLockdown() then return end
-                    self:Hide()
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then return end
+                        self:Hide()
+                    end)
                 end)
             end
         end
@@ -165,9 +167,11 @@ local function PreventAtlasBorder(texture)
     -- Hook future SetAtlas calls to block border re-application
     if texture.SetAtlas then
         hooksecurefunc(texture, "SetAtlas", function(self)
-            if InCombatLockdown() then return end
-            if self.SetTexture then self:SetTexture(nil) end
-            if self.SetAlpha then self:SetAlpha(0) end
+            C_Timer.After(0, function()
+                if InCombatLockdown() then return end
+                if self.SetTexture then self:SetTexture(nil) end
+                if self.SetAlpha then self:SetAlpha(0) end
+            end)
         end)
     end
     -- Clear current state
@@ -322,8 +326,10 @@ local function SkinIcon(icon, size, aspectRatioCrop, zoom, borderSize, borderCol
             if not icon.CooldownFlash._ncdmHooked then
                 icon.CooldownFlash._ncdmHooked = true
                 hooksecurefunc(icon.CooldownFlash, "Show", function(self)
-                    if InCombatLockdown() then return end
-                    self:SetAlpha(0)
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then return end
+                        self:SetAlpha(0)
+                    end)
                 end)
             end
         end
