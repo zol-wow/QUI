@@ -42,17 +42,6 @@ local function HideCooldownEffects(child)
                     end)
                 end
                 
-                -- Also hook parent OnShow
-                if child.HookScript then
-                    child:HookScript("OnShow", function(self)
-                        if InCombatLockdown() then return end
-                        local f = self[frameName]
-                        if f then
-                            f:Hide()
-                            f:SetAlpha(0)
-                        end
-                    end)
-                end
             end
         end
     end
@@ -142,14 +131,8 @@ local function ProcessViewer(viewerName)
         end)
     end
     
-    -- Hook OnShow
-    if not viewer._QUI_EffectsShowHooked then
-        viewer._QUI_EffectsShowHooked = true
-        viewer:HookScript("OnShow", function()
-            if InCombatLockdown() then return end
-            C_Timer.After(0.15, ProcessIcons)  -- 150ms debounce for CPU efficiency
-        end)
-    end
+    -- Do not HookScript() cooldown viewer scripts (can taint secret-value paths).
+    -- Layout hook + world/login refreshes are sufficient to keep effects hidden.
 end
 
 local function ApplyToAllViewers()

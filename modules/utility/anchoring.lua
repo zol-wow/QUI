@@ -1137,6 +1137,22 @@ end
 -- Track which parent frames have been hooked for OnSizeChanged
 local hookedParentFrames = {}
 
+local function IsCooldownViewerFrame(frame)
+    if not frame then return false end
+    if frame == _G["EssentialCooldownViewer"] or frame == _G["UtilityCooldownViewer"]
+        or frame == _G["BuffIconCooldownViewer"] or frame == _G["BuffBarCooldownViewer"] then
+        return true
+    end
+    if frame.GetName then
+        local name = frame:GetName()
+        if name == "EssentialCooldownViewer" or name == "UtilityCooldownViewer"
+            or name == "BuffIconCooldownViewer" or name == "BuffBarCooldownViewer" then
+            return true
+        end
+    end
+    return false
+end
+
 -- Apply auto-width and auto-height to a frame
 local function ApplyAutoSizing(frame, settings, parentFrame, key)
     if not frame then return end
@@ -1152,7 +1168,7 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
         end
 
         -- Hook parent OnSizeChanged so auto-width stays in sync when parent resizes
-        if not hookedParentFrames[parentFrame] then
+        if not hookedParentFrames[parentFrame] and not IsCooldownViewerFrame(parentFrame) then
             hookedParentFrames[parentFrame] = true
             pcall(function()
                 parentFrame:HookScript("OnSizeChanged", function()
@@ -1174,15 +1190,8 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
                 end
             end
 
-            -- Hook viewer OnSizeChanged so auto-height stays in sync when CDM resizes
-            if not hookedParentFrames[viewer] then
-                hookedParentFrames[viewer] = true
-                pcall(function()
-                    viewer:HookScript("OnSizeChanged", function()
-                        DebouncedReapplyOverrides()
-                    end)
-                end)
-            end
+            -- Do not HookScript() cooldown viewers (can taint Blizzard secret-value paths).
+            -- CDM layout code already calls QUI_UpdateCDMAnchoredUnitFrames after resizes.
         end
     end
 end

@@ -85,9 +85,11 @@ local function UpdateCooldownViewerCVar()
 
     local essentialEnabled = db.essential and db.essential.enabled
     local utilityEnabled = db.utility and db.utility.enabled
+    local buffEnabled = db.buff and db.buff.enabled
 
-    -- If BOTH are disabled, turn off Blizzard CVar; otherwise keep it on
-    if essentialEnabled or utilityEnabled then
+    -- If all relevant CDM displays are disabled, turn off Blizzard CVar.
+    -- Include Buff CDM so buff-only setups don't get auto-disabled after combat.
+    if essentialEnabled or utilityEnabled or buffEnabled then
         pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
     else
         pcall(function() SetCVar("cooldownViewerEnabled", 0) end)
@@ -1058,55 +1060,47 @@ local function HookViewer(viewerName, trackerKey)
 
     NCDM.hooked[trackerKey] = true
 
-    -- Step 1 & 3: OnShow hook - enable polling and single deferred layout
-    viewer:HookScript("OnShow", function(self)
-        -- Enable polling when viewer becomes visible
-        if self.__ncdmUpdateFrame then
-            self.__ncdmUpdateFrame:Show()
-        end
-        -- Single deferred layout
-        C_Timer.After(0.02, function()
-            if self:IsShown() then
-                LayoutViewer(viewerName, trackerKey)
-                -- Apply anchor for Utility viewer after layout
-                if trackerKey == "utility" and _G.QUI_ApplyUtilityAnchor then
-                    _G.QUI_ApplyUtilityAnchor()
-                end
-            end
-        end)
-    end)
+    -- IMPORTANT: Do not HookScript() cooldown viewer scripts such as OnShow/OnSizeChanged.
+    -- These script handlers run inside Blizzard refresh paths and can taint secret values
+    -- (e.g. hasTotem from GetTotemInfo), which then crash on boolean tests.
+    -- Keep all detection in our own detached OnUpdate frame instead.
 
-    -- Step 1: OnHide hook - disable polling to save CPU
-    viewer:HookScript("OnHide", function(self)
-        if self.__ncdmUpdateFrame then
-            self.__ncdmUpdateFrame:Hide()
-        end
-    end)
-
-    -- Step 5: OnSizeChanged hook - increment layout counter
-    viewer:HookScript("OnSizeChanged", function(self)
-        -- Increment layout counter so OnUpdate knows Blizzard changed something
-        self.__ncdmBlizzardLayoutCount = (self.__ncdmBlizzardLayoutCount or 0) + 1
-        if self.__cdmLayoutSuppressed or self.__cdmLayoutRunning then
-            return
-        end
-        LayoutViewer(viewerName, trackerKey)
-    end)
-
-    -- Step 2: Layout hook REMOVED (was causing cascade calls)
-
-    -- Step 1: Dedicated update frame (can be shown/hidden to completely stop polling)
+    -- Dedicated update frame for detached polling/state detection.
     local updateFrame = CreateFrame("Frame")
     viewer.__ncdmUpdateFrame = updateFrame
 
     local lastIconCount = 0
     local lastSettingsVersion = 0
-    local lastBlizzardLayoutCount = 0
+    local lastViewerWidth = viewer:GetWidth() or 0
+    local lastViewerHeight = viewer:GetHeight() or 0
+    local wasShown = viewer:IsShown()
     -- Fallback polling intervals (events handle immediate cooldown updates)
     local combatInterval = 1.0   -- 1000ms in combat (can't do work anyway, events blocked)
     local idleInterval = 0.5     -- 500ms out of combat (events handle immediate needs)
 
     updateFrame:SetScript("OnUpdate", function(self, elapsed)
+        local isShown = viewer:IsShown()
+        if isShown ~= wasShown then
+            wasShown = isShown
+            if isShown then
+                -- Force near-immediate check on show without HookScript taint risk.
+                viewer.__ncdmEventFired = true
+                C_Timer.After(0.02, function()
+                    if viewer:IsShown() and not viewer.__cdmLayoutSuppressed and not viewer.__cdmLayoutRunning then
+                        LayoutViewer(viewerName, trackerKey)
+                        if trackerKey == "utility" and _G.QUI_ApplyUtilityAnchor then
+                            _G.QUI_ApplyUtilityAnchor()
+                        end
+                    end
+                end)
+            end
+        end
+
+        if not isShown then
+            viewer.__ncdmElapsed = 0
+            return
+        end
+
         viewer.__ncdmElapsed = (viewer.__ncdmElapsed or 0) + elapsed
 
         -- Adaptive throttle - slower polling since events handle immediate updates
@@ -1127,8 +1121,15 @@ local function HookViewer(viewerName, trackerKey)
         -- Skip expensive icon collection during combat for CPU efficiency
         if InCombatLockdown() then return end
 
-        -- Step 5: Check if Blizzard layout changed or settings changed
-        local currentBlizzardCount = viewer.__ncdmBlizzardLayoutCount or 0
+        -- Detect Blizzard layout changes without HookScript() taint vectors.
+        local viewerWidth = viewer:GetWidth() or 0
+        local viewerHeight = viewer:GetHeight() or 0
+        local sizeChanged = (math.abs(viewerWidth - lastViewerWidth) > 0.5) or (math.abs(viewerHeight - lastViewerHeight) > 0.5)
+        if sizeChanged then
+            lastViewerWidth = viewerWidth
+            lastViewerHeight = viewerHeight
+        end
+
         local currentVersion = NCDM.settingsVersion[trackerKey] or 0
 
         -- Grace period: skip early-exit for 2 seconds after zone change to catch late Blizzard scrambles
@@ -1152,16 +1153,15 @@ local function HookViewer(viewerName, trackerKey)
 
         -- Early-exit if nothing changed (skip during grace period to catch late Blizzard scrambles)
         if not inGracePeriod then
-            if currentBlizzardCount == lastBlizzardLayoutCount and currentVersion == lastSettingsVersion and count == lastIconCount then
+            if not sizeChanged and currentVersion == lastSettingsVersion and count == lastIconCount then
                 return
             end
         end
-        lastBlizzardLayoutCount = currentBlizzardCount
 
         local needsLayout = false
 
-        -- Check if count or settings version changed
-        if count ~= lastIconCount or currentVersion ~= lastSettingsVersion then
+        -- Check if viewer size, count, or settings version changed
+        if sizeChanged or count ~= lastIconCount or currentVersion ~= lastSettingsVersion then
             needsLayout = true
             -- Reset skinned/pending flags on all icons when settings change
             if currentVersion ~= lastSettingsVersion then
@@ -1193,12 +1193,8 @@ local function HookViewer(viewerName, trackerKey)
         end
     end)
 
-    -- Step 1: Initially show update frame only if viewer is visible
-    if viewer:IsShown() then
-        updateFrame:Show()
-    else
-        updateFrame:Hide()
-    end
+    -- Keep the detached watcher running; it self-throttles when viewer is hidden.
+    updateFrame:Show()
 
     -- Step 4: Event-driven layout trigger - simplified flag approach
     local layoutEventFrame = CreateFrame("Frame")

@@ -437,32 +437,55 @@ end
 -- do NOT exist in WoW 12.0. Glow detection is handled entirely via
 -- SPELL_ACTIVATION_OVERLAY_GLOW events + name-based matching.
 
+local viewerScanState = {}
+
+-- Poll cooldown viewer state without HookScript() to avoid tainting Blizzard
+-- secret-value refresh paths (e.g. totem data in CooldownViewerItemData).
+local function PollViewerChangesForScan()
+    local changed = false
+
+    for _, viewerName in ipairs(VIEWER_NAMES) do
+        local viewer = _G[viewerName]
+        if viewer then
+            local state = viewerScanState[viewerName]
+            if not state then
+                state = { shown = false, childCount = 0, width = 0, height = 0 }
+                viewerScanState[viewerName] = state
+            end
+
+            local shown = viewer:IsShown()
+            local childCount = shown and (viewer:GetNumChildren() or 0) or 0
+            local width = shown and (viewer:GetWidth() or 0) or 0
+            local height = shown and (viewer:GetHeight() or 0) or 0
+
+            if shown ~= state.shown
+                or childCount ~= state.childCount
+                or math.abs(width - state.width) > 0.5
+                or math.abs(height - state.height) > 0.5 then
+                state.shown = shown
+                state.childCount = childCount
+                state.width = width
+                state.height = height
+                changed = true
+            end
+        end
+    end
+
+    if changed then
+        ScheduleGlowScan()
+    end
+end
+
 -- ======================================================
 -- Event-Driven Glow Detection (fallback for cases where
 -- ActionButton hooks don't fire)
 -- ======================================================
 
-local function HookViewerForScan(viewerName)
-    local viewer = _G[viewerName]
-    if not viewer or viewer._QUIGlowScanHooked then return end
-    viewer._QUIGlowScanHooked = true
-
-    -- New icons appear when Blizzard resizes the viewer
-    viewer:HookScript("OnSizeChanged", function()
-        ScheduleGlowScan()
-    end)
-
-    -- Scan when viewer becomes visible
-    viewer:HookScript("OnShow", function()
-        ScheduleGlowScan()
-    end)
-end
-
 local function SetupGlowDetection()
-    -- Hook viewer containers for new icon detection
-    for _, viewerName in ipairs(VIEWER_NAMES) do
-        HookViewerForScan(viewerName)
-    end
+    -- Poll viewer state changes instead of HookScript() to avoid taint.
+    C_Timer.NewTicker(0.25, function()
+        PollViewerChangesForScan()
+    end)
 
     -- Listen for glow events and state changes
     local eventFrame = CreateFrame("Frame")
