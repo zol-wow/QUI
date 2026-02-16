@@ -87,6 +87,9 @@ local function BuildFrameEntry(tabContent, frameDef, y)
         end
     end
 
+    -- Register frame name as search section (widgets auto-register)
+    GUI:SetSearchSection(frameDef.name)
+
     -- Frame name sub-header
     local nameLabel = GUI:CreateLabel(tabContent, frameDef.name, 12, C.textLight or C.text)
     nameLabel:SetPoint("TOPLEFT", PAD, y)
@@ -169,6 +172,7 @@ end
 -- TAB BUILDERS (one per category)
 ---------------------------------------------------------------------------
 local function BuildCDMTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 1, subTabName = "CDM"})
     local y = -10
     local frames = {
         { key = "cdmEssential", name = "CDM Essential Viewer" },
@@ -182,6 +186,7 @@ local function BuildCDMTab(tabContent)
 end
 
 local function BuildResourceBarsTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 2, subTabName = "Resource Bars"})
     local y = -10
     local frames = {
         { key = "primaryPower",   name = "Primary Power Bar",   autoWidth = true },
@@ -193,6 +198,7 @@ local function BuildResourceBarsTab(tabContent)
 end
 
 local function BuildUnitFramesTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 3, subTabName = "Unit Frames"})
     local y = -10
     local frames = {
         { key = "playerFrame", name = "Player Frame",    autoWidth = true, autoHeight = true },
@@ -208,12 +214,14 @@ local function BuildUnitFramesTab(tabContent)
 end
 
 local function BuildCastbarsTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 4, subTabName = "Castbars"})
     local y = -10
     local PAD = PADDING
     local castbarUnits = { "player", "target", "focus" }
     local previewActive = false
 
     -- Preview All Castbars toggle
+    GUI:SetSearchSection("Castbar Preview")
     local castbarKeys = { "playerCastbar", "targetCastbar", "focusCastbar" }
     local previewToggle = GUI:CreateFormToggle(tabContent, "Preview All Castbars", nil, nil, function(val)
         previewActive = val
@@ -248,6 +256,7 @@ local function BuildCastbarsTab(tabContent)
 end
 
 local function BuildActionBarsTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 5, subTabName = "Action Bars"})
     local y = -10
     local frames = {
         { key = "bar1",      name = "Action Bar 1 (Main)" },
@@ -269,6 +278,7 @@ local function BuildActionBarsTab(tabContent)
 end
 
 local function BuildDisplayTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 6, subTabName = "Display"})
     local y = -10
     local frames = {
         { key = "minimap",          name = "Minimap" },

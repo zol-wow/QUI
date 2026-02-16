@@ -2305,7 +2305,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
 
     -- Auto-register for search using current context (if context is set)
     if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0)
+        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
         if not GUI.SettingsRegistryKeys[regKey] then
             GUI.SettingsRegistryKeys[regKey] = true
             local entry = {
@@ -2789,7 +2789,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
 
     -- Auto-register for search using current context (if context is set)
     if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0)
+        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
         if not GUI.SettingsRegistryKeys[regKey] then
             GUI.SettingsRegistryKeys[regKey] = true
             table.insert(GUI.SettingsRegistry, {
@@ -3041,7 +3041,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
     -- Auto-register for search using current context (if context is set)
     if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0)
+        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
         if not GUI.SettingsRegistryKeys[regKey] then
             GUI.SettingsRegistryKeys[regKey] = true
             table.insert(GUI.SettingsRegistry, {
@@ -3142,7 +3142,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
 
     -- Auto-register for search using current context (if context is set)
     if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0)
+        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
         if not GUI.SettingsRegistryKeys[regKey] then
             GUI.SettingsRegistryKeys[regKey] = true
             table.insert(GUI.SettingsRegistry, {
@@ -4496,6 +4496,16 @@ function GUI:SelectTab(frame, index)
     if index == self._searchTabIndex and self._allTabsAdded and not self._searchIndexBuilt then
         self:ForceLoadAllTabs()
         self._searchIndexBuilt = true
+    end
+
+    -- Auto-focus search input when navigating to Search tab
+    if index == self._searchTabIndex then
+        C_Timer.After(0, function()
+            local page = frame.pages[index]
+            if page and page.frame and page.frame.searchBox and page.frame.searchBox.editBox then
+                page.frame.searchBox.editBox:SetFocus()
+            end
+        end)
     end
 
     -- Clear search if active
