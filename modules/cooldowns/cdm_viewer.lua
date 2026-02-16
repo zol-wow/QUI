@@ -1083,13 +1083,26 @@ local function HookViewer(viewerName, trackerKey)
     end)
 
     -- Step 5: OnSizeChanged hook - increment layout counter
+    -- IMPORTANT: LayoutViewer is deferred to avoid tainting Blizzard's execution context.
+    -- OnSizeChanged fires synchronously during RefreshData, and HookScript handlers share
+    -- the caller's execution context. Running addon code here taints secret values like
+    -- hasTotem from GetTotemInfo() or spellID comparisons, crashing CooldownViewerItemData.
     viewer:HookScript("OnSizeChanged", function(self)
         -- Increment layout counter so OnUpdate knows Blizzard changed something
         self.__ncdmBlizzardLayoutCount = (self.__ncdmBlizzardLayoutCount or 0) + 1
         if self.__cdmLayoutSuppressed or self.__cdmLayoutRunning then
             return
         end
-        LayoutViewer(viewerName, trackerKey)
+        -- Defer layout to next frame to avoid tainting Blizzard's secure execution
+        if not self.__ncdmSizeChangedDeferred then
+            self.__ncdmSizeChangedDeferred = true
+            C_Timer.After(0, function()
+                self.__ncdmSizeChangedDeferred = nil
+                if self:IsShown() and not self.__cdmLayoutSuppressed and not self.__cdmLayoutRunning then
+                    LayoutViewer(viewerName, trackerKey)
+                end
+            end)
+        end
     end)
 
     -- Step 2: Layout hook REMOVED (was causing cascade calls)
