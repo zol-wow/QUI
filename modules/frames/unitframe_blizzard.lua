@@ -221,6 +221,23 @@ function QUI_UF:HideBlizzardFrames()
     -- Hide Focus frame visuals (always hide Blizzard focus frame when QUI unit frames are enabled)
     HideBlizzardFocusVisuals()
 
+    -- Hide Party frames (when QUI party frames are enabled)
+    if db.party and db.party.enabled then
+        -- Hide CompactPartyFrame (modern compact party container)
+        if CompactPartyFrame then
+            KillBlizzardFrame(CompactPartyFrame)
+        end
+        -- Hide legacy party member frames
+        for i = 1, 4 do
+            local pf = _G["PartyFrame" .. i] or _G["PartyMemberFrame" .. i]
+            if pf then KillBlizzardFrame(pf) end
+        end
+        -- Hide PartyFrame container if it exists
+        if PartyFrame then
+            KillBlizzardFrame(PartyFrame)
+        end
+    end
+
     -- Hide Boss frames (allow in Edit Mode)
     if db.boss and db.boss.enabled then
         for i = 1, 5 do

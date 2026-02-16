@@ -1806,6 +1806,11 @@ local function CreateUnitFramesPage(parent)
         {name = "Boss", builder = function(c) BuildUnitTab(c, "boss") end},
     }
 
+    -- Add Party sub-tab (QUI built-in party frames)
+    if ns.QUI_PartyFramesOptions then
+        table.insert(subTabs, {name = "Party", builder = ns.QUI_PartyFramesOptions.BuildPartyFramesTab})
+    end
+
     -- Add Party/Raidframes sub-tab when DandersFrames is loaded
     if C_AddOns.IsAddOnLoaded("DandersFrames") and ns.QUI_DandersFramesOptions then
         table.insert(subTabs, {name = "Party/Raidframes", builder = ns.QUI_DandersFramesOptions.BuildPartyRaidframesTab})

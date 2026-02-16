@@ -2152,6 +2152,120 @@ local defaults = {
                     yOffset = 8,
                 },
             },
+            party = {
+                enabled = false,  -- Opt-in
+                -- Layout
+                growDirection = "DOWN",      -- "DOWN", "UP", "RIGHT", "LEFT"
+                spacing = 2,                 -- Pixels between cells
+                showPlayer = false,          -- Show player in party frames
+                -- Cell dimensions
+                width = 72,
+                height = 36,
+                borderSize = 1,
+                -- Position (first frame anchor)
+                offsetX = -400,
+                offsetY = 0,
+                -- Health bar (Cell-style: fills entire cell)
+                texture = "Quazii v5",
+                useClassColor = true,
+                customHealthColor = { 0.2, 0.6, 0.2, 1 },
+                bgColor = { 0.1, 0.1, 0.1, 0.9 },
+                -- Name
+                showName = true,
+                nameFontSize = 11,
+                nameAnchor = "CENTER",
+                nameOffsetX = 0,
+                nameOffsetY = 0,
+                maxNameLength = 6,
+                nameUseClassColor = false,
+                nameColor = { 1, 1, 1, 1 },
+                -- Health text
+                showHealth = false,
+                healthDisplayStyle = "percent",
+                healthFontSize = 10,
+                healthAnchor = "BOTTOM",
+                healthOffsetX = 0,
+                healthOffsetY = 2,
+                -- Power bar
+                showPowerBar = false,
+                powerBarHeight = 3,
+                powerBarUsePowerColor = true,
+                powerBarColor = { 0, 0.5, 1, 1 },
+                -- Role icon
+                showRoleIcon = true,
+                roleIconSize = 10,
+                roleIconAnchor = "TOPLEFT",
+                roleIconOffsetX = 1,
+                roleIconOffsetY = -1,
+                -- Leader icon
+                leaderIcon = {
+                    enabled = false,
+                    size = 12,
+                    anchor = "TOPRIGHT",
+                    xOffset = -1,
+                    yOffset = -1,
+                },
+                -- Target marker
+                targetMarker = {
+                    enabled = true,
+                    size = 14,
+                    anchor = "TOP",
+                    xOffset = 0,
+                    yOffset = -2,
+                },
+                -- Absorbs (Cell-style overlay)
+                absorbs = {
+                    enabled = true,
+                    color = { 1, 1, 1, 1 },
+                    opacity = 0.3,
+                    texture = "QUI Stripes",
+                },
+                -- Heal prediction
+                healPrediction = {
+                    enabled = true,
+                    color = { 0.2, 1, 0.2 },
+                    opacity = 0.4,
+                },
+                -- Auras (compact icons on cell)
+                auras = {
+                    showDebuffs = true,
+                    showBuffs = false,
+                    iconSize = 16,
+                    debuffAnchor = "CENTER",
+                    debuffGrow = "RIGHT",
+                    debuffMaxIcons = 3,
+                    debuffOffsetX = 0,
+                    debuffOffsetY = 0,
+                    debuffSpacing = 1,
+                    debuffShowStack = true,
+                    debuffStackSize = 8,
+                    -- Buff settings
+                    buffIconSize = 14,
+                    buffAnchor = "BOTTOMLEFT",
+                    buffGrow = "RIGHT",
+                    buffMaxIcons = 3,
+                    buffOffsetX = 0,
+                    buffOffsetY = 0,
+                    buffSpacing = 1,
+                },
+                -- Dispel highlight (border glow for dispellable debuffs)
+                dispelHighlight = {
+                    enabled = true,
+                    borderSize = 2,
+                },
+                -- Out of range dimming
+                rangeCheck = {
+                    enabled = true,
+                    outOfRangeAlpha = 0.4,
+                },
+                -- Status indicators
+                statusIcons = {
+                    showDead = true,
+                    showOffline = true,
+                    showResurrect = true,
+                    showSummon = true,
+                },
+            },
         },
         unitFrames = {
             enabled = true,
