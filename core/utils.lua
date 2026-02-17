@@ -366,6 +366,37 @@ function Helpers.InCombat()
 end
 
 ---------------------------------------------------------------------------
+-- HUD VISIBILITY HELPERS
+-- Shared checks for CDM, Unitframes, and Custom Trackers visibility
+---------------------------------------------------------------------------
+
+--- Check if player is mounted (includes Druid flight form, shapeshift form 27)
+--- @return boolean True if mounted or in Druid flight form
+function Helpers.IsPlayerMounted()
+    if IsMounted and IsMounted() then return true end
+    if GetShapeshiftFormID and GetShapeshiftFormID() == 27 then return true end
+    return false
+end
+
+--- Check if player is flying (airborne)
+--- @return boolean True if flying
+function Helpers.IsPlayerFlying()
+    if IsFlying then return IsFlying() end
+    return false
+end
+
+--- Check if player is skyriding (dynamic flight in Dragonflight/TWW zones)
+--- @return boolean True if flying in a dynamic flight zone
+function Helpers.IsPlayerSkyriding()
+    if not Helpers.IsPlayerFlying() then return false end
+    if C_PlayerInfo and C_PlayerInfo.CanUseDynamicFlight then
+        local ok, result = pcall(C_PlayerInfo.CanUseDynamicFlight)
+        return ok and result
+    end
+    return false
+end
+
+---------------------------------------------------------------------------
 -- EXPOSE TO NAMESPACE
 -- Also maintain backward compatibility with ns.Utils.IsSecretValue
 ---------------------------------------------------------------------------
@@ -393,3 +424,6 @@ ns.GetItemQualityColor = Helpers.GetItemQualityColor
 ns.CreateEventFrame = Helpers.CreateEventFrame
 ns.InCombat = Helpers.InCombat
 ns.GetCore = Helpers.GetCore
+ns.IsPlayerMounted = Helpers.IsPlayerMounted
+ns.IsPlayerFlying = Helpers.IsPlayerFlying
+ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding

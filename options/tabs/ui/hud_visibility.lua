@@ -135,6 +135,51 @@ local function BuildHUDVisibilityTab(tabContent)
     cdmMountedHint:SetJustifyH("LEFT")
     y = y - 20
 
+    if cdmVis.hideWhenFlying == nil then cdmVis.hideWhenFlying = false end
+    local cdmFlyingCheck = GUI:CreateFormCheckbox(tabContent, "Hide When Flying", "hideWhenFlying", cdmVis, RefreshCDMVisibility)
+    cdmFlyingCheck:SetPoint("TOPLEFT", PADDING, y)
+    cdmFlyingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cdmFlyingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while flying regardless of the settings above.",
+        11, C.textMuted)
+    cdmFlyingHint:SetPoint("TOPLEFT", PADDING, y)
+    cdmFlyingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    cdmFlyingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if cdmVis.hideWhenSkyriding == nil then cdmVis.hideWhenSkyriding = false end
+    local function onCdmSkyridingChange()
+        if cdmVis.hideWhenSkyriding then
+            cdmVis.hideWhenFlying = true
+            cdmFlyingCheck:SetValue(true, true)
+            cdmFlyingCheck:SetEnabled(false)
+        else
+            cdmFlyingCheck:SetEnabled(true)
+        end
+        RefreshCDMVisibility()
+    end
+    local cdmSkyridingCheck = GUI:CreateFormCheckbox(tabContent, "Hide When Skyriding", "hideWhenSkyriding", cdmVis, onCdmSkyridingChange)
+    cdmSkyridingCheck:SetPoint("TOPLEFT", PADDING, y)
+    cdmSkyridingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    -- Sync flying when skyriding is on (e.g. from saved profile)
+    if cdmVis.hideWhenSkyriding then
+        cdmVis.hideWhenFlying = true
+        cdmFlyingCheck:SetValue(true, true)
+        cdmFlyingCheck:SetEnabled(false)
+    end
+
+    local cdmSkyridingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while skyriding regardless of the settings above. Automatically enables Flying.",
+        11, C.textMuted)
+    cdmSkyridingHint:SetPoint("TOPLEFT", PADDING, y)
+    cdmSkyridingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    cdmSkyridingHint:SetJustifyH("LEFT")
+    y = y - 20
+
     y = y - 10
 
     -- Unitframes Visibility Section
@@ -258,6 +303,50 @@ local function BuildHUDVisibilityTab(tabContent)
     ufMountedHint:SetJustifyH("LEFT")
     y = y - 20
 
+    if ufVis.hideWhenFlying == nil then ufVis.hideWhenFlying = false end
+    local ufFlyingCheck = GUI:CreateFormCheckbox(tabContent, "Hide When Flying", "hideWhenFlying", ufVis, RefreshUnitframesVisibility)
+    ufFlyingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ufFlyingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ufFlyingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while flying regardless of the settings above.",
+        11, C.textMuted)
+    ufFlyingHint:SetPoint("TOPLEFT", PADDING, y)
+    ufFlyingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ufFlyingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ufVis.hideWhenSkyriding == nil then ufVis.hideWhenSkyriding = false end
+    local function onUfSkyridingChange()
+        if ufVis.hideWhenSkyriding then
+            ufVis.hideWhenFlying = true
+            ufFlyingCheck:SetValue(true, true)
+            ufFlyingCheck:SetEnabled(false)
+        else
+            ufFlyingCheck:SetEnabled(true)
+        end
+        RefreshUnitframesVisibility()
+    end
+    local ufSkyridingCheck = GUI:CreateFormCheckbox(tabContent, "Hide When Skyriding", "hideWhenSkyriding", ufVis, onUfSkyridingChange)
+    ufSkyridingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ufSkyridingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    if ufVis.hideWhenSkyriding then
+        ufVis.hideWhenFlying = true
+        ufFlyingCheck:SetValue(true, true)
+        ufFlyingCheck:SetEnabled(false)
+    end
+
+    local ufSkyridingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while skyriding regardless of the settings above. Automatically enables Flying.",
+        11, C.textMuted)
+    ufSkyridingHint:SetPoint("TOPLEFT", PADDING, y)
+    ufSkyridingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ufSkyridingHint:SetJustifyH("LEFT")
+    y = y - 20
+
     -- =====================================================
     -- CUSTOM TRACKERS VISIBILITY SECTION
     -- =====================================================
@@ -370,6 +459,50 @@ local function BuildHUDVisibilityTab(tabContent)
     ctMountedHint:SetPoint("TOPLEFT", PADDING, y)
     ctMountedHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     ctMountedHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ctVis.hideWhenFlying == nil then ctVis.hideWhenFlying = false end
+    local ctFlyingCheck = GUI:CreateFormCheckbox(tabContent, "Hide When Flying", "hideWhenFlying", ctVis, RefreshCustomTrackersVisibility)
+    ctFlyingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ctFlyingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ctFlyingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while flying regardless of the settings above.",
+        11, C.textMuted)
+    ctFlyingHint:SetPoint("TOPLEFT", PADDING, y)
+    ctFlyingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ctFlyingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ctVis.hideWhenSkyriding == nil then ctVis.hideWhenSkyriding = false end
+    local function onCtSkyridingChange()
+        if ctVis.hideWhenSkyriding then
+            ctVis.hideWhenFlying = true
+            ctFlyingCheck:SetValue(true, true)
+            ctFlyingCheck:SetEnabled(false)
+        else
+            ctFlyingCheck:SetEnabled(true)
+        end
+        RefreshCustomTrackersVisibility()
+    end
+    local ctSkyridingCheck = GUI:CreateFormCheckbox(tabContent, "Hide When Skyriding", "hideWhenSkyriding", ctVis, onCtSkyridingChange)
+    ctSkyridingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ctSkyridingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    if ctVis.hideWhenSkyriding then
+        ctVis.hideWhenFlying = true
+        ctFlyingCheck:SetValue(true, true)
+        ctFlyingCheck:SetEnabled(false)
+    end
+
+    local ctSkyridingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while skyriding regardless of the settings above. Automatically enables Flying.",
+        11, C.textMuted)
+    ctSkyridingHint:SetPoint("TOPLEFT", PADDING, y)
+    ctSkyridingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ctSkyridingHint:SetJustifyH("LEFT")
     y = y - 20
 
     UpdateCTConditionState()
