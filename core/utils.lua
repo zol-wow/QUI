@@ -481,7 +481,6 @@ end
 -- @param type string eg player or target
 -- @return frame
 function Helpers.FindAnchorFrame(type)
-    local startTime = debugprofilestop()
     local f = EnumerateFrames()
     while f do
         if f.unit == type or f:GetAttribute("unit") == type then
