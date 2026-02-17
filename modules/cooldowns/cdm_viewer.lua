@@ -65,24 +65,201 @@ local NCDM = {
 -- Combat-stable parent used for "Utility below Essential" anchoring.
 -- Out of combat this proxy follows Essential; in combat it stays fixed.
 local UtilityAnchorProxy = nil
-local UtilityDriftDebug = {
-    enabled = false,
-    hooked = false,
-    ticker = nil,
-    history = {},
-    maxEntries = 120,
-    lastX = nil,
-    lastY = nil,
+local FrameDriftDebug = {
+    sessions = {}, -- key -> session
+    frameToKey = setmetatable({}, { __mode = "k" }),
+    defaultInterval = 0.10,
+    defaultThreshold = 0.5,
+    defaultMaxEntries = 120,
 }
 
-local function DriftLog(message)
-    if not UtilityDriftDebug.enabled then return end
-    local line = string.format("[%.3f] %s", GetTime(), tostring(message))
-    table.insert(UtilityDriftDebug.history, line)
-    if #UtilityDriftDebug.history > UtilityDriftDebug.maxEntries then
-        table.remove(UtilityDriftDebug.history, 1)
+local function ResolveDebugFrame(frameOrName)
+    if type(frameOrName) == "table" and frameOrName.GetObjectType then
+        local label = frameOrName.GetName and frameOrName:GetName() or tostring(frameOrName)
+        return frameOrName, label
     end
-    print("|cff34D399QUI Drift|r " .. tostring(message))
+    if type(frameOrName) == "string" then
+        local frame = _G[frameOrName]
+        if frame then
+            return frame, frameOrName
+        end
+    end
+    return nil, nil
+end
+
+local function ResolveDebugSession(frameOrName)
+    if frameOrName == nil then
+        for _, session in pairs(FrameDriftDebug.sessions) do
+            if session.enabled then
+                return session
+            end
+        end
+        return nil
+    end
+    if type(frameOrName) == "string" then
+        local byKey = FrameDriftDebug.sessions[frameOrName]
+        if byKey then return byKey end
+        local frame = _G[frameOrName]
+        if frame then
+            local key = FrameDriftDebug.frameToKey[frame]
+            return key and FrameDriftDebug.sessions[key] or nil
+        end
+    elseif type(frameOrName) == "table" then
+        local key = FrameDriftDebug.frameToKey[frameOrName]
+        return key and FrameDriftDebug.sessions[key] or nil
+    end
+    return nil
+end
+
+local function SessionLog(session, message)
+    if not session or not session.enabled then return end
+    local line = string.format("[%.3f] %s", GetTime(), tostring(message))
+    table.insert(session.history, line)
+    if #session.history > (session.maxEntries or FrameDriftDebug.defaultMaxEntries) then
+        table.remove(session.history, 1)
+    end
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] " .. tostring(message))
+end
+
+local function EnsureSessionHooks(session)
+    if not session or session.hooked or not session.frame then return end
+    local frame = session.frame
+
+    if frame.SetPoint then
+        hooksecurefunc(frame, "SetPoint", function(_, point, relativeTo, relativePoint, xOfs, yOfs)
+            if not session.enabled then return end
+            local relName = relativeTo and relativeTo.GetName and relativeTo:GetName() or tostring(relativeTo)
+            SessionLog(session, string.format(
+                "SetPoint %s -> %s %s (%.1f, %.1f)",
+                tostring(point), tostring(relName), tostring(relativePoint), tonumber(xOfs) or 0, tonumber(yOfs) or 0
+            ))
+        end)
+    end
+
+    if frame.ClearAllPoints then
+        hooksecurefunc(frame, "ClearAllPoints", function()
+            if not session.enabled then return end
+            local stack = debugstack and debugstack(3, 1, 0) or "no stack"
+            SessionLog(session, "ClearAllPoints caller=" .. tostring(stack))
+        end)
+    end
+
+    if frame.HookScript then
+        frame:HookScript("OnSizeChanged", function(_, w, h)
+            if not session.enabled then return end
+            SessionLog(session, string.format("OnSizeChanged %.1fx%.1f", tonumber(w) or 0, tonumber(h) or 0))
+        end)
+    end
+
+    session.hooked = true
+end
+
+local function StartSessionTicker(session)
+    if not session or session.ticker then return end
+    session.ticker = C_Timer.NewTicker(session.interval or FrameDriftDebug.defaultInterval, function()
+        if not session.enabled or not session.frame then return end
+        local x, y = session.frame:GetCenter()
+        if not x or not y then return end
+
+        if session.lastX and session.lastY then
+            local dx = x - session.lastX
+            local dy = y - session.lastY
+            local threshold = session.threshold or FrameDriftDebug.defaultThreshold
+            if math.abs(dx) > threshold or math.abs(dy) > threshold then
+                local point, relTo, relPoint, ox, oy = session.frame:GetPoint(1)
+                local relName = relTo and relTo.GetName and relTo:GetName() or tostring(relTo)
+                SessionLog(session, string.format(
+                    "center moved (dx=%.2f, dy=%.2f) combat=%s p1=%s -> %s %s (%.1f, %.1f)",
+                    dx, dy, tostring(InCombatLockdown()), tostring(point), tostring(relName), tostring(relPoint),
+                    tonumber(ox) or 0, tonumber(oy) or 0
+                ))
+            end
+        end
+
+        session.lastX = x
+        session.lastY = y
+    end)
+end
+
+local function StopSessionTicker(session)
+    if session and session.ticker then
+        session.ticker:Cancel()
+        session.ticker = nil
+    end
+end
+
+local function DriftLog(message)
+    local utilViewer = _G[VIEWER_UTILITY]
+    if not utilViewer then return end
+    local key = FrameDriftDebug.frameToKey[utilViewer]
+    if not key then return end
+    SessionLog(FrameDriftDebug.sessions[key], message)
+end
+
+_G.QUI_FrameDriftDebugEnable = function(frameOrName, opts)
+    local frame, defaultLabel = ResolveDebugFrame(frameOrName)
+    if not frame then
+        print("|cff34D399QUI Drift|r enable failed: invalid frame")
+        return false
+    end
+
+    opts = type(opts) == "table" and opts or {}
+    local label = opts.label or defaultLabel or tostring(frame)
+    local key = label
+    local session = FrameDriftDebug.sessions[key]
+    if not session then
+        session = {
+            key = key,
+            label = label,
+            frame = frame,
+            history = {},
+            hooked = false,
+        }
+        FrameDriftDebug.sessions[key] = session
+    end
+
+    session.frame = frame
+    session.label = label
+    session.maxEntries = tonumber(opts.maxEntries) or session.maxEntries or FrameDriftDebug.defaultMaxEntries
+    session.threshold = tonumber(opts.threshold) or session.threshold or FrameDriftDebug.defaultThreshold
+    session.interval = tonumber(opts.interval) or session.interval or FrameDriftDebug.defaultInterval
+    session.enabled = true
+    session.history = {}
+    session.lastX = nil
+    session.lastY = nil
+
+    FrameDriftDebug.frameToKey[frame] = key
+    EnsureSessionHooks(session)
+    StopSessionTicker(session)
+    StartSessionTicker(session)
+    SessionLog(session, "enabled")
+    return true
+end
+
+_G.QUI_FrameDriftDebugDisable = function(frameOrName)
+    local session = ResolveDebugSession(frameOrName)
+    if not session then
+        print("|cff34D399QUI Drift|r disable: no active session")
+        return false
+    end
+    session.enabled = false
+    StopSessionTicker(session)
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] disabled")
+    return true
+end
+
+_G.QUI_FrameDriftDebugDump = function(frameOrName)
+    local session = ResolveDebugSession(frameOrName)
+    if not session then
+        print("|cff34D399QUI Drift|r dump: no active session")
+        return false
+    end
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] dump begin (" .. tostring(#session.history) .. " entries)")
+    for _, line in ipairs(session.history) do
+        print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] " .. line)
+    end
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] dump end")
+    return true
 end
 
 local function GetUtilityAnchorProxy()
@@ -117,63 +294,6 @@ local function UpdateUtilityAnchorProxy()
     end
     proxy:SetSize(width, height)
     return proxy
-end
-
-local function EnsureUtilityDriftDebugHooks()
-    if UtilityDriftDebug.hooked then return end
-    local utilViewer = _G[VIEWER_UTILITY]
-    if not utilViewer then return end
-
-    hooksecurefunc(utilViewer, "SetPoint", function(self, point, relativeTo, relativePoint, xOfs, yOfs)
-        if not UtilityDriftDebug.enabled then return end
-        local relName = relativeTo and relativeTo.GetName and relativeTo:GetName() or tostring(relativeTo)
-        DriftLog(string.format(
-            "Utility:SetPoint %s -> %s %s (%.1f, %.1f)",
-            tostring(point), tostring(relName), tostring(relativePoint), tonumber(xOfs) or 0, tonumber(yOfs) or 0
-        ))
-    end)
-
-    hooksecurefunc(utilViewer, "ClearAllPoints", function()
-        if not UtilityDriftDebug.enabled then return end
-        local stack = debugstack and debugstack(3, 1, 0) or "no stack"
-        DriftLog("Utility:ClearAllPoints caller=" .. tostring(stack))
-    end)
-
-    utilViewer:HookScript("OnSizeChanged", function(_, w, h)
-        if not UtilityDriftDebug.enabled then return end
-        DriftLog(string.format("Utility:OnSizeChanged %.1fx%.1f", tonumber(w) or 0, tonumber(h) or 0))
-    end)
-
-    UtilityDriftDebug.hooked = true
-end
-
-local function StartUtilityDriftDebugTicker()
-    if UtilityDriftDebug.ticker then return end
-    UtilityDriftDebug.ticker = C_Timer.NewTicker(0.10, function()
-        if not UtilityDriftDebug.enabled then return end
-        local utilViewer = _G[VIEWER_UTILITY]
-        if not utilViewer then return end
-        local x, y = utilViewer:GetCenter()
-        if not x or not y then return end
-
-        if UtilityDriftDebug.lastX and UtilityDriftDebug.lastY then
-            local dx = x - UtilityDriftDebug.lastX
-            local dy = y - UtilityDriftDebug.lastY
-            if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then
-                local point, relTo, relPoint, ox, oy = utilViewer:GetPoint(1)
-                local relName = relTo and relTo.GetName and relTo:GetName() or tostring(relTo)
-                DriftLog(string.format(
-                    "Utility center moved (dx=%.2f, dy=%.2f) combat=%s p1=%s -> %s %s (%.1f, %.1f) anchored=%s pending=%s",
-                    dx, dy, tostring(InCombatLockdown()), tostring(point), tostring(relName), tostring(relPoint),
-                    tonumber(ox) or 0, tonumber(oy) or 0,
-                    tostring(utilViewer.__cdmAnchoredToEssential), tostring(utilViewer.__cdmAnchorPendingAfterCombat)
-                ))
-            end
-        end
-
-        UtilityDriftDebug.lastX = x
-        UtilityDriftDebug.lastY = y
-    end)
 end
 
 -- Combat-safe frame level setter. If in combat, defer until next out-of-combat layout.
@@ -1716,30 +1836,15 @@ local function Initialize()
 end
 
 _G.QUI_CDMDriftDebugEnable = function()
-    UtilityDriftDebug.enabled = true
-    UtilityDriftDebug.history = {}
-    UtilityDriftDebug.lastX = nil
-    UtilityDriftDebug.lastY = nil
-    EnsureUtilityDriftDebugHooks()
-    StartUtilityDriftDebugTicker()
-    DriftLog("enabled")
+    return _G.QUI_FrameDriftDebugEnable(VIEWER_UTILITY, { label = "UtilityCooldownViewer" })
 end
 
 _G.QUI_CDMDriftDebugDisable = function()
-    UtilityDriftDebug.enabled = false
-    if UtilityDriftDebug.ticker then
-        UtilityDriftDebug.ticker:Cancel()
-        UtilityDriftDebug.ticker = nil
-    end
-    print("|cff34D399QUI Drift|r disabled")
+    return _G.QUI_FrameDriftDebugDisable(VIEWER_UTILITY)
 end
 
 _G.QUI_CDMDriftDebugDump = function()
-    print("|cff34D399QUI Drift|r dump begin (" .. tostring(#UtilityDriftDebug.history) .. " entries)")
-    for _, line in ipairs(UtilityDriftDebug.history) do
-        print("|cff34D399QUI Drift|r " .. line)
-    end
-    print("|cff34D399QUI Drift|r dump end")
+    return _G.QUI_FrameDriftDebugDump(VIEWER_UTILITY)
 end
 
 local eventFrame = CreateFrame("Frame")
