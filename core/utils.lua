@@ -481,11 +481,21 @@ end
 -- Shared checks for CDM, Unitframes, and Custom Trackers visibility
 ---------------------------------------------------------------------------
 
---- Check if player is mounted (includes Druid flight form, shapeshift form 27)
---- @return boolean True if mounted or in Druid flight form
+--- Spell ID for Dracthyr Evoker Soar (racial flight form)
+local SOAR_SPELL_ID = 369536
+
+--- Check if player is mounted (includes Druid flight form, Dracthyr Soar)
+--- Druid: GetShapeshiftFormID() == 27 (Swift Flight Form)
+--- Evoker: Soar buff (369536) when using racial flight form
+--- @return boolean True if mounted or in Druid/Evoker flight form
 function Helpers.IsPlayerMounted()
     if IsMounted and IsMounted() then return true end
     if GetShapeshiftFormID and GetShapeshiftFormID() == 27 then return true end
+    -- Dracthyr Evoker Soar (racial flight form; not detected by IsMounted)
+    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, SOAR_SPELL_ID)
+        if ok and aura then return true end
+    end
     return false
 end
 
@@ -497,7 +507,7 @@ function Helpers.IsPlayerFlying()
 end
 
 --- Check if player is skyriding
---- Uses C_PlayerInfo.GetGlidingInfofor accurate
+--- Uses C_PlayerInfo.GetGlidingInfo() for accurate
 --- grounded detection (PLAYER_IS_GLIDING_CHANGED fires on takeoff/landing).
 --- @return boolean True if flying in a dynamic flight zone
 function Helpers.IsPlayerSkyriding()
