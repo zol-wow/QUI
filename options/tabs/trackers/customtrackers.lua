@@ -13,7 +13,7 @@ local GetFontList = Shared.GetFontList
 
 -- Local reference to QUICore (needed by helper functions)
 local QUICore = ns.Addon
-
+local Helpers = ns.Helpers
 ---------------------------------------------------------------------------
 -- Helper: Refresh tracker bar position
 ---------------------------------------------------------------------------
@@ -814,6 +814,11 @@ local function CreateCustomTrackersPage(parent)
                 if yOffsetSlider and yOffsetSlider.SetValue then yOffsetSlider.SetValue(barConfig.offsetY, true) end
             else
                 local playerFrame = _G["QUI_Player"]
+
+                if not playerFrame then
+                    findPlayer = Helpers.FindAnchorFrame("player")
+                    if(findPlayer) then playerFrame = _G[findPlayer:GetName()] end
+                end
                 if not playerFrame then
                     print("|cffff6666[QUI]|r Player frame not found")
                     return
@@ -944,6 +949,12 @@ local function CreateCustomTrackersPage(parent)
                 if yOffsetSlider and yOffsetSlider.SetValue then yOffsetSlider.SetValue(barConfig.offsetY, true) end
             else
                 local targetFrame = _G["QUI_Target"]
+
+                if not targetFrame then
+                    findTarget = Helpers.FindAnchorFrame("target")
+                    if(findTarget) then targetFrame = _G[findTarget:GetName()] end
+                end
+
                 if not targetFrame then
                     print("|cffff6666[QUI]|r Target frame not found")
                     return

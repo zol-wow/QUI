@@ -476,6 +476,24 @@ function Helpers.InCombat()
     return InCombatLockdown()
 end
 
+-- if QUI Player or Target Frames don't exist, find a 3rd party UF
+-- eg Elv, Unhalted, or Blizzard UF for anchoring purposes
+-- @param type string eg player or target
+-- @return frame
+function Helpers.FindAnchorFrame(type)
+    local startTime = debugprofilestop()
+    local f = EnumerateFrames()
+    while f do
+        if f.unit == type or f:GetAttribute("unit") == type then
+            if f:IsVisible() and f:IsObjectType("Button") and f:GetWidth() > 20 and f:GetName() then
+                return f
+            end
+        end
+        f = EnumerateFrames(f)
+    end
+end
+
+
 ---------------------------------------------------------------------------
 -- EXPOSE TO NAMESPACE
 -- Also maintain backward compatibility with ns.Utils.IsSecretValue
