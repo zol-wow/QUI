@@ -333,6 +333,20 @@ local defaults = {
             autoCombatLog = false,  -- Auto start/stop combat logging in M+ (opt-in)
             autoCombatLogRaid = false,  -- Auto start/stop combat logging in raids (opt-in)
             autoDeleteConfirm = true,  -- Auto-fill DELETE confirmation text
+            -- Popup & Toast Blocker (granular, all OFF by default)
+            popupBlocker = {
+                enabled = false,
+                blockTalentMicroButtonAlerts = false, -- Unspent talent/spellbook reminder callouts
+                blockEventToasts = false, -- Event toast manager (often campaign/housing news)
+                blockMountAlerts = false, -- New mount toasts
+                blockPetAlerts = false, -- New pet toasts
+                blockToyAlerts = false, -- New toy toasts
+                blockCosmeticAlerts = false, -- New cosmetic toasts
+                blockWarbandSceneAlerts = false, -- Warband scene toasts (can include housing)
+                blockEntitlementAlerts = false, -- Entitlement/RAF delivery toasts
+                blockStaticTalentPopups = false, -- StaticPopup dialogs with talent/trait-related IDs
+                blockStaticHousingPopups = false, -- StaticPopup dialogs with housing-related IDs
+            },
             -- Pet Warning (pet-spec classes: Hunter, Warlock, DK, Mage)
             petCombatWarning = true,    -- Show combat warning in instances when pet missing/passive
             petWarningOffsetX = 0,      -- Warning frame X offset from center

@@ -718,6 +718,77 @@ local function BuildGeneralTab(tabContent)
 
     y = y - 10
 
+    -- Popup & Toast Blocker Section
+    GUI:SetSearchSection("Popup Blocker")
+    local popupBlockHeader = GUI:CreateSectionHeader(tabContent, "Popup & Toast Blocker")
+    popupBlockHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - popupBlockHeader.gap
+
+    local popupBlockDesc = GUI:CreateLabel(tabContent,
+        "Block selected Blizzard popups, toasts, and reminder alerts (including talent reminders and collection toasts).",
+        11, C.textMuted)
+    popupBlockDesc:SetPoint("TOPLEFT", PADDING, y)
+    popupBlockDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    popupBlockDesc:SetJustifyH("LEFT")
+    popupBlockDesc:SetWordWrap(true)
+    popupBlockDesc:SetHeight(20)
+    y = y - 30
+
+    if generalDB then
+        if type(generalDB.popupBlocker) ~= "table" then
+            generalDB.popupBlocker = {}
+        end
+
+        local popupDB = generalDB.popupBlocker
+
+        local function RefreshPopupBlocker()
+            if _G.QUI_RefreshPopupBlocker then
+                _G.QUI_RefreshPopupBlocker()
+            end
+        end
+
+        local popupToggleWidgets = {}
+        local function UpdatePopupToggleState()
+            local enabled = popupDB.enabled == true
+            for _, widget in ipairs(popupToggleWidgets) do
+                if widget and widget.SetEnabled then
+                    widget:SetEnabled(enabled)
+                end
+            end
+        end
+
+        local popupEnableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Popup/Toast Blocker", "enabled", popupDB, function()
+            UpdatePopupToggleState()
+            RefreshPopupBlocker()
+        end)
+        popupEnableCheck:SetPoint("TOPLEFT", PADDING, y)
+        popupEnableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local function AddPopupToggle(label, key)
+            local check = GUI:CreateFormCheckbox(tabContent, label, key, popupDB, RefreshPopupBlocker)
+            check:SetPoint("TOPLEFT", PADDING, y)
+            check:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+            y = y - FORM_ROW
+            table.insert(popupToggleWidgets, check)
+        end
+
+        AddPopupToggle("Block Talent Reminder Alerts (Microbutton)", "blockTalentMicroButtonAlerts")
+        AddPopupToggle("Block Event Toasts (often campaign/housing)", "blockEventToasts")
+        AddPopupToggle("Block New Mount Toasts", "blockMountAlerts")
+        AddPopupToggle("Block New Pet Toasts", "blockPetAlerts")
+        AddPopupToggle("Block New Toy Toasts", "blockToyAlerts")
+        AddPopupToggle("Block New Cosmetic Toasts", "blockCosmeticAlerts")
+        AddPopupToggle("Block Warband Scene Toasts", "blockWarbandSceneAlerts")
+        AddPopupToggle("Block Entitlement/RAF Delivery Toasts", "blockEntitlementAlerts")
+        AddPopupToggle("Block Talent-Related Static Popups", "blockStaticTalentPopups")
+        AddPopupToggle("Block Housing-Related Static Popups", "blockStaticHousingPopups")
+
+        UpdatePopupToggleState()
+    end
+
+    y = y - 10
+
     -- Quick Salvage Section
     GUI:SetSearchSection("Quick Salvage")
     local quickSalvageHeader = GUI:CreateSectionHeader(tabContent, "Quick Salvage")
