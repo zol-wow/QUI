@@ -159,10 +159,11 @@ local function CreateBrezFrame()
     timerText:SetText("")
     frame.timerText = timerText
 
-    -- Drag handling (only out of combat)
+    -- Drag handling (only when unlocked and out of combat)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
-        if not InCombatLockdown() then
+        local settings = GetSettings()
+        if settings and not settings.locked and not InCombatLockdown() then
             self:StartMoving()
         end
     end)
@@ -391,6 +392,10 @@ local function UpdateAppearance()
     UIKit.CreateBorderLines(frame)
     UIKit.UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
 
+    -- Lock/unlock state
+    local locked = settings.locked ~= false
+    frame:SetMovable(not locked)
+
     -- Update display immediately
     UpdateDisplay()
 end
@@ -593,9 +598,11 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Unlock frame out of combat
+        -- Unlock frame out of combat (only if not user-locked)
         if BrezState.frame then
-            BrezState.frame:SetMovable(true)
+            local settings = GetSettings()
+            local locked = settings and settings.locked ~= false
+            BrezState.frame:SetMovable(not locked)
         end
 
     end

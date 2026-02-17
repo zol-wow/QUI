@@ -198,6 +198,117 @@ function Helpers.GetModuleSettings(moduleName, defaults)
 end
 
 ---------------------------------------------------------------------------
+-- CDM HUD MIN-WIDTH HELPERS
+-- Shared constants/parsing/migration for frameAnchoring.hudMinWidth
+---------------------------------------------------------------------------
+
+Helpers.HUD_MIN_WIDTH_DEFAULT = 200
+Helpers.HUD_MIN_WIDTH_MIN = 100
+Helpers.HUD_MIN_WIDTH_MAX = 500
+
+--- Clamp and round HUD min width into allowed bounds.
+--- @param width any
+--- @return number
+function Helpers.ClampHUDMinWidth(width)
+    local rounded = math.floor(Helpers.SafeToNumber(width, Helpers.HUD_MIN_WIDTH_DEFAULT) + 0.5)
+    if rounded < Helpers.HUD_MIN_WIDTH_MIN then
+        return Helpers.HUD_MIN_WIDTH_MIN
+    end
+    if rounded > Helpers.HUD_MIN_WIDTH_MAX then
+        return Helpers.HUD_MIN_WIDTH_MAX
+    end
+    return rounded
+end
+
+--- Parse HUD min-width settings from a frameAnchoring table.
+--- Supports both current object format and legacy scalar format.
+--- @param frameAnchoring table|nil
+--- @return boolean, number enabled, width
+function Helpers.ParseHUDMinWidth(frameAnchoring)
+    if type(frameAnchoring) ~= "table" then
+        return false, Helpers.HUD_MIN_WIDTH_DEFAULT
+    end
+
+    local cfg = frameAnchoring.hudMinWidth
+    local enabled, width
+
+    if type(cfg) == "table" then
+        enabled = cfg.enabled == true
+        width = cfg.width
+    else
+        local legacyEnabled = frameAnchoring.hudMinWidthEnabled
+        if legacyEnabled == nil then
+            enabled = tonumber(cfg) ~= nil
+        else
+            enabled = legacyEnabled == true
+        end
+        width = cfg
+    end
+
+    return enabled == true, Helpers.ClampHUDMinWidth(width)
+end
+
+--- Parse HUD min-width settings from a profile table.
+--- @param profile table|nil
+--- @return boolean, number enabled, width
+function Helpers.GetHUDMinWidthSettingsFromProfile(profile)
+    local frameAnchoring = profile and profile.frameAnchoring
+    return Helpers.ParseHUDMinWidth(frameAnchoring)
+end
+
+--- Normalize/migrate HUD min-width settings to object format in-place.
+--- @param frameAnchoring table|nil
+--- @return table|nil hudMinWidth object ({ enabled, width })
+function Helpers.MigrateHUDMinWidthSettings(frameAnchoring)
+    if type(frameAnchoring) ~= "table" then
+        return nil
+    end
+    local enabled, width = Helpers.ParseHUDMinWidth(frameAnchoring)
+    frameAnchoring.hudMinWidth = {
+        enabled = enabled,
+        width = width,
+    }
+    frameAnchoring.hudMinWidthEnabled = nil
+    return frameAnchoring.hudMinWidth
+end
+
+--- Check whether player/target HUD frames are anchored to CDM.
+--- Covers both legacy unitframes anchor settings and frameAnchoring overrides.
+--- @param profile table|nil
+--- @return boolean
+function Helpers.IsHUDAnchoredToCDM(profile)
+    if type(profile) ~= "table" then
+        return false
+    end
+
+    local unitframes = profile.unitframes
+    if unitframes then
+        local playerAnchor = unitframes.player and unitframes.player.anchorTo
+        local targetAnchor = unitframes.target and unitframes.target.anchorTo
+        if playerAnchor == "essential" or playerAnchor == "utility" then
+            return true
+        end
+        if targetAnchor == "essential" or targetAnchor == "utility" then
+            return true
+        end
+    end
+
+    local frameAnchoring = profile.frameAnchoring
+    if frameAnchoring then
+        local playerFrame = frameAnchoring.playerFrame
+        local targetFrame = frameAnchoring.targetFrame
+        if playerFrame and playerFrame.enabled and (playerFrame.parent == "cdmEssential" or playerFrame.parent == "cdmUtility") then
+            return true
+        end
+        if targetFrame and targetFrame.enabled and (targetFrame.parent == "cdmEssential" or targetFrame.parent == "cdmUtility") then
+            return true
+        end
+    end
+
+    return false
+end
+
+---------------------------------------------------------------------------
 -- FONT HELPERS
 -- Centralized font fetching from general settings
 ---------------------------------------------------------------------------

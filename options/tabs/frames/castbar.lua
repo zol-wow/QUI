@@ -43,12 +43,13 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
     
     -- CASTBAR section (for player, target, targettarget, focus, pet, boss)
     if unitKey == "player" or unitKey == "target" or unitKey == "targettarget" or unitKey == "focus" or unitKey == "pet" or unitKey == "boss" then
+        local defaultShowChannelTicks = (unitKey == "player")
         local castbarHeader = GUI:CreateSectionHeader(tabContent, "Castbar")
         castbarHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - castbarHeader.gap
 
         if not unitDB.castbar then
-            unitDB.castbar = { enabled = true, width = 250, height = 25, offsetX = 0, offsetY = -25, widthAdjustment = 0, fontSize = 12, iconSize = 25, iconScale = 1.0, color = {1, 0.7, 0, 1}, notInterruptibleColor = {0.7, 0.2, 0.2, 1}, bgColor = {0.149, 0.149, 0.149, 1}, borderSize = 1, iconBorderSize = 2, texture = "Solid" }
+            unitDB.castbar = { enabled = true, width = 250, height = 25, offsetX = 0, offsetY = -25, widthAdjustment = 0, fontSize = 12, iconSize = 25, iconScale = 1.0, color = {1, 0.7, 0, 1}, notInterruptibleColor = {0.7, 0.2, 0.2, 1}, bgColor = {0.149, 0.149, 0.149, 1}, borderSize = 1, iconBorderSize = 2, texture = "Solid", showChannelTicks = defaultShowChannelTicks, channelTickThickness = 1, channelTickColor = {1, 1, 1, 0.9}, channelTickMinConfidence = 0.7, channelTickSourcePolicy = "auto" }
         end
         local castDB = unitDB.castbar
         if not castDB.fontSize then castDB.fontSize = 12 end
@@ -76,6 +77,11 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         if castDB.useClassColor == nil then
             castDB.useClassColor = false
         end
+        if castDB.showChannelTicks == nil then castDB.showChannelTicks = defaultShowChannelTicks end
+        if castDB.channelTickThickness == nil then castDB.channelTickThickness = 1 end
+        if castDB.channelTickColor == nil then castDB.channelTickColor = {1, 1, 1, 0.9} end
+        if castDB.channelTickMinConfidence == nil then castDB.channelTickMinConfidence = 0.7 end
+        if castDB.channelTickSourcePolicy == nil then castDB.channelTickSourcePolicy = "auto" end
         -- Migrate from old lock flags to anchor field
         if not castDB.anchor then
             if castDB.lockedToEssential then
@@ -409,6 +415,7 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
             {key = "target", text = "Target"},
             {key = "targettarget", text = "ToT"},
             {key = "focus", text = "Focus"},
+            {key = "pet", text = "Pet"},
             {key = "boss", text = "Boss"},
         }
         for _, unit in ipairs(castbarUnits) do
@@ -424,9 +431,17 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         castCopyRow:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
 
         -- Helper to copy castbar settings from one unit to another
-        local function CopyCastbarSettings(sourceDB, targetDB)
+        local function CopyCastbarSettings(sourceDB, targetDB, sourceUnitKey, targetUnitKey)
             if not sourceDB or not targetDB then return end
-            local keys = {"width", "height", "offsetX", "offsetY", "fontSize", "borderSize", "maxLength", "texture", "showIcon", "enabled", "anchor", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "empoweredStageColors", "empoweredFillColors"}
+            local keys = {"width", "height", "offsetX", "offsetY", "fontSize", "borderSize", "maxLength", "texture", "showIcon", "enabled", "anchor", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "channelFillForward", "empoweredStageColors", "empoweredFillColors"}
+            local includesUnsupportedTickUnit = (sourceUnitKey == "boss") or (targetUnitKey == "boss")
+                or (sourceUnitKey == "pet") or (targetUnitKey == "pet")
+            if not includesUnsupportedTickUnit then
+                table.insert(keys, "showChannelTicks")
+                table.insert(keys, "channelTickThickness")
+                table.insert(keys, "channelTickMinConfidence")
+                table.insert(keys, "channelTickSourcePolicy")
+            end
             for _, key in ipairs(keys) do
                 if sourceDB[key] ~= nil then
                     targetDB[key] = sourceDB[key]
@@ -437,6 +452,14 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
             end
             if sourceDB.bgColor then
                 targetDB.bgColor = {sourceDB.bgColor[1], sourceDB.bgColor[2], sourceDB.bgColor[3], sourceDB.bgColor[4]}
+            end
+            if not includesUnsupportedTickUnit and sourceDB.channelTickColor then
+                targetDB.channelTickColor = {
+                    sourceDB.channelTickColor[1],
+                    sourceDB.channelTickColor[2],
+                    sourceDB.channelTickColor[3],
+                    sourceDB.channelTickColor[4]
+                }
             end
             if sourceDB.notInterruptibleColor then
                 targetDB.notInterruptibleColor = {
@@ -478,7 +501,7 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
             if castCopyWrapper.selected then
                 local sourceUnitDB = db.quiUnitFrames and db.quiUnitFrames[castCopyWrapper.selected]
                 if sourceUnitDB and sourceUnitDB.castbar then
-                    CopyCastbarSettings(sourceUnitDB.castbar, castDB)
+                    CopyCastbarSettings(sourceUnitDB.castbar, castDB, castCopyWrapper.selected, unitKey)
                     RefreshUnit()
                 end
             end
@@ -574,6 +597,49 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         channelFillCheck:SetPoint("TOPLEFT", PAD, y)
         channelFillCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
+
+        if unitKey ~= "boss" and unitKey ~= "pet" then
+            -- ========================================
+            -- CHANNEL TICKS
+            -- ========================================
+            local channelTicksLabel = GUI:CreateLabel(tabContent, "Channel Ticks", 12, C.accentLight)
+            channelTicksLabel:SetPoint("TOPLEFT", PAD, y)
+            channelTicksLabel:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            channelTicksLabel:SetJustifyH("LEFT")
+            y = y - 20
+
+            local showChannelTicksCheck = GUI:CreateFormCheckbox(tabContent, "Show Channel Tick Markers", "showChannelTicks", castDB, RefreshUnit)
+            showChannelTicksCheck:SetPoint("TOPLEFT", PAD, y)
+            showChannelTicksCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local tickSourceOptions = {
+                {value = "auto", text = "Tick Source: Auto (Static then Runtime)"},
+                {value = "static", text = "Tick Source: Static Only"},
+                {value = "runtimeOnly", text = "Tick Source: Runtime Calibration Only"},
+            }
+            local channelTickSourceDropdown = GUI:CreateFormDropdown(tabContent, "Channel Tick Source", tickSourceOptions, "channelTickSourcePolicy", castDB, RefreshUnit)
+            channelTickSourceDropdown:SetPoint("TOPLEFT", PAD, y)
+            channelTickSourceDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            channelTickSourceDropdown:SetEnabled(false)
+            y = y - FORM_ROW
+
+            local tickConfidenceSlider = GUI:CreateFormSlider(tabContent, "Channel Tick Min Confidence", 0.5, 1.0, 0.05, "channelTickMinConfidence", castDB, RefreshUnit)
+            tickConfidenceSlider:SetPoint("TOPLEFT", PAD, y)
+            tickConfidenceSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            tickConfidenceSlider:SetEnabled(false)
+            y = y - FORM_ROW
+
+            local tickThicknessSlider = GUI:CreateFormSlider(tabContent, "Channel Tick Thickness", 1, 5, 0.5, "channelTickThickness", castDB, RefreshUnit)
+            tickThicknessSlider:SetPoint("TOPLEFT", PAD, y)
+            tickThicknessSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local tickColorPicker = GUI:CreateFormColorPicker(tabContent, "Channel Tick Color", "channelTickColor", castDB, RefreshUnit)
+            tickColorPicker:SetPoint("TOPLEFT", PAD, y)
+            tickColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+        end
 
         -- ========================================
         -- TEXT & DISPLAY

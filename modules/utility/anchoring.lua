@@ -22,6 +22,9 @@ QUI_Anchoring.categories = {}
 -- Anchored frame registry: { frame = { anchorTarget = name, anchorPoint = point, offsetX = x, offsetY = y, parentFrame = frame } }
 QUI_Anchoring.anchoredFrames = {}
 
+-- Frames with active anchoring overrides — module positioning is blocked for these
+QUI_Anchoring.overriddenFrames = {}
+
 local Helpers = {}
 
 ---------------------------------------------------------------------------
@@ -346,7 +349,10 @@ local VALID_ANCHOR_POINTS = {
 --     - targetAnchorPoint2: Secondary target anchor point for dual anchors (e.g., "BOTTOMRIGHT")
 function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, offsetY, parentFrame, options)
     if not frame then return false end
-    
+
+    -- Skip module positioning if this frame has an active anchoring override
+    if self.overriddenFrames[frame] then return true end
+
     -- Defer positioning if in combat or secure context to avoid taint
     if InCombatLockdown() then
         C_Timer.After(0, function()
@@ -598,7 +604,10 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
         offsetY = config.offsetY or 0,  -- Y offset (gap/padding) - maintains spacing when anchor target changes size
         parentFrame = config.parentFrame,
     }
-    
+
+    -- Skip immediate positioning if this frame has an active anchoring override
+    if self.overriddenFrames[frame] then return true end
+
     -- Position immediately using multi-anchor system
     -- Defer if in combat or secure context
     if InCombatLockdown() then
@@ -710,21 +719,20 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
     offsetY = offsetY or 0
     
     -- Get anchor target frame
-    local targetData = self:GetAnchorTarget(anchorTarget)
-    if not targetData then
+    local targetFrame = self:GetAnchorTarget(anchorTarget)
+    if not targetFrame then
         if options.onFailure then
             options.onFailure("Anchor target not found: " .. tostring(anchorTarget))
         end
         return false
     end
-    
-    local targetFrame = targetData.frame
-    
+
     -- Check if target is visible (if requested)
     if options.checkVisible ~= false then
         if not targetFrame:IsShown() then
             if options.onFailure then
-                local displayName = targetData.options and targetData.options.displayName or anchorTarget
+                local registered = self.anchorTargets and self.anchorTargets[anchorTarget]
+                local displayName = registered and registered.options and registered.options.displayName or anchorTarget
                 options.onFailure(displayName .. " not visible.")
             end
             return false
@@ -773,7 +781,12 @@ function QUI_Anchoring:UpdateAllAnchoredFrames()
     end
     
     for frame, config in pairs(self.anchoredFrames) do
-        if frame and frame:IsShown() then
+        -- Skip frames with active anchoring overrides — reapply override instead
+        -- (callers may have called ClearAllPoints before triggering this update)
+        if self.overriddenFrames[frame] then
+            self:ApplyAllFrameAnchors()
+            -- ApplyAllFrameAnchors handles all overridden frames, so we can continue
+        elseif frame and frame:IsShown() then
             local anchors = config.anchors
             if not anchors or #anchors == 0 then
                 -- Backward compatibility: use old anchorPoint format
@@ -959,8 +972,477 @@ function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)
 end
 
 ---------------------------------------------------------------------------
+-- FRAME ANCHORING SYSTEM (centralized override positioning)
+-- Forward declaration (defined below in global callbacks section)
+local DebouncedReapplyOverrides
+---------------------------------------------------------------------------
+-- Lazy resolver functions for all controllable frames
+local FRAME_RESOLVERS = {
+    -- CDM Viewers
+    cdmEssential = function() return _G["EssentialCooldownViewer"] end,
+    cdmUtility = function() return _G["UtilityCooldownViewer"] end,
+    buffIcon = function() return _G["BuffIconCooldownViewer"] end,
+    buffBar = function() return _G["BuffBarCooldownViewer"] end,
+    -- Resource Bars
+    primaryPower = function() return QUICore and QUICore.powerBar end,
+    secondaryPower = function() return QUICore and QUICore.secondaryPowerBar end,
+    -- Unit Frames
+    playerFrame = function() return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.player end,
+    targetFrame = function() return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.target end,
+    totFrame = function() return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.targettarget end,
+    focusFrame = function() return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.focus end,
+    petFrame = function() return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.pet end,
+    bossFrames = function()
+        -- Returns array of boss frames for iteration
+        local frames = {}
+        if ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames then
+            for i = 1, 5 do
+                local f = ns.QUI_UnitFrames.frames["boss" .. i]
+                if f then table.insert(frames, f) end
+            end
+        end
+        return #frames > 0 and frames or nil
+    end,
+    -- Castbars
+    playerCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["player"] end,
+    targetCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["target"] end,
+    focusCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["focus"] end,
+    -- Action Bars
+    bar1 = function() return _G["MainMenuBar"] end,
+    bar2 = function() return _G["MultiBarBottomLeft"] end,
+    bar3 = function() return _G["MultiBarBottomRight"] end,
+    bar4 = function() return _G["MultiBarRight"] end,
+    bar5 = function() return _G["MultiBarLeft"] end,
+    bar6 = function() return _G["MultiBar5"] end,
+    bar7 = function() return _G["MultiBar6"] end,
+    bar8 = function() return _G["MultiBar7"] end,
+    petBar = function() return _G["PetActionBar"] end,
+    stanceBar = function() return _G["StanceBar"] end,
+    microMenu = function() return _G["MicroMenuContainer"] end,
+    bagBar = function() return _G["BagsBar"] end,
+    -- Display
+    minimap = function() return _G["Minimap"] end,
+    objectiveTracker = function() return _G["ObjectiveTrackerFrame"] end,
+    buffFrame = function() return _G["BuffFrame"] end,
+    debuffFrame = function() return _G["DebuffFrame"] end,
+    -- External (DandersFrames)
+    dandersParty = function()
+        if ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable() then
+            local frames = ns.QUI_DandersFrames:GetContainerFrames("party")
+            return frames and frames[1]
+        end
+    end,
+    dandersRaid = function()
+        if ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable() then
+            local frames = ns.QUI_DandersFrames:GetContainerFrames("raid")
+            return frames and frames[1]
+        end
+    end,
+}
+
+-- Frame display info for anchor target registration
+local FRAME_ANCHOR_INFO = {
+    cdmEssential    = { displayName = "CDM Essential Viewer",  category = "Cooldown Manager",  order = 1 },
+    cdmUtility      = { displayName = "CDM Utility Viewer",    category = "Cooldown Manager",  order = 2 },
+    buffIcon        = { displayName = "CDM Buff Icons",        category = "Cooldown Manager",  order = 3 },
+    buffBar         = { displayName = "CDM Buff Bars",         category = "Cooldown Manager",  order = 4 },
+    primaryPower    = { displayName = "Primary Power Bar",     category = "Resource Bars",     order = 1 },
+    secondaryPower  = { displayName = "Secondary Power Bar",   category = "Resource Bars",     order = 2 },
+    playerFrame     = { displayName = "Player Frame",          category = "Unit Frames",       order = 1 },
+    targetFrame     = { displayName = "Target Frame",          category = "Unit Frames",       order = 2 },
+    totFrame        = { displayName = "Target of Target",      category = "Unit Frames",       order = 3 },
+    focusFrame      = { displayName = "Focus Frame",           category = "Unit Frames",       order = 4 },
+    petFrame        = { displayName = "Pet Frame",             category = "Unit Frames",       order = 5 },
+    bossFrames      = { displayName = "Boss Frames",           category = "Unit Frames",       order = 6 },
+    playerCastbar   = { displayName = "Player Castbar",        category = "Castbars",          order = 1 },
+    targetCastbar   = { displayName = "Target Castbar",        category = "Castbars",          order = 2 },
+    focusCastbar    = { displayName = "Focus Castbar",         category = "Castbars",          order = 3 },
+    bar1            = { displayName = "Action Bar 1",          category = "Action Bars",       order = 1 },
+    bar2            = { displayName = "Action Bar 2",          category = "Action Bars",       order = 2 },
+    bar3            = { displayName = "Action Bar 3",          category = "Action Bars",       order = 3 },
+    bar4            = { displayName = "Action Bar 4",          category = "Action Bars",       order = 4 },
+    bar5            = { displayName = "Action Bar 5",          category = "Action Bars",       order = 5 },
+    bar6            = { displayName = "Action Bar 6",          category = "Action Bars",       order = 6 },
+    bar7            = { displayName = "Action Bar 7",          category = "Action Bars",       order = 7 },
+    bar8            = { displayName = "Action Bar 8",          category = "Action Bars",       order = 8 },
+    petBar          = { displayName = "Pet Action Bar",        category = "Action Bars",       order = 9 },
+    stanceBar       = { displayName = "Stance Bar",            category = "Action Bars",       order = 10 },
+    microMenu       = { displayName = "Micro Menu",            category = "Action Bars",       order = 11 },
+    bagBar          = { displayName = "Bag Bar",               category = "Action Bars",       order = 12 },
+    minimap         = { displayName = "Minimap",               category = "Display",           order = 1 },
+    objectiveTracker = { displayName = "Objective Tracker",    category = "Display",           order = 2 },
+    buffFrame       = { displayName = "Buff Frame",            category = "Display",           order = 3 },
+    debuffFrame     = { displayName = "Debuff Frame",          category = "Display",           order = 4 },
+    dandersParty    = { displayName = "DandersFrames Party",   category = "External",          order = 1 },
+    dandersRaid     = { displayName = "DandersFrames Raid",    category = "External",          order = 2 },
+}
+
+-- Virtual CDM anchor parents.
+-- These are lightweight proxy frames we can safely resize in combat so frame
+-- anchoring can still respect configured min-width even when Blizzard's CDM
+-- viewer frame is protected.
+local CDM_PROXY_VIEWER_BY_KEY = {
+    cdmEssential = "EssentialCooldownViewer",
+    cdmUtility = "UtilityCooldownViewer",
+}
+local cdmAnchorProxies = {}
+local cdmAnchorProxyPendingAfterCombat = {}
+local HUD_MIN_WIDTH_DEFAULT = (ns.Helpers and ns.Helpers.HUD_MIN_WIDTH_DEFAULT) or 200
+
+local function GetHUDMinWidthSettings()
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local coreHelpers = ns and ns.Helpers
+    if coreHelpers and coreHelpers.GetHUDMinWidthSettingsFromProfile then
+        return coreHelpers.GetHUDMinWidthSettingsFromProfile(profile)
+    end
+    return false, HUD_MIN_WIDTH_DEFAULT
+end
+
+local function IsHUDAnchoredToCDM()
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local coreHelpers = ns and ns.Helpers
+    if not (coreHelpers and coreHelpers.IsHUDAnchoredToCDM) then
+        return false
+    end
+    return coreHelpers.IsHUDAnchoredToCDM(profile)
+end
+
+local function GetCDMAnchorProxy(parentKey)
+    if parentKey == "essential" then
+        parentKey = "cdmEssential"
+    elseif parentKey == "utility" then
+        parentKey = "cdmUtility"
+    end
+
+    local viewerName = CDM_PROXY_VIEWER_BY_KEY[parentKey]
+    if not viewerName then return nil end
+
+    local viewer = _G[viewerName]
+    if not viewer then return nil end
+
+    local proxy = cdmAnchorProxies[parentKey]
+    if not proxy then
+        proxy = CreateFrame("Frame", nil, UIParent)
+        proxy:SetClampedToScreen(false)
+        proxy:Show()
+        cdmAnchorProxies[parentKey] = proxy
+    end
+
+    -- Combat-stable behavior:
+    -- Keep the proxy frozen during combat once initialized, then refresh after
+    -- combat ends. This prevents children anchored to edge points (TOP/BOTTOM)
+    -- from drifting when Blizzard mutates protected CDM frame size in combat.
+    local inCombat = InCombatLockdown()
+    if inCombat and proxy.__quiCDMProxyInitialized then
+        cdmAnchorProxyPendingAfterCombat[parentKey] = true
+        return proxy
+    end
+
+    local width = viewer.__cdmIconWidth or viewer:GetWidth() or 0
+    local height = viewer.__cdmTotalHeight or viewer:GetHeight() or 0
+    local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
+    if minWidthEnabled and IsHUDAnchoredToCDM() then
+        width = math.max(width, minWidth)
+    end
+    width = math.max(1, width)
+    height = math.max(1, height)
+
+    local viewerX, viewerY = viewer:GetCenter()
+    local screenX, screenY = UIParent:GetCenter()
+    if viewerX and viewerY and screenX and screenY then
+        proxy:ClearAllPoints()
+        proxy:SetPoint("CENTER", UIParent, "CENTER", viewerX - screenX, viewerY - screenY)
+    end
+    proxy:SetSize(width, height)
+    proxy.__quiCDMProxyInitialized = true
+    if inCombat then
+        cdmAnchorProxyPendingAfterCombat[parentKey] = true
+    end
+
+    return proxy
+end
+
+-- Refresh both CDM proxy parents (safe in combat).
+local function UpdateCDMAnchorProxies()
+    GetCDMAnchorProxy("cdmEssential")
+    GetCDMAnchorProxy("cdmUtility")
+end
+
+-- Resolve an anchor parent key to a frame
+local function ResolveParentFrame(parentKey)
+    if not parentKey or parentKey == "screen" or parentKey == "disabled" then
+        return UIParent
+    end
+    -- For CDM viewers, use combat-safe proxy frames so width constraints (like
+    -- HUD minimum width) remain stable even while Blizzard's protected frame
+    -- resizes during combat.
+    local cdmProxy = GetCDMAnchorProxy(parentKey)
+    if cdmProxy then
+        return cdmProxy
+    end
+    -- Try frame resolvers first
+    local resolver = FRAME_RESOLVERS[parentKey]
+    if resolver then
+        local frame = resolver()
+        -- Boss frames resolver returns an array, take the first
+        if type(frame) == "table" and not frame.GetObjectType then
+            frame = frame[1]
+        end
+        if frame then return frame end
+    end
+    -- Try anchor target registry
+    if QUI_Anchoring.anchorTargets[parentKey] then
+        return QUI_Anchoring.anchorTargets[parentKey].frame
+    end
+    return UIParent
+end
+
+-- Expose proxy refresh for CDM layout module.
+_G.QUI_UpdateCDMAnchorProxyFrames = UpdateCDMAnchorProxies
+_G.QUI_GetCDMAnchorProxyFrame = GetCDMAnchorProxy
+
+-- Re-sync frozen proxy anchors after combat ends.
+local cdmProxyCombatFrame = CreateFrame("Frame")
+cdmProxyCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+cdmProxyCombatFrame:SetScript("OnEvent", function()
+    local needsRefresh = false
+    for key, pending in pairs(cdmAnchorProxyPendingAfterCombat) do
+        if pending then
+            needsRefresh = true
+            cdmAnchorProxyPendingAfterCombat[key] = nil
+        end
+    end
+    if not needsRefresh then
+        return
+    end
+    C_Timer.After(0.05, function()
+        if InCombatLockdown() then
+            cdmAnchorProxyPendingAfterCombat.cdmEssential = true
+            cdmAnchorProxyPendingAfterCombat.cdmUtility = true
+            return
+        end
+        UpdateCDMAnchorProxies()
+        DebouncedReapplyOverrides()
+    end)
+end)
+
+-- Register all controllable frames as anchor targets (for dropdown lists)
+function QUI_Anchoring:RegisterAllFrameTargets()
+    for key, resolver in pairs(FRAME_RESOLVERS) do
+        local frame = resolver()
+        -- Boss frames return an array; register the first one
+        if type(frame) == "table" and not frame.GetObjectType then
+            frame = frame[1]
+        end
+        if frame then
+            local info = FRAME_ANCHOR_INFO[key] or {}
+            self:RegisterAnchorTarget(key, frame, {
+                displayName = info.displayName or key,
+                category = info.category,
+                categoryOrder = info.order,
+                order = info.order,
+            })
+        end
+    end
+end
+
+-- Helper: mark a frame as overridden (blocks module positioning via PositionFrame/RegisterAnchoredFrame)
+-- Stores the frame key (e.g. "playerFrame") so callers can do targeted reapply
+local function SetFrameOverride(frame, active, key)
+    if not frame then return end
+    -- Boss frames resolver returns an array
+    if type(frame) == "table" and not frame.GetObjectType then
+        for _, f in ipairs(frame) do
+            QUI_Anchoring.overriddenFrames[f] = active and key or nil
+        end
+    else
+        QUI_Anchoring.overriddenFrames[frame] = active and key or nil
+    end
+end
+
+-- Track which parent frames have been hooked for OnSizeChanged
+local hookedParentFrames = {}
+
+-- Apply auto-width and auto-height to a frame
+local function ApplyAutoSizing(frame, settings, parentFrame, key)
+    if not frame then return end
+
+    -- Auto-width: match anchor target width
+    if settings.autoWidth and parentFrame and parentFrame ~= UIParent then
+        local ok, parentWidth = pcall(function() return parentFrame:GetWidth() end)
+        if ok and parentWidth and parentWidth > 0 then
+            local adjustedWidth = parentWidth + (settings.widthAdjust or 0)
+            if adjustedWidth > 0 then
+                pcall(function() frame:SetWidth(adjustedWidth) end)
+            end
+        end
+
+        -- Hook parent OnSizeChanged so auto-width stays in sync when parent resizes
+        if not hookedParentFrames[parentFrame] then
+            hookedParentFrames[parentFrame] = true
+            pcall(function()
+                parentFrame:HookScript("OnSizeChanged", function()
+                    DebouncedReapplyOverrides()
+                end)
+            end)
+        end
+    end
+
+    -- Auto-height: match CDM Essential row 1 icon height (player/target only)
+    if settings.autoHeight then
+        local viewer = _G["EssentialCooldownViewer"]
+        if viewer then
+            local iconHeight = viewer.__cdmRow1IconHeight
+            if iconHeight and iconHeight > 0 then
+                local adjustedHeight = iconHeight + (settings.heightAdjust or 0)
+                if adjustedHeight > 0 then
+                    pcall(function() frame:SetHeight(adjustedHeight) end)
+                end
+            end
+
+            -- Hook viewer OnSizeChanged so auto-height stays in sync when CDM resizes
+            if not hookedParentFrames[viewer] then
+                hookedParentFrames[viewer] = true
+                pcall(function()
+                    viewer:HookScript("OnSizeChanged", function()
+                        DebouncedReapplyOverrides()
+                    end)
+                end)
+            end
+        end
+    end
+end
+
+-- Apply a single frame anchor override
+function QUI_Anchoring:ApplyFrameAnchor(key, settings)
+    if type(settings) ~= "table" then return end
+
+    local resolver = FRAME_RESOLVERS[key]
+    if not resolver then return end
+
+    local resolved = resolver()
+
+    -- If override is disabled, unblock module positioning and let modules reclaim the frame
+    if not settings.enabled then
+        SetFrameOverride(resolved, false)
+        return
+    end
+
+    if not resolved then return end
+
+    -- Mark frame as overridden FIRST — blocks any module positioning from this point on
+    SetFrameOverride(resolved, true, key)
+
+    -- Defer if in combat
+    if InCombatLockdown() then
+        C_Timer.After(0.5, function()
+            if not InCombatLockdown() then
+                self:ApplyFrameAnchor(key, settings)
+            end
+        end)
+        return
+    end
+
+    local parentFrame = ResolveParentFrame(settings.parent)
+    local point = settings.point or "CENTER"
+    local relative = settings.relative or "CENTER"
+    local offsetX = settings.offsetX or 0
+    local offsetY = settings.offsetY or 0
+
+    -- Boss frames: single setting applied to all with stacking Y offset
+    if key == "bossFrames" and type(resolved) == "table" and not resolved.GetObjectType then
+        for i, frame in ipairs(resolved) do
+            local stackOffsetY = offsetY - ((i - 1) * 50)
+            pcall(function()
+                frame:ClearAllPoints()
+                frame:SetPoint(point, parentFrame, relative, offsetX, stackOffsetY)
+            end)
+        end
+        -- Apply auto-sizing to each boss frame
+        ApplyAutoSizing(resolved[1], settings, parentFrame, key)
+        for i = 2, #resolved do
+            ApplyAutoSizing(resolved[i], settings, parentFrame, key)
+        end
+        return
+    end
+
+    -- Normal single-frame case
+    pcall(function()
+        resolved:ClearAllPoints()
+        resolved:SetPoint(point, parentFrame, relative, offsetX, offsetY)
+    end)
+
+    -- Apply auto-width / auto-height
+    ApplyAutoSizing(resolved, settings, parentFrame, key)
+end
+
+-- Apply all saved frame anchor overrides
+function QUI_Anchoring:ApplyAllFrameAnchors()
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return end
+    local anchoringDB = QUICore.db.profile.frameAnchoring
+    if not anchoringDB then return end
+
+    for key, settings in pairs(anchoringDB) do
+        if type(settings) == "table" and FRAME_RESOLVERS[key] and settings.enabled then
+            self:ApplyFrameAnchor(key, settings)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- GLOBAL CALLBACKS (for backward compatibility)
 ---------------------------------------------------------------------------
+-- Global callbacks for frame anchoring overrides
+-- Check if a frame has an active anchoring override (blocks module positioning)
+_G.QUI_IsFrameOverridden = function(frame)
+    return QUI_Anchoring and QUI_Anchoring.overriddenFrames and QUI_Anchoring.overriddenFrames[frame] or false
+end
+
+_G.QUI_ApplyAllFrameAnchors = function()
+    if QUI_Anchoring then
+        QUI_Anchoring:ApplyAllFrameAnchors()
+    end
+end
+
+_G.QUI_ApplyFrameAnchor = function(key)
+    if not QUI_Anchoring or not QUICore or not QUICore.db or not QUICore.db.profile then return end
+    local anchoringDB = QUICore.db.profile.frameAnchoring
+    local settings = anchoringDB and anchoringDB[key]
+    if type(settings) == "table" and FRAME_RESOLVERS[key] then
+        QUI_Anchoring:ApplyFrameAnchor(key, settings)
+    end
+end
+
+-- Debounced reapply of frame anchoring overrides after module repositioning
+local pendingOverrideReapply = nil
+
+DebouncedReapplyOverrides = function()
+    if pendingOverrideReapply then return end
+    pendingOverrideReapply = true
+    C_Timer.After(0.15, function()
+        pendingOverrideReapply = nil
+        if QUI_Anchoring then
+            QUI_Anchoring:ApplyAllFrameAnchors()
+        end
+    end)
+end
+
+-- Hook module refresh globals to reapply overrides after modules reposition frames.
+-- These globals are defined by modules that load before this file in modules.xml.
+local function HookRefreshGlobal(name)
+    local original = _G[name]
+    if not original then return end
+    _G[name] = function(...)
+        original(...)
+        DebouncedReapplyOverrides()
+    end
+end
+
+HookRefreshGlobal("QUI_RefreshCastbars")
+HookRefreshGlobal("QUI_RefreshUnitFrames")
+HookRefreshGlobal("QUI_RefreshNCDM")
+HookRefreshGlobal("QUI_RefreshBuffBar")
+
 -- Global callback for updating anchored frames (called by NCDM, resource bars, etc.)
 -- Preserve any existing unit-frame updater to avoid breaking legacy anchoring.
 local previousUpdateAnchoredFrames = _G.QUI_UpdateAnchoredFrames
@@ -974,6 +1456,8 @@ _G.QUI_UpdateAnchoredFrames = function(...)
     if previousUpdateAnchoredFrames and previousUpdateAnchoredFrames ~= _G.QUI_UpdateAnchoredFrames then
         previousUpdateAnchoredFrames(...)
     end
+    -- Reapply frame anchoring overrides after modules finish repositioning
+    DebouncedReapplyOverrides()
 end
 
 -- Backward compatibility aliases that also honor any pre-existing unit-frame updater

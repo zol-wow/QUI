@@ -28,6 +28,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+
+
+
+## v2.37.0 - 2026-02-17
+
+### Added
+- added option for minimum HUD width in anchoring options
+- added castbar channel ticks feature
+- added more options to suppress Blizzard popup modals and notifications
+- added option to lock brez timer and counter in place
+
+### Fixed
+- fixed some in-combat frame drifting issues when spells morphed
+- fixed missing raid buff preview not working
+## v2.36.1 - 2026-02-17
+
+### Added
+- added option to reverse target health bar fill direction
+
+### Changed
+- added reasonable tracked buff bars defaults
+
+### Fixed
+- partial revert of the taint hardening of last release
+## v2.36.0 - 2026-02-16
+
+### Added
+- added new anchoring and layout options
+- added new tracked buff bar options
+
+### Changed
+- changed CVar check after leaving combat that would disable CDM entirely when only using CDM buffs
+
+### Fixed
+- addressed some potential taint code paths
+## v2.35.0 - 2026-02-15
+
+### Added
+- added target unitframe to DandersFrames anchor targets
+- added option to only have action bars mouseover hide work for chars at max level
+
+
+### Changed
+- updated castbars text clamping logic
+- made spacing of castbars anchored to cdm visually consistent between one-row and multi-row layouts
+
+### Fixed
+- fixed castbar text anchoring
+- fixed and hardened re-skinning and re-layouting as well as custom CD display on custom spells and items on the CDM
+- addressed various action bars related taint issues
 ## v2.34.1 - 2026-02-15
 
 ### Fixed

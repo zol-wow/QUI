@@ -22,13 +22,61 @@ local SLIDER_HEIGHT = 65  -- Standard height for slider widgets
 local SCROLL_STEP = 60
 ns.SCROLL_STEP = SCROLL_STEP
 
+-- Midnight-safe scroll value helpers
+local function GetSafeVerticalScrollRange(scrollFrame)
+    local okRange, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
+    if not okRange then return 0 end
+
+    if type(issecretvalue) == "function" then
+        local okSecret, isSecret = pcall(issecretvalue, maxScroll)
+        if okSecret and isSecret then
+            return 0
+        end
+    end
+
+    local okClamp, safeMax = pcall(function()
+        return math.max(0, maxScroll or 0)
+    end)
+    if okClamp then
+        return safeMax
+    end
+
+    return 0
+end
+ns.GetSafeVerticalScrollRange = GetSafeVerticalScrollRange
+
+local function GetSafeVerticalScroll(scrollFrame)
+    local okScroll, currentScroll = pcall(scrollFrame.GetVerticalScroll, scrollFrame)
+    if not okScroll then return 0 end
+
+    if type(issecretvalue) == "function" then
+        local okSecret, isSecret = pcall(issecretvalue, currentScroll)
+        if okSecret and isSecret then
+            return 0
+        end
+    end
+
+    local okNormalize, safeCurrent = pcall(function()
+        return currentScroll + 0
+    end)
+    if okNormalize then
+        return safeCurrent
+    end
+
+    return 0
+end
+
 function ns.ApplyScrollWheel(scrollFrame)
     scrollFrame:EnableMouseWheel(true)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local currentScroll = self:GetVerticalScroll()
-        local maxScroll = self:GetVerticalScrollRange()
-        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
-        self:SetVerticalScroll(newScroll)
+        local currentScroll = GetSafeVerticalScroll(self)
+        local maxScroll = GetSafeVerticalScrollRange(self)
+        local okNewScroll, newScroll = pcall(function()
+            return math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
+        end)
+        if okNewScroll then
+            pcall(self.SetVerticalScroll, self, newScroll)
+        end
     end)
 end
 
@@ -232,7 +280,7 @@ local function CreateScrollableContent(parent)
         -- Auto-hide scrollbar when not needed
         scrollBar:HookScript("OnShow", function(self)
             C_Timer.After(0.066, function()
-                local maxScroll = scrollFrame:GetVerticalScrollRange()
+                local maxScroll = GetSafeVerticalScrollRange(scrollFrame)
                 if maxScroll <= 1 then
                     self:Hide()
                 end

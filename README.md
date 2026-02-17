@@ -2,6 +2,7 @@
 [![GPLv3 License](https://img.shields.io/badge/License-GPL%20v3-yellow.svg)](https://opensource.org/licenses/)
 [![Discord](https://img.shields.io/badge/discord-QUI_2.0-0da37b?logo=discord&logoColor=white)](https://discord.gg/VFVv8bhQ)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/zol__)
+[![Ko-fi](https://img.shields.io/badge/PayPal-Support%20me-142c8e?logo=paypal&logoColor=white)](https://paypal.me/ZolQUI)
 
 # QUI 2.0 – QuaziiUI continued and kept alive
 

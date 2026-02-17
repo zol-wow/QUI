@@ -368,6 +368,9 @@ local function CreateUnitFramesPage(parent)
         end
 
         local unitDB = ufdb[unitKey]
+        if unitKey == "target" and unitDB.invertHealthDirection == nil then
+            unitDB.invertHealthDirection = false
+        end
 
         -- Refresh function for this specific unit
         local function RefreshUnit()
@@ -617,6 +620,13 @@ local function CreateUnitFramesPage(parent)
         textureDropdown:SetPoint("TOPLEFT", PAD, y)
         textureDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
+
+        if unitKey == "target" then
+            local invertHealthDirectionCheck = GUI:CreateFormCheckbox(tabContent, "Invert Healthbar Direction (LTR)", "invertHealthDirection", unitDB, RefreshUnit)
+            invertHealthDirectionCheck:SetPoint("TOPLEFT", PAD, y)
+            invertHealthDirectionCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+        end
 
         -- COLORS section
         local colorHeader = GUI:CreateSectionHeader(tabContent, "Health Bar Colors")

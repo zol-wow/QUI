@@ -718,6 +718,162 @@ local function BuildGeneralTab(tabContent)
 
     y = y - 10
 
+    -- Popup & Toast Blocker Section
+    GUI:SetSearchSection("Popup Blocker")
+    local popupBlockHeader = GUI:CreateSectionHeader(tabContent, "Popup & Toast Blocker")
+    popupBlockHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - popupBlockHeader.gap
+
+    local popupBlockDesc = GUI:CreateLabel(tabContent,
+        "Block selected Blizzard popups, toasts, and reminder alerts (including talent reminders and collection toasts).",
+        11, C.textMuted)
+    popupBlockDesc:SetPoint("TOPLEFT", PADDING, y)
+    popupBlockDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    popupBlockDesc:SetJustifyH("LEFT")
+    popupBlockDesc:SetWordWrap(true)
+    popupBlockDesc:SetHeight(20)
+    y = y - 30
+
+    if generalDB then
+        if type(generalDB.popupBlocker) ~= "table" then
+            generalDB.popupBlocker = {}
+        end
+
+        local popupDB = generalDB.popupBlocker
+
+        local function RefreshPopupBlocker()
+            if _G.QUI_RefreshPopupBlocker then
+                _G.QUI_RefreshPopupBlocker()
+            end
+        end
+
+        local popupToggleWidgets = {}
+        local popupSearchKeywords = {
+            enabled = {
+                "popup blocker",
+                "toast blocker",
+                "block popups",
+                "block toasts",
+                "disable popups",
+            },
+            blockTalentMicroButtonAlerts = {
+                "unspent talent",
+                "talent reminder",
+                "microbutton alert",
+                "player spells",
+                "spellbook alert",
+            },
+            blockEventToasts = {
+                "event toast",
+                "campaign toast",
+                "housing toast",
+                "blizzard news toast",
+            },
+            blockMountAlerts = {
+                "new mount",
+                "mount toast",
+                "wrapped mount",
+                "unwrapped mount",
+            },
+            blockPetAlerts = {
+                "new pet",
+                "pet toast",
+                "companion pet",
+            },
+            blockToyAlerts = {
+                "new toy",
+                "toy toast",
+                "toy box",
+            },
+            blockCosmeticAlerts = {
+                "new cosmetic",
+                "cosmetic toast",
+                "appearance unlock",
+            },
+            blockWarbandSceneAlerts = {
+                "warband scene",
+                "warband toast",
+                "housing scene",
+            },
+            blockEntitlementAlerts = {
+                "entitlement",
+                "raf",
+                "recruit a friend",
+                "delivery toast",
+            },
+            blockStaticTalentPopups = {
+                "talent popup",
+                "trait popup",
+                "static popup talent",
+            },
+            blockStaticHousingPopups = {
+                "housing popup",
+                "homestead popup",
+                "static popup housing",
+            },
+        }
+
+        local function GetSearchRegistryInfo(key)
+            local keywords = popupSearchKeywords[key]
+            if not keywords then return nil end
+            return { keywords = keywords }
+        end
+
+        local function UpdatePopupToggleState()
+            local enabled = popupDB.enabled == true
+            for _, widget in ipairs(popupToggleWidgets) do
+                if widget and widget.SetEnabled then
+                    widget:SetEnabled(enabled)
+                end
+            end
+        end
+
+        local popupEnableCheck = GUI:CreateFormCheckbox(
+            tabContent,
+            "Enable Popup/Toast Blocker",
+            "enabled",
+            popupDB,
+            function()
+                UpdatePopupToggleState()
+                RefreshPopupBlocker()
+            end,
+            GetSearchRegistryInfo("enabled")
+        )
+        popupEnableCheck:SetPoint("TOPLEFT", PADDING, y)
+        popupEnableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local function AddPopupToggle(label, key)
+            local check = GUI:CreateFormCheckbox(
+                tabContent,
+                label,
+                key,
+                popupDB,
+                RefreshPopupBlocker,
+                GetSearchRegistryInfo(key)
+            )
+            check:SetPoint("TOPLEFT", PADDING, y)
+            check:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+            y = y - FORM_ROW
+            table.insert(popupToggleWidgets, check)
+        end
+
+        AddPopupToggle("Block Talent Reminder Alerts (Microbutton)", "blockTalentMicroButtonAlerts")
+        AddPopupToggle("Block Event Toasts (often campaign/housing)", "blockEventToasts")
+        AddPopupToggle("Block New Mount Toasts", "blockMountAlerts")
+        AddPopupToggle("Block New Pet Toasts", "blockPetAlerts")
+        AddPopupToggle("Block New Toy Toasts", "blockToyAlerts")
+        AddPopupToggle("Block New Cosmetic Toasts", "blockCosmeticAlerts")
+        AddPopupToggle("Block Warband Scene Toasts", "blockWarbandSceneAlerts")
+        AddPopupToggle("Block Entitlement/RAF Delivery Toasts", "blockEntitlementAlerts")
+        AddPopupToggle("Block Talent-Related Static Popups", "blockStaticTalentPopups")
+        AddPopupToggle("Block Housing-Related Static Popups", "blockStaticHousingPopups")
+
+        UpdatePopupToggleState()
+    end
+
+    y = y - 10
+
     -- Quick Salvage Section
     GUI:SetSearchSection("Quick Salvage")
     local quickSalvageHeader = GUI:CreateSectionHeader(tabContent, "Quick Salvage")
@@ -1272,6 +1428,14 @@ local function BuildGeneralTab(tabContent)
         end)
         brzPreviewCheck:SetPoint("TOPLEFT", PADDING, y)
         brzPreviewCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        -- Lock toggle
+        local brzLockCheck = GUI:CreateFormCheckbox(tabContent, "Lock Frame", "locked", brzDB, function(val)
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzLockCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzLockCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         y = y - FORM_ROW
 
         -- Frame size settings

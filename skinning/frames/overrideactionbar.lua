@@ -12,6 +12,7 @@ local BUTTON_SPACING = 3  -- Tight but readable spacing
 local LEAVE_BUTTON_SIZE = 28  -- Visible leave button
 local RESOURCE_BAR_WIDTH = 12  -- Slim vertical bar
 local RESOURCE_BAR_HEIGHT = 40  -- Match button height
+local pendingOverrideSkin = false
 
 -- Style action button with QUI theme
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -118,6 +119,10 @@ local function SkinOverrideActionBar()
 
     local bar = _G.OverrideActionBar
     if not bar or bar.quiSkinned then return end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        pendingOverrideSkin = true
+        return
+    end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
@@ -349,6 +354,7 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:SetScript("OnEvent", function(self, event, addon)
     if event == "ADDON_LOADED" and addon == "Blizzard_OverrideActionBar" then
         SetupOverrideBarHooks()
@@ -358,5 +364,10 @@ frame:SetScript("OnEvent", function(self, event, addon)
             SetupOverrideBarHooks()
         end
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if pendingOverrideSkin then
+            pendingOverrideSkin = false
+            C_Timer.After(0, SkinOverrideActionBar)
+        end
     end
 end)

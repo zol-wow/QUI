@@ -167,6 +167,13 @@ local function EnsureNCDMDefaults(db)
     if buffData.stackOffsetY == nil then buffData.stackOffsetY = -8 end
     if buffData.stackAnchor == nil then buffData.stackAnchor = "BOTTOM" end
     if buffData.opacity == nil then buffData.opacity = 1.0 end
+    if buffData.anchorTo == nil then buffData.anchorTo = "disabled" end
+    if buffData.anchorPlacement == nil then buffData.anchorPlacement = "center" end
+    if buffData.anchorSpacing == nil then buffData.anchorSpacing = 0 end
+    if buffData.anchorSourcePoint == nil then buffData.anchorSourcePoint = "CENTER" end
+    if buffData.anchorTargetPoint == nil then buffData.anchorTargetPoint = buffData.anchorSourcePoint end
+    if buffData.anchorOffsetX == nil then buffData.anchorOffsetX = 0 end
+    if buffData.anchorOffsetY == nil then buffData.anchorOffsetY = 0 end
 
     -- Ensure trackedBar exists with required defaults
     if not db.ncdm.trackedBar then
@@ -188,8 +195,21 @@ local function EnsureNCDMDefaults(db)
     if trackedData.spacing == nil then trackedData.spacing = 2 end
     if trackedData.growUp == nil then trackedData.growUp = true end
     if trackedData.hideText == nil then trackedData.hideText = false end
+    if trackedData.inactiveMode == nil then trackedData.inactiveMode = "hide" end
+    if trackedData.inactiveAlpha == nil then trackedData.inactiveAlpha = 0.3 end
+    if trackedData.desaturateInactive == nil then trackedData.desaturateInactive = false end
+    if trackedData.reserveSlotWhenInactive == nil then trackedData.reserveSlotWhenInactive = false end
+    if trackedData.autoWidth == nil then trackedData.autoWidth = false end
+    if trackedData.autoWidthOffset == nil then trackedData.autoWidthOffset = 0 end
+    if trackedData.anchorTo == nil then trackedData.anchorTo = "disabled" end
+    if trackedData.anchorPlacement == nil then trackedData.anchorPlacement = "center" end
+    if trackedData.anchorSpacing == nil then trackedData.anchorSpacing = 0 end
+    if trackedData.anchorSourcePoint == nil then trackedData.anchorSourcePoint = "CENTER" end
+    if trackedData.anchorTargetPoint == nil then trackedData.anchorTargetPoint = trackedData.anchorSourcePoint end
+    if trackedData.anchorOffsetX == nil then trackedData.anchorOffsetX = 0 end
+    if trackedData.anchorOffsetY == nil then trackedData.anchorOffsetY = 0 end
     if trackedData.orientation == nil then trackedData.orientation = "horizontal" end
-    if trackedData.fillDirection == nil then trackedData.fillDirection = "UP" end
+    if trackedData.fillDirection == nil then trackedData.fillDirection = "up" end
     if trackedData.iconPosition == nil then trackedData.iconPosition = "top" end
     if trackedData.showTextOnVertical == nil then trackedData.showTextOnVertical = false end
 end
@@ -1505,6 +1525,13 @@ local function CreateCDMSetupPage(parent)
         if buffData.durationSize == nil then buffData.durationSize = 12 end
         if buffData.stackSize == nil then buffData.stackSize = 12 end
         if buffData.opacity == nil then buffData.opacity = 1.0 end
+        if buffData.anchorTo == nil then buffData.anchorTo = "disabled" end
+        if buffData.anchorPlacement == nil then buffData.anchorPlacement = "center" end
+        if buffData.anchorSpacing == nil then buffData.anchorSpacing = 0 end
+        if buffData.anchorSourcePoint == nil then buffData.anchorSourcePoint = "CENTER" end
+        if buffData.anchorTargetPoint == nil then buffData.anchorTargetPoint = buffData.anchorSourcePoint end
+        if buffData.anchorOffsetX == nil then buffData.anchorOffsetX = 0 end
+        if buffData.anchorOffsetY == nil then buffData.anchorOffsetY = 0 end
 
         -- Callback to refresh buff bar
         local function RefreshBuff()
@@ -1549,6 +1576,46 @@ local function CreateCDMSetupPage(parent)
         opacitySlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local updateBuffAnchorStates
+        local buffAnchorTargetOptions = {
+            {value = "disabled", text = "Disabled (Use Edit Mode)"},
+            {value = "screen", text = "Screen Center"},
+            {value = "essential", text = "CDM Essential"},
+            {value = "utility", text = "CDM Utility"},
+            {value = "primary", text = "Primary Resource Bar"},
+            {value = "secondary", text = "Secondary Resource Bar"},
+            {value = "playerFrame", text = "Player Frame"},
+            {value = "targetFrame", text = "Target Frame"},
+        }
+        local buffAnchorPlacementOptions = {
+            {value = "center", text = "center"},
+            {value = "onTop", text = "on top"},
+            {value = "below", text = "below"},
+            {value = "left", text = "left"},
+            {value = "right", text = "right"},
+        }
+
+        local buffAnchorTargetDropdown = GUI:CreateFormDropdown(tabContent, "Anchor To", buffAnchorTargetOptions, "anchorTo", buffData, function()
+            RefreshBuff()
+            if updateBuffAnchorStates then updateBuffAnchorStates() end
+        end)
+        buffAnchorTargetDropdown:SetPoint("TOPLEFT", PAD, y)
+        buffAnchorTargetDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local buffAnchorPlacementDropdown = GUI:CreateFormDropdown(tabContent, "Anchor Position", buffAnchorPlacementOptions, "anchorPlacement", buffData, function()
+            RefreshBuff()
+            if updateBuffAnchorStates then updateBuffAnchorStates() end
+        end)
+        buffAnchorPlacementDropdown:SetPoint("TOPLEFT", PAD, y)
+        buffAnchorPlacementDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local buffAnchorSpacingSlider = GUI:CreateFormSlider(tabContent, "Anchor Spacing", 0, 40, 1, "anchorSpacing", buffData, RefreshBuff)
+        buffAnchorSpacingSlider:SetPoint("TOPLEFT", PAD, y)
+        buffAnchorSpacingSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         local durationSlider = GUI:CreateFormSlider(tabContent, "Duration Size", 8, 50, 1, "durationSize", buffData, RefreshBuff)
         durationSlider:SetPoint("TOPLEFT", PAD, y)
         durationSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
@@ -1565,6 +1632,32 @@ local function CreateCDMSetupPage(parent)
             {value = "BOTTOM", text = "Bottom"},
             {value = "BOTTOMRIGHT", text = "Bottom Right"},
         }
+
+        local buffSourceAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Source Anchor", anchorOptions, "anchorSourcePoint", buffData, RefreshBuff)
+        buffSourceAnchorDropdown:SetPoint("TOPLEFT", PAD, y)
+        buffSourceAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local buffTargetAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Target Anchor", anchorOptions, "anchorTargetPoint", buffData, RefreshBuff)
+        buffTargetAnchorDropdown:SetPoint("TOPLEFT", PAD, y)
+        buffTargetAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local buffAnchorXSlider = GUI:CreateFormSlider(tabContent, "Anchor X Offset", -1000, 1000, 1, "anchorOffsetX", buffData, RefreshBuff)
+        buffAnchorXSlider:SetPoint("TOPLEFT", PAD, y)
+        buffAnchorXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local buffAnchorYSlider = GUI:CreateFormSlider(tabContent, "Anchor Y Offset", -1000, 1000, 1, "anchorOffsetY", buffData, RefreshBuff)
+        buffAnchorYSlider:SetPoint("TOPLEFT", PAD, y)
+        buffAnchorYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local buffAnchorTip = GUI:CreateLabel(tabContent, "When enabled, buff icons follow the selected anchor target instead of Edit Mode placement.", 11, C.textMuted)
+        buffAnchorTip:SetPoint("TOPLEFT", PAD, y)
+        buffAnchorTip:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        buffAnchorTip:SetJustifyH("LEFT")
+        y = y - 20
 
         local durationAnchorDD = GUI:CreateFormDropdown(tabContent, "Anchor Duration To", anchorOptions, "durationAnchor", buffData, RefreshBuff)
         durationAnchorDD:SetPoint("TOPLEFT", PAD, y)
@@ -1621,9 +1714,23 @@ local function CreateCDMSetupPage(parent)
         shapeTip:SetJustifyH("LEFT")
         y = y - 20
 
+        updateBuffAnchorStates = function()
+            local placementMode = buffData.anchorPlacement or "center"
+            local isAnchored = (buffData.anchorTo or "disabled") ~= "disabled"
+            local alpha = isAnchored and 1.0 or 0.4
+            buffAnchorPlacementDropdown:SetAlpha(alpha)
+            buffAnchorSpacingSlider:SetAlpha(alpha)
+            buffAnchorXSlider:SetAlpha(alpha)
+            buffAnchorYSlider:SetAlpha(alpha)
+            local manualPointsActive = isAnchored and placementMode == "center"
+            buffSourceAnchorDropdown:SetAlpha(manualPointsActive and 1.0 or 0.4)
+            buffTargetAnchorDropdown:SetAlpha(manualPointsActive and 1.0 or 0.4)
+        end
+        updateBuffAnchorStates()
+
         y = y - 10 -- Spacer
 
-        local info = GUI:CreateLabel(tabContent, "Position the Buff Icons using Edit Mode (Esc > Edit Mode).", 11, C.textMuted)
+        local info = GUI:CreateLabel(tabContent, "Use Edit Mode (Esc > Edit Mode) when Anchor To is disabled.", 11, C.textMuted)
         info:SetPoint("TOPLEFT", PAD, y)
         info:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         info:SetJustifyH("LEFT")
@@ -1638,19 +1745,32 @@ local function CreateCDMSetupPage(parent)
         local trackedData = db.ncdm.trackedBar
         if trackedData.enabled == nil then trackedData.enabled = true end
         if trackedData.hideIcon == nil then trackedData.hideIcon = false end
-        if trackedData.barHeight == nil then trackedData.barHeight = 24 end
-        if trackedData.barWidth == nil then trackedData.barWidth = 200 end
+        if trackedData.barHeight == nil then trackedData.barHeight = 25 end
+        if trackedData.barWidth == nil then trackedData.barWidth = 215 end
         if trackedData.texture == nil then trackedData.texture = "Quazii v5" end
         if trackedData.useClassColor == nil then trackedData.useClassColor = true end
         if trackedData.barColor == nil then trackedData.barColor = {0.204, 0.827, 0.6, 1} end
         if trackedData.barOpacity == nil then trackedData.barOpacity = 1.0 end
-        if trackedData.borderSize == nil then trackedData.borderSize = 1 end
+        if trackedData.borderSize == nil then trackedData.borderSize = 2 end
         if trackedData.bgColor == nil then trackedData.bgColor = {0, 0, 0, 1} end
-        if trackedData.bgOpacity == nil then trackedData.bgOpacity = 0.7 end
-        if trackedData.textSize == nil then trackedData.textSize = 12 end
-        if trackedData.spacing == nil then trackedData.spacing = 4 end
+        if trackedData.bgOpacity == nil then trackedData.bgOpacity = 0.5 end
+        if trackedData.textSize == nil then trackedData.textSize = 14 end
+        if trackedData.spacing == nil then trackedData.spacing = 2 end
         if trackedData.growUp == nil then trackedData.growUp = true end
         if trackedData.hideText == nil then trackedData.hideText = false end
+        if trackedData.inactiveMode == nil then trackedData.inactiveMode = "hide" end
+        if trackedData.inactiveAlpha == nil then trackedData.inactiveAlpha = 0.3 end
+        if trackedData.desaturateInactive == nil then trackedData.desaturateInactive = false end
+        if trackedData.reserveSlotWhenInactive == nil then trackedData.reserveSlotWhenInactive = false end
+        if trackedData.autoWidth == nil then trackedData.autoWidth = false end
+        if trackedData.autoWidthOffset == nil then trackedData.autoWidthOffset = 0 end
+        if trackedData.anchorTo == nil then trackedData.anchorTo = "disabled" end
+        if trackedData.anchorPlacement == nil then trackedData.anchorPlacement = "center" end
+        if trackedData.anchorSpacing == nil then trackedData.anchorSpacing = 0 end
+        if trackedData.anchorSourcePoint == nil then trackedData.anchorSourcePoint = "CENTER" end
+        if trackedData.anchorTargetPoint == nil then trackedData.anchorTargetPoint = trackedData.anchorSourcePoint end
+        if trackedData.anchorOffsetX == nil then trackedData.anchorOffsetX = 0 end
+        if trackedData.anchorOffsetY == nil then trackedData.anchorOffsetY = 0 end
         -- Vertical bar settings
         if trackedData.orientation == nil then trackedData.orientation = "horizontal" end
         if trackedData.fillDirection == nil then trackedData.fillDirection = "up" end
@@ -1684,6 +1804,180 @@ local function CreateCDMSetupPage(parent)
         hideIconCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        -- Inactive tracked buff behavior
+        local updateInactiveStates
+
+        local inactiveModeDropdown = GUI:CreateFormDropdown(tabContent, "Inactive Buffs", {
+            {value = "always", text = "Always Show"},
+            {value = "fade", text = "Fade When Inactive"},
+            {value = "hide", text = "Hide When Inactive"},
+        }, "inactiveMode", trackedData, function()
+            RefreshBuff()
+            if updateInactiveStates then updateInactiveStates() end
+        end)
+        inactiveModeDropdown:SetPoint("TOPLEFT", PAD, y)
+        inactiveModeDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local inactiveAlphaSlider = GUI:CreateFormSlider(tabContent, "Inactive Alpha", 0, 1, 0.05, "inactiveAlpha", trackedData, RefreshBuff)
+        inactiveAlphaSlider:SetPoint("TOPLEFT", PAD, y)
+        inactiveAlphaSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local desaturateInactiveCheck = GUI:CreateFormCheckbox(tabContent, "Desaturate Inactive", "desaturateInactive", trackedData, RefreshBuff)
+        desaturateInactiveCheck:SetPoint("TOPLEFT", PAD, y)
+        desaturateInactiveCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local reserveSlotCheck = GUI:CreateFormCheckbox(tabContent, "Reserve Slot When Inactive", "reserveSlotWhenInactive", trackedData, RefreshBuff)
+        reserveSlotCheck:SetPoint("TOPLEFT", PAD, y)
+        reserveSlotCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local inactiveTip = GUI:CreateLabel(tabContent, "Reserve Slot only applies when using Hide mode.", 11, C.textMuted)
+        inactiveTip:SetPoint("TOPLEFT", PAD, y)
+        inactiveTip:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        inactiveTip:SetJustifyH("LEFT")
+        y = y - 20
+
+        -- Anchor options for tracked buff bars
+        local updateAnchorStates
+        local trackedAnchorTargetOptions = {
+            {value = "disabled", text = "Disabled (Use Edit Mode)"},
+            {value = "screen", text = "Screen Center"},
+            {value = "essential", text = "CDM Essential"},
+            {value = "utility", text = "CDM Utility"},
+            {value = "primary", text = "Primary Resource Bar"},
+            {value = "secondary", text = "Secondary Resource Bar"},
+            {value = "playerFrame", text = "Player Frame"},
+            {value = "targetFrame", text = "Target Frame"},
+        }
+        local trackedAnchorPlacementOptions = {
+            {value = "center", text = "center"},
+            {value = "onTop", text = "on top"},
+            {value = "below", text = "below"},
+            {value = "left", text = "left"},
+            {value = "right", text = "right"},
+            {value = "onTopResourceBars", text = "on top of resource bars"},
+        }
+        local trackedAnchorPointOptions = {
+            {value = "TOPLEFT", text = "Top Left"},
+            {value = "TOP", text = "Top"},
+            {value = "TOPRIGHT", text = "Top Right"},
+            {value = "LEFT", text = "Left"},
+            {value = "CENTER", text = "Center"},
+            {value = "RIGHT", text = "Right"},
+            {value = "BOTTOMLEFT", text = "Bottom Left"},
+            {value = "BOTTOM", text = "Bottom"},
+            {value = "BOTTOMRIGHT", text = "Bottom Right"},
+        }
+
+        local anchorTargetDropdown = GUI:CreateFormDropdown(tabContent, "Anchor To", trackedAnchorTargetOptions, "anchorTo", trackedData, function()
+            RefreshBuff()
+            if updateAnchorStates then updateAnchorStates() end
+        end)
+        anchorTargetDropdown:SetPoint("TOPLEFT", PAD, y)
+        anchorTargetDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local anchorPlacementDropdown = GUI:CreateFormDropdown(tabContent, "Anchor Position", trackedAnchorPlacementOptions, "anchorPlacement", trackedData, function()
+            RefreshBuff()
+            if updateAnchorStates then updateAnchorStates() end
+        end)
+        anchorPlacementDropdown:SetPoint("TOPLEFT", PAD, y)
+        anchorPlacementDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local anchorSpacingSlider = GUI:CreateFormSlider(tabContent, "Anchor Spacing", 0, 40, 1, "anchorSpacing", trackedData, RefreshBuff)
+        anchorSpacingSlider:SetPoint("TOPLEFT", PAD, y)
+        anchorSpacingSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local presetRow = CreateFrame("Frame", nil, tabContent)
+        presetRow:SetPoint("TOPLEFT", PAD, y)
+        presetRow:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        presetRow:SetHeight(FORM_ROW)
+
+        local presetLabel = presetRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        presetLabel:SetPoint("LEFT", 0, 0)
+        presetLabel:SetText("Quick Presets")
+        presetLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+        local function CreatePresetButton(parent, anchorRef, text, anchorToValue, placementValue)
+            local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+            btn:SetSize(112, 24)
+            if anchorRef then
+                btn:SetPoint("LEFT", anchorRef, "RIGHT", 6, 0)
+            else
+                btn:SetPoint("LEFT", parent, "LEFT", 180, 0)
+            end
+            local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(btn)) or 1
+            btn:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = px,
+            })
+            btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+            btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+            local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            fs:SetPoint("CENTER")
+            fs:SetText(text)
+            fs:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+            btn:SetScript("OnEnter", function(self) self:SetBackdropColor(0.2, 0.2, 0.2, 1) end)
+            btn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.15, 0.15, 0.15, 1) end)
+            btn:SetScript("OnClick", function()
+                trackedData.anchorTo = anchorToValue
+                trackedData.anchorPlacement = placementValue
+                RefreshBuff()
+                if updateAnchorStates then updateAnchorStates() end
+            end)
+            return btn
+        end
+
+        local presetAbovePrimary = CreatePresetButton(presetRow, nil, "Above Primary", "primary", "onTop")
+        local presetBelowPrimary = CreatePresetButton(presetRow, presetAbovePrimary, "Below Primary", "primary", "below")
+        CreatePresetButton(presetRow, presetBelowPrimary, "Above Resource Bars", "primary", "onTopResourceBars")
+        y = y - FORM_ROW
+
+        local sourceAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Source Anchor", trackedAnchorPointOptions, "anchorSourcePoint", trackedData, RefreshBuff)
+        sourceAnchorDropdown:SetPoint("TOPLEFT", PAD, y)
+        sourceAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local targetAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Target Anchor", trackedAnchorPointOptions, "anchorTargetPoint", trackedData, RefreshBuff)
+        targetAnchorDropdown:SetPoint("TOPLEFT", PAD, y)
+        targetAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local anchorOffsetXSlider = GUI:CreateFormSlider(tabContent, "Anchor X Offset", -1000, 1000, 1, "anchorOffsetX", trackedData, RefreshBuff)
+        anchorOffsetXSlider:SetPoint("TOPLEFT", PAD, y)
+        anchorOffsetXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local anchorOffsetYSlider = GUI:CreateFormSlider(tabContent, "Anchor Y Offset", -1000, 1000, 1, "anchorOffsetY", trackedData, RefreshBuff)
+        anchorOffsetYSlider:SetPoint("TOPLEFT", PAD, y)
+        anchorOffsetYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local anchorTip = GUI:CreateLabel(tabContent, "When enabled, tracked bars follow the selected anchor target instead of Edit Mode placement.", 11, C.textMuted)
+        anchorTip:SetPoint("TOPLEFT", PAD, y)
+        anchorTip:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        anchorTip:SetJustifyH("LEFT")
+        y = y - 20
+
+        local autoWidthToggle = GUI:CreateFormCheckbox(tabContent, "Auto Width From Anchor", "autoWidth", trackedData, function()
+            RefreshBuff()
+            if updateAnchorStates then updateAnchorStates() end
+        end)
+        autoWidthToggle:SetPoint("TOPLEFT", PAD, y)
+        autoWidthToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local autoWidthOffsetSlider = GUI:CreateFormSlider(tabContent, "Auto Width Adjust", -20, 20, 1, "autoWidthOffset", trackedData, RefreshBuff)
+        autoWidthOffsetSlider:SetPoint("TOPLEFT", PAD, y)
+        autoWidthOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         -- Bar Height
         local heightSlider = GUI:CreateFormSlider(tabContent, "Bar Height", 2, 48, 1, "barHeight", trackedData, RefreshBuff)
         heightSlider:SetPoint("TOPLEFT", PAD, y)
@@ -1712,6 +2006,7 @@ local function CreateCDMSetupPage(parent)
         }, "orientation", trackedData, function()
             RefreshBuff()
             if updateVerticalStates then updateVerticalStates() end
+            if updateAnchorStates then updateAnchorStates() end
             GUI:ShowConfirmation({
                 title = "Reload Required",
                 message = "Changing bar orientation requires a UI reload to take full effect.",
@@ -1803,6 +2098,45 @@ local function CreateCDMSetupPage(parent)
             end
         end
         updateVerticalStates()  -- Initial state
+
+        updateInactiveStates = function()
+            local mode = trackedData.inactiveMode or "hide"
+            local showInactiveStyling = mode ~= "always"
+            inactiveAlphaSlider:SetAlpha(mode == "fade" and 1.0 or 0.4)
+            desaturateInactiveCheck:SetAlpha(showInactiveStyling and 1.0 or 0.4)
+            reserveSlotCheck:SetAlpha(mode == "hide" and 1.0 or 0.4)
+        end
+        updateInactiveStates()  -- Initial state
+
+        updateAnchorStates = function()
+            local placementMode = trackedData.anchorPlacement or "center"
+            local isAnchored = (trackedData.anchorTo or "disabled") ~= "disabled" or placementMode == "onTopResourceBars"
+            local alpha = isAnchored and 1.0 or 0.4
+            anchorPlacementDropdown:SetAlpha(alpha)
+            anchorSpacingSlider:SetAlpha(alpha)
+            anchorOffsetXSlider:SetAlpha(alpha)
+            anchorOffsetYSlider:SetAlpha(alpha)
+            autoWidthToggle:SetAlpha(alpha)
+            local manualPointsActive = isAnchored and placementMode == "center"
+            sourceAnchorDropdown:SetAlpha(manualPointsActive and 1.0 or 0.4)
+            targetAnchorDropdown:SetAlpha(manualPointsActive and 1.0 or 0.4)
+            local autoWidthActive = isAnchored and trackedData.autoWidth
+            autoWidthOffsetSlider:SetAlpha(autoWidthActive and 1.0 or 0.4)
+            if widthSlider and widthSlider.SetEnabled then
+                widthSlider:SetEnabled(not autoWidthActive)
+            end
+            if widthSlider then
+                widthSlider:SetAlpha(autoWidthActive and 0.4 or 1.0)
+            end
+            local forceGrowth = placementMode == "onTop" or placementMode == "below" or placementMode == "onTopResourceBars"
+                or ((trackedData.orientation == "vertical") and (placementMode == "left" or placementMode == "right"))
+            growthDropdown:SetAlpha(forceGrowth and 0.4 or 1.0)
+            stackTip:SetAlpha(forceGrowth and 0.4 or 1.0)
+            if growthDropdown.SetEnabled then
+                growthDropdown:SetEnabled(not forceGrowth)
+            end
+        end
+        updateAnchorStates()  -- Initial state
 
         -- Use Class Color
         local classColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color", "useClassColor", trackedData, RefreshBuff)

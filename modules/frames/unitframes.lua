@@ -29,6 +29,12 @@ QUI_UF.auraPreviewMode = {}  -- Tracks buff/debuff preview state (keyed by "unit
 -- Reference to castbar module
 local QUI_Castbar = ns.QUI_Castbar
 
+-- Check if a frame has an active anchoring override (blocks module positioning)
+local function IsFrameOverridden(frame)
+    local anchoring = ns.QUI_Anchoring
+    return anchoring and anchoring.overriddenFrames and anchoring.overriddenFrames[frame]
+end
+
 ---------------------------------------------------------------------------
 -- CONSTANTS
 ---------------------------------------------------------------------------
@@ -129,6 +135,18 @@ end
 local function GetUnitSettings(unit)
     local db = GetDB()
     return db and db[unit]
+end
+
+local function IsTargetHealthDirectionInverted(unitKey, settings)
+    return unitKey == "target" and settings and settings.invertHealthDirection == true
+end
+
+local function ApplyHealthFillDirection(frame, settings)
+    if not frame or not frame.healthBar then return false end
+    settings = settings or (frame.unitKey and GetUnitSettings(frame.unitKey))
+    local reverseFill = IsTargetHealthDirectionInverted(frame.unitKey, settings)
+    frame.healthBar:SetReverseFill(reverseFill)
+    return reverseFill
 end
 
 ---------------------------------------------------------------------------
@@ -560,11 +578,14 @@ end
 local function UpdateHealth(frame)
     if not frame or not frame.unit or not frame.healthBar then return end
     local unit = frame.unit
+    local settings = GetUnitSettings(frame.unitKey)
     
     -- Don't update if unit doesn't exist
     if not UnitExists(unit) then
         return
     end
+
+    ApplyHealthFillDirection(frame, settings)
     
     -- Get health values directly - StatusBar can handle secret values
     -- The key is to NOT do any comparisons or arithmetic on these values
@@ -577,8 +598,6 @@ local function UpdateHealth(frame)
     
     -- Update health text using new display style system
     if frame.healthText then
-        local settings = GetUnitSettings(frame.unitKey)
-
         -- Check if health text is disabled
         if settings and settings.showHealth == false then
             frame.healthText:Hide()
@@ -617,7 +636,6 @@ local function UpdateHealth(frame)
     
     -- Update health bar color using unit-specific settings
     local general = GetGeneralSettings()
-    local settings = GetUnitSettings(frame.unitKey)
 
     if general and general.darkMode then
         local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
@@ -638,6 +656,7 @@ local function UpdateAbsorbs(frame)
 
     local unit = frame.unit
     local settings = GetUnitSettings(frame.unitKey)
+    local healthReversed = ApplyHealthFillDirection(frame, settings)
 
     -- Check if enabled
     if not settings or not settings.absorbs or settings.absorbs.enabled == false then
@@ -762,12 +781,16 @@ local function UpdateAbsorbs(frame)
         -- No branching based on secret values - just pass alpha directly
 
         -- ATTACHED BAR: Starts where health ENDS, grows RIGHTWARD into empty space
-        -- Anchor LEFT edge of absorb bar to RIGHT edge of health fill texture
+        -- Anchor to the empty side of the health fill (normal: right side, reversed: left side).
         frame.absorbBar:ClearAllPoints()
-        frame.absorbBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+        if healthReversed then
+            frame.absorbBar:SetPoint("RIGHT", healthTexture, "LEFT", 0, 0)
+        else
+            frame.absorbBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+        end
         frame.absorbBar:SetHeight(frame.healthBar:GetHeight())
         frame.absorbBar:SetWidth(frame.healthBar:GetWidth())  -- Full width available for absorb to fill
-        frame.absorbBar:SetReverseFill(false)  -- Grows LEFT to RIGHT (rightward into empty space)
+        frame.absorbBar:SetReverseFill(healthReversed)
         frame.absorbBar:SetMinMaxValues(0, maxHealth or 1)
         frame.absorbBar:SetValue(clampedAbsorbs)  -- Clamped value (secret-safe via StatusBar)
         frame.absorbBar:SetStatusBarTexture(absorbTexturePath)  -- Apply texture from settings
@@ -780,7 +803,7 @@ local function UpdateAbsorbs(frame)
         frame.absorbOverflowBar:ClearAllPoints()
         frame.absorbOverflowBar:SetPoint("TOPLEFT", frame.healthBar, "TOPLEFT", 0, 0)
         frame.absorbOverflowBar:SetPoint("BOTTOMRIGHT", frame.healthBar, "BOTTOMRIGHT", 0, 0)
-        frame.absorbOverflowBar:SetReverseFill(true)  -- CRITICAL: Fill from RIGHT to LEFT
+        frame.absorbOverflowBar:SetReverseFill(not healthReversed)
         frame.absorbOverflowBar:SetMinMaxValues(0, maxHealth or 1)
         frame.absorbOverflowBar:SetValue(absorbAmount)  -- Full unclamped absorb value
         frame.absorbOverflowBar:SetStatusBarColor(c[1], c[2], c[3], a)  -- Apply color directly to StatusBar
@@ -826,6 +849,7 @@ local function UpdateHealPrediction(frame)
     local unit = frame.unit
     local settings = GetUnitSettings(frame.unitKey)
     local predictionSettings = settings and settings.healPrediction
+    local healthReversed = ApplyHealthFillDirection(frame, settings)
 
     if not predictionSettings or predictionSettings.enabled == false then
         frame.healPredictionBar:Hide()
@@ -885,10 +909,14 @@ local function UpdateHealPrediction(frame)
 
     local healthTexture = frame.healthBar:GetStatusBarTexture()
     frame.healPredictionBar:ClearAllPoints()
-    frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+    if healthReversed then
+        frame.healPredictionBar:SetPoint("RIGHT", healthTexture, "LEFT", 0, 0)
+    else
+        frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+    end
     frame.healPredictionBar:SetHeight(frame.healthBar:GetHeight())
     frame.healPredictionBar:SetWidth(frame.healthBar:GetWidth())
-    frame.healPredictionBar:SetReverseFill(false)
+    frame.healPredictionBar:SetReverseFill(healthReversed)
     frame.healPredictionBar:SetMinMaxValues(0, maxHealth or 1)
     frame.healPredictionBar:SetValue(incomingHeals)
     frame.healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
@@ -1319,6 +1347,7 @@ local function UpdateFrame(frame)
     if frame.healthBar then
         local general = GetGeneralSettings()
         local settings = GetUnitSettings(frame.unitKey)
+        ApplyHealthFillDirection(frame, settings)
 
         if general and general.darkMode then
             local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
@@ -1443,6 +1472,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     healthBar:SetValue(100)
     healthBar:EnableMouse(false)
     frame.healthBar = healthBar
+    ApplyHealthFillDirection(frame, settings)
     -- Absorb bar (StatusBar handles secret values via SetValue)
     -- Use stripe texture directly on StatusBar (no overlay) to avoid 1px sliver at 0 width
     local absorbSettings = settings.absorbs or {}
@@ -1746,6 +1776,7 @@ local function CreateUnitFrame(unit, unitKey)
     healthBar:SetValue(100)
     healthBar:EnableMouse(false)
     frame.healthBar = healthBar
+    ApplyHealthFillDirection(frame, settings)
 
     -- Heal prediction bar (player/target only)
     if unitKey == "player" or unitKey == "target" then
@@ -2323,8 +2354,10 @@ function QUI_UF:ShowPreview(unitKey)
     
     -- Show frame with fake data
     frame:Show()
+    local settings = GetUnitSettings(unitKey)
     
     -- Set fake health
+    ApplyHealthFillDirection(frame, settings)
     frame.healthBar:SetMinMaxValues(0, 100)
     frame.healthBar:SetValue(75)
     
@@ -2353,7 +2386,6 @@ function QUI_UF:ShowPreview(unitKey)
     end
 
     -- Set fake power text
-    local settings = GetUnitSettings(unitKey)
     if frame.powerText then
         if settings and settings.showPowerText then
             frame.powerText:SetText("60%")
@@ -2381,11 +2413,16 @@ function QUI_UF:ShowPreview(unitKey)
             local missing = hpMax - 75
             local clamped = incoming > missing and missing or incoming
             local healthTexture = frame.healthBar:GetStatusBarTexture()
+            local healthReversed = IsTargetHealthDirectionInverted(unitKey, settings)
             frame.healPredictionBar:ClearAllPoints()
-            frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+            if healthReversed then
+                frame.healPredictionBar:SetPoint("RIGHT", healthTexture, "LEFT", 0, 0)
+            else
+                frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
+            end
             frame.healPredictionBar:SetHeight(frame.healthBar:GetHeight())
             frame.healPredictionBar:SetWidth(frame.healthBar:GetWidth())
-            frame.healPredictionBar:SetReverseFill(false)
+            frame.healPredictionBar:SetReverseFill(healthReversed)
             frame.healPredictionBar:SetMinMaxValues(0, hpMax)
             frame.healPredictionBar:SetValue(clamped)
             frame.healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
@@ -2540,17 +2577,20 @@ function QUI_UF:RefreshFrame(unitKey)
     frame:SetSize(width, height)
 
                 -- Position: first boss at configured position, rest stacked below
-                frame:ClearAllPoints()
-                if i == 1 then
-                    if QUICore.SetSnappedPoint then
-                        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+                -- (skip if frame has an active anchoring override)
+                if not IsFrameOverridden(frame) then
+                    frame:ClearAllPoints()
+                    if i == 1 then
+                        if QUICore.SetSnappedPoint then
+                            QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+                        else
+                            frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+                        end
                     else
-                        frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
-                    end
-                else
-                    local prevFrame = self.frames["boss" .. (i - 1)]
-                    if prevFrame then
-                        frame:SetPoint("TOP", prevFrame, "BOTTOM", 0, -spacing)
+                        local prevFrame = self.frames["boss" .. (i - 1)]
+                        if prevFrame then
+                            frame:SetPoint("TOP", prevFrame, "BOTTOM", 0, -spacing)
+                        end
                     end
                 end
 
@@ -2765,18 +2805,20 @@ function QUI_UF:RefreshFrame(unitKey)
     local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
     frame:SetSize(width, height)
 
-    -- Update position
-    frame:ClearAllPoints()
-    local isAnchored = settings.anchorTo and settings.anchorTo ~= "disabled"
-    if isAnchored and (unitKey == "player" or unitKey == "target") then
-        -- Anchored to another frame: defer to the global callback
-        _G.QUI_UpdateAnchoredUnitFrames()
-    else
-        -- Standard positioning (config offsets are virtual coords)
-        if QUICore.SetSnappedPoint then
-            QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    -- Update position (skip if frame has an active anchoring override)
+    if not IsFrameOverridden(frame) then
+        frame:ClearAllPoints()
+        local isAnchored = settings.anchorTo and settings.anchorTo ~= "disabled"
+        if isAnchored and (unitKey == "player" or unitKey == "target") then
+            -- Anchored to another frame: defer to the global callback
+            _G.QUI_UpdateAnchoredUnitFrames()
         else
-            frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+            -- Standard positioning (config offsets are virtual coords)
+            if QUICore.SetSnappedPoint then
+                QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+            else
+                frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+            end
         end
     end
     
@@ -3226,8 +3268,8 @@ function QUI_UF:Initialize()
             -- Pass bossKey (boss1, boss2, etc.) for unique frame names, but settings come from "boss"
             self.frames[bossKey] = CreateBossFrame(bossUnit, bossKey, i)
             
-            -- Position boss frames vertically stacked
-            if self.frames[bossKey] and i > 1 then
+            -- Position boss frames vertically stacked (skip if anchoring override active)
+            if self.frames[bossKey] and i > 1 and not IsFrameOverridden(self.frames[bossKey]) then
                 local prevFrame = self.frames["boss" .. (i - 1)]
                 if prevFrame then
                     self.frames[bossKey]:ClearAllPoints()
@@ -3448,9 +3490,10 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
     if not screenCenterX or not screenCenterY then return end
 
     -- Update Player (anchors to LEFT edge of anchor frame)
+    -- Skip if player frame has an active anchoring override
     local playerSettings = db.player
     local playerAnchorType = playerSettings and playerSettings.anchorTo
-    if playerAnchorType and playerAnchorType ~= "disabled" and QUI_UF.frames.player then
+    if playerAnchorType and playerAnchorType ~= "disabled" and QUI_UF.frames.player and not IsFrameOverridden(QUI_UF.frames.player) then
         local anchorFrame = GetAnchorFrame(playerAnchorType)
         if anchorFrame and anchorFrame:IsShown() then
             local anchor = GetAnchorDimensions(anchorFrame, playerAnchorType)
@@ -3480,9 +3523,10 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
     end
 
     -- Update Target (anchors to RIGHT edge of anchor frame)
+    -- Skip if target frame has an active anchoring override
     local targetSettings = db.target
     local targetAnchorType = targetSettings and targetSettings.anchorTo
-    if targetAnchorType and targetAnchorType ~= "disabled" and QUI_UF.frames.target then
+    if targetAnchorType and targetAnchorType ~= "disabled" and QUI_UF.frames.target and not IsFrameOverridden(QUI_UF.frames.target) then
         local anchorFrame = GetAnchorFrame(targetAnchorType)
         if anchorFrame and anchorFrame:IsShown() then
             local anchor = GetAnchorDimensions(anchorFrame, targetAnchorType)

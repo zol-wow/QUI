@@ -38,9 +38,51 @@ local function GetCustomData(trackerKey)
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: Get configured initial icon size for a tracker
+-- Uses first active row size, then first available row size, then fallback.
+---------------------------------------------------------------------------
+local DEFAULT_CUSTOM_ICON_SIZE = 30
+
+local function GetTrackerInitialIconSize(trackerKey)
+    local db = GetDB()
+    if not db or not trackerKey then
+        return DEFAULT_CUSTOM_ICON_SIZE
+    end
+
+    local tracker = db[trackerKey]
+    if type(tracker) ~= "table" then
+        return DEFAULT_CUSTOM_ICON_SIZE
+    end
+
+    -- Prefer first active row
+    for i = 1, 3 do
+        local row = tracker["row" .. i]
+        local size = row and tonumber(row.iconSize)
+        local count = row and tonumber(row.iconCount)
+        if size and size > 0 and count and count > 0 then
+            return size
+        end
+    end
+
+    -- Fallback to first row that has a valid size configured
+    for i = 1, 3 do
+        local row = tracker["row" .. i]
+        local size = row and tonumber(row.iconSize)
+        if size and size > 0 then
+            return size
+        end
+    end
+
+    return DEFAULT_CUSTOM_ICON_SIZE
+end
+
+---------------------------------------------------------------------------
 -- HELPER: Resolve icon texture for an entry
 ---------------------------------------------------------------------------
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local function IsSecretValue(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
 
 local function GetEntryTexture(entry)
     if not entry then return FALLBACK_ICON end
@@ -62,6 +104,76 @@ local function GetEntryTexture(entry)
     end
 
     return FALLBACK_ICON
+end
+
+---------------------------------------------------------------------------
+-- HELPER: Resolve spell cooldown across base/override identifiers
+---------------------------------------------------------------------------
+local function GetBestSpellCooldown(spellID)
+    if not spellID then return nil, nil end
+
+    local candidates = { spellID }
+
+    if C_Spell.GetOverrideSpell then
+        local overrideID = C_Spell.GetOverrideSpell(spellID)
+        if overrideID and overrideID ~= spellID then
+            table.insert(candidates, overrideID)
+        end
+    end
+
+    local bestStart, bestDuration = nil, nil
+    local secretStart, secretDuration = nil, nil
+
+    local function IsSafeNumeric(value)
+        return type(value) == "number" and not IsSecretValue(value)
+    end
+
+    local function Consider(startTime, duration)
+        if startTime == nil or duration == nil then
+            return
+        end
+
+        -- Keep one secret fallback pair (combat-restricted values).
+        -- CooldownFrame can still consume these, but we must not compare them.
+        if IsSecretValue(startTime) or IsSecretValue(duration) then
+            if not secretStart and not secretDuration then
+                secretStart, secretDuration = startTime, duration
+            end
+            return
+        end
+
+        if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) or duration <= 0 then
+            return
+        end
+
+        if not bestDuration or duration > bestDuration then
+            bestStart, bestDuration = startTime, duration
+        end
+    end
+
+    for _, identifier in ipairs(candidates) do
+        local cdInfo = C_Spell.GetSpellCooldown(identifier)
+        if cdInfo then
+            Consider(cdInfo.startTime, cdInfo.duration)
+        end
+
+        if C_Spell.GetSpellCharges then
+            local chargeInfo = C_Spell.GetSpellCharges(identifier)
+            if chargeInfo then
+                local currentCharges = chargeInfo.currentCharges
+                local maxCharges = chargeInfo.maxCharges
+                local canCompareCharges = IsSafeNumeric(currentCharges) and IsSafeNumeric(maxCharges)
+                if canCompareCharges and currentCharges < maxCharges then
+                    Consider(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration)
+                end
+            end
+        end
+    end
+
+    if secretStart and secretDuration then
+        return secretStart, secretDuration
+    end
+    return bestStart, bestDuration
 end
 
 ---------------------------------------------------------------------------
@@ -91,12 +203,13 @@ end
 ---------------------------------------------------------------------------
 -- ICON CREATION: Build a frame matching Blizzard CDM icon structure
 ---------------------------------------------------------------------------
-local function CreateCustomIcon(parent, entry)
+local function CreateCustomIcon(parent, entry, initialSize)
     CustomCDM.iconCounter = CustomCDM.iconCounter + 1
     local frameName = "QUICustomCDMIcon" .. CustomCDM.iconCounter
 
     local icon = CreateFrame("Frame", frameName, parent)
-    icon:SetSize(30, 30)
+    local size = initialSize or DEFAULT_CUSTOM_ICON_SIZE
+    icon:SetSize(size, size)
 
     -- .Icon texture (matches Blizzard structure for IsIconFrame / SkinIcon)
     icon.Icon = icon:CreateTexture(nil, "ARTWORK")
@@ -157,30 +270,55 @@ local function UpdateIconCooldown(icon)
     local entry = icon._customCDMEntry
     local cooldown = icon.Cooldown
 
+    local function ApplyCooldown(startTime, duration, enable)
+        if startTime == nil or duration == nil then
+            cooldown:Clear()
+            return
+        end
+
+        -- Item cooldown APIs can report a disabled state (enable == 0).
+        if type(enable) == "number" and enable == 0 then
+            cooldown:Clear()
+            return
+        end
+
+        if not IsSecretValue(duration) and type(duration) == "number" and duration <= 0 then
+            cooldown:Clear()
+            return
+        end
+
+        local ok = pcall(cooldown.SetCooldown, cooldown, startTime, duration)
+        if not ok then
+            cooldown:Clear()
+        end
+    end
+
     pcall(function()
         if entry.type == "spell" then
-            local cdInfo = C_Spell.GetSpellCooldown(entry.id)
-            if cdInfo and cdInfo.startTime and cdInfo.duration and cdInfo.duration > 0 then
-                cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration)
-            else
+            local startTime, duration = GetBestSpellCooldown(entry.id)
+            if not startTime or not duration then
+                cooldown:Clear()
+                return
+            end
+
+            -- Avoid comparing secret values; let CooldownFrame process them.
+            if not IsSecretValue(duration) and type(duration) == "number" and duration <= 0 then
+                cooldown:Clear()
+                return
+            end
+
+            local ok = pcall(cooldown.SetCooldown, cooldown, startTime, duration)
+            if not ok then
                 cooldown:Clear()
             end
         elseif entry.type == "item" then
-            local startTime, duration = C_Item.GetItemCooldown(entry.id)
-            if startTime and duration and duration > 0 then
-                cooldown:SetCooldown(startTime, duration)
-            else
-                cooldown:Clear()
-            end
+            local startTime, duration, enable = C_Item.GetItemCooldown(entry.id)
+            ApplyCooldown(startTime, duration, enable)
         elseif entry.type == "trinket" then
             local itemID = GetInventoryItemID("player", entry.id)
             if itemID then
-                local startTime, duration = C_Item.GetItemCooldown(itemID)
-                if startTime and duration and duration > 0 then
-                    cooldown:SetCooldown(startTime, duration)
-                else
-                    cooldown:Clear()
-                end
+                local startTime, duration, enable = C_Item.GetItemCooldown(itemID)
+                ApplyCooldown(startTime, duration, enable)
             else
                 cooldown:Clear()
             end
@@ -210,11 +348,13 @@ end
 ---------------------------------------------------------------------------
 
 -- Acquire an icon from the recycle pool or create a new one
-function CustomCDM:AcquireIcon(parent, entry)
+function CustomCDM:AcquireIcon(parent, entry, initialSize)
     local icon = table.remove(self.recyclePool)
     if icon then
         -- Reuse recycled frame
+        local size = initialSize or DEFAULT_CUSTOM_ICON_SIZE
         icon:SetParent(parent)
+        icon:SetSize(size, size)
         icon._isCustomCDMIcon = true
         icon._customCDMEntry = entry
         icon._ncdmSetup = nil      -- Reset skin state so SkinIcon re-processes
@@ -226,7 +366,7 @@ function CustomCDM:AcquireIcon(parent, entry)
         icon:Show()
         return icon
     end
-    return CreateCustomIcon(parent, entry)
+    return CreateCustomIcon(parent, entry, initialSize)
 end
 
 function CustomCDM:RebuildIcons(viewerName, trackerKey)
@@ -259,11 +399,13 @@ function CustomCDM:RebuildIcons(viewerName, trackerKey)
     local entries = customData.entries
     if not entries or #entries == 0 then return end
 
+    local initialSize = GetTrackerInitialIconSize(trackerKey)
+
     -- Create (or recycle) icons for each enabled entry
     local pool = {}
     for _, entry in ipairs(entries) do
         if entry.enabled ~= false then
-            local icon = self:AcquireIcon(viewer, entry)
+            local icon = self:AcquireIcon(viewer, entry, initialSize)
             table.insert(pool, icon)
             -- Initial cooldown state
             UpdateIconCooldown(icon)

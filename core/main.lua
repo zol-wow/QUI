@@ -333,6 +333,20 @@ local defaults = {
             autoCombatLog = false,  -- Auto start/stop combat logging in M+ (opt-in)
             autoCombatLogRaid = false,  -- Auto start/stop combat logging in raids (opt-in)
             autoDeleteConfirm = true,  -- Auto-fill DELETE confirmation text
+            -- Popup & Toast Blocker (granular, all OFF by default)
+            popupBlocker = {
+                enabled = false,
+                blockTalentMicroButtonAlerts = false, -- Unspent talent/spellbook reminder callouts
+                blockEventToasts = false, -- Event toast manager (often campaign/housing news)
+                blockMountAlerts = false, -- New mount toasts
+                blockPetAlerts = false, -- New pet toasts
+                blockToyAlerts = false, -- New toy toasts
+                blockCosmeticAlerts = false, -- New cosmetic toasts
+                blockWarbandSceneAlerts = false, -- Warband scene toasts (can include housing)
+                blockEntitlementAlerts = false, -- Entitlement/RAF delivery toasts
+                blockStaticTalentPopups = false, -- StaticPopup dialogs with talent/trait-related IDs
+                blockStaticHousingPopups = false, -- StaticPopup dialogs with housing-related IDs
+            },
             -- Pet Warning (pet-spec classes: Hunter, Warlock, DK, Mage)
             petCombatWarning = true,    -- Show combat warning in instances when pet missing/passive
             petWarningOffsetX = 0,      -- Warning frame X offset from center
@@ -656,6 +670,13 @@ local defaults = {
                 stackOffsetX = 0,
                 stackOffsetY = -8,
                 stackAnchor = "BOTTOM",
+                anchorTo = "disabled",
+                anchorPlacement = "center",
+                anchorSpacing = 0,
+                anchorSourcePoint = "CENTER",
+                anchorTargetPoint = "CENTER",
+                anchorOffsetX = 0,
+                anchorOffsetY = 0,
             },
             trackedBar = {
                 enabled = true,
@@ -665,13 +686,29 @@ local defaults = {
                 texture = "Quazii v5",
                 useClassColor = true,
                 barColor = {0.204, 0.827, 0.6, 1},  -- mint accent fallback
+                barOpacity = 1.0,
                 borderSize = 2,
+                bgColor = {0, 0, 0, 1},
                 bgOpacity = 0.5,
                 textSize = 14,
                 spacing = 2,
                 growUp = true,  -- true = grow upward, false = grow downward
+                -- Inactive tracked-buff display behavior
+                inactiveMode = "hide",  -- always, fade, hide
+                inactiveAlpha = 0.3,
+                desaturateInactive = false,
+                reserveSlotWhenInactive = false,
+                autoWidth = false,
+                autoWidthOffset = 0,
+                anchorTo = "disabled",
+                anchorPlacement = "center",
+                anchorSpacing = 0,
+                anchorSourcePoint = "CENTER",
+                anchorTargetPoint = "CENTER",
+                anchorOffsetX = 0,
+                anchorOffsetY = 0,
                 orientation = "horizontal",
-                fillDirection = "UP",
+                fillDirection = "up",
                 iconPosition = "top",
                 showTextOnVertical = false,
             },
@@ -1220,6 +1257,7 @@ local defaults = {
                 fadeOutAlpha = 0.0,         -- Alpha when faded out (0-1)
                 fadeOutDelay = 0.5,         -- Delay before fading out (seconds)
                 alwaysShowInCombat = false, -- Force full opacity during combat
+                disableBelowMaxLevel = false, -- Keep bars visible until character reaches max level
                 linkBars1to8 = false,       -- Link all action bars 1-8 for mouseover
             },
             -- Per-bar settings (nil = use global, value = override)
@@ -1596,6 +1634,7 @@ local defaults = {
                 anchorGap = 10,
                 anchorYOffset = 0,
                 texture = "Quazii v5 Inverse",
+                invertHealthDirection = false,   -- false = default right-to-left depletion, true = left-to-right
                 useClassColor = true,
                 useHostilityColor = true,  -- Use red/yellow/green based on unit hostility
                 customHealthColor = { 0.2, 0.6, 0.2, 1 },
@@ -3780,6 +3819,14 @@ function QUICore:OnEnable()
         end
     end)
 
+    -- Helper: apply frame anchoring overrides — marks frames in the gatekeeper set
+    -- and positions them. Called after each init stage to catch newly created frames.
+    local function ApplyFrameOverrides()
+        if ns.QUI_Anchoring then
+            ns.QUI_Anchoring:ApplyAllFrameAnchors()
+        end
+    end
+
     -- DEFERRED 0.5s: Unit frames (secure APIs now safe) + global font override + alerts
     C_Timer.After(0.5, function()
         if self.UnitFrames and self.db.profile.unitFrames and self.db.profile.unitFrames.enabled then
@@ -3793,6 +3840,8 @@ function QUICore:OnEnable()
         if self.ApplyGlobalFont then
             self:ApplyGlobalFont()
         end
+        -- Mark newly created frames + position overrides (gatekeeper blocks later module repositioning)
+        ApplyFrameOverrides()
     end)
 
     -- DEFERRED 1.0s: First viewer reskin + UI hider + buff borders
@@ -3806,6 +3855,7 @@ function QUICore:OnEnable()
         if _G.QUI_RefreshBuffBorders then
             _G.QUI_RefreshBuffBorders()
         end
+        ApplyFrameOverrides()
     end)
 
     -- DEFERRED 2.0s: Safety retry for late-loading frames
@@ -3813,6 +3863,15 @@ function QUICore:OnEnable()
         if not InCombatLockdown() then
             self:ForceReskinAllViewers()
         end
+        ApplyFrameOverrides()
+    end)
+
+    -- DEFERRED 3.0s: Register all frames as anchor targets + final override apply
+    C_Timer.After(3.0, function()
+        if ns.QUI_Anchoring then
+            ns.QUI_Anchoring:RegisterAllFrameTargets()
+        end
+        ApplyFrameOverrides()
     end)
 
     self:SetupEncounterWarningsSecretValuePatch()
@@ -3964,6 +4023,12 @@ function QUICore:HookEditMode()
     combatEndFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     combatEndFrame:SetScript("OnEvent", function(frame, event)
         if event == "PLAYER_REGEN_ENABLED" then
+            -- Reapply frame anchoring overrides deferred during combat
+            C_Timer.After(0.3, function()
+                if _G.QUI_ApplyAllFrameAnchors then
+                    _G.QUI_ApplyAllFrameAnchors()
+                end
+            end)
             -- Small delay to let things settle after combat
             C_Timer.After(0.2, function()
                 -- Check if any icons need re-skinning

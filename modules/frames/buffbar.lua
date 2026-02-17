@@ -29,11 +29,322 @@ local floor = math.floor
 -- Tolerance-based position check: skip repositioning if within tolerance
 -- Prevents jitter from floating-point drift
 local abs = math.abs
+local function Clamp01(value, fallback)
+    if type(value) ~= "number" then return fallback end
+    if value < 0 then return 0 end
+    if value > 1 then return 1 end
+    return value
+end
+
 local function PositionMatchesTolerance(icon, expectedX, tolerance)
     if not icon then return false end
     local point, _, _, xOfs = icon:GetPoint(1)
     if not point then return false end
     return abs((xOfs or 0) - expectedX) <= (tolerance or 2)
+end
+
+local VALID_ANCHOR_POINTS = {
+    TOPLEFT = true, TOP = true, TOPRIGHT = true,
+    LEFT = true, CENTER = true, RIGHT = true,
+    BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true,
+}
+
+local function IsFrameVisiblyShown(frame)
+    if not frame or not frame.IsShown or not frame:IsShown() then
+        return false
+    end
+    local alpha = Helpers.SafeToNumber((frame.GetAlpha and frame:GetAlpha()) or 1, 1)
+    if alpha <= 0.01 then
+        return false
+    end
+    local width = Helpers.SafeToNumber(frame.GetWidth and frame:GetWidth(), 0)
+    local height = Helpers.SafeToNumber(frame.GetHeight and frame:GetHeight(), 0)
+    if width <= 1 or height <= 1 then
+        return false
+    end
+    return true
+end
+
+local function GetFrameTopEdge(frame)
+    if not frame then return nil end
+    local top = Helpers.SafeToNumber(frame.GetTop and frame:GetTop(), nil)
+    if type(top) == "number" then
+        return top
+    end
+    local _, rawCenterY = frame.GetCenter and frame:GetCenter()
+    local centerY = Helpers.SafeToNumber(rawCenterY, nil)
+    local height = Helpers.SafeToNumber(frame.GetHeight and frame:GetHeight(), nil)
+    if type(centerY) == "number" and type(height) == "number" then
+        return centerY + (height / 2)
+    end
+    return nil
+end
+
+local function GetTopVisibleResourceBarFrame()
+    local candidates = {}
+    if QUICore then
+        if QUICore.powerBar then
+            table.insert(candidates, QUICore.powerBar)
+        end
+        if QUICore.secondaryPowerBar then
+            table.insert(candidates, QUICore.secondaryPowerBar)
+        end
+    end
+
+    local bestFrame, bestTop
+    for _, frame in ipairs(candidates) do
+        if IsFrameVisiblyShown(frame) then
+            local top = GetFrameTopEdge(frame)
+            if type(top) == "number" and (not bestTop or top > bestTop) then
+                bestTop = top
+                bestFrame = frame
+            end
+        end
+    end
+
+    return bestFrame
+end
+
+local function ResolveTrackedBarAnchorFrame(anchorTo)
+    if not anchorTo or anchorTo == "disabled" then
+        return nil
+    end
+    if anchorTo == "essential" or anchorTo == "utility" then
+        local getProxy = _G.QUI_GetCDMAnchorProxyFrame
+        if type(getProxy) == "function" then
+            local proxyKey = (anchorTo == "essential") and "cdmEssential" or "cdmUtility"
+            local proxy = getProxy(proxyKey)
+            if proxy then
+                return proxy
+            end
+        end
+    end
+    if anchorTo == "screen" then
+        return UIParent
+    elseif anchorTo == "essential" then
+        return _G["EssentialCooldownViewer"]
+    elseif anchorTo == "utility" then
+        return _G["UtilityCooldownViewer"]
+    elseif anchorTo == "primary" then
+        return QUICore and QUICore.powerBar
+    elseif anchorTo == "secondary" then
+        return QUICore and QUICore.secondaryPowerBar
+    elseif anchorTo == "playerFrame" then
+        return _G.QUI_UnitFrames and _G.QUI_UnitFrames.player
+    elseif anchorTo == "targetFrame" then
+        return _G.QUI_UnitFrames and _G.QUI_UnitFrames.target
+    end
+    return nil
+end
+
+local function GetTrackedBarAnchorWidth(anchorTo, anchorFrame)
+    if not anchorFrame then return nil end
+
+    local width
+    if anchorTo == "essential" or anchorTo == "utility" then
+        width = anchorFrame.__cdmIconWidth or anchorFrame.__cdmRow1Width or anchorFrame:GetWidth()
+    else
+        width = anchorFrame:GetWidth()
+    end
+
+    if type(width) ~= "number" or width <= 1 then
+        return nil
+    end
+    return width
+end
+
+local function ApplyTrackedBarAnchor(settings)
+    if not BuffBarCooldownViewer then return end
+    -- Avoid ClearAllPoints/SetPoint churn on protected Blizzard viewers during combat.
+    if InCombatLockdown() then return end
+
+    local anchorTo = settings.anchorTo or "disabled"
+    local sourcePoint = settings.anchorSourcePoint or "CENTER"
+    local targetPoint = settings.anchorTargetPoint or sourcePoint
+    local placement = settings.anchorPlacement or "center"
+    local spacing = settings.anchorSpacing or 0
+    local useTopResourceBars = placement == "onTopResourceBars"
+    local spacingX, spacingY = 0, 0
+    local offsetX = settings.anchorOffsetX or 0
+    local offsetY = settings.anchorOffsetY or 0
+
+    if useTopResourceBars or placement == "onTop" then
+        sourcePoint = "BOTTOM"
+        targetPoint = "TOP"
+        spacingY = spacing
+    elseif placement == "below" then
+        sourcePoint = "TOP"
+        targetPoint = "BOTTOM"
+        spacingY = -spacing
+    elseif placement == "left" then
+        sourcePoint = "RIGHT"
+        targetPoint = "LEFT"
+        spacingX = -spacing
+    elseif placement == "right" then
+        sourcePoint = "LEFT"
+        targetPoint = "RIGHT"
+        spacingX = spacing
+    else -- center (or advanced manual points)
+        -- Keep configured source/target points for backward compatibility.
+    end
+
+    offsetX = QUICore:PixelRound(offsetX + spacingX, BuffBarCooldownViewer)
+    offsetY = QUICore:PixelRound(offsetY + spacingY, BuffBarCooldownViewer)
+
+    if not VALID_ANCHOR_POINTS[sourcePoint] then sourcePoint = "CENTER" end
+    if not VALID_ANCHOR_POINTS[targetPoint] then targetPoint = sourcePoint end
+
+    if anchorTo == "disabled" and not useTopResourceBars then
+        BuffBarCooldownViewer._quiTrackedBarAnchorCache = nil
+        return
+    end
+
+    local anchorFrame = useTopResourceBars and GetTopVisibleResourceBarFrame() or ResolveTrackedBarAnchorFrame(anchorTo)
+    if not anchorFrame and useTopResourceBars then
+        -- Fallback to configured target when no visible resource bar is available.
+        anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+    end
+    if not anchorFrame then return end
+    if anchorFrame ~= UIParent and not anchorFrame:IsShown() then return end
+
+    local cache = BuffBarCooldownViewer._quiTrackedBarAnchorCache
+    if cache
+        and cache.anchorTo == anchorTo
+        and cache.placement == placement
+        and cache.anchorFrame == anchorFrame
+        and cache.sourcePoint == sourcePoint
+        and cache.targetPoint == targetPoint
+        and cache.offsetX == offsetX
+        and cache.offsetY == offsetY
+    then
+        return
+    end
+
+    pcall(function()
+        BuffBarCooldownViewer:ClearAllPoints()
+        BuffBarCooldownViewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
+    end)
+
+    BuffBarCooldownViewer._quiTrackedBarAnchorCache = {
+        anchorTo = anchorTo,
+        placement = placement,
+        anchorFrame = anchorFrame,
+        sourcePoint = sourcePoint,
+        targetPoint = targetPoint,
+        offsetX = offsetX,
+        offsetY = offsetY,
+    }
+end
+
+local function ApplyBuffIconAnchor(settings)
+    if not BuffIconCooldownViewer then return end
+    if InCombatLockdown() then return end
+
+    local anchorTo = settings.anchorTo or "disabled"
+    local sourcePoint = settings.anchorSourcePoint or "CENTER"
+    local targetPoint = settings.anchorTargetPoint or sourcePoint
+    local placement = settings.anchorPlacement or "center"
+    local spacing = settings.anchorSpacing or 0
+    local spacingX, spacingY = 0, 0
+    local offsetX = settings.anchorOffsetX or 0
+    local offsetY = settings.anchorOffsetY or 0
+
+    if placement == "onTop" then
+        sourcePoint = "BOTTOM"
+        targetPoint = "TOP"
+        spacingY = spacing
+    elseif placement == "below" then
+        sourcePoint = "TOP"
+        targetPoint = "BOTTOM"
+        spacingY = -spacing
+    elseif placement == "left" then
+        sourcePoint = "RIGHT"
+        targetPoint = "LEFT"
+        spacingX = -spacing
+    elseif placement == "right" then
+        sourcePoint = "LEFT"
+        targetPoint = "RIGHT"
+        spacingX = spacing
+    else
+        -- center/manual points
+    end
+
+    offsetX = QUICore:PixelRound(offsetX + spacingX, BuffIconCooldownViewer)
+    offsetY = QUICore:PixelRound(offsetY + spacingY, BuffIconCooldownViewer)
+
+    if not VALID_ANCHOR_POINTS[sourcePoint] then sourcePoint = "CENTER" end
+    if not VALID_ANCHOR_POINTS[targetPoint] then targetPoint = sourcePoint end
+
+    if anchorTo == "disabled" then
+        local hadAnchor = BuffIconCooldownViewer._quiBuffIconAnchorCache ~= nil
+        local originalPoints = BuffIconCooldownViewer._quiBuffIconAnchorOriginalPoints
+        if hadAnchor and originalPoints and #originalPoints > 0 then
+            pcall(function()
+                BuffIconCooldownViewer:ClearAllPoints()
+                for _, pointData in ipairs(originalPoints) do
+                    BuffIconCooldownViewer:SetPoint(
+                        pointData.point,
+                        pointData.relativeTo,
+                        pointData.relativePoint,
+                        pointData.xOfs,
+                        pointData.yOfs
+                    )
+                end
+            end)
+        end
+        BuffIconCooldownViewer._quiBuffIconAnchorCache = nil
+        return
+    end
+
+    local anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+    if not anchorFrame then return end
+    if anchorFrame ~= UIParent and not anchorFrame:IsShown() then return end
+
+    local cache = BuffIconCooldownViewer._quiBuffIconAnchorCache
+    if cache
+        and cache.anchorTo == anchorTo
+        and cache.placement == placement
+        and cache.anchorFrame == anchorFrame
+        and cache.sourcePoint == sourcePoint
+        and cache.targetPoint == targetPoint
+        and cache.offsetX == offsetX
+        and cache.offsetY == offsetY
+    then
+        return
+    end
+
+    if not BuffIconCooldownViewer._quiBuffIconAnchorOriginalPoints then
+        local originalPoints = {}
+        local numPoints = BuffIconCooldownViewer:GetNumPoints() or 0
+        for i = 1, numPoints do
+            local point, relativeTo, relativePoint, xOfs, yOfs = BuffIconCooldownViewer:GetPoint(i)
+            if point then
+                originalPoints[#originalPoints + 1] = {
+                    point = point,
+                    relativeTo = relativeTo,
+                    relativePoint = relativePoint,
+                    xOfs = xOfs or 0,
+                    yOfs = yOfs or 0,
+                }
+            end
+        end
+        BuffIconCooldownViewer._quiBuffIconAnchorOriginalPoints = originalPoints
+    end
+
+    pcall(function()
+        BuffIconCooldownViewer:ClearAllPoints()
+        BuffIconCooldownViewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
+    end)
+
+    BuffIconCooldownViewer._quiBuffIconAnchorCache = {
+        anchorTo = anchorTo,
+        placement = placement,
+        anchorFrame = anchorFrame,
+        sourcePoint = sourcePoint,
+        targetPoint = targetPoint,
+        offsetX = offsetX,
+        offsetY = offsetY,
+    }
 end
 
 ---------------------------------------------------------------------------
@@ -66,6 +377,13 @@ local function GetBuffSettings()
         zoom = 0,
         padding = 0,
         opacity = 1.0,
+        anchorTo = "disabled",
+        anchorPlacement = "center",
+        anchorSpacing = 0,
+        anchorSourcePoint = "CENTER",
+        anchorTargetPoint = "CENTER",
+        anchorOffsetX = 0,
+        anchorOffsetY = 0,
     }
 end
 
@@ -77,19 +395,32 @@ local function GetTrackedBarSettings()
     -- Return defaults if no DB
     return {
         enabled = true,
-        barHeight = 24,
-        barWidth = 200,
+        barHeight = 25,
+        barWidth = 215,
         texture = "Quazii v5",
         useClassColor = true,
         barColor = {0.204, 0.827, 0.6, 1},
         barOpacity = 1.0,
-        borderSize = 1,
+        borderSize = 2,
         bgColor = {0, 0, 0, 1},
-        bgOpacity = 0.7,
-        textSize = 12,
-        spacing = 4,
+        bgOpacity = 0.5,
+        textSize = 14,
+        spacing = 2,
         growUp = true,
         hideText = false,
+        inactiveMode = "hide",
+        inactiveAlpha = 0.3,
+        desaturateInactive = false,
+        reserveSlotWhenInactive = false,
+        autoWidth = false,
+        autoWidthOffset = 0,
+        anchorTo = "disabled",
+        anchorPlacement = "center",
+        anchorSpacing = 0,
+        anchorSourcePoint = "CENTER",
+        anchorTargetPoint = "CENTER",
+        anchorOffsetX = 0,
+        anchorOffsetY = 0,
         -- Vertical bar settings
         orientation = "horizontal",
         fillDirection = "up",
@@ -199,26 +530,201 @@ local function GetBuffBarFrames()
         end
     end
 
-    -- Fallback to raw children scan
-    if #frames == 0 then
-        local okc, children = pcall(BuffBarCooldownViewer.GetChildren, BuffBarCooldownViewer)
-        if okc and children then
-            for _, child in ipairs({ children }) do
-                if child and child:IsObjectType("Frame") then
-                    -- Skip Selection frame
-                    if child ~= BuffBarCooldownViewer.Selection then
-                        table.insert(frames, child)
-                    end
+    -- Merge raw children scan as well (GetItemFrames may return only active rows).
+    local seen = {}
+    for _, frame in ipairs(frames) do
+        seen[frame] = true
+    end
+    local okc, children = pcall(function()
+        return { BuffBarCooldownViewer:GetChildren() }
+    end)
+    if okc and children then
+        for _, child in ipairs(children) do
+            if child and child:IsObjectType("Frame") then
+                -- Skip Selection frame
+                if child ~= BuffBarCooldownViewer.Selection and not seen[child] then
+                    table.insert(frames, child)
+                    seen[child] = true
                 end
             end
         end
     end
 
-    -- Filter to active/visible frames
+    -- Resolve inactivity behavior once for this pass
+    local settings = GetTrackedBarSettings()
+    local stylingEnabled = settings.enabled
+    local inactiveMode = stylingEnabled and (settings.inactiveMode or "hide") or "always"
+    if inactiveMode ~= "always" and inactiveMode ~= "fade" and inactiveMode ~= "hide" then
+        inactiveMode = "always"
+    end
+    local reserveSlotWhenInactive = (settings.reserveSlotWhenInactive == true)
+
+    local function IsTrackedBarActive(frame)
+        if not frame then return false end
+
+        local function IsSecret(value)
+            if Helpers and Helpers.IsSecretValue then
+                local ok, secret = pcall(Helpers.IsSecretValue, value)
+                return ok and secret == true
+            end
+            return false
+        end
+
+        local function IsSafeNumber(value)
+            return type(value) == "number" and not IsSecret(value)
+        end
+
+        local function SafeCompareNumbers(a, b, mode)
+            if not IsSafeNumber(a) or not IsSafeNumber(b) then return nil end
+            local ok, result = pcall(function()
+                if mode == "gt" then return a > b end
+                if mode == "lt" then return a < b end
+                return nil
+            end)
+            return ok and result or nil
+        end
+
+        local function SafeAddNumber(a, b)
+            if not IsSafeNumber(a) or not IsSafeNumber(b) then return nil end
+            local ok, result = pcall(function()
+                return a + b
+            end)
+            if ok and IsSafeNumber(result) then
+                return result
+            end
+            return nil
+        end
+
+        local hadComparableData = false
+
+        local function LooksLikeDurationText(text)
+            if IsSecret(text) then return false end
+            if type(text) ~= "string" then return false end
+            local compact = text:gsub("%s+", "")
+            if compact == "" then return false end
+            local lowered = compact:lower()
+            if lowered == "0" or lowered == "0.0" or lowered == "0s" or lowered == "00:00" then
+                return false
+            end
+            return lowered:match("^[%d:%.smhd]+$") ~= nil
+        end
+
+        local function HasDurationText(owner)
+            if not owner or not owner.GetRegions then return false end
+            for _, region in ipairs({ owner:GetRegions() }) do
+                if region and region.GetObjectType and region:GetObjectType() == "FontString" and region.GetText then
+                    local okText, text = pcall(region.GetText, region)
+                    if okText and type(text) == "string" and not IsSecret(text) then
+                        hadComparableData = true
+                    end
+                    if okText and LooksLikeDurationText(text) then
+                        return true
+                    end
+                end
+            end
+            return false
+        end
+
+        local hasProgressingValue = false
+        local hasRunningCooldown = false
+        local hasDuration = false
+
+        local statusBar = frame.Bar
+        if statusBar and statusBar.GetValue then
+            local okValue, value = pcall(statusBar.GetValue, statusBar)
+            if okValue and IsSafeNumber(value) then
+                hadComparableData = true
+                local okMinMax, minValue, maxValue = pcall(statusBar.GetMinMaxValues, statusBar)
+                local maxGreaterMin = okMinMax and SafeCompareNumbers(maxValue, minValue, "gt")
+                if maxGreaterMin then
+                    hadComparableData = true
+                    -- Treat only in-progress bars as active from value alone.
+                    local minThreshold = SafeAddNumber(minValue, 0.001)
+                    local maxThreshold = SafeAddNumber(maxValue, -0.001)
+                    local aboveMin = minThreshold and SafeCompareNumbers(value, minThreshold, "gt")
+                    local belowMax = maxThreshold and SafeCompareNumbers(value, maxThreshold, "lt")
+                    hasProgressingValue = (aboveMin == true and belowMax == true)
+                end
+            end
+        end
+
+        local iconContainer = frame.Icon
+        local cooldown = iconContainer and (iconContainer.Cooldown or iconContainer.cooldown)
+        if cooldown and cooldown.GetCooldownTimes then
+            local okCD, startTime, duration, isEnabled = pcall(cooldown.GetCooldownTimes, cooldown)
+            if okCD and IsSafeNumber(duration) and IsSafeNumber(startTime) then
+                hadComparableData = true
+                local durationPositive = SafeCompareNumbers(duration, 0, "gt")
+                local startPositive = SafeCompareNumbers(startTime, 0, "gt")
+                local enabledState = true
+                if isEnabled ~= nil and not IsSecret(isEnabled) then
+                    hadComparableData = true
+                    local okEnabled, enabled = pcall(function()
+                        return isEnabled ~= 0
+                    end)
+                    enabledState = okEnabled and enabled or false
+                end
+                if durationPositive and startPositive and enabledState then
+                    hasRunningCooldown = true
+                end
+            end
+        end
+
+        hasDuration = HasDurationText(frame) or HasDurationText(statusBar)
+
+        if hasRunningCooldown or hasDuration or hasProgressingValue then
+            return true
+        end
+        if hadComparableData then
+            return false
+        end
+        return nil -- Unknown due secret/combat restrictions.
+    end
+
+    -- Filter frames, allowing inactive entries to be shown for always/fade modes.
     local active = {}
+    local inCombat = InCombatLockdown()
     for _, frame in ipairs(frames) do
-        if frame:IsShown() and frame:IsVisible() then
-            table.insert(active, frame)
+        if frame then
+            local iconContainer = frame.Icon
+            local iconTexture = iconContainer and (iconContainer.Icon or iconContainer.icon or iconContainer.texture)
+            local hasTexture = iconTexture and iconTexture.GetTexture and iconTexture:GetTexture() ~= nil
+            -- Hidden frames without identifiers or texture are usually unused pool entries.
+            local looksInitialized = (frame.cooldownID ~= nil) or (frame.layoutIndex ~= nil) or hasTexture
+
+            if not frame:IsShown() and not looksInitialized then
+                -- Skip uninitialized pooled frames.
+            else
+                local blizzShown = frame:IsShown() and frame:IsVisible()
+
+                if inCombat then
+                    -- In combat, trust Blizzard visibility state and avoid forcing Show/Hide.
+                    frame._quiTrackedBarIsActive = blizzShown
+                    if blizzShown then
+                        table.insert(active, frame)
+                    end
+                else
+                    local isActive = IsTrackedBarActive(frame)
+                    if isActive == nil then
+                        isActive = blizzShown
+                    end
+                    frame._quiTrackedBarIsActive = isActive
+
+                    if inactiveMode == "hide" and not reserveSlotWhenInactive and not isActive then
+                        pcall(function()
+                            frame:SetAlpha(0)
+                            frame:Hide()
+                        end)
+                    else
+                        if not frame:IsShown() then
+                            pcall(function()
+                                frame:Show()
+                            end)
+                        end
+                        table.insert(active, frame)
+                    end
+                end
+            end
         end
     end
 
@@ -545,12 +1051,12 @@ end
 -- BAR STYLING (for BuffBarCooldownViewer item cooldowns)
 ---------------------------------------------------------------------------
 
-local function ApplyBarStyle(frame, settings)
+local function ApplyBarStyle(frame, settings, overrideBarWidth)
     if not frame then return end
     if frame.IsForbidden and frame:IsForbidden() then return end
 
     local barHeight = settings.barHeight or 24
-    local barWidth = settings.barWidth or 200
+    local barWidth = overrideBarWidth or settings.barWidth or 200
     local texture = settings.texture or "Quazii v5"
     local useClassColor = settings.useClassColor
     local barColor = settings.barColor or {0.204, 0.827, 0.6, 1}
@@ -562,12 +1068,21 @@ local function ApplyBarStyle(frame, settings)
     local hideIcon = settings.hideIcon
     local hideText = settings.hideText
 
+    -- Inactive visual settings
+    local inactiveMode = settings.inactiveMode or "hide"
+    if inactiveMode ~= "always" and inactiveMode ~= "fade" and inactiveMode ~= "hide" then
+        inactiveMode = "always"
+    end
+    local inactiveAlpha = Clamp01(settings.inactiveAlpha, 0.3)
+    local desaturateInactive = (settings.desaturateInactive == true)
+
     -- Vertical bar settings
     local orientation = settings.orientation or "horizontal"
     local isVertical = (orientation == "vertical")
     local fillDirection = settings.fillDirection or "up"
     local iconPosition = settings.iconPosition or "top"
     local showTextOnVertical = settings.showTextOnVertical or false
+    local isActive = (frame._quiTrackedBarIsActive ~= false)
 
     -- For vertical bars: swap width/height conceptually
     -- "Bar Height" setting becomes bar width, "Bar Width" becomes bar height
@@ -583,9 +1098,11 @@ local function ApplyBarStyle(frame, settings)
     -- Get the StatusBar child (usually frame.Bar)
     local statusBar = frame.Bar
     if not statusBar and frame.GetChildren then
-        local okC, children = pcall(frame.GetChildren, frame)
+        local okC, children = pcall(function()
+            return { frame:GetChildren() }
+        end)
         if okC and children then
-            for _, child in ipairs({children}) do
+            for _, child in ipairs(children) do
                 if child and child.IsObjectType and child:IsObjectType("StatusBar") then
                     statusBar = child
                     break
@@ -632,6 +1149,7 @@ local function ApplyBarStyle(frame, settings)
 
     -- 3. Handle icon visibility and styling
     local iconContainer = frame.Icon
+    local iconTexture = iconContainer and (iconContainer.Icon or iconContainer.icon or iconContainer.texture)
     if iconContainer then
         if hideIcon then
             -- Hide icon completely when user wants no icon
@@ -655,7 +1173,6 @@ local function ApplyBarStyle(frame, settings)
                 iconContainer:SetSize(iconSize, iconSize)
 
             -- Get the actual icon texture inside the container
-            local iconTexture = iconContainer.Icon or iconContainer.icon or iconContainer.texture
             if iconTexture and iconTexture.IsObjectType and iconTexture:IsObjectType("Texture") then
                 -- Step A: Remove ALL mask textures FIRST (iterate through all of them)
                 if iconTexture.GetMaskTexture then
@@ -741,6 +1258,13 @@ local function ApplyBarStyle(frame, settings)
         end  -- end else (not hideIcon)
     end
 
+    -- Apply optional icon desaturation for inactive entries.
+    if iconTexture and iconTexture.SetDesaturated then
+        pcall(function()
+            iconTexture:SetDesaturated((not isActive) and desaturateInactive and inactiveMode ~= "always")
+        end)
+    end
+
     -- 3b. Reposition statusBar and icon based on orientation and visibility
     if statusBar then
         pcall(function()
@@ -793,14 +1317,17 @@ local function ApplyBarStyle(frame, settings)
     -- 5. Apply bar color (class or custom) with opacity
     if statusBar and statusBar.SetStatusBarColor then
         pcall(function()
+            local c = barColor
             if useClassColor then
                 local _, class = UnitClass("player")
-                local color = RAID_CLASS_COLORS[class]
+                local safeClass = Helpers.SafeToString(class, nil)
+                local color = safeClass and RAID_CLASS_COLORS[safeClass]
                 if color then
                     statusBar:SetStatusBarColor(color.r, color.g, color.b, barOpacity)
+                else
+                    statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
                 end
             else
-                local c = barColor
                 statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
             end
         end)
@@ -913,6 +1440,19 @@ local function ApplyBarStyle(frame, settings)
         end
     end
 
+    -- Apply frame alpha as the final step so all child visuals are covered.
+    local targetAlpha = 1
+    if not isActive then
+        if inactiveMode == "fade" then
+            targetAlpha = inactiveAlpha
+        elseif inactiveMode == "hide" then
+            targetAlpha = 0
+        end
+    end
+    pcall(function()
+        frame:SetAlpha(targetAlpha)
+    end)
+
     frame._trackedBarStyled = true
 end
 
@@ -937,6 +1477,9 @@ LayoutBuffIcons = function()
         isIconLayoutRunning = false
         return
     end
+
+    -- Optional anchoring to CDM/resource/unitframe targets.
+    ApplyBuffIconAnchor(settings)
 
     -- Apply HUD layer priority
     local core = GetCore()
@@ -1118,6 +1661,13 @@ LayoutBuffBars = function()
     BuffBarCooldownViewer:SetFrameStrata("MEDIUM")
     BuffBarCooldownViewer:SetFrameLevel(frameLevel)
 
+    -- Get tracked bar settings
+    local settings = GetTrackedBarSettings()
+    local stylingEnabled = settings.enabled
+
+    -- Optional anchoring to CDM/resource/unitframe targets.
+    ApplyTrackedBarAnchor(settings)
+
     local bars = GetBuffBarFrames()
     local count = #bars
     if count == 0 then
@@ -1132,12 +1682,37 @@ LayoutBuffBars = function()
         return
     end
 
-    -- Get tracked bar settings
-    local settings = GetTrackedBarSettings()
-    local stylingEnabled = settings.enabled
-
     -- Use settings for dimensions if styling enabled, otherwise use frame defaults
     local barWidth = refBar:GetWidth()
+    local resolvedBarWidth = settings.barWidth or barWidth
+    local placement = settings.anchorPlacement or "center"
+    local anchorTo = settings.anchorTo or "disabled"
+    local canAutoWidth = stylingEnabled and settings.autoWidth and (anchorTo ~= "screen")
+    if canAutoWidth then
+        local anchorFrame
+        local widthAnchorType = anchorTo
+        if placement == "onTopResourceBars" then
+            anchorFrame = GetTopVisibleResourceBarFrame()
+            widthAnchorType = nil
+        else
+            anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+        end
+        if not anchorFrame and placement == "onTopResourceBars" then
+            anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+            widthAnchorType = anchorTo
+        end
+        if anchorFrame and anchorFrame:IsShown() then
+            local anchorWidth = GetTrackedBarAnchorWidth(widthAnchorType, anchorFrame)
+            if anchorWidth then
+                local adjust = settings.autoWidthOffset or 0
+                resolvedBarWidth = math.max(20, QUICore:PixelRound(anchorWidth + adjust, BuffBarCooldownViewer))
+            end
+        end
+    end
+    if stylingEnabled then
+        barWidth = resolvedBarWidth
+    end
+
     local barHeight = stylingEnabled and settings.barHeight or refBar:GetHeight()
     local spacing = stylingEnabled and settings.spacing or (BuffBarCooldownViewer.childYPadding or 0)
     local growFromBottom = (not stylingEnabled) or (settings.growUp ~= false)
@@ -1145,6 +1720,19 @@ LayoutBuffBars = function()
     -- Vertical bar support
     local orientation = stylingEnabled and settings.orientation or "horizontal"
     local isVertical = (orientation == "vertical")
+    if stylingEnabled and ((settings.anchorTo or "disabled") ~= "disabled" or placement == "onTopResourceBars") then
+        if placement == "onTop" then
+            growFromBottom = true
+        elseif placement == "onTopResourceBars" then
+            growFromBottom = true
+        elseif placement == "below" then
+            growFromBottom = false
+        elseif isVertical and placement == "right" then
+            growFromBottom = true
+        elseif isVertical and placement == "left" then
+            growFromBottom = false
+        end
+    end
 
     -- CRITICAL: Tell Blizzard's GridLayoutFrameMixin which layout direction to use
     -- When isHorizontal=true, Blizzard positions bars up/down (Y-axis)
@@ -1165,7 +1753,7 @@ LayoutBuffBars = function()
     local effectiveBarWidth, effectiveBarHeight
     if isVertical then
         effectiveBarWidth = barHeight  -- Height setting becomes bar width
-        effectiveBarHeight = stylingEnabled and settings.barWidth or 200  -- Width setting becomes bar height
+        effectiveBarHeight = stylingEnabled and resolvedBarWidth or 200  -- Width setting becomes bar height
     else
         effectiveBarWidth = barWidth
         effectiveBarHeight = barHeight
@@ -1269,7 +1857,18 @@ LayoutBuffBars = function()
     -- Apply visual styling and frame strata/level to each bar (always, regardless of reposition)
     for _, bar in ipairs(bars) do
         if stylingEnabled then
-            ApplyBarStyle(bar, settings)
+            ApplyBarStyle(bar, settings, resolvedBarWidth)
+        else
+            pcall(function()
+                bar:SetAlpha(1)
+            end)
+            local iconContainer = bar.Icon
+            local iconTexture = iconContainer and (iconContainer.Icon or iconContainer.icon or iconContainer.texture)
+            if iconTexture and iconTexture.SetDesaturated then
+                pcall(function()
+                    iconTexture:SetDesaturated(false)
+                end)
+            end
         end
         -- Apply frame strata/level to each bar AND its .Bar child for proper HUD layering
         bar:SetFrameStrata("MEDIUM")
@@ -1327,13 +1926,20 @@ local lastIconHash = ""
 
 -- Build hash of icon count + settings to detect actual changes
 local function BuildIconHash(count, settings)
-    return string.format("%d_%d_%d_%.2f_%d_%s",
+    return string.format("%d_%d_%d_%.2f_%d_%s_%s_%s_%d_%s_%s_%d_%d",
         count,
         settings.iconSize or 42,
         settings.padding or 0,
         settings.aspectRatioCrop or 1.0,
         settings.borderSize or 2,
-        settings.growthDirection or "CENTERED_HORIZONTAL"
+        settings.growthDirection or "CENTERED_HORIZONTAL",
+        settings.anchorTo or "disabled",
+        settings.anchorPlacement or "center",
+        settings.anchorSpacing or 0,
+        settings.anchorSourcePoint or "CENTER",
+        settings.anchorTargetPoint or "CENTER",
+        settings.anchorOffsetX or 0,
+        settings.anchorOffsetY or 0
     )
 end
 
@@ -1354,6 +1960,7 @@ local function CheckIconChanges()
 
     -- Build hash including count AND settings
     local settings = GetBuffSettings()
+    ApplyBuffIconAnchor(settings)
     local hash = BuildIconHash(visibleCount, settings)
 
     -- Only layout if hash changed (count or settings)
@@ -1530,6 +2137,8 @@ local function Initialize()
     -- Using hooksecurefunc is safer than replacing methods - avoids breaking Blizzard's code paths.
     if BuffBarCooldownViewer and BuffBarCooldownViewer.RefreshLayout then
         hooksecurefunc(BuffBarCooldownViewer, "RefreshLayout", function(self)
+            -- Keep RefreshLayout passive in combat to avoid mutating protected viewer state
+            -- while Blizzard is actively running secure layout updates.
             if InCombatLockdown() then return end
             local settings = GetTrackedBarSettings()
             if settings.enabled and settings.orientation == "vertical" then

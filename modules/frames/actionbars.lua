@@ -97,7 +97,21 @@ local ActionBars = {
     skinnedButtons = {},        -- Track which buttons have been skinned
     fadeState = {},             -- Per-bar fade state tracking
     fadeFrame = nil,            -- OnUpdate frame for smooth fading
+    levelSuppressionActive = nil, -- Cached state for below-max-level suppression
 }
+
+-- Store QUI state outside secure Blizzard frame tables.
+-- Writing custom keys directly on action buttons can taint secret values.
+local frameState = setmetatable({}, { __mode = "k" })
+
+local function GetFrameState(frame)
+    local state = frameState[frame]
+    if not state then
+        state = {}
+        frameState[frame] = state
+    end
+    return state
+end
 
 ---------------------------------------------------------------------------
 -- HELPER FUNCTIONS
@@ -136,6 +150,30 @@ end
 local function GetFadeSettings()
     local db = GetDB()
     return db and db.fade
+end
+
+local function IsPlayerBelowMaxLevel()
+    local level = UnitLevel("player")
+    if not level or level <= 0 then return false end
+
+    local maxLevel = GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion() or MAX_PLAYER_LEVEL or 80
+    if not maxLevel or maxLevel <= 0 then return false end
+
+    return level < maxLevel
+end
+
+local function ShouldSuppressMouseoverHideForLevel()
+    local fadeSettings = GetFadeSettings()
+    return fadeSettings and fadeSettings.disableBelowMaxLevel and IsPlayerBelowMaxLevel()
+end
+
+local function UpdateLevelSuppressionState()
+    local suppress = ShouldSuppressMouseoverHideForLevel()
+    if ActionBars.levelSuppressionActive == suppress then
+        return false
+    end
+    ActionBars.levelSuppressionActive = suppress
+    return true
 end
 
 local function GetFontSettings()
@@ -179,7 +217,11 @@ end
 
 -- Add LibKeyBound methods to a button for mousewheel binding support
 local function AddKeybindMethods(button, barKey)
-    if not button or button._quiKeybindMethods then return end
+    if not button then return end
+    if IS_MIDNIGHT then return end -- Avoid mutating secure buttons with method injection.
+
+    local state = GetFrameState(button)
+    if state.keybindMethods then return end
 
     local bindingPrefix = BINDING_COMMANDS[barKey]
     if not bindingPrefix then return end
@@ -188,12 +230,13 @@ local function AddKeybindMethods(button, barKey)
     if not buttonIndex then return end
 
     local bindingCommand = bindingPrefix .. buttonIndex
-    button._quiBindingCommand = bindingCommand
-    button._quiKeybindMethods = true
+    state.bindingCommand = bindingCommand
+    state.keybindMethods = true
 
     -- Required method: Returns current keybind text
     function button:GetHotkey()
-        local key = GetBindingKey(self._quiBindingCommand)
+        local command = GetFrameState(self).bindingCommand
+        local key = command and GetBindingKey(command)
         if key then
             local LibKeyBound = LibStub("LibKeyBound-1.0", true)
             return LibKeyBound and LibKeyBound:ToShortKey(key) or key
@@ -204,14 +247,19 @@ local function AddKeybindMethods(button, barKey)
     -- Required method: Binds a key to this button
     function button:SetKey(key)
         if InCombatLockdown() then return end
-        SetBinding(key, self._quiBindingCommand)
+        local command = GetFrameState(self).bindingCommand
+        if command then
+            SetBinding(key, command)
+        end
     end
 
     -- Optional method: Returns all bindings as comma-separated string
     function button:GetBindings()
+        local command = GetFrameState(self).bindingCommand
+        if not command then return nil end
         local keys = {}
-        for i = 1, select("#", GetBindingKey(self._quiBindingCommand)) do
-            local key = select(i, GetBindingKey(self._quiBindingCommand))
+        for i = 1, select("#", GetBindingKey(command)) do
+            local key = select(i, GetBindingKey(command))
             if key then
                 table.insert(keys, key)
             end
@@ -222,14 +270,16 @@ local function AddKeybindMethods(button, barKey)
     -- Optional method: Clears all bindings from this button
     function button:ClearBindings()
         if InCombatLockdown() then return end
-        while GetBindingKey(self._quiBindingCommand) do
-            SetBinding(GetBindingKey(self._quiBindingCommand), nil)
+        local command = GetFrameState(self).bindingCommand
+        if not command then return end
+        while GetBindingKey(command) do
+            SetBinding(GetBindingKey(command), nil)
         end
     end
 
     -- Optional method: Returns display name for what we're binding
     function button:GetActionName()
-        return self._quiBindingCommand
+        return GetFrameState(self).bindingCommand
     end
 end
 
@@ -347,6 +397,10 @@ local extraActionMover = nil
 local zoneAbilityHolder = nil
 local zoneAbilityMover = nil
 local extraButtonMoversVisible = false
+local hookingSetPoint = false
+local extraActionSetPointHooked = false
+local zoneAbilitySetPointHooked = false
+local pageArrowShowHooked = false
 
 -- Get settings for a specific extra button type
 local function GetExtraButtonDB(buttonType)
@@ -435,16 +489,14 @@ local function ApplyExtraButtonSettings(buttonType)
     if not settings or not settings.enabled then return end
 
     local blizzFrame
-    local holder, mover
+    local holder
 
     if buttonType == "extraActionButton" then
         blizzFrame = ExtraActionBarFrame
         holder = extraActionHolder
-        mover = extraActionMover
     else
         blizzFrame = ZoneAbilityFrame
         holder = zoneAbilityHolder
-        mover = zoneAbilityMover
     end
 
     if not blizzFrame or not holder then return end
@@ -457,10 +509,12 @@ local function ApplyExtraButtonSettings(buttonType)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
 
-    -- Reparent to our holder and position
-    blizzFrame:SetParent(holder)
+    -- Keep Blizzard parent/manager chain intact to avoid managed-frame taint.
+    -- Only override the anchor when we're outside combat.
+    hookingSetPoint = true
     blizzFrame:ClearAllPoints()
     blizzFrame:SetPoint("CENTER", holder, "CENTER", offsetX, offsetY)
+    hookingSetPoint = false
 
     -- Update holder size to match scaled frame
     local width = (blizzFrame:GetWidth() or 64) * scale
@@ -492,42 +546,52 @@ local function ApplyExtraButtonSettings(buttonType)
 end
 
 -- Flag to prevent recursive SetPoint hooks
-local hookingSetPoint = false
+local pendingExtraButtonReanchor = {}
+
+-- Re-anchor extra buttons outside Blizzard's SetPoint call chain.
+-- Directly mutating anchors inside managed-frame SetPoint hooks can taint
+-- UIParent managed frame containers and trigger ADDON_ACTION_BLOCKED in combat.
+local function QueueExtraButtonReanchor(buttonType)
+    if pendingExtraButtonReanchor[buttonType] then return end
+    pendingExtraButtonReanchor[buttonType] = true
+
+    C_Timer.After(0, function()
+        pendingExtraButtonReanchor[buttonType] = false
+
+        if InCombatLockdown() then
+            ActionBars.pendingExtraButtonRefresh = true
+            return
+        end
+
+        local settings = GetExtraButtonDB(buttonType)
+        if settings and settings.enabled then
+            ApplyExtraButtonSettings(buttonType)
+        end
+    end)
+end
 
 -- Hook Blizzard frames to prevent them from repositioning
 local function HookExtraButtonPositioning()
     -- Hook ExtraActionBarFrame
-    if ExtraActionBarFrame and not ExtraActionBarFrame._quiHooked then
-        ExtraActionBarFrame._quiHooked = true
+    if ExtraActionBarFrame and not extraActionSetPointHooked then
+        extraActionSetPointHooked = true
         hooksecurefunc(ExtraActionBarFrame, "SetPoint", function(self)
             if hookingSetPoint or InCombatLockdown() then return end
-            if extraActionHolder and GetExtraButtonDB("extraActionButton") then
-                local settings = GetExtraButtonDB("extraActionButton")
-                if settings and settings.enabled then
-                    hookingSetPoint = true
-                    self:ClearAllPoints()
-                    self:SetPoint("CENTER", extraActionHolder, "CENTER",
-                        settings.offsetX or 0, settings.offsetY or 0)
-                    hookingSetPoint = false
-                end
+            local settings = GetExtraButtonDB("extraActionButton")
+            if extraActionHolder and settings and settings.enabled then
+                QueueExtraButtonReanchor("extraActionButton")
             end
         end)
     end
 
     -- Hook ZoneAbilityFrame
-    if ZoneAbilityFrame and not ZoneAbilityFrame._quiHooked then
-        ZoneAbilityFrame._quiHooked = true
+    if ZoneAbilityFrame and not zoneAbilitySetPointHooked then
+        zoneAbilitySetPointHooked = true
         hooksecurefunc(ZoneAbilityFrame, "SetPoint", function(self)
             if hookingSetPoint or InCombatLockdown() then return end
-            if zoneAbilityHolder and GetExtraButtonDB("zoneAbility") then
-                local settings = GetExtraButtonDB("zoneAbility")
-                if settings and settings.enabled then
-                    hookingSetPoint = true
-                    self:ClearAllPoints()
-                    self:SetPoint("CENTER", zoneAbilityHolder, "CENTER",
-                        settings.offsetX or 0, settings.offsetY or 0)
-                    hookingSetPoint = false
-                end
+            local settings = GetExtraButtonDB("zoneAbility")
+            if zoneAbilityHolder and settings and settings.enabled then
+                QueueExtraButtonReanchor("zoneAbility")
             end
         end)
     end
@@ -617,8 +681,9 @@ end
 
 -- Remove Blizzard's default textures and masks
 local function StripBlizzardArtwork(button)
-    if button._quiStripped then return end
-    button._quiStripped = true
+    local state = GetFrameState(button)
+    if state.stripped then return end
+    state.stripped = true
 
     -- Hide NormalTexture (Blizzard's border)
     local normalTex = button:GetNormalTexture()
@@ -663,6 +728,7 @@ end
 -- Apply QUI skin to a single button
 local function SkinButton(button, settings)
     if not button or not settings or not settings.skinEnabled then return end
+    local state = GetFrameState(button)
 
     -- Skip if already skinned with same settings
     local settingsKey = string.format("%d_%.2f_%s_%.2f_%s_%.2f",
@@ -673,8 +739,8 @@ local function SkinButton(button, settings)
         tostring(settings.showGloss),
         settings.glossAlpha or 0.6
     )
-    if button._quiSkinKey == settingsKey then return end
-    button._quiSkinKey = settingsKey
+    if state.skinKey == settingsKey then return end
+    state.skinKey = settingsKey
 
     -- Strip Blizzard artwork first
     StripBlizzardArtwork(button)
@@ -692,45 +758,45 @@ local function SkinButton(button, settings)
 
     -- Create or update backdrop (behind icon, configurable opacity)
     if settings.showBackdrop then
-        if not button._quiBackdrop then
-            button._quiBackdrop = button:CreateTexture(nil, "BACKGROUND", nil, -8)
-            button._quiBackdrop:SetColorTexture(0, 0, 0, 1)
+        if not state.backdrop then
+            state.backdrop = button:CreateTexture(nil, "BACKGROUND", nil, -8)
+            state.backdrop:SetColorTexture(0, 0, 0, 1)
         end
-        button._quiBackdrop:SetAlpha(settings.backdropAlpha or 0.8)
-        button._quiBackdrop:ClearAllPoints()
-        button._quiBackdrop:SetAllPoints(button)  -- Same size as button, not extending beyond
-        button._quiBackdrop:Show()
-    elseif button._quiBackdrop then
-        button._quiBackdrop:Hide()
+        state.backdrop:SetAlpha(settings.backdropAlpha or 0.8)
+        state.backdrop:ClearAllPoints()
+        state.backdrop:SetAllPoints(button)  -- Same size as button, not extending beyond
+        state.backdrop:Show()
+    elseif state.backdrop then
+        state.backdrop:Hide()
     end
 
     -- Create or update Normal overlay (border frame texture)
     if settings.showBorders ~= false then
-        if not button._quiNormal then
-            button._quiNormal = button:CreateTexture(nil, "OVERLAY", nil, 1)
-            button._quiNormal:SetTexture(TEXTURES.normal)
-            button._quiNormal:SetVertexColor(0, 0, 0, 1)
+        if not state.normal then
+            state.normal = button:CreateTexture(nil, "OVERLAY", nil, 1)
+            state.normal:SetTexture(TEXTURES.normal)
+            state.normal:SetVertexColor(0, 0, 0, 1)
         end
-        button._quiNormal:SetSize(iconSize, iconSize)
-        button._quiNormal:ClearAllPoints()
-        button._quiNormal:SetAllPoints(button)
-        button._quiNormal:Show()
-    elseif button._quiNormal then
-        button._quiNormal:Hide()
+        state.normal:SetSize(iconSize, iconSize)
+        state.normal:ClearAllPoints()
+        state.normal:SetAllPoints(button)
+        state.normal:Show()
+    elseif state.normal then
+        state.normal:Hide()
     end
 
     -- Create or update Gloss overlay (ADD blend shine)
     if settings.showGloss then
-        if not button._quiGloss then
-            button._quiGloss = button:CreateTexture(nil, "OVERLAY", nil, 2)
-            button._quiGloss:SetTexture(TEXTURES.gloss)
-            button._quiGloss:SetBlendMode("ADD")
+        if not state.gloss then
+            state.gloss = button:CreateTexture(nil, "OVERLAY", nil, 2)
+            state.gloss:SetTexture(TEXTURES.gloss)
+            state.gloss:SetBlendMode("ADD")
         end
-        button._quiGloss:SetVertexColor(1, 1, 1, settings.glossAlpha or 0.6)
-        button._quiGloss:SetAllPoints(button)
-        button._quiGloss:Show()
-    elseif button._quiGloss then
-        button._quiGloss:Hide()
+        state.gloss:SetVertexColor(1, 1, 1, settings.glossAlpha or 0.6)
+        state.gloss:SetAllPoints(button)
+        state.gloss:Show()
+    elseif state.gloss then
+        state.gloss:Hide()
     end
 
     -- Fix Cooldown frame positioning
@@ -948,6 +1014,7 @@ end
 -- Update empty slot visibility for a single button
 local function UpdateEmptySlotVisibility(button, settings)
     if not settings then return end
+    local state = GetFrameState(button)
 
     -- Get the bar's current fade alpha (respects mouseover hide)
     local barKey = GetBarKeyFromButton(button)
@@ -956,9 +1023,9 @@ local function UpdateEmptySlotVisibility(button, settings)
 
     if not settings.hideEmptySlots then
         -- Restore visibility if setting is off (respect fade state)
-        if button._quiHiddenEmpty then
+        if state.hiddenEmpty then
             button:SetAlpha(targetAlpha)
-            button._quiHiddenEmpty = nil
+            state.hiddenEmpty = nil
         end
         return
     end
@@ -968,7 +1035,7 @@ local function UpdateEmptySlotVisibility(button, settings)
         local hasAction = SafeHasAction(button.action)
         if hasAction then
             button:SetAlpha(targetAlpha)
-            button._quiHiddenEmpty = nil
+            state.hiddenEmpty = nil
         else
             -- Show at preview alpha while dragging a placeable action
             if ActionBars.dragPreviewActive then
@@ -976,7 +1043,7 @@ local function UpdateEmptySlotVisibility(button, settings)
             else
                 button:SetAlpha(0)
             end
-            button._quiHiddenEmpty = true
+            state.hiddenEmpty = true
         end
     end
 end
@@ -1057,15 +1124,16 @@ local function UpdateButtonUsability(button, settings)
     if not settings then return end
     if not button.action then return end
 
+    local state = GetFrameState(button)
     local icon = button.icon or button.Icon
     if not icon then return end
 
     -- Reset state if both features disabled
     if not settings.rangeIndicator and not settings.usabilityIndicator then
-        if button._quiTinted then
+        if state.tinted then
             icon:SetVertexColor(1, 1, 1, 1)
             icon:SetDesaturated(false)
-            button._quiTinted = nil
+            state.tinted = nil
         end
         return
     end
@@ -1081,7 +1149,7 @@ local function UpdateButtonUsability(button, settings)
             local a = c and c[4] or 1
             icon:SetVertexColor(r, g, b, a)
             icon:SetDesaturated(false)
-            button._quiTinted = "range"
+            state.tinted = "range"
             return
         end
     end
@@ -1099,7 +1167,7 @@ local function UpdateButtonUsability(button, settings)
             local a = c and c[4] or 1
             icon:SetVertexColor(r, g, b, a)
             icon:SetDesaturated(false)
-            button._quiTinted = "mana"
+            state.tinted = "mana"
             return
         elseif not isUsable then
             -- Not usable - desaturate or apply grey tint
@@ -1115,16 +1183,16 @@ local function UpdateButtonUsability(button, settings)
                 icon:SetVertexColor(r, g, b, a)
                 icon:SetDesaturated(false)
             end
-            button._quiTinted = "unusable"
+            state.tinted = "unusable"
             return
         end
     end
 
     -- Normal state - reset to full brightness
-    if button._quiTinted then
+    if state.tinted then
         icon:SetVertexColor(1, 1, 1, 1)
         icon:SetDesaturated(false)
-        button._quiTinted = nil
+        state.tinted = nil
     end
 end
 
@@ -1163,11 +1231,12 @@ local function ResetAllButtonTints()
         local barKey = "bar" .. i
         local buttons = GetBarButtons(barKey)
         for _, button in ipairs(buttons) do
+            local state = GetFrameState(button)
             local icon = button.icon or button.Icon
-            if icon and button._quiTinted then
+            if icon and state.tinted then
                 icon:SetVertexColor(1, 1, 1, 1)
                 icon:SetDesaturated(false)
-                button._quiTinted = nil
+                state.tinted = nil
             end
         end
     end
@@ -1273,8 +1342,9 @@ local function SetBarAlpha(barKey, alpha)
     local hideEmptyEnabled = settings and settings.hideEmptySlots
 
     for _, button in ipairs(buttons) do
+        local state = GetFrameState(button)
         -- Respect hide empty slots setting - keep empty buttons hidden
-        if hideEmptyEnabled and button._quiHiddenEmpty then
+        if hideEmptyEnabled and state.hiddenEmpty then
             button:SetAlpha(ActionBars.dragPreviewActive and (DRAG_PREVIEW_ALPHA * alpha) or 0)
         else
             button:SetAlpha(alpha)
@@ -1393,6 +1463,10 @@ local function ShowLinkedBarDirect(barKey)
     local fadeSettings = GetFadeSettings()
 
     if not barSettings then return end
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
     if barSettings.alwaysShow then return end
 
     local fadeEnabled = barSettings.fadeEnabled
@@ -1422,6 +1496,10 @@ local function FadeLinkedBarDirect(barKey)
     local fadeSettings = GetFadeSettings()
 
     if not barSettings then return end
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
     if barSettings.alwaysShow then return end
 
     local fadeEnabled = barSettings.fadeEnabled
@@ -1458,6 +1536,11 @@ local function OnBarMouseEnter(barKey)
     local state = GetBarFadeState(barKey)
     local fadeSettings = GetFadeSettings()
     local barSettings = GetBarSettings(barKey)
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
 
     -- If bar should always be visible, skip fade logic entirely
     if barSettings and barSettings.alwaysShow then return end
@@ -1498,6 +1581,11 @@ local function OnBarMouseLeave(barKey)
     local state = GetBarFadeState(barKey)
     local fadeSettings = GetFadeSettings()
     local barSettings = GetBarSettings(barKey)
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
 
     -- If bar should always be visible, skip fade logic entirely
     if barSettings and barSettings.alwaysShow then return end
@@ -1571,8 +1659,10 @@ end
 
 -- Hook OnEnter/OnLeave on a frame for bar mouseover detection
 local function HookFrameForMouseover(frame, barKey)
-    if not frame or frame._quiMouseoverHooked then return end
-    frame._quiMouseoverHooked = true
+    if not frame then return end
+    local state = GetFrameState(frame)
+    if state.mouseoverHooked then return end
+    state.mouseoverHooked = true
 
     frame:HookScript("OnEnter", function()
         OnBarMouseEnter(barKey)
@@ -1600,6 +1690,20 @@ local function SetupBarMouseover(barKey)
     end
 
     local state = GetBarFadeState(barKey)
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        state.isFading = false
+        if state.delayTimer then
+            state.delayTimer:Cancel()
+            state.delayTimer = nil
+        end
+        if state.leaveCheckTimer then
+            state.leaveCheckTimer:Cancel()
+            state.leaveCheckTimer = nil
+        end
+        SetBarAlpha(barKey, 1)
+        return
+    end
 
     -- Check if bar should always be visible (overrides fade)
     if barSettings and barSettings.alwaysShow then
@@ -1676,6 +1780,7 @@ combatFadeFrame:SetScript("OnEvent", function(self, event)
     local fadeSettings = GetFadeSettings()
     if not fadeSettings or not fadeSettings.enabled then return end
     if not fadeSettings.alwaysShowInCombat then return end
+    if ShouldSuppressMouseoverHideForLevel() then return end
 
     if event == "PLAYER_REGEN_DISABLED" then
         -- Entering combat: Force action bars 1-8 to full opacity
@@ -1723,20 +1828,23 @@ local function SkinBar(barKey)
         SkinButton(button, effectiveSettings)
         UpdateButtonText(button, effectiveSettings)
 
-        -- Add LibKeyBound methods for mousewheel binding support
-        AddKeybindMethods(button, barKey)
+        if not IS_MIDNIGHT then
+            -- Add LibKeyBound methods for mousewheel binding support
+            AddKeybindMethods(button, barKey)
 
-        -- Hook OnEnter to register with LibKeyBound when in keybind mode
-        -- Use HookScript to avoid tainting Blizzard's secure execution context
-        -- (SetScript + calling old handler causes ADDON_ACTION_BLOCKED during combat)
-        if not button._quiOnEnterHooked then
-            button._quiOnEnterHooked = true
-            button:HookScript("OnEnter", function(self)
-                local LibKeyBound = LibStub("LibKeyBound-1.0", true)
-                if LibKeyBound and LibKeyBound:IsShown() then
-                    LibKeyBound:Set(self)
-                end
-            end)
+            -- Hook OnEnter to register with LibKeyBound when in keybind mode
+            -- Use HookScript to avoid tainting Blizzard's secure execution context
+            -- (SetScript + calling old handler causes ADDON_ACTION_BLOCKED during combat)
+            local state = GetFrameState(button)
+            if not state.onEnterHooked then
+                state.onEnterHooked = true
+                button:HookScript("OnEnter", function(self)
+                    local LibKeyBound = LibStub("LibKeyBound-1.0", true)
+                    if LibKeyBound and LibKeyBound:IsShown() then
+                        LibKeyBound:Set(self)
+                    end
+                end)
+            end
         end
     end
 end
@@ -1767,8 +1875,8 @@ local function ApplyPageArrowVisibility(hide)
 
     if hide then
         pageNum:Hide()
-        if not pageNum._QUI_ShowHooked then
-            pageNum._QUI_ShowHooked = true
+        if not pageArrowShowHooked then
+            pageArrowShowHooked = true
             hooksecurefunc(pageNum, "Show", function(self)
                 local db = GetDB()
                 if db and db.bars and db.bars.bar1 and db.bars.bar1.hidePageArrow then
@@ -1793,7 +1901,7 @@ function ActionBars:Refresh()
 
     -- Clear skinned cache to force re-skin
     for button, _ in pairs(ActionBars.skinnedButtons) do
-        button._quiSkinKey = nil
+        GetFrameState(button).skinKey = nil
     end
 
     SkinAllBars()
@@ -1820,6 +1928,7 @@ function ActionBars:Initialize()
     if not db or not db.enabled then return end
 
     ActionBars.initialized = true
+    ActionBars.levelSuppressionActive = ShouldSuppressMouseoverHideForLevel()
 
     -- One-time migration for lock setting (preserves user setting after CVar sync fix)
     MigrateLockSetting()
@@ -1903,6 +2012,8 @@ eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("CURSOR_CHANGED")
+eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -1938,7 +2049,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                     if effectiveSettings then
                         local buttons = GetBarButtons(barKey)
                         for _, button in ipairs(buttons) do
-                            if button._quiHiddenEmpty then
+                            local state = GetFrameState(button)
+                            if state.hiddenEmpty then
                                 local fadeState = ActionBars.fadeState and ActionBars.fadeState[barKey]
                                 local targetAlpha = fadeState and fadeState.currentAlpha or 1
                                 button:SetAlpha(shouldPreview and (DRAG_PREVIEW_ALPHA * targetAlpha) or 0)
@@ -1962,6 +2074,20 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 end
             end
         end)
+
+    elseif event == "PLAYER_LEVEL_UP" then
+        if UpdateLevelSuppressionState() then
+            if type(_G.QUI_RefreshActionBars) == "function" then
+                _G.QUI_RefreshActionBars()
+            end
+        end
+
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if UpdateLevelSuppressionState() then
+            if type(_G.QUI_RefreshActionBars) == "function" then
+                _G.QUI_RefreshActionBars()
+            end
+        end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Process pending initialization (from /reload during combat)

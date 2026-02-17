@@ -306,8 +306,8 @@ local function BuildRaidBuffsTab(tabContent)
         y = y - previewHeader.gap
 
         -- Preview checkbox
-        local previewCheck = GUI:CreateCheckbox(tabContent, "Preview Missing Buffs", function(self)
-            TogglePreview(self:GetChecked())
+        local previewCheck = GUI:CreateCheckbox(tabContent, "Preview Missing Buffs", nil, nil, function(val)
+            TogglePreview(val)
         end)
         previewCheck:SetPoint("TOPLEFT", PADDING, y)
         y = y - FORM_ROW

@@ -110,6 +110,56 @@ QUI_Castbar.STAGE_FILL_COLORS = {
 local STAGE_COLORS = QUI_Castbar.STAGE_COLORS
 local STAGE_FILL_COLORS = QUI_Castbar.STAGE_FILL_COLORS
 
+local CHANNEL_TICK_DEFAULT_COLOR = {1, 1, 1, 0.9}
+local CHANNEL_TICK_SOURCE_POLICY_AUTO = "auto"
+local CHANNEL_TICK_SOURCE_POLICY_STATIC = "static"
+local CHANNEL_TICK_SOURCE_POLICY_RUNTIME_ONLY = "runtimeOnly"
+local CHANNEL_TICK_SPELL_ALIASES = {
+    [468720] = 473728, -- Void Ray wrapper -> periodic channel spell
+}
+
+-- Deterministic tick profiles for high-confidence channels.
+-- These are intended to be robust on first cast and can still be
+-- superseded by runtime calibration when users opt in to runtime-only mode.
+local CHANNEL_TICK_RULE_DB = {
+    [740] = { baseTicks = 4 },       -- Tranquility
+    [5143] = { baseTicks = 4 },      -- Arcane Missiles
+    [15407] = { baseTicks = 6 },     -- Mind Flay
+    [64843] = { baseTicks = 4 },     -- Divine Hymn
+    [120360] = { baseTicks = 15 },   -- Barrage
+    [198013] = { baseTicks = 10 },   -- Eye Beam
+    [205021] = { baseTicks = 5 },    -- Ray of Frost
+    [206931] = { baseTicks = 3 },    -- Blooddrinker
+    [212084] = { baseTicks = 10 },   -- Fel Devastation
+    [234153] = { baseTicks = 5 },    -- Drain Life
+    [356995] = { baseTicks = 5 },    -- Disintegrate
+}
+
+-- Interval-based fallback for channels without a curated profile.
+local CHANNEL_TICK_STATIC_DB = {
+    [115175] = { interval = 1.0 },   -- Soothing Mist
+    [473728] = { interval = 0.15 },  -- Void Ray
+}
+
+local CHANNEL_TICK_RUNTIME_CACHE = {}
+local CHANNEL_TICK_ACTIVE_BY_GUID = {}
+local CHANNEL_TICK_EVENT_FRAME = CreateFrame("Frame")
+local CHANNEL_TICK_EVENT_REGISTERED = false
+
+local CHANNEL_TICK_SUBEVENTS = {
+    SPELL_PERIODIC_DAMAGE = true,
+    SPELL_PERIODIC_HEAL = true,
+    SPELL_PERIODIC_MISSED = true,
+    SPELL_PERIODIC_ENERGIZE = true,
+    SPELL_PERIODIC_DRAIN = true,
+    SPELL_PERIODIC_LEECH = true,
+}
+
+local function NormalizeChannelTickSpellID(spellID)
+    if not spellID then return nil end
+    return CHANNEL_TICK_SPELL_ALIASES[spellID] or spellID
+end
+
 ---------------------------------------------------------------------------
 -- SETTINGS HELPERS
 ---------------------------------------------------------------------------
@@ -131,7 +181,7 @@ local function UpdateThrottledText(castbar, elapsed, text, value)
     return false
 end
 
-local function InitializeDefaultSettings(castSettings)
+local function InitializeDefaultSettings(castSettings, unitKey)
     if castSettings.iconAnchor == nil then castSettings.iconAnchor = "LEFT" end
     if castSettings.iconSpacing == nil then castSettings.iconSpacing = 0 end
     if castSettings.showIcon == nil then castSettings.showIcon = true end
@@ -171,6 +221,22 @@ local function InitializeDefaultSettings(castSettings)
     if castSettings.empoweredLevelTextOffsetY == nil then castSettings.empoweredLevelTextOffsetY = 0 end
     if castSettings.showEmpoweredLevel == nil then castSettings.showEmpoweredLevel = false end
     if castSettings.hideTimeTextOnEmpowered == nil then castSettings.hideTimeTextOnEmpowered = false end
+
+    local defaultShowChannelTicks = (unitKey == "player")
+    if castSettings.showChannelTicks == nil then castSettings.showChannelTicks = defaultShowChannelTicks end
+    if castSettings.channelTickThickness == nil then castSettings.channelTickThickness = 1 end
+    if castSettings.channelTickColor == nil then
+        castSettings.channelTickColor = {
+            CHANNEL_TICK_DEFAULT_COLOR[1],
+            CHANNEL_TICK_DEFAULT_COLOR[2],
+            CHANNEL_TICK_DEFAULT_COLOR[3],
+            CHANNEL_TICK_DEFAULT_COLOR[4]
+        }
+    end
+    if castSettings.channelTickMinConfidence == nil then castSettings.channelTickMinConfidence = 0.7 end
+    if castSettings.channelTickSourcePolicy == nil then
+        castSettings.channelTickSourcePolicy = CHANNEL_TICK_SOURCE_POLICY_AUTO
+    end
 
     -- Empowered color overrides (player only) - initialize with default constants
     if not castSettings.empoweredStageColors then
@@ -357,8 +423,15 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
         local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
         local viewer = _G["EssentialCooldownViewer"]
         if viewer then
-            anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
-            anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY)
+            -- Keep castbar spacing visually consistent with the active bottom CDM row.
+            -- In horizontal CDM layouts, row yOffset can move the visible bottom row
+            -- without changing the viewer frame bounds.
+            local bottomRowYOffset = 0
+            if viewer.__cdmLayoutDirection ~= "VERTICAL" then
+                bottomRowYOffset = QUICore:PixelRound(viewer.__cdmBottomRowYOffset or 0, anchorFrame)
+            end
+            anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
+            anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
         else
             anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
         end
@@ -368,8 +441,13 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
         local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
         local viewer = _G["UtilityCooldownViewer"]
         if viewer then
-            anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
-            anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY)
+            -- Mirror Essential logic so Utility-anchored castbars behave consistently.
+            local bottomRowYOffset = 0
+            if viewer.__cdmLayoutDirection ~= "VERTICAL" then
+                bottomRowYOffset = QUICore:PixelRound(viewer.__cdmBottomRowYOffset or 0, anchorFrame)
+            end
+            anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
+            anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
         else
             anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
         end
@@ -506,16 +584,688 @@ local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, ico
     end
 end
 
+local VALID_TEXT_ANCHORS = {
+    TOPLEFT = true,
+    TOP = true,
+    TOPRIGHT = true,
+    LEFT = true,
+    CENTER = true,
+    RIGHT = true,
+    BOTTOMLEFT = true,
+    BOTTOM = true,
+    BOTTOMRIGHT = true,
+}
+
+local BAR_EDGE_PADDING = 2
+local TIME_TEXT_RESERVE_SAMPLE = "9.9"
+local TIME_TEXT_EXTRA_PADDING = -4
+
+local function NormalizeTextAnchor(anchor)
+    local safeAnchor = string.upper(tostring(anchor or "CENTER"))
+    if not VALID_TEXT_ANCHORS[safeAnchor] then
+        return "CENTER"
+    end
+    return safeAnchor
+end
+
+local function GetTextJustificationFromAnchor(anchor)
+    local safeAnchor = NormalizeTextAnchor(anchor)
+    local justifyH = "CENTER"
+    local justifyV = "MIDDLE"
+
+    if safeAnchor == "LEFT" or safeAnchor == "TOPLEFT" or safeAnchor == "BOTTOMLEFT" then
+        justifyH = "LEFT"
+    elseif safeAnchor == "RIGHT" or safeAnchor == "TOPRIGHT" or safeAnchor == "BOTTOMRIGHT" then
+        justifyH = "RIGHT"
+    end
+
+    if safeAnchor == "TOP" or safeAnchor == "TOPLEFT" or safeAnchor == "TOPRIGHT" then
+        justifyV = "TOP"
+    elseif safeAnchor == "BOTTOM" or safeAnchor == "BOTTOMLEFT" or safeAnchor == "BOTTOMRIGHT" then
+        justifyV = "BOTTOM"
+    end
+
+    return justifyH, justifyV
+end
+
 local function UpdateTextPosition(textElement, statusBar, anchor, offsetX, offsetY, show)
     if not textElement then return end
     
     if show then
+        local normalizedAnchor = NormalizeTextAnchor(anchor)
+        local justifyH, justifyV = GetTextJustificationFromAnchor(anchor)
+        textElement:SetJustifyH(justifyH)
+        textElement:SetJustifyV(justifyV)
         textElement:ClearAllPoints()
-        textElement:SetPoint(anchor, statusBar, anchor, QUICore:PixelRound(offsetX, textElement), QUICore:PixelRound(offsetY, textElement))
+        textElement:SetPoint(normalizedAnchor, statusBar, normalizedAnchor, QUICore:PixelRound(offsetX, textElement), QUICore:PixelRound(offsetY, textElement))
         textElement:Show()
     else
         textElement:Hide()
     end
+end
+
+local function GetFixedTimeTextReserveWidth(anchorFrame, currentCastSettings)
+    if not (anchorFrame and anchorFrame.statusBar and anchorFrame.timeText) then
+        return 0
+    end
+
+    local timeText = anchorFrame.timeText
+    local fontPath, fontSize, fontFlags = timeText:GetFont()
+    local safeFontPath = fontPath or GetFontPath()
+    local safeFontSize = fontSize or currentCastSettings.fontSize or 12
+    local safeFontFlags = fontFlags or GetFontOutline() or ""
+    local fontSignature = tostring(safeFontPath) .. "|" .. tostring(safeFontSize) .. "|" .. tostring(safeFontFlags)
+
+    if anchorFrame._timeTextReserveSignature ~= fontSignature then
+        local probe = anchorFrame._timeTextReserveProbe
+        if not probe then
+            probe = anchorFrame.statusBar:CreateFontString(nil, "OVERLAY")
+            probe:SetWordWrap(false)
+            anchorFrame._timeTextReserveProbe = probe
+        end
+
+        local ok = pcall(probe.SetFont, probe, safeFontPath, safeFontSize, safeFontFlags)
+        if not ok then
+            probe:SetFont(GetFontPath(), currentCastSettings.fontSize or 12, GetFontOutline())
+        end
+        probe:SetText(TIME_TEXT_RESERVE_SAMPLE)
+
+        anchorFrame._timeTextReserveWidth = SafeToNumber(probe:GetStringWidth()) or 0
+        anchorFrame._timeTextReserveSignature = fontSignature
+    end
+
+    local reserveWidth = anchorFrame._timeTextReserveWidth or 0
+    if reserveWidth <= 0 then
+        reserveWidth = SafeToNumber(timeText:GetStringWidth()) or 0
+    end
+    return reserveWidth
+end
+
+local function UpdateSpellTextWidthClamp(anchorFrame, castSettingsOverride, showTimeTextOverride)
+    if not (anchorFrame and anchorFrame.spellText and anchorFrame.statusBar) then return end
+
+    local currentSettings = anchorFrame.unitKey and GetUnitSettings(anchorFrame.unitKey)
+    local currentCastSettings = (currentSettings and currentSettings.castbar) or castSettingsOverride
+    if not currentCastSettings then return end
+
+    local barWidth = SafeToNumber(anchorFrame.statusBar:GetWidth())
+    if not (barWidth and barWidth > 0) then return end
+
+    local showTimeText = showTimeTextOverride
+    if showTimeText == nil then
+        showTimeText = currentCastSettings.showTimeText
+        if showTimeText and currentCastSettings.hideTimeTextOnEmpowered and anchorFrame.isEmpowered then
+            showTimeText = false
+        end
+    end
+
+    local spellPad = math.max(0, math.abs(currentCastSettings.spellTextOffsetX or 4))
+    local reserveForTime = 0
+
+    if showTimeText and anchorFrame.timeText and anchorFrame.timeText:IsShown() then
+        local timePad = math.max(0, math.abs(currentCastSettings.timeTextOffsetX or -4))
+        local fixedReserveWidth = GetFixedTimeTextReserveWidth(anchorFrame, currentCastSettings)
+        if fixedReserveWidth > 0 then
+            reserveForTime = timePad + fixedReserveWidth + TIME_TEXT_EXTRA_PADDING
+        end
+    end
+
+    anchorFrame.spellText:SetWidth(math.max(1, barWidth - spellPad - reserveForTime - BAR_EDGE_PADDING))
+end
+
+---------------------------------------------------------------------------
+-- CHANNEL TICK RESOLVER + RENDERING
+---------------------------------------------------------------------------
+local function ClampNumber(value, minValue, maxValue)
+    if value == nil then return minValue end
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function SafeRound(value)
+    if not value then return nil end
+    if value >= 0 then
+        return math.floor(value + 0.5)
+    end
+    return math.ceil(value - 0.5)
+end
+
+local function GetChannelTickSourcePolicy(castSettings)
+    local policy = castSettings and castSettings.channelTickSourcePolicy
+    if policy == CHANNEL_TICK_SOURCE_POLICY_STATIC or policy == CHANNEL_TICK_SOURCE_POLICY_RUNTIME_ONLY then
+        return policy
+    end
+    return CHANNEL_TICK_SOURCE_POLICY_AUTO
+end
+
+local function GetDurationSecondsFromDurationObject(durationObj)
+    if not durationObj then return nil end
+
+    local getters = {
+        "GetTotalDuration",
+        "GetDuration",
+        "GetMaxDuration",
+        "GetRemainingDuration",
+        "GetRemaining",
+    }
+
+    for _, methodName in ipairs(getters) do
+        local getter = durationObj[methodName]
+        if getter then
+            local ok, value = pcall(getter, durationObj)
+            if ok then
+                value = SafeToNumber(value)
+                if value and value > 0 then
+                    return value
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function BuildEvenTickPositions(tickCount)
+    if not tickCount or tickCount <= 1 then
+        return nil
+    end
+    local positions = {}
+    for i = 1, tickCount - 1 do
+        positions[#positions + 1] = i / tickCount
+    end
+    return positions
+end
+
+local function BuildIntervalTickPositions(duration, interval)
+    if not duration or duration <= 0 or not interval or interval <= 0 then
+        return nil, nil
+    end
+
+    local tickCount = SafeRound(duration / interval)
+    tickCount = ClampNumber(tickCount or 0, 2, 24)
+    local positions = {}
+    for i = 1, tickCount - 1 do
+        local position = (i * interval) / duration
+        if position > 0 and position < 1 then
+            positions[#positions + 1] = position
+        end
+    end
+
+    if #positions == 0 then
+        positions = BuildEvenTickPositions(tickCount)
+    end
+
+    return tickCount, positions
+end
+
+local function IsSpellKnownForTickRule(spellID)
+    if not spellID then return false end
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        return C_SpellBook.IsSpellKnown(spellID)
+    end
+    if IsPlayerSpell then
+        return IsPlayerSpell(spellID)
+    end
+    return false
+end
+
+local function UnitHasAuraBySpellID(unit, auraSpellID, filter)
+    if not unit or not auraSpellID then return false end
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
+        local aura = C_UnitAuras.GetAuraDataBySpellID(unit, auraSpellID)
+        if aura then
+            return true
+        end
+    end
+
+    if AuraUtil and AuraUtil.FindAuraBySpellID then
+        local aura = AuraUtil.FindAuraBySpellID(auraSpellID, unit, filter)
+        return aura ~= nil
+    end
+
+    return false
+end
+
+local function ResolveRuleBasedTickModel(castbar, castContext)
+    local spellID = castContext and NormalizeChannelTickSpellID(castContext.spellID)
+    local rule = spellID and CHANNEL_TICK_RULE_DB[spellID]
+    if not rule then return nil end
+
+    local tickCount = rule.baseTicks
+    if not tickCount or tickCount <= 1 then
+        return nil
+    end
+
+    if rule.talentOptions then
+        for _, option in ipairs(rule.talentOptions) do
+            if option and IsSpellKnownForTickRule(option.spellID) and option.ticks and option.ticks > 1 then
+                tickCount = option.ticks
+                break
+            end
+        end
+    end
+
+    if rule.auraOptions and castContext and castContext.unit then
+        for _, option in ipairs(rule.auraOptions) do
+            if option and UnitHasAuraBySpellID(castContext.unit, option.auraSpellID, option.filter) and option.ticks and option.ticks > 1 then
+                tickCount = option.ticks
+                break
+            end
+        end
+    end
+
+    if rule.sequenceBonus and castContext and castContext.unit and UnitIsUnit and UnitIsUnit(castContext.unit, "player") then
+        local history = castbar.channelTickRuleHistory or {}
+        local now = GetTime()
+        local last = history[spellID]
+        if last and (now - last) <= (rule.sequenceBonus.windowSeconds or 0) then
+            tickCount = tickCount + (rule.sequenceBonus.bonusTicks or 0)
+        end
+        history[spellID] = now
+        castbar.channelTickRuleHistory = history
+    end
+
+    tickCount = ClampNumber(SafeRound(tickCount) or 0, 2, 24)
+    local positions = BuildEvenTickPositions(tickCount)
+    if not positions or #positions == 0 then
+        return nil
+    end
+
+    return {
+        positions = positions,
+        tickCount = tickCount,
+        confidence = 0.9,
+        source = "rules",
+        reason = "curated_profile",
+    }
+end
+
+local function HideChannelTickMarkers(bar)
+    if not bar or not bar.channelTickMarkers then return end
+    for _, marker in ipairs(bar.channelTickMarkers) do
+        marker:Hide()
+    end
+end
+
+local function StoreChannelTickCalibration(observation)
+    if not observation then return end
+    local spellID = NormalizeChannelTickSpellID(observation.spellID)
+    if not spellID then return end
+    if not observation.tickTimes or #observation.tickTimes < 2 then return end
+
+    local intervals = {}
+    for i = 2, #observation.tickTimes do
+        local delta = observation.tickTimes[i] - observation.tickTimes[i - 1]
+        if delta and delta > 0.05 and delta < 5 then
+            intervals[#intervals + 1] = delta
+        end
+    end
+    if #intervals == 0 then return end
+
+    local sum = 0
+    for _, interval in ipairs(intervals) do
+        sum = sum + interval
+    end
+    local avgInterval = sum / #intervals
+    if not avgInterval or avgInterval <= 0 then return end
+
+    local variance = 0
+    for _, interval in ipairs(intervals) do
+        local diff = interval - avgInterval
+        variance = variance + (diff * diff)
+    end
+    variance = variance / #intervals
+    local stdev = math.sqrt(variance)
+    local variation = stdev / avgInterval
+
+    local observedTickCount = #observation.tickTimes
+    if observation.startTime and observation.endTime and observation.endTime > observation.startTime then
+        local duration = observation.endTime - observation.startTime
+        local derivedCount = SafeRound(duration / avgInterval)
+        if derivedCount and derivedCount > observedTickCount then
+            observedTickCount = derivedCount
+        end
+    end
+    observedTickCount = ClampNumber(observedTickCount, 2, 24)
+
+    local confidence = 0.45 + math.min(0.2, #intervals * 0.05)
+    if variation <= 0.08 then
+        confidence = confidence + 0.25
+    elseif variation <= 0.15 then
+        confidence = confidence + 0.15
+    elseif variation <= 0.25 then
+        confidence = confidence + 0.05
+    else
+        confidence = confidence - 0.1
+    end
+
+    local matchQuality = ClampNumber(observation.matchQuality or 0.5, 0.25, 1)
+    confidence = confidence + (0.1 * (matchQuality - 0.5))
+    confidence = ClampNumber(confidence, 0.35, 0.95)
+
+    local existing = CHANNEL_TICK_RUNTIME_CACHE[spellID]
+    if existing then
+        existing.interval = (existing.interval * 0.7) + (avgInterval * 0.3)
+        existing.tickCount = SafeRound((existing.tickCount * 0.7) + (observedTickCount * 0.3))
+        existing.confidence = ClampNumber(math.max(existing.confidence * 0.9, confidence), 0.3, 0.95)
+        existing.updatedAt = GetTime()
+    else
+        CHANNEL_TICK_RUNTIME_CACHE[spellID] = {
+            interval = avgInterval,
+            tickCount = observedTickCount,
+            confidence = confidence,
+            updatedAt = GetTime(),
+        }
+    end
+end
+
+local function StopChannelTickObservation(bar)
+    if not bar then return end
+    local guid = bar.channelTickObservationGUID
+    if not guid then
+        local unit = bar.unit
+        guid = unit and UnitGUID(unit)
+    end
+    if not guid then return end
+
+    local observation = CHANNEL_TICK_ACTIVE_BY_GUID[guid]
+    if observation then
+        StoreChannelTickCalibration(observation)
+        CHANNEL_TICK_ACTIVE_BY_GUID[guid] = nil
+    end
+    bar.channelTickObservationGUID = nil
+end
+
+local function OnChannelTickCombatLogEvent()
+    local _, subEvent, _, sourceGUID, _, _, _, _, _, _, _, spellID, spellName = CombatLogGetCurrentEventInfo()
+    if not CHANNEL_TICK_SUBEVENTS[subEvent] then return end
+    if not sourceGUID then return end
+
+    local observation = CHANNEL_TICK_ACTIVE_BY_GUID[sourceGUID]
+    if not observation then return end
+
+    local now = GetTime()
+    if observation.endTime and now > (observation.endTime + 0.5) then
+        StoreChannelTickCalibration(observation)
+        CHANNEL_TICK_ACTIVE_BY_GUID[sourceGUID] = nil
+        return
+    end
+
+    local matched = false
+    local quality = 0.5
+    local normalizedSpellID = NormalizeChannelTickSpellID(spellID)
+    local observationSpellID = NormalizeChannelTickSpellID(observation.spellID)
+    if observationSpellID and normalizedSpellID and observationSpellID == normalizedSpellID then
+        matched = true
+        quality = 1.0
+    elseif observation.spellName and spellName and observation.spellName == spellName then
+        matched = true
+        quality = 0.75
+    end
+    if not matched then return end
+
+    if observation.lastTickTime and (now - observation.lastTickTime) < 0.08 then
+        return
+    end
+
+    observation.lastTickTime = now
+    observation.matchQuality = math.max(observation.matchQuality or 0, quality)
+    if observation.tickTimes then
+        observation.tickTimes[#observation.tickTimes + 1] = now
+    end
+end
+
+local function EnsureChannelTickEventRegistration()
+    if CHANNEL_TICK_EVENT_REGISTERED then return end
+    if not EventRegistry or type(EventRegistry.RegisterCallback) ~= "function" then return end
+    EventRegistry:RegisterCallback("COMBAT_LOG_EVENT_UNFILTERED", OnChannelTickCombatLogEvent, CHANNEL_TICK_EVENT_FRAME)
+    CHANNEL_TICK_EVENT_REGISTERED = true
+end
+
+local function StartChannelTickObservation(bar, spellID, spellName, startTime, endTime)
+    if not bar or not bar.unit then return end
+    local sourceGUID = UnitGUID(bar.unit)
+    if not sourceGUID then return end
+
+    EnsureChannelTickEventRegistration()
+    StopChannelTickObservation(bar)
+
+    CHANNEL_TICK_ACTIVE_BY_GUID[sourceGUID] = {
+        spellID = NormalizeChannelTickSpellID(spellID),
+        spellName = spellName,
+        sourceGUID = sourceGUID,
+        startTime = startTime or GetTime(),
+        endTime = endTime,
+        tickTimes = {},
+        matchQuality = 0,
+        lastTickTime = nil,
+    }
+    bar.channelTickObservationGUID = sourceGUID
+end
+
+local function GetChannelTickMinConfidence(castSettings)
+    local v = castSettings and castSettings.channelTickMinConfidence
+    return ClampNumber(v or 0.7, 0.5, 1.0)
+end
+
+local function ResolveChannelTickModel(castbar, castSettings, castContext)
+    if not castContext or not castContext.isChanneled then
+        return nil
+    end
+    if castContext.isEmpowered then
+        return nil
+    end
+    if not castSettings or castSettings.showChannelTicks == false then
+        return nil
+    end
+
+    local minConfidence = GetChannelTickMinConfidence(castSettings)
+    local sourcePolicy = GetChannelTickSourcePolicy(castSettings)
+    local duration = castContext.duration
+    local spellID = NormalizeChannelTickSpellID(castContext.spellID)
+
+    local rulesCandidate
+    if sourcePolicy ~= CHANNEL_TICK_SOURCE_POLICY_RUNTIME_ONLY then
+        rulesCandidate = ResolveRuleBasedTickModel(castbar, castContext)
+    end
+
+    local staticCandidate
+    if sourcePolicy ~= CHANNEL_TICK_SOURCE_POLICY_RUNTIME_ONLY and spellID then
+        local staticModel = CHANNEL_TICK_STATIC_DB[spellID]
+        if staticModel then
+            local tickCount, positions = BuildIntervalTickPositions(duration, staticModel.interval)
+            if positions and #positions > 0 then
+                staticCandidate = {
+                    positions = positions,
+                    tickCount = tickCount,
+                    confidence = 0.8,
+                    source = "static",
+                    reason = "static_interval",
+                }
+            end
+        end
+    end
+
+    local runtimeCandidate
+    if sourcePolicy ~= CHANNEL_TICK_SOURCE_POLICY_STATIC and spellID then
+        local runtimeModel = CHANNEL_TICK_RUNTIME_CACHE[spellID]
+        if runtimeModel then
+            local tickCount = runtimeModel.tickCount
+            local positions = nil
+
+            if runtimeModel.interval and duration and duration > 0 then
+                tickCount, positions = BuildIntervalTickPositions(duration, runtimeModel.interval)
+            elseif tickCount and tickCount > 1 then
+                positions = BuildEvenTickPositions(tickCount)
+            end
+
+            if positions and #positions > 0 then
+                runtimeCandidate = {
+                    positions = positions,
+                    tickCount = tickCount or #positions + 1,
+                    confidence = ClampNumber(runtimeModel.confidence or 0.5, 0.3, 0.95),
+                    source = "runtime",
+                    reason = "runtime_calibration",
+                }
+            end
+        end
+    end
+
+    local function candidatePasses(candidate)
+        return candidate and candidate.confidence >= minConfidence
+    end
+
+    if sourcePolicy == CHANNEL_TICK_SOURCE_POLICY_RUNTIME_ONLY then
+        if candidatePasses(runtimeCandidate) then return runtimeCandidate end
+        return nil
+    end
+    if sourcePolicy == CHANNEL_TICK_SOURCE_POLICY_STATIC then
+        if candidatePasses(rulesCandidate) then return rulesCandidate end
+        if candidatePasses(staticCandidate) then return staticCandidate end
+        return nil
+    end
+
+    -- Auto policy:
+    -- - use static immediately as a baseline,
+    -- - allow runtime to override when it is more trustworthy or materially disagrees.
+    if candidatePasses(rulesCandidate) then
+        return rulesCandidate
+    end
+
+    local staticOk = candidatePasses(staticCandidate)
+    local runtimeOk = candidatePasses(runtimeCandidate)
+    if staticOk and runtimeOk then
+        local runtimeBetter = runtimeCandidate.confidence >= ((staticCandidate.confidence or 0) + 0.03)
+        local tickMismatch = runtimeCandidate.tickCount and staticCandidate.tickCount
+            and math.abs(runtimeCandidate.tickCount - staticCandidate.tickCount) >= 1
+        if runtimeBetter or (tickMismatch and runtimeCandidate.confidence >= 0.75) then
+            return runtimeCandidate
+        end
+        return staticCandidate
+    end
+    if staticOk then return staticCandidate end
+    if runtimeOk then return runtimeCandidate end
+    return nil
+end
+
+local function EnsureChannelTickTextures(bar, count)
+    if not bar or not bar.statusBar or not count or count <= 0 then return end
+    bar.channelTickMarkers = bar.channelTickMarkers or {}
+
+    for i = 1, count do
+        local marker = bar.channelTickMarkers[i]
+        if not marker then
+            marker = bar.statusBar:CreateTexture(nil, "OVERLAY", nil, 3)
+            bar.channelTickMarkers[i] = marker
+        end
+    end
+end
+
+local function ApplyChannelTickPositions(bar, positions, castSettings)
+    if not bar or not bar.statusBar or not positions then return false end
+
+    local barWidth = SafeToNumber(bar.statusBar:GetWidth())
+    local barHeight = SafeToNumber(bar.statusBar:GetHeight())
+    if not barWidth or barWidth <= 0 or not barHeight or barHeight <= 0 then
+        bar.channelTickLayoutDirty = true
+        return false
+    end
+
+    EnsureChannelTickTextures(bar, #positions)
+    local color = castSettings and castSettings.channelTickColor or CHANNEL_TICK_DEFAULT_COLOR
+    local thickness = QUICore:Pixels((castSettings and castSettings.channelTickThickness) or 1, bar.statusBar)
+    thickness = math.max(QUICore:Pixels(1, bar.statusBar), thickness)
+
+    for i, position in ipairs(positions) do
+        local marker = bar.channelTickMarkers[i]
+        local x = QUICore:PixelRound((barWidth * position) - (thickness / 2), bar.statusBar)
+        marker:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 0.9)
+        marker:ClearAllPoints()
+        marker:SetPoint("LEFT", bar.statusBar, "LEFT", x, 0)
+        marker:SetPoint("TOP", bar.statusBar, "TOP", 0, 0)
+        marker:SetPoint("BOTTOM", bar.statusBar, "BOTTOM", 0, 0)
+        marker:SetWidth(thickness)
+        marker:Show()
+    end
+
+    if bar.channelTickMarkers then
+        for i = #positions + 1, #bar.channelTickMarkers do
+            if bar.channelTickMarkers[i] then
+                bar.channelTickMarkers[i]:Hide()
+            end
+        end
+    end
+
+    bar.channelTickLayoutDirty = nil
+    bar.channelTickLastLayout = string.format("%d:%d:%d:%0.2f",
+        SafeRound(barWidth) or 0,
+        SafeRound(barHeight) or 0,
+        #positions,
+        thickness
+    )
+    return true
+end
+
+local function RefreshChannelTickMarkers(bar, castSettings)
+    if not bar then return end
+    if not bar.channelTickPositions or #bar.channelTickPositions == 0 then
+        HideChannelTickMarkers(bar)
+        return
+    end
+    if not castSettings or castSettings.showChannelTicks == false then
+        HideChannelTickMarkers(bar)
+        return
+    end
+    ApplyChannelTickPositions(bar, bar.channelTickPositions, castSettings)
+end
+
+local function ClearChannelTickState(bar)
+    if not bar then return end
+    HideChannelTickMarkers(bar)
+    StopChannelTickObservation(bar)
+    bar.channelTickPositions = nil
+    bar.channelTickResolution = nil
+    bar.channelTickSpellID = nil
+    bar.channelTickLayoutDirty = nil
+    bar.channelTickLastLayout = nil
+end
+
+local function UpdateChannelTicksForCurrentCast(bar, castSettings, castContext)
+    if not bar then return end
+    ClearChannelTickState(bar)
+    if bar.unitKey == "boss" or bar.unitKey == "pet"
+        or (type(bar.unit) == "string" and (bar.unit:match("^boss%d+$") or bar.unit == "pet")) then
+        return
+    end
+
+    if not castContext or not castContext.isChanneled then
+        return
+    end
+    if castContext.isEmpowered then
+        return
+    end
+
+    local sourcePolicy = GetChannelTickSourcePolicy(castSettings)
+    if sourcePolicy ~= CHANNEL_TICK_SOURCE_POLICY_STATIC then
+        StartChannelTickObservation(
+            bar,
+            castContext.spellID,
+            castContext.spellName,
+            castContext.startTime,
+            castContext.endTime
+        )
+    end
+
+    local resolution = ResolveChannelTickModel(bar, castSettings, castContext)
+    if not resolution or not resolution.positions or #resolution.positions == 0 then
+        return
+    end
+
+    bar.channelTickResolution = resolution
+    bar.channelTickPositions = resolution.positions
+    bar.channelTickSpellID = NormalizeChannelTickSpellID(castContext.spellID)
+    RefreshChannelTickMarkers(bar, castSettings)
 end
 
 ---------------------------------------------------------------------------
@@ -556,25 +1306,8 @@ local function UpdateCastbarElements(anchorFrame, unitKey, castSettings)
         showTimeText
     )
 
-    -- Constrain spell text width so it doesn't overflow the status bar
-    if anchorFrame.spellText and anchorFrame.statusBar then
-        local barWidth = SafeToNumber(anchorFrame.statusBar:GetWidth())
-        if barWidth and barWidth > 0 then
-            local spellPad = math.abs(currentCastSettings.spellTextOffsetX or 4)
-            local timePad = math.abs(currentCastSettings.timeTextOffsetX or -4)
-            local timeWidth = 0
-            if showTimeText and anchorFrame.timeText then
-                local measuredWidth = anchorFrame.timeText:GetStringWidth()
-                timeWidth = SafeToNumber(measuredWidth) or 0
-
-                -- If no active cast or restricted value, estimate from font size ("00.0" style text)
-                if timeWidth <= 0 then
-                    timeWidth = (currentCastSettings.fontSize or 10) * 3.5
-                end
-            end
-            anchorFrame.spellText:SetWidth(math.max(1, barWidth - spellPad - timePad - timeWidth - 2))
-        end
-    end
+    -- Constrain spell text width while avoiding over-reserving when time text is empty.
+    UpdateSpellTextWidthClamp(anchorFrame, currentCastSettings, showTimeText)
 
     -- Empowered level text (player only)
     if unitKey == "player" and anchorFrame.empoweredLevelText then
@@ -598,6 +1331,10 @@ local function UpdateCastbarElements(anchorFrame, unitKey, castSettings)
                 overlay:SetColorTexture(unpack(stageColor))
             end
         end
+    end
+
+    if anchorFrame.channelTickPositions then
+        RefreshChannelTickMarkers(anchorFrame, currentCastSettings)
     end
 end
 
@@ -652,6 +1389,7 @@ local PREVIEW_ICON_ID = 136048
 
 local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
     if not castbar then return end
+    ClearChannelTickState(castbar)
     
     local castTime = 3.0
     local spellName = (unitKey == "boss" and bossIndex) and ("Boss " .. bossIndex .. " Cast") or "Preview Cast"
@@ -757,6 +1495,8 @@ local function ClearPreviewSimulation(castbar)
     castbar:EnableMouse(false)
     castbar:SetScript("OnDragStart", nil)
     castbar:SetScript("OnDragStop", nil)
+
+    ClearChannelTickState(castbar)
     
     if not UnitCastingInfo(castbar.unit) and not UnitChannelInfo(castbar.unit) then
         castbar:Hide()
@@ -992,7 +1732,7 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     end
     
     local castSettings = settings.castbar
-    InitializeDefaultSettings(castSettings)
+    InitializeDefaultSettings(castSettings, unitKey)
     
     local fontSize = castSettings.fontSize or 12
 
@@ -1064,6 +1804,8 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     anchorFrame.numStages = 0
     anchorFrame.empoweredStages = {}
     anchorFrame.stageOverlays = {}
+    anchorFrame.channelTickMarkers = {}
+    anchorFrame.channelTickPositions = nil
     
     self:SetupCastbar(anchorFrame, unit, unitKey, castSettings)
     
@@ -1088,11 +1830,15 @@ local function GetCastInfo(castbar, unit)
     local spellName, text, texture, startTimeMS, endTimeMS, _, _, notInterruptible, unitSpellID = UnitCastingInfo(unit)
     local isChanneled = false
     local channelStages = 0
+    local channelSpellID = nil
 
     if not spellName then
-        spellName, text, texture, startTimeMS, endTimeMS, _, notInterruptible, _, _, channelStages = UnitChannelInfo(unit)
+        spellName, text, texture, startTimeMS, endTimeMS, _, notInterruptible, channelSpellID, _, channelStages = UnitChannelInfo(unit)
         if spellName then
             isChanneled = true
+            if channelSpellID and not unitSpellID then
+                unitSpellID = channelSpellID
+            end
         end
     end
 
@@ -1180,6 +1926,42 @@ local function StoreCastTimes(castbar, isPlayer, startTimeMS, endTimeMS, startTi
     end
 end
 
+local function BuildChannelTickCastContext(castbar, spellName, spellID, isChanneled, isEmpowered, channelStages, startTime, endTime, durationObj, useTimerDriven)
+    if not isChanneled then
+        return nil
+    end
+
+    local resolvedDuration = nil
+    local resolvedStart = startTime
+    local resolvedEnd = endTime
+
+    if startTime and endTime and endTime > startTime then
+        resolvedDuration = endTime - startTime
+    else
+        resolvedDuration = GetDurationSecondsFromDurationObject(durationObj)
+    end
+
+    if not resolvedStart then
+        resolvedStart = GetTime()
+    end
+    if not resolvedEnd and resolvedDuration and resolvedDuration > 0 then
+        resolvedEnd = resolvedStart + resolvedDuration
+    end
+
+    return {
+        spellID = NormalizeChannelTickSpellID(spellID),
+        spellName = spellName,
+        isChanneled = true,
+        isEmpowered = isEmpowered,
+        channelStages = channelStages or 0,
+        duration = resolvedDuration,
+        startTime = resolvedStart,
+        endTime = resolvedEnd,
+        timerDriven = useTimerDriven == true,
+        unit = castbar and castbar.unit,
+    }
+end
+
 -- Update castbar visual elements (icon, text, colors, bar)
 local function UpdateCastbarVisuals(castbar, castSettings, unitKey, texture, text, spellName, unit, isChanneled, notInterruptible, startTime, endTime)
     -- Get current settings
@@ -1247,6 +2029,7 @@ local function HandleNoCast(castbar, castSettings, isPlayer, onUpdateHandler)
             if isPlayer then
                 ClearEmpoweredState(castbar)
             end
+            ClearChannelTickState(castbar)
 
             -- Clear timer-driven state
             castbar.timerDriven = false
@@ -1275,6 +2058,7 @@ end
 ---------------------------------------------------------------------------
 function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
     local isPlayer = (unit == "player")
+    castbar.channelTickMarkers = castbar.channelTickMarkers or {}
     
     -- Unified OnUpdate handler - handles both real casts and preview
     local function CastBar_OnUpdate(self, elapsed)
@@ -1345,6 +2129,17 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 if remaining ~= nil then
                     UpdateThrottledText(self, elapsed, self.timeText, remaining)
                 end
+
+                if self.channelTickPositions then
+                    self.channelTickLayoutThrottle = (self.channelTickLayoutThrottle or 0) + elapsed
+                    local refreshInterval = self.channelTickLayoutDirty and 0.05 or 0.2
+                    if self.channelTickLayoutThrottle >= refreshInterval then
+                        self.channelTickLayoutThrottle = 0
+                        local currentSettings = GetUnitSettings(self.unitKey)
+                        local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
+                        RefreshChannelTickMarkers(self, currentCastSettings)
+                    end
+                end
                 return
             end
 
@@ -1356,6 +2151,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             else
                 -- Target/focus uses milliseconds, convert to seconds
                 if not self.castStartTime or not self.castEndTime then
+                    ClearChannelTickState(self)
                     self:SetScript("OnUpdate", nil)
                     self:Hide()
                     TryApplyDeferredCastbarRefresh(self)
@@ -1366,6 +2162,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             end
 
             if not startTime or not endTime then
+                ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
                 TryApplyDeferredCastbarRefresh(self)
@@ -1377,6 +2174,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 if isPlayer then
                     ClearEmpoweredState(self)
                 end
+                ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
                 TryApplyDeferredCastbarRefresh(self)
@@ -1396,6 +2194,17 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
 
             self.statusBar:SetMinMaxValues(0, duration)
             self.statusBar:SetValue(progress)
+
+            if self.channelTickPositions then
+                self.channelTickLayoutThrottle = (self.channelTickLayoutThrottle or 0) + elapsed
+                local refreshInterval = self.channelTickLayoutDirty and 0.05 or 0.2
+                if self.channelTickLayoutThrottle >= refreshInterval then
+                    self.channelTickLayoutThrottle = 0
+                    local currentSettings = GetUnitSettings(self.unitKey)
+                    local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
+                    RefreshChannelTickMarkers(self, currentCastSettings)
+                end
+            end
 
             -- Empowered cast handling (player only)
             if isPlayer and self.isEmpowered then
@@ -1474,6 +2283,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             UpdateThrottledText(self, elapsed, self.timeText, remaining)
         else
             -- No cast and no preview - hide
+            ClearChannelTickState(self)
             self:SetScript("OnUpdate", nil)
             self:Hide()
         end
@@ -1486,6 +2296,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
     function castbar:Cast(spellID, isEmpowerEvent)
         -- Get cast information (now includes durationObj and hasSecretTiming)
         local spellName, text, texture, startTimeMS, endTimeMS, notInterruptible, unitSpellID, isChanneled, channelStages, durationObj, hasSecretTiming = GetCastInfo(self, self.unit)
+        local resolvedSpellID = spellID or unitSpellID
 
         -- Detect empowered cast (player only)
         local isEmpowered, numStages = DetectEmpoweredCast(isPlayer, spellID, unitSpellID, isEmpowerEvent, isChanneled, channelStages)
@@ -1541,6 +2352,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             self.notInterruptible = notInterruptible
             self.timerDriven = useTimerDriven
             self.durationObj = durationObj
+            self.channelSpellID = resolvedSpellID
             self._assumeCountdown = nil  -- Reset countdown detection for new cast
 
             if useTimerDriven then
@@ -1565,6 +2377,20 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 endTime = AdjustEmpoweredEndTime(self, isPlayer, isEmpowered, endTime)
                 StoreCastTimes(self, isPlayer, startTimeMS, endTimeMS, startTime, endTime)
             end
+
+            local channelCastContext = BuildChannelTickCastContext(
+                self,
+                spellName,
+                resolvedSpellID,
+                isChanneled,
+                isEmpowered,
+                channelStages,
+                startTime,
+                endTime,
+                durationObj,
+                useTimerDriven
+            )
+            UpdateChannelTicksForCurrentCast(self, castSettings, channelCastContext)
 
             -- Set icon texture IMMEDIATELY
             if SetIconTexture(self, texture) then
@@ -1591,6 +2417,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             self:Show()
         else
             -- No real cast - handle preview mode
+            ClearChannelTickState(self)
             HandleNoCast(self, castSettings, isPlayer, CastBar_OnUpdate)
         end
     end
@@ -1609,6 +2436,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         -- Cast end events - hide immediately without re-querying APIs
         UNIT_SPELLCAST_STOP = function(self, spellID)
             if isPlayer then ClearEmpoweredState(self) end
+            ClearChannelTickState(self)
             self.timerDriven = false
             self.durationObj = nil
             self:SetScript("OnUpdate", nil)
@@ -1617,6 +2445,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         end,
         UNIT_SPELLCAST_CHANNEL_STOP = function(self, spellID)
             if isPlayer then ClearEmpoweredState(self) end
+            ClearChannelTickState(self)
             self.timerDriven = false
             self.durationObj = nil
             self:SetScript("OnUpdate", nil)
@@ -1629,6 +2458,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 return
             end
             if isPlayer then ClearEmpoweredState(self) end
+            ClearChannelTickState(self)
             self.timerDriven = false
             self.durationObj = nil
             self:SetScript("OnUpdate", nil)
@@ -1637,6 +2467,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         end,
         UNIT_SPELLCAST_INTERRUPTED = function(self, spellID)
             if isPlayer then ClearEmpoweredState(self) end
+            ClearChannelTickState(self)
             self.timerDriven = false
             self.durationObj = nil
             self:SetScript("OnUpdate", nil)
@@ -1672,6 +2503,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             else
                 -- Cast ended (cancelled, interrupted, or completed) - hide immediately
                 ClearEmpoweredState(self)
+                ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
                 TryApplyDeferredCastbarRefresh(self)
@@ -1741,6 +2573,7 @@ function QUI_Castbar:SetupBossCastbar(castbar, unit, bossIndex, castSettings)
             local now = GetTime()
             if now >= self.endTime then
                 ClearEmpoweredState(self)
+                ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
                 TryApplyDeferredCastbarRefresh(self)
@@ -1791,6 +2624,7 @@ function QUI_Castbar:SetupBossCastbar(castbar, unit, bossIndex, castSettings)
             UpdateThrottledText(self, elapsed, self.timeText, remaining)
         else
             -- No cast and no preview - hide
+            ClearChannelTickState(self)
             self:SetScript("OnUpdate", nil)
             self:Hide()
         end
@@ -1806,9 +2640,10 @@ function QUI_Castbar:SetupBossCastbar(castbar, unit, bossIndex, castSettings)
         local isChanneled = false
         local isEmpowered = isEmpowerEvent or false
         local numStages = 0
+        local channelSpellID = nil
         
         if not spellName then
-            local channelName, _, channelTex, channelStart, channelEnd, _, channelNotInt, _, _, channelStages = UnitChannelInfo(self.unit)
+            local channelName, _, channelTex, channelStart, channelEnd, _, channelNotInt, channelID, _, channelStages = UnitChannelInfo(self.unit)
             if channelName then
                 spellName = channelName
                 texture = channelTex
@@ -1816,13 +2651,15 @@ function QUI_Castbar:SetupBossCastbar(castbar, unit, bossIndex, castSettings)
                 endTimeMS = channelEnd
                 notInterruptible = channelNotInt
                 isChanneled = true
+                channelSpellID = channelID
                 if isEmpowerEvent and channelStages and channelStages > 0 then
                     numStages = channelStages
                 end
             end
         end
         
-        local checkSpellID = spellID or unitSpellID
+        local resolvedSpellID = spellID or unitSpellID or channelSpellID
+        local checkSpellID = resolvedSpellID
         if checkSpellID and C_Spell and C_Spell.GetSpellEmpowerInfo then
             local empowerInfo = C_Spell.GetSpellEmpowerInfo(checkSpellID)
             if empowerInfo and empowerInfo.numStages and empowerInfo.numStages > 0 then
@@ -1858,6 +2695,7 @@ function QUI_Castbar:SetupBossCastbar(castbar, unit, bossIndex, castSettings)
             self.isEmpowered = isEmpowered
             self.numStages = numStages or 0
             self.notInterruptible = notInterruptible
+            self.channelSpellID = resolvedSpellID
             
             -- Ensure status bar has texture
             local currentSettings = GetUnitSettings(self.unitKey)
@@ -1900,6 +2738,7 @@ function QUI_Castbar:SetupBossCastbar(castbar, unit, bossIndex, castSettings)
             self:Show()
         else
             -- No real cast - check if preview mode is enabled AND boss frame preview is active
+            ClearChannelTickState(self)
             C_Timer.After(0.1, function()
                 if not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
                     ClearEmpoweredState(self)
@@ -1953,12 +2792,14 @@ function QUI_Castbar:SetupBossCastbar(castbar, unit, bossIndex, castSettings)
             else
                 -- Cast ended (cancelled, interrupted, or completed) - hide immediately
                 ClearEmpoweredState(self)
+                ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
             end
         elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP"
             or event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" then
             ClearEmpoweredState(self)
+            ClearChannelTickState(self)
             self:Cast(spellID, false)
         elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
             self.notInterruptible = false
@@ -1980,7 +2821,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     end
     
     local castSettings = settings.castbar
-    InitializeDefaultSettings(castSettings)
+    InitializeDefaultSettings(castSettings, "boss")
     
     local fontSize = castSettings.fontSize or 12
 
@@ -2062,6 +2903,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             
             local now = GetTime()
             if now >= self.endTime then
+                ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
                 TryApplyDeferredCastbarRefresh(self)
@@ -2114,6 +2956,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             UpdateThrottledText(self, elapsed, self.timeText, remaining)
         else
             -- No cast and no preview - hide
+            ClearChannelTickState(self)
             self:SetScript("OnUpdate", nil)
             self:Hide()
             TryApplyDeferredCastbarRefresh(self)
@@ -2126,11 +2969,12 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     -- Cast function
     function anchorFrame:Cast()
         -- Check if actually casting
-        local spellName, text, texture, startTimeMS, endTimeMS, _, _, notInterruptible = UnitCastingInfo(self.unit)
+        local spellName, text, texture, startTimeMS, endTimeMS, _, _, notInterruptible, unitSpellID = UnitCastingInfo(self.unit)
         local isChanneled = false
+        local channelSpellID = nil
         
         if not spellName then
-            spellName, text, texture, startTimeMS, endTimeMS, _, notInterruptible = UnitChannelInfo(self.unit)
+            spellName, text, texture, startTimeMS, endTimeMS, _, notInterruptible, channelSpellID = UnitChannelInfo(self.unit)
             if spellName then
                 isChanneled = true
             end
@@ -2154,6 +2998,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             self.endTime = endTime
             self.isChanneled = isChanneled
             self.notInterruptible = notInterruptible
+            self.channelSpellID = unitSpellID or channelSpellID
 
             if self.startTime < now - 5 then
                 local dur = self.endTime - self.startTime
@@ -2193,6 +3038,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             self:Show()
         else
             -- No real cast - check if preview mode is enabled AND boss frame preview is active
+            ClearChannelTickState(self)
             C_Timer.After(0.1, function()
                 if not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
                     local settings = GetUnitSettings(self.unitKey)
@@ -2233,6 +3079,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
         elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" 
             or event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED"
             or event == "UNIT_SPELLCAST_SUCCEEDED" then
+            ClearChannelTickState(self)
             self:Cast()
             TryApplyDeferredCastbarRefresh(self)
         elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
@@ -2306,6 +3153,7 @@ end
 local function DestroyCastbar(castbar)
     if not castbar then return end
     
+    ClearChannelTickState(castbar)
     castbar:SetScript("OnUpdate", nil)
     castbar:SetScript("OnEvent", nil)
     castbar:SetScript("OnDragStart", nil)
@@ -2368,6 +3216,8 @@ local function ApplyLiveCastbarSettings(castbar, unitKey, castSettings)
             castbar.icon:Hide()
         end
     end
+
+    RefreshChannelTickMarkers(castbar, castSettings)
 end
 
 local function QueueDeferredCastbarRefresh(castbar, refreshKey)

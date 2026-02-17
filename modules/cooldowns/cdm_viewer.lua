@@ -25,6 +25,7 @@ local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 ---------------------------------------------------------------------------
 local VIEWER_ESSENTIAL = "EssentialCooldownViewer"
 local VIEWER_UTILITY = "UtilityCooldownViewer"
+local HUD_MIN_WIDTH_DEFAULT = Helpers.HUD_MIN_WIDTH_DEFAULT or 200
 
 -- Aspect ratios
 local ASPECT_RATIOS = {
@@ -59,6 +60,301 @@ local NCDM = {
     settingsVersion = {},  -- Track settings changes per tracker (for optimization)
 }
 
+-- Combat-stable parent used for "Utility below Essential" anchoring.
+-- Out of combat this proxy follows Essential; in combat it stays fixed.
+local UtilityAnchorProxy = nil
+local FrameDriftDebug = {
+    sessions = {}, -- key -> session
+    frameToKey = setmetatable({}, { __mode = "k" }),
+    defaultInterval = 0.10,
+    defaultThreshold = 0.5,
+    defaultMaxEntries = 120,
+}
+
+local function ResolveDebugFrame(frameOrName)
+    if type(frameOrName) == "table" and frameOrName.GetObjectType then
+        local label = frameOrName.GetName and frameOrName:GetName() or tostring(frameOrName)
+        return frameOrName, label
+    end
+    if type(frameOrName) == "string" then
+        local frame = _G[frameOrName]
+        if frame then
+            return frame, frameOrName
+        end
+    end
+    return nil, nil
+end
+
+local function ResolveDebugSession(frameOrName)
+    if frameOrName == nil then
+        for _, session in pairs(FrameDriftDebug.sessions) do
+            if session.enabled then
+                return session
+            end
+        end
+        return nil
+    end
+    if type(frameOrName) == "string" then
+        local byKey = FrameDriftDebug.sessions[frameOrName]
+        if byKey then return byKey end
+        local frame = _G[frameOrName]
+        if frame then
+            local key = FrameDriftDebug.frameToKey[frame]
+            return key and FrameDriftDebug.sessions[key] or nil
+        end
+    elseif type(frameOrName) == "table" then
+        local key = FrameDriftDebug.frameToKey[frameOrName]
+        return key and FrameDriftDebug.sessions[key] or nil
+    end
+    return nil
+end
+
+local function SessionLog(session, message)
+    if not session or not session.enabled then return end
+    local line = string.format("[%.3f] %s", GetTime(), tostring(message))
+    table.insert(session.history, line)
+    if #session.history > (session.maxEntries or FrameDriftDebug.defaultMaxEntries) then
+        table.remove(session.history, 1)
+    end
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] " .. tostring(message))
+end
+
+local function EnsureSessionHooks(session)
+    if not session or session.hooked or not session.frame then return end
+    local frame = session.frame
+
+    if frame.SetPoint then
+        hooksecurefunc(frame, "SetPoint", function(_, point, relativeTo, relativePoint, xOfs, yOfs)
+            if not session.enabled then return end
+            local relName = relativeTo and relativeTo.GetName and relativeTo:GetName() or tostring(relativeTo)
+            SessionLog(session, string.format(
+                "SetPoint %s -> %s %s (%.1f, %.1f)",
+                tostring(point), tostring(relName), tostring(relativePoint), Helpers.SafeToNumber(xOfs, 0), Helpers.SafeToNumber(yOfs, 0)
+            ))
+        end)
+    end
+
+    if frame.ClearAllPoints then
+        hooksecurefunc(frame, "ClearAllPoints", function()
+            if not session.enabled then return end
+            local stack = debugstack and debugstack(3, 1, 0) or "no stack"
+            SessionLog(session, "ClearAllPoints caller=" .. tostring(stack))
+        end)
+    end
+
+    if frame.HookScript then
+        frame:HookScript("OnSizeChanged", function(_, w, h)
+            if not session.enabled then return end
+            SessionLog(session, string.format("OnSizeChanged %.1fx%.1f", Helpers.SafeToNumber(w, 0), Helpers.SafeToNumber(h, 0)))
+        end)
+    end
+
+    session.hooked = true
+end
+
+local function StartSessionTicker(session)
+    if not session or session.ticker then return end
+    session.ticker = C_Timer.NewTicker(session.interval or FrameDriftDebug.defaultInterval, function()
+        if not session.enabled or not session.frame then return end
+        local x, y = session.frame:GetCenter()
+        if not x or not y then return end
+
+        if session.lastX and session.lastY then
+            local dx = x - session.lastX
+            local dy = y - session.lastY
+            local threshold = session.threshold or FrameDriftDebug.defaultThreshold
+            if math.abs(dx) > threshold or math.abs(dy) > threshold then
+                local point, relTo, relPoint, ox, oy = session.frame:GetPoint(1)
+                local relName = relTo and relTo.GetName and relTo:GetName() or tostring(relTo)
+                SessionLog(session, string.format(
+                    "center moved (dx=%.2f, dy=%.2f) combat=%s p1=%s -> %s %s (%.1f, %.1f)",
+                    dx, dy, tostring(InCombatLockdown()), tostring(point), tostring(relName), tostring(relPoint),
+                    Helpers.SafeToNumber(ox, 0), Helpers.SafeToNumber(oy, 0)
+                ))
+            end
+        end
+
+        session.lastX = x
+        session.lastY = y
+    end)
+end
+
+local function StopSessionTicker(session)
+    if session and session.ticker then
+        session.ticker:Cancel()
+        session.ticker = nil
+    end
+end
+
+local function DriftLog(message)
+    local utilViewer = _G[VIEWER_UTILITY]
+    if not utilViewer then return end
+    local key = FrameDriftDebug.frameToKey[utilViewer]
+    if not key then return end
+    SessionLog(FrameDriftDebug.sessions[key], message)
+end
+
+_G.QUI_FrameDriftDebugEnable = function(frameOrName, opts)
+    local frame, defaultLabel = ResolveDebugFrame(frameOrName)
+    if not frame then
+        print("|cff34D399QUI Drift|r enable failed: invalid frame")
+        return false
+    end
+
+    opts = type(opts) == "table" and opts or {}
+    local label = opts.label or defaultLabel or tostring(frame)
+    local key = label
+    local session = FrameDriftDebug.sessions[key]
+    if not session then
+        session = {
+            key = key,
+            label = label,
+            frame = frame,
+            history = {},
+            hooked = false,
+        }
+        FrameDriftDebug.sessions[key] = session
+    end
+
+    session.frame = frame
+    session.label = label
+    session.maxEntries = tonumber(opts.maxEntries) or session.maxEntries or FrameDriftDebug.defaultMaxEntries
+    session.threshold = tonumber(opts.threshold) or session.threshold or FrameDriftDebug.defaultThreshold
+    session.interval = tonumber(opts.interval) or session.interval or FrameDriftDebug.defaultInterval
+    session.enabled = true
+    session.history = {}
+    session.lastX = nil
+    session.lastY = nil
+
+    FrameDriftDebug.frameToKey[frame] = key
+    EnsureSessionHooks(session)
+    StopSessionTicker(session)
+    StartSessionTicker(session)
+    SessionLog(session, "enabled")
+    return true
+end
+
+_G.QUI_FrameDriftDebugDisable = function(frameOrName)
+    local session = ResolveDebugSession(frameOrName)
+    if not session then
+        print("|cff34D399QUI Drift|r disable: no active session")
+        return false
+    end
+    session.enabled = false
+    StopSessionTicker(session)
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] disabled")
+    return true
+end
+
+_G.QUI_FrameDriftDebugDump = function(frameOrName)
+    local session = ResolveDebugSession(frameOrName)
+    if not session then
+        print("|cff34D399QUI Drift|r dump: no active session")
+        return false
+    end
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] dump begin (" .. tostring(#session.history) .. " entries)")
+    for _, line in ipairs(session.history) do
+        print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] " .. line)
+    end
+    print("|cff34D399QUI Drift|r [" .. tostring(session.label) .. "] dump end")
+    return true
+end
+
+local function GetUtilityAnchorProxy()
+    if not UtilityAnchorProxy then
+        UtilityAnchorProxy = CreateFrame("Frame", nil, UIParent)
+        UtilityAnchorProxy:Show()
+    end
+    return UtilityAnchorProxy
+end
+
+local function UpdateUtilityAnchorProxy()
+    local proxy = GetUtilityAnchorProxy()
+    if InCombatLockdown() then
+        return proxy
+    end
+
+    local essViewer = _G[VIEWER_ESSENTIAL]
+    if not essViewer then
+        return proxy
+    end
+
+    local viewerX, viewerY = essViewer:GetCenter()
+    local screenX, screenY = UIParent:GetCenter()
+    local width = essViewer.__cdmIconWidth or essViewer:GetWidth() or 1
+    local height = essViewer.__cdmTotalHeight or essViewer:GetHeight() or 1
+    width = math.max(1, width)
+    height = math.max(1, height)
+
+    if viewerX and viewerY and screenX and screenY then
+        proxy:ClearAllPoints()
+        proxy:SetPoint("CENTER", UIParent, "CENTER", viewerX - screenX, viewerY - screenY)
+    end
+    proxy:SetSize(width, height)
+    return proxy
+end
+
+-- Combat-safe frame level setter. If in combat, defer until next out-of-combat layout.
+local function SetFrameLevelSafe(frame, level)
+    if not frame or not frame.SetFrameLevel or type(level) ~= "number" then
+        return false
+    end
+
+    if InCombatLockdown() then
+        frame.__cdmPendingFrameLevel = level
+        return false
+    end
+
+    local ok = pcall(frame.SetFrameLevel, frame, level)
+    if ok then
+        frame.__cdmPendingFrameLevel = nil
+    end
+    return ok
+end
+
+-- Combat-safe size setter for protected Blizzard CDM frames.
+local function SetSizeSafe(frame, width, height)
+    if not frame or not frame.SetSize or type(width) ~= "number" or type(height) ~= "number" then
+        return false
+    end
+
+    if InCombatLockdown() then
+        frame.__cdmPendingWidth = width
+        frame.__cdmPendingHeight = height
+        return false
+    end
+
+    local ok = pcall(frame.SetSize, frame, width, height)
+    if ok then
+        frame.__cdmPendingWidth = nil
+        frame.__cdmPendingHeight = nil
+    end
+    return ok
+end
+
+local function SyncViewerSelectionSafe(viewer)
+    if not viewer or not viewer.Selection then
+        return false
+    end
+
+    if InCombatLockdown() then
+        viewer.__cdmPendingSelectionSync = true
+        return false
+    end
+
+    local ok = pcall(function()
+        viewer.Selection:ClearAllPoints()
+        viewer.Selection:SetPoint("TOPLEFT", viewer, "TOPLEFT", 0, 0)
+        viewer.Selection:SetPoint("BOTTOMRIGHT", viewer, "BOTTOMRIGHT", 0, 0)
+    end)
+    SetFrameLevelSafe(viewer.Selection, viewer:GetFrameLevel())
+
+    if ok then
+        viewer.__cdmPendingSelectionSync = nil
+    end
+    return ok
+end
+
 ---------------------------------------------------------------------------
 -- HELPER: Get database
 ---------------------------------------------------------------------------
@@ -76,6 +372,27 @@ local function GetTrackerSettings(trackerKey)
     return nil
 end
 
+local function IsHUDAnchoredToCDM()
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    if Helpers and Helpers.IsHUDAnchoredToCDM then
+        return Helpers.IsHUDAnchoredToCDM(profile)
+    end
+    return false
+end
+
+local function GetHUDMinWidth()
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    if Helpers and Helpers.GetHUDMinWidthSettingsFromProfile then
+        return Helpers.GetHUDMinWidthSettingsFromProfile(profile)
+    end
+    return false, HUD_MIN_WIDTH_DEFAULT
+end
+
+-- Shared helper exports so other modules (anchoring, buffbar) can use the
+-- exact same min-width and HUD-anchor semantics.
+_G.QUI_IsHUDAnchoredToCDM = IsHUDAnchoredToCDM
+_G.QUI_GetHUDMinWidthSettings = GetHUDMinWidth
+
 ---------------------------------------------------------------------------
 -- HELPER: Update Blizzard cooldownViewerEnabled CVar based on settings
 ---------------------------------------------------------------------------
@@ -85,9 +402,11 @@ local function UpdateCooldownViewerCVar()
 
     local essentialEnabled = db.essential and db.essential.enabled
     local utilityEnabled = db.utility and db.utility.enabled
+    local buffEnabled = db.buff and db.buff.enabled
 
-    -- If BOTH are disabled, turn off Blizzard CVar; otherwise keep it on
-    if essentialEnabled or utilityEnabled then
+    -- If all relevant CDM displays are disabled, turn off Blizzard CVar.
+    -- Include Buff CDM so buff-only setups don't get auto-disabled after combat.
+    if essentialEnabled or utilityEnabled or buffEnabled then
         pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
     else
         pcall(function() SetCVar("cooldownViewerEnabled", 0) end)
@@ -348,6 +667,25 @@ local function SkinIcon(icon, size, aspectRatioCrop, zoom, borderSize, borderCol
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: Apply only frame size (combat-safe lightweight path)
+---------------------------------------------------------------------------
+local function ApplyIconSizeOnly(icon, size, aspectRatioCrop)
+    if not icon or not size or size <= 0 then return end
+
+    local aspectRatio = aspectRatioCrop or 1.0
+    local width = size
+    local height = size / aspectRatio
+
+    -- Pixel-snap icon dimensions to prevent sub-pixel edge rounding
+    if QUICore and QUICore.PixelRound then
+        width = QUICore:PixelRound(width, icon)
+        height = QUICore:PixelRound(height, icon)
+    end
+
+    pcall(icon.SetSize, icon, width, height)
+end
+
+---------------------------------------------------------------------------
 -- HELPER: Process pending icons after combat ends
 ---------------------------------------------------------------------------
 local function ProcessPendingIcons()
@@ -362,6 +700,7 @@ local function ProcessPendingIcons()
     end
 
     for icon, data in pairs(NCDM.pendingIcons) do
+        local processed = false
         if icon and icon:IsShown() then
             local success = pcall(SkinIcon, icon, data.size, data.aspectRatioCrop, data.zoom, data.borderSize, data.borderColorTable)
             if success then
@@ -370,7 +709,13 @@ local function ProcessPendingIcons()
                     data.durationTextColor, data.durationAnchor, data.stackTextColor, data.stackAnchor)
                 icon.__cdmSkinned = true
                 icon.__cdmSkinPending = nil
+                processed = true
             end
+        end
+        -- If icon was hidden or skinning failed, clear pending flag so
+        -- LayoutViewer can queue/skin it again on the next pass.
+        if icon and not processed then
+            icon.__cdmSkinPending = nil
         end
         NCDM.pendingIcons[icon] = nil
     end
@@ -387,6 +732,12 @@ local combatEndFrame = CreateFrame("Frame")
 combatEndFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatEndFrame:SetScript("OnEvent", function()
     ProcessPendingIcons()
+    -- Re-apply Utility anchor after combat if it was deferred.
+    C_Timer.After(0.05, function()
+        if not InCombatLockdown() and _G.QUI_ApplyUtilityAnchor then
+            _G.QUI_ApplyUtilityAnchor()
+        end
+    end)
     -- Force layout refresh after combat (layouts were skipped for CPU efficiency)
     -- Use global refresh which is defined later in the file
     C_Timer.After(0.1, function()
@@ -534,7 +885,7 @@ local function ApplyIconTextSizes(icon, durationSize, stackSize, durationOffsetX
                 if parentFrame and parentFrame.SetFrameLevel and icon.GetFrameLevel then
                     local iconLevel = icon:GetFrameLevel() or 0
                     local currentLevel = parentFrame:GetFrameLevel() or 0
-                    parentFrame:SetFrameLevel(math.max(currentLevel, iconLevel + 10))
+                    SetFrameLevelSafe(parentFrame, math.max(currentLevel, iconLevel + 10))
                 end
             end)
         end
@@ -668,7 +1019,10 @@ local function LayoutViewer(viewerName, trackerKey)
     local layerPriority = hudLayering and hudLayering[trackerKey] or 5
     if QUICore and QUICore.GetHUDFrameLevel then
         local frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
-        viewer:SetFrameLevel(frameLevel)
+        SetFrameLevelSafe(viewer, frameLevel)
+    end
+    if not InCombatLockdown() and viewer.__cdmPendingFrameLevel then
+        SetFrameLevelSafe(viewer, viewer.__cdmPendingFrameLevel)
     end
 
     -- Check for vertical layout mode
@@ -836,6 +1190,17 @@ local function LayoutViewer(viewerName, trackerKey)
         totalHeight = maxColHeight
         maxRowWidth = totalWidth
     end
+
+    -- Optional floor for HUD layouts anchored to CDM (player/target spacing safety).
+    -- Apply this to container/anchor widths, but keep row layout widths untouched so
+    -- icon spacing remains visually centered.
+    local minWidthEnabled, minWidth = GetHUDMinWidth()
+    local applyHUDMinWidth = minWidthEnabled and IsHUDAnchoredToCDM()
+    if applyHUDMinWidth then
+        maxRowWidth = math.max(maxRowWidth, minWidth)
+        potentialRow1Width = math.max(potentialRow1Width, minWidth)
+        potentialBottomRowWidth = math.max(potentialBottomRowWidth, minWidth)
+    end
     
     -- Position icons using CENTER-based anchoring (more stable, less flicker)
     local currentY = totalHeight / 2  -- Start from top (positive Y from center)
@@ -881,8 +1246,11 @@ local function LayoutViewer(viewerName, trackerKey)
             end
 
             -- Only skin if not already skinned with these settings
-            if not icon.__cdmSkinned and not icon.__cdmSkinPending then
+            if not icon.__cdmSkinned then
                 if InCombatLockdown() then
+                    -- Combat-safe immediate size inheritance so custom icons do not
+                    -- temporarily display at their creation size.
+                    ApplyIconSizeOnly(icon, rowConfig.size, rowConfig.aspectRatioCrop)
                     -- Queue for after combat
                     QueueIconForSkinning(icon, rowConfig.size, rowConfig.aspectRatioCrop, rowConfig.zoom,
                         rowConfig.borderSize, rowConfig.borderColorTable, rowConfig.durationSize, rowConfig.stackSize,
@@ -928,6 +1296,7 @@ local function LayoutViewer(viewerName, trackerKey)
     -- Store dimensions
     viewer.__cdmIconWidth = maxRowWidth
     viewer.__cdmTotalHeight = totalHeight
+    viewer.__cdmRow1IconHeight = rows[1] and (rows[1].size / (rows[1].aspectRatioCrop or 1.0)) or 0
     viewer.__cdmRow1BorderSize = rows[1] and rows[1].borderSize or 0
     viewer.__cdmBottomRowBorderSize = rows[#rows] and rows[#rows].borderSize or 0
     viewer.__cdmBottomRowYOffset = rows[#rows] and rows[#rows].yOffset or 0
@@ -938,29 +1307,38 @@ local function LayoutViewer(viewerName, trackerKey)
         viewer.__cdmPotentialRow1Width = maxRowWidth
         viewer.__cdmPotentialBottomRowWidth = maxRowWidth
     else
-        viewer.__cdmRow1Width = rowWidths[1] or maxRowWidth  -- Row 1 specifically for power bar snap
-        viewer.__cdmBottomRowWidth = rowWidths[#rows] or maxRowWidth  -- Bottom row for Utility snap
+        local row1Width = rowWidths[1] or maxRowWidth
+        local bottomRowWidth = rowWidths[#rows] or maxRowWidth
+        if applyHUDMinWidth then
+            row1Width = math.max(row1Width, minWidth)
+            bottomRowWidth = math.max(bottomRowWidth, minWidth)
+        end
+        viewer.__cdmRow1Width = row1Width  -- Row 1 specifically for power bar snap
+        viewer.__cdmBottomRowWidth = bottomRowWidth  -- Bottom row for Utility snap
         viewer.__cdmPotentialRow1Width = potentialRow1Width  -- Based on settings, not actual icons
         viewer.__cdmPotentialBottomRowWidth = potentialBottomRowWidth
     end
 
     -- Resize viewer (suppress OnSizeChanged triggering another layout)
     if maxRowWidth > 0 and totalHeight > 0 then
-        viewer.__cdmLayoutSuppressed = (viewer.__cdmLayoutSuppressed or 0) + 1
-        pcall(function()
-            viewer:SetSize(maxRowWidth, totalHeight)
-        end)
-        viewer.__cdmLayoutSuppressed = viewer.__cdmLayoutSuppressed - 1
-        if viewer.__cdmLayoutSuppressed <= 0 then
-            viewer.__cdmLayoutSuppressed = nil
+        if InCombatLockdown() then
+            SetSizeSafe(viewer, maxRowWidth, totalHeight)
+        else
+            viewer.__cdmLayoutSuppressed = (viewer.__cdmLayoutSuppressed or 0) + 1
+            SetSizeSafe(viewer, maxRowWidth, totalHeight)
+            viewer.__cdmLayoutSuppressed = viewer.__cdmLayoutSuppressed - 1
+            if viewer.__cdmLayoutSuppressed <= 0 then
+                viewer.__cdmLayoutSuppressed = nil
+            end
         end
-        
-        if viewer.Selection then
-            viewer.Selection:ClearAllPoints()
-            viewer.Selection:SetPoint("TOPLEFT", viewer, "TOPLEFT", 0, 0)
-            viewer.Selection:SetPoint("BOTTOMRIGHT", viewer, "BOTTOMRIGHT", 0, 0)
-            viewer.Selection:SetFrameLevel(viewer:GetFrameLevel())
-        end
+        SyncViewerSelectionSafe(viewer)
+    end
+
+    -- Keep frame-anchoring CDM proxy parents up to date when safe.
+    -- In combat, the proxy layer now freezes and schedules a post-combat refresh
+    -- to avoid edge-anchor drift on dependent frames.
+    if _G.QUI_UpdateCDMAnchorProxyFrames then
+        _G.QUI_UpdateCDMAnchorProxyFrames()
     end
 
     NCDM.applying[trackerKey] = false
@@ -1273,6 +1651,10 @@ local function RefreshAll()
         if _G.QUI_UpdateCDMAnchoredUnitFrames then
             _G.QUI_UpdateCDMAnchoredUnitFrames()
         end
+        -- Re-hook icons for mouseover visibility (covers newly rebuilt custom icons).
+        if _G.QUI_RefreshCDMMouseover then
+            _G.QUI_RefreshCDMMouseover()
+        end
     end)
 end
 
@@ -1289,6 +1671,32 @@ local function ApplyUtilityAnchor()
 
     if not utilSettings.anchorBelowEssential then
         utilViewer.__cdmAnchoredToEssential = nil
+        -- Stabilize unanchored Utility at current CENTER so combat-time
+        -- Blizzard size changes do not visually shift its position.
+        if InCombatLockdown() then
+            utilViewer.__cdmAnchorPendingAfterCombat = true
+            DriftLog("ApplyUtilityAnchor: disabled (deferred center stabilize)")
+        else
+            utilViewer.__cdmAnchorPendingAfterCombat = nil
+            local ux, uy = utilViewer:GetCenter()
+            local sx, sy = UIParent:GetCenter()
+            if ux and uy and sx and sy then
+                local ox = ux - sx
+                local oy = uy - sy
+                pcall(function()
+                    utilViewer:ClearAllPoints()
+                    utilViewer:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+                end)
+            end
+            DriftLog("ApplyUtilityAnchor: disabled (center stabilized)")
+        end
+        return
+    end
+
+    -- Freeze Utility position during combat (proxy stays fixed), then re-anchor after.
+    if InCombatLockdown() then
+        utilViewer.__cdmAnchorPendingAfterCombat = true
+        DriftLog("ApplyUtilityAnchor: deferred (combat)")
         return
     end
 
@@ -1305,10 +1713,15 @@ local function ApplyUtilityAnchor()
         savedPoints[i] = { utilViewer:GetPoint(i) }
     end
 
+    local anchorParent = UpdateUtilityAnchorProxy() or essViewer
+
     utilViewer:ClearAllPoints()
-    local ok = pcall(utilViewer.SetPoint, utilViewer, "TOP", essViewer, "BOTTOM", 0, -totalOffset)
+    local ok = pcall(utilViewer.SetPoint, utilViewer, "TOP", anchorParent, "BOTTOM", 0, -totalOffset)
     if ok then
         utilViewer.__cdmAnchoredToEssential = true
+        utilViewer.__cdmAnchorPendingAfterCombat = nil
+        local parentName = anchorParent and anchorParent.GetName and anchorParent:GetName() or tostring(anchorParent)
+        DriftLog("ApplyUtilityAnchor: anchored to " .. tostring(parentName))
     else
         -- SetPoint failed (circular anchor dependency) - restore previous position
         -- Saved points may also reference essViewer, so protect the restore too
@@ -1325,6 +1738,7 @@ local function ApplyUtilityAnchor()
             utilViewer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         end
         utilViewer.__cdmAnchoredToEssential = nil
+        utilViewer.__cdmAnchorPendingAfterCombat = nil
         -- Disable the setting so this doesn't repeat on every reload
         utilSettings.anchorBelowEssential = false
         print("|cff34D399QUI:|r Anchor Utility below Essential failed (circular dependency). Setting has been disabled. Reposition via Edit Mode.")
@@ -1380,6 +1794,18 @@ local function Initialize()
 
     -- Single delayed refresh (consolidated from 3 calls at 1s/2s/4s to reduce CPU spike)
     C_Timer.After(2.5, RefreshAll)
+end
+
+_G.QUI_CDMDriftDebugEnable = function()
+    return _G.QUI_FrameDriftDebugEnable(VIEWER_UTILITY, { label = "UtilityCooldownViewer" })
+end
+
+_G.QUI_CDMDriftDebugDisable = function()
+    return _G.QUI_FrameDriftDebugDisable(VIEWER_UTILITY)
+end
+
+_G.QUI_CDMDriftDebugDump = function()
+    return _G.QUI_FrameDriftDebugDump(VIEWER_UTILITY)
 end
 
 local eventFrame = CreateFrame("Frame")
@@ -1689,11 +2115,15 @@ local function SetupCDMMouseoverDetector()
     end
 
     -- Hook existing icons from each viewer
+    local viewerToTracker = {
+        EssentialCooldownViewer = "essential",
+        UtilityCooldownViewer = "utility",
+    }
     local viewers = {"EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer"}
     for _, viewerName in ipairs(viewers) do
         local viewer = _G[viewerName]
         if viewer then
-            local icons = CollectIcons(viewer)
+            local icons = CollectIcons(viewer, viewerToTracker[viewerName])
             for _, icon in ipairs(icons) do
                 HookFrameForMouseover(icon)
             end
@@ -1718,6 +2148,7 @@ local UnitframesVisibility = {
     fadeFrame = nil,
     mouseOver = false,
     mouseoverDetector = nil,
+    leaveTimer = nil,
 }
 
 -- Get unitframesVisibility settings from profile
@@ -1883,6 +2314,11 @@ local function SetupUnitframesMouseoverDetector()
         UnitframesVisibility.mouseoverDetector:Hide()
         UnitframesVisibility.mouseoverDetector = nil
     end
+
+    if UnitframesVisibility.leaveTimer then
+        UnitframesVisibility.leaveTimer:Cancel()
+        UnitframesVisibility.leaveTimer = nil
+    end
     UnitframesVisibility.mouseOver = false
 
     -- Only create if mouseover is enabled and showAlways is disabled
@@ -1901,6 +2337,10 @@ local function SetupUnitframesMouseoverDetector()
 
             -- Hook OnEnter
             frame:HookScript("OnEnter", function()
+                if UnitframesVisibility.leaveTimer then
+                    UnitframesVisibility.leaveTimer:Cancel()
+                    UnitframesVisibility.leaveTimer = nil
+                end
                 hoverCount = hoverCount + 1
                 if hoverCount == 1 then
                     UnitframesVisibility.mouseOver = true
@@ -1912,8 +2352,16 @@ local function SetupUnitframesMouseoverDetector()
             frame:HookScript("OnLeave", function()
                 hoverCount = math.max(0, hoverCount - 1)
                 if hoverCount == 0 then
-                    UnitframesVisibility.mouseOver = false
-                    UpdateUnitframesVisibility()
+                    if UnitframesVisibility.leaveTimer then
+                        UnitframesVisibility.leaveTimer:Cancel()
+                    end
+                    UnitframesVisibility.leaveTimer = C_Timer.After(0.5, function()
+                        UnitframesVisibility.leaveTimer = nil
+                        if hoverCount == 0 then
+                            UnitframesVisibility.mouseOver = false
+                            UpdateUnitframesVisibility()
+                        end
+                    end)
                 end
             end)
         end

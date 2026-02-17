@@ -17,6 +17,7 @@
     <Script file="utility/keybinds.lua"/>
     <Script file="frames/castbar.lua"/>
     <Script file="ui/hudlayering.lua"/>
+    <Script file="ui/frameanchoring.lua"/>
     <Script file="core/profiles.lua"/>
     <Script file="core/import.lua"/>
     <Script file="cooldowns/cdm.lua"/>

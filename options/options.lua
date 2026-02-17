@@ -219,7 +219,9 @@ local function CreateScrollableContent(parent)
         -- Auto-hide scrollbar when not needed
         scrollBar:HookScript("OnShow", function(self)
             C_Timer.After(0.066, function()
-                local maxScroll = scrollFrame:GetVerticalScrollRange()
+                local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
+                    and ns.GetSafeVerticalScrollRange(scrollFrame)
+                    or 0
                 if maxScroll <= 1 then
                     self:Hide()
                 end
@@ -409,6 +411,7 @@ function GUI:InitializeOptions()
 
     -- Sidebar tabs (short names for vertical layout)
     GUI:AddTab(frame, "General & QoL", ns.QUI_GeneralOptions.CreateGeneralQoLPage)
+    GUI:AddTab(frame, "Anchoring & Layout", ns.QUI_FrameAnchoringOptions.CreateFrameAnchoringPage)
     GUI:AddTab(frame, "Cooldown Manager", ns.QUI_NCDMOptions.CreateCDMSetupPage)
     GUI:AddTab(frame, "Unit Frames", ns.QUI_UnitFramesOptions.CreateUnitFramesPage)
     GUI:AddTab(frame, "Action Bars", ns.QUI_ActionBarsOptions.CreateActionBarsPage)

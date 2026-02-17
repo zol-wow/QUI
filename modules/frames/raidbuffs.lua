@@ -1188,18 +1188,27 @@ function QUI_RaidBuffs:GetFrame()
 end
 
 function QUI_RaidBuffs:TogglePreview()
-    previewMode = not previewMode
     if previewMode then
-        -- Show all raid buffs in preview mode
-        previewBuffs = {}
-        for i, buff in ipairs(RAID_BUFFS) do
-            previewBuffs[i] = buff
-        end
+        self:DisablePreview()
     else
-        previewBuffs = nil
+        self:EnablePreview()
+    end
+    return previewMode
+end
+
+function QUI_RaidBuffs:EnablePreview()
+    previewMode = true
+    previewBuffs = {}
+    for i, buff in ipairs(RAID_BUFFS) do
+        previewBuffs[i] = buff
     end
     UpdateDisplay()
-    return previewMode
+end
+
+function QUI_RaidBuffs:DisablePreview()
+    previewMode = false
+    previewBuffs = nil
+    UpdateDisplay()
 end
 
 function QUI_RaidBuffs:IsPreviewMode()

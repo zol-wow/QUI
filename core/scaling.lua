@@ -234,6 +234,19 @@ end
 --- @param offsetY? number Y offset in virtual coordinates (will be snapped)
 function QUICore:SetSnappedPoint(frame, point, relativeTo, relativePoint, offsetX, offsetY)
     if not frame then return end
+    -- If frame has an active anchoring override, reapply the override position
+    -- (modules call ClearAllPoints before SetSnappedPoint, so the override was just cleared)
+    local anchoring = ns.QUI_Anchoring
+    if anchoring and anchoring.overriddenFrames and anchoring.overriddenFrames[frame] then
+        local overrideKey = anchoring.overriddenFrames[frame]
+        if overrideKey and QUICore.db and QUICore.db.profile then
+            local anchoringDB = QUICore.db.profile.frameAnchoring
+            if anchoringDB and anchoringDB[overrideKey] then
+                anchoring:ApplyFrameAnchor(overrideKey, anchoringDB[overrideKey])
+            end
+        end
+        return
+    end
     local px = self:GetPixelSize(frame)
     local x = offsetX and Round(offsetX / px) * px or 0
     local y = offsetY and Round(offsetY / px) * px or 0

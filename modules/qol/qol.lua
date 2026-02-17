@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Helpers = ns.Helpers
+addonName = addonName or "QUI"
 
 ---------------------------------------------------------------------------
 -- QOL AUTOMATION FEATURES
@@ -10,6 +11,270 @@ local function GetSettings()
 end
 
 local qolFrame = CreateFrame("Frame")
+
+local popupBlockerDefaults = {
+    enabled = false,
+    blockTalentMicroButtonAlerts = false,
+    blockEventToasts = false,
+    blockMountAlerts = false,
+    blockPetAlerts = false,
+    blockToyAlerts = false,
+    blockCosmeticAlerts = false,
+    blockWarbandSceneAlerts = false,
+    blockEntitlementAlerts = false,
+    blockStaticTalentPopups = false,
+    blockStaticHousingPopups = false,
+}
+
+local staticPopupBlockRules = {
+    blockStaticTalentPopups = { "TALENT", "TRAIT", "PLAYER_SPELLS", "PLAYERSP" },
+    blockStaticHousingPopups = { "HOUSING", "HOMESTEAD", "WARBAND_HOME", "WARBANDHOME" },
+}
+
+local alertSystemToggleMap = {
+    NewMountAlertSystem = "blockMountAlerts",
+    NewPetAlertSystem = "blockPetAlerts",
+    NewToyAlertSystem = "blockToyAlerts",
+    NewCosmeticAlertFrameSystem = "blockCosmeticAlerts",
+    NewWarbandSceneAlertSystem = "blockWarbandSceneAlerts",
+    EntitlementDeliveredAlertSystem = "blockEntitlementAlerts",
+    RafRewardDeliveredAlertSystem = "blockEntitlementAlerts",
+}
+
+local talentMicroButtonCandidates = {
+    "PlayerSpellsMicroButton",
+    "TalentMicroButton",
+    "SpellbookMicroButton",
+}
+
+local talentMicroButtonAlertCandidates = {
+    "PlayerSpellsMicroButtonAlert",
+    "TalentMicroButtonAlert",
+    "SpellbookMicroButtonAlert",
+}
+
+local hookedAlertSystems = {}
+local eventToastHooked = false
+local mainMenuAlertHooked = false
+
+local function GetMaxStaticPopupDialogs()
+    return math.min(STATICPOPUP_NUMDIALOGS or 4, 8)
+end
+
+local function GetPopupBlockerSettings()
+    local settings = GetSettings()
+    if not settings then return nil end
+
+    if type(settings.popupBlocker) ~= "table" then
+        settings.popupBlocker = {}
+    end
+
+    local blocker = settings.popupBlocker
+    for key, defaultValue in pairs(popupBlockerDefaults) do
+        if blocker[key] == nil then
+            blocker[key] = defaultValue
+        end
+    end
+
+    return blocker
+end
+
+local function IsPopupBlockEnabled(toggleKey)
+    local blocker = GetPopupBlockerSettings()
+    if not blocker or not blocker.enabled then
+        return false
+    end
+    return blocker[toggleKey] == true
+end
+
+local function HideAlertFrame(frame)
+    if not frame then return end
+    if frame.Hide then
+        frame:Hide()
+    end
+end
+
+local function ShouldBlockStaticPopup(which)
+    if type(which) ~= "string" then return false end
+
+    local blocker = GetPopupBlockerSettings()
+    if not blocker or not blocker.enabled then
+        return false
+    end
+
+    local upperWhich = string.upper(which)
+    for toggleKey, keywords in pairs(staticPopupBlockRules) do
+        if blocker[toggleKey] then
+            for _, keyword in ipairs(keywords) do
+                if string.find(upperWhich, keyword, 1, true) then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function HideStaticPopupByWhich(which)
+    if type(which) ~= "string" then return end
+
+    for i = 1, GetMaxStaticPopupDialogs() do
+        local frame = _G["StaticPopup" .. i]
+        if frame and frame.which == which and frame:IsShown() then
+            frame:Hide()
+        end
+    end
+end
+
+local function HookAlertSystem(globalSystemName, toggleKey)
+    local system = _G[globalSystemName]
+    if not system or hookedAlertSystems[system] then
+        return
+    end
+
+    if type(system.setUpFunction) ~= "function" then
+        return
+    end
+
+    hooksecurefunc(system, "setUpFunction", function(frame)
+        if IsPopupBlockEnabled(toggleKey) then
+            HideAlertFrame(frame)
+        end
+    end)
+    hookedAlertSystems[system] = true
+end
+
+local function HookPopupAlertSystems()
+    for globalSystemName, toggleKey in pairs(alertSystemToggleMap) do
+        HookAlertSystem(globalSystemName, toggleKey)
+    end
+end
+
+local function HideEventToasts()
+    if not IsPopupBlockEnabled("blockEventToasts") then return end
+    if not EventToastManagerFrame then return end
+    EventToastManagerFrame:Hide()
+end
+
+local function HookEventToastManager()
+    if eventToastHooked or not EventToastManagerFrame then
+        return
+    end
+
+    local function PostShowHide(self)
+        if IsPopupBlockEnabled("blockEventToasts") then
+            self:Hide()
+        end
+    end
+
+    hooksecurefunc(EventToastManagerFrame, "Show", PostShowHide)
+    if type(EventToastManagerFrame.ShowToast) == "function" then
+        hooksecurefunc(EventToastManagerFrame, "ShowToast", PostShowHide)
+    end
+    if type(EventToastManagerFrame.DisplayToast) == "function" then
+        hooksecurefunc(EventToastManagerFrame, "DisplayToast", PostShowHide)
+    end
+    if type(EventToastManagerFrame.QueueToast) == "function" then
+        hooksecurefunc(EventToastManagerFrame, "QueueToast", PostShowHide)
+    end
+
+    eventToastHooked = true
+end
+
+local function IsTalentMicroButton(button)
+    if not button then return false end
+    if (PlayerSpellsMicroButton and button == PlayerSpellsMicroButton)
+        or (TalentMicroButton and button == TalentMicroButton)
+        or (SpellbookMicroButton and button == SpellbookMicroButton) then
+        return true
+    end
+
+    local name = button.GetName and button:GetName()
+    if type(name) ~= "string" then
+        return false
+    end
+
+    local upperName = string.upper(name)
+    return string.find(upperName, "TALENT", 1, true)
+        or string.find(upperName, "SPELLBOOK", 1, true)
+        or string.find(upperName, "PLAYERSP", 1, true)
+end
+
+local function HideTalentMicroButtonAlert(button)
+    if not button then return end
+
+    local alert = button.alert
+    if not alert and button.GetName then
+        alert = _G[button:GetName() .. "Alert"]
+    end
+    if alert then
+        alert:Hide()
+    end
+
+    if button.NewFeatureTexture then
+        button.NewFeatureTexture:Hide()
+    end
+    if button.NewFeatureShine then
+        button.NewFeatureShine:Hide()
+    end
+    if button.Flash then
+        button.Flash:Hide()
+    end
+end
+
+local function HideTalentReminderAlerts()
+    if not IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then return end
+
+    for _, buttonName in ipairs(talentMicroButtonCandidates) do
+        local button = _G[buttonName]
+        if button then
+            HideTalentMicroButtonAlert(button)
+        end
+    end
+
+    for _, alertName in ipairs(talentMicroButtonAlertCandidates) do
+        local alertFrame = _G[alertName]
+        if alertFrame then
+            alertFrame:Hide()
+        end
+    end
+end
+
+local function HookTalentReminderAlerts()
+    if not mainMenuAlertHooked and type(MainMenuMicroButton_ShowAlert) == "function" then
+        hooksecurefunc("MainMenuMicroButton_ShowAlert", function(button)
+            if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") and IsTalentMicroButton(button) then
+                HideTalentMicroButtonAlert(button)
+            end
+        end)
+        mainMenuAlertHooked = true
+    end
+
+    -- Some frames are only created lazily, so keep checking and attach one-shot OnShow hooks.
+    for _, alertName in ipairs(talentMicroButtonAlertCandidates) do
+        local alertFrame = _G[alertName]
+        if alertFrame and not alertFrame.__quiPopupBlockerHooked then
+            alertFrame:HookScript("OnShow", function(self)
+                if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
+                    self:Hide()
+                end
+            end)
+            alertFrame.__quiPopupBlockerHooked = true
+        end
+    end
+end
+
+local function RefreshPopupBlocker()
+    HookPopupAlertSystems()
+    HookEventToastManager()
+    HookTalentReminderAlerts()
+
+    HideEventToasts()
+    HideTalentReminderAlerts()
+end
+
+_G.QUI_RefreshPopupBlocker = RefreshPopupBlocker
 
 ---------------------------------------------------------------------------
 -- MERCHANT: SELL JUNK + AUTO REPAIR
@@ -351,13 +616,18 @@ local deletePopups = {
 }
 
 hooksecurefunc("StaticPopup_Show", function(which)
+    if ShouldBlockStaticPopup(which) then
+        HideStaticPopupByWhich(which)
+        return
+    end
+
     if not deletePopups[which] then return end
 
     local settings = GetSettings()
     if not settings or not settings.autoDeleteConfirm then return end
 
     -- Find the popup frame that's showing this dialog
-    for i = 1, STATICPOPUP_NUMDIALOGS or 4 do
+    for i = 1, GetMaxStaticPopupDialogs() do
         local frame = _G["StaticPopup" .. i]
         if frame and frame.which == which and frame:IsShown() then
             local editBox = frame.editBox or _G["StaticPopup" .. i .. "EditBox"]
@@ -392,6 +662,7 @@ qolFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 qolFrame:RegisterEvent("CHALLENGE_MODE_RESET")
 qolFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 qolFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+qolFrame:RegisterEvent("ADDON_LOADED")
 
 qolFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "MERCHANT_SHOW" then
@@ -417,7 +688,18 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(2, CheckResumeLogging)
         C_Timer.After(2, UpdateRaidAutoLogging)
+        C_Timer.After(2, RefreshPopupBlocker)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         UpdateRaidAutoLogging()
+    elseif event == "ADDON_LOADED" then
+        local loadedAddon = ...
+        if loadedAddon == addonName then
+            C_Timer.After(0, RefreshPopupBlocker)
+            return
+        end
+        if type(loadedAddon) == "string" and string.find(loadedAddon, "Blizzard_", 1, true) == 1 then
+            -- Retry hooks when Blizzard UI modules load lazily.
+            C_Timer.After(0, RefreshPopupBlocker)
+        end
     end
 end)
