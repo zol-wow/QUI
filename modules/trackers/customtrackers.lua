@@ -94,7 +94,7 @@ local function PositionBar(bar)
             findPlayer = Helpers.FindAnchorFrame("player")
             if(findPlayer) then playerFrame = _G[findPlayer:GetName()] end
         end
-        
+
         if playerFrame then
             bar:SetParent(playerFrame)
             bar:SetFrameLevel(playerFrame:GetFrameLevel() + 10)
