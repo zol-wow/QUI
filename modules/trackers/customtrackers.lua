@@ -2680,7 +2680,13 @@ local function ShouldCustomTrackersBeVisible()
     if not vis then return true end
 
     -- Hide When Mounted overrides all other conditions (includes Druid flight form)
-    if vis.hideWhenMounted and (IsMounted() or GetShapeshiftFormID() == 27) then return false end
+    if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+
+    -- Hide When Flying (any flight)
+    if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+
+    -- Hide When Skyriding (dynamic flight zones)
+    if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
 
     -- Show Always overrides all conditions
     if vis.showAlways then return true end
