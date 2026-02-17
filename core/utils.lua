@@ -496,15 +496,14 @@ function Helpers.IsPlayerFlying()
     return false
 end
 
---- Check if player is skyriding (dynamic flight in Dragonflight/TWW zones)
+--- Check if player is skyriding
+--- Uses C_PlayerInfo.GetGlidingInfofor accurate
+--- grounded detection (PLAYER_IS_GLIDING_CHANGED fires on takeoff/landing).
 --- @return boolean True if flying in a dynamic flight zone
 function Helpers.IsPlayerSkyriding()
-    if not Helpers.IsPlayerFlying() then return false end
-    if C_PlayerInfo and C_PlayerInfo.CanUseDynamicFlight then
-        local ok, result = pcall(C_PlayerInfo.CanUseDynamicFlight)
-        return ok and result
-    end
-    return false
+    if not (C_PlayerInfo and C_PlayerInfo.GetGlidingInfo) then return false end
+    local ok, gliding, canGlideNow = pcall(C_PlayerInfo.GetGlidingInfo)
+    return ok and gliding and canGlideNow
 end
 
 ---------------------------------------------------------------------------
