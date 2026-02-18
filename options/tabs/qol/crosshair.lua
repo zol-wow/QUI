@@ -18,7 +18,7 @@ local function BuildCrosshairTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 3, subTabName = "Cursor & Crosshair"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 3, subTabName = "Cursor & Crosshair"})
 
     -- ========== CURSOR RING SECTION (before crosshair) ==========
     local cursorHeader = GUI:CreateSectionHeader(tabContent, "Cursor Ring")

@@ -1,4 +1,3 @@
--- Edit Mode String for QUI
 -- Quazii's personal Edit Mode layout string
 
 QUI.imports = QUI.imports or {}

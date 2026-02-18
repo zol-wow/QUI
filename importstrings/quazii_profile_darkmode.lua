@@ -1,4 +1,3 @@
--- QUI Dark Mode Profile String for QUI
 -- Quazii's personal QUI dark mode profile export string
 
 QUI.imports = QUI.imports or {}

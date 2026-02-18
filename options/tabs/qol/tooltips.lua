@@ -20,7 +20,7 @@ local function BuildTooltipTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 6, subTabName = "Tooltip"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 6, subTabName = "Tooltip"})
 
     -- Refresh callback
     local function RefreshTooltips()

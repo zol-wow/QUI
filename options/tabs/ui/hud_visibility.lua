@@ -18,7 +18,7 @@ local function BuildHUDVisibilityTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 2, subTabName = "HUD Visibility"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 2, subTabName = "HUD Visibility"})
 
     -- Ensure cdmVisibility settings exist
     if not db.cdmVisibility then db.cdmVisibility = {} end
