@@ -670,27 +670,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.After(0.5, function()
             SetupTooltipHook()
 
-            -- Wrap MoneyFrame functions in pcall to suppress Blizzard secret value bug
-            if MoneyFrame_Update then
-                local originalMoneyFrameUpdate = MoneyFrame_Update
-                MoneyFrame_Update = function(...)
-                    pcall(originalMoneyFrameUpdate, ...)
-                end
-            end
-            if SetTooltipMoney then
-                local originalSetTooltipMoney = SetTooltipMoney
-                SetTooltipMoney = function(...)
-                    pcall(originalSetTooltipMoney, ...)
-                end
-            end
-
-            -- Wrap GameTooltip:SetSpellByID in pcall to suppress Blizzard PTRFeedback secret value bug
-            if GameTooltip and GameTooltip.SetSpellByID then
-                local originalSetSpellByID = GameTooltip.SetSpellByID
-                GameTooltip.SetSpellByID = function(...)
-                    pcall(originalSetSpellByID, ...)
-                end
-            end
+            -- NOTE: MoneyFrame_Update, SetTooltipMoney, and GameTooltip.SetSpellByID
+            -- were previously wrapped in pcall via direct replacement to suppress
+            -- Blizzard secret-value bugs. However, direct global function replacement
+            -- permanently taints the function in Midnight's taint model, causing
+            -- ADDON_ACTION_FORBIDDEN errors throughout Edit Mode and other secure
+            -- execution paths. The pcall wrappers have been removed. If Blizzard's
+            -- own functions error on secret values, that is a Blizzard bug — QUI
+            -- should not absorb the taint cost of working around it.
         end)
     elseif event == "MODIFIER_STATE_CHANGED" then
         OnModifierStateChanged()

@@ -14,6 +14,9 @@ local QUI = _G.QuaziiUI or _G.QUI
 local QUI_UF = ns.QUI_UnitFrames
 if not QUI_UF then return end
 
+-- TAINT SAFETY: Track hook/fix guards in local table, NOT on Blizzard frames.
+local _blizzFrameGuards = {}
+
 ---------------------------------------------------------------------------
 -- LOCAL HELPERS
 ---------------------------------------------------------------------------
@@ -171,8 +174,8 @@ function QUI_UF:HideBlizzardCastbars()
         end)
         if not ok2 then QUI:DebugPrint("Could not detach PlayerCastingBarFrame unit: " .. tostring(err2)) end
         local ok3, err3 = pcall(function()
-            if not PlayerCastingBarFrame._quiShowHooked then
-                PlayerCastingBarFrame._quiShowHooked = true
+            if not _blizzFrameGuards.castbarShowHooked then
+                _blizzFrameGuards.castbarShowHooked = true
                 hooksecurefunc(PlayerCastingBarFrame, "Show", function(self)
                     pcall(function() self:Hide() end)
                 end)
@@ -230,28 +233,19 @@ function QUI_UF:HideBlizzardFrames()
 
         -- Fix Edit Mode crash: BossTargetFrameContainer.GetScaledSelectionSides() crashes
         -- when GetRect() returns nil (children moved off-screen).
-        -- Hook the crashing function directly to return safe fallback values.
-        if BossTargetFrameContainer and not BossTargetFrameContainer._quiEditModeFixed then
-            -- Hook GetScaledSelectionSides to handle nil GetRect case
-            if BossTargetFrameContainer.GetScaledSelectionSides then
-                local originalGetScaledSelectionSides = BossTargetFrameContainer.GetScaledSelectionSides
-                BossTargetFrameContainer.GetScaledSelectionSides = function(self)
-                    local left, bottom, width, height = self:GetRect()
-                    if left == nil then
-                        -- Return off-screen fallback sides (left, right, bottom, top)
-                        return -10000, -9999, 10000, 10001
-                    end
-                    return originalGetScaledSelectionSides(self)
-                end
-            end
+        -- TAINT SAFETY: Do NOT replace GetScaledSelectionSides with an addon function.
+        -- Direct method replacement taints the method in Midnight's taint model,
+        -- causing ADDON_ACTION_FORBIDDEN when Edit Mode calls it in secure context.
+        -- Instead, ensure the container always has valid bounds so GetRect() never
+        -- returns nil, making the crash impossible.
+        if BossTargetFrameContainer and not _blizzFrameGuards.bossContainerEditModeFixed then
+            _blizzFrameGuards.bossContainerEditModeFixed = true
 
-            -- Also try to give container valid bounds as backup
+            -- Give container valid size and position so GetRect() always returns values
             BossTargetFrameContainer:SetSize(1, 1)
             if not BossTargetFrameContainer:GetPoint() then
                 BossTargetFrameContainer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
             end
-
-            BossTargetFrameContainer._quiEditModeFixed = true
         end
     end
 end
@@ -272,8 +266,9 @@ function QUI_UF:HideBlizzardSelectionFrames()
         parent.Selection:Hide()
 
         -- Hook OnShow to persistently hide while QUI frames are enabled
-        if not parent.Selection._quiHooked then
-            parent.Selection._quiHooked = true
+        local selKey = tostring(parent) .. "_selection"
+        if not _blizzFrameGuards[selKey] then
+            _blizzFrameGuards[selKey] = true
             parent.Selection:HookScript("OnShow", function(self)
                 local db = GetDB()
                 if db and db[unitKey] and db[unitKey].enabled then
