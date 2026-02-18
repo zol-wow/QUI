@@ -35,9 +35,9 @@ local ICON_TEXCOORD = {0.07, 0.93, 0.07, 0.93}
 -- Blizzard's range indicator placeholder (to detect and hide)
 local RANGE_INDICATOR = RANGE_INDICATOR or "●"
 
--- Bar frame name mappings
+-- Bar frame name mappings (MainMenuBar was renamed to MainActionBar in Midnight 12.0)
 local BAR_FRAMES = {
-    bar1 = "MainMenuBar",
+    bar1 = "MainActionBar",
     bar2 = "MultiBarBottomLeft",
     bar3 = "MultiBarBottomRight",
     bar4 = "MultiBarRight",
@@ -215,10 +215,13 @@ local function GetButtonIndex(button)
     return tonumber(name:match("%d+$"))
 end
 
--- Add LibKeyBound methods to a button for mousewheel binding support
+-- Register a button's binding command so LibKeyBound can bind keys to it.
+-- On pre-Midnight clients the methods are injected directly onto the button.
+-- On Midnight (12.0+) mutating secure action buttons spreads taint, so we
+-- store the data in our external frameState table and patch the LibKeyBound
+-- Binder to consult it instead (see PatchLibKeyBoundForMidnight below).
 local function AddKeybindMethods(button, barKey)
     if not button then return end
-    if IS_MIDNIGHT then return end -- Avoid mutating secure buttons with method injection.
 
     local state = GetFrameState(button)
     if state.keybindMethods then return end
@@ -232,6 +235,9 @@ local function AddKeybindMethods(button, barKey)
     local bindingCommand = bindingPrefix .. buttonIndex
     state.bindingCommand = bindingCommand
     state.keybindMethods = true
+
+    -- On Midnight we skip method injection; the patched Binder handles it.
+    if IS_MIDNIGHT then return end
 
     -- Required method: Returns current keybind text
     function button:GetHotkey()
@@ -280,6 +286,199 @@ local function AddKeybindMethods(button, barKey)
     -- Optional method: Returns display name for what we're binding
     function button:GetActionName()
         return GetFrameState(self).bindingCommand
+    end
+end
+
+---------------------------------------------------------------------------
+-- MIDNIGHT LIBKEYBOUND COMPATIBILITY
+-- On Midnight (12.0+) we cannot inject methods onto secure action buttons
+-- without spreading taint. Instead we override LibKeyBound's Binder methods
+-- to consult our external frameState table for binding commands.
+---------------------------------------------------------------------------
+
+local libKeyBoundPatched = false
+
+local function PatchLibKeyBoundForMidnight()
+    if not IS_MIDNIGHT then return end
+    if libKeyBoundPatched then return end
+
+    local LibKeyBound = LibStub("LibKeyBound-1.0", true)
+    if not LibKeyBound then return end
+
+    libKeyBoundPatched = true
+    local Binder = LibKeyBound.Binder
+
+    -- Helper: get binding command from our external state
+    local function GetBindingCommand(button)
+        local state = frameState[button]
+        return state and state.bindingCommand
+    end
+
+    -- Override SetKey: use our frameState binding command when button lacks SetKey
+    local origSetKey = Binder.SetKey
+    function Binder:SetKey(button, key)
+        if InCombatLockdown() then
+            UIErrorsFrame:AddMessage(LibKeyBound.L.CannotBindInCombat, 1, 0.3, 0.3, 1, UIERRORS_HOLD_TIME)
+            return
+        end
+
+        self:FreeKey(button, key)
+
+        local command = GetBindingCommand(button)
+        if command then
+            SetBinding(key, command)
+        elseif button.SetKey then
+            button:SetKey(key)
+        else
+            SetBindingClick(key, button:GetName(), "LeftButton")
+        end
+
+        local msg
+        if command then
+            msg = format(LibKeyBound.L.BoundKey, GetBindingText(key), command)
+        elseif button.GetActionName then
+            msg = format(LibKeyBound.L.BoundKey, GetBindingText(key), button:GetActionName())
+        else
+            msg = format(LibKeyBound.L.BoundKey, GetBindingText(key), button:GetName())
+        end
+        UIErrorsFrame:AddMessage(msg, 1, 1, 1, 1, UIERRORS_HOLD_TIME)
+    end
+
+    -- Override ClearBindings: use our frameState binding command
+    local origClearBindings = Binder.ClearBindings
+    function Binder:ClearBindings(button)
+        if InCombatLockdown() then
+            UIErrorsFrame:AddMessage(LibKeyBound.L.CannotBindInCombat, 1, 0.3, 0.3, 1, UIERRORS_HOLD_TIME)
+            return
+        end
+
+        local command = GetBindingCommand(button)
+        if command then
+            while GetBindingKey(command) do
+                SetBinding(GetBindingKey(command), nil)
+            end
+        elseif button.ClearBindings then
+            button:ClearBindings()
+        else
+            local binding = self:ToBinding(button)
+            while (GetBindingKey(binding)) do
+                SetBinding(GetBindingKey(binding), nil)
+            end
+        end
+
+        local msg
+        if command then
+            msg = format(LibKeyBound.L.ClearedBindings, command)
+        elseif button.GetActionName then
+            msg = format(LibKeyBound.L.ClearedBindings, button:GetActionName())
+        else
+            msg = format(LibKeyBound.L.ClearedBindings, button:GetName())
+        end
+        UIErrorsFrame:AddMessage(msg, 1, 1, 1, 1, UIERRORS_HOLD_TIME)
+    end
+
+    -- Override GetBindings: use our frameState binding command
+    local origGetBindings = Binder.GetBindings
+    function Binder:GetBindings(button)
+        local command = GetBindingCommand(button)
+        if command then
+            local keys
+            for i = 1, select("#", GetBindingKey(command)) do
+                local hotKey = select(i, GetBindingKey(command))
+                if keys then
+                    keys = keys .. ", " .. GetBindingText(hotKey)
+                else
+                    keys = GetBindingText(hotKey)
+                end
+            end
+            return keys
+        end
+        return origGetBindings(self, button)
+    end
+
+    -- Override FreeKey: check our frameState binding command for conflict resolution
+    local origFreeKey = Binder.FreeKey
+    function Binder:FreeKey(button, key)
+        local command = GetBindingCommand(button)
+        if command then
+            local action = GetBindingAction(key)
+            if action and action ~= "" and action ~= command then
+                local msg = format(LibKeyBound.L.UnboundKey, GetBindingText(key), action)
+                UIErrorsFrame:AddMessage(msg, 1, 0.82, 0, 1, UIERRORS_HOLD_TIME)
+            end
+        else
+            origFreeKey(self, button, key)
+        end
+    end
+
+    -- Patch LibKeyBound:Set to provide hotkey text from our state
+    local origSet = LibKeyBound.Set
+    function LibKeyBound:Set(button, ...)
+        if button and self:IsShown() and not InCombatLockdown() then
+            local bindFrame = self.frame
+            if bindFrame then
+                bindFrame.button = button
+                bindFrame:SetAllPoints(button)
+
+                -- Get hotkey text: prefer button method, fall back to our state
+                local hotkeyText
+                if button.GetHotkey then
+                    hotkeyText = button:GetHotkey()
+                else
+                    local cmd = GetBindingCommand(button)
+                    if cmd then
+                        local key = GetBindingKey(cmd)
+                        if key then
+                            hotkeyText = self:ToShortKey(key)
+                        end
+                    end
+                end
+
+                bindFrame.text:SetFontObject("GameFontNormalLarge")
+                bindFrame.text:SetText(hotkeyText or "")
+                if bindFrame.text:GetStringWidth() > bindFrame:GetWidth() then
+                    bindFrame.text:SetFontObject("GameFontNormal")
+                end
+                bindFrame:Show()
+                bindFrame:OnEnter()
+            end
+        elseif self.frame then
+            self.frame.button = nil
+            self.frame:ClearAllPoints()
+            self.frame:Hide()
+        end
+    end
+
+    -- Patch Binder:OnEnter to show action name from our state
+    function Binder:OnEnter()
+        local button = self.button
+        if button and not InCombatLockdown() then
+            if self:GetRight() >= (GetScreenWidth() / 2) then
+                GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            else
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            end
+
+            local command = GetBindingCommand(button)
+            if command then
+                GameTooltip:SetText(command, 1, 1, 1)
+            elseif button.GetActionName then
+                GameTooltip:SetText(button:GetActionName(), 1, 1, 1)
+            else
+                GameTooltip:SetText(button:GetName(), 1, 1, 1)
+            end
+
+            local bindings = self:GetBindings(button)
+            if bindings and bindings ~= "" then
+                GameTooltip:AddLine(bindings, 0, 1, 0)
+                GameTooltip:AddLine(LibKeyBound.L.ClearTip)
+            else
+                GameTooltip:AddLine(LibKeyBound.L.NoKeysBoundTip, 0, 1, 0)
+            end
+            GameTooltip:Show()
+        else
+            GameTooltip:Hide()
+        end
     end
 end
 
@@ -385,7 +584,12 @@ end
 -- Get the bar container frame
 local function GetBarFrame(barKey)
     local frameName = BAR_FRAMES[barKey]
-    return frameName and _G[frameName]
+    local frame = frameName and _G[frameName]
+    -- Fallback: MainMenuBar (pre-Midnight name for bar1)
+    if not frame and barKey == "bar1" then
+        frame = _G["MainMenuBar"]
+    end
+    return frame
 end
 
 ---------------------------------------------------------------------------
@@ -1828,23 +2032,23 @@ local function SkinBar(barKey)
         SkinButton(button, effectiveSettings)
         UpdateButtonText(button, effectiveSettings)
 
-        if not IS_MIDNIGHT then
-            -- Add LibKeyBound methods for mousewheel binding support
-            AddKeybindMethods(button, barKey)
+        -- Register binding command for LibKeyBound quickbind support.
+        -- On pre-Midnight this injects methods directly; on Midnight the patched
+        -- Binder reads from our external frameState instead.
+        AddKeybindMethods(button, barKey)
 
-            -- Hook OnEnter to register with LibKeyBound when in keybind mode
-            -- Use HookScript to avoid tainting Blizzard's secure execution context
-            -- (SetScript + calling old handler causes ADDON_ACTION_BLOCKED during combat)
-            local state = GetFrameState(button)
-            if not state.onEnterHooked then
-                state.onEnterHooked = true
-                button:HookScript("OnEnter", function(self)
-                    local LibKeyBound = LibStub("LibKeyBound-1.0", true)
-                    if LibKeyBound and LibKeyBound:IsShown() then
-                        LibKeyBound:Set(self)
-                    end
-                end)
-            end
+        -- Hook OnEnter to register with LibKeyBound when in keybind mode.
+        -- HookScript is safe on secure frames (unlike SetScript) because it
+        -- appends to the handler chain without replacing the secure handler.
+        local state = GetFrameState(button)
+        if not state.onEnterHooked then
+            state.onEnterHooked = true
+            button:HookScript("OnEnter", function(self)
+                local LibKeyBound = LibStub("LibKeyBound-1.0", true)
+                if LibKeyBound and LibKeyBound:IsShown() then
+                    LibKeyBound:Set(self)
+                end
+            end)
         end
     end
 end
@@ -1932,6 +2136,9 @@ function ActionBars:Initialize()
 
     -- One-time migration for lock setting (preserves user setting after CVar sync fix)
     MigrateLockSetting()
+
+    -- Patch LibKeyBound Binder methods to work without method injection on Midnight
+    PatchLibKeyBoundForMidnight()
 
     -- Hook tooltip suppression for action buttons
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)

@@ -2095,7 +2095,14 @@ end
 function QUICore:UpdateSecondaryPowerBar()
     local cfg = self.db.profile.secondaryPowerBar
     if not cfg.enabled then
-        if self.secondaryPowerBar then self.secondaryPowerBar:Hide() end
+        if self.secondaryPowerBar then
+            local wasShown = self.secondaryPowerBar:IsShown()
+            self.secondaryPowerBar:Hide()
+            -- Visibility changed — reapply frame anchoring so fallback targets update
+            if wasShown and _G.QUI_UpdateAnchoredFrames then
+                _G.QUI_UpdateAnchoredFrames()
+            end
+        end
         return
     end
 
@@ -2103,7 +2110,12 @@ function QUICore:UpdateSecondaryPowerBar()
     local resource = GetSecondaryResource()
 
     if not resource then
+        local wasShown = bar:IsShown()
         bar:Hide()
+        -- Visibility changed — reapply frame anchoring so fallback targets update
+        if wasShown and _G.QUI_UpdateAnchoredFrames then
+            _G.QUI_UpdateAnchoredFrames()
+        end
         return
     end
 
@@ -2850,12 +2862,24 @@ function QUICore:OnSpecChanged()
 
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
+
+    -- Reapply frame anchoring overrides: secondary resource availability may
+    -- have changed, so frames anchored to secondaryPower need to re-evaluate
+    -- whether to fall back to primaryPower (or vice versa).
+    if _G.QUI_UpdateAnchoredFrames then
+        _G.QUI_UpdateAnchoredFrames()
+    end
 end
 
 function QUICore:OnShapeshiftChanged()
     -- Druid form changes affect primary/secondary resources
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
+
+    -- Druid form changes can toggle secondary resource availability
+    if _G.QUI_UpdateAnchoredFrames then
+        _G.QUI_UpdateAnchoredFrames()
+    end
 end
 -- Hook into that shit
 local oldOnEnable = QUICore.OnEnable

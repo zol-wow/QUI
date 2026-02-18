@@ -2935,8 +2935,9 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
 
     local function UpdateVisual(val)
+        if val == nil then return end
         for _, opt in ipairs(container.options) do
-            if opt.value == val then
+            if not opt.isHeader and opt.value == val then
                 dropdown.selected:SetText(opt.text)
                 break
             end
@@ -2960,25 +2961,41 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
         local yOff = -4
         local itemHeight = 20
+        local headerHeight = 18
         local maxVisibleItems = 8
         local numItems = #container.options
 
         for i, opt in ipairs(container.options) do
-            local btn = CreateFrame("Button", nil, scrollContent or menuFrame)
-            btn:SetHeight(itemHeight)
-            btn:SetPoint("TOPLEFT", 4, yOff)
-            btn:SetPoint("TOPRIGHT", -4, yOff)
-            local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            SetFont(btnText, 11, "", C.text)
-            btnText:SetText(opt.text)
-            btnText:SetPoint("LEFT", 4, 0)
-            btn:SetScript("OnClick", function()
-                SetValue(opt.value)
-                menuFrame:Hide()
-            end)
-            btn:SetScript("OnEnter", function() btnText:SetTextColor(unpack(C.accent)) end)
-            btn:SetScript("OnLeave", function() btnText:SetTextColor(unpack(C.text)) end)
-            yOff = yOff - itemHeight
+            if opt.isHeader then
+                -- Non-clickable category header
+                local header = CreateFrame("Frame", nil, scrollContent or menuFrame)
+                -- Add top spacing before headers (except the first item)
+                if i > 1 then yOff = yOff - 4 end
+                header:SetHeight(headerHeight)
+                header:SetPoint("TOPLEFT", 4, yOff)
+                header:SetPoint("TOPRIGHT", -4, yOff)
+                local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                SetFont(headerText, 10, "", C.textMuted or {0.6, 0.6, 0.6})
+                headerText:SetText(opt.text)
+                headerText:SetPoint("LEFT", 4, 0)
+                yOff = yOff - headerHeight
+            else
+                local btn = CreateFrame("Button", nil, scrollContent or menuFrame)
+                btn:SetHeight(itemHeight)
+                btn:SetPoint("TOPLEFT", 4, yOff)
+                btn:SetPoint("TOPRIGHT", -4, yOff)
+                local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                SetFont(btnText, 11, "", C.text)
+                btnText:SetText(opt.text)
+                btnText:SetPoint("LEFT", 4, 0)
+                btn:SetScript("OnClick", function()
+                    SetValue(opt.value)
+                    menuFrame:Hide()
+                end)
+                btn:SetScript("OnEnter", function() btnText:SetTextColor(unpack(C.accent)) end)
+                btn:SetScript("OnLeave", function() btnText:SetTextColor(unpack(C.text)) end)
+                yOff = yOff - itemHeight
+            end
         end
 
         local totalHeight = math.abs(yOff) + 4
@@ -3004,20 +3021,22 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
     local function SetOptions(newOptions)
         container.options = newOptions or {}
-        -- Check if current value still exists in new options
+        -- Check if current value still exists in new options (skip headers)
         local currentVal = GetValue()
         local found = false
         for _, opt in ipairs(container.options) do
-            if opt.value == currentVal then
+            if not opt.isHeader and opt.value == currentVal then
                 dropdown.selected:SetText(opt.text)
                 found = true
                 break
             end
         end
-        if not found then
+        if not found and currentVal ~= nil and currentVal ~= "" then
+            -- Value not in current list but was previously set - keep it
+            -- (anchor target may not be registered yet)
+            dropdown.selected:SetText(tostring(currentVal))
+        elseif not found then
             dropdown.selected:SetText("")
-            container.selectedValue = nil
-            if dbTable and dbKey then dbTable[dbKey] = "" end
         end
     end
 
