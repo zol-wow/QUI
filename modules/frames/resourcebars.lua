@@ -2854,15 +2854,21 @@ local function InitializeResourceBars(self)
     C_Timer.After(0.6, function()
         if EditModeManagerFrame and not QUICore._powerBarEditModeHooked then
             QUICore._powerBarEditModeHooked = true
+            -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
+            -- secure execution context. Synchronous addon code here taints the chain.
             hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-                if not InCombatLockdown() then
-                    QUICore:EnablePowerBarEditMode()
-                end
+                C_Timer.After(0, function()
+                    if not InCombatLockdown() then
+                        QUICore:EnablePowerBarEditMode()
+                    end
+                end)
             end)
             hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-                if not InCombatLockdown() then
-                    QUICore:DisablePowerBarEditMode()
-                end
+                C_Timer.After(0, function()
+                    if not InCombatLockdown() then
+                        QUICore:DisablePowerBarEditMode()
+                    end
+                end)
             end)
         end
     end)

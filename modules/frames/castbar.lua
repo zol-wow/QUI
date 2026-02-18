@@ -3878,15 +3878,21 @@ end
 C_Timer.After(0.5, function()
     if EditModeManagerFrame and not QUICore._castbarEditModeHooked then
         QUICore._castbarEditModeHooked = true
+        -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
+        -- secure execution context. Synchronous addon code here taints the chain.
         hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-            if not InCombatLockdown() then
-                EnableCastbarEditMode()
-            end
+            C_Timer.After(0, function()
+                if not InCombatLockdown() then
+                    EnableCastbarEditMode()
+                end
+            end)
         end)
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-            if not InCombatLockdown() then
-                DisableCastbarEditMode()
-            end
+            C_Timer.After(0, function()
+                if not InCombatLockdown() then
+                    DisableCastbarEditMode()
+                end
+            end)
         end)
 
         -- Hook PlayerCastingBarFrame visibility changes to sync with QUI castbar

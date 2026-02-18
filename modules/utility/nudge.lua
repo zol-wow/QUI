@@ -1050,46 +1050,51 @@ end
 local function SetupEditModeHooks()
     if not EditModeManagerFrame then return end
     
+    -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
+    -- secure execution context. Synchronous addon code here taints the chain.
     hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-        -- Ensure LibEditModeOverride layouts are loaded when entering Edit Mode
-        if LibEditModeOverride and LibEditModeOverride:IsReady() then
-            if not LibEditModeOverride:AreLayoutsLoaded() then
-                LibEditModeOverride:LoadLayouts()
+        C_Timer.After(0, function()
+            -- Ensure LibEditModeOverride layouts are loaded when entering Edit Mode
+            if LibEditModeOverride and LibEditModeOverride:IsReady() then
+                if not LibEditModeOverride:AreLayoutsLoaded() then
+                    LibEditModeOverride:LoadLayouts()
+                end
             end
-        end
 
-        -- NudgeFrame is lazy-loaded, only update if it exists
-        if QUICore.nudgeFrame then
-            QUICore.nudgeFrame:UpdateVisibility()
-        end
-        QUICore:EnableClickDetection()
-        -- Let Blizzard's native Edit Mode handle CDM viewers and standard Edit Mode frames
-        -- QUICore:ShowViewerOverlays()
-        -- QUICore:ShowBlizzardFrameOverlays()
-        QUICore:ShowMinimapOverlay()  -- Show nudge overlay on QUI minimap
-        QUICore:EnableMinimapEditMode()  -- Temporarily allow minimap movement
+            -- NudgeFrame is lazy-loaded, only update if it exists
+            if QUICore.nudgeFrame then
+                QUICore.nudgeFrame:UpdateVisibility()
+            end
+            QUICore:EnableClickDetection()
+            -- Let Blizzard's native Edit Mode handle CDM viewers and standard Edit Mode frames
+            -- QUICore:ShowViewerOverlays()
+            -- QUICore:ShowBlizzardFrameOverlays()
+            QUICore:ShowMinimapOverlay()  -- Show nudge overlay on QUI minimap
+            QUICore:EnableMinimapEditMode()  -- Temporarily allow minimap movement
+        end)
     end)
 
     hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        -- NudgeFrame is lazy-loaded, only hide if it exists
-        if QUICore.nudgeFrame then
-            QUICore.nudgeFrame:Hide()
-        end
-        QUICore:DisableClickDetection()
-        -- QUICore:HideViewerOverlays()
-        -- QUICore:HideBlizzardFrameOverlays()
-        QUICore:HideMinimapOverlay()  -- Hide minimap overlay
-        QUICore:DisableMinimapEditMode()  -- Restore minimap lock setting
-        QUICore.selectedViewer = nil
-        -- Clear central selection (in case a CDM viewer was selected)
-        if QUICore.ClearEditModeSelection then
-            QUICore:ClearEditModeSelection()
-        end
-        
-        -- Fix for arrow-key positioning bug: Convert TOPLEFT anchoring to CENTER anchoring
-        -- Arrow keys in Edit Mode use TOPLEFT anchor, mouse drag uses CENTER anchor
-        -- Uses GetCenter() for exact center position directly from WoW
-        C_Timer.After(0.066, function()
+        C_Timer.After(0, function()
+            -- NudgeFrame is lazy-loaded, only hide if it exists
+            if QUICore.nudgeFrame then
+                QUICore.nudgeFrame:Hide()
+            end
+            QUICore:DisableClickDetection()
+            -- QUICore:HideViewerOverlays()
+            -- QUICore:HideBlizzardFrameOverlays()
+            QUICore:HideMinimapOverlay()  -- Hide minimap overlay
+            QUICore:DisableMinimapEditMode()  -- Restore minimap lock setting
+            QUICore.selectedViewer = nil
+            -- Clear central selection (in case a CDM viewer was selected)
+            if QUICore.ClearEditModeSelection then
+                QUICore:ClearEditModeSelection()
+            end
+
+            -- Fix for arrow-key positioning bug: Convert TOPLEFT anchoring to CENTER anchoring
+            -- Arrow keys in Edit Mode use TOPLEFT anchor, mouse drag uses CENTER anchor
+            -- Uses GetCenter() for exact center position directly from WoW
+            C_Timer.After(0.066, function()
             local uiCenterX, uiCenterY = UIParent:GetCenter()
 
             -- Fix BuffIconCooldownViewer
@@ -1146,6 +1151,7 @@ local function SetupEditModeHooks()
                 end
             end
         end)
+    end)
     end)
 end
 

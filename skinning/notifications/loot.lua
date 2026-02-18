@@ -1609,11 +1609,15 @@ function Loot:HookBlizzardEditMode()
     if self._editModeHooked then return end
     self._editModeHooked = true
 
+    -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
+    -- secure execution context. Synchronous addon code here taints the chain.
     -- Only hook ExitEditMode to auto-hide movers
     -- EnterEditMode intentionally NOT hooked - users toggle movers manually via Skinning options
     hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        if InCombatLockdown() then return end
-        self:DisableEditMode()
+        C_Timer.After(0, function()
+            if InCombatLockdown() then return end
+            self:DisableEditMode()
+        end)
     end)
 end
 

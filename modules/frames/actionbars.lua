@@ -2343,19 +2343,25 @@ end
 local function SetupEditModeHooks()
     if not EditModeManagerFrame then return end
 
+    -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
+    -- secure execution context. Synchronous addon code here taints the chain.
     -- Show movers when entering Edit Mode
     hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-        local extraSettings = GetExtraButtonDB("extraActionButton")
-        local zoneSettings = GetExtraButtonDB("zoneAbility")
-        -- Only show movers if at least one extra button feature is enabled
-        if (extraSettings and extraSettings.enabled) or (zoneSettings and zoneSettings.enabled) then
-            ShowExtraButtonMovers()
-        end
+        C_Timer.After(0, function()
+            local extraSettings = GetExtraButtonDB("extraActionButton")
+            local zoneSettings = GetExtraButtonDB("zoneAbility")
+            -- Only show movers if at least one extra button feature is enabled
+            if (extraSettings and extraSettings.enabled) or (zoneSettings and zoneSettings.enabled) then
+                ShowExtraButtonMovers()
+            end
+        end)
     end)
 
     -- Hide movers when exiting Edit Mode
     hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        HideExtraButtonMovers()
+        C_Timer.After(0, function()
+            HideExtraButtonMovers()
+        end)
     end)
 end
 
