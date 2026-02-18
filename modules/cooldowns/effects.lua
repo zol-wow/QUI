@@ -7,6 +7,12 @@
 local _, ns = ...
 local Helpers = ns.Helpers
 
+-- TAINT SAFETY: Store per-frame state in local weak-keyed tables instead of
+-- writing custom properties to Blizzard frames (CDM viewer icons/subframes).
+local hookedFrames   = setmetatable({}, { __mode = "k" })  -- frame → true (Show hook applied)
+local processedIcons = setmetatable({}, { __mode = "k" })  -- icon  → true (effects hidden)
+local hookedViewers  = setmetatable({}, { __mode = "k" })  -- viewer → { layout, show }
+
 -- Default settings
 local DEFAULTS = { hideEssential = true, hideUtility = true }
 
@@ -30,27 +36,34 @@ local function HideCooldownEffects(child)
             frame:SetAlpha(0)
             
             -- Hook to keep it hidden
-            if not frame._QUI_NoShow then
-                frame._QUI_NoShow = true
+            if not hookedFrames[frame] then
+                hookedFrames[frame] = true
                 
+                -- TAINT SAFETY: Defer to break taint chain from secure CDM context.
                 -- Hook Show to prevent it from showing
                 if frame.Show then
                     hooksecurefunc(frame, "Show", function(self)
-                        if InCombatLockdown() then return end
-                        self:Hide()
-                        self:SetAlpha(0)
+                        C_Timer.After(0, function()
+                            if InCombatLockdown() then return end
+                            if self and self.Hide then
+                                self:Hide()
+                                self:SetAlpha(0)
+                            end
+                        end)
                     end)
                 end
-                
+
                 -- Also hook parent OnShow
                 if child.HookScript then
                     child:HookScript("OnShow", function(self)
-                        if InCombatLockdown() then return end
-                        local f = self[frameName]
-                        if f then
-                            f:Hide()
-                            f:SetAlpha(0)
-                        end
+                        C_Timer.After(0, function()
+                            if InCombatLockdown() then return end
+                            if self and self[frameName] then
+                                local f = self[frameName]
+                                f:Hide()
+                                f:SetAlpha(0)
+                            end
+                        end)
                     end)
                 end
             end
@@ -83,7 +96,9 @@ local function HideBlizzardGlows(button)
     -- Hide _ButtonGlow only when it's Blizzard's frame, not LibCustomGlow's.
     -- LibCustomGlow's ButtonGlow_Start uses the same _ButtonGlow property,
     -- so skip hiding when our custom glow is active on this icon.
-    if button._ButtonGlow and not button._QUICustomGlowActive then
+    -- NOTE: _QUICustomGlowActive is checked via the glows module's shared table
+    local glowState = _G.QUI_GetGlowState and _G.QUI_GetGlowState(button)
+    if button._ButtonGlow and not (glowState and glowState.active) then
         button._ButtonGlow:Hide()
     end
 end
@@ -126,7 +141,7 @@ local function ProcessViewer(viewerName)
                 pcall(HideAllGlows, child)
                 
                 -- Mark as processed (no OnUpdate hook needed - we handle glows via hooksecurefunc)
-                    child._QUI_EffectsHidden = true
+                processedIcons[child] = true
             end
         end
     end
@@ -134,20 +149,22 @@ local function ProcessViewer(viewerName)
     -- Process immediately
     ProcessIcons()
     
+    -- TAINT SAFETY: Defer to break taint chain from secure CDM context.
     -- Hook Layout to reprocess when viewer updates
-    if viewer.Layout and not viewer._QUI_EffectsHooked then
-        viewer._QUI_EffectsHooked = true
+    local hvState = hookedViewers[viewer]
+    if not hvState then hvState = {}; hookedViewers[viewer] = hvState end
+    if viewer.Layout and not hvState.layout then
+        hvState.layout = true
         hooksecurefunc(viewer, "Layout", function()
-            C_Timer.After(0.15, ProcessIcons)  -- 150ms debounce for CPU efficiency
+            C_Timer.After(0.15, ProcessIcons)
         end)
     end
-    
+
     -- Hook OnShow
-    if not viewer._QUI_EffectsShowHooked then
-        viewer._QUI_EffectsShowHooked = true
+    if not hvState.show then
+        hvState.show = true
         viewer:HookScript("OnShow", function()
-            if InCombatLockdown() then return end
-            C_Timer.After(0.15, ProcessIcons)  -- 150ms debounce for CPU efficiency
+            C_Timer.After(0.15, ProcessIcons)
         end)
     end
 end
@@ -181,26 +198,22 @@ local function HookAllGlows()
     -- When Blizzard tries to show a glow, we ALWAYS hide Blizzard's glow
     -- Our custom glow (via LibCustomGlow) is completely separate and won't be affected
     if type(ActionButton_ShowOverlayGlow) == "function" then
+        -- TAINT SAFETY: Defer ALL addon logic to break taint chain from secure context.
         hooksecurefunc("ActionButton_ShowOverlayGlow", function(button)
-            -- Only hide glows on Essential/Utility cooldown viewers, NOT BuffIcon
-            if button and button:GetParent() then
-                local parent = button:GetParent()
-                local parentName = parent:GetName()
-                if parentName and (
-                    parentName:find("EssentialCooldown") or 
-                    parentName:find("UtilityCooldown")
-                    -- BuffIconCooldown is NOT included - we want glows on buff icons
-                ) then
-                    -- Hide Blizzard's glow immediately
-                    -- customglows.lua runs first (load order) and applies LibCustomGlow
-                    -- which is NOT affected by HideBlizzardGlows
-                    C_Timer.After(0.01, function()
-                        if button then
-                            pcall(HideBlizzardGlows, button)
-                        end
-                    end)
+            C_Timer.After(0, function()
+                -- Only hide glows on Essential/Utility cooldown viewers, NOT BuffIcon
+                if button and button.GetParent and button:GetParent() then
+                    local parent = button:GetParent()
+                    local parentName = parent.GetName and parent:GetName()
+                    if parentName and (
+                        parentName:find("EssentialCooldown") or
+                        parentName:find("UtilityCooldown")
+                        -- BuffIconCooldown is NOT included - we want glows on buff icons
+                    ) then
+                        pcall(HideBlizzardGlows, button)
+                    end
                 end
-            end
+            end)
         end)
     end
     

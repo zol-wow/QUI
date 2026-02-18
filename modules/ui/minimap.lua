@@ -832,21 +832,27 @@ local zoomOutShowHooked = false
 
 if Minimap.ZoomIn and not zoomInShowHooked then
     zoomInShowHooked = true
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc(Minimap.ZoomIn, "Show", function(self)
-        local s = GetSettings()
-        if s and not s.showZoomButtons then
-            self:Hide()
-        end
+        C_Timer.After(0, function()
+            local s = GetSettings()
+            if s and not s.showZoomButtons then
+                self:Hide()
+            end
+        end)
     end)
 end
 
 if Minimap.ZoomOut and not zoomOutShowHooked then
     zoomOutShowHooked = true
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc(Minimap.ZoomOut, "Show", function(self)
-        local s = GetSettings()
-        if s and not s.showZoomButtons then
-            self:Hide()
-        end
+        C_Timer.After(0, function()
+            local s = GetSettings()
+            if s and not s.showZoomButtons then
+                self:Hide()
+            end
+        end)
     end)
 end
 
@@ -1073,14 +1079,16 @@ local function SetupDungeonEyeHook()
     if dungeonEyeHooked then return end
     if not QueueStatusButton then return end
 
+    -- TAINT SAFETY: Defer ALL addon logic to break taint chain from secure context.
     -- Hook UpdatePosition to re-apply our positioning after Blizzard resets it
     if QueueStatusButton.UpdatePosition then
         hooksecurefunc(QueueStatusButton, "UpdatePosition", function()
-            local settings = GetSettings()
-            if settings and settings.dungeonEye and settings.dungeonEye.enabled then
-                -- Use C_Timer.After to avoid infinite hook recursion
-                C_Timer.After(0, UpdateDungeonEyePosition)
-            end
+            C_Timer.After(0, function()
+                local settings = GetSettings()
+                if settings and settings.dungeonEye and settings.dungeonEye.enabled then
+                    UpdateDungeonEyePosition()
+                end
+            end)
         end)
         dungeonEyeHooked = true
     end
@@ -1273,12 +1281,17 @@ local function SetupAutoZoom()
             C_Timer.After(10, ZoomOut)
         end
     end
-    
+
+    -- TAINT SAFETY: Defer to break taint chain from secure Blizzard context.
     if Minimap.ZoomIn then
-        Minimap.ZoomIn:HookScript("OnClick", OnZoom)
+        Minimap.ZoomIn:HookScript("OnClick", function()
+            C_Timer.After(0, OnZoom)
+        end)
     end
     if Minimap.ZoomOut then
-        Minimap.ZoomOut:HookScript("OnClick", OnZoom)
+        Minimap.ZoomOut:HookScript("OnClick", function()
+            C_Timer.After(0, OnZoom)
+        end)
     end
     
     -- Initial zoom out

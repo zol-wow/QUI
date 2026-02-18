@@ -138,10 +138,13 @@ local function HookAlertSystem(globalSystemName, toggleKey)
         return
     end
 
+    -- TAINT SAFETY: Defer to break taint chain from secure alert system context.
     hooksecurefunc(system, "setUpFunction", function(frame)
-        if IsPopupBlockEnabled(toggleKey) then
-            HideAlertFrame(frame)
-        end
+        C_Timer.After(0, function()
+            if IsPopupBlockEnabled(toggleKey) then
+                HideAlertFrame(frame)
+            end
+        end)
     end)
     hookedAlertSystems[system] = true
 end
@@ -163,10 +166,14 @@ local function HookEventToastManager()
         return
     end
 
+    -- TAINT SAFETY: Defer to break taint chain — EventToastManagerFrame methods
+    -- can fire inside secure execution contexts.
     local function PostShowHide(self)
-        if IsPopupBlockEnabled("blockEventToasts") then
-            self:Hide()
-        end
+        C_Timer.After(0, function()
+            if IsPopupBlockEnabled("blockEventToasts") then
+                self:Hide()
+            end
+        end)
     end
 
     hooksecurefunc(EventToastManagerFrame, "Show", PostShowHide)
@@ -244,10 +251,13 @@ end
 
 local function HookTalentReminderAlerts()
     if not mainMenuAlertHooked and type(MainMenuMicroButton_ShowAlert) == "function" then
+        -- TAINT SAFETY: Defer to break taint chain from secure context.
         hooksecurefunc("MainMenuMicroButton_ShowAlert", function(button)
-            if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") and IsTalentMicroButton(button) then
-                HideTalentMicroButtonAlert(button)
-            end
+            C_Timer.After(0, function()
+                if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") and IsTalentMicroButton(button) then
+                    HideTalentMicroButtonAlert(button)
+                end
+            end)
         end)
         mainMenuAlertHooked = true
     end
@@ -257,10 +267,13 @@ local function HookTalentReminderAlerts()
     for _, alertName in ipairs(talentMicroButtonAlertCandidates) do
         local alertFrame = _G[alertName]
         if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             alertFrame:HookScript("OnShow", function(self)
-                if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
-                    self:Hide()
-                end
+                C_Timer.After(0, function()
+                    if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") and self and self.Hide then
+                        self:Hide()
+                    end
+                end)
             end)
             _quiPopupBlockerHooked[alertFrame] = true
         end
@@ -617,34 +630,37 @@ local deletePopups = {
     ["DELETE_QUEST_ITEM"] = true,
 }
 
+-- TAINT SAFETY: Defer to break taint chain from secure context.
 hooksecurefunc("StaticPopup_Show", function(which)
-    if ShouldBlockStaticPopup(which) then
-        HideStaticPopupByWhich(which)
-        return
-    end
+    C_Timer.After(0, function()
+        if ShouldBlockStaticPopup(which) then
+            HideStaticPopupByWhich(which)
+            return
+        end
 
-    if not deletePopups[which] then return end
+        if not deletePopups[which] then return end
 
-    local settings = GetSettings()
-    if not settings or not settings.autoDeleteConfirm then return end
+        local settings = GetSettings()
+        if not settings or not settings.autoDeleteConfirm then return end
 
-    -- Find the popup frame that's showing this dialog
-    for i = 1, GetMaxStaticPopupDialogs() do
-        local frame = _G["StaticPopup" .. i]
-        if frame and frame.which == which and frame:IsShown() then
-            local editBox = frame.editBox or _G["StaticPopup" .. i .. "EditBox"]
-            if editBox then
-                editBox:SetText(DELETE_ITEM_CONFIRM_STRING or "DELETE")
-                -- Trigger OnTextChanged to enable the confirm button
-                local handler = editBox:GetScript("OnTextChanged")
-                if handler then
-                    handler(editBox)
-                end
+        -- Find the popup frame that's showing this dialog
+        for i = 1, GetMaxStaticPopupDialogs() do
+            local frame = _G["StaticPopup" .. i]
+            if frame and frame.which == which and frame:IsShown() then
+                local editBox = frame.editBox or _G["StaticPopup" .. i .. "EditBox"]
+                if editBox then
+                    editBox:SetText(DELETE_ITEM_CONFIRM_STRING or "DELETE")
+                    -- Trigger OnTextChanged to enable the confirm button
+                    local handler = editBox:GetScript("OnTextChanged")
+                    if handler then
+                        handler(editBox)
+                    end
                 -- Note: Cannot auto-click - DeleteCursorItem() is protected
             end
             break
         end
     end
+    end)
 end)
 
 ---------------------------------------------------------------------------

@@ -592,9 +592,10 @@ BuildDatatextTab = function(tabContent)
         watcher:SetScript("OnEvent", function()
             CheckAndRebuildCurrencyOptions()
         end)
+        -- TAINT SAFETY: Defer to break taint chain from secure Blizzard context.
         if BackpackTokenFrame and BackpackTokenFrame.Update then
             hooksecurefunc(BackpackTokenFrame, "Update", function()
-                CheckAndRebuildCurrencyOptions()
+                C_Timer.After(0, CheckAndRebuildCurrencyOptions)
             end)
         end
         tabContent._currencyWatcher = watcher

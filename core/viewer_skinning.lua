@@ -7,6 +7,30 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 
 ---------------------------------------------------------------------------
+-- TAINT SAFETY: Weak-keyed tables for per-icon and per-viewer state
+-- Previously stored as icon.__cdmSkinned, viewer.__cdmIconCount, etc.
+-- which taints Blizzard frames in the Midnight (12.0) taint model.
+---------------------------------------------------------------------------
+local skinIconState   = setmetatable({}, { __mode = "k" })
+local skinViewerState = setmetatable({}, { __mode = "k" })
+
+local function GetSkinIconState(icon)
+    local s = skinIconState[icon]
+    if not s then s = {}; skinIconState[icon] = s end
+    return s
+end
+local function GetSkinViewerState(viewer)
+    local s = skinViewerState[viewer]
+    if not s then s = {}; skinViewerState[viewer] = s end
+    return s
+end
+local EMPTY = {}
+
+-- Expose skin state for cross-module reads (e.g. main.lua, qol/tooltips.lua)
+_G.QUI_GetSkinIconState   = function(icon) return skinIconState[icon] end
+_G.QUI_GetSkinViewerState = function(viewer) return skinViewerState[viewer] end
+
+---------------------------------------------------------------------------
 -- LOCAL HELPERS
 ---------------------------------------------------------------------------
 
@@ -129,7 +153,7 @@ function QUICore:SkinIcon(icon, settings)
 
     local padding   = settings.padding or 5
     local zoom      = settings.zoom or 0
-    local border    = icon.__CDM_Border
+    local border    = (skinIconState[icon] or EMPTY).borderTexture
     local cdPadding = math.floor(padding * 0.7 + 0.5)
 
     -- This prevents stretching by cropping the texture to match the container aspect ratio
@@ -192,9 +216,9 @@ function QUICore:SkinIcon(icon, settings)
     -- and mark icon as NOT skinned so we retry later
     if not sizeSet then
         iconTexture:SetTexCoord(0, 1, 0, 1)
-        icon.__cdmSkinFailed = true  -- Mark for retry
+        GetSkinIconState(icon).skinFailed = true  -- Mark for retry
     else
-        icon.__cdmSkinFailed = nil
+        GetSkinIconState(icon).skinFailed = nil
     end
 
     -- Cooldown glow
@@ -288,7 +312,7 @@ function QUICore:SkinIcon(icon, settings)
     -- Border (using BACKGROUND texture to avoid secret value errors during combat)
     -- BackdropTemplate causes "arithmetic on secret value" crashes when frame is resized during combat
     if icon.IsForbidden and icon:IsForbidden() then
-        icon.__cdmSkinned = true
+        GetSkinIconState(icon).skinned = true
         return
     end
 
@@ -297,7 +321,7 @@ function QUICore:SkinIcon(icon, settings)
     if edgeSize > 0 then
         if not border then
             border = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
-            icon.__CDM_Border = border
+            GetSkinIconState(icon).borderTexture = border
         end
 
         local r, g, b, a = unpack(settings.borderColor or { 0, 0, 0, 1 })
@@ -313,10 +337,11 @@ function QUICore:SkinIcon(icon, settings)
     end
 
     -- Only mark as fully skinned if size was successfully set
-    if not icon.__cdmSkinFailed then
-    icon.__cdmSkinned = true
+    local iState = GetSkinIconState(icon)
+    if not iState.skinFailed then
+    iState.skinned = true
     end
-    icon.__cdmSkinPending = nil  -- Clear pending flag
+    iState.skinPending = nil  -- Clear pending flag
 end
 
 function QUICore:SkinAllIconsInViewer(viewer)
@@ -333,7 +358,7 @@ function QUICore:SkinAllIconsInViewer(viewer)
         if IsCooldownIconFrame(icon) and (icon.icon or icon.Icon) then
             local ok, err = pcall(self.SkinIcon, self, icon, settings)
             if not ok then
-                icon.__cdmSkinError = true
+                GetSkinIconState(icon).skinError = true
                 print("|cffff4444[QUICore] SkinIcon error for", name, "icon:", err, "|r")
             end
         end
@@ -497,10 +522,11 @@ function QUICore:ApplyViewerLayout(viewer)
     local yOffset = 0
     if name == "UtilityCooldownViewer" and settings.anchorToEssential then
         local essentialViewer = _G.EssentialCooldownViewer
-        if essentialViewer and essentialViewer.__cdmTotalHeight then
+        local essVS = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(essentialViewer)
+        if essentialViewer and essVS and essVS.totalHeight then
             local anchorGap = settings.anchorGap or 10
             -- Offset by Essential's total height plus gap
-            yOffset = -(essentialViewer.__cdmTotalHeight + anchorGap)
+            yOffset = -(essVS.totalHeight + anchorGap)
         end
     end
 
@@ -511,9 +537,10 @@ function QUICore:ApplyViewerLayout(viewer)
         local alignment = settings.rowAlignment or "CENTER"
         local rowSpacing = iconHeight + spacing
 
-        viewer.__cdmIconWidth = maxW
+        local vvs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer) or {}
+        vvs.iconWidth = maxW
         -- Store total height for anchoring (number of rows * row height, minus last spacing)
-        viewer.__cdmTotalHeight = (#grid * iconHeight) + ((#grid - 1) * spacing)
+        vvs.totalHeight = (#grid * iconHeight) + ((#grid - 1) * spacing)
 
         local y = yOffset
         for rowIdx, row in ipairs(grid) do
@@ -543,8 +570,9 @@ function QUICore:ApplyViewerLayout(viewer)
     elseif rowLimit <= 0 then
         -- Single row (original behavior)
         local totalWidth = count * iconWidth + (count - 1) * spacing
-        viewer.__cdmIconWidth = totalWidth
-        viewer.__cdmTotalHeight = iconHeight  -- Single row height
+        local vvs2 = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer) or {}
+        vvs2.iconWidth = totalWidth
+        vvs2.totalHeight = iconHeight  -- Single row height
 
         local startX = -totalWidth / 2 + iconWidth / 2
 
@@ -570,8 +598,9 @@ function QUICore:ApplyViewerLayout(viewer)
             end
         end
 
-        viewer.__cdmIconWidth = maxRowWidth
-        viewer.__cdmTotalHeight = (numRows * iconHeight) + ((numRows - 1) * spacing)
+        local vvs3 = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer) or {}
+        vvs3.iconWidth = maxRowWidth
+        vvs3.totalHeight = (numRows * iconHeight) + ((numRows - 1) * spacing)
 
         local growDirection = "down"
 
@@ -618,10 +647,11 @@ function QUICore:RescanViewer(viewer)
             table.insert(icons, child)
 
             -- Retry skinning if it failed before or hasn't been done
-            if not child.__cdmSkinned or child.__cdmSkinFailed then
+            local childIS = skinIconState[child] or EMPTY
+            if not childIS.skinned or childIS.skinFailed then
                 -- Mark as pending to avoid multiple attempts
-                if not child.__cdmSkinPending then
-                    child.__cdmSkinPending = true
+                if not childIS.skinPending then
+                    GetSkinIconState(child).skinPending = true
 
                     if inCombat then
                         -- Defer skinning until out of combat
@@ -645,7 +675,7 @@ function QUICore:RescanViewer(viewer)
                         -- Not in combat, try to skin immediately
                         local success = pcall(self.SkinIcon, self, child, settings)
                         if success then
-                            child.__cdmSkinPending = nil
+                            GetSkinIconState(child).skinPending = nil
                         end
                     end
                     changed = true
@@ -657,8 +687,8 @@ function QUICore:RescanViewer(viewer)
     local count = #icons
 
     -- Check if icon count changed
-    if count ~= viewer.__cdmIconCount then
-        viewer.__cdmIconCount = count
+    if count ~= (skinViewerState[viewer] or EMPTY).iconCount then
+        GetSkinViewerState(viewer).iconCount = count
         changed = true
     end
 
@@ -700,10 +730,10 @@ function QUICore:ProcessPendingIcons()
 
     local processed = {}
     for icon, data in pairs(self.__cdmPendingIcons) do
-        if icon and icon:IsShown() and not icon.__cdmSkinned then
+        if icon and icon:IsShown() and not (skinIconState[icon] or EMPTY).skinned then
             local success = pcall(self.SkinIcon, self, icon, data.settings)
             if success then
-                icon.__cdmSkinPending = nil
+                GetSkinIconState(icon).skinPending = nil
                 processed[icon] = true
             end
         elseif not icon or not icon:IsShown() then
@@ -730,7 +760,7 @@ end
 function QUICore:ForceRefreshBuffIcons()
     local viewer = _G["BuffIconCooldownViewer"]
     if viewer and viewer:IsShown() then
-        viewer.__cdmIconCount = nil
+        GetSkinViewerState(viewer).iconCount = nil
         self:RescanViewer(viewer)
         -- Process any pending icons if not in combat
         if not InCombatLockdown() then
@@ -748,12 +778,15 @@ function QUICore:ForceReskinAllViewers()
             local children = { container:GetChildren() }
             for _, child in ipairs(children) do
                 -- Clear skinned flag to force re-skinning
-                child.__cdmSkinned = nil
-                child.__cdmSkinPending = nil
-                child.__cdmSkinFailed = nil
+                local cState = skinIconState[child]
+                if cState then
+                    cState.skinned = nil
+                    cState.skinPending = nil
+                    cState.skinFailed = nil
+                end
             end
             -- Reset icon count to force layout refresh
-            viewer.__cdmIconCount = nil
+            GetSkinViewerState(viewer).iconCount = nil
 
             -- Note: We avoid calling viewer.Layout() directly as it can trigger
             -- Blizzard's internal code that accesses "secret" values and errors

@@ -181,8 +181,11 @@ function QUI_UF:HideBlizzardCastbars()
         local ok3, err3 = pcall(function()
             if not _blizzFrameGuards.castbarShowHooked then
                 _blizzFrameGuards.castbarShowHooked = true
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(PlayerCastingBarFrame, "Show", function(self)
-                    pcall(function() self:Hide() end)
+                    C_Timer.After(0, function()
+                        pcall(function() self:Hide() end)
+                    end)
                 end)
             end
         end)
@@ -274,11 +277,14 @@ function QUI_UF:HideBlizzardSelectionFrames()
         local selKey = tostring(parent) .. "_selection"
         if not _blizzFrameGuards[selKey] then
             _blizzFrameGuards[selKey] = true
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             parent.Selection:HookScript("OnShow", function(self)
-                local db = GetDB()
-                if db and db[unitKey] and db[unitKey].enabled then
-                    self:Hide()
-                end
+                C_Timer.After(0, function()
+                    local db = GetDB()
+                    if db and db[unitKey] and db[unitKey].enabled and self and self.Hide then
+                        self:Hide()
+                    end
+                end)
             end)
         end
     end

@@ -714,6 +714,10 @@ function QUICore:ShowViewerOverlays()
                             LibEditModeOverride:ReanchorFrame(viewer, point, relativeTo, relativePoint, x, y)
                         end)
                     end
+                    -- Update frames anchored to this viewer
+                    if _G.QUI_UpdateAnchoredFrames then
+                        _G.QUI_UpdateAnchoredFrames()
+                    end
                 end
             end)
         end
@@ -984,6 +988,10 @@ function QUICore:NudgeSelectedViewer(direction)
             if self.nudgeFrame and self.nudgeFrame:IsShown() then
                 self.nudgeFrame:UpdateInfo()
             end
+            -- Update frames anchored to this viewer
+            if _G.QUI_UpdateAnchoredFrames then
+                _G.QUI_UpdateAnchoredFrames()
+            end
             return true
         end
     end
@@ -1006,6 +1014,11 @@ function QUICore:NudgeSelectedViewer(direction)
     -- Update the display in your nudge panel
     if self.nudgeFrame and self.nudgeFrame:IsShown() then
         self.nudgeFrame:UpdateInfo()
+    end
+
+    -- Update frames anchored to this viewer
+    if _G.QUI_UpdateAnchoredFrames then
+        _G.QUI_UpdateAnchoredFrames()
     end
 
     return true

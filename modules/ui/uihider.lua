@@ -261,11 +261,14 @@ local function ApplyHideSettings()
         if not gtState then gtState = {}; hookedSecureFrames[GameTimeFrame] = gtState end
         if not gtState.showHooked then
             gtState.showHooked = true
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             hooksecurefunc(GameTimeFrame, "Show", function(self)
-                local s = GetSettings()
-                if s and s.hideGameTime then
-                    self:Hide()
-                end
+                C_Timer.After(0, function()
+                    local s = GetSettings()
+                    if s and s.hideGameTime then
+                        self:Hide()
+                    end
+                end)
             end)
         end
     end
@@ -345,11 +348,15 @@ end
             if not btnState then btnState = {}; hookedSecureFrames[btn] = btnState end
             if not btnState.alphaHooked then
                 btnState.alphaHooked = true
-                local function BlockAlpha(texture, alpha)
-                    local s = GetSettings()
-                    if s and s.hideBuffCollapseButton and alpha > 0 then
-                        texture:SetAlpha(0)
-                    end
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
+                local function BlockAlpha(texture)
+                    C_Timer.After(0, function()
+                        if not texture then return end
+                        local s = GetSettings()
+                        if s and s.hideBuffCollapseButton and texture.GetAlpha and texture:GetAlpha() > 0 then
+                            texture:SetAlpha(0)
+                        end
+                    end)
                 end
                 if btn.NormalTexture then hooksecurefunc(btn.NormalTexture, "SetAlpha", BlockAlpha) end
                 if btn.PushedTexture then hooksecurefunc(btn.PushedTexture, "SetAlpha", BlockAlpha) end
@@ -429,12 +436,15 @@ end
             -- Hook Show() to keep it hidden
             if not thState.showHooked then
                 thState.showHooked = true
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(TalkingHeadFrame, "Show", function(self)
-                    local s = GetSettings()
-                    if s and s.hideTalkingHead then
-                        self:Hide()
-                        DisableTalkingHeadMouse()
-                    end
+                    C_Timer.After(0, function()
+                        local s = GetSettings()
+                        if s and s.hideTalkingHead then
+                            self:Hide()
+                            DisableTalkingHeadMouse()
+                        end
+                    end)
                 end)
             end
         else
@@ -447,13 +457,19 @@ end
                 DisableTalkingHeadMouse()
 
                 -- Re-enable mouse when a talking head starts playing
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(TalkingHeadFrame, "PlayCurrent", function()
-                    EnableTalkingHeadMouse()
+                    C_Timer.After(0, function()
+                        EnableTalkingHeadMouse()
+                    end)
                 end)
 
                 -- Disable mouse when the talking head finishes/hides
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 TalkingHeadFrame:HookScript("OnHide", function()
-                    DisableTalkingHeadMouse()
+                    C_Timer.After(0, function()
+                        DisableTalkingHeadMouse()
+                    end)
                 end)
             end
         end
@@ -461,12 +477,15 @@ end
         -- Talking Head Mute (hook PlayCurrent once)
         if not thState.muteHooked then
             thState.muteHooked = true
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             hooksecurefunc(TalkingHeadFrame, "PlayCurrent", function()
-                local s = GetSettings()
-                if s and s.muteTalkingHead and TalkingHeadFrame.voHandle then
-                    StopSound(TalkingHeadFrame.voHandle, 0)
-                    TalkingHeadFrame.voHandle = nil
-                end
+                C_Timer.After(0, function()
+                    local s = GetSettings()
+                    if s and s.muteTalkingHead and TalkingHeadFrame.voHandle then
+                        StopSound(TalkingHeadFrame.voHandle, 0)
+                        TalkingHeadFrame.voHandle = nil
+                    end
+                end)
             end)
         end
     end
@@ -527,11 +546,14 @@ end
 
             if not stbState.showHooked then
                 stbState.showHooked = true
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(StatusTrackingBarManager, "Show", function(self)
-                    local s = GetSettings()
-                    if s and s.hideExperienceBar and s.hideReputationBar then
-                        self:Hide()
-                    end
+                    C_Timer.After(0, function()
+                        local s = GetSettings()
+                        if s and s.hideExperienceBar and s.hideReputationBar then
+                            self:Hide()
+                        end
+                    end)
                 end)
             end
         elseif hideXP or hideRep then
@@ -591,23 +613,29 @@ end
             if not boState then boState = {}; hookedSecureFrames[WorldMapFrame.BlackoutFrame] = boState end
             if not boState.blackoutHooked then
                 boState.blackoutHooked = true
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(WorldMapFrame.BlackoutFrame, "Show", function(self)
-                    if InCombatLockdown() then return end  -- Avoid taint during combat
-                    local s = GetSettings()
-                    if s and s.hideWorldMapBlackout then
-                        self:SetAlpha(0)
-                        self:EnableMouse(false)
-                    end
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then return end  -- Avoid taint during combat
+                        local s = GetSettings()
+                        if s and s.hideWorldMapBlackout then
+                            self:SetAlpha(0)
+                            self:EnableMouse(false)
+                        end
+                    end)
                 end)
 
                 -- Also hook SetAlpha to prevent alpha changes
-                hooksecurefunc(WorldMapFrame.BlackoutFrame, "SetAlpha", function(self, alpha)
-                    if InCombatLockdown() then return end  -- Avoid taint during combat
-                    local s = GetSettings()
-                    if s and s.hideWorldMapBlackout and alpha > 0 then
-                        self:SetAlpha(0)
-                        self:EnableMouse(false)
-                    end
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
+                hooksecurefunc(WorldMapFrame.BlackoutFrame, "SetAlpha", function(self)
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then return end  -- Avoid taint during combat
+                        local s = GetSettings()
+                        if s and s.hideWorldMapBlackout and self.GetAlpha and self:GetAlpha() > 0 then
+                            self:SetAlpha(0)
+                            self:EnableMouse(false)
+                        end
+                    end)
                 end)
             end
         else

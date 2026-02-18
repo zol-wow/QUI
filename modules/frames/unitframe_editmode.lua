@@ -360,6 +360,11 @@ function QUI_UF:EnableEditMode()
 
                             -- Notify options panel of position change (real-time sync)
                             QUI_UF:NotifyPositionChanged(settingsKey, offsetX, offsetY)
+
+                            -- Update anchored frames in real-time so they follow this frame
+                            if _G.QUI_UpdateAnchoredFrames then
+                                _G.QUI_UpdateAnchoredFrames()
+                            end
                         end
                     end
                 end)
@@ -391,6 +396,11 @@ function QUI_UF:EnableEditMode()
 
                     -- Final notification to options panel
                     QUI_UF:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
+
+                    -- Update anchored frames to final position
+                    if _G.QUI_UpdateAnchoredFrames then
+                        _G.QUI_UpdateAnchoredFrames()
+                    end
                 end
             end
         end)
