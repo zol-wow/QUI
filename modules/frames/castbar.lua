@@ -474,8 +474,9 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
             -- In horizontal CDM layouts, row yOffset can move the visible bottom row
             -- without changing the viewer frame bounds.
             local bottomRowYOffset = 0
-            if viewer.__cdmLayoutDirection ~= "VERTICAL" then
-                bottomRowYOffset = QUICore:PixelRound(viewer.__cdmBottomRowYOffset or 0, anchorFrame)
+            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
+            if (vs and vs.layoutDir) ~= "VERTICAL" then
+                bottomRowYOffset = QUICore:PixelRound((vs and vs.bottomRowYOffset) or 0, anchorFrame)
             end
             anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
             anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
@@ -490,8 +491,9 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
         if viewer then
             -- Mirror Essential logic so Utility-anchored castbars behave consistently.
             local bottomRowYOffset = 0
-            if viewer.__cdmLayoutDirection ~= "VERTICAL" then
-                bottomRowYOffset = QUICore:PixelRound(viewer.__cdmBottomRowYOffset or 0, anchorFrame)
+            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
+            if (vs and vs.layoutDir) ~= "VERTICAL" then
+                bottomRowYOffset = QUICore:PixelRound((vs and vs.bottomRowYOffset) or 0, anchorFrame)
             end
             anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
             anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
@@ -3893,23 +3895,31 @@ C_Timer.After(0.5, function()
         -- Wrapped in pcall — frame can be forbidden in 12.0.x beta
         if PlayerCastingBarFrame then
             local ok, err = pcall(function()
+                -- TAINT SAFETY: Defer all work to break taint chain from secure context.
+                -- PlayerCastingBarFrame methods fire inside Blizzard's secure execution.
                 hooksecurefunc(PlayerCastingBarFrame, "SetShown", function(_, shown)
-                    if EditModeState.active then
-                        EditModeState.castBarCheckboxEnabled = shown
-                        UpdateCastbarVisibilityForEditMode()
-                    end
+                    C_Timer.After(0, function()
+                        if EditModeState.active then
+                            EditModeState.castBarCheckboxEnabled = shown
+                            UpdateCastbarVisibilityForEditMode()
+                        end
+                    end)
                 end)
                 hooksecurefunc(PlayerCastingBarFrame, "Show", function()
-                    if EditModeState.active then
-                        EditModeState.castBarCheckboxEnabled = true
-                        UpdateCastbarVisibilityForEditMode()
-                    end
+                    C_Timer.After(0, function()
+                        if EditModeState.active then
+                            EditModeState.castBarCheckboxEnabled = true
+                            UpdateCastbarVisibilityForEditMode()
+                        end
+                    end)
                 end)
                 hooksecurefunc(PlayerCastingBarFrame, "Hide", function()
-                    if EditModeState.active then
-                        EditModeState.castBarCheckboxEnabled = false
-                        UpdateCastbarVisibilityForEditMode()
-                    end
+                    C_Timer.After(0, function()
+                        if EditModeState.active then
+                            EditModeState.castBarCheckboxEnabled = false
+                            UpdateCastbarVisibilityForEditMode()
+                        end
+                    end)
                 end)
             end)
             if not ok then QUI:DebugPrint("Could not hook PlayerCastingBarFrame for Edit Mode: " .. tostring(err)) end

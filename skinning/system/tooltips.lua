@@ -331,6 +331,8 @@ end
 local function HookTooltipOnShow(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
 
+    -- NOTE: Tooltip OnShow runs synchronously — deferring causes unskinned tooltip flash.
+    -- Tooltip skinning is NOT in the Edit Mode taint chain.
     tooltip:HookScript("OnShow", function(self)
         ApplyTooltipFontSize()
         ApplyTooltipFontSizeToFrame(self)
@@ -418,6 +420,7 @@ local function SetupHealthBarHook()
     if not GameTooltip then return end
 
     -- Hook the status bar's Show method to catch when it tries to display
+    -- NOTE: Synchronous — deferring causes visible health bar flash before hide.
     local statusBar = GameTooltip.StatusBar or GameTooltipStatusBar
     if statusBar then
         hooksecurefunc(statusBar, "Show", function(self)

@@ -176,11 +176,15 @@ local function ApplyFrameHiding()
         -- Hook Show() once to prevent Blizzard from re-showing
         if not buffFrameShowHooked then
             buffFrameShowHooked = true
+            -- TAINT SAFETY: Defer to break taint chain — BuffFrame.Show() can fire
+            -- inside secure execution contexts (compact unit frame updates).
             hooksecurefunc(BuffFrame, "Show", function(self)
-                local s = GetSettings()
-                if s and s.hideBuffFrame then
-                    self:Hide()
-                end
+                C_Timer.After(0, function()
+                    local s = GetSettings()
+                    if s and s.hideBuffFrame then
+                        self:Hide()
+                    end
+                end)
             end)
         end
     end
@@ -195,11 +199,15 @@ local function ApplyFrameHiding()
         -- Hook Show() once to prevent Blizzard from re-showing
         if not debuffFrameShowHooked then
             debuffFrameShowHooked = true
+            -- TAINT SAFETY: Defer to break taint chain — DebuffFrame.Show() can fire
+            -- inside secure execution contexts (compact unit frame updates).
             hooksecurefunc(DebuffFrame, "Show", function(self)
-                local s = GetSettings()
-                if s and s.hideDebuffFrame then
-                    self:Hide()
-                end
+                C_Timer.After(0, function()
+                    local s = GetSettings()
+                    if s and s.hideDebuffFrame then
+                        self:Hide()
+                    end
+                end)
             end)
         end
     end
@@ -244,30 +252,43 @@ local function ScheduleBuffBorders()
 end
 
 -- Hook into aura update functions
+-- TAINT SAFETY: All hooks defer via C_Timer.After(0) to break taint chain from secure context.
+-- Even a simple boolean check + C_Timer.After call inside a synchronous hooksecurefunc callback
+-- contaminates the secure execution context in the Midnight (12.0+) taint model.
 local function HookAuraUpdates()
     -- Hook BuffFrame updates
     if BuffFrame and BuffFrame.Update then
-        hooksecurefunc(BuffFrame, "Update", ScheduleBuffBorders)
+        hooksecurefunc(BuffFrame, "Update", function()
+            C_Timer.After(0, ScheduleBuffBorders)
+        end)
     end
 
     -- Hook AuraContainer updates if it exists (buffs)
     if BuffFrame and BuffFrame.AuraContainer and BuffFrame.AuraContainer.Update then
-        hooksecurefunc(BuffFrame.AuraContainer, "Update", ScheduleBuffBorders)
+        hooksecurefunc(BuffFrame.AuraContainer, "Update", function()
+            C_Timer.After(0, ScheduleBuffBorders)
+        end)
     end
 
     -- Hook DebuffFrame updates
     if DebuffFrame and DebuffFrame.Update then
-        hooksecurefunc(DebuffFrame, "Update", ScheduleBuffBorders)
+        hooksecurefunc(DebuffFrame, "Update", function()
+            C_Timer.After(0, ScheduleBuffBorders)
+        end)
     end
 
     -- Hook DebuffFrame.AuraContainer updates if it exists
     if DebuffFrame and DebuffFrame.AuraContainer and DebuffFrame.AuraContainer.Update then
-        hooksecurefunc(DebuffFrame.AuraContainer, "Update", ScheduleBuffBorders)
+        hooksecurefunc(DebuffFrame.AuraContainer, "Update", function()
+            C_Timer.After(0, ScheduleBuffBorders)
+        end)
     end
 
     -- Hook the global aura update function if available
     if type(AuraButton_Update) == "function" then
-        hooksecurefunc("AuraButton_Update", ScheduleBuffBorders)
+        hooksecurefunc("AuraButton_Update", function()
+            C_Timer.After(0, ScheduleBuffBorders)
+        end)
     end
 end
 

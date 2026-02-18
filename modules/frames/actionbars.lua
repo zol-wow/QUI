@@ -777,15 +777,18 @@ end
 
 -- Hook Blizzard frames to prevent them from repositioning
 local function HookExtraButtonPositioning()
+    -- TAINT SAFETY: Defer to break taint chain from secure Blizzard context.
     -- Hook ExtraActionBarFrame
     if ExtraActionBarFrame and not extraActionSetPointHooked then
         extraActionSetPointHooked = true
         hooksecurefunc(ExtraActionBarFrame, "SetPoint", function(self)
-            if hookingSetPoint or InCombatLockdown() then return end
-            local settings = GetExtraButtonDB("extraActionButton")
-            if extraActionHolder and settings and settings.enabled then
-                QueueExtraButtonReanchor("extraActionButton")
-            end
+            C_Timer.After(0, function()
+                if hookingSetPoint or InCombatLockdown() then return end
+                local settings = GetExtraButtonDB("extraActionButton")
+                if extraActionHolder and settings and settings.enabled then
+                    QueueExtraButtonReanchor("extraActionButton")
+                end
+            end)
         end)
     end
 
@@ -793,11 +796,13 @@ local function HookExtraButtonPositioning()
     if ZoneAbilityFrame and not zoneAbilitySetPointHooked then
         zoneAbilitySetPointHooked = true
         hooksecurefunc(ZoneAbilityFrame, "SetPoint", function(self)
-            if hookingSetPoint or InCombatLockdown() then return end
-            local settings = GetExtraButtonDB("zoneAbility")
-            if zoneAbilityHolder and settings and settings.enabled then
-                QueueExtraButtonReanchor("zoneAbility")
-            end
+            C_Timer.After(0, function()
+                if hookingSetPoint or InCombatLockdown() then return end
+                local settings = GetExtraButtonDB("zoneAbility")
+                if zoneAbilityHolder and settings and settings.enabled then
+                    QueueExtraButtonReanchor("zoneAbility")
+                end
+            end)
         end)
     end
 
@@ -2082,11 +2087,14 @@ local function ApplyPageArrowVisibility(hide)
         pageNum:Hide()
         if not pageArrowShowHooked then
             pageArrowShowHooked = true
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             hooksecurefunc(pageNum, "Show", function(self)
-                local db = GetDB()
-                if db and db.bars and db.bars.bar1 and db.bars.bar1.hidePageArrow then
-                    self:Hide()
-                end
+                C_Timer.After(0, function()
+                    local db = GetDB()
+                    if db and db.bars and db.bars.bar1 and db.bars.bar1.hidePageArrow and self and self.Hide then
+                        self:Hide()
+                    end
+                end)
             end)
         end
     else
@@ -2142,6 +2150,7 @@ function ActionBars:Initialize()
     PatchLibKeyBoundForMidnight()
 
     -- Hook tooltip suppression for action buttons
+    -- NOTE: Synchronous — deferring causes tooltip flash before hide.
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
         local global = GetGlobalSettings()
         if not global or global.showTooltips ~= false then return end

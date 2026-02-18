@@ -351,15 +351,16 @@ local function SetupOverrideBarHooks()
     -- Blizzard calls this in OnShow and UpdateSkin, which can re-position MicroMenu
     -- after QUI's initial skinning. This hook ensures MicroMenu stays in normal position.
     -- Use C_Timer.After(0) to break taint chain from secure Blizzard code
+    -- TAINT SAFETY: Defer ALL addon logic to break taint chain from secure context.
     if bar.UpdateMicroButtons then
         hooksecurefunc(bar, "UpdateMicroButtons", function()
-            if SkinBase.IsSkinned(bar) and MicroMenu and MicroMenu.ResetMicroMenuPosition then
-                C_Timer.After(0, function()
+            C_Timer.After(0, function()
+                if SkinBase.IsSkinned(bar) and MicroMenu and MicroMenu.ResetMicroMenuPosition then
                     if not InCombatLockdown() then
                         MicroMenu:ResetMicroMenuPosition()
                     end
-                end)
-            end
+                end
+            end)
         end)
     end
 

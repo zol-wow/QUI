@@ -28,6 +28,13 @@ local COLORS = {
 -- Module state
 local customBg = nil
 
+-- TAINT SAFETY: Store per-frame state in weak-keyed tables instead of writing
+-- properties to Blizzard frames, which taints them in Midnight (12.0)
+local iconBorders = setmetatable({}, { __mode = "k" })  -- CurrencyIcon/entry.icon → border frame
+local skinnedEntries = setmetatable({}, { __mode = "k" })  -- entry → true
+local hookedScrollBoxes = setmetatable({}, { __mode = "k" })  -- ScrollBox → true (hooked for Update)
+local titleHighlights = setmetatable({}, { __mode = "k" })  -- button → highlight texture
+
 ---------------------------------------------------------------------------
 -- Helper: Get skin colors from QUI system
 ---------------------------------------------------------------------------
@@ -117,7 +124,7 @@ end
 -- Skin individual reputation entry/header
 ---------------------------------------------------------------------------
 local function SkinReputationEntry(child)
-    if child.quiCharSkinned then return end
+    if skinnedEntries[child] then return end
 
     local sr, sg, sb, sa = GetSkinColors()
     local fontPath = GetFontPath()
@@ -198,14 +205,14 @@ local function SkinReputationEntry(child)
         UpdateToggleButton(ToggleCollapseButton)
     end
 
-    child.quiCharSkinned = true
+    skinnedEntries[child] = true
 end
 
 ---------------------------------------------------------------------------
 -- Skin individual currency entry/header
 ---------------------------------------------------------------------------
 local function SkinCurrencyEntry(child)
-    if child.quiCharSkinned then return end
+    if skinnedEntries[child] then return end
 
     local sr, sg, sb, sa = GetSkinColors()
     local fontPath = GetFontPath()
@@ -239,7 +246,7 @@ local function SkinCurrencyEntry(child)
     if CurrencyIcon then
         CurrencyIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-        if not CurrencyIcon.quiBorder then
+        if not iconBorders[CurrencyIcon] then
             local border = CreateFrame("Frame", nil, CurrencyIcon:GetParent(), "BackdropTemplate")
             local drawLayer = CurrencyIcon.GetDrawLayer and CurrencyIcon:GetDrawLayer()
             border:SetFrameLevel((drawLayer == "OVERLAY") and child:GetFrameLevel() + 2 or child:GetFrameLevel() + 1)
@@ -251,7 +258,7 @@ local function SkinCurrencyEntry(child)
                 edgeSize = curPx,
             })
             border:SetBackdropBorderColor(sr, sg, sb, 1)
-            CurrencyIcon.quiBorder = border
+            iconBorders[CurrencyIcon] = border
         end
     end
 
@@ -283,7 +290,7 @@ local function SkinCurrencyEntry(child)
         UpdateToggleButton(ToggleCollapseButton)
     end
 
-    child.quiCharSkinned = true
+    skinnedEntries[child] = true
 end
 
 ---------------------------------------------------------------------------
@@ -402,7 +409,7 @@ local function RefreshCharacterFrameColors()
     -- Update reputation entries
     if ReputationFrame and ReputationFrame.ScrollBox then
         ReputationFrame.ScrollBox:ForEachFrame(function(child)
-            if not child.quiCharSkinned then return end
+            if not skinnedEntries[child] then return end
             if child.Right and child.Name then
                 child.Name:SetTextColor(sr, sg, sb, 1)
             end
@@ -417,13 +424,13 @@ local function RefreshCharacterFrameColors()
     -- Update currency entries
     if TokenFrame and TokenFrame.ScrollBox then
         TokenFrame.ScrollBox:ForEachFrame(function(child)
-            if not child.quiCharSkinned then return end
+            if not skinnedEntries[child] then return end
             if child.Right and child.Name then
                 child.Name:SetTextColor(sr, sg, sb, 1)
             end
             local CurrencyIcon = child.Content and child.Content.CurrencyIcon
-            if CurrencyIcon and CurrencyIcon.quiBorder then
-                CurrencyIcon.quiBorder:SetBackdropBorderColor(sr, sg, sb, 1)
+            if CurrencyIcon and iconBorders[CurrencyIcon] then
+                iconBorders[CurrencyIcon]:SetBackdropBorderColor(sr, sg, sb, 1)
             end
         end)
     end
@@ -441,7 +448,7 @@ end
 
 -- Skin individual equipment set entry
 local function SkinEquipmentSetEntry(entry)
-    if entry.quiCharSkinned then return end
+    if skinnedEntries[entry] then return end
 
     local sr, sg, sb, sa = GetSkinColors()
     local fontPath = GetFontPath()
@@ -453,7 +460,7 @@ local function SkinEquipmentSetEntry(entry)
     end
 
     -- Style the icon with a border
-    if entry.icon and not entry.icon.quiBorder then
+    if entry.icon and not iconBorders[entry.icon] then
         entry.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         local border = CreateFrame("Frame", nil, entry, "BackdropTemplate")
         border:SetPoint("TOPLEFT", entry.icon, "TOPLEFT", -1, 1)
@@ -464,7 +471,7 @@ local function SkinEquipmentSetEntry(entry)
             edgeSize = eqPx,
         })
         border:SetBackdropBorderColor(sr, sg, sb, 1)
-        entry.icon.quiBorder = border
+        iconBorders[entry.icon] = border
     end
 
     -- Style highlight/selection
@@ -475,12 +482,12 @@ local function SkinEquipmentSetEntry(entry)
         entry.HighlightBar:SetColorTexture(sr, sg, sb, 0.15)
     end
 
-    entry.quiCharSkinned = true
+    skinnedEntries[entry] = true
 end
 
 -- Style Equip/Save buttons
 local function StyleEquipMgrButton(btn)
-    if not btn or btn.quiCharSkinned then return end
+    if not btn or skinnedEntries[btn] then return end
 
     local sr, sg, sb, sa = GetSkinColors()
     local fontPath = GetFontPath()
@@ -528,7 +535,7 @@ local function StyleEquipMgrButton(btn)
         self:SetBackdropBorderColor(r, g, b, 0.5)
     end)
 
-    btn.quiCharSkinned = true
+    skinnedEntries[btn] = true
 end
 
 -- Main function to skin Equipment Manager popup
@@ -542,14 +549,14 @@ local function SkinEquipmentManager()
     local fontPath = GetFontPath()
 
     -- Skin popup backdrop
-    if not popup.quiCharSkinned then
+    if not skinnedEntries[popup] then
         local popPx = QUICore:GetPixelSize(popup)
         popup:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = popPx,
         })
-        popup.quiCharSkinned = true
+        skinnedEntries[popup] = true
     end
     popup:SetBackdropColor(bgr, bgg, bgb, bga)
     popup:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -564,13 +571,13 @@ local function SkinEquipmentManager()
     local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
     if pane and pane.ScrollBox then
         -- Hook ScrollBox to skin entries as they're created/recycled
-        if not pane.ScrollBox.quiCharHooked then
+        if not hookedScrollBoxes[pane.ScrollBox] then
             hooksecurefunc(pane.ScrollBox, "Update", function(scrollBox)
                 if IsSkinningEnabled() then
                     scrollBox:ForEachFrame(SkinEquipmentSetEntry)
                 end
             end)
-            pane.ScrollBox.quiCharHooked = true
+            hookedScrollBoxes[pane.ScrollBox] = true
         end
         -- Initial skin
         pane.ScrollBox:ForEachFrame(SkinEquipmentSetEntry)
@@ -588,7 +595,7 @@ RefreshEquipmentManagerColors = function()
     if not IsSkinningEnabled() then return end
 
     local popup = _G.QUI_EquipMgrPopup
-    if not popup or not popup.quiCharSkinned then return end
+    if not popup or not skinnedEntries[popup] then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
 
@@ -603,9 +610,9 @@ RefreshEquipmentManagerColors = function()
     local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
     if pane and pane.ScrollBox then
         pane.ScrollBox:ForEachFrame(function(entry)
-            if not entry.quiCharSkinned then return end
-            if entry.icon and entry.icon.quiBorder then
-                entry.icon.quiBorder:SetBackdropBorderColor(sr, sg, sb, 1)
+            if not skinnedEntries[entry] then return end
+            if entry.icon and iconBorders[entry.icon] then
+                iconBorders[entry.icon]:SetBackdropBorderColor(sr, sg, sb, 1)
             end
             if entry.SelectedBar then
                 entry.SelectedBar:SetColorTexture(sr, sg, sb, 0.3)
@@ -617,10 +624,10 @@ RefreshEquipmentManagerColors = function()
     end
 
     -- Update buttons
-    if PaperDollFrameEquipSet and PaperDollFrameEquipSet.quiCharSkinned then
+    if PaperDollFrameEquipSet and skinnedEntries[PaperDollFrameEquipSet] then
         PaperDollFrameEquipSet:SetBackdropBorderColor(sr, sg, sb, 0.5)
     end
-    if PaperDollFrameSaveSet and PaperDollFrameSaveSet.quiCharSkinned then
+    if PaperDollFrameSaveSet and skinnedEntries[PaperDollFrameSaveSet] then
         PaperDollFrameSaveSet:SetBackdropBorderColor(sr, sg, sb, 0.5)
     end
 end
@@ -632,7 +639,7 @@ end
 
 -- Skin individual title entry button
 local function SkinTitleEntry(button)
-    if button.quiCharSkinned then return end
+    if skinnedEntries[button] then return end
 
     local sr, sg, sb, sa = GetSkinColors()
     local fontPath = GetFontPath()
@@ -661,14 +668,14 @@ local function SkinTitleEntry(button)
     -- Add subtle hover highlight
     if button.Highlight then
         button.Highlight:SetColorTexture(sr, sg, sb, 0.15)
-    elseif not button.quiHighlight then
+    elseif not titleHighlights[button] then
         local highlight = button:CreateTexture(nil, "HIGHLIGHT")
         highlight:SetAllPoints()
         highlight:SetColorTexture(sr, sg, sb, 0.15)
-        button.quiHighlight = highlight
+        titleHighlights[button] = highlight
     end
 
-    button.quiCharSkinned = true
+    skinnedEntries[button] = true
 end
 
 -- Main function to skin Title Manager popup and pane
@@ -683,7 +690,7 @@ local function SkinTitleManagerPane()
     local fontPath = GetFontPath()
 
     -- Skin popup backdrop (if popup exists)
-    if popup and not popup.quiCharSkinned then
+    if popup and not skinnedEntries[popup] then
         local pop2Px = QUICore:GetPixelSize(popup)
         popup:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -700,11 +707,11 @@ local function SkinTitleManagerPane()
             popup.title:SetTextColor(sr, sg, sb, 1)
         end
 
-        popup.quiCharSkinned = true
+        skinnedEntries[popup] = true
     end
 
     -- Skip pane if already skinned
-    if pane.quiCharSkinned then return end
+    if skinnedEntries[pane] then return end
 
     -- Hide pane background (uses popup's custom bg)
     if pane.Bg then pane.Bg:Hide() end
@@ -735,7 +742,7 @@ local function SkinTitleManagerPane()
         end
     end
 
-    pane.quiCharSkinned = true
+    skinnedEntries[pane] = true
 end
 
 -- Refresh Title Pane colors
@@ -746,7 +753,7 @@ RefreshTitlePaneColors = function()
 
     -- Update popup
     local popup = _G.QUI_TitlesPopup
-    if popup and popup.quiCharSkinned then
+    if popup and skinnedEntries[popup] then
         popup:SetBackdropColor(bgr, bgg, bgb, bga)
         popup:SetBackdropBorderColor(sr, sg, sb, sa)
         if popup.title then
@@ -756,19 +763,19 @@ RefreshTitlePaneColors = function()
 
     -- Update pane entries
     local pane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-    if not pane or not pane.quiCharSkinned then return end
+    if not pane or not skinnedEntries[pane] then return end
 
     if pane.ScrollBox then
         pane.ScrollBox:ForEachFrame(function(button)
-            if not button.quiCharSkinned then return end
+            if not skinnedEntries[button] then return end
             if button.Check then
                 button.Check:SetVertexColor(sr, sg, sb, 1)
             end
             if button.SelectedBar then
                 button.SelectedBar:SetColorTexture(sr, sg, sb, 0.3)
             end
-            if button.quiHighlight then
-                button.quiHighlight:SetColorTexture(sr, sg, sb, 0.15)
+            if titleHighlights[button] then
+                titleHighlights[button]:SetColorTexture(sr, sg, sb, 0.15)
             end
         end)
     end

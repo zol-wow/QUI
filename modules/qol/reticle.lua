@@ -352,26 +352,31 @@ end
 ---------------------------------------------------------------------------
 -- Right-click hide functionality
 ---------------------------------------------------------------------------
+-- TAINT SAFETY: Defer to break taint chain from secure WorldFrame context.
 local function SetupRightClickHide()
     WorldFrame:HookScript("OnMouseDown", function(_, button)
-        if button == "RightButton" then
-            local settings = GetSettings()
-            if settings and settings.hideOnRightClick and ringFrame then
-                ringFrame:Hide()
+        C_Timer.After(0, function()
+            if button == "RightButton" then
+                local settings = GetSettings()
+                if settings and settings.hideOnRightClick and ringFrame then
+                    ringFrame:Hide()
+                end
             end
-        end
+        end)
     end)
 
     WorldFrame:HookScript("OnMouseUp", function(_, button)
-        if button == "RightButton" then
-            local settings = GetSettings()
-            if settings and settings.enabled and settings.hideOnRightClick and ringFrame then
-                -- Only show if settings allow
-                if not settings.hideOutOfCombat or InCombatLockdown() then
-                    ringFrame:Show()
+        C_Timer.After(0, function()
+            if button == "RightButton" then
+                local settings = GetSettings()
+                if settings and settings.enabled and settings.hideOnRightClick and ringFrame then
+                    -- Only show if settings allow
+                    if not settings.hideOutOfCombat or InCombatLockdown() then
+                        ringFrame:Show()
+                    end
                 end
             end
-        end
+        end)
     end)
 end
 
