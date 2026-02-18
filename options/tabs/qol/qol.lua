@@ -1211,7 +1211,7 @@ local function BuildGeneralTab(tabContent)
     y = y - consumableHeader.gap
 
     local consumableDesc = GUI:CreateLabel(tabContent,
-        "Display consumable status icons when triggered by events below. Click missing consumable icons to use them.",
+        "Display consumable status icons when triggered by events below. Left-click missing icons to use your preferred item; right-click in ready check to choose a different item.",
         11, C.textMuted)
     consumableDesc:SetPoint("TOPLEFT", PADDING, y)
     consumableDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
@@ -1363,6 +1363,11 @@ local function BuildGeneralTab(tabContent)
         local iconSizeSlider = GUI:CreateFormSlider(tabContent, "Icon Size", 24, 64, 2, "consumableIconSize", generalDB, RefreshConsumables)
         iconSizeSlider:SetPoint("TOPLEFT", PADDING, y)
         iconSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local scaleSlider = GUI:CreateFormSlider(tabContent, "Scale", 0.5, 3, 0.05, "consumableScale", generalDB, RefreshConsumables)
+        scaleSlider:SetPoint("TOPLEFT", PADDING, y)
+        scaleSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         y = y - FORM_ROW
 
         -- Show/hide preview buttons
