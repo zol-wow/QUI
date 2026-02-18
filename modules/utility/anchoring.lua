@@ -771,15 +771,17 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
 end
 
 -- Update all registered anchored frames
+local pendingAnchoredFrameUpdateAfterCombat = false
+
 function QUI_Anchoring:UpdateAllAnchoredFrames()
-    if InCombatLockdown() then 
-        -- Defer update after combat
-        C_Timer.After(0, function()
-            self:UpdateAllAnchoredFrames()
-        end)
-        return 
+    if InCombatLockdown() then
+        -- Avoid hot-loop requeueing during combat; process once on PLAYER_REGEN_ENABLED.
+        pendingAnchoredFrameUpdateAfterCombat = true
+        return
     end
-    
+
+    pendingAnchoredFrameUpdateAfterCombat = false
+
     for frame, config in pairs(self.anchoredFrames) do
         -- Skip frames with active anchoring overrides — reapply override instead
         -- (callers may have called ClearAllPoints before triggering this update)
@@ -872,6 +874,24 @@ function QUI_Anchoring:UpdateAllAnchoredFrames()
         end
     end
 end
+
+-- If an anchoring update was requested during combat, apply it once combat ends.
+local anchoredFramesCombatFrame = CreateFrame("Frame")
+anchoredFramesCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+anchoredFramesCombatFrame:SetScript("OnEvent", function()
+    if not pendingAnchoredFrameUpdateAfterCombat then return end
+
+    pendingAnchoredFrameUpdateAfterCombat = false
+    C_Timer.After(0.05, function()
+        if InCombatLockdown() then
+            pendingAnchoredFrameUpdateAfterCombat = true
+            return
+        end
+        if QUI_Anchoring then
+            QUI_Anchoring:UpdateAllAnchoredFrames()
+        end
+    end)
+end)
 
 -- Update frames anchored to a specific anchor target
 function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)

@@ -3037,6 +3037,8 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
             dropdown.selected:SetText(tostring(currentVal))
         elseif not found then
             dropdown.selected:SetText("")
+            container.selectedValue = nil
+            if dbTable and dbKey then dbTable[dbKey] = "" end
         end
     end
 
