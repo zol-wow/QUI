@@ -29,6 +29,10 @@ local BORDER_COLOR_DEBUFF = {0.5, 0, 0, 1}    -- Dark red for debuffs
 -- Track which buttons we've already bordered
 local borderedButtons = {}
 
+-- Hook guards stored locally (NOT on Blizzard frames) to avoid taint
+local buffFrameShowHooked = false
+local debuffFrameShowHooked = false
+
 -- Add border to a single buff/debuff button
 local function AddBorderToButton(button, isBuff)
     if not button or borderedButtons[button] then
@@ -170,8 +174,8 @@ local function ApplyFrameHiding()
             BuffFrame:Show()
         end
         -- Hook Show() once to prevent Blizzard from re-showing
-        if not BuffFrame._QUI_ShowHooked then
-            BuffFrame._QUI_ShowHooked = true
+        if not buffFrameShowHooked then
+            buffFrameShowHooked = true
             hooksecurefunc(BuffFrame, "Show", function(self)
                 local s = GetSettings()
                 if s and s.hideBuffFrame then
@@ -189,8 +193,8 @@ local function ApplyFrameHiding()
             DebuffFrame:Show()
         end
         -- Hook Show() once to prevent Blizzard from re-showing
-        if not DebuffFrame._QUI_ShowHooked then
-            DebuffFrame._QUI_ShowHooked = true
+        if not debuffFrameShowHooked then
+            debuffFrameShowHooked = true
             hooksecurefunc(DebuffFrame, "Show", function(self)
                 local s = GetSettings()
                 if s and s.hideDebuffFrame then

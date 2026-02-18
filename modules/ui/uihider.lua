@@ -36,6 +36,11 @@ local DEFAULTS = {
 
 local pendingObjectiveTrackerHide = false
 
+-- TAINT SAFETY: Track hook state in a local weak-keyed table, NOT on Blizzard
+-- frames. Writing _QUI_* properties to secure frames taints them in Midnight's
+-- taint model, causing ADDON_ACTION_FORBIDDEN and secret-value errors.
+local hookedSecureFrames = setmetatable({}, { __mode = "k" })
+
 -- Get settings from AceDB via shared helper
 local function GetSettings()
     local uiHider = Helpers.GetModuleSettings("uiHider", DEFAULTS)
@@ -187,8 +192,10 @@ local function ApplyHideSettings()
             end
 
             -- Hook Show() to prevent Blizzard from showing it again (quest updates, boss fights, etc.)
-            if not ObjectiveTrackerFrame._QUI_ShowHooked then
-                ObjectiveTrackerFrame._QUI_ShowHooked = true
+            local otState = hookedSecureFrames[ObjectiveTrackerFrame]
+            if not otState then otState = {}; hookedSecureFrames[ObjectiveTrackerFrame] = otState end
+            if not otState.showHooked then
+                otState.showHooked = true
                 hooksecurefunc(ObjectiveTrackerFrame, "Show", function(self)
                     -- Break secure call chains before enforcing hidden state
                     C_Timer.After(0, function()
@@ -250,8 +257,10 @@ local function ApplyHideSettings()
             GameTimeFrame:Show()
         end
         -- Hook Show() to prevent Blizzard from re-showing when hidden
-        if not GameTimeFrame._QUI_ShowHooked then
-            GameTimeFrame._QUI_ShowHooked = true
+        local gtState = hookedSecureFrames[GameTimeFrame]
+        if not gtState then gtState = {}; hookedSecureFrames[GameTimeFrame] = gtState end
+        if not gtState.showHooked then
+            gtState.showHooked = true
             hooksecurefunc(GameTimeFrame, "Show", function(self)
                 local s = GetSettings()
                 if s and s.hideGameTime then
@@ -263,15 +272,21 @@ local function ApplyHideSettings()
 
     -- Compact Raid Frame Manager
     if CompactRaidFrameManager then
+        local crfState = hookedSecureFrames[CompactRaidFrameManager]
+        if not crfState then crfState = {}; hookedSecureFrames[CompactRaidFrameManager] = crfState end
+
         if InCombatLockdown() then
             -- Skip protected operations during combat
         elseif settings.hideRaidFrameManager then
-            CompactRaidFrameManager:Hide()
-            CompactRaidFrameManager:EnableMouse(false)  -- Prevent hidden frame from blocking clicks
+            -- Defer Hide/EnableMouse to break taint chain from secure context
+            C_Timer.After(0, function()
+                if InCombatLockdown() then return end
+                CompactRaidFrameManager:Hide()
+                CompactRaidFrameManager:EnableMouse(false)
+            end)
             -- Hook Show() to prevent it from reappearing when joining groups, etc.
-            -- BUG-008: Wrap in C_Timer.After(0) to break taint chain from secure Blizzard code
-            if not CompactRaidFrameManager._QUI_ShowHooked then
-                CompactRaidFrameManager._QUI_ShowHooked = true
+            if not crfState.showHooked then
+                crfState.showHooked = true
                 hooksecurefunc(CompactRaidFrameManager, "Show", function(self)
                     C_Timer.After(0, function()
                         if InCombatLockdown() then return end
@@ -284,9 +299,8 @@ local function ApplyHideSettings()
                 end)
             end
             -- Hook SetShown() to catch permission-change visibility updates
-            -- BUG-008: Wrap in C_Timer.After(0) to break taint chain from secure Blizzard code
-            if not CompactRaidFrameManager._QUI_SetShownHooked then
-                CompactRaidFrameManager._QUI_SetShownHooked = true
+            if not crfState.setShownHooked then
+                crfState.setShownHooked = true
                 hooksecurefunc(CompactRaidFrameManager, "SetShown", function(self, shown)
                     C_Timer.After(0, function()
                         if InCombatLockdown() then return end
@@ -300,7 +314,7 @@ local function ApplyHideSettings()
             end
         else
             CompactRaidFrameManager:Show()
-            CompactRaidFrameManager:EnableMouse(true)  -- Restore mouse when shown
+            CompactRaidFrameManager:EnableMouse(true)
         end
     end
     
@@ -327,8 +341,10 @@ end
             btn:EnableMouse(false)
 
             -- Hook SetAlpha on textures to prevent Blizzard from resetting
-            if not btn._QUI_AlphaHooked then
-                btn._QUI_AlphaHooked = true
+            local btnState = hookedSecureFrames[btn]
+            if not btnState then btnState = {}; hookedSecureFrames[btn] = btnState end
+            if not btnState.alphaHooked then
+                btnState.alphaHooked = true
                 local function BlockAlpha(texture, alpha)
                     local s = GetSettings()
                     if s and s.hideBuffCollapseButton and alpha > 0 then
@@ -348,18 +364,18 @@ end
         end
     end
 
-    -- Friendly Player Nameplates
-    if settings.hideFriendlyPlayerNameplates then
-        SetCVar("nameplateShowFriendlyPlayers", "0")
-    else
-        SetCVar("nameplateShowFriendlyPlayers", "1")
-end
-
-    -- Friendly NPC Nameplates
-    if settings.hideFriendlyNPCNameplates then
-        SetCVar("nameplateShowFriendlyNPCs", "0")
-    else
-        SetCVar("nameplateShowFriendlyNPCs", "1")
+    -- Friendly Player/NPC Nameplates
+    -- TAINT SAFETY: Defer SetCVar calls via C_Timer.After(0) to break taint
+    -- chain. Synchronous SetCVar triggers OnNamePlateAdded in the current
+    -- (possibly tainted) execution context, causing SetNamePlateHitTestFrame
+    -- and CompactUnitFrame_UpdateHealPrediction errors.
+    do
+        local hidePlayers = settings.hideFriendlyPlayerNameplates
+        local hideNPCs = settings.hideFriendlyNPCNameplates
+        C_Timer.After(0, function()
+            SetCVar("nameplateShowFriendlyPlayers", hidePlayers and "0" or "1")
+            SetCVar("nameplateShowFriendlyNPCs", hideNPCs and "0" or "1")
+        end)
     end
 
     -- Talking Head Frame
@@ -367,11 +383,12 @@ end
     -- blocking clicks on panels that open near its position.
     -- We disable mouse on the frame and its children when idle.
     if TalkingHeadFrame then
+        local thState = hookedSecureFrames[TalkingHeadFrame]
+        if not thState then thState = {}; hookedSecureFrames[TalkingHeadFrame] = thState end
+
         -- Helper to disable mouse on TalkingHeadFrame and children
         local function DisableTalkingHeadMouse()
             TalkingHeadFrame:EnableMouse(false)
-            -- Disable mouse on all child frames that could capture clicks
-            -- (based on /fstack output showing these children)
             local childrenToDisable = {
                 "MainFrame",
                 "PortraitFrame",
@@ -410,8 +427,8 @@ end
             DisableTalkingHeadMouse()
 
             -- Hook Show() to keep it hidden
-            if not TalkingHeadFrame._QUI_ShowHooked then
-                TalkingHeadFrame._QUI_ShowHooked = true
+            if not thState.showHooked then
+                thState.showHooked = true
                 hooksecurefunc(TalkingHeadFrame, "Show", function(self)
                     local s = GetSettings()
                     if s and s.hideTalkingHead then
@@ -423,8 +440,8 @@ end
         else
             -- Not hiding, but still manage mouse to prevent blocking
             -- Disable mouse when idle, re-enable when content plays
-            if not TalkingHeadFrame._QUI_MouseManaged then
-                TalkingHeadFrame._QUI_MouseManaged = true
+            if not thState.mouseManaged then
+                thState.mouseManaged = true
 
                 -- Initially disable mouse (no content showing)
                 DisableTalkingHeadMouse()
@@ -442,8 +459,8 @@ end
         end
 
         -- Talking Head Mute (hook PlayCurrent once)
-        if not TalkingHeadFrame._QUI_MuteHooked then
-            TalkingHeadFrame._QUI_MuteHooked = true
+        if not thState.muteHooked then
+            thState.muteHooked = true
             hooksecurefunc(TalkingHeadFrame, "PlayCurrent", function()
                 local s = GetSettings()
                 if s and s.muteTalkingHead and TalkingHeadFrame.voHandle then
@@ -501,12 +518,15 @@ end
             end
         end
 
+        local stbState = hookedSecureFrames[StatusTrackingBarManager]
+        if not stbState then stbState = {}; hookedSecureFrames[StatusTrackingBarManager] = stbState end
+
         -- If both are hidden, just hide the entire manager
         if hideXP and hideRep then
             StatusTrackingBarManager:Hide()
 
-            if not StatusTrackingBarManager._QUI_ShowHooked then
-                StatusTrackingBarManager._QUI_ShowHooked = true
+            if not stbState.showHooked then
+                stbState.showHooked = true
                 hooksecurefunc(StatusTrackingBarManager, "Show", function(self)
                     local s = GetSettings()
                     if s and s.hideExperienceBar and s.hideReputationBar then
@@ -522,8 +542,8 @@ end
             end
 
             -- Hook UpdateBarsShown to re-hide bars after Blizzard updates
-            if not StatusTrackingBarManager._QUI_BarsHooked then
-                StatusTrackingBarManager._QUI_BarsHooked = true
+            if not stbState.barsHooked then
+                stbState.barsHooked = true
                 hooksecurefunc(StatusTrackingBarManager, "UpdateBarsShown", function()
                     C_Timer.After(0.01, HideStatusBars)
                 end)
@@ -567,8 +587,10 @@ end
 
             -- Hook the BlackoutFrame to keep it hidden if Blizzard tries to show it
             -- IMPORTANT: Skip during combat to avoid taint propagation to SetPassThroughButtons
-            if not WorldMapFrame.BlackoutFrame._QUI_BlackoutHooked then
-                WorldMapFrame.BlackoutFrame._QUI_BlackoutHooked = true
+            local boState = hookedSecureFrames[WorldMapFrame.BlackoutFrame]
+            if not boState then boState = {}; hookedSecureFrames[WorldMapFrame.BlackoutFrame] = boState end
+            if not boState.blackoutHooked then
+                boState.blackoutHooked = true
                 hooksecurefunc(WorldMapFrame.BlackoutFrame, "Show", function(self)
                     if InCombatLockdown() then return end  -- Avoid taint during combat
                     local s = GetSettings()

@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 
 local GetCore = ns.Helpers.GetCore
 
@@ -156,7 +157,7 @@ local function SkinReputationEntry(child)
         end
 
         -- Create backdrop for rep bar
-        if not ReputationBar.quiBackdrop then
+        if not SkinBase.GetFrameData(ReputationBar, "backdrop") then
             local backdrop = CreateFrame("Frame", nil, ReputationBar:GetParent(), "BackdropTemplate")
             backdrop:SetFrameLevel(ReputationBar:GetFrameLevel())
             backdrop:SetPoint("TOPLEFT", ReputationBar, "TOPLEFT", -2, 2)
@@ -171,7 +172,7 @@ local function SkinReputationEntry(child)
             backdrop:SetBackdropColor(0, 0, 0, 0.9)
             backdrop:SetBackdropBorderColor(sr, sg, sb, 1)
             backdrop:Show()
-            ReputationBar.quiBackdrop = backdrop
+            SkinBase.SetFrameData(ReputationBar, "backdrop", backdrop)
         end
 
         if child.Content.Name then
@@ -406,8 +407,9 @@ local function RefreshCharacterFrameColors()
                 child.Name:SetTextColor(sr, sg, sb, 1)
             end
             local ReputationBar = child.Content and child.Content.ReputationBar
-            if ReputationBar and ReputationBar.quiBackdrop then
-                ReputationBar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, 1)
+            local repBd = ReputationBar and SkinBase.GetFrameData(ReputationBar, "backdrop")
+            if repBd then
+                repBd:SetBackdropBorderColor(sr, sg, sb, 1)
             end
         end)
     end
@@ -492,9 +494,10 @@ local function StyleEquipMgrButton(btn)
     if btn:GetPushedTexture() then btn:GetPushedTexture():SetTexture(nil) end
     if btn:GetDisabledTexture() then btn:GetDisabledTexture():SetTexture(nil) end
 
-    -- Add backdrop
+    -- Skip buttons that don't have BackdropTemplate — Mixin() from addon context
+    -- would taint the frame permanently in Midnight's taint model.
     if not btn.SetBackdrop then
-        Mixin(btn, BackdropTemplateMixin)
+        return
     end
     local btnPx = QUICore:GetPixelSize(btn)
     btn:SetBackdrop({
