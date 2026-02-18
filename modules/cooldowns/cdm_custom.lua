@@ -357,10 +357,10 @@ function CustomCDM:AcquireIcon(parent, entry, initialSize)
         icon:SetSize(size, size)
         icon._isCustomCDMIcon = true
         icon._customCDMEntry = entry
-        icon._ncdmSetup = nil      -- Reset skin state so SkinIcon re-processes
-        icon.__cdmSkinned = nil
-        icon.__cdmSkinPending = nil
-        icon._ncdmPositioned = nil
+        -- Reset skin state so SkinIcon re-processes (uses cdm_viewer's iconState table)
+        local getVS = _G.QUI_GetCDMViewerState  -- Access the iconState via the global API
+        -- Clear icon state stored in cdm_viewer's weak-keyed tables
+        if _G.QUI_ClearIconState then _G.QUI_ClearIconState(icon) end
         icon.Icon:SetTexture(GetEntryTexture(entry))
         icon.Cooldown:Clear()
         icon:Show()

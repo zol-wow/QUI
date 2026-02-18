@@ -2492,7 +2492,7 @@ local function CreateCDMSetupPage(parent)
             self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
         end)
         snapPrimaryBtn:SetScript("OnClick", function()
-            -- Force CDM refresh to ensure __cdmIconWidth is current
+            -- Force CDM refresh to ensure viewer state (iconWidth) is current
             if _G.QUI_RefreshNCDM then
                 _G.QUI_RefreshNCDM()
             end
@@ -3972,15 +3972,17 @@ local function CreateCDMSetupPage(parent)
             local offsetY
             local width
 
+            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
+
             if targetType == "essential" then
                 if isVertical then
                     -- Vertical bar: goes to the RIGHT of Essential, length matches total height
-                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
-                    local topBottomBorderSize = viewer.__cdmRow1BorderSize or 0
+                    local totalHeight = (vs and vs.totalHeight) or viewer:GetHeight() or 100
+                    local topBottomBorderSize = (vs and vs.row1BorderSize) or 0
                     local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-                    local totalWidth = viewer.__cdmIconWidth or viewer:GetWidth()
+                    local totalWidth = (vs and vs.iconWidth) or viewer:GetWidth()
                     local barThickness = barConfig.height or 8
-                    local rightColBorderSize = viewer.__cdmBottomRowBorderSize or 0
+                    local rightColBorderSize = (vs and vs.bottomRowBorderSize) or 0
                     local cdmVisualRight = viewerCenterX + (totalWidth / 2) + rightColBorderSize
                     local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
                     offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) - 4
@@ -3988,9 +3990,9 @@ local function CreateCDMSetupPage(parent)
                     width = math.floor(targetWidth + 0.5)
                 else
                     -- Horizontal bar: goes ABOVE Essential, width matches row width
-                    local rowWidth = viewer.__cdmRow1Width or viewer.__cdmIconWidth or 300
-                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
-                    local row1BorderSize = viewer.__cdmRow1BorderSize or 2
+                    local rowWidth = (vs and vs.row1Width) or (vs and vs.iconWidth) or 300
+                    local totalHeight = (vs and vs.totalHeight) or viewer:GetHeight() or 100
+                    local row1BorderSize = (vs and vs.row1BorderSize) or 2
                     local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
                     local barHeight = barConfig.height or 8
                     local cdmVisualTop = viewerCenterY + (totalHeight / 2) + row1BorderSize
@@ -4002,12 +4004,12 @@ local function CreateCDMSetupPage(parent)
             else
                 if isVertical then
                     -- Vertical bar: goes to the LEFT of Utility, length matches total height
-                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
-                    local topBottomBorderSize = viewer.__cdmRow1BorderSize or 0
+                    local totalHeight = (vs and vs.totalHeight) or viewer:GetHeight() or 100
+                    local topBottomBorderSize = (vs and vs.row1BorderSize) or 0
                     local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-                    local totalWidth = viewer.__cdmIconWidth or viewer:GetWidth()
+                    local totalWidth = (vs and vs.iconWidth) or viewer:GetWidth()
                     local barThickness = barConfig.height or 8
-                    local row1BorderSize = viewer.__cdmRow1BorderSize or 0
+                    local row1BorderSize = (vs and vs.row1BorderSize) or 0
                     local cdmVisualLeft = viewerCenterX - (totalWidth / 2) - row1BorderSize
                     local powerBarCenterX = cdmVisualLeft - (barThickness / 2) - barBorderSize
                     offsetX = math.floor(powerBarCenterX - screenCenterX + 0.5) + 1
@@ -4015,9 +4017,9 @@ local function CreateCDMSetupPage(parent)
                     width = math.floor(targetWidth + 0.5)
                 else
                     -- Horizontal bar: goes BELOW Utility, width matches row width
-                    local rowWidth = viewer.__cdmBottomRowWidth or viewer.__cdmIconWidth or 300
-                    local totalHeight = viewer.__cdmTotalHeight or viewer:GetHeight() or 100
-                    local bottomRowBorderSize = viewer.__cdmBottomRowBorderSize or 2
+                    local rowWidth = (vs and vs.bottomRowWidth) or (vs and vs.iconWidth) or 300
+                    local totalHeight = (vs and vs.totalHeight) or viewer:GetHeight() or 100
+                    local bottomRowBorderSize = (vs and vs.bottomRowBorderSize) or 2
                     local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
                     local barHeight = barConfig.height or 8
                     local cdmVisualBottom = viewerCenterY - (totalHeight / 2) - bottomRowBorderSize

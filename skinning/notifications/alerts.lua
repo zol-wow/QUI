@@ -56,10 +56,13 @@ local function GetThemeColors()
 end
 
 --- Force alpha to 1 (prevents Blizzard fade animations)
-local function ForceAlpha(frame, alpha, forced)
-    if alpha ~= 1 and forced ~= true then
-        frame:SetAlpha(1, true)
-    end
+-- TAINT SAFETY: Defer to break taint chain from secure context.
+local function ForceAlpha(frame)
+    C_Timer.After(0, function()
+        if frame and frame.SetAlpha and frame:GetAlpha() ~= 1 then
+            frame:SetAlpha(1)
+        end
+    end)
 end
 
 --- Create QUI-styled backdrop for alert frames
@@ -1013,17 +1016,29 @@ local function CreateAlertMover()
     end
 
     -- Hook for any new subsystems added later
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc(AlertFrame, "AddAlertFrameSubSystem", function(_, alertFrameSubSystem)
-        ReplaceSubSystemAnchors(alertFrameSubSystem)
+        C_Timer.After(0, function()
+            ReplaceSubSystemAnchors(alertFrameSubSystem)
+        end)
     end)
 
     -- Hook UpdateAnchors to reposition after Blizzard updates
-    hooksecurefunc(AlertFrame, "UpdateAnchors", PostAlertMove)
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
+    hooksecurefunc(AlertFrame, "UpdateAnchors", function()
+        C_Timer.After(0, PostAlertMove)
+    end)
 
     -- Disable mouse on GroupLootContainer for cleaner interaction
     if GroupLootContainer then
         GroupLootContainer:EnableMouse(false)
-        GroupLootContainer.ignoreInLayout = true
+        -- TAINT SAFETY: Defer ignoreInLayout write to break taint chain.
+        -- This is a Blizzard layout property that taints if set from addon context directly.
+        C_Timer.After(0, function()
+            if GroupLootContainer then
+                GroupLootContainer.ignoreInLayout = true
+            end
+        end)
     end
 
     -- Set alert subsystem priorities (lower = appears first/top)
@@ -1103,9 +1118,12 @@ local function CreateEventToastMover()
     end
 
     -- Hook EventToastManagerFrame:UpdateAnchor instead of SetPoint (avoids recursion)
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc(EventToastManagerFrame, "UpdateAnchor", function(self)
-        self:ClearAllPoints()
-        self:SetPoint("TOP", toastHolder, "TOP")
+        C_Timer.After(0, function()
+            self:ClearAllPoints()
+            self:SetPoint("TOP", toastHolder, "TOP")
+        end)
     end)
 
     -- Initial positioning
@@ -1186,14 +1204,17 @@ local function CreateBNetToastMover()
     -- Hook BNToastFrame anchor updates to redirect positioning when user has set a custom position
     -- Try global function first (legacy), then frame method (12.0+)
     if not bnetToastHooked then
+        -- TAINT SAFETY: Defer to break taint chain from secure context.
         local function BNetAnchorOverride()
-            local alertDB = GetAlertSettings()
-            if alertDB and alertDB.bnetToastPosition then
-                pcall(function()
-                    BNToastFrame:ClearAllPoints()
-                    BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
-                end)
-            end
+            C_Timer.After(0, function()
+                local alertDB = GetAlertSettings()
+                if alertDB and alertDB.bnetToastPosition then
+                    pcall(function()
+                        BNToastFrame:ClearAllPoints()
+                        BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
+                    end)
+                end
+            end)
         end
 
         if type(BNToastFrame_UpdateAnchor) == "function" then
@@ -1317,83 +1338,51 @@ function Alerts:HookAlertSystems()
     local db = GetAlertSettings()
     if not db.enabled then return end
 
+    -- TAINT SAFETY: All setUpFunction hooks defer via C_Timer.After(0) to break taint chain.
+    -- Alert system setUpFunction fires from Blizzard's internal alert pool, which can propagate taint.
+    local function DeferredHook(system, skinFunc)
+        if system then
+            hooksecurefunc(system, "setUpFunction", function(frame)
+                C_Timer.After(0, function()
+                    skinFunc(frame)
+                end)
+            end)
+        end
+    end
+
     -- Achievements
-    if AchievementAlertSystem then
-        hooksecurefunc(AchievementAlertSystem, "setUpFunction", SkinAchievementAlert)
-    end
-    if CriteriaAlertSystem then
-        hooksecurefunc(CriteriaAlertSystem, "setUpFunction", SkinCriteriaAlert)
-    end
-    if MonthlyActivityAlertSystem then
-        hooksecurefunc(MonthlyActivityAlertSystem, "setUpFunction", SkinCriteriaAlert)
-    end
+    DeferredHook(AchievementAlertSystem, SkinAchievementAlert)
+    DeferredHook(CriteriaAlertSystem, SkinCriteriaAlert)
+    DeferredHook(MonthlyActivityAlertSystem, SkinCriteriaAlert)
 
     -- Encounters
-    if DungeonCompletionAlertSystem then
-        hooksecurefunc(DungeonCompletionAlertSystem, "setUpFunction", SkinDungeonCompletionAlert)
-    end
-    if GuildChallengeAlertSystem then
-        hooksecurefunc(GuildChallengeAlertSystem, "setUpFunction", SkinGuildChallengeAlert)
-    end
-    if InvasionAlertSystem then
-        hooksecurefunc(InvasionAlertSystem, "setUpFunction", SkinInvasionAlert)
-    end
-    if ScenarioAlertSystem then
-        hooksecurefunc(ScenarioAlertSystem, "setUpFunction", SkinScenarioAlert)
-    end
-    if WorldQuestCompleteAlertSystem then
-        hooksecurefunc(WorldQuestCompleteAlertSystem, "setUpFunction", SkinWorldQuestCompleteAlert)
-    end
+    DeferredHook(DungeonCompletionAlertSystem, SkinDungeonCompletionAlert)
+    DeferredHook(GuildChallengeAlertSystem, SkinGuildChallengeAlert)
+    DeferredHook(InvasionAlertSystem, SkinInvasionAlert)
+    DeferredHook(ScenarioAlertSystem, SkinScenarioAlert)
+    DeferredHook(WorldQuestCompleteAlertSystem, SkinWorldQuestCompleteAlert)
 
     -- Honor
-    if HonorAwardedAlertSystem then
-        hooksecurefunc(HonorAwardedAlertSystem, "setUpFunction", SkinHonorAwardedAlert)
-    end
+    DeferredHook(HonorAwardedAlertSystem, SkinHonorAwardedAlert)
 
     -- Loot
-    if LegendaryItemAlertSystem then
-        hooksecurefunc(LegendaryItemAlertSystem, "setUpFunction", SkinLegendaryItemAlert)
-    end
-    if LootAlertSystem then
-        hooksecurefunc(LootAlertSystem, "setUpFunction", SkinLootWonAlert)
-    end
-    if LootUpgradeAlertSystem then
-        hooksecurefunc(LootUpgradeAlertSystem, "setUpFunction", SkinLootUpgradeAlert)
-    end
-    if MoneyWonAlertSystem then
-        hooksecurefunc(MoneyWonAlertSystem, "setUpFunction", SkinMoneyWonAlert)
-    end
-    if EntitlementDeliveredAlertSystem then
-        hooksecurefunc(EntitlementDeliveredAlertSystem, "setUpFunction", SkinEntitlementAlert)
-    end
-    if RafRewardDeliveredAlertSystem then
-        hooksecurefunc(RafRewardDeliveredAlertSystem, "setUpFunction", SkinEntitlementAlert)
-    end
+    DeferredHook(LegendaryItemAlertSystem, SkinLegendaryItemAlert)
+    DeferredHook(LootAlertSystem, SkinLootWonAlert)
+    DeferredHook(LootUpgradeAlertSystem, SkinLootUpgradeAlert)
+    DeferredHook(MoneyWonAlertSystem, SkinMoneyWonAlert)
+    DeferredHook(EntitlementDeliveredAlertSystem, SkinEntitlementAlert)
+    DeferredHook(RafRewardDeliveredAlertSystem, SkinEntitlementAlert)
 
     -- Professions
-    if DigsiteCompleteAlertSystem then
-        hooksecurefunc(DigsiteCompleteAlertSystem, "setUpFunction", SkinDigsiteCompleteAlert)
-    end
-    if NewRecipeLearnedAlertSystem then
-        hooksecurefunc(NewRecipeLearnedAlertSystem, "setUpFunction", SkinNewRecipeLearnedAlert)
-    end
+    DeferredHook(DigsiteCompleteAlertSystem, SkinDigsiteCompleteAlert)
+    DeferredHook(NewRecipeLearnedAlertSystem, SkinNewRecipeLearnedAlert)
 
     -- Collections (Pets/Mounts/Toys/Cosmetics/Warband)
-    if NewPetAlertSystem then
-        hooksecurefunc(NewPetAlertSystem, "setUpFunction", SkinMiscAlert)
-    end
-    if NewMountAlertSystem then
-        hooksecurefunc(NewMountAlertSystem, "setUpFunction", SkinMiscAlert)
-    end
-    if NewToyAlertSystem then
-        hooksecurefunc(NewToyAlertSystem, "setUpFunction", SkinMiscAlert)
-    end
-    if NewCosmeticAlertFrameSystem then
-        hooksecurefunc(NewCosmeticAlertFrameSystem, "setUpFunction", SkinMiscAlert)
-    end
-    if NewWarbandSceneAlertSystem then
-        hooksecurefunc(NewWarbandSceneAlertSystem, "setUpFunction", SkinMiscAlert)
-    end
+    DeferredHook(NewPetAlertSystem, SkinMiscAlert)
+    DeferredHook(NewMountAlertSystem, SkinMiscAlert)
+    DeferredHook(NewToyAlertSystem, SkinMiscAlert)
+    DeferredHook(NewCosmeticAlertFrameSystem, SkinMiscAlert)
+    DeferredHook(NewWarbandSceneAlertSystem, SkinMiscAlert)
 
     -- Skin bonus roll frames
     SkinBonusRollFrames()

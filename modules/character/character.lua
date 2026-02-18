@@ -91,6 +91,16 @@ local statsPanel = nil
 local pendingUpdate = false
 local updatingStatsPanel = false  -- Guard to prevent multiple simultaneous updates
 
+-- TAINT SAFETY: Store per-frame state in weak-keyed table instead of writing properties
+-- to Blizzard frames, which taints them in Midnight (12.0)
+local frameState = setmetatable({}, { __mode = "k" })
+local EMPTY = {}
+local function GetState(f)
+    local s = frameState[f]
+    if not s then s = {}; frameState[f] = s end
+    return s
+end
+
 -- Forward declarations (for functions called before definition)
 local CreateStatsPanel
 local ScheduleUpdate
@@ -901,17 +911,17 @@ local function HideBlizzardDecorations()
         if frame then
             frame:Hide()
             -- Hook to keep hidden (Blizzard may re-show on updates)
-            if not frame._quiHideHooked then
+            if not (frameState[frame] or EMPTY).hideHooked then
                 hooksecurefunc(frame, "Show", function(self) self:Hide() end)
-                frame._quiHideHooked = true
+                GetState(frame).hideHooked = true
             end
         end
     end
 
     -- Block Blizzard's IconBorder from showing (prevent double borders)
     local function BlockIconBorder(iconBorder)
-        if not iconBorder or iconBorder._quiBlocked then return end
-        iconBorder._quiBlocked = true
+        if not iconBorder or (frameState[iconBorder] or EMPTY).blocked then return end
+        GetState(iconBorder).blocked = true
         iconBorder:SetAlpha(0)
         if iconBorder.SetTexture then iconBorder:SetTexture(nil) end
         if iconBorder.SetAtlas then
@@ -946,7 +956,7 @@ local function HideBlizzardDecorations()
             end
         end
 
-        -- Block Blizzard's IconBorder (we use custom _quiBorderFrame instead)
+        -- Block Blizzard's IconBorder (we use custom border frame instead)
         if slot.IconBorder then
             BlockIconBorder(slot.IconBorder)
         end
@@ -958,21 +968,23 @@ local function HideBlizzardDecorations()
         end
 
         -- Create border frame as child of slot (won't be affected by Blizzard's texture updates)
-        if not slot._quiBorderFrame then
-            slot._quiBorderFrame = CreateFrame("Frame", nil, slot, "BackdropTemplate")
-            slot._quiBorderFrame:SetFrameLevel(slot:GetFrameLevel() + 10)
-            slot._quiBorderFrame:SetAllPoints(slot)
-            local px = QUICore:GetPixelSize(slot._quiBorderFrame)
-            slot._quiBorderFrame:SetBackdrop({
+        if not (frameState[slot] or EMPTY).borderFrame then
+            local borderFrame = CreateFrame("Frame", nil, slot, "BackdropTemplate")
+            borderFrame:SetFrameLevel(slot:GetFrameLevel() + 10)
+            borderFrame:SetAllPoints(slot)
+            local px = QUICore:GetPixelSize(borderFrame)
+            borderFrame:SetBackdrop({
                 edgeFile = "Interface\\Buttons\\WHITE8X8",
                 edgeSize = px,
             })
+            GetState(slot).borderFrame = borderFrame
         end
     end
 
     -- Update border color based on equipped item quality
     local function UpdateSlotBorder(slot)
-        if not slot or not slot._quiBorderFrame then return end
+        local borderFrame = slot and (frameState[slot] or EMPTY).borderFrame
+        if not borderFrame then return end
 
         local slotID = slot:GetID()
 
@@ -981,10 +993,10 @@ local function HideBlizzardDecorations()
 
         if quality and quality >= 1 then
             local r, g, b = C_Item.GetItemQualityColor(quality)
-            slot._quiBorderFrame:SetBackdropBorderColor(r, g, b, 1)
-            slot._quiBorderFrame:Show()
+            borderFrame:SetBackdropBorderColor(r, g, b, 1)
+            borderFrame:Show()
         else
-            slot._quiBorderFrame:Hide()
+            borderFrame:Hide()
         end
     end
 
@@ -1016,7 +1028,7 @@ local function HideBlizzardDecorations()
 
     -- Hook equipment changes to update all borders
     local firstSlot = allSlots[1]
-    if firstSlot and not firstSlot._quiEquipHooked then
+    if firstSlot and not (frameState[firstSlot] or EMPTY).equipHooked then
         firstSlot:HookScript("OnEvent", function(self, event)
             if event == "PLAYER_EQUIPMENT_CHANGED" then
                 C_Timer.After(0.1, function()
@@ -1026,7 +1038,7 @@ local function HideBlizzardDecorations()
                 end)
             end
         end)
-        firstSlot._quiEquipHooked = true
+        GetState(firstSlot).equipHooked = true
     end
 
     -- Model scene background elements
@@ -1274,7 +1286,7 @@ local function SetupTitleArea()
     end
 
     -- Create top-left two-line display: Line 1 = Name, Line 2 = Level + Spec
-    if not CharacterFrame._quiILvlDisplay then
+    if not (frameState[CharacterFrame] or EMPTY).ilvlDisplay then
         local displayFrame = CreateFrame("Frame", nil, CharacterFrame)
         displayFrame:SetSize(400, 30)
         displayFrame:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 19, -10)  -- Aligned with first slot
@@ -1294,11 +1306,11 @@ local function SetupTitleArea()
 
         displayFrame.text = nameText
         displayFrame.specText = specText
-        CharacterFrame._quiILvlDisplay = displayFrame
+        GetState(CharacterFrame).ilvlDisplay = displayFrame
     end
 
     -- Create center ilvl display (title bar) - shows equipped | overall
-    if not CharacterFrame._quiCenterILvl then
+    if not (frameState[CharacterFrame] or EMPTY).centerILvl then
         local centerFrame = CreateFrame("Frame", nil, CharacterFrame)
         centerFrame:SetSize(200, 20)
         centerFrame:SetPoint("TOP", CharacterFrame, "TOP", -62, -10)  -- Title bar, shifted left over model
@@ -1310,7 +1322,7 @@ local function SetupTitleArea()
         centerText:SetJustifyH("CENTER")
 
         centerFrame.text = centerText
-        CharacterFrame._quiCenterILvl = centerFrame
+        GetState(CharacterFrame).centerILvl = centerFrame
     end
 end
 
@@ -2241,12 +2253,12 @@ end
 -- Update Item Level Display: [Name] [ilvl] [Spec Class]
 ---------------------------------------------------------------------------
 local function UpdateILvlDisplay()
-    if not CharacterFrame or not CharacterFrame._quiILvlDisplay then return end
+    if not CharacterFrame or not (frameState[CharacterFrame] or EMPTY).ilvlDisplay then return end
 
     local settings = GetSettings()
     if not settings.enabled then return end
 
-    local displayFrame = CharacterFrame._quiILvlDisplay
+    local displayFrame = (frameState[CharacterFrame] or EMPTY).ilvlDisplay
     if not displayFrame.text then return end
 
     -- Get player info
@@ -2289,7 +2301,7 @@ local function UpdateILvlDisplay()
     end
 
     -- Update center ilvl display (above model) - shows equipped | overall with color coding
-    local centerFrame = CharacterFrame._quiCenterILvl
+    local centerFrame = (frameState[CharacterFrame] or EMPTY).centerILvl
     if centerFrame and centerFrame.text then
         -- Get colors for each ilvl tier
         local eR, eG, eB = GetILvlColor(equipped)
@@ -2452,8 +2464,8 @@ local function HookCharacterFrame()
                     if overlay then overlay:Hide() end
                 end
                 if equipMgrPopup then equipMgrPopup:Hide() end
-                if CharacterFrame._quiILvlDisplay then CharacterFrame._quiILvlDisplay:Hide() end
-                if CharacterFrame._quiCenterILvl then CharacterFrame._quiCenterILvl:Hide() end
+                if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
+                if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
                 CharacterFrame:SetScale(1.0)
             end
         end)
@@ -2472,8 +2484,8 @@ local function HookCharacterFrame()
         end
 
         local equipPane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
-        if equipPane and equipPane._quiOriginalParent then
-            equipPane:SetParent(equipPane._quiOriginalParent)
+        if equipPane and (frameState[equipPane] or EMPTY).originalParent then
+            equipPane:SetParent((frameState[equipPane] or EMPTY).originalParent)
         end
 
         -- Hide floating Titles popup and restore pane to original parent
@@ -2482,8 +2494,8 @@ local function HookCharacterFrame()
         end
 
         local titlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-        if titlesPane and titlesPane._quiOriginalParent then
-            titlesPane:SetParent(titlesPane._quiOriginalParent)
+        if titlesPane and (frameState[titlesPane] or EMPTY).originalParent then
+            titlesPane:SetParent((frameState[titlesPane] or EMPTY).originalParent)
         end
     end)
 
@@ -2499,7 +2511,7 @@ local function HookCharacterFrame()
     end
 
     -- Equipment Manager tab: Reparent to floating popup (Blizzard native appearance)
-    if PaperDollSidebarTab3 and not PaperDollSidebarTab3._quiHooked then
+    if PaperDollSidebarTab3 and not (frameState[PaperDollSidebarTab3] or EMPTY).hooked then
         PaperDollSidebarTab3:HookScript("OnClick", function()
             local settings = GetSettings()
             if not settings.enabled then return end
@@ -2509,8 +2521,8 @@ local function HookCharacterFrame()
                 titlesPopup:Hide()
             end
             local titlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-            if titlesPane and titlesPane._quiOriginalParent then
-                titlesPane:SetParent(titlesPane._quiOriginalParent)
+            if titlesPane and (frameState[titlesPane] or EMPTY).originalParent then
+                titlesPane:SetParent((frameState[titlesPane] or EMPTY).originalParent)
             end
 
             -- Create floating container if needed
@@ -2520,8 +2532,8 @@ local function HookCharacterFrame()
             local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
             if pane then
                 -- Store original parent for restoration
-                if not pane._quiOriginalParent then
-                    pane._quiOriginalParent = pane:GetParent()
+                if not (frameState[pane] or EMPTY).originalParent then
+                    GetState(pane).originalParent = pane:GetParent()
                 end
 
                 -- Reparent to floating popup (Blizzard appearance preserved)
@@ -2549,11 +2561,11 @@ local function HookCharacterFrame()
 
             -- Keep stats panel visible so user can see stats while managing gear
         end)
-        PaperDollSidebarTab3._quiHooked = true
+        GetState(PaperDollSidebarTab3).hooked = true
     end
 
     -- Titles tab (Tab2): Reparent to floating popup
-    if PaperDollSidebarTab2 and not PaperDollSidebarTab2._quiHooked then
+    if PaperDollSidebarTab2 and not (frameState[PaperDollSidebarTab2] or EMPTY).hooked then
         PaperDollSidebarTab2:HookScript("OnClick", function()
             local settings = GetSettings()
             if not settings.enabled then return end
@@ -2563,8 +2575,8 @@ local function HookCharacterFrame()
                 equipMgrPopup:Hide()
             end
             local equipPane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
-            if equipPane and equipPane._quiOriginalParent then
-                equipPane:SetParent(equipPane._quiOriginalParent)
+            if equipPane and (frameState[equipPane] or EMPTY).originalParent then
+                equipPane:SetParent((frameState[equipPane] or EMPTY).originalParent)
             end
 
             -- Create floating container if needed
@@ -2574,8 +2586,8 @@ local function HookCharacterFrame()
             local pane = PaperDollFrame and PaperDollFrame.TitleManagerPane
             if pane then
                 -- Store original parent for restoration
-                if not pane._quiOriginalParent then
-                    pane._quiOriginalParent = pane:GetParent()
+                if not (frameState[pane] or EMPTY).originalParent then
+                    GetState(pane).originalParent = pane:GetParent()
                 end
 
                 -- Reparent to floating popup
@@ -2601,7 +2613,7 @@ local function HookCharacterFrame()
                 end
             end
         end)
-        PaperDollSidebarTab2._quiHooked = true
+        GetState(PaperDollSidebarTab2).hooked = true
     end
 
     -- Ensure Equipment Manager popups appear above custom layout
@@ -2631,8 +2643,8 @@ local function HookCharacterFrame()
             end
 
             local equipPane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
-            if equipPane and equipPane._quiOriginalParent then
-                equipPane:SetParent(equipPane._quiOriginalParent)
+            if equipPane and (frameState[equipPane] or EMPTY).originalParent then
+                equipPane:SetParent((frameState[equipPane] or EMPTY).originalParent)
             end
 
             -- Hide Titles popup and restore pane to original parent
@@ -2641,8 +2653,8 @@ local function HookCharacterFrame()
             end
 
             local titlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-            if titlesPane and titlesPane._quiOriginalParent then
-                titlesPane:SetParent(titlesPane._quiOriginalParent)
+            if titlesPane and (frameState[titlesPane] or EMPTY).originalParent then
+                titlesPane:SetParent((frameState[titlesPane] or EMPTY).originalParent)
             end
 
             -- Show stats panel
@@ -2691,10 +2703,10 @@ local function HookCharacterFrame()
         -- Hide Equipment Manager popup when leaving Character tab
         if equipMgrPopup then equipMgrPopup:Hide() end
         -- Hide ilvl display, center ilvl, and settings button on non-Character tabs
-        if CharacterFrame._quiILvlDisplay then CharacterFrame._quiILvlDisplay:Hide() end
-        if CharacterFrame._quiCenterILvl then CharacterFrame._quiCenterILvl:Hide() end
-        if CharacterFrame._quiGearBtn then CharacterFrame._quiGearBtn:Hide() end
-        if CharacterFrame._quiSettingsPanel then CharacterFrame._quiSettingsPanel:Hide() end
+        if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
+        if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
+        if (frameState[CharacterFrame] or EMPTY).gearBtn then (frameState[CharacterFrame] or EMPTY).gearBtn:Hide() end
+        if (frameState[CharacterFrame] or EMPTY).settingsPanel then (frameState[CharacterFrame] or EMPTY).settingsPanel:Hide() end
 
         -- Handle background and decorations based on skinning state
         if IsSkinningHandlingBackground() then
@@ -2772,9 +2784,9 @@ local function HookCharacterFrame()
                     if overlay then overlay:Show() end
                 end
                 -- Show ilvl display, center ilvl, and settings button on Character tab
-                if CharacterFrame._quiILvlDisplay then CharacterFrame._quiILvlDisplay:Show() end
-                if CharacterFrame._quiCenterILvl then CharacterFrame._quiCenterILvl:Show() end
-                if CharacterFrame._quiGearBtn then CharacterFrame._quiGearBtn:Show() end
+                if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Show() end
+                if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Show() end
+                if (frameState[CharacterFrame] or EMPTY).gearBtn then (frameState[CharacterFrame] or EMPTY).gearBtn:Show() end
                 ScheduleUpdate()
                 -- Refresh equipment slot borders (may be reset by Blizzard on reopen)
                 if #allEquipmentSlots > 0 and UpdateEquipmentSlotBorder then
@@ -2802,17 +2814,17 @@ local function HookCharacterFrame()
     local settings = GetSettings()
     if not settings.enabled then
         -- Hide existing button if module was disabled
-        if CharacterFrame._quiGearBtn then
-            CharacterFrame._quiGearBtn:Hide()
+        if (frameState[CharacterFrame] or EMPTY).gearBtn then
+            (frameState[CharacterFrame] or EMPTY).gearBtn:Hide()
         end
-        if CharacterFrame._quiSettingsPanel then
-            CharacterFrame._quiSettingsPanel:Hide()
+        if (frameState[CharacterFrame] or EMPTY).settingsPanel then
+            (frameState[CharacterFrame] or EMPTY).settingsPanel:Hide()
         end
         return
     end
 
     -- Create gear icon (more prominent position in title bar)
-    if not CharacterFrame._quiGearBtn then
+    if not (frameState[CharacterFrame] or EMPTY).gearBtn then
         gearBtn = CreateFrame("Button", "QUI_CharacterSettingsBtn", CharacterFrame, "BackdropTemplate")
         gearBtn:SetSize(70, 20)
         gearBtn:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 20, -5)
@@ -2847,7 +2859,7 @@ local function HookCharacterFrame()
             self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
         end)
 
-        CharacterFrame._quiGearBtn = gearBtn
+        GetState(CharacterFrame).gearBtn = gearBtn
 
         -- Settings panel (positioned to the right of CharacterFrame)
         settingsPanel = CreateFrame("Frame", "QUI_CharSettingsPanel", CharacterFrame, "BackdropTemplate")
@@ -2865,7 +2877,7 @@ local function HookCharacterFrame()
         settingsPanel:SetFrameLevel(200)
         settingsPanel:EnableMouse(true)
         settingsPanel:Hide()
-        CharacterFrame._quiSettingsPanel = settingsPanel
+        GetState(CharacterFrame).settingsPanel = settingsPanel
 
         -- Title
         local title = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3172,8 +3184,8 @@ local function HookCharacterFrame()
 
     -- Hide settings panel when character frame closes (outside creation block)
     CharacterFrame:HookScript("OnHide", function()
-        if CharacterFrame._quiSettingsPanel then
-            CharacterFrame._quiSettingsPanel:Hide()
+        if (frameState[CharacterFrame] or EMPTY).settingsPanel then
+            (frameState[CharacterFrame] or EMPTY).settingsPanel:Hide()
         end
     end)
 end

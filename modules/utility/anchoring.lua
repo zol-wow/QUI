@@ -288,8 +288,9 @@ function QUI_Anchoring:GetAnchorDimensions(anchorFrame, anchorTargetName)
     
     -- Special handling for CDM viewers (backward compatibility)
     if anchorTargetName == "essential" or anchorTargetName == "utility" then
-        width = anchorFrame.__cdmRow1Width or width
-        height = anchorFrame.__cdmTotalHeight or height
+        local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(anchorFrame)
+        width = (vs and vs.row1Width) or width
+        height = (vs and vs.totalHeight) or height
     end
     
     local centerX, centerY = anchorFrame:GetCenter()
@@ -1181,8 +1182,9 @@ local function GetCDMAnchorProxy(parentKey)
         return proxy
     end
 
-    local width = viewer.__cdmIconWidth or viewer:GetWidth() or 0
-    local height = viewer.__cdmTotalHeight or viewer:GetHeight() or 0
+    local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
+    local width = (vs and vs.iconWidth) or viewer:GetWidth() or 0
+    local height = (vs and vs.totalHeight) or viewer:GetHeight() or 0
     local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
     if minWidthEnabled and IsHUDAnchoredToCDM() then
         width = math.max(width, minWidth)
@@ -1450,7 +1452,8 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
     if settings.autoHeight then
         local viewer = _G["EssentialCooldownViewer"]
         if viewer then
-            local iconHeight = viewer.__cdmRow1IconHeight
+            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
+            local iconHeight = vs and vs.row1IconHeight
             if iconHeight and iconHeight > 0 then
                 local adjustedHeight = iconHeight + (settings.heightAdjust or 0)
                 if adjustedHeight > 0 then

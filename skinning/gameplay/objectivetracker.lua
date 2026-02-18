@@ -279,8 +279,11 @@ local function ApplyMaxWidth(settings)
         -- Hook SetCollapsed to override atlas with secondary style
         -- (Blizzard resets to collapse-all/expand-all on state change)
         if TrackerFrame.Header.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame.Header, "setCollapsedHooked") then
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             hooksecurefunc(TrackerFrame.Header, "SetCollapsed", function(self, collapsed)
-                UpdateMinimizeButtonAtlas(self.MinimizeButton, collapsed)
+                C_Timer.After(0, function()
+                    UpdateMinimizeButtonAtlas(self.MinimizeButton, collapsed)
+                end)
             end)
             SkinBase.SetFrameData(TrackerFrame.Header, "setCollapsedHooked", true)
 
@@ -387,9 +390,12 @@ local function HidePOIButtonGlows()
                             block.poiButton.Glow:Hide()
                             block.poiButton.Glow:SetAlpha(0)
                             -- Hook Show to prevent Blizzard from re-showing
+                            -- TAINT SAFETY: Defer to break taint chain from secure context.
                             if not SkinBase.GetFrameData(block.poiButton.Glow, "hooked") then
                                 hooksecurefunc(block.poiButton.Glow, "Show", function(self)
-                                    self:Hide()
+                                    C_Timer.After(0, function()
+                                        if self and self.Hide then self:Hide() end
+                                    end)
                                 end)
                                 SkinBase.SetFrameData(block.poiButton.Glow, "hooked", true)
                             end
@@ -557,18 +563,21 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
 
     -- Hook SetBackgroundAlpha so edit mode opacity also affects our backdrop
     if trackerFrame.SetBackgroundAlpha and not SkinBase.GetFrameData(trackerFrame, "backgroundHooked") then
+        -- TAINT SAFETY: Defer to break taint chain from secure context.
         hooksecurefunc(trackerFrame, "SetBackgroundAlpha", function(self, alpha)
-            -- Keep NineSlice hidden
-            if self.NineSlice then
-                self.NineSlice:Hide()
-                self.NineSlice:SetAlpha(0)
-            end
-            -- Apply edit mode opacity to our backdrop (get fresh colors)
-            local bd = SkinBase.GetFrameData(self, "backdrop")
-            if bd then
-                local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
-                bd:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
-            end
+            C_Timer.After(0, function()
+                -- Keep NineSlice hidden
+                if self.NineSlice then
+                    self.NineSlice:Hide()
+                    self.NineSlice:SetAlpha(0)
+                end
+                -- Apply edit mode opacity to our backdrop (get fresh colors)
+                local bd = SkinBase.GetFrameData(self, "backdrop")
+                if bd then
+                    local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
+                    bd:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
+                end
+            end)
         end)
         SkinBase.SetFrameData(trackerFrame, "backgroundHooked", true)
     end
@@ -661,33 +670,41 @@ local function HookLineCreation()
     local fontPath = GetFontPath()
 
     -- Hook ObjectiveTrackerBlockMixin:AddObjective to style lines as they're created
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked") then
-        hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function(self, objectiveKey, text, template, useFullHeight, dashStyle, colorStyle, adjustForNoText, overrideHeight)
-            local line = self.usedLines and self.usedLines[objectiveKey]
-            if line then
-                local currentSettings = GetSettings()
-                local currentTextSize = currentSettings and currentSettings.objectiveTrackerTextFontSize or 0
-                local currentTextColor = currentSettings and currentSettings.objectiveTrackerTextColor
-                if currentTextSize > 0 then
-                    StyleLine(line, GetFontPath(), currentTextSize, currentTextColor)
-                    -- Schedule line repositioning to fix overlap from text wrapping
-                    ScheduleLineReposition()
+        hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function(self, objectiveKey)
+            local block = self
+            C_Timer.After(0, function()
+                local line = block.usedLines and block.usedLines[objectiveKey]
+                if line then
+                    local currentSettings = GetSettings()
+                    local currentTextSize = currentSettings and currentSettings.objectiveTrackerTextFontSize or 0
+                    local currentTextColor = currentSettings and currentSettings.objectiveTrackerTextColor
+                    if currentTextSize > 0 then
+                        StyleLine(line, GetFontPath(), currentTextSize, currentTextColor)
+                        -- Schedule line repositioning to fix overlap from text wrapping
+                        ScheduleLineReposition()
+                    end
                 end
-            end
+            end)
         end)
         SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked", true)
     end
 
     -- Hook ObjectiveTrackerBlockMixin:SetHeader to style block headers (quest/achievement titles)
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked") then
-        hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function(self, text)
-            local currentSettings = GetSettings()
-            local currentTitleSize = currentSettings and currentSettings.objectiveTrackerTitleFontSize or 0
-            local currentTitleColor = currentSettings and currentSettings.objectiveTrackerTitleColor
-            if currentTitleSize > 0 and self.HeaderText then
-                self.HeaderText:SetFont(GetFontPath(), currentTitleSize, GetFontFlags())
-                SafeSetTextColor(self.HeaderText, currentTitleColor)
-            end
+        hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function(self)
+            local block = self
+            C_Timer.After(0, function()
+                local currentSettings = GetSettings()
+                local currentTitleSize = currentSettings and currentSettings.objectiveTrackerTitleFontSize or 0
+                local currentTitleColor = currentSettings and currentSettings.objectiveTrackerTitleColor
+                if currentTitleSize > 0 and block.HeaderText then
+                    block.HeaderText:SetFont(GetFontPath(), currentTitleSize, GetFontFlags())
+                    SafeSetTextColor(block.HeaderText, currentTitleColor)
+                end
+            end)
         end)
         SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked", true)
     end
@@ -736,15 +753,20 @@ local function SkinObjectiveTracker()
         end
     end
 
+    -- TAINT SAFETY: Wrapper to defer ScheduleBackdropUpdate from secure context.
+    local function DeferredScheduleBackdropUpdate()
+        C_Timer.After(0, ScheduleBackdropUpdate)
+    end
+
     -- Hook the main container's Update to update backdrop anchors when content changes
     if TrackerFrame.Update and not SkinBase.GetFrameData(TrackerFrame, "updateHooked") then
-        hooksecurefunc(TrackerFrame, "Update", ScheduleBackdropUpdate)
+        hooksecurefunc(TrackerFrame, "Update", DeferredScheduleBackdropUpdate)
         SkinBase.SetFrameData(TrackerFrame, "updateHooked", true)
     end
 
     -- Hook main container's SetCollapsed for when entire tracker is collapsed/expanded
     if TrackerFrame.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame, "collapseHooked") then
-        hooksecurefunc(TrackerFrame, "SetCollapsed", ScheduleBackdropUpdate)
+        hooksecurefunc(TrackerFrame, "SetCollapsed", DeferredScheduleBackdropUpdate)
         SkinBase.SetFrameData(TrackerFrame, "collapseHooked", true)
     end
 
@@ -754,22 +776,27 @@ local function SkinObjectiveTracker()
         if tracker and not SkinBase.GetFrameData(tracker, "collapseHooked") then
             -- Hook the header's minimize button click
             if tracker.Header and tracker.Header.MinimizeButton then
-                tracker.Header.MinimizeButton:HookScript("OnClick", ScheduleBackdropUpdate)
+                tracker.Header.MinimizeButton:HookScript("OnClick", DeferredScheduleBackdropUpdate)
             end
 
             -- Hook SetCollapsed on the module itself
             if tracker.SetCollapsed then
-                hooksecurefunc(tracker, "SetCollapsed", ScheduleBackdropUpdate)
+                hooksecurefunc(tracker, "SetCollapsed", DeferredScheduleBackdropUpdate)
             end
 
             -- Hook LayoutContents to catch world quest/bonus objective changes
             if tracker.LayoutContents then
-                hooksecurefunc(tracker, "LayoutContents", ScheduleBackdropUpdate)
+                hooksecurefunc(tracker, "LayoutContents", DeferredScheduleBackdropUpdate)
             end
 
             -- Hook AddBlock to style new blocks
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             if tracker.AddBlock and not SkinBase.GetFrameData(tracker, "addBlockHooked") then
-                hooksecurefunc(tracker, "AddBlock", ApplyBlockSkinning)
+                hooksecurefunc(tracker, "AddBlock", function(trackerSelf, block)
+                    C_Timer.After(0, function()
+                        ApplyBlockSkinning(trackerSelf, block)
+                    end)
+                end)
                 SkinBase.SetFrameData(tracker, "addBlockHooked", true)
             end
 
@@ -778,21 +805,27 @@ local function SkinObjectiveTracker()
     end
 
     -- Also update on size changes (with guard to prevent multiple hooks)
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     if not SkinBase.GetFrameData(TrackerFrame, "sizeChangedHooked") then
-        TrackerFrame:HookScript("OnSizeChanged", UpdateBackdropAnchors)
+        TrackerFrame:HookScript("OnSizeChanged", function()
+            C_Timer.After(0, UpdateBackdropAnchors)
+        end)
         SkinBase.SetFrameData(TrackerFrame, "sizeChangedHooked", true)
     end
 
     -- Hook ObjectiveTrackerManager.SetOpacity to catch when edit mode loads saved settings
     local manager = _G.ObjectiveTrackerManager
     if manager and manager.SetOpacity and not SkinBase.GetFrameData(manager, "opacityHooked") then
+        -- TAINT SAFETY: Defer to break taint chain from secure context.
         hooksecurefunc(manager, "SetOpacity", function(self, opacityPercent)
-            local alpha = (opacityPercent or 0) / 100
-            local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
-            local bd = SkinBase.GetFrameData(TrackerFrame, "backdrop")
-            if bd then
-                bd:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
-            end
+            C_Timer.After(0, function()
+                local alpha = (opacityPercent or 0) / 100
+                local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
+                local bd = SkinBase.GetFrameData(TrackerFrame, "backdrop")
+                if bd then
+                    bd:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
+                end
+            end)
         end)
         SkinBase.SetFrameData(manager, "opacityHooked", true)
     end

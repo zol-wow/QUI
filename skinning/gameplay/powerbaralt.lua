@@ -240,13 +240,17 @@ local function HideBlizzardBar()
     -- Hook UnitPowerBarAlt_SetUp to catch bar creation/setup
     -- IMPORTANT: Skip during combat to avoid taint - let Blizzard's bar show if needed
     if not blizzardBarHooked and _G.UnitPowerBarAlt_SetUp then
+        -- TAINT SAFETY: Defer to break taint chain from secure context.
         hooksecurefunc("UnitPowerBarAlt_SetUp", function(self)
-            if InCombatLockdown() then return end  -- Avoid taint during combat
-            if self == _G.PlayerPowerBarAlt and isEnabled then
-                self:UnregisterAllEvents()
-                self:Hide()
-                self:SetAlpha(0)
-            end
+            local bar = self
+            C_Timer.After(0, function()
+                if InCombatLockdown() then return end  -- Avoid taint during combat
+                if bar == _G.PlayerPowerBarAlt and isEnabled then
+                    bar:UnregisterAllEvents()
+                    bar:Hide()
+                    bar:SetAlpha(0)
+                end
+            end)
         end)
         blizzardBarHooked = true
     end
