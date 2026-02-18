@@ -196,7 +196,7 @@ end
 -- TAB BUILDERS (one per category)
 ---------------------------------------------------------------------------
 local function BuildCDMTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 1, subTabName = "CDM"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 1, subTabName = "CDM"})
     local y = -10
     local anchoringDB = GetAnchoringDB()
     local hudMinWidth = anchoringDB and anchoringDB.hudMinWidth
@@ -264,7 +264,7 @@ local function BuildCDMTab(tabContent)
 end
 
 local function BuildResourceBarsTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 2, subTabName = "Resource Bars"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 2, subTabName = "Resource Bars"})
     local y = -10
     local frames = {
         { key = "primaryPower",   name = "Primary Power Bar",   autoWidth = true },
@@ -276,7 +276,7 @@ local function BuildResourceBarsTab(tabContent)
 end
 
 local function BuildUnitFramesTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 3, subTabName = "Unit Frames"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 3, subTabName = "Unit Frames"})
     local y = -10
     local frames = {
         { key = "playerFrame", name = "Player Frame",    autoWidth = true, autoHeight = true },
@@ -292,7 +292,7 @@ local function BuildUnitFramesTab(tabContent)
 end
 
 local function BuildCastbarsTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 4, subTabName = "Castbars"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 4, subTabName = "Castbars"})
     local y = -10
     local PAD = PADDING
     local castbarUnits = { "player", "target", "focus" }
@@ -334,7 +334,7 @@ local function BuildCastbarsTab(tabContent)
 end
 
 local function BuildActionBarsTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 5, subTabName = "Action Bars"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 5, subTabName = "Action Bars"})
     local y = -10
     local frames = {
         { key = "bar1",      name = "Action Bar 1 (Main)" },
@@ -356,7 +356,7 @@ local function BuildActionBarsTab(tabContent)
 end
 
 local function BuildDisplayTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 2, tabName = "Anchoring & Layout", subTabIndex = 6, subTabName = "Display"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 6, subTabName = "Display"})
     local y = -10
     local frames = {
         { key = "minimap",          name = "Minimap" },

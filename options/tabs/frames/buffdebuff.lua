@@ -18,7 +18,7 @@ local function BuildBuffDebuffTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 4, subTabName = "Buff & Debuff"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 4, subTabName = "Buff & Debuff"})
 
     -- Section Header
     local header = GUI:CreateSectionHeader(tabContent, "Buff & Debuff Borders")

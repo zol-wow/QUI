@@ -105,7 +105,7 @@ local function BuildPartyRaidframesTab(tabContent)
     local PAD = PADDING
 
     -- Set search context for Unit Frames > Party/Raidframes sub-tab
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Unit Frames", subTabIndex = 8, subTabName = "Party/Raidframes"})
+    GUI:SetSearchContext({tabIndex = 4, tabName = "Unit Frames", subTabIndex = 8, subTabName = "Party/Raidframes"})
 
     -- Description
     local info = GUI:CreateLabel(tabContent, "Anchor DandersFrames containers to QUI elements. When enabled, QUI controls the container position instead of DandersFrames.", 11, C.textMuted)

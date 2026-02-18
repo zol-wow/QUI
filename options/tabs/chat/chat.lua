@@ -18,7 +18,7 @@ local function BuildChatTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 5, subTabName = "Chat"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 5, subTabName = "Chat"})
 
     -- Refresh callback
     local function RefreshChat()

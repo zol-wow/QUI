@@ -63,7 +63,7 @@ local function BuildGeneralTab(tabContent)
     end
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 1, subTabName = "General"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 1, subTabName = "General"})
 
     -- UI Scale Section
     GUI:SetSearchSection("UI Scale")

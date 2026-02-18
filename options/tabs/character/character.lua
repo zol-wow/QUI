@@ -18,7 +18,7 @@ local function BuildCharacterPaneTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 7, subTabName = "Character Pane"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 7, subTabName = "Character Pane"})
 
     local char = db and db.character
     if not char then return end

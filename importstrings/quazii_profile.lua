@@ -1,4 +1,3 @@
--- QUI Profile String for QUI
 -- Quazii's personal QUI profile export string
 
 QUI.imports = QUI.imports or {}

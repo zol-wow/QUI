@@ -18,7 +18,7 @@ local function BuildDragonridingTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 8, subTabName = "Skyriding"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 8, subTabName = "Skyriding"})
 
     -- Refresh callback
     local function RefreshSkyriding()

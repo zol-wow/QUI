@@ -1,4 +1,3 @@
--- Platynator String for QUI
 -- Quazii's personal Platynator nameplate configuration
 
 QUI.imports = QUI.imports or {}

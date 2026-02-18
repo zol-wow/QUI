@@ -19,7 +19,7 @@ local function BuildPartyKeystonesTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 10, subTabName = "Party Keystones"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 10, subTabName = "Party Keystones"})
 
     local general = db and db.general
     if not general then return end

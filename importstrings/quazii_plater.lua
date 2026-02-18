@@ -1,4 +1,3 @@
--- Plater String for QUI
 -- Quazii's personal Plater nameplate configuration
 
 QUI.imports = QUI.imports or {}

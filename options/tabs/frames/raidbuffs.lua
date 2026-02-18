@@ -46,7 +46,7 @@ local function BuildRaidBuffsTab(tabContent)
     local db = Shared.GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 1, tabName = "General & QoL", subTabIndex = 9, subTabName = "Missing Raid Buffs"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 9, subTabName = "Missing Raid Buffs"})
 
     -- Section Header
     local header = GUI:CreateSectionHeader(tabContent, "Missing Raid Buffs Display")
