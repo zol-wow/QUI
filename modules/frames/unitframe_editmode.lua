@@ -572,18 +572,27 @@ function QUI_UF:HookBlizzardEditMode()
     -- Track if we triggered from Blizzard Edit Mode (vs /qui editmode)
     self.triggeredByBlizzEditMode = false
 
+    -- TAINT SAFETY: hooksecurefunc callbacks run synchronously in the secure
+    -- EditMode execution context. Any addon code that runs here taints the
+    -- chain, causing "attempt to perform arithmetic on a secret number value"
+    -- errors in RefreshEncounterEvents/HideSystemSelections. Defer ALL work
+    -- via C_Timer.After(0) to break the taint chain.
     hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-        if InCombatLockdown() then return end
-        if self.editModeActive then return end  -- Already active via /qui editmode
-        self.triggeredByBlizzEditMode = true
-        self:EnableEditMode()
+        C_Timer.After(0, function()
+            if InCombatLockdown() then return end
+            if self.editModeActive then return end  -- Already active via /qui editmode
+            self.triggeredByBlizzEditMode = true
+            self:EnableEditMode()
+        end)
     end)
 
     hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        if InCombatLockdown() then return end
-        if not self.editModeActive then return end
-        if not self.triggeredByBlizzEditMode then return end  -- Don't exit if user used /qui editmode
-        self.triggeredByBlizzEditMode = false
-        self:DisableEditMode()
+        C_Timer.After(0, function()
+            if InCombatLockdown() then return end
+            if not self.editModeActive then return end
+            if not self.triggeredByBlizzEditMode then return end  -- Don't exit if user used /qui editmode
+            self.triggeredByBlizzEditMode = false
+            self:DisableEditMode()
+        end)
     end)
 end
