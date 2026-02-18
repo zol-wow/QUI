@@ -106,6 +106,12 @@ end
 --- SAFE BACKDROP UTILITY (Combat/Secret Value Protection)
 ---=================================================================================
 
+-- Weak-keyed table to store pending backdrop info WITHOUT writing to Blizzard frames
+-- Previously used frame.__quiBackdropPending which taints the frame
+local _pendingBackdrops = setmetatable({}, { __mode = "k" })
+local _backdropUpdateFrame = nil
+local _backdropEventFrame = nil
+
 -- Global SafeSetBackdrop function that defers SetBackdrop calls when frame dimensions
 -- are secret values (Midnight 12.0 protection) or when in combat lockdown.
 -- This prevents the "attempt to perform arithmetic on a secret value" error that occurs
@@ -119,14 +125,12 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
     if not frame or not frame.SetBackdrop then return false end
 
     -- Check if frame has valid (non-secret) dimensions
-    -- SetBackdrop internally calls GetWidth/GetHeight which can error on secret values
     local hasValidSize = false
     local ok, result = pcall(function()
         local w = frame:GetWidth()
         local h = frame:GetHeight()
-        -- Try to do arithmetic - this will fail if they're secret values
         if w and h then
-            local test = w + h  -- This will error if secret
+            local test = w + h
             if test > 0 then
                 return true
             end
@@ -139,24 +143,21 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
 
     -- If dimensions are secret/invalid, defer the backdrop setup
     if not hasValidSize then
-        frame.__quiBackdropPending = backdropInfo
-        frame.__quiBackdropBorderColor = borderColor
-        QUICore.__pendingBackdrops = QUICore.__pendingBackdrops or {}
-        QUICore.__pendingBackdrops[frame] = true
+        -- Store pending info in local weak table (NOT on the frame)
+        _pendingBackdrops[frame] = { info = backdropInfo, border = borderColor }
 
         -- Set up deferred processing via OnUpdate (for when dimensions become valid)
-        if not QUICore.__backdropUpdateFrame then
+        if not _backdropUpdateFrame then
             local updateFrame = CreateFrame("Frame")
             local elapsed = 0
             updateFrame:SetScript("OnUpdate", function(self, delta)
                 elapsed = elapsed + delta
-                if elapsed < 0.1 then return end  -- Check every 0.1s
+                if elapsed < 0.1 then return end
                 elapsed = 0
 
                 local processed = {}
-                for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
-                    if pendingFrame and pendingFrame.__quiBackdropPending ~= nil then
-                        -- Re-check if dimensions are now valid
+                for pendingFrame, pending in pairs(_pendingBackdrops) do
+                    if pendingFrame and pending and pending.info ~= nil then
                         local checkOk, checkResult = pcall(function()
                             local w = pendingFrame:GetWidth()
                             local h = pendingFrame:GetHeight()
@@ -168,13 +169,11 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                         end)
 
                         if checkOk and checkResult and not InCombatLockdown() then
-                            local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingFrame.__quiBackdropPending)
-                            if setOk and pendingFrame.__quiBackdropPending and pendingFrame.__quiBackdropBorderColor then
-                                local c = pendingFrame.__quiBackdropBorderColor
+                            local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pending.info)
+                            if setOk and pending.info and pending.border then
+                                local c = pending.border
                                 pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
                             end
-                            pendingFrame.__quiBackdropPending = nil
-                            pendingFrame.__quiBackdropBorderColor = nil
                             table.insert(processed, pendingFrame)
                         end
                     else
@@ -183,12 +182,12 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                 end
 
                 for _, pf in ipairs(processed) do
-                    QUICore.__pendingBackdrops[pf] = nil
+                    _pendingBackdrops[pf] = nil
                 end
 
                 -- Stop OnUpdate if no more pending
                 local hasAny = false
-                for _ in pairs(QUICore.__pendingBackdrops or {}) do
+                for _ in pairs(_pendingBackdrops) do
                     hasAny = true
                     break
                 end
@@ -196,45 +195,39 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                     self:Hide()
                 end
             end)
-            QUICore.__backdropUpdateFrame = updateFrame
+            _backdropUpdateFrame = updateFrame
         end
-        QUICore.__backdropUpdateFrame:Show()
+        _backdropUpdateFrame:Show()
         return false
     end
 
     -- If in combat, defer backdrop setup to avoid secret value errors
     if InCombatLockdown() then
-        local alreadyPending = QUICore.__pendingBackdrops and QUICore.__pendingBackdrops[frame]
-        if not alreadyPending then
-            frame.__quiBackdropPending = backdropInfo
-            frame.__quiBackdropBorderColor = borderColor
+        if not _pendingBackdrops[frame] then
+            _pendingBackdrops[frame] = { info = backdropInfo, border = borderColor }
 
-            if not QUICore.__backdropEventFrame then
+            if not _backdropEventFrame then
                 local eventFrame = CreateFrame("Frame")
                 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
                 eventFrame:SetScript("OnEvent", function(self)
                     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                    for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
-                        if pendingFrame and pendingFrame.__quiBackdropPending ~= nil then
+                    for pendingFrame, pending in pairs(_pendingBackdrops) do
+                        if pendingFrame and pending and pending.info ~= nil then
                             if not InCombatLockdown() then
-                                local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingFrame.__quiBackdropPending)
-                                if setOk and pendingFrame.__quiBackdropPending and pendingFrame.__quiBackdropBorderColor then
-                                    local c = pendingFrame.__quiBackdropBorderColor
+                                local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pending.info)
+                                if setOk and pending.info and pending.border then
+                                    local c = pending.border
                                     pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
                                 end
                             end
-                            pendingFrame.__quiBackdropPending = nil
-                            pendingFrame.__quiBackdropBorderColor = nil
                         end
                     end
-                    QUICore.__pendingBackdrops = {}
+                    _pendingBackdrops = setmetatable({}, { __mode = "k" })
                 end)
-                QUICore.__backdropEventFrame = eventFrame
+                _backdropEventFrame = eventFrame
             end
 
-            QUICore.__pendingBackdrops = QUICore.__pendingBackdrops or {}
-            QUICore.__pendingBackdrops[frame] = true
-            QUICore.__backdropEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+            _backdropEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         end
         return false
     end
@@ -3975,22 +3968,10 @@ function QUICore:HookEditMode()
                 self:ForceReskinAllViewers()
             end)
 
-            -- Fix BossTargetFrameContainer crash: GetScaledSelectionSides fails when GetRect returns nil
-            -- Apply hook here because the method may not exist at addon init time
-            if BossTargetFrameContainer and not BossTargetFrameContainer._quiScaledSidesHooked then
-                if BossTargetFrameContainer.GetScaledSelectionSides then
-                    local original = BossTargetFrameContainer.GetScaledSelectionSides
-                    BossTargetFrameContainer.GetScaledSelectionSides = function(frame)
-                        local left = frame:GetLeft()
-                        if left == nil then
-                            -- Return off-screen fallback sides (left, right, bottom, top)
-                            return -10000, -9999, 10000, 10001
-                        end
-                        return original(frame)
-                    end
-                    BossTargetFrameContainer._quiScaledSidesHooked = true
-                end
-            end
+            -- NOTE: BossTargetFrameContainer.GetScaledSelectionSides crash fix
+            -- is handled in unitframe_blizzard.lua. The previous direct method
+            -- replacement here was removed because it taints the EnterEditMode
+            -- secure execution context, causing ADDON_ACTION_FORBIDDEN errors.
         end)
         
         -- Hook when Edit Mode is exited

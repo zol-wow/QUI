@@ -67,26 +67,28 @@ end
 local function ApplyBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, showBorder)
     if not frame then return end
 
-    if not frame.quiBackdrop then
-        frame.quiBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        frame.quiBackdrop:SetAllPoints()
-        frame.quiBackdrop:SetFrameLevel(math.max(1, frame:GetFrameLevel() - 1))
-        frame.quiBackdrop:EnableMouse(false)
+    local backdrop = SkinBase.GetFrameData(frame, "backdrop")
+    if not backdrop then
+        backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        backdrop:SetAllPoints()
+        backdrop:SetFrameLevel(math.max(1, frame:GetFrameLevel() - 1))
+        backdrop:EnableMouse(false)
+        SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
     local core = GetCore()
-    local px = (core and core.GetPixelSize) and core:GetPixelSize(frame.quiBackdrop) or 1
-    frame.quiBackdrop:SetBackdrop({
+    local px = (core and core.GetPixelSize) and core:GetPixelSize(backdrop) or 1
+    backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px }
     })
-    frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
+    backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
 
     -- Border visibility controlled by showBorder setting (alpha 0 when hidden)
     local borderAlpha = showBorder and sa or 0
-    frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, borderAlpha)
+    backdrop:SetBackdropBorderColor(sr, sg, sb, borderAlpha)
 end
 
 ---------------------------------------------------------------------------
@@ -278,8 +280,8 @@ local function ApplyMPlusTimerSkin()
     end
 
     -- Store colors for refresh
-    MPlusTimer.frames.root.quiSkinned = true
-    MPlusTimer.frames.root.quiColors = colors
+    SkinBase.MarkSkinned(MPlusTimer.frames.root)
+    SkinBase.SetFrameData(MPlusTimer.frames.root, "colors", colors)
 end
 
 ---------------------------------------------------------------------------
@@ -290,7 +292,7 @@ local function RefreshMPlusTimerColors()
     if not MPlusTimer or not MPlusTimer.frames or not MPlusTimer.frames.root then
         return
     end
-    if not MPlusTimer.frames.root.quiSkinned then return end
+    if not SkinBase.IsSkinned(MPlusTimer.frames.root) then return end
 
     -- Re-apply full skin to pick up new contrast colors
     ApplyMPlusTimerSkin()
