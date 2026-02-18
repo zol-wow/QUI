@@ -315,7 +315,6 @@ local function PatchLibKeyBoundForMidnight()
     end
 
     -- Override SetKey: use our frameState binding command when button lacks SetKey
-    local origSetKey = Binder.SetKey
     function Binder:SetKey(button, key)
         if InCombatLockdown() then
             UIErrorsFrame:AddMessage(LibKeyBound.L.CannotBindInCombat, 1, 0.3, 0.3, 1, UIERRORS_HOLD_TIME)
@@ -345,7 +344,6 @@ local function PatchLibKeyBoundForMidnight()
     end
 
     -- Override ClearBindings: use our frameState binding command
-    local origClearBindings = Binder.ClearBindings
     function Binder:ClearBindings(button)
         if InCombatLockdown() then
             UIErrorsFrame:AddMessage(LibKeyBound.L.CannotBindInCombat, 1, 0.3, 0.3, 1, UIERRORS_HOLD_TIME)
@@ -403,6 +401,7 @@ local function PatchLibKeyBoundForMidnight()
         if command then
             local action = GetBindingAction(key)
             if action and action ~= "" and action ~= command then
+                SetBinding(key, nil)
                 local msg = format(LibKeyBound.L.UnboundKey, GetBindingText(key), action)
                 UIErrorsFrame:AddMessage(msg, 1, 0.82, 0, 1, UIERRORS_HOLD_TIME)
             end
@@ -411,26 +410,28 @@ local function PatchLibKeyBoundForMidnight()
         end
     end
 
-    -- Patch LibKeyBound:Set to provide hotkey text from our state
+    -- Wrap LibKeyBound:Set — only override for buttons tracked in our frameState;
+    -- delegate to the original for everything else so future library updates apply.
     local origSet = LibKeyBound.Set
     function LibKeyBound:Set(button, ...)
-        if button and self:IsShown() and not InCombatLockdown() then
+        -- If the button has no entry in our state, let the original handle it
+        if not button or not GetBindingCommand(button) then
+            return origSet(self, button, ...)
+        end
+
+        if self:IsShown() and not InCombatLockdown() then
             local bindFrame = self.frame
             if bindFrame then
                 bindFrame.button = button
                 bindFrame:SetAllPoints(button)
 
-                -- Get hotkey text: prefer button method, fall back to our state
+                -- Get hotkey text from our external state
                 local hotkeyText
-                if button.GetHotkey then
-                    hotkeyText = button:GetHotkey()
-                else
-                    local cmd = GetBindingCommand(button)
-                    if cmd then
-                        local key = GetBindingKey(cmd)
-                        if key then
-                            hotkeyText = self:ToShortKey(key)
-                        end
+                local cmd = GetBindingCommand(button)
+                if cmd then
+                    local key = GetBindingKey(cmd)
+                    if key then
+                        hotkeyText = self:ToShortKey(key)
                     end
                 end
 
@@ -449,10 +450,16 @@ local function PatchLibKeyBoundForMidnight()
         end
     end
 
-    -- Patch Binder:OnEnter to show action name from our state
+    -- Wrap Binder:OnEnter — only override for our frameState buttons; delegate
+    -- to the original for everything else.
+    local origOnEnter = Binder.OnEnter
     function Binder:OnEnter()
         local button = self.button
-        if button and not InCombatLockdown() then
+        if not button or not GetBindingCommand(button) then
+            return origOnEnter(self)
+        end
+
+        if not InCombatLockdown() then
             if self:GetRight() >= (GetScreenWidth() / 2) then
                 GameTooltip:SetOwner(self, "ANCHOR_LEFT")
             else
@@ -460,13 +467,7 @@ local function PatchLibKeyBoundForMidnight()
             end
 
             local command = GetBindingCommand(button)
-            if command then
-                GameTooltip:SetText(command, 1, 1, 1)
-            elseif button.GetActionName then
-                GameTooltip:SetText(button:GetActionName(), 1, 1, 1)
-            else
-                GameTooltip:SetText(button:GetName(), 1, 1, 1)
-            end
+            GameTooltip:SetText(command, 1, 1, 1)
 
             local bindings = self:GetBindings(button)
             if bindings and bindings ~= "" then
@@ -2339,19 +2340,25 @@ end
 local function SetupEditModeHooks()
     if not EditModeManagerFrame then return end
 
+    -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
+    -- secure execution context. Synchronous addon code here taints the chain.
     -- Show movers when entering Edit Mode
     hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-        local extraSettings = GetExtraButtonDB("extraActionButton")
-        local zoneSettings = GetExtraButtonDB("zoneAbility")
-        -- Only show movers if at least one extra button feature is enabled
-        if (extraSettings and extraSettings.enabled) or (zoneSettings and zoneSettings.enabled) then
-            ShowExtraButtonMovers()
-        end
+        C_Timer.After(0, function()
+            local extraSettings = GetExtraButtonDB("extraActionButton")
+            local zoneSettings = GetExtraButtonDB("zoneAbility")
+            -- Only show movers if at least one extra button feature is enabled
+            if (extraSettings and extraSettings.enabled) or (zoneSettings and zoneSettings.enabled) then
+                ShowExtraButtonMovers()
+            end
+        end)
     end)
 
     -- Hide movers when exiting Edit Mode
     hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        HideExtraButtonMovers()
+        C_Timer.After(0, function()
+            HideExtraButtonMovers()
+        end)
     end)
 end
 

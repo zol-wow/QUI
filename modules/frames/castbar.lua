@@ -76,7 +76,7 @@ end
 -- Simpler approach: trust type check, don't over-validate
 local function SafeToNumber(v)
     if v == nil then return nil end
-    if type(IsSecretValue) == "function" and IsSecretValue(v) then
+    if IsSecretValue(v) then
         return nil
     end
     -- If already a number, return it directly (trust type check)
@@ -157,7 +157,25 @@ local CHANNEL_TICK_SUBEVENTS = {
 
 local function NormalizeChannelTickSpellID(spellID)
     if not spellID then return nil end
-    return CHANNEL_TICK_SPELL_ALIASES[spellID] or spellID
+    if IsSecretValue(spellID) then
+        return nil
+    end
+    local safeSpellID = SafeToNumber(spellID)
+    if not safeSpellID then
+        return nil
+    end
+    return CHANNEL_TICK_SPELL_ALIASES[safeSpellID] or safeSpellID
+end
+
+local function NormalizeChannelTickGUID(guid)
+    if not guid then return nil end
+    if IsSecretValue(guid) then
+        return nil
+    end
+    if type(guid) ~= "string" or guid == "" then
+        return nil
+    end
+    return guid
 end
 
 ---------------------------------------------------------------------------
@@ -962,12 +980,15 @@ end
 
 local function StopChannelTickObservation(bar)
     if not bar then return end
-    local guid = bar.channelTickObservationGUID
+    local guid = NormalizeChannelTickGUID(bar.channelTickObservationGUID)
     if not guid then
         local unit = bar.unit
-        guid = unit and UnitGUID(unit)
+        guid = unit and NormalizeChannelTickGUID(UnitGUID(unit))
     end
-    if not guid then return end
+    if not guid then
+        bar.channelTickObservationGUID = nil
+        return
+    end
 
     local observation = CHANNEL_TICK_ACTIVE_BY_GUID[guid]
     if observation then
@@ -980,6 +1001,7 @@ end
 local function OnChannelTickCombatLogEvent()
     local _, subEvent, _, sourceGUID, _, _, _, _, _, _, _, spellID, spellName = CombatLogGetCurrentEventInfo()
     if not CHANNEL_TICK_SUBEVENTS[subEvent] then return end
+    sourceGUID = NormalizeChannelTickGUID(sourceGUID)
     if not sourceGUID then return end
 
     local observation = CHANNEL_TICK_ACTIVE_BY_GUID[sourceGUID]
@@ -1025,7 +1047,7 @@ end
 
 local function StartChannelTickObservation(bar, spellID, spellName, startTime, endTime)
     if not bar or not bar.unit then return end
-    local sourceGUID = UnitGUID(bar.unit)
+    local sourceGUID = NormalizeChannelTickGUID(UnitGUID(bar.unit))
     if not sourceGUID then return end
 
     EnsureChannelTickEventRegistration()
@@ -3766,15 +3788,21 @@ end
 C_Timer.After(0.5, function()
     if EditModeManagerFrame and not QUICore._castbarEditModeHooked then
         QUICore._castbarEditModeHooked = true
+        -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
+        -- secure execution context. Synchronous addon code here taints the chain.
         hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-            if not InCombatLockdown() then
-                EnableCastbarEditMode()
-            end
+            C_Timer.After(0, function()
+                if not InCombatLockdown() then
+                    EnableCastbarEditMode()
+                end
+            end)
         end)
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-            if not InCombatLockdown() then
-                DisableCastbarEditMode()
-            end
+            C_Timer.After(0, function()
+                if not InCombatLockdown() then
+                    DisableCastbarEditMode()
+                end
+            end)
         end)
 
         -- Hook PlayerCastingBarFrame visibility changes to sync with QUI castbar
