@@ -33,6 +33,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.37.2 - 2026-02-18
+
+### Fixed
+- fixed castbar related lua errors introduced with the castbar ticks feature
 ## v2.37.1 - 2026-02-18
 
 ### Changed
