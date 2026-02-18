@@ -33,33 +33,12 @@ local clockTicker = nil
 local coordsTicker = nil
 
 ---=================================================================================
---- BLIZZARD BUG WORKAROUND: Indicator frames need parent with Layout method
---- When reparenting IndicatorFrame children, the new parent needs Layout method.
---- We ensure Minimap has a Layout method (hiddenButtonParent gets one below).
+--- BLIZZARD BUG WORKAROUND: Removed Layout method writes on Blizzard frames
+--- Writing `Minimap.Layout = function() end` or similar on Blizzard frames taints
+--- them in Midnight's taint model. The Layout method is only needed on parent
+--- frames that receive reparented children — our own hiddenButtonParent (defined
+--- below in BUTTON VISIBILITY) provides this safely since it's our own frame.
 ---=================================================================================
-do
-    local function EnsureLayoutMethods()
-        -- Ensure Minimap has Layout method
-        if Minimap and not Minimap.Layout then
-            Minimap.Layout = function() end
-        end
-        -- Ensure IndicatorFrame has Layout method
-        if MinimapCluster and MinimapCluster.IndicatorFrame and not MinimapCluster.IndicatorFrame.Layout then
-            MinimapCluster.IndicatorFrame.Layout = function() end
-        end
-    end
-    
-    -- Apply on login and entering world
-    local frame = CreateFrame("Frame")
-    frame:RegisterEvent("PLAYER_LOGIN")
-    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    frame:SetScript("OnEvent", function(self, event)
-        EnsureLayoutMethods()
-    end)
-    
-    -- Try immediately
-    EnsureLayoutMethods()
-end
 
 ---=================================================================================
 --- HELPER FUNCTIONS
@@ -847,8 +826,12 @@ hiddenButtonParent:Hide()
 hiddenButtonParent.Layout = function() end  -- Prevent nil errors when Blizzard code calls Layout on children
 
 -- Hook Show() on zoom buttons to prevent Blizzard from re-showing them
-if Minimap.ZoomIn and not Minimap.ZoomIn._QUI_ShowHooked then
-    Minimap.ZoomIn._QUI_ShowHooked = true
+-- Use local guard variables instead of writing properties to Blizzard frames
+local zoomInShowHooked = false
+local zoomOutShowHooked = false
+
+if Minimap.ZoomIn and not zoomInShowHooked then
+    zoomInShowHooked = true
     hooksecurefunc(Minimap.ZoomIn, "Show", function(self)
         local s = GetSettings()
         if s and not s.showZoomButtons then
@@ -857,8 +840,8 @@ if Minimap.ZoomIn and not Minimap.ZoomIn._QUI_ShowHooked then
     end)
 end
 
-if Minimap.ZoomOut and not Minimap.ZoomOut._QUI_ShowHooked then
-    Minimap.ZoomOut._QUI_ShowHooked = true
+if Minimap.ZoomOut and not zoomOutShowHooked then
+    zoomOutShowHooked = true
     hooksecurefunc(Minimap.ZoomOut, "Show", function(self)
         local s = GetSettings()
         if s and not s.showZoomButtons then
@@ -897,12 +880,12 @@ local function UpdateButtonVisibility()
     -- Mail indicator - position at bottom left
     if MinimapCluster and MinimapCluster.IndicatorFrame and MinimapCluster.IndicatorFrame.MailFrame then
         local mailFrame = MinimapCluster.IndicatorFrame.MailFrame
-        
-        -- Ensure frame has Layout method (Blizzard's event handlers call self:Layout())
-        if not mailFrame.Layout then
-            mailFrame.Layout = function() end
-        end
-        
+
+        -- NOTE: Removed direct `mailFrame.Layout = function() end` write which taints
+        -- the Blizzard frame. hiddenButtonParent already has Layout defined on it,
+        -- and when mailFrame is reparented there, Blizzard's Layout calls on the
+        -- child frame itself should be safe since MailFrame typically has its own Layout.
+
         if settings.showMail then
             mailFrame:SetParent(Minimap)
             mailFrame:ClearAllPoints()
@@ -918,12 +901,10 @@ local function UpdateButtonVisibility()
     -- Crafting order indicator - position next to mail
     if MinimapCluster and MinimapCluster.IndicatorFrame and MinimapCluster.IndicatorFrame.CraftingOrderFrame then
         local craftingFrame = MinimapCluster.IndicatorFrame.CraftingOrderFrame
-        
-        -- Ensure frame has Layout method (Blizzard's event handlers call self:Layout())
-        if not craftingFrame.Layout then
-            craftingFrame.Layout = function() end
-        end
-        
+
+        -- NOTE: Removed direct `craftingFrame.Layout = function() end` write which
+        -- taints the Blizzard frame. See mailFrame comment above.
+
         if settings.showCraftingOrder then
             craftingFrame:SetParent(Minimap)
             craftingFrame:ClearAllPoints()

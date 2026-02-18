@@ -169,7 +169,7 @@ _G.QUI_ToggleReadyCheckMover = ToggleMover
 
 -- Style a button with QUI look
 local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
-    if not button or button.quiSkinned then return end
+    if not button or SkinBase.IsSkinned(button) then return end
 
     -- Hide default button textures
     if button.Left then button.Left:SetAlpha(0) end
@@ -197,20 +197,24 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     local btnBgb = math.min(bgb + 0.07, 1)
     SkinBase.CreateBackdrop(button, sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
 
-    -- Store colors for hover effects
-    button.quiNormalBg = { btnBgr, btnBgg, btnBgb, bga }
-    button.quiHoverBg = { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga }
-    button.quiBorderColor = { sr, sg, sb, 1 }
+    -- Store colors for hover effects (in local weak-keyed table via SkinBase)
+    SkinBase.SetFrameData(button, "normalBg", { btnBgr, btnBgg, btnBgb, bga })
+    SkinBase.SetFrameData(button, "hoverBg", { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga })
+    SkinBase.SetFrameData(button, "borderColor", { sr, sg, sb, 1 })
 
     -- Hover effects
     button:HookScript("OnEnter", function(self)
-        if self.quiBackdrop and self.quiHoverBg then
-            self.quiBackdrop:SetBackdropColor(unpack(self.quiHoverBg))
+        local backdrop = SkinBase.GetBackdrop(self)
+        local hoverBg = SkinBase.GetFrameData(self, "hoverBg")
+        if backdrop and hoverBg then
+            backdrop:SetBackdropColor(unpack(hoverBg))
         end
     end)
     button:HookScript("OnLeave", function(self)
-        if self.quiBackdrop and self.quiNormalBg then
-            self.quiBackdrop:SetBackdropColor(unpack(self.quiNormalBg))
+        local backdrop = SkinBase.GetBackdrop(self)
+        local normalBg = SkinBase.GetFrameData(self, "normalBg")
+        if backdrop and normalBg then
+            backdrop:SetBackdropColor(unpack(normalBg))
         end
     end)
 
@@ -221,23 +225,24 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
         text:SetTextColor(0.9, 0.9, 0.9, 1)
     end
 
-    button.quiSkinned = true
+    SkinBase.MarkSkinned(button)
 end
 
 -- Update button colors (for live refresh)
 local function RefreshButtonColors(button, sr, sg, sb, bgr, bgg, bgb, bga)
-    if not button or not button.quiBackdrop then return end
+    local backdrop = button and SkinBase.GetBackdrop(button)
+    if not backdrop then return end
 
     local btnBgr = math.min(bgr + 0.07, 1)
     local btnBgg = math.min(bgg + 0.07, 1)
     local btnBgb = math.min(bgb + 0.07, 1)
 
-    button.quiNormalBg = { btnBgr, btnBgg, btnBgb, bga }
-    button.quiHoverBg = { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga }
-    button.quiBorderColor = { sr, sg, sb, 1 }
+    SkinBase.SetFrameData(button, "normalBg", { btnBgr, btnBgg, btnBgb, bga })
+    SkinBase.SetFrameData(button, "hoverBg", { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga })
+    SkinBase.SetFrameData(button, "borderColor", { sr, sg, sb, 1 })
 
-    button.quiBackdrop:SetBackdropColor(btnBgr, btnBgg, btnBgb, bga)
-    button.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, 1)
+    backdrop:SetBackdropColor(btnBgr, btnBgg, btnBgb, bga)
+    backdrop:SetBackdropBorderColor(sr, sg, sb, 1)
 end
 
 ---------------------------------------------------------------------------
@@ -303,7 +308,7 @@ local function SkinReadyCheckFrame()
 
     local frame = _G.ReadyCheckFrame
     local listenerFrame = _G.ReadyCheckListenerFrame
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     -- Get colors
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "readyCheck")
@@ -315,8 +320,8 @@ local function SkinReadyCheckFrame()
     local targetFrame = listenerFrame or frame
     SkinBase.CreateBackdrop(targetFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
-    -- Store reference on main frame for refresh
-    frame.quiBackdrop = targetFrame.quiBackdrop
+    -- Store backdrop reference on main frame for refresh (via SkinBase to avoid taint)
+    SkinBase.SetFrameData(frame, "backdrop", SkinBase.GetBackdrop(targetFrame))
 
     -- Skin Yes/No buttons and re-center them
     local yesButton = _G.ReadyCheckFrameYesButton
@@ -343,13 +348,14 @@ local function SkinReadyCheckFrame()
     end
 
     -- Create custom title (hide Blizzard's, make our own)
-    if not frame.quiTitle then
-        frame.quiTitle = targetFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        frame.quiTitle:SetPoint("TOP", targetFrame, "TOP", 0, -8)
-        frame.quiTitle:SetFont(STANDARD_TEXT_FONT, 13, FONT_FLAGS)
+    if not SkinBase.GetFrameData(frame, "title") then
+        local title = targetFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOP", targetFrame, "TOP", 0, -8)
+        title:SetFont(STANDARD_TEXT_FONT, 13, FONT_FLAGS)
+        SkinBase.SetFrameData(frame, "title", title)
     end
-    frame.quiTitle:SetText("Ready Check")
-    frame.quiTitle:SetTextColor(sr, sg, sb, 1)  -- Use skin color for title
+    SkinBase.GetFrameData(frame, "title"):SetText("Ready Check")
+    SkinBase.GetFrameData(frame, "title"):SetTextColor(sr, sg, sb, 1)  -- Use skin color for title
 
     -- Hook OnShow to reapply hiding and restore position (Blizzard may reset)
     frame:HookScript("OnShow", function(self)
@@ -366,12 +372,12 @@ local function SkinReadyCheckFrame()
     frame:SetMovable(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
-        if self.quiUnlocked then
+        if SkinBase.GetFrameData(self, "unlocked") then
             self:StartMoving()
         end
     end)
     frame:SetScript("OnDragStop", function(self)
-        if self.quiUnlocked then
+        if SkinBase.GetFrameData(self, "unlocked") then
             self:StopMovingOrSizing()
             -- Save position (snapped to pixel grid)
             if not Addon or not Addon.SnapFramePosition then
@@ -388,7 +394,7 @@ local function SkinReadyCheckFrame()
         end
     end)
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 ---------------------------------------------------------------------------
@@ -397,20 +403,22 @@ end
 
 local function RefreshReadyCheckColors()
     local frame = _G.ReadyCheckFrame
-    if not frame or not frame.quiSkinned then return end
+    if not frame or not SkinBase.IsSkinned(frame) then return end
 
     local settings = GetSettings()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "readyCheck")
 
     -- Update main frame backdrop
-    if frame.quiBackdrop then
-        frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local backdrop = SkinBase.GetFrameData(frame, "backdrop")
+    if backdrop then
+        backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
+        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Update title color
-    if frame.quiTitle then
-        frame.quiTitle:SetTextColor(sr, sg, sb, 1)
+    local title = SkinBase.GetFrameData(frame, "title")
+    if title then
+        title:SetTextColor(sr, sg, sb, 1)
     end
 
     -- Update buttons

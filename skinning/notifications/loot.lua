@@ -5,6 +5,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 local LSM = LibStub("LibSharedMedia-3.0")
 
 local tinsert, tremove = tinsert, tremove
@@ -808,19 +809,21 @@ local function SkinGroupLootHistoryFrame()
     end
 
     -- Apply QUI backdrop
-    if not HistoryFrame.quiBackdrop then
-        HistoryFrame.quiBackdrop = CreateFrame("Frame", nil, HistoryFrame, "BackdropTemplate")
-        HistoryFrame.quiBackdrop:SetAllPoints()
-        HistoryFrame.quiBackdrop:SetFrameLevel(HistoryFrame:GetFrameLevel())
-        local hfPx = QUICore:GetPixelSize(HistoryFrame.quiBackdrop)
-        HistoryFrame.quiBackdrop:SetBackdrop({
+    local hfBd = SkinBase.GetFrameData(HistoryFrame, "backdrop")
+    if not hfBd then
+        hfBd = CreateFrame("Frame", nil, HistoryFrame, "BackdropTemplate")
+        hfBd:SetAllPoints()
+        hfBd:SetFrameLevel(HistoryFrame:GetFrameLevel())
+        local hfPx = QUICore:GetPixelSize(hfBd)
+        hfBd:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = hfPx,
         })
+        SkinBase.SetFrameData(HistoryFrame, "backdrop", hfBd)
     end
-    HistoryFrame.quiBackdrop:SetBackdropColor(unpack(bgColor))
-    HistoryFrame.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
+    hfBd:SetBackdropColor(unpack(bgColor))
+    hfBd:SetBackdropBorderColor(unpack(borderColor))
 
     -- Style the timer bar
     local Timer = HistoryFrame.Timer
@@ -862,17 +865,19 @@ local function SkinGroupLootHistoryFrame()
     if ResizeButton then
         if ResizeButton.NineSlice then ResizeButton.NineSlice:SetAlpha(0) end
 
-        if not ResizeButton.quiBackdrop then
-            ResizeButton.quiBackdrop = CreateFrame("Frame", nil, ResizeButton, "BackdropTemplate")
-            ResizeButton.quiBackdrop:SetAllPoints()
-            local rbPx = QUICore:GetPixelSize(ResizeButton.quiBackdrop)
-            ResizeButton.quiBackdrop:SetBackdrop({
+        local rbBd = SkinBase.GetFrameData(ResizeButton, "backdrop")
+        if not rbBd then
+            rbBd = CreateFrame("Frame", nil, ResizeButton, "BackdropTemplate")
+            rbBd:SetAllPoints()
+            local rbPx = QUICore:GetPixelSize(rbBd)
+            rbBd:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
                 edgeSize = rbPx,
             })
-            ResizeButton.quiBackdrop:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
-            ResizeButton.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
+            rbBd:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
+            rbBd:SetBackdropBorderColor(unpack(borderColor))
+            SkinBase.SetFrameData(ResizeButton, "backdrop", rbBd)
 
             -- Add resize text
             ResizeButton.quiText = ResizeButton:CreateFontString(nil, "OVERLAY")
@@ -907,9 +912,10 @@ function Loot:ApplyLootHistoryTheme()
     local enabled = db.lootResults and db.lootResults.enabled ~= false
 
     -- If disabled, restore Blizzard look
+    local themeBd = SkinBase.GetFrameData(HistoryFrame, "backdrop")
     if not enabled then
-        if HistoryFrame.quiBackdrop then
-            HistoryFrame.quiBackdrop:Hide()
+        if themeBd then
+            themeBd:Hide()
         end
         if HistoryFrame.NineSlice then
             HistoryFrame.NineSlice:SetAlpha(1)
@@ -922,8 +928,9 @@ function Loot:ApplyLootHistoryTheme()
             if HistoryFrame.Timer.Border then HistoryFrame.Timer.Border:SetAlpha(1) end
             if HistoryFrame.Timer.quiBg then HistoryFrame.Timer.quiBg:Hide() end
         end
-        if HistoryFrame.ResizeButton and HistoryFrame.ResizeButton.quiBackdrop then
-            HistoryFrame.ResizeButton.quiBackdrop:Hide()
+        local disRbBd = HistoryFrame.ResizeButton and SkinBase.GetFrameData(HistoryFrame.ResizeButton, "backdrop")
+        if disRbBd then
+            disRbBd:Hide()
             if HistoryFrame.ResizeButton.NineSlice then
                 HistoryFrame.ResizeButton.NineSlice:SetAlpha(1)
             end
@@ -935,17 +942,17 @@ function Loot:ApplyLootHistoryTheme()
     end
 
     -- Enabled - apply QUI skin
-    if not HistoryFrame.quiBackdrop then return end
+    if not themeBd then return end
 
     local bgColor, borderColor, textColor = GetThemeColors()
 
     -- Show our backdrop, hide Blizzard's
-    HistoryFrame.quiBackdrop:Show()
+    themeBd:Show()
     if HistoryFrame.NineSlice then HistoryFrame.NineSlice:SetAlpha(0) end
     if HistoryFrame.Bg then HistoryFrame.Bg:SetAlpha(0) end
 
-    HistoryFrame.quiBackdrop:SetBackdropColor(unpack(bgColor))
-    HistoryFrame.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
+    themeBd:SetBackdropColor(unpack(bgColor))
+    themeBd:SetBackdropBorderColor(unpack(borderColor))
 
     if HistoryFrame.Timer then
         if HistoryFrame.Timer.Background then HistoryFrame.Timer.Background:SetAlpha(0) end
@@ -956,13 +963,14 @@ function Loot:ApplyLootHistoryTheme()
         end
     end
 
-    if HistoryFrame.ResizeButton and HistoryFrame.ResizeButton.quiBackdrop then
-        HistoryFrame.ResizeButton.quiBackdrop:Show()
+    local enRbBd = HistoryFrame.ResizeButton and SkinBase.GetFrameData(HistoryFrame.ResizeButton, "backdrop")
+    if enRbBd then
+        enRbBd:Show()
         if HistoryFrame.ResizeButton.NineSlice then
             HistoryFrame.ResizeButton.NineSlice:SetAlpha(0)
         end
-        HistoryFrame.ResizeButton.quiBackdrop:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
-        HistoryFrame.ResizeButton.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
+        enRbBd:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
+        enRbBd:SetBackdropBorderColor(unpack(borderColor))
         if HistoryFrame.ResizeButton.quiText then
             HistoryFrame.ResizeButton.quiText:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
             HistoryFrame.ResizeButton.quiText:Show()

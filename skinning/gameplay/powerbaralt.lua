@@ -204,9 +204,9 @@ local function CreateQUIAltPowerBar()
     bar.text:SetJustifyH("CENTER")
 
     -- Store colors for refresh and mark as skinned
-    bar.quiSkinColor = { sr, sg, sb, sa }
-    bar.quiBgColor = { bgr, bgg, bgb, bga }
-    bar.quiSkinned = true
+    SkinBase.SetFrameData(bar, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(bar, "bgColor", { bgr, bgg, bgb, bga })
+    SkinBase.MarkSkinned(bar)
 
     -- Tooltip support
     bar:EnableMouse(true)
@@ -265,8 +265,8 @@ local function RefreshPowerBarAltColors()
     QUIAltPowerBar.backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     QUIAltPowerBar.backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
 
-    QUIAltPowerBar.quiSkinColor = { sr, sg, sb, sa }
-    QUIAltPowerBar.quiBgColor = { bgr, bgg, bgb, bga }
+    SkinBase.SetFrameData(QUIAltPowerBar, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(QUIAltPowerBar, "bgColor", { bgr, bgg, bgb, bga })
 
     -- Update mover colors if it exists
     if powerBarMover then

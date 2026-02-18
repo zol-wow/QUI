@@ -186,10 +186,16 @@ end
 -- Store original backdrops for unskinning
 local originalBackdrops = {}
 
+-- TAINT SAFETY: Track skinned state in local tables, NOT on Blizzard frames.
+-- Writing addon properties (quiSkinned, quiColors, etc.) to secure frames
+-- taints them in Midnight's taint model.
+local skinnedTooltips = setmetatable({}, { __mode = "k" })   -- tooltip → { colors = {...} }
+local hookedTooltips = setmetatable({}, { __mode = "k" })    -- tooltip → true (OnShow hooked)
+
 -- Apply QUI skin to a tooltip frame
 local function SkinTooltip(tooltip)
     if not tooltip then return end
-    if tooltip.quiSkinned then return end
+    if skinnedTooltips[tooltip] then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
@@ -202,9 +208,11 @@ local function SkinTooltip(tooltip)
         end
     end
 
-    -- Apply BackdropTemplate if needed
+    -- Skip tooltips that don't have BackdropTemplate — Mixin() from addon context
+    -- would taint the tooltip permanently in Midnight's taint model.
+    -- In 12.0, virtually all tooltips already have BackdropTemplate.
     if not tooltip.SetBackdrop then
-        Mixin(tooltip, BackdropTemplateMixin)
+        return
     end
 
     -- Set the QUI backdrop
@@ -217,13 +225,12 @@ local function SkinTooltip(tooltip)
         tooltip.NineSlice:SetAlpha(0)
     end
 
-    tooltip.quiSkinned = true
-    tooltip.quiColors = { sr, sg, sb, sa, bgr, bgg, bgb, bga }
+    skinnedTooltips[tooltip] = { colors = { sr, sg, sb, sa, bgr, bgg, bgb, bga } }
 end
 
 -- Update colors on an already-skinned tooltip
 local function UpdateTooltipColors(tooltip)
-    if not tooltip or not tooltip.quiSkinned then return end
+    if not tooltip or not skinnedTooltips[tooltip] then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
 
@@ -234,19 +241,19 @@ local function UpdateTooltipColors(tooltip)
         tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
-    tooltip.quiColors = { sr, sg, sb, sa, bgr, bgg, bgb, bga }
+    skinnedTooltips[tooltip].colors = { sr, sg, sb, sa, bgr, bgg, bgb, bga }
 end
 
 -- Re-skin a tooltip (rebuild backdrop for thickness changes)
 local function ReskinTooltip(tooltip)
-    if not tooltip or not tooltip.quiSkinned then return end
+    if not tooltip or not skinnedTooltips[tooltip] then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
 
-    -- Apply BackdropTemplate if needed
+    -- Skip if no SetBackdrop — Mixin() from addon context taints (see SkinTooltip)
     if not tooltip.SetBackdrop then
-        Mixin(tooltip, BackdropTemplateMixin)
+        return
     end
 
     -- Rebuild backdrop with current thickness
@@ -254,7 +261,7 @@ local function ReskinTooltip(tooltip)
     tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
     tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
 
-    tooltip.quiColors = { sr, sg, sb, sa, bgr, bgg, bgb, bga }
+    skinnedTooltips[tooltip].colors = { sr, sg, sb, sa, bgr, bgg, bgb, bga }
 end
 
 -- List of tooltips to skin
@@ -272,7 +279,9 @@ local tooltipsToSkin = {
     "WorldMapCompareTooltip2",
     "SmallTextTooltip",
     "ReputationParagonTooltip",
-    "NamePlateTooltip",
+    -- NOTE: NamePlateTooltip intentionally omitted. Skinning it (Mixin,
+    -- SetBackdrop, property writes) taints the frame in Midnight's taint
+    -- model, causing nameplate errors (SetNamePlateHitTestFrame, etc.).
     "QueueStatusFrame",
     "FloatingGarrisonFollowerTooltip",
     "FloatingGarrisonFollowerAbilityTooltip",
@@ -304,7 +313,7 @@ end
 local function RefreshAllTooltipColors()
     for _, name in ipairs(tooltipsToSkin) do
         local tooltip = _G[name]
-        if tooltip and tooltip.quiSkinned then
+        if tooltip and skinnedTooltips[tooltip] then
             ReskinTooltip(tooltip)
         end
     end
@@ -322,13 +331,13 @@ end
 
 -- Hook OnShow to ensure colors stay applied (some tooltips reset on show)
 local function HookTooltipOnShow(tooltip)
-    if not tooltip or tooltip.quiOnShowHooked then return end
+    if not tooltip or hookedTooltips[tooltip] then return end
 
     tooltip:HookScript("OnShow", function(self)
         ApplyTooltipFontSize()
         ApplyTooltipFontSizeToFrame(self)
         if not IsEnabled() then return end
-        if not self.quiSkinned then
+        if not skinnedTooltips[self] then
             SkinTooltip(self)
         else
             -- Re-apply colors in case they were reset
@@ -345,7 +354,7 @@ local function HookTooltipOnShow(tooltip)
         end
     end)
 
-    tooltip.quiOnShowHooked = true
+    hookedTooltips[tooltip] = true
 end
 
 -- Hook all tooltips for OnShow
@@ -380,7 +389,7 @@ local function SetupTooltipPostProcessor()
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
         ApplyTooltipFontSizeToFrame(tooltip)
-        if IsEnabled() and not tooltip.quiSkinned then
+        if IsEnabled() and not skinnedTooltips[tooltip] then
             SkinTooltip(tooltip)
         end
     end)
@@ -389,7 +398,7 @@ local function SetupTooltipPostProcessor()
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
         ApplyTooltipFontSizeToFrame(tooltip)
-        if IsEnabled() and not tooltip.quiSkinned then
+        if IsEnabled() and not skinnedTooltips[tooltip] then
             SkinTooltip(tooltip)
         end
     end)
@@ -398,7 +407,7 @@ local function SetupTooltipPostProcessor()
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
         ApplyTooltipFontSizeToFrame(tooltip)
-        if IsEnabled() and not tooltip.quiSkinned then
+        if IsEnabled() and not skinnedTooltips[tooltip] then
             SkinTooltip(tooltip)
         end
         -- Health bar hiding works independently of skinning

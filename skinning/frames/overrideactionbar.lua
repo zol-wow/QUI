@@ -33,23 +33,25 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, b
     end
 
     -- Create backdrop
-    if not button.quiBackdrop then
-        button.quiBackdrop = CreateFrame("Frame", nil, button, "BackdropTemplate")
-        button.quiBackdrop:SetPoint("TOPLEFT", -1, 1)
-        button.quiBackdrop:SetPoint("BOTTOMRIGHT", 1, -1)
-        button.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
-        button.quiBackdrop:EnableMouse(false)
+    local btnBd = SkinBase.GetFrameData(button, "backdrop")
+    if not btnBd then
+        btnBd = CreateFrame("Frame", nil, button, "BackdropTemplate")
+        btnBd:SetPoint("TOPLEFT", -1, 1)
+        btnBd:SetPoint("BOTTOMRIGHT", 1, -1)
+        btnBd:SetFrameLevel(button:GetFrameLevel())
+        btnBd:EnableMouse(false)
+        SkinBase.SetFrameData(button, "backdrop", btnBd)
     end
 
-    local px = QUICore:GetPixelSize(button.quiBackdrop)
-    button.quiBackdrop:SetBackdrop({
+    local px = QUICore:GetPixelSize(btnBd)
+    btnBd:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px }
     })
-    button.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
-    button.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    btnBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
+    btnBd:SetBackdropBorderColor(sr, sg, sb, sa)
 
     -- Hide default border/normal texture
     local normalTexture = button:GetNormalTexture()
@@ -61,8 +63,8 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, b
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- Trim edges
     end
 
-    button.quiSkinColor = { sr, sg, sb, sa }
-    button.quiStyled = true
+    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
+    SkinBase.MarkStyled(button)
 end
 
 -- Hide ALL Blizzard decorative elements
@@ -118,7 +120,7 @@ local function SkinOverrideActionBar()
     if not settings or not settings.skinOverrideActionBar then return end
 
     local bar = _G.OverrideActionBar
-    if not bar or bar.quiSkinned then return end
+    if not bar or SkinBase.IsSkinned(bar) then return end
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         pendingOverrideSkin = true
         return
@@ -138,22 +140,24 @@ local function SkinOverrideActionBar()
     bar:SetSize(totalWidth, totalHeight)
 
     -- Create main backdrop
-    if not bar.quiBackdrop then
-        bar.quiBackdrop = CreateFrame("Frame", nil, bar, "BackdropTemplate")
-        bar.quiBackdrop:SetAllPoints()
-        bar.quiBackdrop:SetFrameLevel(math.max(bar:GetFrameLevel() - 1, 0))
-        bar.quiBackdrop:EnableMouse(false)
+    local barBd = SkinBase.GetFrameData(bar, "backdrop")
+    if not barBd then
+        barBd = CreateFrame("Frame", nil, bar, "BackdropTemplate")
+        barBd:SetAllPoints()
+        barBd:SetFrameLevel(math.max(bar:GetFrameLevel() - 1, 0))
+        barBd:EnableMouse(false)
+        SkinBase.SetFrameData(bar, "backdrop", barBd)
     end
 
-    local barPx = QUICore:GetPixelSize(bar.quiBackdrop)
-    bar.quiBackdrop:SetBackdrop({
+    local barPx = QUICore:GetPixelSize(barBd)
+    barBd:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = barPx,
         insets = { left = barPx, right = barPx, top = barPx, bottom = barPx }
     })
-    bar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    bar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    barBd:SetBackdropColor(bgr, bgg, bgb, bga)
+    barBd:SetBackdropBorderColor(sr, sg, sb, sa)
 
     -- Style and reposition spell buttons
     for i = 1, 6 do
@@ -170,23 +174,25 @@ local function SkinOverrideActionBar()
         leaveBtn:ClearAllPoints()
         leaveBtn:SetPoint("LEFT", bar.SpellButton6, "RIGHT", BUTTON_SPACING + 4, 0)
 
-        if not leaveBtn.quiBackdrop then
-            leaveBtn.quiBackdrop = CreateFrame("Frame", nil, leaveBtn, "BackdropTemplate")
-            leaveBtn.quiBackdrop:SetPoint("TOPLEFT", -1, 1)
-            leaveBtn.quiBackdrop:SetPoint("BOTTOMRIGHT", 1, -1)
-            leaveBtn.quiBackdrop:SetFrameLevel(leaveBtn:GetFrameLevel())
-            leaveBtn.quiBackdrop:EnableMouse(false)
+        local leaveBd = SkinBase.GetFrameData(leaveBtn, "backdrop")
+        if not leaveBd then
+            leaveBd = CreateFrame("Frame", nil, leaveBtn, "BackdropTemplate")
+            leaveBd:SetPoint("TOPLEFT", -1, 1)
+            leaveBd:SetPoint("BOTTOMRIGHT", 1, -1)
+            leaveBd:SetFrameLevel(leaveBtn:GetFrameLevel())
+            leaveBd:EnableMouse(false)
+            SkinBase.SetFrameData(leaveBtn, "backdrop", leaveBd)
         end
 
-        local lbPx = QUICore:GetPixelSize(leaveBtn.quiBackdrop)
-        leaveBtn.quiBackdrop:SetBackdrop({
+        local lbPx = QUICore:GetPixelSize(leaveBd)
+        leaveBd:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = lbPx,
             insets = { left = lbPx, right = lbPx, top = lbPx, bottom = lbPx }
         })
-        leaveBtn.quiBackdrop:SetBackdropColor(0.6, 0.1, 0.1, 0.9)  -- Reddish for exit
-        leaveBtn.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        leaveBd:SetBackdropColor(0.6, 0.1, 0.1, 0.9)  -- Reddish for exit
+        leaveBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Style and reposition health bar (vertical, on the left)
@@ -202,23 +208,25 @@ local function SkinOverrideActionBar()
         healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
 
         -- Create backdrop for health bar
-        if not healthBar.quiBackdrop then
-            healthBar.quiBackdrop = CreateFrame("Frame", nil, healthBar, "BackdropTemplate")
-            healthBar.quiBackdrop:SetPoint("TOPLEFT", -1, 1)
-            healthBar.quiBackdrop:SetPoint("BOTTOMRIGHT", 1, -1)
-            healthBar.quiBackdrop:SetFrameLevel(healthBar:GetFrameLevel())
-            healthBar.quiBackdrop:EnableMouse(false)
+        local hbBd = SkinBase.GetFrameData(healthBar, "backdrop")
+        if not hbBd then
+            hbBd = CreateFrame("Frame", nil, healthBar, "BackdropTemplate")
+            hbBd:SetPoint("TOPLEFT", -1, 1)
+            hbBd:SetPoint("BOTTOMRIGHT", 1, -1)
+            hbBd:SetFrameLevel(healthBar:GetFrameLevel())
+            hbBd:EnableMouse(false)
+            SkinBase.SetFrameData(healthBar, "backdrop", hbBd)
         end
 
-        local hbPx = QUICore:GetPixelSize(healthBar.quiBackdrop)
-        healthBar.quiBackdrop:SetBackdrop({
+        local hbPx = QUICore:GetPixelSize(hbBd)
+        hbBd:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = hbPx,
             insets = { left = hbPx, right = hbPx, top = hbPx, bottom = hbPx }
         })
-        healthBar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        healthBar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        hbBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
+        hbBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Style and reposition power bar (vertical, on the right)
@@ -234,26 +242,28 @@ local function SkinOverrideActionBar()
         powerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
 
         -- Create backdrop for power bar
-        if not powerBar.quiBackdrop then
-            powerBar.quiBackdrop = CreateFrame("Frame", nil, powerBar, "BackdropTemplate")
-            powerBar.quiBackdrop:SetPoint("TOPLEFT", -1, 1)
-            powerBar.quiBackdrop:SetPoint("BOTTOMRIGHT", 1, -1)
-            powerBar.quiBackdrop:SetFrameLevel(powerBar:GetFrameLevel())
-            powerBar.quiBackdrop:EnableMouse(false)
+        local pbBd = SkinBase.GetFrameData(powerBar, "backdrop")
+        if not pbBd then
+            pbBd = CreateFrame("Frame", nil, powerBar, "BackdropTemplate")
+            pbBd:SetPoint("TOPLEFT", -1, 1)
+            pbBd:SetPoint("BOTTOMRIGHT", 1, -1)
+            pbBd:SetFrameLevel(powerBar:GetFrameLevel())
+            pbBd:EnableMouse(false)
+            SkinBase.SetFrameData(powerBar, "backdrop", pbBd)
         end
 
-        local pbPx = QUICore:GetPixelSize(powerBar.quiBackdrop)
-        powerBar.quiBackdrop:SetBackdrop({
+        local pbPx = QUICore:GetPixelSize(pbBd)
+        pbBd:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = pbPx,
             insets = { left = pbPx, right = pbPx, top = pbPx, bottom = pbPx }
         })
-        powerBar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        powerBar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        pbBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
+        pbBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
-    bar.quiSkinned = true
+    SkinBase.MarkSkinned(bar)
 
     -- BUG-005: Reset MicroMenu to normal position after skinning
     -- Blizzard's UpdateMicroButtons() positions MicroMenu using hardcoded offsets (x=648+)
@@ -272,43 +282,48 @@ end
 -- Refresh colors
 local function RefreshOverrideActionBarColors()
     local bar = _G.OverrideActionBar
-    if not bar or not bar.quiSkinned then return end
+    if not bar or not SkinBase.IsSkinned(bar) then return end
 
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "overrideActionBar")
 
     -- Update main backdrop
-    if bar.quiBackdrop then
-        bar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        bar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local mainBd = SkinBase.GetFrameData(bar, "backdrop")
+    if mainBd then
+        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
+        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Update spell buttons
     for i = 1, 6 do
         local button = bar["SpellButton" .. i]
-        if button and button.quiBackdrop then
-            button.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
-            button.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-            button.quiSkinColor = { sr, sg, sb, sa }
+        local spellBd = button and SkinBase.GetFrameData(button, "backdrop")
+        if spellBd then
+            spellBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
+            spellBd:SetBackdropBorderColor(sr, sg, sb, sa)
+            SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
         end
     end
 
     -- Update leave button
-    if bar.LeaveButton and bar.LeaveButton.quiBackdrop then
-        bar.LeaveButton.quiBackdrop:SetBackdropColor(0.6, 0.1, 0.1, 0.9)
-        bar.LeaveButton.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local leaveBd = bar.LeaveButton and SkinBase.GetFrameData(bar.LeaveButton, "backdrop")
+    if leaveBd then
+        leaveBd:SetBackdropColor(0.6, 0.1, 0.1, 0.9)
+        leaveBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Update health bar
-    if bar.healthBar and bar.healthBar.quiBackdrop then
-        bar.healthBar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        bar.healthBar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local healthBd = bar.healthBar and SkinBase.GetFrameData(bar.healthBar, "backdrop")
+    if healthBd then
+        healthBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
+        healthBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Update power bar
-    if bar.powerBar and bar.powerBar.quiBackdrop then
-        bar.powerBar.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        bar.powerBar.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local powerBd = bar.powerBar and SkinBase.GetFrameData(bar.powerBar, "backdrop")
+    if powerBd then
+        powerBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
+        powerBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 end
 
@@ -321,7 +336,7 @@ _G.QUI_RefreshOverrideActionBarColors = RefreshOverrideActionBarColors
 
 local function SetupOverrideBarHooks()
     local bar = _G.OverrideActionBar
-    if not bar or bar.quiHooked then return end
+    if not bar or SkinBase.GetFrameData(bar, "hooked") then return end
 
     -- Hook OnShow with delay to let Blizzard finish setup
     bar:HookScript("OnShow", function()
@@ -339,7 +354,7 @@ local function SetupOverrideBarHooks()
     -- Use C_Timer.After(0) to break taint chain from secure Blizzard code
     if bar.UpdateMicroButtons then
         hooksecurefunc(bar, "UpdateMicroButtons", function()
-            if bar.quiSkinned and MicroMenu and MicroMenu.ResetMicroMenuPosition then
+            if SkinBase.IsSkinned(bar) and MicroMenu and MicroMenu.ResetMicroMenuPosition then
                 C_Timer.After(0, function()
                     if not InCombatLockdown() then
                         MicroMenu:ResetMicroMenuPosition()
@@ -349,7 +364,7 @@ local function SetupOverrideBarHooks()
         end)
     end
 
-    bar.quiHooked = true
+    SkinBase.SetFrameData(bar, "hooked", true)
 end
 
 local frame = CreateFrame("Frame")
