@@ -19,15 +19,17 @@ local FONT_FLAGS = "OUTLINE"
 local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button then return end
 
-    if not button.quiBackdrop then
-        button.quiBackdrop = CreateFrame("Frame", nil, button, "BackdropTemplate")
-        button.quiBackdrop:SetAllPoints()
-        button.quiBackdrop:SetFrameLevel(button:GetFrameLevel())
-        button.quiBackdrop:EnableMouse(false)
+    local btnBd = SkinBase.GetFrameData(button, "backdrop")
+    if not btnBd then
+        btnBd = CreateFrame("Frame", nil, button, "BackdropTemplate")
+        btnBd:SetAllPoints()
+        btnBd:SetFrameLevel(button:GetFrameLevel())
+        btnBd:EnableMouse(false)
+        SkinBase.SetFrameData(button, "backdrop", btnBd)
     end
 
-    local btnPx = SkinBase.GetPixelSize(button.quiBackdrop, 1)
-    button.quiBackdrop:SetBackdrop({
+    local btnPx = SkinBase.GetPixelSize(btnBd, 1)
+    btnBd:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = btnPx,
@@ -37,8 +39,8 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local btnBgR = math.min(bgr + 0.07, 1)
     local btnBgG = math.min(bgg + 0.07, 1)
     local btnBgB = math.min(bgb + 0.07, 1)
-    button.quiBackdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    button.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    btnBd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
+    btnBd:SetBackdropBorderColor(sr, sg, sb, sa)
 
     -- Hide default textures
     if button.Left then button.Left:SetAlpha(0) end
@@ -61,18 +63,22 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 
     -- Store skin color for hover effects
-    button.quiSkinColor = { sr, sg, sb, sa }
+    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
 
     -- Hover effect (brighten border)
     button:HookScript("OnEnter", function(self)
-        if self.quiBackdrop and self.quiSkinColor then
-            local r, g, b, a = unpack(self.quiSkinColor)
-            self.quiBackdrop:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+        local bd = SkinBase.GetFrameData(self, "backdrop")
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            local r, g, b, a = unpack(sc)
+            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
         end
     end)
     button:HookScript("OnLeave", function(self)
-        if self.quiBackdrop and self.quiSkinColor then
-            self.quiBackdrop:SetBackdropBorderColor(unpack(self.quiSkinColor))
+        local bd = SkinBase.GetFrameData(self, "backdrop")
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            bd:SetBackdropBorderColor(unpack(sc))
         end
     end)
 end
@@ -87,22 +93,23 @@ end
 local function StyleKeystoneSlot(slot, sr, sg, sb, sa)
     if not slot then return end
 
-    if not slot.quiBorder then
-        slot.quiBorder = CreateFrame("Frame", nil, slot, "BackdropTemplate")
-        slot.quiBorder:SetPoint("TOPLEFT", -4, 4)
-        slot.quiBorder:SetPoint("BOTTOMRIGHT", 4, -4)
-        slot.quiBorder:SetFrameLevel(slot:GetFrameLevel() - 1)
-        slot.quiBorder:EnableMouse(false)
-        local slotPx = SkinBase.GetPixelSize(slot.quiBorder, 1)
+    if not SkinBase.GetFrameData(slot, "border") then
+        local slotBorder = CreateFrame("Frame", nil, slot, "BackdropTemplate")
+        slotBorder:SetPoint("TOPLEFT", -4, 4)
+        slotBorder:SetPoint("BOTTOMRIGHT", 4, -4)
+        slotBorder:SetFrameLevel(slot:GetFrameLevel() - 1)
+        slotBorder:EnableMouse(false)
+        local slotPx = SkinBase.GetPixelSize(slotBorder, 1)
         local slotEdge2 = 2 * slotPx
-        slot.quiBorder:SetBackdrop({
+        slotBorder:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = slotEdge2,
             insets = { left = slotEdge2, right = slotEdge2, top = slotEdge2, bottom = slotEdge2 }
         })
-        slot.quiBorder:SetBackdropColor(0, 0, 0, 0.5)
-        slot.quiBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+        slotBorder:SetBackdropColor(0, 0, 0, 0.5)
+        slotBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetFrameData(slot, "border", slotBorder)
     end
 end
 
@@ -124,7 +131,7 @@ local function SkinKeystoneFrame()
     if not settings or not settings.skinKeystoneFrame then return end
 
     local keystoneFrame = _G.ChallengesKeystoneFrame
-    if not keystoneFrame or keystoneFrame.quiSkinned then return end
+    if not keystoneFrame or SkinBase.IsSkinned(keystoneFrame) then return end
 
     -- Get skin colors from QUI system
     local QUI = _G.QUI
@@ -172,32 +179,34 @@ local function SkinKeystoneFrame()
     StyleKeystoneSlot(keystoneFrame.KeystoneSlot, sr, sg, sb, sa)
 
     -- Store skin color for affix hook
-    keystoneFrame.quiSkinColor = { sr, sg, sb, sa }
+    SkinBase.SetFrameData(keystoneFrame, "skinColor", { sr, sg, sb, sa })
 
     -- Style affix icons when keystone is slotted
     hooksecurefunc(keystoneFrame, "OnKeystoneSlotted", function(f)
-        local r, g, b, a = unpack(f.quiSkinColor or { 0.2, 1.0, 0.6, 1 })
+        local sc = SkinBase.GetFrameData(f, "skinColor") or { 0.2, 1.0, 0.6, 1 }
+        local r, g, b, a = unpack(sc)
         for i = 1, 4 do
             local affix = f["Affix" .. i]
             if affix and affix.Portrait then
-                if not affix.quiBorder then
-                    affix.quiBorder = affix:CreateTexture(nil, "OVERLAY")
-                    affix.quiBorder:SetPoint("TOPLEFT", affix.Portrait, -1, 1)
-                    affix.quiBorder:SetPoint("BOTTOMRIGHT", affix.Portrait, 1, -1)
-                    affix.quiBorder:SetColorTexture(r, g, b, a)
-                    affix.quiBorder:SetDrawLayer("OVERLAY", -1)
+                if not SkinBase.GetFrameData(affix, "border") then
+                    local affixBorder = affix:CreateTexture(nil, "OVERLAY")
+                    affixBorder:SetPoint("TOPLEFT", affix.Portrait, -1, 1)
+                    affixBorder:SetPoint("BOTTOMRIGHT", affix.Portrait, 1, -1)
+                    affixBorder:SetColorTexture(r, g, b, a)
+                    affixBorder:SetDrawLayer("OVERLAY", -1)
+                    SkinBase.SetFrameData(affix, "border", affixBorder)
                 end
             end
         end
     end)
 
-    keystoneFrame.quiSkinned = true
+    SkinBase.MarkSkinned(keystoneFrame)
 end
 
 -- Refresh colors on already-skinned keystone frame (for live preview)
 local function RefreshKeystoneColors()
     local keystoneFrame = _G.ChallengesKeystoneFrame
-    if not keystoneFrame or not keystoneFrame.quiSkinned then return end
+    if not keystoneFrame or not SkinBase.IsSkinned(keystoneFrame) then return end
 
     -- Get current colors
     local QUI = _G.QUI
@@ -212,37 +221,41 @@ local function RefreshKeystoneColors()
     end
 
     -- Update main frame backdrop
-    if keystoneFrame.quiBackdrop then
-        keystoneFrame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        keystoneFrame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local ksBd = SkinBase.GetBackdrop(keystoneFrame)
+    if ksBd then
+        ksBd:SetBackdropColor(bgr, bgg, bgb, bga)
+        ksBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Update button backdrop
-    if keystoneFrame.StartButton and keystoneFrame.StartButton.quiBackdrop then
+    local startBtnBd = keystoneFrame.StartButton and SkinBase.GetFrameData(keystoneFrame.StartButton, "backdrop")
+    if startBtnBd then
         local btnBgR = math.min(bgr + 0.07, 1)
         local btnBgG = math.min(bgg + 0.07, 1)
         local btnBgB = math.min(bgb + 0.07, 1)
-        keystoneFrame.StartButton.quiBackdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-        keystoneFrame.StartButton.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        keystoneFrame.StartButton.quiSkinColor = { sr, sg, sb, sa }
+        startBtnBd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
+        startBtnBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetFrameData(keystoneFrame.StartButton, "skinColor", { sr, sg, sb, sa })
     end
 
     -- Update keystone slot border
-    if keystoneFrame.KeystoneSlot and keystoneFrame.KeystoneSlot.quiBorder then
-        keystoneFrame.KeystoneSlot.quiBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+    local slotBorder = keystoneFrame.KeystoneSlot and SkinBase.GetFrameData(keystoneFrame.KeystoneSlot, "border")
+    if slotBorder then
+        slotBorder:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Update affix borders
     for i = 1, 4 do
         local affix = keystoneFrame["Affix" .. i]
-        if affix and affix.quiBorder then
-            affix.quiBorder:SetColorTexture(sr, sg, sb, sa)
+        local affixBorder = affix and SkinBase.GetFrameData(affix, "border")
+        if affixBorder then
+            affixBorder:SetColorTexture(sr, sg, sb, sa)
         end
     end
 
     -- Update stored color for future affix borders
-    keystoneFrame.quiSkinned = true
-    keystoneFrame.quiSkinColor = { sr, sg, sb, sa }
+    SkinBase.MarkSkinned(keystoneFrame)
+    SkinBase.SetFrameData(keystoneFrame, "skinColor", { sr, sg, sb, sa })
 end
 
 -- Expose refresh function globally

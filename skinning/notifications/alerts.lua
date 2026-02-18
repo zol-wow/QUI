@@ -4,6 +4,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 
 -- Safe pixel size helper (guards against QUICore being nil during early init)
 local function SafeGetPixelSize(frame)
@@ -60,7 +61,8 @@ end
 
 --- Create QUI-styled backdrop for alert frames
 local function CreateAlertBackdrop(frame, xOffset1, yOffset1, xOffset2, yOffset2)
-    if frame.quiBackdrop then return frame.quiBackdrop end
+    local existing = SkinBase.GetFrameData(frame, "backdrop")
+    if existing then return existing end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
 
@@ -77,17 +79,18 @@ local function CreateAlertBackdrop(frame, xOffset1, yOffset1, xOffset2, yOffset2
     backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
     backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
 
-    frame.quiBackdrop = backdrop
+    SkinBase.SetFrameData(frame, "backdrop", backdrop)
     return backdrop
 end
 
 --- Update existing backdrop colors (for theme changes)
 local function UpdateBackdropColors(frame)
-    if not frame.quiBackdrop then return end
+    local bd = SkinBase.GetFrameData(frame, "backdrop")
+    if not bd then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-    frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    bd:SetBackdropColor(bgr, bgg, bgb, bga)
+    bd:SetBackdropBorderColor(sr, sg, sb, sa)
 end
 
 --- Create icon border frame with optional quality color
@@ -98,13 +101,14 @@ local function CreateIconBorder(icon, parent, qualityColor)
     local sr, sg, sb, sa = GetThemeColors()
 
     -- If border already exists (pooled frame), just update the color
-    if icon.quiBorder then
+    local existingBorder = SkinBase.GetFrameData(icon, "border")
+    if existingBorder then
         if qualityColor then
-            icon.quiBorder:SetBackdropBorderColor(qualityColor.r or qualityColor[1], qualityColor.g or qualityColor[2], qualityColor.b or qualityColor[3], 1)
+            existingBorder:SetBackdropBorderColor(qualityColor.r or qualityColor[1], qualityColor.g or qualityColor[2], qualityColor.b or qualityColor[3], 1)
         else
-            icon.quiBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+            existingBorder:SetBackdropBorderColor(sr, sg, sb, sa)
         end
-        return icon.quiBorder
+        return existingBorder
     end
 
     local border = CreateFrame("Frame", nil, parent, "BackdropTemplate")
@@ -125,7 +129,7 @@ local function CreateIconBorder(icon, parent, qualityColor)
         border:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
-    icon.quiBorder = border
+    SkinBase.SetFrameData(icon, "border", border)
     return border
 end
 
@@ -164,12 +168,12 @@ end
 
 --- Skin Achievement Alert
 local function SkinAchievementAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     -- Create backdrop
@@ -196,17 +200,17 @@ local function SkinAchievementAlert(frame)
         StyleIcon(frame.Icon.Texture, frame)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Criteria Alert (achievement criteria)
 local function SkinCriteriaAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, -2, -6, -2, 6)
@@ -222,17 +226,17 @@ local function SkinCriteriaAlert(frame)
 
     StyleIcon(frame.Icon.Texture, frame)
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Loot Won Alert
 local function SkinLootWonAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     Kill(frame.Background)
@@ -259,13 +263,14 @@ local function SkinLootWonAlert(frame)
     StyleIcon(lootItem.Icon, frame, qualityColor)
 
     -- Create backdrop anchored to icon
-    if not frame.quiBackdrop and lootItem.Icon.quiBorder then
+    local iconBorder = SkinBase.GetFrameData(lootItem.Icon, "border")
+    if not SkinBase.GetFrameData(frame, "backdrop") and iconBorder then
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
 
         local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
         backdrop:SetFrameLevel(frame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", lootItem.Icon.quiBorder, "TOPLEFT", -4, 4)
-        backdrop:SetPoint("BOTTOMRIGHT", lootItem.Icon.quiBorder, "BOTTOMRIGHT", 180, -4)
+        backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -4, 4)
+        backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -4)
         local bdPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -274,20 +279,20 @@ local function SkinLootWonAlert(frame)
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        frame.quiBackdrop = backdrop
+        SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Loot Upgrade Alert
 local function SkinLootUpgradeAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     Kill(frame.Background)
@@ -312,13 +317,14 @@ local function SkinLootUpgradeAlert(frame)
     frame.Icon:SetParent(border)
 
     -- Create backdrop
-    if not frame.quiBackdrop and frame.Icon.quiBorder then
+    local iconBorder = SkinBase.GetFrameData(frame.Icon, "border")
+    if not SkinBase.GetFrameData(frame, "backdrop") and iconBorder then
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
 
         local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
         backdrop:SetFrameLevel(frame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", frame.Icon.quiBorder, "TOPLEFT", -8, 8)
-        backdrop:SetPoint("BOTTOMRIGHT", frame.Icon.quiBorder, "BOTTOMRIGHT", 180, -8)
+        backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -8, 8)
+        backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -8)
         local luPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -327,15 +333,15 @@ local function SkinLootUpgradeAlert(frame)
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        frame.quiBackdrop = backdrop
+        SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Money Won Alert
 local function SkinMoneyWonAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
 
@@ -349,7 +355,7 @@ local function SkinMoneyWonAlert(frame)
     end
 
     -- Create backdrop
-    if not frame.quiBackdrop then
+    if not SkinBase.GetFrameData(frame, "backdrop") then
         local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
         backdrop:SetFrameLevel(frame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, -5)
@@ -362,20 +368,20 @@ local function SkinMoneyWonAlert(frame)
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        frame.quiBackdrop = backdrop
+        SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Honor Awarded Alert
 local function SkinHonorAwardedAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     Kill(frame.Background)
@@ -383,13 +389,14 @@ local function SkinHonorAwardedAlert(frame)
 
     StyleIcon(frame.Icon, frame)
 
-    if not frame.quiBackdrop and frame.Icon.quiBorder then
+    local iconBorder = SkinBase.GetFrameData(frame.Icon, "border")
+    if not SkinBase.GetFrameData(frame, "backdrop") and iconBorder then
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
 
         local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
         backdrop:SetFrameLevel(frame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", frame.Icon.quiBorder, "TOPLEFT", -4, 4)
-        backdrop:SetPoint("BOTTOMRIGHT", frame.Icon.quiBorder, "BOTTOMRIGHT", 180, -4)
+        backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -4, 4)
+        backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -4)
         local haPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -398,20 +405,20 @@ local function SkinHonorAwardedAlert(frame)
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        frame.quiBackdrop = backdrop
+        SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin New Recipe Learned Alert
 local function SkinNewRecipeLearnedAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, 19, -6, -23, 6)
@@ -433,23 +440,23 @@ local function SkinNewRecipeLearnedAlert(frame)
         frame.Icon:SetTexCoord(unpack(ICON_TEX_COORDS))
         frame.Icon:SetDrawLayer("BORDER", 5)
         frame.Icon:ClearAllPoints()
-        frame.Icon:SetPoint("LEFT", frame.quiBackdrop, 9, 0)
+        frame.Icon:SetPoint("LEFT", SkinBase.GetFrameData(frame, "backdrop"), 9, 0)
 
         local border = CreateIconBorder(frame.Icon, frame)
         frame.Icon:SetParent(border)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Dungeon Completion Alert
 local function SkinDungeonCompletionAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, -2, -6, -2, 6)
@@ -478,17 +485,17 @@ local function SkinDungeonCompletionAlert(frame)
         frame.dungeonTexture:SetParent(border)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Scenario Alert
 local function SkinScenarioAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, 4, 4, -7, 6)
@@ -511,24 +518,24 @@ local function SkinScenarioAlert(frame)
     if frame.dungeonTexture then
         frame.dungeonTexture:SetTexCoord(0.1, 0.9, 0.1, 0.9)
         frame.dungeonTexture:ClearAllPoints()
-        frame.dungeonTexture:SetPoint("LEFT", frame.quiBackdrop, 9, 0)
+        frame.dungeonTexture:SetPoint("LEFT", SkinBase.GetFrameData(frame, "backdrop"), 9, 0)
         frame.dungeonTexture:SetDrawLayer("OVERLAY")
 
         local border = CreateIconBorder(frame.dungeonTexture, frame)
         frame.dungeonTexture:SetParent(border)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin World Quest Complete Alert
 local function SkinWorldQuestCompleteAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, 10, -6, -14, 6)
@@ -544,17 +551,17 @@ local function SkinWorldQuestCompleteAlert(frame)
         frame.QuestTexture:SetParent(border)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Legendary Item Alert
 local function SkinLegendaryItemAlert(frame, itemLink)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     Kill(frame.Background)
@@ -587,7 +594,7 @@ local function SkinLegendaryItemAlert(frame, itemLink)
         end
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Get quality color for misc alerts (mounts, toys, pets)
@@ -611,12 +618,12 @@ local function SkinMiscAlert(frame)
     end
 
     -- Skip structural changes if already skinned (pooled frame)
-    if frame.quiSkinned then return end
+    if SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     Kill(frame.Background)
@@ -627,10 +634,10 @@ local function SkinMiscAlert(frame)
         frame.Icon:SetTexCoord(unpack(ICON_TEX_COORDS))
         frame.Icon:SetDrawLayer("BORDER", 5)
 
-        local border = frame.Icon.quiBorder
+        local border = SkinBase.GetFrameData(frame.Icon, "border")
         frame.Icon:SetParent(border)
 
-        if not frame.quiBackdrop then
+        if not SkinBase.GetFrameData(frame, "backdrop") then
             local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
 
             local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -645,21 +652,21 @@ local function SkinMiscAlert(frame)
             })
             backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
             backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-            frame.quiBackdrop = backdrop
+            SkinBase.SetFrameData(frame, "backdrop", backdrop)
         end
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Entitlement/RAF Delivered Alert
 local function SkinEntitlementAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, 10, -6, -14, 6)
@@ -672,23 +679,23 @@ local function SkinEntitlementAlert(frame)
     if frame.Icon then
         frame.Icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
         frame.Icon:ClearAllPoints()
-        frame.Icon:SetPoint("LEFT", frame.quiBackdrop, 9, 0)
+        frame.Icon:SetPoint("LEFT", SkinBase.GetFrameData(frame, "backdrop"), 9, 0)
 
         local border = CreateIconBorder(frame.Icon, frame)
         frame.Icon:SetParent(border)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Digsite Complete Alert
 local function SkinDigsiteCompleteAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, -16, -6, 13, 6)
@@ -704,17 +711,17 @@ local function SkinDigsiteCompleteAlert(frame)
         frame.DigsiteTypeTexture:SetPoint("LEFT", -10, -14)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Guild Challenge Alert
 local function SkinGuildChallengeAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, -2, -6, -2, 6)
@@ -737,17 +744,17 @@ local function SkinGuildChallengeAlert(frame)
         SetLargeGuildTabardTextures("player", frame.EmblemIcon)
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 --- Skin Invasion Alert
 local function SkinInvasionAlert(frame)
-    if not frame or frame.quiSkinned then return end
+    if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
-    if not frame.quiHooked then
+    if not SkinBase.GetFrameData(frame, "hooked") then
         hooksecurefunc(frame, "SetAlpha", ForceAlpha)
-        frame.quiHooked = true
+        SkinBase.SetFrameData(frame, "hooked", true)
     end
 
     CreateAlertBackdrop(frame, 4, 4, -7, 6)
@@ -771,7 +778,7 @@ local function SkinInvasionAlert(frame)
         end
     end
 
-    frame.quiSkinned = true
+    SkinBase.MarkSkinned(frame)
 end
 
 ---------------------------------------------------------------------------
@@ -784,7 +791,7 @@ local function SkinBonusRollFrames()
 
     -- BonusRollMoneyWonFrame
     local moneyFrame = BonusRollMoneyWonFrame
-    if moneyFrame and not moneyFrame.quiSkinned then
+    if moneyFrame and not SkinBase.IsSkinned(moneyFrame) then
         moneyFrame:SetAlpha(1)
         hooksecurefunc(moneyFrame, "SetAlpha", ForceAlpha)
 
@@ -794,10 +801,11 @@ local function SkinBonusRollFrames()
         StyleIcon(moneyFrame.Icon, moneyFrame)
 
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
+        local moneyIconBorder = SkinBase.GetFrameData(moneyFrame.Icon, "border")
         local backdrop = CreateFrame("Frame", nil, moneyFrame, "BackdropTemplate")
         backdrop:SetFrameLevel(moneyFrame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", moneyFrame.Icon.quiBorder, "TOPLEFT", -4, 4)
-        backdrop:SetPoint("BOTTOMRIGHT", moneyFrame.Icon.quiBorder, "BOTTOMRIGHT", 180, -4)
+        backdrop:SetPoint("TOPLEFT", moneyIconBorder, "TOPLEFT", -4, 4)
+        backdrop:SetPoint("BOTTOMRIGHT", moneyIconBorder, "BOTTOMRIGHT", 180, -4)
         local mfPx = SafeGetPixelSize(backdrop)
         backdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -806,13 +814,13 @@ local function SkinBonusRollFrames()
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        moneyFrame.quiBackdrop = backdrop
-        moneyFrame.quiSkinned = true
+        SkinBase.SetFrameData(moneyFrame, "backdrop", backdrop)
+        SkinBase.MarkSkinned(moneyFrame)
     end
 
     -- BonusRollLootWonFrame
     local lootFrame = BonusRollLootWonFrame
-    if lootFrame and not lootFrame.quiSkinned then
+    if lootFrame and not SkinBase.IsSkinned(lootFrame) then
         lootFrame:SetAlpha(1)
         hooksecurefunc(lootFrame, "SetAlpha", ForceAlpha)
 
@@ -840,8 +848,8 @@ local function SkinBonusRollFrames()
         })
         backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
         backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        lootFrame.quiBackdrop = backdrop
-        lootFrame.quiSkinned = true
+        SkinBase.SetFrameData(lootFrame, "backdrop", backdrop)
+        SkinBase.MarkSkinned(lootFrame)
     end
 end
 
@@ -1266,26 +1274,32 @@ local function RefreshAlertColors()
     for _, system in ipairs(alertSystems) do
         if system and system.alertFramePool then
             for frame in system.alertFramePool:EnumerateActive() do
-                if frame.quiBackdrop then
-                    frame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-                    frame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+                local bd = SkinBase.GetFrameData(frame, "backdrop")
+                if bd then
+                    bd:SetBackdropColor(bgr, bgg, bgb, bga)
+                    bd:SetBackdropBorderColor(sr, sg, sb, sa)
                 end
                 -- Update icon borders
-                if frame.Icon and frame.Icon.quiBorder then
-                    frame.Icon.quiBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+                if frame.Icon then
+                    local ib = SkinBase.GetFrameData(frame.Icon, "border")
+                    if ib then
+                        ib:SetBackdropBorderColor(sr, sg, sb, sa)
+                    end
                 end
             end
         end
     end
 
     -- Update bonus roll frames
-    if BonusRollMoneyWonFrame and BonusRollMoneyWonFrame.quiBackdrop then
-        BonusRollMoneyWonFrame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        BonusRollMoneyWonFrame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local moneyBd = BonusRollMoneyWonFrame and SkinBase.GetFrameData(BonusRollMoneyWonFrame, "backdrop")
+    if moneyBd then
+        moneyBd:SetBackdropColor(bgr, bgg, bgb, bga)
+        moneyBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
-    if BonusRollLootWonFrame and BonusRollLootWonFrame.quiBackdrop then
-        BonusRollLootWonFrame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        BonusRollLootWonFrame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local lootBd = BonusRollLootWonFrame and SkinBase.GetFrameData(BonusRollLootWonFrame, "backdrop")
+    if lootBd then
+        lootBd:SetBackdropColor(bgr, bgg, bgb, bga)
+        lootBd:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 end
 

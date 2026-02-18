@@ -79,7 +79,7 @@ local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 -- Style quest POI icon (glow removed - was causing indefinite glow bug BUG-003)
 local function StyleQuestPOIIcon(button)
-    if not button or button.quiStyled then return end
+    if not button or SkinBase.IsStyled(button) then return end
 
     -- Style the POI button
     if button.NormalTexture then
@@ -97,19 +97,19 @@ local function StyleQuestPOIIcon(button)
         LCG.PixelGlow_Stop(button, "_QUIQuestGlow")
     end
 
-    button.quiStyled = true
+    SkinBase.MarkStyled(button)
 end
 
 -- Style completion checkmark with QUI color
 local function StyleCompletionCheck(check)
-    if not check or check.quiStyled then return end
+    if not check or SkinBase.IsStyled(check) then return end
 
     local sr, sg, sb = SkinBase.GetSkinColors()
     check:SetAtlas("checkmark-minimal")
     check:SetDesaturated(true)
     check:SetVertexColor(sr, sg, sb)
 
-    check.quiStyled = true
+    SkinBase.MarkStyled(check)
 end
 
 -- Apply full block skinning (fonts, colors, icons) to a single block
@@ -270,19 +270,19 @@ local function ApplyMaxWidth(settings)
             -- Resize to match module buttons (16x16 vs default 18x19)
             minBtn:SetSize(16, 16)
             -- Set highlight to yellow (only once)
-            if not minBtn.quiHighlightSet and minBtn:GetHighlightTexture() then
+            if not SkinBase.GetFrameData(minBtn, "highlightSet") and minBtn:GetHighlightTexture() then
                 minBtn:GetHighlightTexture():SetAtlas("ui-questtrackerbutton-yellow-highlight")
-                minBtn.quiHighlightSet = true
+                SkinBase.SetFrameData(minBtn, "highlightSet", true)
             end
         end
 
         -- Hook SetCollapsed to override atlas with secondary style
         -- (Blizzard resets to collapse-all/expand-all on state change)
-        if TrackerFrame.Header.SetCollapsed and not TrackerFrame.Header.quiSetCollapsedHooked then
+        if TrackerFrame.Header.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame.Header, "setCollapsedHooked") then
             hooksecurefunc(TrackerFrame.Header, "SetCollapsed", function(self, collapsed)
                 UpdateMinimizeButtonAtlas(self.MinimizeButton, collapsed)
             end)
-            TrackerFrame.Header.quiSetCollapsedHooked = true
+            SkinBase.SetFrameData(TrackerFrame.Header, "setCollapsedHooked", true)
 
             -- Apply immediately for current state
             local isCollapsed = false
@@ -311,7 +311,8 @@ end
 -- Update backdrop to match content, respecting max height setting
 local function UpdateBackdropAnchors()
     local TrackerFrame = _G.ObjectiveTrackerFrame
-    if not TrackerFrame or not TrackerFrame.quiBackdrop then return end
+    local quiBackdrop = TrackerFrame and SkinBase.GetFrameData(TrackerFrame, "backdrop")
+    if not TrackerFrame or not quiBackdrop then return end
 
     local settings = GetSettings()
     local maxHeight = settings and settings.objectiveTrackerHeight or 600
@@ -346,9 +347,9 @@ local function UpdateBackdropAnchors()
     end
 
     -- Re-anchor backdrop to match content bounds
-    TrackerFrame.quiBackdrop:ClearAllPoints()
-    TrackerFrame.quiBackdrop:SetPoint("TOPLEFT", TrackerFrame, "TOPLEFT", -15, 0)
-    TrackerFrame.quiBackdrop:SetPoint("TOPRIGHT", TrackerFrame, "TOPRIGHT", 10, 0)
+    quiBackdrop:ClearAllPoints()
+    quiBackdrop:SetPoint("TOPLEFT", TrackerFrame, "TOPLEFT", -15, 0)
+    quiBackdrop:SetPoint("TOPRIGHT", TrackerFrame, "TOPRIGHT", 10, 0)
 
     if bottomModule then
         -- Calculate actual content height (guard against nil/invalid during initial layout)
@@ -360,15 +361,15 @@ local function UpdateBackdropAnchors()
 
         if contentHeight > maxHeight then
             -- Content exceeds max height, use fixed height
-            TrackerFrame.quiBackdrop:SetHeight(maxHeight)
+            quiBackdrop:SetHeight(maxHeight)
         else
             -- Content fits, anchor to bottommost module
-            TrackerFrame.quiBackdrop:SetPoint("BOTTOM", bottomModule, "BOTTOM", 0, -15)
+            quiBackdrop:SetPoint("BOTTOM", bottomModule, "BOTTOM", 0, -15)
         end
-        TrackerFrame.quiBackdrop:Show()
+        quiBackdrop:Show()
     else
         -- No visible modules, hide backdrop
-        TrackerFrame.quiBackdrop:Hide()
+        quiBackdrop:Hide()
     end
 end
 
@@ -386,11 +387,11 @@ local function HidePOIButtonGlows()
                             block.poiButton.Glow:Hide()
                             block.poiButton.Glow:SetAlpha(0)
                             -- Hook Show to prevent Blizzard from re-showing
-                            if not block.poiButton.Glow.quiHooked then
+                            if not SkinBase.GetFrameData(block.poiButton.Glow, "hooked") then
                                 hooksecurefunc(block.poiButton.Glow, "Show", function(self)
                                     self:Hide()
                                 end)
-                                block.poiButton.Glow.quiHooked = true
+                                SkinBase.SetFrameData(block.poiButton.Glow, "hooked", true)
                             end
                         end
                         -- Stop any LibCustomGlow effects (cleanup)
@@ -555,7 +556,7 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     KillNineSlice(trackerFrame.NineSlice)
 
     -- Hook SetBackgroundAlpha so edit mode opacity also affects our backdrop
-    if trackerFrame.SetBackgroundAlpha and not trackerFrame.quiBackgroundHooked then
+    if trackerFrame.SetBackgroundAlpha and not SkinBase.GetFrameData(trackerFrame, "backgroundHooked") then
         hooksecurefunc(trackerFrame, "SetBackgroundAlpha", function(self, alpha)
             -- Keep NineSlice hidden
             if self.NineSlice then
@@ -563,12 +564,13 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
                 self.NineSlice:SetAlpha(0)
             end
             -- Apply edit mode opacity to our backdrop (get fresh colors)
-            if self.quiBackdrop then
+            local bd = SkinBase.GetFrameData(self, "backdrop")
+            if bd then
                 local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
-                self.quiBackdrop:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
+                bd:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
             end
         end)
-        trackerFrame.quiBackgroundHooked = true
+        SkinBase.SetFrameData(trackerFrame, "backgroundHooked", true)
     end
 
     -- Get initial opacity from edit mode (0 is valid = transparent, so check for nil)
@@ -581,27 +583,29 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     end
 
     -- Create QUI backdrop (anchors will be set by UpdateBackdropAnchors)
-    if not trackerFrame.quiBackdrop then
-        trackerFrame.quiBackdrop = CreateFrame("Frame", nil, trackerFrame, "BackdropTemplate")
-        trackerFrame.quiBackdrop:SetFrameLevel(math.max(trackerFrame:GetFrameLevel() - 1, 0))
-        trackerFrame.quiBackdrop:EnableMouse(false)
+    local backdrop = SkinBase.GetFrameData(trackerFrame, "backdrop")
+    if not backdrop then
+        backdrop = CreateFrame("Frame", nil, trackerFrame, "BackdropTemplate")
+        backdrop:SetFrameLevel(math.max(trackerFrame:GetFrameLevel() - 1, 0))
+        backdrop:EnableMouse(false)
+        SkinBase.SetFrameData(trackerFrame, "backdrop", backdrop)
     end
 
     local settings = GetSettings()
     local hideBorder = settings and settings.hideObjectiveTrackerBorder
 
-    local otPx = SkinBase.GetPixelSize(trackerFrame.quiBackdrop, 1)
-    trackerFrame.quiBackdrop:SetBackdrop({
+    local otPx = SkinBase.GetPixelSize(backdrop, 1)
+    backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = hideBorder and 0 or otPx,
         insets = { left = otPx, right = otPx, top = otPx, bottom = otPx }
     })
-    trackerFrame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, opacity)
+    backdrop:SetBackdropColor(bgr, bgg, bgb, opacity)
     if hideBorder then
-        trackerFrame.quiBackdrop:SetBackdropBorderColor(0, 0, 0, 0)
+        backdrop:SetBackdropBorderColor(0, 0, 0, 0)
     else
-        trackerFrame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     -- Set initial anchors
@@ -657,7 +661,7 @@ local function HookLineCreation()
     local fontPath = GetFontPath()
 
     -- Hook ObjectiveTrackerBlockMixin:AddObjective to style lines as they're created
-    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective and not ObjectiveTrackerBlockMixin.quiAddObjectiveHooked then
+    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked") then
         hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function(self, objectiveKey, text, template, useFullHeight, dashStyle, colorStyle, adjustForNoText, overrideHeight)
             local line = self.usedLines and self.usedLines[objectiveKey]
             if line then
@@ -671,11 +675,11 @@ local function HookLineCreation()
                 end
             end
         end)
-        ObjectiveTrackerBlockMixin.quiAddObjectiveHooked = true
+        SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked", true)
     end
 
     -- Hook ObjectiveTrackerBlockMixin:SetHeader to style block headers (quest/achievement titles)
-    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader and not ObjectiveTrackerBlockMixin.quiSetHeaderHooked then
+    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked") then
         hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function(self, text)
             local currentSettings = GetSettings()
             local currentTitleSize = currentSettings and currentSettings.objectiveTrackerTitleFontSize or 0
@@ -685,7 +689,7 @@ local function HookLineCreation()
                 SafeSetTextColor(self.HeaderText, currentTitleColor)
             end
         end)
-        ObjectiveTrackerBlockMixin.quiSetHeaderHooked = true
+        SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked", true)
     end
 
     -- Note: POI button glows are hidden via HidePOIButtonGlows() called from ScheduleBackdropUpdate()
@@ -733,21 +737,21 @@ local function SkinObjectiveTracker()
     end
 
     -- Hook the main container's Update to update backdrop anchors when content changes
-    if TrackerFrame.Update and not TrackerFrame.quiUpdateHooked then
+    if TrackerFrame.Update and not SkinBase.GetFrameData(TrackerFrame, "updateHooked") then
         hooksecurefunc(TrackerFrame, "Update", ScheduleBackdropUpdate)
-        TrackerFrame.quiUpdateHooked = true
+        SkinBase.SetFrameData(TrackerFrame, "updateHooked", true)
     end
 
     -- Hook main container's SetCollapsed for when entire tracker is collapsed/expanded
-    if TrackerFrame.SetCollapsed and not TrackerFrame.quiCollapseHooked then
+    if TrackerFrame.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame, "collapseHooked") then
         hooksecurefunc(TrackerFrame, "SetCollapsed", ScheduleBackdropUpdate)
-        TrackerFrame.quiCollapseHooked = true
+        SkinBase.SetFrameData(TrackerFrame, "collapseHooked", true)
     end
 
     -- Hook each module's header minimize button, SetCollapsed, LayoutContents, and AddBlock
     for _, trackerName in ipairs(trackerModules) do
         local tracker = _G[trackerName]
-        if tracker and not tracker.quiCollapseHooked then
+        if tracker and not SkinBase.GetFrameData(tracker, "collapseHooked") then
             -- Hook the header's minimize button click
             if tracker.Header and tracker.Header.MinimizeButton then
                 tracker.Header.MinimizeButton:HookScript("OnClick", ScheduleBackdropUpdate)
@@ -764,39 +768,40 @@ local function SkinObjectiveTracker()
             end
 
             -- Hook AddBlock to style new blocks
-            if tracker.AddBlock and not tracker.quiAddBlockHooked then
+            if tracker.AddBlock and not SkinBase.GetFrameData(tracker, "addBlockHooked") then
                 hooksecurefunc(tracker, "AddBlock", ApplyBlockSkinning)
-                tracker.quiAddBlockHooked = true
+                SkinBase.SetFrameData(tracker, "addBlockHooked", true)
             end
 
-            tracker.quiCollapseHooked = true
+            SkinBase.SetFrameData(tracker, "collapseHooked", true)
         end
     end
 
     -- Also update on size changes (with guard to prevent multiple hooks)
-    if not TrackerFrame.quiSizeChangedHooked then
+    if not SkinBase.GetFrameData(TrackerFrame, "sizeChangedHooked") then
         TrackerFrame:HookScript("OnSizeChanged", UpdateBackdropAnchors)
-        TrackerFrame.quiSizeChangedHooked = true
+        SkinBase.SetFrameData(TrackerFrame, "sizeChangedHooked", true)
     end
 
     -- Hook ObjectiveTrackerManager.SetOpacity to catch when edit mode loads saved settings
     local manager = _G.ObjectiveTrackerManager
-    if manager and manager.SetOpacity and not manager.quiOpacityHooked then
+    if manager and manager.SetOpacity and not SkinBase.GetFrameData(manager, "opacityHooked") then
         hooksecurefunc(manager, "SetOpacity", function(self, opacityPercent)
             local alpha = (opacityPercent or 0) / 100
             local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
-            if TrackerFrame.quiBackdrop then
-                TrackerFrame.quiBackdrop:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
+            local bd = SkinBase.GetFrameData(TrackerFrame, "backdrop")
+            if bd then
+                bd:SetBackdropColor(currBgR, currBgG, currBgB, alpha)
             end
         end)
-        manager.quiOpacityHooked = true
+        SkinBase.SetFrameData(manager, "opacityHooked", true)
     end
 
     -- Hide POI glows after delay to catch late-loading POI buttons
     -- (ScheduleBackdropUpdate also calls HidePOIButtonGlows at 0.15s)
     C_Timer.After(0.5, HidePOIButtonGlows)
 
-    TrackerFrame.quiSkinned = true
+    SkinBase.MarkSkinned(TrackerFrame)
 end
 
 -- Refresh/update settings (called from options panel)
@@ -813,7 +818,8 @@ local function RefreshObjectiveTracker()
     ApplyLayoutSettingsSafely(settings)
 
     -- Update backdrop colors (SetBackdrop resets colors, so must re-apply both)
-    if TrackerFrame.quiBackdrop then
+    local refreshBackdrop = SkinBase.GetFrameData(TrackerFrame, "backdrop")
+    if refreshBackdrop then
         local hideBorder = settings.hideObjectiveTrackerBorder
 
         -- Get opacity from edit mode manager
@@ -826,18 +832,18 @@ local function RefreshObjectiveTracker()
         end
 
         -- Apply backdrop (edgeSize 0 hides border, px shows it)
-        local updPx = SkinBase.GetPixelSize(TrackerFrame.quiBackdrop, 1)
-        TrackerFrame.quiBackdrop:SetBackdrop({
+        local updPx = SkinBase.GetPixelSize(refreshBackdrop, 1)
+        refreshBackdrop:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = hideBorder and 0 or updPx,
             insets = { left = updPx, right = updPx, top = updPx, bottom = updPx }
         })
-        TrackerFrame.quiBackdrop:SetBackdropColor(bgr, bgg, bgb, opacity)
+        refreshBackdrop:SetBackdropColor(bgr, bgg, bgb, opacity)
         if hideBorder then
-            TrackerFrame.quiBackdrop:SetBackdropBorderColor(0, 0, 0, 0)
+            refreshBackdrop:SetBackdropBorderColor(0, 0, 0, 0)
         else
-            TrackerFrame.quiBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+            refreshBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
         end
     end
 

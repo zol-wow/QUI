@@ -56,6 +56,7 @@ local talentMicroButtonAlertCandidates = {
 local hookedAlertSystems = {}
 local eventToastHooked = false
 local mainMenuAlertHooked = false
+local _quiPopupBlockerHooked = {}  -- Track hooked alert frames (avoids writing to Blizzard frames)
 
 local function GetMaxStaticPopupDialogs()
     return math.min(STATICPOPUP_NUMDIALOGS or 4, 8)
@@ -252,15 +253,16 @@ local function HookTalentReminderAlerts()
     end
 
     -- Some frames are only created lazily, so keep checking and attach one-shot OnShow hooks.
+    -- Use local table to track hooked frames (NOT writing to Blizzard frames to avoid taint)
     for _, alertName in ipairs(talentMicroButtonAlertCandidates) do
         local alertFrame = _G[alertName]
-        if alertFrame and not alertFrame.__quiPopupBlockerHooked then
+        if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
             alertFrame:HookScript("OnShow", function(self)
                 if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
                     self:Hide()
                 end
             end)
-            alertFrame.__quiPopupBlockerHooked = true
+            _quiPopupBlockerHooked[alertFrame] = true
         end
     end
 end
