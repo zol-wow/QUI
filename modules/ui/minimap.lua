@@ -33,12 +33,20 @@ local clockTicker = nil
 local coordsTicker = nil
 
 ---=================================================================================
---- BLIZZARD BUG WORKAROUND: Removed Layout method writes on Blizzard frames
---- Writing `Minimap.Layout = function() end` or similar on Blizzard frames taints
---- them in Midnight's taint model. The Layout method is only needed on parent
---- frames that receive reparented children — our own hiddenButtonParent (defined
---- below in BUTTON VISIBILITY) provides this safely since it's our own frame.
+--- BLIZZARD LAYOUT NO-OPS
+--- Blizzard's Minimap.lua calls self:Layout() internally (line ~479).
+--- Minimap does not have a Layout method by default — it expects the layout
+--- system or a mixin to provide one. Writing a no-op here prevents the nil
+--- call error. Minimap is NOT in the Edit Mode secure execution chain, so
+--- this does not cause taint for EnterEditMode/CompactUnitFrame paths.
+---
+--- MinimapCluster.IndicatorFrame subframes (MailFrame, CraftingOrderFrame)
+--- are NOT given no-op Layout — they are reparented to hiddenButtonParent
+--- which provides its own Layout. See BUTTON VISIBILITY section below.
 ---=================================================================================
+if Minimap and not Minimap.Layout then
+    Minimap.Layout = function() end
+end
 
 ---=================================================================================
 --- HELPER FUNCTIONS
@@ -1217,6 +1225,12 @@ local editModeWasLocked = nil
 function QUICore:EnableMinimapEditMode()
     local settings = GetSettings()
     if not settings then return end
+
+    -- Block movement if minimap is locked by the anchoring system
+    if _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(Minimap) then
+        Minimap:SetMovable(false)
+        return
+    end
 
     -- Remember lock state
     editModeWasLocked = settings.lock

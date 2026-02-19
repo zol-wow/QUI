@@ -36,6 +36,10 @@ local DEFAULTS = {
 
 local pendingObjectiveTrackerHide = false
 
+-- CompactRaidFrameManager visibility watcher (replaces hooksecurefunc to avoid taint)
+local _crfWatcher = nil
+local _crfWatcherShown = false
+
 -- TAINT SAFETY: Track hook state in a local weak-keyed table, NOT on Blizzard
 -- frames. Writing _QUI_* properties to secure frames taints them in Midnight's
 -- taint model, causing ADDON_ACTION_FORBIDDEN and secret-value errors.
@@ -274,50 +278,56 @@ local function ApplyHideSettings()
     end
 
     -- Compact Raid Frame Manager
+    -- TAINT SAFETY: CompactRaidFrameManager is a secure frame. NEVER use
+    -- hooksecurefunc on its Show/SetShown — those hooks execute addon code
+    -- in the secure context, tainting CompactUnitFrame values. When Edit Mode
+    -- then reads those values, it causes "secret number tainted by QUI" errors.
+    -- Instead, use an OnUpdate watcher to detect when it reappears.
     if CompactRaidFrameManager then
-        local crfState = hookedSecureFrames[CompactRaidFrameManager]
-        if not crfState then crfState = {}; hookedSecureFrames[CompactRaidFrameManager] = crfState end
-
         if InCombatLockdown() then
             -- Skip protected operations during combat
         elseif settings.hideRaidFrameManager then
-            -- Defer Hide/EnableMouse to break taint chain from secure context
+            -- Defer Hide/EnableMouse to break taint chain
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
                 CompactRaidFrameManager:Hide()
                 CompactRaidFrameManager:EnableMouse(false)
             end)
-            -- Hook Show() to prevent it from reappearing when joining groups, etc.
-            if not crfState.showHooked then
-                crfState.showHooked = true
-                hooksecurefunc(CompactRaidFrameManager, "Show", function(self)
+            -- Start OnUpdate watcher to re-hide if Blizzard shows it again
+            -- (replaces hooksecurefunc on Show/SetShown to avoid taint)
+            if not _crfWatcher then
+                _crfWatcher = CreateFrame("Frame", nil, UIParent)
+                _crfWatcherShown = false
+            end
+            _crfWatcher:SetScript("OnUpdate", function()
+                local isShown = CompactRaidFrameManager:IsShown()
+                if isShown and not _crfWatcherShown then
+                    _crfWatcherShown = true
+                    -- Blizzard showed it — re-hide if setting is still on
                     C_Timer.After(0, function()
                         if InCombatLockdown() then return end
                         local s = GetSettings()
                         if s and s.hideRaidFrameManager then
-                            self:Hide()
-                            self:EnableMouse(false)
+                            CompactRaidFrameManager:Hide()
+                            CompactRaidFrameManager:EnableMouse(false)
                         end
+                        _crfWatcherShown = false
                     end)
-                end)
-            end
-            -- Hook SetShown() to catch permission-change visibility updates
-            if not crfState.setShownHooked then
-                crfState.setShownHooked = true
-                hooksecurefunc(CompactRaidFrameManager, "SetShown", function(self, shown)
-                    C_Timer.After(0, function()
-                        if InCombatLockdown() then return end
-                        local s = GetSettings()
-                        if s and s.hideRaidFrameManager and shown then
-                            self:Hide()
-                            self:EnableMouse(false)
-                        end
-                    end)
-                end)
-            end
+                elseif not isShown then
+                    _crfWatcherShown = false
+                end
+            end)
         else
-            CompactRaidFrameManager:Show()
-            CompactRaidFrameManager:EnableMouse(true)
+            -- Defer Show/EnableMouse to break taint chain from secure context
+            C_Timer.After(0, function()
+                if InCombatLockdown() then return end
+                CompactRaidFrameManager:Show()
+                CompactRaidFrameManager:EnableMouse(true)
+            end)
+            -- Stop the watcher if it was running
+            if _crfWatcher then
+                _crfWatcher:SetScript("OnUpdate", nil)
+            end
         end
     end
     

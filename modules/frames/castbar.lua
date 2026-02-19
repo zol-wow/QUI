@@ -3876,60 +3876,40 @@ local function DisableCastbarEditMode()
     wipe(EditModeState.showedPreviews)
 end
 
--- Hook Blizzard Edit Mode after a short delay to ensure EditModeManagerFrame exists
-C_Timer.After(0.5, function()
-    if EditModeManagerFrame and not QUICore._castbarEditModeHooked then
-        QUICore._castbarEditModeHooked = true
-        -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
-        -- secure execution context. Synchronous addon code here taints the chain.
-        hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-            C_Timer.After(0, function()
-                if not InCombatLockdown() then
-                    EnableCastbarEditMode()
-                end
-            end)
-        end)
-        hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-            C_Timer.After(0, function()
-                if not InCombatLockdown() then
-                    DisableCastbarEditMode()
-                end
-            end)
-        end)
+-- Use central Edit Mode dispatcher to avoid taint from multiple hooksecurefunc
+-- callbacks on EnterEditMode/ExitEditMode.
+QUICore:RegisterEditModeEnter(function()
+    if not InCombatLockdown() then
+        EnableCastbarEditMode()
+    end
+end)
+QUICore:RegisterEditModeExit(function()
+    if not InCombatLockdown() then
+        DisableCastbarEditMode()
+    end
+end)
 
-        -- Hook PlayerCastingBarFrame visibility changes to sync with QUI castbar
-        -- When the "Cast Bar" checkbox is toggled in Edit Mode, Blizzard changes visibility
-        -- Wrapped in pcall — frame can be forbidden in 12.0.x beta
+-- Monitor PlayerCastingBarFrame visibility changes for Edit Mode sync
+-- TAINT SAFETY: Do NOT use hooksecurefunc on PlayerCastingBarFrame (secure frame).
+-- Even deferred callbacks execute addon code in the secure context, tainting the
+-- execution chain and causing ADDON_ACTION_FORBIDDEN / secret number errors.
+-- Instead, use an OnUpdate watcher to poll IsShown() from a UIParent-child frame.
+C_Timer.After(0.5, function()
+    if not QUICore._castbarEditModeHooked then
+        QUICore._castbarEditModeHooked = true
+
         if PlayerCastingBarFrame then
-            local ok, err = pcall(function()
-                -- TAINT SAFETY: Defer all work to break taint chain from secure context.
-                -- PlayerCastingBarFrame methods fire inside Blizzard's secure execution.
-                hooksecurefunc(PlayerCastingBarFrame, "SetShown", function(_, shown)
-                    C_Timer.After(0, function()
-                        if EditModeState.active then
-                            EditModeState.castBarCheckboxEnabled = shown
-                            UpdateCastbarVisibilityForEditMode()
-                        end
-                    end)
-                end)
-                hooksecurefunc(PlayerCastingBarFrame, "Show", function()
-                    C_Timer.After(0, function()
-                        if EditModeState.active then
-                            EditModeState.castBarCheckboxEnabled = true
-                            UpdateCastbarVisibilityForEditMode()
-                        end
-                    end)
-                end)
-                hooksecurefunc(PlayerCastingBarFrame, "Hide", function()
-                    C_Timer.After(0, function()
-                        if EditModeState.active then
-                            EditModeState.castBarCheckboxEnabled = false
-                            UpdateCastbarVisibilityForEditMode()
-                        end
-                    end)
-                end)
+            local castbarWatcher = CreateFrame("Frame", nil, UIParent)
+            local wasCastbarShown = PlayerCastingBarFrame:IsShown()
+            castbarWatcher:SetScript("OnUpdate", function()
+                if not EditModeState.active then return end
+                local isShown = PlayerCastingBarFrame:IsShown()
+                if isShown ~= wasCastbarShown then
+                    wasCastbarShown = isShown
+                    EditModeState.castBarCheckboxEnabled = isShown
+                    UpdateCastbarVisibilityForEditMode()
+                end
             end)
-            if not ok then QUI:DebugPrint("Could not hook PlayerCastingBarFrame for Edit Mode: " .. tostring(err)) end
         end
 
         -- Check if Edit Mode is already active (e.g., /reload while in Edit Mode)

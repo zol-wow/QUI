@@ -288,10 +288,13 @@ function QUI_UF:EnableEditMode()
         if settings and frame.editOverlay.infoText then
             local label = frame.editOverlay.unitLabel or unitKey
             local isAnchored = settings.anchorTo and settings.anchorTo ~= "disabled"
+            local isFrameLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
             if isAnchored and (settingsKey == "player" or settingsKey == "target") then
                 local anchorNames = {essential = "Essential", utility = "Utility", primary = "Primary", secondary = "Secondary"}
                 local anchorName = anchorNames[settings.anchorTo] or settings.anchorTo
                 frame.editOverlay.infoText:SetText(label .. "  (Locked to " .. anchorName .. ")")
+            elseif isFrameLocked then
+                frame.editOverlay.infoText:SetText(label .. "  (Locked)")
             else
                 local x = settings.offsetX or 0
                 local y = settings.offsetY or 0
@@ -300,6 +303,44 @@ function QUI_UF:EnableEditMode()
         end
 
         frame.editOverlay:Show()
+
+        -- Defer visual indicator updates to break taint chain from Edit Mode enter.
+        -- Unit frames use SecureUnitButtonTemplate — any addon code in their
+        -- script handlers during EnterEditMode taints the secure execution path.
+        C_Timer.After(0, function()
+            if not frame.editOverlay then return end
+            local s = GetUnitSettings(settingsKey)
+            local anchored = s and s.anchorTo and s.anchorTo ~= "disabled"
+            local frameLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
+            local locked = (anchored and (settingsKey == "player" or settingsKey == "target")) or frameLocked
+            if locked then
+                frame.editOverlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+                frame.editOverlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
+                if frame.editOverlay.infoText then
+                    frame.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 1)
+                    -- Re-anchor info text to overlay center (normally anchored to nudgeUp
+                    -- which is hidden, making text invisible)
+                    frame.editOverlay.infoText:ClearAllPoints()
+                    frame.editOverlay.infoText:SetPoint("CENTER", frame.editOverlay, "CENTER", 0, 0)
+                    frame.editOverlay.infoText:Show()
+                end
+                -- Raise overlay strata so it appears above Blizzard's Edit Mode overlays
+                frame.editOverlay:SetFrameStrata("TOOLTIP")
+            else
+                frame.editOverlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+                frame.editOverlay:SetBackdropColor(0.2, 0.8, 1, 0.15)
+                if frame.editOverlay.infoText then
+                    frame.editOverlay.infoText:SetTextColor(1, 1, 1, 1)
+                    -- Restore normal anchor: above nudgeUp button (default positioning)
+                    frame.editOverlay.infoText:ClearAllPoints()
+                    frame.editOverlay.infoText:SetPoint("BOTTOM", frame.editOverlay.nudgeUp, "TOP", 0, 2)
+                    frame.editOverlay.infoText:Hide()  -- Hidden until selected
+                end
+                -- Restore normal frame level (was raised to TOOLTIP for locked state)
+                frame.editOverlay:SetFrameStrata("MEDIUM")
+                frame.editOverlay:SetFrameLevel(frame:GetFrameLevel() + 10)
+            end
+        end)
 
         -- Enable dragging
         frame:SetMovable(true)
@@ -321,13 +362,16 @@ function QUI_UF:EnableEditMode()
 
         frame:SetScript("OnDragStart", function(self)
             if QUI_UF.editModeActive then
-                -- Block dragging for anchored frames
+                -- Block dragging for anchored or overridden frames
                 local settingsKey = self.unitKey
                 if self.unitKey:match("^boss%d+$") then settingsKey = "boss" end
                 local settings = GetUnitSettings(settingsKey)
                 local isAnchored = settings and settings.anchorTo and settings.anchorTo ~= "disabled"
                 if isAnchored and (settingsKey == "player" or settingsKey == "target") then
                     return -- Locked to anchor, cannot drag
+                end
+                if _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(self) then
+                    return -- Locked by anchoring system, cannot drag
                 end
 
                 self:StartMoving()
@@ -569,7 +613,6 @@ end
 ---------------------------------------------------------------------------
 -- Hook Blizzard's Edit Mode to trigger QUI's edit mode when user enters via Esc > Edit Mode
 function QUI_UF:HookBlizzardEditMode()
-    if not EditModeManagerFrame then return end
     if self._blizzEditModeHooked then return end
     self._blizzEditModeHooked = true
 
@@ -582,27 +625,23 @@ function QUI_UF:HookBlizzardEditMode()
     -- Track if we triggered from Blizzard Edit Mode (vs /qui editmode)
     self.triggeredByBlizzEditMode = false
 
-    -- TAINT SAFETY: hooksecurefunc callbacks run synchronously in the secure
-    -- EditMode execution context. Any addon code that runs here taints the
-    -- chain, causing "attempt to perform arithmetic on a secret number value"
-    -- errors in RefreshEncounterEvents/HideSystemSelections. Defer ALL work
-    -- via C_Timer.After(0) to break the taint chain.
-    hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-        C_Timer.After(0, function()
+    -- Use central Edit Mode dispatcher to avoid taint from multiple hooksecurefunc
+    -- callbacks on EnterEditMode/ExitEditMode.
+    local core = GetCore()
+    if core and core.RegisterEditModeEnter then
+        core:RegisterEditModeEnter(function()
             if InCombatLockdown() then return end
             if self.editModeActive then return end  -- Already active via /qui editmode
             self.triggeredByBlizzEditMode = true
             self:EnableEditMode()
         end)
-    end)
 
-    hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        C_Timer.After(0, function()
+        core:RegisterEditModeExit(function()
             if InCombatLockdown() then return end
             if not self.editModeActive then return end
             if not self.triggeredByBlizzEditMode then return end  -- Don't exit if user used /qui editmode
             self.triggeredByBlizzEditMode = false
             self:DisableEditMode()
         end)
-    end)
+    end
 end
