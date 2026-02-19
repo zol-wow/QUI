@@ -737,6 +737,7 @@ local defaults = {
             hideWhenMounted = false,
             hideWhenFlying = false,
             hideWhenSkyriding = false,
+            dontHideInDungeonsRaids = false,
         },
 
         -- Unitframes Visibility (player, target, focus, pet, tot, boss)
@@ -753,6 +754,7 @@ local defaults = {
             hideWhenMounted = false,
             hideWhenFlying = false,
             hideWhenSkyriding = false,
+            dontHideInDungeonsRaids = false,
         },
 
         -- Custom Trackers Visibility (all custom item/spell bars)
@@ -768,6 +770,7 @@ local defaults = {
             hideWhenMounted = false,
             hideWhenFlying = false,
             hideWhenSkyriding = false,
+            dontHideInDungeonsRaids = false,
         },
 
         viewers = {

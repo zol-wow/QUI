@@ -1936,14 +1936,13 @@ local function ShouldCDMBeVisible()
     local vis = GetCDMVisibilitySettings()
     if not vis then return true end
 
-    -- Hide When Mounted overrides all other conditions (includes Druid flight form)
-    if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
-
-    -- Hide When Flying (any flight)
-    if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-
-    -- Hide When Skyriding (dynamic flight zones)
-    if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if not ignoreHideRules then
+        -- Hide rules override show conditions.
+        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    end
 
     -- Show Always overrides all other conditions
     if vis.showAlways then return true end
@@ -2192,14 +2191,13 @@ local function ShouldUnitframesBeVisible()
     local vis = GetUnitframesVisibilitySettings()
     if not vis then return true end
 
-    -- Hide When Mounted overrides all other conditions (includes Druid flight form)
-    if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
-
-    -- Hide When Flying (any flight)
-    if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-
-    -- Hide When Skyriding (dynamic flight zones)
-    if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if not ignoreHideRules then
+        -- Hide rules override show conditions.
+        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    end
 
     -- Show Always overrides all other conditions
     if vis.showAlways then return true end
@@ -2388,34 +2386,15 @@ visibilityEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 visibilityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 visibilityEventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-
--- Flight state changes (takeoff/landing) have no event; poll when flight visibility options are enabled
-local flightCheckElapsed = 0
-local flightCheckFrame = CreateFrame("Frame")
-flightCheckFrame:SetScript("OnUpdate", function(self, elapsed)
-    flightCheckElapsed = flightCheckElapsed + elapsed
-    if flightCheckElapsed < 0.5 then return end
-    flightCheckElapsed = 0
-
-    local needUpdate = false
-    if QUICore and QUICore.db and QUICore.db.profile then
-        local p = QUICore.db.profile
-        if (p.cdmVisibility and (p.cdmVisibility.hideWhenFlying or p.cdmVisibility.hideWhenSkyriding)) or
-           (p.unitframesVisibility and (p.unitframesVisibility.hideWhenFlying or p.unitframesVisibility.hideWhenSkyriding)) or
-           (p.customTrackersVisibility and (p.customTrackersVisibility.hideWhenFlying or p.customTrackersVisibility.hideWhenSkyriding)) then
-            needUpdate = true
-        end
-    end
-    if not needUpdate then return end
-
-    UpdateCDMVisibility()
-    UpdateUnitframesVisibility()
-    if _G.QUI_RefreshCustomTrackersVisibility then
-        _G.QUI_RefreshCustomTrackersVisibility()
-    end
-end)
+visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
+visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
 
 visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_FLAGS_CHANGED" then
+        local unit = ...
+        if unit ~= "player" then return end
+    end
+
     if event == "PLAYER_LOGIN" then
         -- Delay initial check to ensure frames exist
         C_Timer.After(1.5, function()

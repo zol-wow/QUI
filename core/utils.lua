@@ -482,7 +482,7 @@ end
 ---------------------------------------------------------------------------
 
 --- Spell ID for Dracthyr Evoker Soar (racial flight form)
-local SOAR_SPELL_ID = 369536
+local SOAR_SPELL_ID = 381322
 
 --- Check if player is mounted (includes Druid flight form, Dracthyr Soar)
 --- Druid: GetShapeshiftFormID() == 27 (Swift Flight Form)
@@ -512,8 +512,16 @@ end
 --- @return boolean True if flying in a dynamic flight zone
 function Helpers.IsPlayerSkyriding()
     if not (C_PlayerInfo and C_PlayerInfo.GetGlidingInfo) then return false end
-    local ok, gliding, canGlideNow = pcall(C_PlayerInfo.GetGlidingInfo)
-    return ok and gliding and canGlideNow
+    local ok, gliding = pcall(C_PlayerInfo.GetGlidingInfo)
+    return ok and gliding
+end
+
+--- Check if player is inside a dungeon or raid instance.
+--- Used by HUD visibility hide-rule overrides.
+--- @return boolean True when instance type is party or raid
+function Helpers.IsPlayerInDungeonOrRaid()
+    local _, instanceType = GetInstanceInfo()
+    return instanceType == "party" or instanceType == "raid"
 end
 
 ---------------------------------------------------------------------------
@@ -547,3 +555,4 @@ ns.GetCore = Helpers.GetCore
 ns.IsPlayerMounted = Helpers.IsPlayerMounted
 ns.IsPlayerFlying = Helpers.IsPlayerFlying
 ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding
+ns.IsPlayerInDungeonOrRaid = Helpers.IsPlayerInDungeonOrRaid
