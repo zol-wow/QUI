@@ -398,23 +398,34 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
--- Hook into GameMenuFrame button initialization (with defensive check)
-if GameMenuFrame and GameMenuFrame.InitButtons then
-    hooksecurefunc(GameMenuFrame, "InitButtons", function()
-        -- CRITICAL: Defer ALL work to break the taint chain.
-        -- InitButtons runs in Blizzard's secure context. Any addon code
-        -- that runs synchronously here (even reading pool buttons) can
-        -- taint the execution context and propagate to Edit Mode.
-        C_Timer.After(0, function()
-            if not GameMenuFrame:IsShown() then return end
+-- TAINT SAFETY: NEVER hook GameMenuFrame directly (HookScript, hooksecurefunc).
+-- Even deferred callbacks (C_Timer.After(0) inside the hook) still execute addon
+-- code in GameMenuFrame's secure context, tainting the execution chain. When the
+-- user then clicks "Edit Mode", the tainted context propagates through:
+--   SetAttribute -> ShowUIPanel -> EnterEditMode -> TargetUnit() -> ADDON_ACTION_FORBIDDEN
+--
+-- Instead, use a visibility watcher frame that polls GameMenuFrame:IsShown()
+-- without any hooks on the secure frame itself.
+if GameMenuFrame then
+    local gameMenuWatcher = CreateFrame("Frame", nil, UIParent)
+    local wasShown = false
+    local lastButtonCount = 0
 
-            -- Position standalone QUI button (no AddButton, no layoutIndex writes)
+    gameMenuWatcher:SetScript("OnUpdate", function()
+        local isShown = GameMenuFrame:IsShown()
+
+        if isShown and not wasShown then
+            -- GameMenuFrame just became visible
+            wasShown = true
+
+            ShowDimBehindGameMenu()
+
+            local oc = GetOverlayContainer()
+            oc:Show()
+
             PositionStandaloneButton()
-
-            -- Skin menu if enabled
             SkinGameMenu()
 
-            -- Style any new buttons
             if skinState.skinned and GameMenuFrame.buttonPool then
                 local core = GetCore()
                 local settings = core and core.db and core.db.profile and core.db.profile.general
@@ -425,40 +436,35 @@ if GameMenuFrame and GameMenuFrame.InitButtons then
                     end
                 end
             end
-        end)
-    end)
-
-    -- Hook Show/Hide for dim effect and overlay visibility
-    -- CRITICAL: Defer ALL work in OnShow/OnHide. These hooks run synchronously
-    -- in GameMenuFrame's secure execution context. Any operation that reads
-    -- from GameMenuFrame (e.g. GetFrameLevel()) taints the context, which
-    -- then propagates to Edit Mode → TargetUnit/UpdateHealthColor errors.
-    GameMenuFrame:HookScript("OnShow", function()
-        C_Timer.After(0, function()
-            if not GameMenuFrame:IsShown() then return end
-
-            ShowDimBehindGameMenu()
-
-            local oc = GetOverlayContainer()
-            oc:Show()
-
-            PositionStandaloneButton()
-
-            if not skinState.skinned then return end
-            if not GameMenuFrame.buttonPool then return end
-
-            local core = GetCore()
-            local settings = core and core.db and core.db.profile and core.db.profile.general
-            local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "gameMenu")
-            for button in GameMenuFrame.buttonPool:EnumerateActive() do
-                if not buttonOverlays[button] then
-                    StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        elseif isShown then
+            -- Already showing: detect button pool changes and skin new entries.
+            local count = 0
+            if GameMenuFrame.buttonPool then
+                for _ in GameMenuFrame.buttonPool:EnumerateActive() do
+                    count = count + 1
                 end
             end
-        end)
-    end)
-    GameMenuFrame:HookScript("OnHide", function()
-        C_Timer.After(0, function()
+
+            if count ~= lastButtonCount then
+                lastButtonCount = count
+                PositionStandaloneButton()
+                SkinGameMenu()
+                if skinState.skinned and GameMenuFrame.buttonPool then
+                    local core = GetCore()
+                    local settings = core and core.db and core.db.profile and core.db.profile.general
+                    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "gameMenu")
+                    for button in GameMenuFrame.buttonPool:EnumerateActive() do
+                        if not buttonOverlays[button] then
+                            StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+                        end
+                    end
+                end
+            end
+        elseif wasShown then
+            -- GameMenuFrame just became hidden
+            wasShown = false
+            lastButtonCount = 0
+
             HideDimBehindGameMenu()
 
             local oc = GetOverlayContainer()
@@ -467,6 +473,6 @@ if GameMenuFrame and GameMenuFrame.InitButtons then
             if quiStandaloneButton then
                 quiStandaloneButton:Hide()
             end
-        end)
+        end
     end)
 end

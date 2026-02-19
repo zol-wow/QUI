@@ -777,15 +777,37 @@ function QUICore:EnablePowerBarEditMode()
             CreatePowerBarEditOverlay(bar, barKey)
             bar.editOverlay:Show()
 
+            -- Check if this power bar is locked by any anchoring system
+            local isLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(bar)
+
             -- Update info text with current position
             if bar.editOverlay.infoText then
                 local label = (barKey == "primary") and "Primary" or "Secondary"
-                local x = cfg.offsetX or 0
-                local y = cfg.offsetY or 0
-                bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
+                if isLocked then
+                    bar.editOverlay.infoText:SetText(label .. "  (Locked)")
+                else
+                    local x = cfg.offsetX or 0
+                    local y = cfg.offsetY or 0
+                    bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
+                end
             end
 
-            -- Enable dragging
+            -- Visual indicator: grey out locked power bar overlays
+            if isLocked then
+                bar.editOverlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+                bar.editOverlay:SetBackdropColor(0.5, 0.5, 0.5, 0.15)
+                if bar.editOverlay.infoText then
+                    bar.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 1)
+                end
+            else
+                bar.editOverlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+                bar.editOverlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
+                if bar.editOverlay.infoText then
+                    bar.editOverlay.infoText:SetTextColor(0.7, 0.7, 0.7, 1)
+                end
+            end
+
+            -- Enable dragging (blocked below for locked frames)
             bar:SetMovable(true)
             bar:EnableMouse(true)
             bar:RegisterForDrag("LeftButton")
@@ -804,6 +826,10 @@ function QUICore:EnablePowerBarEditMode()
 
             bar:SetScript("OnDragStart", function(self)
                 if PowerBarEditMode.active then
+                    -- Block drag if frame is locked by any anchoring system
+                    if _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(self) then
+                        return
+                    end
                     self:StartMoving()
                     self._isMoving = true
 
@@ -2871,28 +2897,21 @@ local function InitializeResourceBars(self)
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
 
-    -- Hook Blizzard Edit Mode for power bars
-    C_Timer.After(0.6, function()
-        if EditModeManagerFrame and not QUICore._powerBarEditModeHooked then
-            QUICore._powerBarEditModeHooked = true
-            -- TAINT SAFETY: Defer all work to break the taint chain from EditMode's
-            -- secure execution context. Synchronous addon code here taints the chain.
-            hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-                C_Timer.After(0, function()
-                    if not InCombatLockdown() then
-                        QUICore:EnablePowerBarEditMode()
-                    end
-                end)
-            end)
-            hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-                C_Timer.After(0, function()
-                    if not InCombatLockdown() then
-                        QUICore:DisablePowerBarEditMode()
-                    end
-                end)
-            end)
-        end
-    end)
+    -- Use central Edit Mode dispatcher to avoid taint from multiple hooksecurefunc
+    -- callbacks on EnterEditMode/ExitEditMode.
+    if not QUICore._powerBarEditModeHooked then
+        QUICore._powerBarEditModeHooked = true
+        QUICore:RegisterEditModeEnter(function()
+            if not InCombatLockdown() then
+                QUICore:EnablePowerBarEditMode()
+            end
+        end)
+        QUICore:RegisterEditModeExit(function()
+            if not InCombatLockdown() then
+                QUICore:DisablePowerBarEditMode()
+            end
+        end)
+    end
 end
 
 

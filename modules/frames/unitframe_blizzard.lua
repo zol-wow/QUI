@@ -36,10 +36,10 @@ local function KillBlizzardFrame(frame, allowInEditMode)
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10000, 10000)
 
-    -- Use RegisterStateDriver to keep it hidden (works with secure frames)
-    if not InCombatLockdown() then
-        RegisterStateDriver(frame, "visibility", "hide")
-    end
+    -- NOTE: Do NOT use RegisterStateDriver(frame, "visibility", "hide") here.
+    -- Hidden frames return nil from GetRect(), which crashes Blizzard's
+    -- GetScaledSelectionSides() when the Edit Mode magnetic snap system
+    -- iterates all registered systems.  Alpha 0 + off-screen is sufficient.
 end
 
 local function KillBlizzardChildFrame(frame)
@@ -178,18 +178,20 @@ function QUI_UF:HideBlizzardCastbars()
             PlayerCastingBarFrame:SetUnit(nil)
         end)
         if not ok2 then QUI:DebugPrint("Could not detach PlayerCastingBarFrame unit: " .. tostring(err2)) end
-        local ok3, err3 = pcall(function()
-            if not _blizzFrameGuards.castbarShowHooked then
-                _blizzFrameGuards.castbarShowHooked = true
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
-                hooksecurefunc(PlayerCastingBarFrame, "Show", function(self)
+        -- TAINT SAFETY: Do NOT use hooksecurefunc on PlayerCastingBarFrame (secure frame).
+        -- Even deferred callbacks taint the secure execution context.
+        -- Use an OnUpdate watcher to re-hide if Blizzard shows it again.
+        if not _blizzFrameGuards.castbarShowHooked then
+            _blizzFrameGuards.castbarShowHooked = true
+            local castbarHideWatcher = CreateFrame("Frame", nil, UIParent)
+            castbarHideWatcher:SetScript("OnUpdate", function()
+                if PlayerCastingBarFrame:IsShown() then
                     C_Timer.After(0, function()
-                        pcall(function() self:Hide() end)
+                        pcall(function() PlayerCastingBarFrame:Hide() end)
                     end)
-                end)
-            end
-        end)
-        if not ok3 then QUI:DebugPrint("Could not hook PlayerCastingBarFrame:Show: " .. tostring(err3)) end
+                end
+            end)
+        end
     end
     -- Hide pet castbar only when QUI pet frame is enabled.
     if db.enabled and db.pet and db.pet.enabled and PetCastingBarFrame then
@@ -264,6 +266,12 @@ end
 
 -- Hide Blizzard's selection frames when QUI frames are enabled
 -- Called during EnableEditMode() to prevent visual conflicts
+-- TAINT SAFETY: All operations deferred to avoid tainting the secure frame context.
+-- Selection frames are children of secure unit frames (PlayerFrame, TargetFrame, etc).
+-- Synchronous Hide()/HookScript calls on these taint CompactUnitFrame values,
+-- causing "secret number tainted by QUI" errors when Edit Mode reads them.
+-- NOTE: Use SetAlpha(0) instead of Hide(). Hidden frames return nil from
+-- GetRect(), crashing GetScaledSelectionSides() in Blizzard's magnetic snap loop.
 function QUI_UF:HideBlizzardSelectionFrames()
     local function HideSelection(parent, unitKey)
         if not parent or not parent.Selection then return end
@@ -271,20 +279,33 @@ function QUI_UF:HideBlizzardSelectionFrames()
         local db = GetDB()
         if not db or not db[unitKey] or not db[unitKey].enabled then return end
 
-        parent.Selection:Hide()
+        -- Defer to break taint chain from Edit Mode secure context.
+        -- SetAlpha(0) keeps the frame "shown" so GetRect() returns valid bounds,
+        -- avoiding crashes in Blizzard's magnetic snap system.
+        C_Timer.After(0, function()
+            if parent.Selection then
+                parent.Selection:SetAlpha(0)
+            end
+        end)
 
-        -- Hook OnShow to persistently hide while QUI frames are enabled
+        -- Use OnUpdate watcher to persistently keep alpha 0 instead of HookScript
+        -- (HookScript on Selection fires addon code in the secure frame context)
         local selKey = tostring(parent) .. "_selection"
         if not _blizzFrameGuards[selKey] then
             _blizzFrameGuards[selKey] = true
-            -- TAINT SAFETY: Defer to break taint chain from secure context.
-            parent.Selection:HookScript("OnShow", function(self)
-                C_Timer.After(0, function()
-                    local db = GetDB()
-                    if db and db[unitKey] and db[unitKey].enabled and self and self.Hide then
-                        self:Hide()
+            local selWatcher = CreateFrame("Frame", nil, UIParent)
+            selWatcher:SetScript("OnUpdate", function()
+                local sel = parent.Selection
+                if sel and sel:GetAlpha() > 0 then
+                    local curDb = GetDB()
+                    if curDb and curDb[unitKey] and curDb[unitKey].enabled then
+                        C_Timer.After(0, function()
+                            if sel then
+                                sel:SetAlpha(0)
+                            end
+                        end)
                     end
-                end)
+                end
             end)
         end
     end

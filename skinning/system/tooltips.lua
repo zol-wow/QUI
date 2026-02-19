@@ -7,7 +7,17 @@ local GetCore = ns.Helpers.GetCore
 ---------------------------------------------------------------------------
 -- TOOLTIP SKINNING
 -- Applies QUI theme to Blizzard tooltips (GameTooltip, ItemRefTooltip, etc.)
+--
+-- Since WoW 9.1.5, GameTooltip (via SharedTooltipTemplate) no longer
+-- inherits BackdropTemplate. tooltip:SetBackdrop() is nil.
+-- Instead, tooltips use a NineSlice sub-frame for their appearance.
+-- We skin tooltips by manipulating the NineSlice directly:
+--   NineSlice:SetCenterColor(r, g, b, a)  — background
+--   NineSlice:SetBorderColor(r, g, b, a)  — border
+-- And by applying flat textures to the NineSlice pieces for the QUI look.
 ---------------------------------------------------------------------------
+
+local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
 -- Get skinning colors (uses unified color system)
 local function GetTooltipColors()
@@ -119,20 +129,6 @@ local function GetPlayerClassColor()
     return 0.2, 1.0, 0.6, 1 -- fallback to mint
 end
 
--- Build a backdrop table with the given edge size (pixel-perfect)
-local function BuildTooltipBackdrop(edgeSize, frame)
-    edgeSize = edgeSize or 1
-    local core = GetCore()
-    local px = core and core.GetPixelSize and core:GetPixelSize(frame) or 1
-    local edge = edgeSize * px
-    return {
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = edge,
-        insets = { left = edge, right = edge, top = edge, bottom = edge }
-    }
-end
-
 -- Resolve the effective colors from settings (or fall back to skin colors)
 local function GetEffectiveColors()
     local settings = GetSettings()
@@ -183,16 +179,116 @@ local function GetEffectiveBorderThickness()
     return 1
 end
 
--- Store original backdrops for unskinning
-local originalBackdrops = {}
+---------------------------------------------------------------------------
+-- NineSlice-based tooltip skinning
+-- Works with modern WoW tooltips that use NineSlice instead of BackdropTemplate.
+-- Also falls back to SetBackdrop for any tooltips that still support it.
+---------------------------------------------------------------------------
 
 -- TAINT SAFETY: Track skinned state in local tables, NOT on Blizzard frames.
--- Writing addon properties (quiSkinned, quiColors, etc.) to secure frames
--- taints them in Midnight's taint model.
-local skinnedTooltips = setmetatable({}, { __mode = "k" })   -- tooltip → { colors = {...} }
+local skinnedTooltips = setmetatable({}, { __mode = "k" })   -- tooltip → true
 local hookedTooltips = setmetatable({}, { __mode = "k" })    -- tooltip → true (OnShow hooked)
 
--- Apply QUI skin to a tooltip frame
+-- NineSlice piece names used by Blizzard tooltips
+local NINE_SLICE_PIECES = {
+    "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
+    "TopEdge", "BottomEdge", "LeftEdge", "RightEdge", "Center",
+}
+
+-- Apply flat QUI textures to all NineSlice pieces
+local function ApplyFlatNineSlice(nineSlice, edgeSize)
+    if not nineSlice then return end
+
+    local core = GetCore()
+    local px = core and core.GetPixelSize and core:GetPixelSize(nineSlice) or 1
+    local edge = (edgeSize or 1) * px
+
+    for _, pieceName in ipairs(NINE_SLICE_PIECES) do
+        local piece = nineSlice[pieceName]
+        if piece and piece.SetTexture then
+            piece:SetTexture(FLAT_TEXTURE)
+            piece:SetTexCoord(0, 1, 0, 1)
+        end
+    end
+
+    -- Size the corners and edges to match our border thickness
+    local tl = nineSlice.TopLeftCorner
+    local tr = nineSlice.TopRightCorner
+    local bl = nineSlice.BottomLeftCorner
+    local br = nineSlice.BottomRightCorner
+
+    if tl then tl:SetSize(edge, edge) end
+    if tr then tr:SetSize(edge, edge) end
+    if bl then bl:SetSize(edge, edge) end
+    if br then br:SetSize(edge, edge) end
+
+    -- Edge thickness
+    local te = nineSlice.TopEdge
+    local be = nineSlice.BottomEdge
+    local le = nineSlice.LeftEdge
+    local re = nineSlice.RightEdge
+
+    if te then te:SetHeight(edge) end
+    if be then be:SetHeight(edge) end
+    if le then le:SetWidth(edge) end
+    if re then re:SetWidth(edge) end
+
+    -- Inset the center piece so the background doesn't bleed past the border.
+    -- By default Blizzard anchors Center to fill between corners, but with thin
+    -- borders the background can extend beyond the visible edge.
+    local center = nineSlice.Center
+    if center then
+        center:ClearAllPoints()
+        center:SetPoint("TOPLEFT", nineSlice, "TOPLEFT", edge, -edge)
+        center:SetPoint("BOTTOMRIGHT", nineSlice, "BOTTOMRIGHT", -edge, edge)
+    end
+end
+
+-- Apply QUI skin colors to a tooltip's NineSlice
+local function ApplyNineSliceColors(nineSlice, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not nineSlice then return end
+
+    -- Background (center piece)
+    if nineSlice.SetCenterColor then
+        nineSlice:SetCenterColor(bgr, bgg, bgb, bga)
+    elseif nineSlice.Center then
+        nineSlice.Center:SetVertexColor(bgr, bgg, bgb, bga)
+    end
+
+    -- Border (edge + corner pieces)
+    if nineSlice.SetBorderColor then
+        nineSlice:SetBorderColor(sr, sg, sb, sa)
+    else
+        -- Manual fallback: color each border piece individually
+        for _, pieceName in ipairs(NINE_SLICE_PIECES) do
+            if pieceName ~= "Center" then
+                local piece = nineSlice[pieceName]
+                if piece and piece.SetVertexColor then
+                    piece:SetVertexColor(sr, sg, sb, sa)
+                end
+            end
+        end
+    end
+end
+
+-- Prevent Blizzard from re-applying the default NineSlice layout on Show
+local function ClearNineSliceLayoutInfo(tooltip)
+    if not tooltip then return end
+
+    -- Clear layout info that Blizzard uses to re-apply defaults
+    local ns = tooltip.NineSlice
+    if ns then
+        ns.layoutType = nil
+        ns.layoutTextureKit = nil
+        ns.backdropInfo = nil
+    end
+
+    tooltip.layoutType = nil
+    tooltip.layoutTextureKit = nil
+    tooltip.backdropInfo = nil
+end
+
+-- Full skin application for a tooltip
 local function SkinTooltip(tooltip)
     if not tooltip then return end
     if skinnedTooltips[tooltip] then return end
@@ -200,68 +296,60 @@ local function SkinTooltip(tooltip)
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
 
-    -- Store original backdrop info if available
-    if tooltip.GetBackdrop then
-        local ok, backdrop = pcall(tooltip.GetBackdrop, tooltip)
-        if ok and backdrop then
-            originalBackdrops[tooltip] = backdrop
-        end
-    end
-
-    -- Skip tooltips that don't have BackdropTemplate — Mixin() from addon context
-    -- would taint the tooltip permanently in Midnight's taint model.
-    -- In 12.0, virtually all tooltips already have BackdropTemplate.
-    if not tooltip.SetBackdrop then
+    local ns = tooltip.NineSlice
+    if ns then
+        -- NineSlice path (modern WoW 9.1.5+)
+        ClearNineSliceLayoutInfo(tooltip)
+        ApplyFlatNineSlice(ns, thickness)
+        ApplyNineSliceColors(ns, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        ns:Show()
+    elseif tooltip.SetBackdrop then
+        -- Legacy BackdropTemplate path (fallback)
+        local core = GetCore()
+        local px = core and core.GetPixelSize and core:GetPixelSize(tooltip) or 1
+        local edge = thickness * px
+        tooltip:SetBackdrop({
+            bgFile = FLAT_TEXTURE,
+            edgeFile = FLAT_TEXTURE,
+            edgeSize = edge,
+            insets = { left = edge, right = edge, top = edge, bottom = edge }
+        })
+        tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
+        tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
+    else
+        -- No NineSlice and no BackdropTemplate — cannot skin this tooltip
         return
     end
 
-    -- Set the QUI backdrop
-    tooltip:SetBackdrop(BuildTooltipBackdrop(thickness, tooltip))
-    tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
-    tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
-
-    -- Hide NineSlice if present (Blizzard's default tooltip border)
-    if tooltip.NineSlice then
-        tooltip.NineSlice:SetAlpha(0)
-    end
-
-    skinnedTooltips[tooltip] = { colors = { sr, sg, sb, sa, bgr, bgg, bgb, bga } }
+    skinnedTooltips[tooltip] = true
 end
 
--- Update colors on an already-skinned tooltip
-local function UpdateTooltipColors(tooltip)
-    if not tooltip or not skinnedTooltips[tooltip] then return end
-
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-
-    if tooltip.SetBackdropColor then
-        tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
-    end
-    if tooltip.SetBackdropBorderColor then
-        tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
-    end
-
-    skinnedTooltips[tooltip].colors = { sr, sg, sb, sa, bgr, bgg, bgb, bga }
-end
-
--- Re-skin a tooltip (rebuild backdrop for thickness changes)
-local function ReskinTooltip(tooltip)
-    if not tooltip or not skinnedTooltips[tooltip] then return end
+-- Re-apply skin to an already-skinned tooltip (called on every Show)
+local function ReapplySkin(tooltip)
+    if not tooltip then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
 
-    -- Skip if no SetBackdrop — Mixin() from addon context taints (see SkinTooltip)
-    if not tooltip.SetBackdrop then
-        return
+    local ns = tooltip.NineSlice
+    if ns then
+        ClearNineSliceLayoutInfo(tooltip)
+        ApplyFlatNineSlice(ns, thickness)
+        ApplyNineSliceColors(ns, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        ns:Show()
+    elseif tooltip.SetBackdrop then
+        local core = GetCore()
+        local px = core and core.GetPixelSize and core:GetPixelSize(tooltip) or 1
+        local edge = thickness * px
+        tooltip:SetBackdrop({
+            bgFile = FLAT_TEXTURE,
+            edgeFile = FLAT_TEXTURE,
+            edgeSize = edge,
+            insets = { left = edge, right = edge, top = edge, bottom = edge }
+        })
+        tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
+        tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
     end
-
-    -- Rebuild backdrop with current thickness
-    tooltip:SetBackdrop(BuildTooltipBackdrop(thickness, tooltip))
-    tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
-    tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
-
-    skinnedTooltips[tooltip].colors = { sr, sg, sb, sa, bgr, bgg, bgb, bga }
 end
 
 -- List of tooltips to skin
@@ -279,9 +367,8 @@ local tooltipsToSkin = {
     "WorldMapCompareTooltip2",
     "SmallTextTooltip",
     "ReputationParagonTooltip",
-    -- NOTE: NamePlateTooltip intentionally omitted. Skinning it (Mixin,
-    -- SetBackdrop, property writes) taints the frame in Midnight's taint
-    -- model, causing nameplate errors (SetNamePlateHitTestFrame, etc.).
+    -- NOTE: NamePlateTooltip intentionally omitted. Skinning it taints the frame
+    -- in Midnight's taint model, causing nameplate errors.
     "QueueStatusFrame",
     "FloatingGarrisonFollowerTooltip",
     "FloatingGarrisonFollowerAbilityTooltip",
@@ -309,12 +396,12 @@ local function SkinAllTooltips()
     end
 end
 
--- Refresh colors on all skinned tooltips (rebuilds backdrop for thickness)
+-- Refresh colors on all skinned tooltips (rebuilds textures for thickness changes)
 local function RefreshAllTooltipColors()
     for _, name in ipairs(tooltipsToSkin) do
         local tooltip = _G[name]
         if tooltip and skinnedTooltips[tooltip] then
-            ReskinTooltip(tooltip)
+            ReapplySkin(tooltip)
         end
     end
 end
@@ -329,7 +416,7 @@ local function RefreshAllTooltipFonts()
     end
 end
 
--- Hook OnShow to ensure colors stay applied (some tooltips reset on show)
+-- Hook OnShow to ensure skin stays applied (Blizzard resets NineSlice on show)
 local function HookTooltipOnShow(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
 
@@ -342,17 +429,8 @@ local function HookTooltipOnShow(tooltip)
         if not skinnedTooltips[self] then
             SkinTooltip(self)
         else
-            -- Re-apply colors in case they were reset
-            local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-            if self.SetBackdropColor and self.SetBackdropBorderColor then
-                self:SetBackdropColor(bgr, bgg, bgb, bga)
-                self:SetBackdropBorderColor(sr, sg, sb, sa)
-            end
-
-            -- Keep NineSlice hidden
-            if self.NineSlice then
-                self.NineSlice:SetAlpha(0)
-            end
+            -- Re-apply full skin — Blizzard resets NineSlice layout on every Show
+            ReapplySkin(self)
         end
     end)
 
@@ -462,6 +540,6 @@ eventFrame:SetScript("OnEvent", function(self, event)
 end)
 
 -- Expose refresh function globally for live color updates
--- This rebuilds backdrops (for thickness changes) and recolors
+-- This rebuilds textures (for thickness changes) and recolors
 _G.QUI_RefreshTooltipSkinColors = RefreshAllTooltipColors
 _G.QUI_RefreshTooltipFontSize = RefreshAllTooltipFonts
