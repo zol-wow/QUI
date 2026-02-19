@@ -377,6 +377,23 @@ local function BuildDisplayTab(tabContent)
     end
 end
 
+local function BuildQoLTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 7, subTabName = "QoL"})
+    local y = -10
+    local frames = {
+        { key = "brezCounter", name = "Brez Counter" },
+        { key = "combatTimer", name = "Combat Timer" },
+        { key = "skyriding", name = "Skyriding" },
+        { key = "petWarning", name = "Pet Warning" },
+        { key = "focusCastAlert", name = "Focus Cast Alert" },
+        { key = "missingRaidBuffs", name = "Missing Raid Buffs" },
+        { key = "mplusTimer", name = "M+ Timer" },
+    }
+    for _, frameDef in ipairs(frames) do
+        y = BuildFrameEntry(tabContent, frameDef, y)
+    end
+end
+
 --------------------------------------------------------------------------------
 -- FRAME ANCHORING PAGE (coordinator with sub-tabs)
 --------------------------------------------------------------------------------
@@ -390,6 +407,7 @@ local function CreateFrameAnchoringPage(parent)
         { name = "Castbars",      builder = BuildCastbarsTab },
         { name = "Action Bars",   builder = BuildActionBarsTab },
         { name = "Display",       builder = BuildDisplayTab },
+        { name = "QoL",           builder = BuildQoLTab },
     })
 
     content:SetHeight(600)
