@@ -153,8 +153,12 @@ end
 ---------------------------------------------------------------------------
 function QUI_UF:HideBlizzardCastbars()
     local db = GetDB()
-    if not db or not db.enabled then return end
-    if not (db.player and db.player.castbar and db.player.castbar.enabled) then return end
+    if not db then return end
+    local standalone = db.player and db.player.standaloneCastbar and not db.player.enabled
+    if not standalone then
+        if not db.enabled then return end
+        if not (db.player and db.player.enabled and db.player.castbar and db.player.castbar.enabled) then return end
+    end
 
     -- NOTE: As of 12.0.x beta, CastingBarFrame can be a forbidden/restricted frame.
     -- All interactions are wrapped in pcall to prevent errors from blocking initialization.

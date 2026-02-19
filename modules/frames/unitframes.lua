@@ -2801,6 +2801,17 @@ function QUI_UF:RefreshFrame(unitKey)
     end
     
     local frame = self.frames[unitKey]
+
+    -- Castbar refresh: runs before the frame guard so standalone castbars (no unit frame) also get updated
+    local castbar = self.castbars[unitKey]
+    if castbar and QUI_Castbar and QUI_Castbar.RefreshCastbar then
+        local unitSettings = GetUnitSettings(unitKey)
+        local castSettings = unitSettings and unitSettings.castbar
+        if castSettings and castSettings.enabled then
+            QUI_Castbar:RefreshCastbar(castbar, unitKey, castSettings, frame)
+        end
+    end
+
     if not frame then return end
 
     -- Skip frame modifications during combat (secure frames are protected)
@@ -3166,12 +3177,11 @@ function QUI_UF:RefreshFrame(unitKey)
         UpdateFrame(frame)
     end
     
-    -- Refresh castbar if exists, OR create if newly enabled
+    -- Refresh or create castbar
     local castbar = self.castbars[unitKey]
     local castSettings = settings.castbar
     if castSettings and castSettings.enabled then
         if castbar and QUI_Castbar and QUI_Castbar.RefreshCastbar then
-            -- Castbar exists - refresh it
             QUI_Castbar:RefreshCastbar(castbar, unitKey, castSettings, frame)
         elseif not castbar and QUI_Castbar and QUI_Castbar.CreateCastbar then
             -- Castbar doesn't exist but is now enabled - create it
@@ -3195,7 +3205,6 @@ end
 function QUI_UF:RefreshAll()
     -- Track if we've refreshed boss frames to avoid doing it 5 times
     local bossRefreshed = false
-    
     for unitKey, frame in pairs(self.frames) do
         -- Boss frames (boss1-boss5) share settings from "boss" key
         if unitKey:match("^boss%d+$") then
@@ -3220,9 +3229,10 @@ function QUI_UF:Initialize()
     end
 
     local db = GetDB()
-    if not db or not db.enabled then return end
+    if not db then return end
+    if not db.enabled and not db.player.standaloneCastbar then return end
 
-    -- Setup castbar module with helpers and references
+    -- Setup castbar module references
     if QUI_Castbar then
         QUI_Castbar:SetHelpers({
             GetUnitSettings = GetUnitSettings,
@@ -3238,7 +3248,18 @@ function QUI_UF:Initialize()
         QUI_Castbar:SetUnitFramesModule(self)
         QUI_Castbar.castbars = self.castbars
     end
-    
+
+    -- Standalone player castbar (solo mode on, player frame disabled)
+    if db.player and db.player.standaloneCastbar and not db.player.enabled then
+        if not db.player.castbar then
+            db.player.castbar = { enabled = true }
+        elseif db.player.castbar.enabled == nil then
+            db.player.castbar.enabled = true
+        end
+        self.castbars.player = CreateCastbar(nil, "player", "player")
+        self:HideBlizzardCastbars()
+    end
+
     -- Hide Blizzard default frames first
     self:HideBlizzardFrames()
     
@@ -3464,6 +3485,19 @@ end
 -- Register slider references for real-time sync during edit mode
 _G.QUI_RegisterEditModeSliders = function(unitKey, xSlider, ySlider)
     QUI_UF:RegisterEditModeSliders(unitKey, xSlider, ySlider)
+end
+
+-- Enable standalone player castbar live from options (no reload needed)
+_G.QUI_ToggleStandaloneCastbar = function()
+    local db = GetDB()
+    if not db then return end
+    if db.player and not db.player.castbar then
+        db.player.castbar = { enabled = true }
+    elseif db.player and db.player.castbar.enabled == nil then
+        db.player.castbar.enabled = true
+    end
+    QUI_UF.castbars.player = CreateCastbar(nil, "player", "player")
+    QUI_UF:HideBlizzardCastbars()
 end
 
 -- Global references for external access

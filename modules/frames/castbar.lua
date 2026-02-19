@@ -451,7 +451,11 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
             anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
             anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
         else
-            anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
+            if unitFrame then
+                anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
+            else
+                anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+            end
         end
     elseif anchor == "utility" then
         local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
@@ -467,14 +471,22 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
             anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
             anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
         else
-            anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
+            if unitFrame then
+                anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
+            else
+                anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+            end
         end
     elseif anchor == "unitframe" then
         local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
         local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
         local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
-        anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
-        anchorFrame:SetPoint("TOPRIGHT", unitFrame, "BOTTOMRIGHT", offsetX + widthAdj, offsetY)
+        if unitFrame then
+            anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
+            anchorFrame:SetPoint("TOPRIGHT", unitFrame, "BOTTOMRIGHT", offsetX + widthAdj, offsetY)
+        else
+            anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+        end
     else
         -- None: positioned independently on screen
         local offsetX = castSettings.offsetX or 0
@@ -488,13 +500,8 @@ local function SetCastbarSize(anchorFrame, castSettings, unitFrame, barHeight)
     
     if anchor == "essential" or anchor == "utility" then
         anchorFrame:SetSize(1, barHeight)
-    elseif anchor == "none" then
-        local frameWidth = unitFrame:GetWidth() or 250
-        local widthValue = (type(castSettings.width) == "number" and castSettings.width > 0) and castSettings.width or frameWidth
-        local castWidth = QUICore:PixelRound(widthValue, anchorFrame)
-        anchorFrame:SetSize(castWidth, barHeight)
     else
-        local frameWidth = unitFrame:GetWidth() or 250
+        local frameWidth = (unitFrame and unitFrame:GetWidth()) or 250
         local widthValue = (type(castSettings.width) == "number" and castSettings.width > 0) and castSettings.width or frameWidth
         local castWidth = QUICore:PixelRound(widthValue, anchorFrame)
         anchorFrame:SetSize(castWidth, barHeight)
@@ -3267,7 +3274,7 @@ end
 -- REFRESH: Update castbar in place (preserves active casts)
 ---------------------------------------------------------------------------
 function QUI_Castbar:RefreshCastbar(castbar, unitKey, castSettings, unitFrame)
-    if not castSettings or not unitFrame then return end
+    if not castSettings then return end
 
     local unit = (castbar and castbar.unit) or unitKey
     if castbar then
@@ -3296,7 +3303,7 @@ end
 
 function QUI_Castbar:RefreshBossCastbar(castbar, bossKey, castSettings, unitFrame)
     if not castSettings or not unitFrame then return end
-    
+
     local bossIndex = (castbar and castbar.bossIndex) or (bossKey and tonumber(bossKey:match("boss(%d+)")))
     if not bossIndex then return end
     

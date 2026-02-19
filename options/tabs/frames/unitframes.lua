@@ -69,7 +69,16 @@ local function CreateUnitFramesPage(parent)
         end
 
         -- Enable checkbox
-        local enableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Unitframes (Req. Reload)", "enabled", ufdb, RefreshNewUF)
+        local enableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Unitframes (Req. Reload)", "enabled", ufdb, function()
+            RefreshNewUF()
+            GUI:ShowConfirmation({
+                title = "Reload UI?",
+                message = "Enabling or disabling unit frames requires a UI reload to take effect.",
+                acceptText = "Reload",
+                cancelText = "Later",
+                onAccept = function() QUI:SafeReload() end,
+            })
+        end)
         enableCheck:SetPoint("TOPLEFT", PAD, y)
         enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -453,6 +462,7 @@ local function CreateUnitFramesPage(parent)
         y = y - FORM_ROW
 
         -- Enable checkbox (requires reload)
+        local updateSoloCheckState
         local displayNames = {targettarget = "Target of Target"}
         local frameName = displayNames[unitKey] or unitKey:gsub("^%l", string.upper)
         local enableCheck = GUI:CreateFormCheckbox(tabContent, "Enable " .. frameName .. " Frame", "enabled", unitDB, function()
@@ -463,12 +473,66 @@ local function CreateUnitFramesPage(parent)
                 cancelText = "Later",
                 onAccept = function() QUI:SafeReload() end,
             })
+            if updateSoloCheckState then updateSoloCheckState() end
         end)
         enableCheck:SetPoint("TOPLEFT", PAD, y)
         enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        -- FRAME SIZE section
+        -- Solo mode castbar (mutually exclusive with Enable Player Frame)
+        if unitKey == "player" then
+            local soloCheck
+            soloCheck = GUI:CreateFormCheckbox(tabContent, "Enable Player Castbar (Solo Mode)", "standaloneCastbar", unitDB, function(val)
+                local vis = db and db.unitframesVisibility
+                if val then
+                    -- Force player frame off and lock it out
+                    unitDB.enabled = false
+                    enableCheck.SetValue(false, true)
+                    enableCheck:SetEnabled(false)
+                    if vis then vis.alwaysShowCastbars = true end
+                    if _G.QUI_ToggleStandaloneCastbar then
+                        _G.QUI_ToggleStandaloneCastbar()
+                    end
+                else
+                    -- Solo off: prompt reload to restore Blizzard castbar
+                    enableCheck:SetEnabled(true)
+                    if vis then vis.alwaysShowCastbars = false end
+                    GUI:ShowConfirmation({
+                        title = "Reload UI?",
+                        message = "A reload is required to restore the default castbar.",
+                        acceptText = "Reload",
+                        cancelText = "Later",
+                        onAccept = function() QUI:SafeReload() end,
+                    })
+                end
+            end)
+            soloCheck:SetPoint("TOPLEFT", PAD, y)
+            soloCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local soloDesc = GUI:CreateLabel(tabContent, "The Solo Mode Player Castbar can be used with QUI Unitframes turned off, or the Player Frame turned off.", 11, C.textMuted)
+            soloDesc:SetPoint("TOPLEFT", PAD, y)
+            soloDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            soloDesc:SetJustifyH("LEFT")
+            y = y - 32
+
+            -- Called when Enable Player Frame is toggled
+            updateSoloCheckState = function()
+                local playerEnabled = unitDB and unitDB.enabled
+                soloCheck:SetEnabled(not playerEnabled)
+                if playerEnabled then
+                    unitDB.standaloneCastbar = false
+                    soloCheck.SetValue(false, true)
+                end
+            end
+
+            -- Initial state: if solo is already on, lock out the player frame toggle
+            if unitDB.standaloneCastbar then
+                enableCheck:SetEnabled(false)
+            end
+            updateSoloCheckState()
+        end
+
         local sizeHeader = GUI:CreateSectionHeader(tabContent, "Frame Size & Position")
         sizeHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - sizeHeader.gap
