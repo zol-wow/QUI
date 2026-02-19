@@ -36,6 +36,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.38.0 - 2026-02-19
+
+### Added
+- added more granular visibility options when mounted/flying for CDM, Unit Frames and Custom Tracker Bars
+- added more frames to the anchoring system (i.e. Skyriding, Combat Timer, M+ Timer, BRez Timer, ExtraActionButton etc pp)
 ## v2.37.4 - 2026-02-19
 
 ### Added

@@ -735,6 +735,9 @@ local defaults = {
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
             hideWhenMounted = false,
+            hideWhenFlying = false,
+            hideWhenSkyriding = false,
+            dontHideInDungeonsRaids = false,
         },
 
         -- Unitframes Visibility (player, target, focus, pet, tot, boss)
@@ -749,6 +752,9 @@ local defaults = {
             fadeOutAlpha = 0,
             alwaysShowCastbars = false,  -- When true, castbars ignore UF visibility
             hideWhenMounted = false,
+            hideWhenFlying = false,
+            hideWhenSkyriding = false,
+            dontHideInDungeonsRaids = false,
         },
 
         -- Custom Trackers Visibility (all custom item/spell bars)
@@ -762,6 +768,9 @@ local defaults = {
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
             hideWhenMounted = false,
+            hideWhenFlying = false,
+            hideWhenSkyriding = false,
+            dontHideInDungeonsRaids = false,
         },
 
         viewers = {

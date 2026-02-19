@@ -17,6 +17,15 @@ local function BuildHUDVisibilityTab(tabContent)
     local PADDING = Shared.PADDING
     local db = Shared.GetDB()
 
+    local function BuildSearchInfo(sectionKeyword, ...)
+        local keywords = {"hud", "visibility", sectionKeyword}
+        local extra = {...}
+        for i = 1, #extra do
+            keywords[#keywords + 1] = extra[i]
+        end
+        return {keywords = keywords}
+    end
+
     -- Set search context for auto-registration
     GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 2, subTabName = "HUD Visibility"})
 
@@ -133,6 +142,69 @@ local function BuildHUDVisibilityTab(tabContent)
     cdmMountedHint:SetPoint("TOPLEFT", PADDING, y)
     cdmMountedHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     cdmMountedHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if cdmVis.hideWhenFlying == nil then cdmVis.hideWhenFlying = false end
+    local cdmFlyingCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Hide When Flying",
+        "hideWhenFlying",
+        cdmVis,
+        RefreshCDMVisibility,
+        BuildSearchInfo("cdm", "flying", "flight", "airborne")
+    )
+    cdmFlyingCheck:SetPoint("TOPLEFT", PADDING, y)
+    cdmFlyingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cdmFlyingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while flying regardless of the settings above.",
+        11, C.textMuted)
+    cdmFlyingHint:SetPoint("TOPLEFT", PADDING, y)
+    cdmFlyingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    cdmFlyingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if cdmVis.hideWhenSkyriding == nil then cdmVis.hideWhenSkyriding = false end
+    local cdmSkyridingCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Hide When Skyriding",
+        "hideWhenSkyriding",
+        cdmVis,
+        RefreshCDMVisibility,
+        BuildSearchInfo("cdm", "skyriding", "dragonriding", "dynamic flight", "gliding")
+    )
+    cdmSkyridingCheck:SetPoint("TOPLEFT", PADDING, y)
+    cdmSkyridingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cdmSkyridingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while actively skyriding.",
+        11, C.textMuted)
+    cdmSkyridingHint:SetPoint("TOPLEFT", PADDING, y)
+    cdmSkyridingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    cdmSkyridingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if cdmVis.dontHideInDungeonsRaids == nil then cdmVis.dontHideInDungeonsRaids = false end
+    local cdmDungeonOverrideCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Don't Hide in Dungeons/Raids",
+        "dontHideInDungeonsRaids",
+        cdmVis,
+        RefreshCDMVisibility,
+        BuildSearchInfo("cdm", "dungeon", "dungeons", "raid", "raids", "instance", "instances", "mythic", "mythic+", "m+")
+    )
+    cdmDungeonOverrideCheck:SetPoint("TOPLEFT", PADDING, y)
+    cdmDungeonOverrideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cdmDungeonOverrideHint = GUI:CreateLabel(tabContent,
+        "When enabled, mounted/flying/skyriding hide rules are ignored in dungeon and raid instances.",
+        11, C.textMuted)
+    cdmDungeonOverrideHint:SetPoint("TOPLEFT", PADDING, y)
+    cdmDungeonOverrideHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    cdmDungeonOverrideHint:SetJustifyH("LEFT")
     y = y - 20
 
     y = y - 10
@@ -258,6 +330,69 @@ local function BuildHUDVisibilityTab(tabContent)
     ufMountedHint:SetJustifyH("LEFT")
     y = y - 20
 
+    if ufVis.hideWhenFlying == nil then ufVis.hideWhenFlying = false end
+    local ufFlyingCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Hide When Flying",
+        "hideWhenFlying",
+        ufVis,
+        RefreshUnitframesVisibility,
+        BuildSearchInfo("unitframes", "unit frames", "flying", "flight", "airborne")
+    )
+    ufFlyingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ufFlyingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ufFlyingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while flying regardless of the settings above.",
+        11, C.textMuted)
+    ufFlyingHint:SetPoint("TOPLEFT", PADDING, y)
+    ufFlyingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ufFlyingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ufVis.hideWhenSkyriding == nil then ufVis.hideWhenSkyriding = false end
+    local ufSkyridingCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Hide When Skyriding",
+        "hideWhenSkyriding",
+        ufVis,
+        RefreshUnitframesVisibility,
+        BuildSearchInfo("unitframes", "unit frames", "skyriding", "dragonriding", "dynamic flight", "gliding")
+    )
+    ufSkyridingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ufSkyridingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ufSkyridingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while actively skyriding.",
+        11, C.textMuted)
+    ufSkyridingHint:SetPoint("TOPLEFT", PADDING, y)
+    ufSkyridingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ufSkyridingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ufVis.dontHideInDungeonsRaids == nil then ufVis.dontHideInDungeonsRaids = false end
+    local ufDungeonOverrideCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Don't Hide in Dungeons/Raids",
+        "dontHideInDungeonsRaids",
+        ufVis,
+        RefreshUnitframesVisibility,
+        BuildSearchInfo("unitframes", "unit frames", "dungeon", "dungeons", "raid", "raids", "instance", "instances", "mythic", "mythic+", "m+")
+    )
+    ufDungeonOverrideCheck:SetPoint("TOPLEFT", PADDING, y)
+    ufDungeonOverrideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ufDungeonOverrideHint = GUI:CreateLabel(tabContent,
+        "When enabled, mounted/flying/skyriding hide rules are ignored in dungeon and raid instances.",
+        11, C.textMuted)
+    ufDungeonOverrideHint:SetPoint("TOPLEFT", PADDING, y)
+    ufDungeonOverrideHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ufDungeonOverrideHint:SetJustifyH("LEFT")
+    y = y - 20
+
     -- =====================================================
     -- CUSTOM TRACKERS VISIBILITY SECTION
     -- =====================================================
@@ -370,6 +505,69 @@ local function BuildHUDVisibilityTab(tabContent)
     ctMountedHint:SetPoint("TOPLEFT", PADDING, y)
     ctMountedHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     ctMountedHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ctVis.hideWhenFlying == nil then ctVis.hideWhenFlying = false end
+    local ctFlyingCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Hide When Flying",
+        "hideWhenFlying",
+        ctVis,
+        RefreshCustomTrackersVisibility,
+        BuildSearchInfo("custom trackers", "trackers", "flying", "flight", "airborne")
+    )
+    ctFlyingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ctFlyingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ctFlyingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while flying regardless of the settings above.",
+        11, C.textMuted)
+    ctFlyingHint:SetPoint("TOPLEFT", PADDING, y)
+    ctFlyingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ctFlyingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ctVis.hideWhenSkyriding == nil then ctVis.hideWhenSkyriding = false end
+    local ctSkyridingCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Hide When Skyriding",
+        "hideWhenSkyriding",
+        ctVis,
+        RefreshCustomTrackersVisibility,
+        BuildSearchInfo("custom trackers", "trackers", "skyriding", "dragonriding", "dynamic flight", "gliding")
+    )
+    ctSkyridingCheck:SetPoint("TOPLEFT", PADDING, y)
+    ctSkyridingCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ctSkyridingHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while actively skyriding.",
+        11, C.textMuted)
+    ctSkyridingHint:SetPoint("TOPLEFT", PADDING, y)
+    ctSkyridingHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ctSkyridingHint:SetJustifyH("LEFT")
+    y = y - 20
+
+    if ctVis.dontHideInDungeonsRaids == nil then ctVis.dontHideInDungeonsRaids = false end
+    local ctDungeonOverrideCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Don't Hide in Dungeons/Raids",
+        "dontHideInDungeonsRaids",
+        ctVis,
+        RefreshCustomTrackersVisibility,
+        BuildSearchInfo("custom trackers", "trackers", "dungeon", "dungeons", "raid", "raids", "instance", "instances", "mythic", "mythic+", "m+")
+    )
+    ctDungeonOverrideCheck:SetPoint("TOPLEFT", PADDING, y)
+    ctDungeonOverrideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local ctDungeonOverrideHint = GUI:CreateLabel(tabContent,
+        "When enabled, mounted/flying/skyriding hide rules are ignored in dungeon and raid instances.",
+        11, C.textMuted)
+    ctDungeonOverrideHint:SetPoint("TOPLEFT", PADDING, y)
+    ctDungeonOverrideHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    ctDungeonOverrideHint:SetJustifyH("LEFT")
     y = y - 20
 
     UpdateCTConditionState()
