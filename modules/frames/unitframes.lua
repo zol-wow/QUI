@@ -3205,6 +3205,7 @@ end
 function QUI_UF:RefreshAll()
     -- Track if we've refreshed boss frames to avoid doing it 5 times
     local bossRefreshed = false
+
     for unitKey, frame in pairs(self.frames) do
         -- Boss frames (boss1-boss5) share settings from "boss" key
         if unitKey:match("^boss%d+$") then
@@ -3213,6 +3214,13 @@ function QUI_UF:RefreshAll()
                 bossRefreshed = true
             end
         else
+            self:RefreshFrame(unitKey)
+        end
+    end
+
+    -- Standalone castbars with no unit frame (e.g. solo mode)
+    for unitKey, castbar in pairs(self.castbars) do
+        if castbar then
             self:RefreshFrame(unitKey)
         end
     end
