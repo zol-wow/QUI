@@ -14,6 +14,9 @@ local STATUS_ICON_SIZE = 18
 
 local INVSLOT_MAINHAND = 16
 local INVSLOT_OFFHAND = 17
+local FOOD_ICON_FALLBACK = 136000
+local PICKER_ROW_HEIGHT = 24
+local PICKER_MIN_WIDTH = 200
 
 ---------------------------------------------------------------------------
 -- BUFF / ITEM DATA
@@ -59,8 +62,13 @@ local FLASK_ITEMS = {
     212283, 212284, 212285, 212286, 212287, 212288,  -- TWW Flasks
     191318, 191319, 191320, 191321, 191322, 191323, 191324, 191325, 191326, 191327,  -- DF Flasks
 }
+local FLASK_ITEM_SET = {}
+for _, itemID in ipairs(FLASK_ITEMS) do
+    FLASK_ITEM_SET[itemID] = true
+end
 
 local RUNE_ITEMS = {
+    243191,  -- Ethereal Augment Rune (infinite)
     224572,  -- Crystallized Augment Rune (TWW)
     201325,  -- Draconic Augment Rune (DF)
     190384,  -- Eternal Augment Rune
@@ -139,6 +147,24 @@ local WEAPON_ENCHANTS = {
     [6384] = { icon = 4622274, item = 191950 },
 }
 
+local PREFERENCE_KEYS = {
+    food = "consumablePreferredFood",
+    flask = "consumablePreferredFlask",
+    rune = "consumablePreferredRune",
+    oilMH = "consumablePreferredOilMH",
+    oilOH = "consumablePreferredOilOH",
+}
+
+local UpdateConsumables
+local ToggleConsumablePicker
+local HideConsumablePicker
+local StartButtonGlow
+local StopButtonGlow
+local ITEM_CLASS_CONSUMABLE_ID = (Enum and Enum.ItemClass and Enum.ItemClass.Consumable) or LE_ITEM_CLASS_CONSUMABLE
+local FOOD_AND_DRINK_SUBCLASS_ID = Enum and Enum.ItemConsumableSubclass and Enum.ItemConsumableSubclass.FoodAndDrink
+local FLASK_SUBCLASS_ID = Enum and Enum.ItemConsumableSubclass and Enum.ItemConsumableSubclass.Flask
+local PHIAL_SUBCLASS_ID = Enum and Enum.ItemConsumableSubclass and Enum.ItemConsumableSubclass.Phial
+
 ---------------------------------------------------------------------------
 -- UTILITY FUNCTIONS
 ---------------------------------------------------------------------------
@@ -150,6 +176,18 @@ end
 local function GetButtonSize()
     local settings = GetSettings()
     return (settings and settings.consumableIconSize) or DEFAULT_BUTTON_SIZE
+end
+
+local function GetConsumableScale()
+    local settings = GetSettings()
+    local scale = (settings and settings.consumableScale) or 1
+    scale = tonumber(scale) or 1
+    if scale < 0.5 then
+        return 0.5
+    elseif scale > 3 then
+        return 3
+    end
+    return scale
 end
 
 local function GetLastWeaponEnchant(slot)
@@ -205,6 +243,205 @@ local function FormatTimeRemaining(seconds)
     else
         return string.format("%ds", math.floor(seconds))
     end
+end
+
+local function GetPreferenceKey(buttonType)
+    return PREFERENCE_KEYS[buttonType]
+end
+
+local function GetPreferredItemID(buttonType)
+    local settings = GetSettings()
+    if not settings then return nil end
+    local key = GetPreferenceKey(buttonType)
+    return key and settings[key] or nil
+end
+
+local function SetPreferredItemID(buttonType, itemID)
+    local settings = GetSettings()
+    if not settings then return end
+    local key = GetPreferenceKey(buttonType)
+    if key then
+        settings[key] = itemID
+    end
+end
+
+local function IsConsumableClass(itemID)
+    local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
+    if not ITEM_CLASS_CONSUMABLE_ID or not classID then
+        return false
+    end
+    return classID == ITEM_CLASS_CONSUMABLE_ID
+end
+
+local function CollectItemTotalsFromList(itemIDs, totals)
+    for _, itemID in ipairs(itemIDs) do
+        local count = C_Item.GetItemCount(itemID, false, false)
+        if count and count > 0 then
+            totals[itemID] = (totals[itemID] or 0) + count
+        end
+    end
+end
+
+local function CollectItemTotalsFromBags(totals, predicate)
+    local maxBag = NUM_BAG_SLOTS or 4
+    for bag = 0, maxBag do
+        local numSlots = C_Container.GetContainerNumSlots(bag) or 0
+        for slot = 1, numSlots do
+            local itemID = C_Container.GetContainerItemID(bag, slot)
+            if itemID and predicate(itemID) then
+                local info = C_Container.GetContainerItemInfo(bag, slot)
+                local stackCount = (info and info.stackCount) or 1
+                totals[itemID] = (totals[itemID] or 0) + stackCount
+            end
+        end
+    end
+end
+
+local function BuildOwnedItemsFromTotals(totals, fallbackIcon)
+    local items = {}
+    for itemID, count in pairs(totals) do
+        local itemName = C_Item.GetItemInfo(itemID)
+        local icon = select(5, C_Item.GetItemInfoInstant(itemID))
+        table.insert(items, {
+            itemID = itemID,
+            name = itemName or ("item:" .. itemID),
+            count = count,
+            icon = icon or fallbackIcon,
+        })
+    end
+    table.sort(items, function(a, b)
+        return (a.name or "") < (b.name or "")
+    end)
+    return items
+end
+
+local function BuildOwnedItemsFromList(itemIDs, fallbackIcon)
+    local totals = {}
+    CollectItemTotalsFromList(itemIDs, totals)
+    return BuildOwnedItemsFromTotals(totals, fallbackIcon)
+end
+
+local function IsFoodItem(itemID)
+    local _, foodSpellID = C_Item.GetItemSpell(itemID)
+    if foodSpellID and FOOD_BUFFS[foodSpellID] then
+        return true
+    end
+
+    local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
+    if not classID or not subClassID then
+        return false
+    end
+    if classID ~= ITEM_CLASS_CONSUMABLE_ID then
+        return false
+    end
+    if FOOD_AND_DRINK_SUBCLASS_ID then
+        return subClassID == FOOD_AND_DRINK_SUBCLASS_ID
+    end
+    return false
+end
+
+local function IsFlaskItem(itemID)
+    local _, flaskSpellID = C_Item.GetItemSpell(itemID)
+    if flaskSpellID and FLASK_BUFFS[flaskSpellID] then
+        return true
+    end
+
+    local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
+    if not classID or not subClassID then
+        return false
+    end
+    if classID ~= ITEM_CLASS_CONSUMABLE_ID then
+        return false
+    end
+    if FLASK_SUBCLASS_ID and subClassID == FLASK_SUBCLASS_ID then
+        return true
+    end
+    if PHIAL_SUBCLASS_ID and subClassID == PHIAL_SUBCLASS_ID then
+        return true
+    end
+    return false
+end
+
+local function BuildOwnedFoodItems()
+    local totals = {}
+    CollectItemTotalsFromBags(totals, IsFoodItem)
+    return BuildOwnedItemsFromTotals(totals, FOOD_ICON_FALLBACK)
+end
+
+local function BuildOwnedFlaskItems()
+    local totals = {}
+    CollectItemTotalsFromBags(totals, function(itemID)
+        return FLASK_ITEM_SET[itemID] or IsFlaskItem(itemID)
+    end)
+    return BuildOwnedItemsFromTotals(totals)
+end
+
+local function GetOwnedItemsForButton(buttonType)
+    if buttonType == "food" then
+        return BuildOwnedFoodItems()
+    elseif buttonType == "flask" then
+        return BuildOwnedFlaskItems()
+    elseif buttonType == "rune" then
+        return BuildOwnedItemsFromList(RUNE_ITEMS)
+    elseif buttonType == "oilMH" or buttonType == "oilOH" then
+        return BuildOwnedItemsFromList(OIL_ITEMS)
+    end
+    return {}
+end
+
+local function ResolveSelectedOwnedItem(buttonType, ownedItems)
+    local preferredItemID = GetPreferredItemID(buttonType)
+    if preferredItemID then
+        for _, itemData in ipairs(ownedItems) do
+            if itemData.itemID == preferredItemID then
+                return itemData
+            end
+        end
+        SetPreferredItemID(buttonType, nil)
+    end
+    return ownedItems[1]
+end
+
+local function ConfigureButtonClickItem(button, buttonType, itemData)
+    if not button or not button.click or not itemData then return end
+    button.selectedItemID = itemData.itemID
+    button.click.selectedItemID = itemData.itemID
+    local useToken = itemData.name or ("item:" .. itemData.itemID)
+    button.click:SetAttribute("type1", "macro")
+    if buttonType == "oilMH" then
+        button.click:SetAttribute("macrotext1", "/use " .. useToken .. "\n/use " .. INVSLOT_MAINHAND)
+    elseif buttonType == "oilOH" then
+        button.click:SetAttribute("macrotext1", "/use " .. useToken .. "\n/use " .. INVSLOT_OFFHAND)
+    else
+        button.click:SetAttribute("macrotext1", "/use " .. useToken)
+    end
+    button.click:Show()
+    button.countText:SetText(tostring(itemData.count))
+    if itemData.icon then
+        button.icon:SetTexture(itemData.icon)
+    end
+    StartButtonGlow(button)
+end
+
+local function ApplyPreferredItemIcons(buttons, settings)
+    if not settings then return end
+
+    local function apply(buttonType)
+        local button = buttons[buttonType]
+        if not button then return end
+        local preferredItemID = GetPreferredItemID(buttonType)
+        if not preferredItemID then return end
+        local icon = select(5, C_Item.GetItemInfoInstant(preferredItemID))
+        if icon then
+            button.icon:SetTexture(icon)
+        end
+    end
+
+    if settings.consumableFood ~= false then apply("food") end
+    if settings.consumableFlask ~= false then apply("flask") end
+    if settings.consumableRune ~= false then apply("rune") end
+    if settings.consumableOilMH ~= false then apply("oilMH") end
+    if settings.consumableOilOH ~= false then apply("oilOH") end
 end
 
 local function ScanPlayerBuffs()
@@ -265,7 +502,10 @@ closeButton:SetScript("OnLeave", function(self)
     self.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
     self.text:SetTextColor(0.8, 0.8, 0.8, 1)
 end)
-closeButton:SetScript("OnClick", function() ConsumablesFrame:Hide() end)
+closeButton:SetScript("OnClick", function()
+    HideConsumablePicker()
+    ConsumablesFrame:Hide()
+end)
 ConsumablesFrame.closeButton = closeButton
 
 ---------------------------------------------------------------------------
@@ -276,6 +516,7 @@ local function CreateConsumableButton(parent, index, buttonType, iconID, isClick
     local button = CreateFrame("Frame", nil, parent)
     button:SetSize(buttonSize, buttonSize)
     button.buttonType = buttonType
+    button.defaultIcon = iconID
 
     button.icon = button:CreateTexture(nil, "BACKGROUND")
     button.icon:SetAllPoints()
@@ -299,34 +540,215 @@ local function CreateConsumableButton(parent, index, buttonType, iconID, isClick
     if isClickable then
         button.click = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
         button.click:SetAllPoints()
-        button.click:RegisterForClicks("AnyUp")
+        button.click:RegisterForClicks("AnyUp", "AnyDown")
         button.click:Hide()
         if buttonType == "oilMH" then
-            button.click:SetAttribute("type", "item")
+            button.click:SetAttribute("type1", "item")
             button.click:SetAttribute("target-slot", INVSLOT_MAINHAND)
         elseif buttonType == "oilOH" then
-            button.click:SetAttribute("type", "item")
+            button.click:SetAttribute("type1", "item")
             button.click:SetAttribute("target-slot", INVSLOT_OFFHAND)
         else
-            button.click:SetAttribute("type", "item")
+            button.click:SetAttribute("type1", "item")
         end
         button.click:SetScript("OnEnter", function() button:SetAlpha(0.7) end)
         button.click:SetScript("OnLeave", function() button:SetAlpha(1) end)
+        button.click:SetScript("PostClick", function(self, mouseButton, down)
+            if down then return end
+            if mouseButton == "RightButton" then
+                if not InCombatLockdown() and ToggleConsumablePicker then
+                    ToggleConsumablePicker(button)
+                end
+                return
+            end
+            if mouseButton == "LeftButton" and self.selectedItemID then
+                SetPreferredItemID(button.buttonType, self.selectedItemID)
+            end
+        end)
     end
 
     return button
 end
 
-local function StartButtonGlow(button)
+StartButtonGlow = function(button)
     if LCG and button then
         LCG.PixelGlow_Start(button, {1, 0.8, 0, 1}, 8, 0.25, nil, 2, 0, 0, false, "_QUIConsumable")
     end
 end
 
-local function StopButtonGlow(button)
+StopButtonGlow = function(button)
     if LCG and button then
         LCG.PixelGlow_Stop(button, "_QUIConsumable")
     end
+end
+
+local pickerFrame = nil
+local pickerOverlay = nil
+
+local function EnsurePickerFrame()
+    if pickerFrame then return end
+
+    pickerOverlay = CreateFrame("Button", nil, UIParent)
+    pickerOverlay:SetAllPoints(UIParent)
+    pickerOverlay:EnableMouse(true)
+    pickerOverlay:RegisterForClicks("AnyUp")
+    pickerOverlay:SetFrameStrata("DIALOG")
+    pickerOverlay:SetFrameLevel(600)
+    pickerOverlay:SetScript("OnClick", function()
+        if HideConsumablePicker then HideConsumablePicker() end
+    end)
+    pickerOverlay:Hide()
+
+    pickerFrame = CreateFrame("Frame", "QUI_ConsumablesPickerFrame", UIParent, "BackdropTemplate")
+    pickerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    pickerFrame:SetFrameLevel(700)
+    pickerFrame:SetClampedToScreen(true)
+    pickerFrame:Hide()
+    pickerFrame.rows = {}
+    pickerFrame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    pickerFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+    pickerFrame:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+    pickerFrame:SetScript("OnHide", function()
+        if pickerOverlay then pickerOverlay:Hide() end
+    end)
+end
+
+HideConsumablePicker = function()
+    if pickerFrame then
+        pickerFrame.ownerButton = nil
+        pickerFrame:Hide()
+    end
+end
+
+local function ConfigurePickerRow(row, buttonType, itemData)
+    row.buttonType = buttonType
+    row.itemID = itemData.itemID
+    row.icon:SetTexture(itemData.icon or FOOD_ICON_FALLBACK)
+    row.nameText:SetText(itemData.name or ("item:" .. itemData.itemID))
+    row.countText:SetText(tostring(itemData.count or 0))
+
+    local useToken = itemData.name or ("item:" .. itemData.itemID)
+    local macroText
+    if buttonType == "oilMH" then
+        macroText = "/use " .. useToken .. "\n/use " .. INVSLOT_MAINHAND
+    elseif buttonType == "oilOH" then
+        macroText = "/use " .. useToken .. "\n/use " .. INVSLOT_OFFHAND
+    else
+        macroText = "/use " .. useToken
+    end
+    row:SetAttribute("type1", "macro")
+    row:SetAttribute("macrotext1", macroText)
+    row:SetAttribute("type2", "macro")
+    row:SetAttribute("macrotext2", macroText)
+end
+
+local function BuildPickerRows(buttonType, ownedItems)
+    EnsurePickerFrame()
+    local rowCount = #ownedItems
+    local maxNameWidth = 0
+    local preferredItemID = GetPreferredItemID(buttonType)
+
+    for i = 1, rowCount do
+        local row = pickerFrame.rows[i]
+        if not row then
+            row = CreateFrame("Button", nil, pickerFrame, "SecureActionButtonTemplate")
+            row:SetHeight(PICKER_ROW_HEIGHT)
+            row:RegisterForClicks("AnyUp", "AnyDown")
+
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+            row.bg:SetColorTexture(0.12, 0.12, 0.12, 0.95)
+
+            row.icon = row:CreateTexture(nil, "ARTWORK")
+            row.icon:SetSize(18, 18)
+            row.icon:SetPoint("LEFT", 5, 0)
+
+            row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.nameText:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+            row.nameText:SetJustifyH("LEFT")
+
+            row.countText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            row.countText:SetPoint("RIGHT", -6, 0)
+            row.countText:SetTextColor(0.85, 0.85, 0.85, 1)
+
+            row:SetScript("OnEnter", function(self)
+                self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.95)
+            end)
+            row:SetScript("OnLeave", function(self)
+                self.bg:SetColorTexture(0.12, 0.12, 0.12, 0.95)
+            end)
+            row:SetScript("PostClick", function(self, mouseButton, down)
+                if down then return end
+                if mouseButton ~= "LeftButton" and mouseButton ~= "RightButton" then return end
+                if self.itemID then
+                    SetPreferredItemID(self.buttonType, self.itemID)
+                end
+                HideConsumablePicker()
+                if UpdateConsumables and ConsumablesFrame:IsShown() then
+                    C_Timer.After(0.1, UpdateConsumables)
+                end
+            end)
+
+            pickerFrame.rows[i] = row
+        end
+
+        local itemData = ownedItems[i]
+        ConfigurePickerRow(row, buttonType, itemData)
+        if preferredItemID and itemData.itemID == preferredItemID then
+            row.nameText:SetTextColor(0.5, 1, 0.5, 1)
+        else
+            row.nameText:SetTextColor(1, 1, 1, 1)
+        end
+        local width = row.nameText:GetStringWidth() or 0
+        if width > maxNameWidth then
+            maxNameWidth = width
+        end
+        row:ClearAllPoints()
+        row:SetPoint("BOTTOMLEFT", pickerFrame, "BOTTOMLEFT", 2, 2 + (i - 1) * PICKER_ROW_HEIGHT)
+        row:SetPoint("BOTTOMRIGHT", pickerFrame, "BOTTOMRIGHT", -2, 2 + (i - 1) * PICKER_ROW_HEIGHT)
+        row:Show()
+    end
+
+    for i = rowCount + 1, #pickerFrame.rows do
+        pickerFrame.rows[i]:Hide()
+    end
+
+    local frameWidth = math.max(PICKER_MIN_WIDTH, math.ceil(maxNameWidth) + 70)
+    local frameHeight = rowCount * PICKER_ROW_HEIGHT + 4
+    pickerFrame:SetSize(frameWidth, frameHeight)
+end
+
+local function ShowConsumablePicker(button, ownedItems)
+    if not button or not button.buttonType or not ownedItems or #ownedItems == 0 then return end
+    BuildPickerRows(button.buttonType, ownedItems)
+    pickerFrame:SetScale(GetConsumableScale())
+    pickerFrame.ownerButton = button
+    pickerFrame:ClearAllPoints()
+    pickerFrame:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 0, 4)
+    pickerOverlay:Show()
+    pickerFrame:Show()
+end
+
+ToggleConsumablePicker = function(button)
+    if not button or not button.buttonType then return end
+    if not ConsumablesFrame:IsShown() then return end
+    if InCombatLockdown() then return end
+
+    local ownedItems = GetOwnedItemsForButton(button.buttonType)
+    if #ownedItems == 0 then
+        HideConsumablePicker()
+        return
+    end
+
+    if pickerFrame and pickerFrame:IsShown() and pickerFrame.ownerButton == button then
+        HideConsumablePicker()
+        return
+    end
+    ShowConsumablePicker(button, ownedItems)
 end
 
 local function InitializeButtons()
@@ -341,7 +763,7 @@ local function InitializeButtons()
     end
 
     local buttonDefs = {
-        { "food", 136000, false },
+        { "food", FOOD_ICON_FALLBACK, true },
         { "flask", 3566840, true },
         { "oilMH", 609892, true },
         { "rune", 4549102, true },
@@ -363,24 +785,39 @@ end
 -- UPDATE CONSUMABLE STATUS
 ---------------------------------------------------------------------------
 
-local function UpdateConsumables()
+UpdateConsumables = function()
     local settings = GetSettings()
     if not settings then return end
 
     local buttons = ConsumablesFrame.buttons
+    local frameScale = GetConsumableScale()
+    ConsumablesFrame:SetScale(frameScale)
+    if pickerFrame and pickerFrame:IsShown() then
+        pickerFrame:SetScale(frameScale)
+    end
     local now = GetTime()
     local visibleCount = 0
+    local hasFoodBuff = false
+    local hasFlaskBuff = false
+    local hasRuneBuff = false
 
     -- Reset all buttons
     for _, button in pairs(buttons) do
         if type(button) == "table" and button.icon then
             button.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-NotReady")
+            if button.defaultIcon then
+                button.icon:SetTexture(button.defaultIcon)
+            end
             button.icon:SetDesaturated(true)
             button.timeText:SetText("")
             button.countText:SetText("")
+            button.selectedItemID = nil
             if not InCombatLockdown() then
                 button:Hide()
-                if button.click then button.click:Hide() end
+                if button.click then
+                    button.click.selectedItemID = nil
+                    button.click:Hide()
+                end
             end
             StopButtonGlow(button)
         end
@@ -397,6 +834,7 @@ local function UpdateConsumables()
         if settings.consumableFood ~= false then
             local success, isFood = pcall(function() return FOOD_BUFFS[spellId] or icon == 136000 end)
             if success and isFood then
+                hasFoodBuff = true
                 buttons.food.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
                 buttons.food.icon:SetDesaturated(false)
                 pcall(function()
@@ -410,6 +848,7 @@ local function UpdateConsumables()
         if settings.consumableFlask ~= false then
             local success, isFlask = pcall(function() return FLASK_BUFFS[spellId] end)
             if success and isFlask then
+                hasFlaskBuff = true
                 buttons.flask.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
                 buttons.flask.icon:SetDesaturated(false)
                 buttons.flask.icon:SetTexture(icon)
@@ -424,6 +863,7 @@ local function UpdateConsumables()
         if settings.consumableRune ~= false then
             local success, isRune = pcall(function() return RUNE_BUFFS[spellId] end)
             if success and isRune then
+                hasRuneBuff = true
                 buttons.rune.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
                 buttons.rune.icon:SetDesaturated(false)
                 pcall(function()
@@ -489,98 +929,57 @@ local function UpdateConsumables()
         end
     end
 
-    -- Clickable flask button
-    local hasFlask = buttons.flask.icon:IsDesaturated() == false
-    if not hasFlask and settings.consumableFlask ~= false and not InCombatLockdown() then
-        for _, itemID in ipairs(FLASK_ITEMS) do
-            local count = C_Item.GetItemCount(itemID, false, false)
-            if count and count > 0 then
-                local itemName = C_Item.GetItemInfo(itemID)
-                if itemName and buttons.flask.click then
-                    buttons.flask.click:SetAttribute("type", "macro")
-                    buttons.flask.click:SetAttribute("macrotext", "/use " .. itemName)
-                    buttons.flask.click:Show()
-                    buttons.flask.countText:SetText(tostring(count))
-                    local texture = select(5, C_Item.GetItemInfoInstant(itemID))
-                    if texture then buttons.flask.icon:SetTexture(texture) end
-                    StartButtonGlow(buttons.flask)
-                end
-                break
-            end
-        end
-    end
+    -- If a preferred item is configured, use that icon for the category.
+    ApplyPreferredItemIcons(buttons, settings)
 
-    -- Clickable rune button
-    local hasRune = buttons.rune.icon:IsDesaturated() == false
-    if not hasRune and settings.consumableRune ~= false and not InCombatLockdown() then
-        for _, itemID in ipairs(RUNE_ITEMS) do
-            local count = C_Item.GetItemCount(itemID, false, false)
-            if count and count > 0 then
-                local itemName = C_Item.GetItemInfo(itemID)
-                if itemName and buttons.rune.click then
-                    buttons.rune.click:SetAttribute("type", "macro")
-                    buttons.rune.click:SetAttribute("macrotext", "/use " .. itemName)
-                    buttons.rune.click:Show()
-                    buttons.rune.countText:SetText(tostring(count))
-                    local texture = select(5, C_Item.GetItemInfoInstant(itemID))
-                    if texture then buttons.rune.icon:SetTexture(texture) end
-                    StartButtonGlow(buttons.rune)
-                end
-                break
+    local canUseItems = not InCombatLockdown()
+    if canUseItems then
+        -- Clickable food button
+        if settings.consumableFood ~= false and not hasFoodBuff then
+            local ownedFoodItems = GetOwnedItemsForButton("food")
+            local selectedFood = ResolveSelectedOwnedItem("food", ownedFoodItems)
+            if selectedFood then
+                ConfigureButtonClickItem(buttons.food, "food", selectedFood)
             end
         end
-    end
 
-    -- Clickable oil button (Main Hand)
-    if not hasMainHandEnchant and settings.consumableOilMH ~= false and not InCombatLockdown() then
-        local lastEnchant = GetLastWeaponEnchant(INVSLOT_MAINHAND)
-        local oilItemID = lastEnchant and lastEnchant.item
-        local oilCount = oilItemID and C_Item.GetItemCount(oilItemID, false, false) or 0
-        if not oilItemID or oilCount == 0 then
-            for _, itemID in ipairs(OIL_ITEMS) do
-                local count = C_Item.GetItemCount(itemID, false, false)
-                if count and count > 0 then
-                    oilItemID = itemID; oilCount = count; break
-                end
+        -- Clickable flask button
+        if settings.consumableFlask ~= false and not hasFlaskBuff then
+            local ownedFlasks = GetOwnedItemsForButton("flask")
+            local selectedFlask = ResolveSelectedOwnedItem("flask", ownedFlasks)
+            if selectedFlask then
+                ConfigureButtonClickItem(buttons.flask, "flask", selectedFlask)
             end
         end
-        if oilItemID and oilCount > 0 and buttons.oilMH.click then
-            local itemName = C_Item.GetItemInfo(oilItemID)
-            if itemName then
-                buttons.oilMH.click:SetAttribute("item", itemName)
-                buttons.oilMH.click:Show()
-                buttons.oilMH.countText:SetText(tostring(oilCount))
-                local texture = select(5, C_Item.GetItemInfoInstant(oilItemID))
-                if texture then buttons.oilMH.icon:SetTexture(texture) end
-                StartButtonGlow(buttons.oilMH)
-            end
-        end
-    end
 
-    -- Clickable oil button (Off Hand)
-    if not hasOffHandEnchant and settings.consumableOilOH ~= false and IsDualWielding() and not InCombatLockdown() then
-        local lastEnchant = GetLastWeaponEnchant(INVSLOT_OFFHAND)
-        local oilItemID = lastEnchant and lastEnchant.item
-        local oilCount = oilItemID and C_Item.GetItemCount(oilItemID, false, false) or 0
-        if not oilItemID or oilCount == 0 then
-            for _, itemID in ipairs(OIL_ITEMS) do
-                local count = C_Item.GetItemCount(itemID, false, false)
-                if count and count > 0 then
-                    oilItemID = itemID; oilCount = count; break
-                end
+        -- Clickable rune button
+        if settings.consumableRune ~= false and not hasRuneBuff then
+            local ownedRunes = GetOwnedItemsForButton("rune")
+            local selectedRune = ResolveSelectedOwnedItem("rune", ownedRunes)
+            if selectedRune then
+                ConfigureButtonClickItem(buttons.rune, "rune", selectedRune)
             end
         end
-        if oilItemID and oilCount > 0 and buttons.oilOH.click then
-            local itemName = C_Item.GetItemInfo(oilItemID)
-            if itemName then
-                buttons.oilOH.click:SetAttribute("item", itemName)
-                buttons.oilOH.click:Show()
-                buttons.oilOH.countText:SetText(tostring(oilCount))
-                local texture = select(5, C_Item.GetItemInfoInstant(oilItemID))
-                if texture then buttons.oilOH.icon:SetTexture(texture) end
-                StartButtonGlow(buttons.oilOH)
+
+        -- Clickable oil button (Main Hand)
+        if settings.consumableOilMH ~= false and not hasMainHandEnchant then
+            local ownedOilsMH = GetOwnedItemsForButton("oilMH")
+            local selectedOilMH = ResolveSelectedOwnedItem("oilMH", ownedOilsMH)
+            if selectedOilMH then
+                ConfigureButtonClickItem(buttons.oilMH, "oilMH", selectedOilMH)
             end
         end
+
+        -- Clickable oil button (Off Hand)
+        if settings.consumableOilOH ~= false and IsDualWielding() and not hasOffHandEnchant then
+            local ownedOilsOH = GetOwnedItemsForButton("oilOH")
+            local selectedOilOH = ResolveSelectedOwnedItem("oilOH", ownedOilsOH)
+            if selectedOilOH then
+                ConfigureButtonClickItem(buttons.oilOH, "oilOH", selectedOilOH)
+            end
+        end
+    else
+        HideConsumablePicker()
     end
 
     -- Position visible buttons
@@ -677,6 +1076,7 @@ ConsumablesFrame:SetScript("OnShow", function(self)
 end)
 
 ConsumablesFrame:SetScript("OnHide", function(self)
+    HideConsumablePicker()
     self:UnregisterEvent("UNIT_AURA")
     if weaponEnchantTicker then
         weaponEnchantTicker:Cancel()
@@ -744,6 +1144,7 @@ local function ToggleMover()
 end
 
 local function PositionConsumablesFrame()
+    ConsumablesFrame:SetScale(GetConsumableScale())
     ConsumablesFrame:ClearAllPoints()
     local settings = GetSettings()
     local anchorMode = settings and settings.consumableAnchorMode ~= false
@@ -807,8 +1208,10 @@ end
 ---------------------------------------------------------------------------
 
 local function ShowConsumablesStandalone()
+    HideConsumablePicker()
     InitializeButtons()
     UpdateConsumables()
+    ConsumablesFrame:SetScale(GetConsumableScale())
 
     local settings = GetSettings()
     local anchorMode = settings and settings.consumableAnchorMode ~= false
@@ -840,12 +1243,14 @@ local function OnReadyCheck(starter, timer)
     if not settings or settings.consumableCheckEnabled == false then return end
     if settings.consumableOnReadyCheck == false then return end
 
+    HideConsumablePicker()
     PositionConsumablesFrame()
     UpdateConsumables()
     ConsumablesFrame:Show()
 end
 
 local function OnReadyCheckFinished()
+    HideConsumablePicker()
     ConsumablesFrame:Hide()
     if not InCombatLockdown() then
         for _, button in pairs(ConsumablesFrame.buttons) do
@@ -1011,6 +1416,7 @@ combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
+        HideConsumablePicker()
         for _, button in pairs(ConsumablesFrame.buttons) do
             if type(button) == "table" and button.click then
                 button.click:Hide()
@@ -1043,6 +1449,7 @@ _G.QUI_RefreshConsumables = function()
         local point, relativeTo, relativePoint, x, y = ConsumablesFrame:GetPoint()
         InitializeButtons()
         UpdateConsumables()
+        ConsumablesFrame:SetScale(GetConsumableScale())
         ConsumablesFrame:ClearAllPoints()
         ConsumablesFrame:SetPoint(point, relativeTo, relativePoint, x, y)
     end

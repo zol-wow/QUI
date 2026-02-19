@@ -376,11 +376,17 @@ local defaults = {
             consumableOilOH = true,               -- Track off hand weapon enchant
             consumableRune = true,                -- Track augment rune
             consumableHealthstone = true,         -- Track healthstones (warlock in group)
+            consumablePreferredFood = nil,        -- Preferred food item ID
+            consumablePreferredFlask = nil,       -- Preferred flask item ID
+            consumablePreferredRune = nil,        -- Preferred rune item ID
+            consumablePreferredOilMH = nil,       -- Preferred main hand oil item ID
+            consumablePreferredOilOH = nil,       -- Preferred off hand oil item ID
             consumableExpirationWarning = false,  -- Warn when buffs expiring
             consumableExpirationThreshold = 300,  -- Seconds before expiration warning
             consumableAnchorMode = true,          -- Anchor to ready check frame
             consumableIconOffset = 5,             -- Icon offset from anchor
             consumableIconSize = 40,              -- Icon size in pixels
+            consumableScale = 1,                  -- Frame scale multiplier
             -- Quick Salvage settings
             quickSalvage = {
                 enabled = false,  -- Opt-in, OFF by default
