@@ -1936,8 +1936,13 @@ local function ShouldCDMBeVisible()
     local vis = GetCDMVisibilitySettings()
     if not vis then return true end
 
-    -- Hide When Mounted overrides all other conditions (includes Druid flight form)
-    if vis.hideWhenMounted and (IsMounted() or GetShapeshiftFormID() == 27) then return false end
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if not ignoreHideRules then
+        -- Hide rules override show conditions.
+        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    end
 
     -- Show Always overrides all other conditions
     if vis.showAlways then return true end
@@ -2186,8 +2191,13 @@ local function ShouldUnitframesBeVisible()
     local vis = GetUnitframesVisibilitySettings()
     if not vis then return true end
 
-    -- Hide When Mounted overrides all other conditions (includes Druid flight form)
-    if vis.hideWhenMounted and (IsMounted() or GetShapeshiftFormID() == 27) then return false end
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if not ignoreHideRules then
+        -- Hide rules override show conditions.
+        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    end
 
     -- Show Always overrides all other conditions
     if vis.showAlways then return true end
@@ -2376,8 +2386,15 @@ visibilityEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 visibilityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 visibilityEventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
+visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
 
 visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_FLAGS_CHANGED" then
+        local unit = ...
+        if unit ~= "player" then return end
+    end
+
     if event == "PLAYER_LOGIN" then
         -- Delay initial check to ensure frames exist
         C_Timer.After(1.5, function()

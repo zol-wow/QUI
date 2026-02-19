@@ -477,6 +477,54 @@ function Helpers.InCombat()
 end
 
 ---------------------------------------------------------------------------
+-- HUD VISIBILITY HELPERS
+-- Shared checks for CDM, Unitframes, and Custom Trackers visibility
+---------------------------------------------------------------------------
+
+--- Spell ID for Dracthyr Evoker Soar (racial flight form)
+local SOAR_SPELL_ID = 381322
+
+--- Check if player is mounted (includes Druid flight form, Dracthyr Soar)
+--- Druid: GetShapeshiftFormID() == 27 (Swift Flight Form)
+--- Evoker: Soar buff (369536) when using racial flight form
+--- @return boolean True if mounted or in Druid/Evoker flight form
+function Helpers.IsPlayerMounted()
+    if IsMounted and IsMounted() then return true end
+    if GetShapeshiftFormID and GetShapeshiftFormID() == 27 then return true end
+    -- Dracthyr Evoker Soar (racial flight form; not detected by IsMounted)
+    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, SOAR_SPELL_ID)
+        if ok and aura then return true end
+    end
+    return false
+end
+
+--- Check if player is flying (airborne)
+--- @return boolean True if flying
+function Helpers.IsPlayerFlying()
+    if IsFlying then return IsFlying() end
+    return false
+end
+
+--- Check if player is skyriding
+--- Uses C_PlayerInfo.GetGlidingInfo() for accurate
+--- grounded detection (PLAYER_IS_GLIDING_CHANGED fires on takeoff/landing).
+--- @return boolean True if flying in a dynamic flight zone
+function Helpers.IsPlayerSkyriding()
+    if not (C_PlayerInfo and C_PlayerInfo.GetGlidingInfo) then return false end
+    local ok, gliding = pcall(C_PlayerInfo.GetGlidingInfo)
+    return ok and gliding
+end
+
+--- Check if player is inside a dungeon or raid instance.
+--- Used by HUD visibility hide-rule overrides.
+--- @return boolean True when instance type is party or raid
+function Helpers.IsPlayerInDungeonOrRaid()
+    local _, instanceType = GetInstanceInfo()
+    return instanceType == "party" or instanceType == "raid"
+end
+
+---------------------------------------------------------------------------
 -- EXPOSE TO NAMESPACE
 -- Also maintain backward compatibility with ns.Utils.IsSecretValue
 ---------------------------------------------------------------------------
@@ -504,3 +552,7 @@ ns.GetItemQualityColor = Helpers.GetItemQualityColor
 ns.CreateEventFrame = Helpers.CreateEventFrame
 ns.InCombat = Helpers.InCombat
 ns.GetCore = Helpers.GetCore
+ns.IsPlayerMounted = Helpers.IsPlayerMounted
+ns.IsPlayerFlying = Helpers.IsPlayerFlying
+ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding
+ns.IsPlayerInDungeonOrRaid = Helpers.IsPlayerInDungeonOrRaid
