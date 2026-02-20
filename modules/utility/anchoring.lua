@@ -1180,6 +1180,17 @@ local function GetCDMAnchorProxy(parentKey)
         cdmAnchorProxies[parentKey] = proxy
     end
 
+    -- Mirror source visibility on the proxy so that ResolveParentFrame's
+    -- IsShown() check naturally falls through to FRAME_ANCHOR_FALLBACKS
+    -- when the source is hidden (e.g. secondary power bar on Hunter).
+    local sourceVisible = sourceFrame.IsShown and sourceFrame:IsShown()
+    if sourceVisible then
+        if not proxy:IsShown() then proxy:Show() end
+    else
+        if proxy:IsShown() then proxy:Hide() end
+        return proxy
+    end
+
     -- Combat-stable behavior:
     -- Keep the proxy frozen during combat once initialized, then refresh after
     -- combat ends. This prevents children anchored to edge points (TOP/BOTTOM)
