@@ -346,7 +346,7 @@ local function SyncViewerSelectionSafe(viewer)
     -- in Edit Mode taints Blizzard's execution path, causing CompactUnitFrame
     -- "secret number value tainted by 'QUI'" errors on Edit Mode exit.
     if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then
-        GetViewerState(viewer).pendingSelectionSync = true
+        viewer.__cdmPendingSelectionSync = true
         return false
     end
 
