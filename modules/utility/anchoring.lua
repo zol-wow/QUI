@@ -1637,6 +1637,10 @@ _G.QUI_IsFrameOverridden = function(frame)
     return QUI_Anchoring and QUI_Anchoring.overriddenFrames and QUI_Anchoring.overriddenFrames[frame] or false
 end
 
+-- Alias used by nudge, Edit Mode, resource bars, etc. to check if a frame
+-- should be locked in place (same underlying check as IsFrameOverridden).
+_G.QUI_IsFrameLocked = _G.QUI_IsFrameOverridden
+
 _G.QUI_ApplyAllFrameAnchors = function()
     if QUI_Anchoring then
         QUI_Anchoring:ApplyAllFrameAnchors()
