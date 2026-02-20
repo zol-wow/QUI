@@ -37,6 +37,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.38.1 - 2026-02-20
+
+### Fixed
+- fixed anchoring susceptible to drifts when spell morphs resize frames, fix combat timer anchoring
 ## v2.38.0 - 2026-02-19
 
 ### Added
