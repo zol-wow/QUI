@@ -1117,13 +1117,15 @@ local FRAME_ANCHOR_INFO = {
     dandersRaid     = { displayName = "DandersFrames Raid",    category = "External",          order = 2 },
 }
 
--- Virtual CDM anchor parents.
--- These are lightweight proxy frames we can safely resize in combat so frame
--- anchoring can still respect configured min-width even when Blizzard's CDM
--- viewer frame is protected.
-local CDM_PROXY_VIEWER_BY_KEY = {
-    cdmEssential = "EssentialCooldownViewer",
-    cdmUtility = "UtilityCooldownViewer",
+-- Virtual anchor proxy parents.
+-- Lightweight proxy frames we can safely resize in combat so frame anchoring
+-- can still respect configured min-width even when source frames are protected.
+-- CDM viewers use viewer-state sizing; other frames mirror size directly.
+local ANCHOR_PROXY_SOURCES = {
+    cdmEssential   = { resolver = function() return _G["EssentialCooldownViewer"] end, cdm = true },
+    cdmUtility     = { resolver = function() return _G["UtilityCooldownViewer"] end,   cdm = true },
+    primaryPower   = { resolver = function() return QUICore and QUICore.powerBar end },
+    secondaryPower = { resolver = function() return QUICore and QUICore.secondaryPowerBar end },
 }
 local cdmAnchorProxies = {}
 local cdmAnchorProxyPendingAfterCombat = {}
@@ -1154,14 +1156,20 @@ local function GetCDMAnchorProxy(parentKey)
         parentKey = "cdmUtility"
     end
 
-    local viewerName = CDM_PROXY_VIEWER_BY_KEY[parentKey]
-    if not viewerName then return nil end
+    local source = ANCHOR_PROXY_SOURCES[parentKey]
+    if not source then return nil end
 
-    local viewer = _G[viewerName]
-    if not viewer then return nil end
+    local sourceFrame = source.resolver()
+    if not sourceFrame then return nil end
 
     local proxy = cdmAnchorProxies[parentKey]
     if not proxy then
+        -- Defer first creation until out of combat to avoid tainting
+        -- the anchor to a protected Blizzard CDM viewer frame.
+        if InCombatLockdown() then
+            cdmAnchorProxyPendingAfterCombat[parentKey] = true
+            return nil
+        end
         proxy = CreateFrame("Frame", nil, UIParent)
         proxy:SetClampedToScreen(false)
         proxy:Show()
@@ -1171,30 +1179,44 @@ local function GetCDMAnchorProxy(parentKey)
     -- Combat-stable behavior:
     -- Keep the proxy frozen during combat once initialized, then refresh after
     -- combat ends. This prevents children anchored to edge points (TOP/BOTTOM)
-    -- from drifting when Blizzard mutates protected CDM frame size in combat.
+    -- from drifting when Blizzard mutates protected frame size in combat.
     local inCombat = InCombatLockdown()
     if inCombat and proxy.__quiCDMProxyInitialized then
         cdmAnchorProxyPendingAfterCombat[parentKey] = true
         return proxy
     end
 
-    local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
-    local width = (vs and vs.iconWidth) or viewer:GetWidth() or 0
-    local height = (vs and vs.totalHeight) or viewer:GetHeight() or 0
-    local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
-    if minWidthEnabled and IsHUDAnchoredToCDM() then
-        width = math.max(width, minWidth)
+    local width, height
+    if source.cdm then
+        -- CDM viewers: use viewer state for accurate sizing
+        local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(sourceFrame)
+        width = (vs and vs.iconWidth) or sourceFrame:GetWidth() or 0
+        height = (vs and vs.totalHeight) or sourceFrame:GetHeight() or 0
+        local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
+        if minWidthEnabled and IsHUDAnchoredToCDM() then
+            width = math.max(width, minWidth)
+        end
+    else
+        -- General frames: mirror size directly
+        width = sourceFrame:GetWidth() or 0
+        height = sourceFrame:GetHeight() or 0
     end
     width = math.max(1, width)
     height = math.max(1, height)
 
-    local viewerX, viewerY = viewer:GetCenter()
-    local screenX, screenY = UIParent:GetCenter()
-    if viewerX and viewerY and screenX and screenY then
+    -- Anchor proxy directly to source frame so it follows automatically
+    -- (no coordinate math, no feedback loops during Edit Mode drag).
+    local _, _, relTo = proxy:GetPoint(1)
+    if relTo ~= sourceFrame then
         proxy:ClearAllPoints()
-        proxy:SetPoint("CENTER", UIParent, "CENTER", viewerX - screenX, viewerY - screenY)
+        proxy:SetPoint("CENTER", sourceFrame, "CENTER", 0, 0)
     end
-    proxy:SetSize(width, height)
+    -- Only update size when it actually changes to avoid triggering
+    -- OnSizeChanged hooks (which fire DebouncedReapplyOverrides).
+    local curW, curH = proxy:GetWidth(), proxy:GetHeight()
+    if curW ~= width or curH ~= height then
+        proxy:SetSize(width, height)
+    end
     proxy.__quiCDMProxyInitialized = true
     if inCombat then
         cdmAnchorProxyPendingAfterCombat[parentKey] = true
@@ -1203,10 +1225,20 @@ local function GetCDMAnchorProxy(parentKey)
     return proxy
 end
 
--- Refresh both CDM proxy parents (safe in combat).
+-- Refresh all anchor proxy parents (safe in combat).
+-- Order matters: upstream proxies must be ready before downstream ones
+-- so that the anchor chain (essential → primary → secondary → utility)
+-- resolves without transient jumps.
+local ANCHOR_PROXY_ORDER = {
+    "cdmEssential",
+    "primaryPower",
+    "secondaryPower",
+    "cdmUtility",
+}
 local function UpdateCDMAnchorProxies()
-    GetCDMAnchorProxy("cdmEssential")
-    GetCDMAnchorProxy("cdmUtility")
+    for _, key in ipairs(ANCHOR_PROXY_ORDER) do
+        GetCDMAnchorProxy(key)
+    end
 end
 
 -- Fallback anchor targets for when a resolved frame is unavailable (nil or hidden).
@@ -1296,8 +1328,9 @@ cdmProxyCombatFrame:SetScript("OnEvent", function()
     end
     C_Timer.After(0.05, function()
         if InCombatLockdown() then
-            cdmAnchorProxyPendingAfterCombat.cdmEssential = true
-            cdmAnchorProxyPendingAfterCombat.cdmUtility = true
+            for key in pairs(ANCHOR_PROXY_SOURCES) do
+                cdmAnchorProxyPendingAfterCombat[key] = true
+            end
             return
         end
         UpdateCDMAnchorProxies()

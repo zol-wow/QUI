@@ -165,6 +165,9 @@ local function ApplyTrackedBarAnchor(settings)
     if not BuffBarCooldownViewer then return end
     -- Avoid ClearAllPoints/SetPoint churn on protected Blizzard viewers during combat.
     if InCombatLockdown() then return end
+    -- Don't reposition during Edit Mode — let the user drag/nudge freely.
+    -- Blizzard's Edit Mode system handles position save/restore.
+    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
 
     local anchorTo = settings.anchorTo or "disabled"
     local sourcePoint = settings.anchorSourcePoint or "CENTER"
@@ -1665,7 +1668,9 @@ LayoutBuffIcons = function()
         UnsuppressLayout()
 
         -- Also resize Selection child if it exists
-        if BuffIconCooldownViewer.Selection then
+        -- Skip during Edit Mode to avoid tainting Blizzard's execution path
+        if BuffIconCooldownViewer.Selection
+            and not (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then
             BuffIconCooldownViewer.Selection:ClearAllPoints()
             BuffIconCooldownViewer.Selection:SetPoint("TOPLEFT", BuffIconCooldownViewer, "TOPLEFT", 0, 0)
             BuffIconCooldownViewer.Selection:SetPoint("BOTTOMRIGHT", BuffIconCooldownViewer, "BOTTOMRIGHT", 0, 0)

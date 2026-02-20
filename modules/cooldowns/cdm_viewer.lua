@@ -342,6 +342,14 @@ local function SyncViewerSelectionSafe(viewer)
         return false
     end
 
+    -- Skip during Edit Mode: manipulating .Selection on protected CDM viewers
+    -- in Edit Mode taints Blizzard's execution path, causing CompactUnitFrame
+    -- "secret number value tainted by 'QUI'" errors on Edit Mode exit.
+    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then
+        GetViewerState(viewer).pendingSelectionSync = true
+        return false
+    end
+
     local ok = pcall(function()
         viewer.Selection:ClearAllPoints()
         viewer.Selection:SetPoint("TOPLEFT", viewer, "TOPLEFT", 0, 0)
