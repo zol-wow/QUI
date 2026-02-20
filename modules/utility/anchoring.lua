@@ -1467,9 +1467,6 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
     end
 end
 
--- Frame anchor reapply requested while in combat.
-local pendingFrameAnchorApplyAfterCombat = false
-
 -- Apply a single frame anchor override
 function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     if type(settings) ~= "table" then return end
@@ -1490,11 +1487,16 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     -- Mark frame as overridden FIRST — blocks any module positioning from this point on
     SetFrameOverride(resolved, true, key)
 
-    -- Defer in combat for protected or high-risk frames.
-    -- Buff viewers can still update in combat; the rest are reapplied after combat.
-    local allowCombatApply = (key == "buffIcon" or key == "buffBar")
+    -- Defer in combat for most frames.
+    -- CDM viewers are allowed to attempt re-anchoring in combat so morph/layout
+    -- churn can be corrected immediately instead of waiting for combat end.
+    local allowCombatApply = (key == "cdmEssential" or key == "cdmUtility" or key == "buffIcon" or key == "buffBar")
     if InCombatLockdown() and not allowCombatApply then
-        pendingFrameAnchorApplyAfterCombat = true
+        C_Timer.After(0.5, function()
+            if not InCombatLockdown() then
+                self:ApplyFrameAnchor(key, settings)
+            end
+        end)
         return
     end
 
@@ -1571,24 +1573,6 @@ function QUI_Anchoring:ApplyAllFrameAnchors()
         end
     end
 end
-
--- If frame anchor overrides were requested during combat, apply once combat ends.
-local frameAnchorsCombatFrame = CreateFrame("Frame")
-frameAnchorsCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-frameAnchorsCombatFrame:SetScript("OnEvent", function()
-    if not pendingFrameAnchorApplyAfterCombat then return end
-
-    pendingFrameAnchorApplyAfterCombat = false
-    C_Timer.After(0.05, function()
-        if InCombatLockdown() then
-            pendingFrameAnchorApplyAfterCombat = true
-            return
-        end
-        if QUI_Anchoring then
-            QUI_Anchoring:ApplyAllFrameAnchors()
-        end
-    end)
-end)
 
 ---------------------------------------------------------------------------
 -- GLOBAL CALLBACKS (for backward compatibility)
