@@ -1614,10 +1614,13 @@ local function StartBarFade(barKey, targetAlpha)
             end
 
             if not anyFading then
+                self:SetScript("OnUpdate", nil)
                 self:Hide()
             end
         end)
+        ActionBars.fadeFrameUpdate = ActionBars.fadeFrame:GetScript("OnUpdate")
     end
+    ActionBars.fadeFrame:SetScript("OnUpdate", ActionBars.fadeFrameUpdate)
     ActionBars.fadeFrame:Show()
 end
 

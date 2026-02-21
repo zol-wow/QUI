@@ -186,13 +186,14 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                     QUICore.__pendingBackdrops[pf] = nil
                 end
 
-                -- Stop OnUpdate if no more pending
+                -- Stop OnUpdate if no more pending (SetScript nil to avoid per-frame CPU cost)
                 local hasAny = false
                 for _ in pairs(QUICore.__pendingBackdrops or {}) do
                     hasAny = true
                     break
                 end
                 if not hasAny then
+                    self:SetScript("OnUpdate", nil)
                     self:Hide()
                 end
             end)

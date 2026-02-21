@@ -215,26 +215,29 @@ refreshEventFrame:SetScript("OnEvent", function(_, event)
 end)
 
 -- Keep swipe state responsive while viewers are visible.
-local pulseFrame = CreateFrame("Frame")
-pulseFrame:SetScript("OnUpdate", function(self, elapsed)
-    self._quiElapsed = (self._quiElapsed or 0) + elapsed
-    if self._quiElapsed < 0.12 then return end
-    self._quiElapsed = 0
-
-    local essential = _G.EssentialCooldownViewer
-    local utility = _G.UtilityCooldownViewer
-    local buff = _G.BuffIconCooldownViewer
-    local anyVisible = (essential and essential:IsShown())
-        or (utility and utility:IsShown())
-        or (buff and buff:IsShown())
-    if anyVisible then
-        if InCombatLockdown() then
-            pendingCombatRefresh = true
-            return
+-- Use ticker (0.12s) instead of OnUpdate to avoid per-frame CPU cost (~60-120 invocations/s -> ~8/s)
+local PULSE_INTERVAL = 0.12
+local pulseTicker = nil
+local function StartPulseTicker()
+    if pulseTicker then return end
+    pulseTicker = C_Timer.NewTicker(PULSE_INTERVAL, function()
+        local essential = _G.EssentialCooldownViewer
+        local utility = _G.UtilityCooldownViewer
+        local buff = _G.BuffIconCooldownViewer
+        local anyVisible = (essential and essential:IsShown())
+            or (utility and utility:IsShown())
+            or (buff and buff:IsShown())
+        if anyVisible then
+            if InCombatLockdown() then
+                pendingCombatRefresh = true
+                return
+            end
+            QueueApplyAllSettings(0)
         end
-        QueueApplyAllSettings(0)
-    end
-end)
+    end)
+end
+-- Start ticker on load (viewers may already be visible)
+C_Timer.After(2, StartPulseTicker)
 
 -- Initialize on addon load
 local eventFrame = CreateFrame("Frame")
