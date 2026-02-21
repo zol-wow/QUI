@@ -104,6 +104,64 @@ local function BuildEffectsTab(tabContent)
     end
 
     -- =====================================================
+    -- OVERLAY COLOR
+    -- =====================================================
+    local overlayHeader = GUI:CreateSectionHeader(tabContent, "OVERLAY COLOR")
+    overlayHeader:SetPoint("TOPLEFT", PAD, y)
+    y = y - overlayHeader.gap
+
+    local overlayDesc = GUI:CreateLabel(tabContent, "Override the Blizzard yellow swipe overlay color on Essential and Utility icons.", 11, C.textMuted)
+    overlayDesc:SetPoint("TOPLEFT", PAD, y)
+    overlayDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    overlayDesc:SetJustifyH("LEFT")
+    y = y - 24
+
+    if db and db.cooldownSwipe then
+        local colorModeOptions = {
+            {value = "default", text = "Default (Blizzard)"},
+            {value = "class",   text = "Class Color"},
+            {value = "accent",  text = "UI Accent Color"},
+            {value = "custom",  text = "Custom Color"},
+        }
+
+        -- Overlay color: active/aura state
+        local overlayColorPicker
+        local overlayMode = GUI:CreateFormDropdown(tabContent, "Overlay Color", colorModeOptions, "overlayColorMode", db.cooldownSwipe, function()
+            RefreshSwipe()
+            if overlayColorPicker then
+                overlayColorPicker:SetEnabled((db.cooldownSwipe.overlayColorMode or "default") == "custom")
+            end
+        end)
+        overlayMode:SetPoint("TOPLEFT", PAD, y)
+        overlayMode:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        overlayColorPicker = GUI:CreateFormColorPicker(tabContent, "Overlay Custom Color", "overlayColor", db.cooldownSwipe, RefreshSwipe)
+        overlayColorPicker:SetPoint("TOPLEFT", PAD, y)
+        overlayColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        overlayColorPicker:SetEnabled((db.cooldownSwipe.overlayColorMode or "default") == "custom")
+        y = y - FORM_ROW
+
+        -- Swipe color: cooldown/radial-darkening state
+        local swipeColorPicker
+        local swipeMode = GUI:CreateFormDropdown(tabContent, "Swipe Color", colorModeOptions, "swipeColorMode", db.cooldownSwipe, function()
+            RefreshSwipe()
+            if swipeColorPicker then
+                swipeColorPicker:SetEnabled((db.cooldownSwipe.swipeColorMode or "default") == "custom")
+            end
+        end)
+        swipeMode:SetPoint("TOPLEFT", PAD, y)
+        swipeMode:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        swipeColorPicker = GUI:CreateFormColorPicker(tabContent, "Swipe Custom Color", "swipeColor", db.cooldownSwipe, RefreshSwipe)
+        swipeColorPicker:SetPoint("TOPLEFT", PAD, y)
+        swipeColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        swipeColorPicker:SetEnabled((db.cooldownSwipe.swipeColorMode or "default") == "custom")
+        y = y - FORM_ROW
+    end
+
+    -- =====================================================
     -- COOLDOWN EFFECTS
     -- =====================================================
     local effectsHeader = GUI:CreateSectionHeader(tabContent, "COOLDOWN EFFECTS")
