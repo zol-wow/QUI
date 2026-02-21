@@ -69,7 +69,16 @@ local function CreateUnitFramesPage(parent)
         end
 
         -- Enable checkbox
-        local enableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Unitframes (Req. Reload)", "enabled", ufdb, RefreshNewUF)
+        local enableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Unitframes (Req. Reload)", "enabled", ufdb, function()
+            RefreshNewUF()
+            GUI:ShowConfirmation({
+                title = "Reload UI?",
+                message = "Enabling or disabling unit frames requires a UI reload to take effect.",
+                acceptText = "Reload",
+                cancelText = "Later",
+                onAccept = function() QUI:SafeReload() end,
+            })
+        end)
         enableCheck:SetPoint("TOPLEFT", PAD, y)
         enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -468,7 +477,38 @@ local function CreateUnitFramesPage(parent)
         enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        -- FRAME SIZE section
+        -- Standalone player castbar fallback mode
+        if unitKey == "player" then
+            local soloCheck = GUI:CreateFormCheckbox(tabContent, "Enable Player Castbar (Standalone Mode)", "standaloneCastbar", unitDB, function(val)
+                if _G.QUI_ToggleStandaloneCastbar then
+                    _G.QUI_ToggleStandaloneCastbar()
+                end
+
+                if not val then
+                    local ufdbCurrent = GetUFDB()
+                    local playerFrameEnabled = ufdbCurrent and ufdbCurrent.enabled and unitDB.enabled
+                    if not playerFrameEnabled then
+                        GUI:ShowConfirmation({
+                            title = "Reload UI?",
+                            message = "A reload is required to restore the default Blizzard player castbar.",
+                            acceptText = "Reload",
+                            cancelText = "Later",
+                            onAccept = function() QUI:SafeReload() end,
+                        })
+                    end
+                end
+            end)
+            soloCheck:SetPoint("TOPLEFT", PAD, y)
+            soloCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local soloDesc = GUI:CreateLabel(tabContent, "Standalone mode keeps the QUI Player Castbar available when Unit Frames are disabled globally or when the Player Frame is disabled. It has no effect while the QUI Player Frame is enabled.", 11, C.textMuted)
+            soloDesc:SetPoint("TOPLEFT", PAD, y)
+            soloDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            soloDesc:SetJustifyH("LEFT")
+            y = y - 32
+        end
+
         local sizeHeader = GUI:CreateSectionHeader(tabContent, "Frame Size & Position")
         sizeHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - sizeHeader.gap
@@ -1815,11 +1855,6 @@ local function CreateUnitFramesPage(parent)
         {name = "Focus", builder = function(c) BuildUnitTab(c, "focus") end},
         {name = "Boss", builder = function(c) BuildUnitTab(c, "boss") end},
     }
-
-    -- Add Party/Raidframes sub-tab when DandersFrames is loaded
-    if C_AddOns.IsAddOnLoaded("DandersFrames") and ns.QUI_DandersFramesOptions then
-        table.insert(subTabs, {name = "Party/Raidframes", builder = ns.QUI_DandersFramesOptions.BuildPartyRaidframesTab})
-    end
 
     GUI:CreateSubTabs(content, subTabs)
 

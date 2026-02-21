@@ -3,5 +3,6 @@
     <Script file="nudge.lua"/>
     <Script file="keybinds.lua"/>
     <Script file="anchoring.lua"/>
+    <Script file="bigwigs.lua"/>
     <Script file="dandersframes.lua"/>
 </Ui>

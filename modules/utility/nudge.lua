@@ -397,8 +397,8 @@ local BLIZZARD_EDITMODE_FRAMES = {
     { name = "MultiBar5", label = "Action Bar 6", passthrough = true },
     { name = "MultiBar6", label = "Action Bar 7", passthrough = true },
     { name = "MultiBar7", label = "Action Bar 8", passthrough = true },
-    { name = "PetActionBar", label = "Pet Bar", passthrough = true },
-    { name = "StanceBar", label = "Stance Bar", passthrough = true },
+    { name = "PetActionBar", label = "Pet Bar", passthrough = true, alwaysShow = true },
+    { name = "StanceBar", label = "Stance Bar", passthrough = true, alwaysShow = true },
     { name = "MicroMenuContainer", label = "Micro Menu", passthrough = true },
     { name = "BagsBar", label = "Bag Bar", passthrough = true },
     -- Display
@@ -764,8 +764,16 @@ local function CreateBlizzardFrameOverlay(frameInfo)
     end
     if not frame then return nil end
 
-    local overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    overlay:SetAllPoints()
+    -- Parent to UIParent for alwaysShow frames so the overlay remains visible
+    -- even when the source frame is hidden (e.g. PetActionBar with no pet).
+    local parent = frameInfo.alwaysShow and UIParent or frame
+    local overlay = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    if frameInfo.alwaysShow then
+        overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    else
+        overlay:SetAllPoints()
+    end
     overlay:SetFrameStrata("TOOLTIP")
     local px = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
@@ -1027,8 +1035,15 @@ function QUICore:ShowBlizzardFrameOverlays()
             end
         end
 
-        -- Skip if frame doesn't exist (e.g., DamageMeter not in combat)
-        if frame then
+        -- Skip if frame doesn't exist, or is hidden unless alwaysShow
+        -- (e.g., hidden action bars/damage meters skip, but PetActionBar/StanceBar always show)
+        -- Force-show alwaysShow frames so the bar and .Selection are visible
+        -- in Edit Mode (e.g., PetActionBar when pet is dismissed).
+        if frame and frameInfo.alwaysShow and not frame:IsShown() then
+            frame:Show()
+            frame.__quiForceShown = true
+        end
+        if frame and (frame:IsShown() or frameInfo.alwaysShow) then
             if not blizzardOverlays[frameName] then
                 blizzardOverlays[frameName] = CreateBlizzardFrameOverlay(frameInfo)
             end
@@ -1038,8 +1053,7 @@ function QUICore:ShowBlizzardFrameOverlays()
                 local isLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
 
                 if isLocked then
-                    -- Locked: grey overlay, drag disabled on selection children
-                    -- to prevent drag initiation
+                    -- Locked: grey overlay, no drag allowed.
                     overlay:Show()
                     overlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
                     overlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
@@ -1047,14 +1061,44 @@ function QUICore:ShowBlizzardFrameOverlays()
                         overlay.label:SetTextColor(0.5, 0.5, 0.5, 0.8)
                         overlay.label:SetText((overlay.displayName or frameName) .. "  (Locked)")
                     end
-                    overlay:EnableMouse(false)
-                    overlay:SetScript("OnMouseDown", nil)
-                    overlay:SetScript("OnMouseUp", nil)
+                    -- For force-shown frames, bar buttons eat click-throughs
+                    -- so we handle the menu directly on the overlay.
+                    if frame.__quiForceShown then
+                        overlay:EnableMouse(true)
+                        overlay:SetScript("OnEnter", function(self)
+                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetText(overlay.displayName or frameName)
+                            GameTooltip:Show()
+                        end)
+                        overlay:SetScript("OnLeave", function(self)
+                            GameTooltip:Hide()
+                        end)
+                        overlay:SetScript("OnMouseDown", function(self, button)
+                            if button == "LeftButton" and frame.SelectSystem then
+                                pcall(function()
+                                    if EditModeManagerFrame and EditModeManagerFrame.ClearSelectedSystem then
+                                        EditModeManagerFrame:ClearSelectedSystem()
+                                    end
+                                    frame.isSelected = false
+                                    frame:SelectSystem()
+                                    if frame.Selection then
+                                        frame.Selection:SetAlpha(0)
+                                    end
+                                end)
+                            end
+                        end)
+                        overlay:SetScript("OnMouseUp", nil)
+                    else
+                        -- Normal locked: click-through to .Selection for menu
+                        overlay:EnableMouse(false)
+                        overlay:SetScript("OnMouseDown", nil)
+                        overlay:SetScript("OnMouseUp", nil)
+                    end
                     -- Block drag by overriding OnDragStart on selection children
                     BlockFrameMovement(frame)
                     -- Hide Blizzard's blue .Selection indicator
                     HideSelectionIndicator(frame)
-                elseif frameInfo.passthrough then
+                elseif frameInfo.passthrough and not frame.__quiForceShown then
                     -- Free passthrough: visual-only QUI overlay, clicks pass
                     -- through to Blizzard's .Selection for Edit Mode menu + drag.
                     overlay:Show()
@@ -1070,7 +1114,9 @@ function QUICore:ShowBlizzardFrameOverlays()
                     UnblockFrameMovement(frame)
                     HideSelectionIndicator(frame)
                 else
-                    -- Free: show blue QUI overlay with drag handling
+                    -- Free: show blue QUI overlay with drag handling.
+                    -- For force-shown frames (alwaysShow), also open the
+                    -- Blizzard Edit Mode menu on clean left-click.
                     overlay:Show()
                     overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
                     overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
@@ -1082,27 +1128,56 @@ function QUICore:ShowBlizzardFrameOverlays()
                     UnblockFrameMovement(frame)
                     ShowSelectionIndicator(frame)
                     overlay:EnableMouse(true)
+                    if frame.__quiForceShown then
+                        overlay:SetScript("OnEnter", function(self)
+                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetText(overlay.displayName or frameName)
+                            GameTooltip:Show()
+                        end)
+                        overlay:SetScript("OnLeave", function(self)
+                            GameTooltip:Hide()
+                        end)
+                    end
+                    overlay:SetMovable(true)
+                    overlay:RegisterForDrag("LeftButton")
                     overlay:SetScript("OnMouseDown", function(self, button)
                         if button == "LeftButton" then
+                            self.__dragging = false
                             QUICore:SelectViewer(frameName)
-                            pcall(function()
-                                frame:SetMovable(true)
-                                frame:StartMoving()
-                            end)
-                        end
-                    end)
-                    overlay:SetScript("OnMouseUp", function(self, button)
-                        if frame then
-                            pcall(function() frame:StopMovingOrSizing() end)
-                            -- Save position via LibEditModeOverride
-                            if LibEditModeOverride and EnsureEditModeReady() and LibEditModeOverride:HasEditModeSettings(frame) then
-                                local point, relativeTo, relativePoint, x, y = frame:GetPoint(1)
+                            -- Open Blizzard Edit Mode menu on mouse down
+                            -- (matches stance bar behavior).
+                            if frame.__quiForceShown and frame.SelectSystem then
                                 pcall(function()
-                                    LibEditModeOverride:ReanchorFrame(frame, point, relativeTo, relativePoint, x, y)
+                                    if EditModeManagerFrame and EditModeManagerFrame.ClearSelectedSystem then
+                                        EditModeManagerFrame:ClearSelectedSystem()
+                                    end
+                                    frame.isSelected = false
+                                    frame:SelectSystem()
+                                    if frame.Selection then
+                                        frame.Selection:SetAlpha(0)
+                                    end
                                 end)
                             end
                         end
                     end)
+                    overlay:SetScript("OnDragStart", function(self)
+                        self.__dragging = true
+                        pcall(function()
+                            frame:SetMovable(true)
+                            frame:StartMoving()
+                        end)
+                    end)
+                    overlay:SetScript("OnDragStop", function(self)
+                        self.__dragging = false
+                        pcall(function() frame:StopMovingOrSizing() end)
+                        if LibEditModeOverride and EnsureEditModeReady() and LibEditModeOverride:HasEditModeSettings(frame) then
+                            local point, relativeTo, relativePoint, x, y = frame:GetPoint(1)
+                            pcall(function()
+                                LibEditModeOverride:ReanchorFrame(frame, point, relativeTo, relativePoint, x, y)
+                            end)
+                        end
+                    end)
+                    overlay:SetScript("OnMouseUp", nil)
                 end
             end
         end
@@ -1114,7 +1189,12 @@ end
 -- Hide all Blizzard frame overlays
 function QUICore:HideBlizzardFrameOverlays()
     for _, frameInfo in ipairs(BLIZZARD_EDITMODE_FRAMES) do
-        local overlay = blizzardOverlays[frameInfo.name]
+        local frameName = frameInfo.name
+        local frame = _G[frameName]
+        if not frame and frameInfo.fallback then
+            frame = _G[frameInfo.fallback]
+        end
+        local overlay = blizzardOverlays[frameName]
         -- Check fallback name too (e.g., MainActionBar -> MainMenuBar)
         if not overlay and frameInfo.fallback then
             overlay = blizzardOverlays[frameInfo.fallback]
@@ -1124,6 +1204,13 @@ function QUICore:HideBlizzardFrameOverlays()
             overlay:EnableMouse(false)
             overlay:SetScript("OnMouseDown", nil)
             overlay:SetScript("OnMouseUp", nil)
+            overlay:SetScript("OnDragStart", nil)
+            overlay:SetScript("OnDragStop", nil)
+        end
+        -- Hide frames we force-showed on Edit Mode enter
+        if frame and frame.__quiForceShown then
+            frame:Hide()
+            frame.__quiForceShown = nil
         end
     end
 end

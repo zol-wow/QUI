@@ -40,6 +40,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.39.0 - 2026-02-21
+
+### Added
+- added anchoring integration with BigWigs bars, if addon is detected
+- added discord notification for new releases
+- added player castbar standalone mode (if you don't want to use QUI Unit Frames, but the player castbar)
+
+### Fixed
+- fixed / optimized OnUpdate handling across multiple modules to reduce CPU load
 ## v2.38.3 - 2026-02-20
 
 ### Changed

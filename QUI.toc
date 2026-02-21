@@ -6,11 +6,11 @@
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
 ## Author: Zol
-## Version: 2.38.3
+## Version: 2.39.0
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
 ## SavedVariables: QUI_DB, QUIDB
-## OptionalDeps: DandersFrames
+## OptionalDeps: DandersFrames, BigWigs
 
 ## X-Contributors: Quazii (original creator), LiQiuDGG, Mondo, Zol
 ## X-License: GPLv3

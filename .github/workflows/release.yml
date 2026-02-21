@@ -64,6 +64,7 @@ jobs:
           echo "$NOTES" > release_notes.txt
 
       - name: Create GitHub Release
+        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           files: QUI-${{ steps.version.outputs.version }}.zip
@@ -72,3 +73,41 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Read the extracted changelog
+          CHANGELOG=$(cat release_notes.txt)
+          
+          # Construct URLs
+          RELEASE_URL="https://github.com/$REPO/releases/tag/$VERSION"
+          ZIP_URL="https://github.com/$REPO/releases/download/$VERSION/QUI-$VERSION.zip"
+          
+          # Truncate changelog if it exceeds Discord's 4096 character embed limit
+          if [ ${#CHANGELOG} -gt 4000 ]; then
+            CHANGELOG="${CHANGELOG:0:4000}... *(Changelog truncated, view GitHub release for full notes)*"
+          fi
+
+          # Use jq to safely format the multi-line text into valid JSON
+          JSON_PAYLOAD=$(jq -n \
+            --arg version "$VERSION" \
+            --arg url "$RELEASE_URL" \
+            --arg zip "$ZIP_URL" \
+            --arg changelog "$CHANGELOG" \
+            '{
+              content: "🚀 **New QUI Release:** \($version)\n\n📥 **[Download \($version) zip](\($zip))**\n🔗 [View Release on GitHub](\($url))\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*",
+              embeds: [
+                {
+                  title: "Changelog",
+                  description: $changelog,
+                  color: 3447003
+                }
+              ]
+            }')
+          
+          # Send the request to Discord
+          curl -H "Content-Type: application/json" -d "$JSON_PAYLOAD" $DISCORD_WEBHOOK

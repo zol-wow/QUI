@@ -156,8 +156,13 @@ end
 ---------------------------------------------------------------------------
 function QUI_UF:HideBlizzardCastbars()
     local db = GetDB()
-    if not db or not db.enabled then return end
-    if not (db.player and db.player.castbar and db.player.castbar.enabled) then return end
+    if not db then return end
+    local playerDB = db.player
+    local playerFrameEnabled = db.enabled and playerDB and playerDB.enabled
+    local playerCastbarEnabled = playerDB and (playerDB.castbar == nil or playerDB.castbar.enabled ~= false)
+    local standaloneActive = playerDB and playerDB.standaloneCastbar and not playerFrameEnabled and playerCastbarEnabled
+    local shouldHidePlayerCastbar = (playerFrameEnabled and playerCastbarEnabled) or standaloneActive
+    if not shouldHidePlayerCastbar then return end
 
     -- NOTE: As of 12.0.x beta, CastingBarFrame can be a forbidden/restricted frame.
     -- All interactions are wrapped in pcall to prevent errors from blocking initialization.
@@ -188,8 +193,8 @@ function QUI_UF:HideBlizzardCastbars()
             end)
         end
     end
-    -- Also hide the pet castbar if it exists
-    if PetCastingBarFrame then
+    -- Hide pet castbar only when QUI pet frame is enabled.
+    if db.enabled and db.pet and db.pet.enabled and PetCastingBarFrame then
         local ok, err = pcall(function()
             PetCastingBarFrame:SetAlpha(0)
             PetCastingBarFrame:SetScale(0.0001)

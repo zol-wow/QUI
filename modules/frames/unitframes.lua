@@ -173,6 +173,69 @@ local function GetUnitSettings(unit)
     return db and db[unit]
 end
 
+local function IsPlayerFrameEnabled(db)
+    return db and db.enabled and db.player and db.player.enabled
+end
+
+local function IsStandalonePlayerCastbarActive(db)
+    local playerDB = db and db.player
+    if not playerDB or not playerDB.standaloneCastbar then
+        return false
+    end
+    return not IsPlayerFrameEnabled(db)
+end
+
+local function EnsurePlayerCastbarSettings(db)
+    if not db or not db.player then return nil end
+    if not db.player.castbar then
+        db.player.castbar = { enabled = true }
+    elseif db.player.castbar.enabled == nil then
+        db.player.castbar.enabled = true
+    end
+    return db.player.castbar
+end
+
+local function DestroyManagedCastbar(castbar)
+    if not castbar then return end
+    if castbar.UnregisterAllEvents then
+        castbar:UnregisterAllEvents()
+    end
+    castbar:SetScript("OnUpdate", nil)
+    castbar:SetScript("OnEvent", nil)
+    castbar:SetScript("OnDragStart", nil)
+    castbar:SetScript("OnDragStop", nil)
+    castbar:Hide()
+    castbar:ClearAllPoints()
+end
+
+local function ApplyStandalonePlayerCastbarMode()
+    local db = GetDB()
+    if not db or not db.player then return false end
+
+    local standaloneActive = IsStandalonePlayerCastbarActive(db)
+    local castSettings = EnsurePlayerCastbarSettings(db)
+    local castbarAllowed = castSettings and castSettings.enabled ~= false
+    local hasPlayerFrame = QUI_UF.frames and QUI_UF.frames.player
+    local castbar = QUI_UF.castbars and QUI_UF.castbars.player
+
+    if standaloneActive and not hasPlayerFrame and castbarAllowed then
+        if castbar and QUI_Castbar and QUI_Castbar.RefreshCastbar then
+            QUI_Castbar:RefreshCastbar(castbar, "player", castSettings, nil)
+        elseif QUI_Castbar and QUI_Castbar.CreateCastbar then
+            QUI_UF.castbars.player = QUI_Castbar:CreateCastbar(nil, "player", "player")
+        end
+        QUI_UF:HideBlizzardCastbars()
+        return true
+    end
+
+    if castbar and not hasPlayerFrame then
+        DestroyManagedCastbar(castbar)
+        QUI_UF.castbars.player = nil
+    end
+
+    return false
+end
+
 local function IsTargetHealthDirectionInverted(unitKey, settings)
     return unitKey == "target" and settings and settings.invertHealthDirection == true
 end
@@ -2801,7 +2864,13 @@ function QUI_UF:RefreshFrame(unitKey)
     end
     
     local frame = self.frames[unitKey]
-    if not frame then return end
+    if not frame then
+        -- Standalone mode only applies to the player castbar.
+        if unitKey == "player" then
+            ApplyStandalonePlayerCastbarMode()
+        end
+        return
+    end
 
     -- Skip frame modifications during combat (secure frames are protected)
     if InCombatLockdown() then
@@ -3166,12 +3235,11 @@ function QUI_UF:RefreshFrame(unitKey)
         UpdateFrame(frame)
     end
     
-    -- Refresh castbar if exists, OR create if newly enabled
+    -- Refresh or create castbar
     local castbar = self.castbars[unitKey]
     local castSettings = settings.castbar
     if castSettings and castSettings.enabled then
         if castbar and QUI_Castbar and QUI_Castbar.RefreshCastbar then
-            -- Castbar exists - refresh it
             QUI_Castbar:RefreshCastbar(castbar, unitKey, castSettings, frame)
         elseif not castbar and QUI_Castbar and QUI_Castbar.CreateCastbar then
             -- Castbar doesn't exist but is now enabled - create it
@@ -3195,7 +3263,7 @@ end
 function QUI_UF:RefreshAll()
     -- Track if we've refreshed boss frames to avoid doing it 5 times
     local bossRefreshed = false
-    
+
     for unitKey, frame in pairs(self.frames) do
         -- Boss frames (boss1-boss5) share settings from "boss" key
         if unitKey:match("^boss%d+$") then
@@ -3204,6 +3272,13 @@ function QUI_UF:RefreshAll()
                 bossRefreshed = true
             end
         else
+            self:RefreshFrame(unitKey)
+        end
+    end
+
+    -- Standalone castbars with no unit frame (player fallback mode)
+    for unitKey, castbar in pairs(self.castbars) do
+        if castbar and not self.frames[unitKey] then
             self:RefreshFrame(unitKey)
         end
     end
@@ -3220,9 +3295,15 @@ function QUI_UF:Initialize()
     end
 
     local db = GetDB()
-    if not db or not db.enabled then return end
+    if not db then return end
 
-    -- Setup castbar module with helpers and references
+    local unitFramesEnabled = db.enabled == true
+    local standaloneActive = IsStandalonePlayerCastbarActive(db)
+    if not unitFramesEnabled and not standaloneActive then
+        return
+    end
+
+    -- Setup castbar module references
     if QUI_Castbar then
         QUI_Castbar:SetHelpers({
             GetUnitSettings = GetUnitSettings,
@@ -3238,7 +3319,15 @@ function QUI_UF:Initialize()
         QUI_Castbar:SetUnitFramesModule(self)
         QUI_Castbar.castbars = self.castbars
     end
-    
+
+    -- Apply standalone player castbar first; ignored while player frame is enabled.
+    ApplyStandalonePlayerCastbarMode()
+
+    -- If unit frames are globally disabled, standalone mode is the only runtime path.
+    if not unitFramesEnabled then
+        return
+    end
+
     -- Hide Blizzard default frames first
     self:HideBlizzardFrames()
     
@@ -3464,6 +3553,11 @@ end
 -- Register slider references for real-time sync during edit mode
 _G.QUI_RegisterEditModeSliders = function(unitKey, xSlider, ySlider)
     QUI_UF:RegisterEditModeSliders(unitKey, xSlider, ySlider)
+end
+
+-- Apply standalone player castbar mode live from options.
+_G.QUI_ToggleStandaloneCastbar = function()
+    return ApplyStandalonePlayerCastbarMode()
 end
 
 -- Global references for external access

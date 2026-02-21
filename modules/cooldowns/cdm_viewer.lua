@@ -1416,8 +1416,11 @@ local function HookViewer(viewerName, trackerKey)
 
     -- Step 1 & 3: OnShow hook - enable polling and single deferred layout
     viewer:HookScript("OnShow", function(self)
-        -- Enable polling when viewer becomes visible
+        -- Enable polling when viewer becomes visible (restore handler if we cleared it on Hide)
         if self.__ncdmUpdateFrame then
+            if self.__ncdmUpdateHandler then
+                self.__ncdmUpdateFrame:SetScript("OnUpdate", self.__ncdmUpdateHandler)
+            end
             self.__ncdmUpdateFrame:Show()
         end
         -- Single deferred layout
@@ -1432,9 +1435,10 @@ local function HookViewer(viewerName, trackerKey)
         end)
     end)
 
-    -- Step 1: OnHide hook - disable polling to save CPU
+    -- Step 1: OnHide hook - disable polling to save CPU (SetScript nil stops OnUpdate entirely)
     viewer:HookScript("OnHide", function(self)
         if self.__ncdmUpdateFrame then
+            self.__ncdmUpdateFrame:SetScript("OnUpdate", nil)
             self.__ncdmUpdateFrame:Hide()
         end
     end)
@@ -1548,6 +1552,7 @@ local function HookViewer(viewerName, trackerKey)
             LayoutViewer(viewerName, trackerKey)
         end
     end)
+    viewer.__ncdmUpdateHandler = updateFrame:GetScript("OnUpdate")
 
     -- Step 1: Initially show update frame only if viewer is visible
     if viewer:IsShown() then
@@ -1766,6 +1771,26 @@ end
 _G.QUI_RefreshNCDM = RefreshAll
 _G.QUI_IncrementNCDMVersion = IncrementSettingsVersion
 _G.QUI_ApplyUtilityAnchor = ApplyUtilityAnchor
+
+-- Expose viewer layout state for resource bars, castbars, anchoring, etc.
+-- Reads the __cdm* properties stored by LayoutViewer and returns a structured table.
+_G.QUI_GetCDMViewerState = function(viewer)
+    if not viewer then return nil end
+    if not viewer.__cdmIconWidth then return nil end
+    return {
+        iconWidth              = viewer.__cdmIconWidth,
+        totalHeight            = viewer.__cdmTotalHeight,
+        row1Width              = viewer.__cdmRow1Width,
+        bottomRowWidth         = viewer.__cdmBottomRowWidth,
+        potentialRow1Width     = viewer.__cdmPotentialRow1Width,
+        potentialBottomRowWidth = viewer.__cdmPotentialBottomRowWidth,
+        row1IconHeight         = viewer.__cdmRow1IconHeight,
+        row1BorderSize         = viewer.__cdmRow1BorderSize,
+        bottomRowBorderSize    = viewer.__cdmBottomRowBorderSize,
+        bottomRowYOffset       = viewer.__cdmBottomRowYOffset,
+        layoutDir              = viewer.__cdmLayoutDirection,
+    }
+end
 
 ---------------------------------------------------------------------------
 -- FORCE LOAD CDM: Open settings panel invisibly to force Blizzard init
