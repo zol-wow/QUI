@@ -1531,6 +1531,17 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
 
     if not resolved then return end
 
+    -- Skip anchoring override for Blizzard Edit Mode system frames that are
+    -- empty/hidden (e.g. StanceBar with 0 stances, PetActionBar with no pet).
+    -- ClearAllPoints on these frames triggers Blizzard's OnSystemPositionChange
+    -- which reads GetPoint() and errors on nil offsetY when the frame has no
+    -- anchor points.
+    local isBlizzEditModeSystem = resolved.system ~= nil or resolved.systemIndex ~= nil
+    if isBlizzEditModeSystem and resolved.IsShown and not resolved:IsShown() then
+        SetFrameOverride(resolved, false)
+        return
+    end
+
     -- Mark frame as overridden FIRST — blocks any module positioning from this point on
     SetFrameOverride(resolved, true, key)
 
