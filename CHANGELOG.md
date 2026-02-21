@@ -44,6 +44,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.40.2 - 2026-02-22
+
+### Added
+- added curseforge upload to release workflow
 ## v2.40.1 - 2026-02-21
 
 ### Fixed
