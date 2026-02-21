@@ -1027,8 +1027,14 @@ function QUICore:ShowBlizzardFrameOverlays()
             end
         end
 
-        -- Skip if frame doesn't exist (e.g., DamageMeter not in combat)
-        if frame then
+        -- Skip if frame doesn't exist or is hidden with no content
+        -- (e.g., PetActionBar when pet is dismissed, StanceBar with 0 stances)
+        if frame and not frame:IsShown() then
+            -- Hide any existing overlay for this hidden frame
+            if blizzardOverlays[frameName] then
+                blizzardOverlays[frameName]:Hide()
+            end
+        elseif frame then
             if not blizzardOverlays[frameName] then
                 blizzardOverlays[frameName] = CreateBlizzardFrameOverlay(frameInfo)
             end
