@@ -3621,6 +3621,27 @@ end
 
 -- Show nudge arrows on the specified element
 function QUICore:ShowSelectionArrows(elementType, elementKey)
+    -- Resolve the actual frame so we can check if it's locked
+    local resolvedFrame
+    if elementType == "unitframe" then
+        resolvedFrame = ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames[elementKey]
+    elseif elementType == "powerbar" then
+        resolvedFrame = (elementKey == "primary") and self.powerBar or self.secondaryPowerBar
+    elseif elementType == "cdm" then
+        resolvedFrame = _G[elementKey]
+    elseif elementType == "blizzard" then
+        resolvedFrame = _G[elementKey]
+    elseif elementType == "minimap" then
+        resolvedFrame = _G["Minimap"]
+    elseif elementType == "castbar" then
+        resolvedFrame = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars[elementKey]
+    end
+
+    -- Don't show nudge arrows on locked frames
+    if resolvedFrame and _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(resolvedFrame) then
+        return
+    end
+
     if elementType == "unitframe" then
         if ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames then
             local frame = ns.QUI_UnitFrames.frames[elementKey]
