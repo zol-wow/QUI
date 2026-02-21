@@ -263,11 +263,18 @@ function Helpers.MigrateHUDMinWidthSettings(frameAnchoring)
     if type(frameAnchoring) ~= "table" then
         return nil
     end
+
+    local cfg = frameAnchoring.hudMinWidth
+    if type(cfg) == "table" then
+        -- Normalize in place so existing widget/db references stay valid.
+        cfg.enabled = (cfg.enabled == true)
+        cfg.width = Helpers.ClampHUDMinWidth(cfg.width)
+        frameAnchoring.hudMinWidthEnabled = nil
+        return cfg
+    end
+
     local enabled, width = Helpers.ParseHUDMinWidth(frameAnchoring)
-    frameAnchoring.hudMinWidth = {
-        enabled = enabled,
-        width = width,
-    }
+    frameAnchoring.hudMinWidth = { enabled = enabled, width = width }
     frameAnchoring.hudMinWidthEnabled = nil
     return frameAnchoring.hudMinWidth
 end
