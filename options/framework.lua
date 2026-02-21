@@ -331,6 +331,31 @@ local function SetFont(fontString, size, flags, color)
     end
 end
 
+-- Ensure all text in a frame subtree uses the shared QUI font.
+local function ApplyFontToFrameRecursive(frame, fontPath)
+    if not frame then return end
+
+    local regions = { frame:GetRegions() }
+    for _, region in ipairs(regions) do
+        if region and region.IsObjectType and region:IsObjectType("FontString") and region.GetFont and region.SetFont then
+            local _, size, flags = region:GetFont()
+            if size and size > 0 then
+                region:SetFont(fontPath, size, flags or "")
+            end
+        end
+    end
+
+    local children = { frame:GetChildren() }
+    for _, child in ipairs(children) do
+        ApplyFontToFrameRecursive(child, fontPath)
+    end
+end
+
+function GUI:ApplyTabFont(frame)
+    if not frame then return end
+    ApplyFontToFrameRecursive(frame, GetFontPath())
+end
+
 ---------------------------------------------------------------------------
 -- WIDGET: LABEL
 ---------------------------------------------------------------------------
@@ -4613,6 +4638,14 @@ function GUI:SelectTab(frame, index)
             end
         end
         TriggerOnShow(page.frame)
+        GUI:ApplyTabFont(page.frame)
+
+        -- Some tab widgets build rows asynchronously after OnShow; apply a second pass.
+        C_Timer.After(0, function()
+            if page.frame and page.frame:IsShown() then
+                GUI:ApplyTabFont(page.frame)
+            end
+        end)
     end
 end
 
