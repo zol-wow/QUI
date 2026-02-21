@@ -150,7 +150,7 @@ local function CreateWelcomePage(parent)
 
     -- Links (both on one row, parented directly to content)
     local discordItem = CreateLinkItem(content,
-        "|cff5865F2Discord|r", "https://discord.gg/VFVv8bhQ",
+        "|cff5865F2Discord|r", "https://discord.gg/FFUjA4JXnH",
         0.345, 0.396, 0.949,  -- Discord blurple
         "Interface\\AddOns\\QUI\\assets\\discord",
         "Copy Discord Invite")
@@ -219,7 +219,7 @@ local function CreateWelcomePage(parent)
 
     y = CreateQA(content,
         "How do I report a bug or get help?",
-        "First, try importing the QUI Edit Mode layout string (below) as a starting point. If you're still encountering issues, raise an issue on GitHub (github.com/zol-wow/QUI) or ask for help on Discord (discord.gg/VFVv8bhQ). Links with copy buttons are at the top of this page.",
+        "First, try importing the QUI Edit Mode layout string (below) as a starting point. If you're still encountering issues, raise an issue on GitHub (https://github.com/zol-wow/QUI) or ask for help on Discord (https://discord.gg/FFUjA4JXnH). Links with copy buttons are at the top of this page.",
         y, contentWidth)
 
     y = y - 10

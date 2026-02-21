@@ -99,7 +99,7 @@ jobs:
             --arg zip "$ZIP_URL" \
             --arg changelog "$CHANGELOG" \
             '{
-              content: "🚀 **New QUI Release:** \($version)\n\n📥 **[Download \($version) zip](\($zip))**\n🔗 [View Release on GitHub](\($url))\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*",
+              content: "🚀 **New QUI Release:** \($version)\n\n📥 **[Download \($version) zip](\($zip))**\n🔗 [View Release on GitHub](\($url))\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*\n\n",
               embeds: [
                 {
                   title: "Changelog",
