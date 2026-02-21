@@ -3849,6 +3849,23 @@ function QUICore:ClearEditModeSelection()
 end
 
 -- ============================================================================
+-- EDIT MODE CALLBACK REGISTRY
+-- Modules call RegisterEditModeEnter/Exit to receive notifications when
+-- Edit Mode is toggled, dispatched from the hooksecurefunc hooks below.
+-- ============================================================================
+
+QUICore._editModeEnterCallbacks = {}
+QUICore._editModeExitCallbacks = {}
+
+function QUICore:RegisterEditModeEnter(callback)
+    table.insert(self._editModeEnterCallbacks, callback)
+end
+
+function QUICore:RegisterEditModeExit(callback)
+    table.insert(self._editModeExitCallbacks, callback)
+end
+
+-- ============================================================================
 
 function QUICore:OnEnable()
     -- Override Blizzard's /reload command to use SafeReload
@@ -4059,6 +4076,13 @@ function QUICore:HookEditMode()
     if EditModeManagerFrame then
         -- Hook when Edit Mode is entered
         hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
+            -- Dispatch registered enter callbacks
+            C_Timer.After(0, function()
+                for _, cb in ipairs(self._editModeEnterCallbacks) do
+                    pcall(cb)
+                end
+            end)
+
             C_Timer.After(0.1, function()
                 self:ForceReskinAllViewers()
             end)
@@ -4083,6 +4107,13 @@ function QUICore:HookEditMode()
         
         -- Hook when Edit Mode is exited
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
+            -- Dispatch registered exit callbacks
+            C_Timer.After(0, function()
+                for _, cb in ipairs(self._editModeExitCallbacks) do
+                    pcall(cb)
+                end
+            end)
+
             C_Timer.After(0.1, function()
                 self:ForceReskinAllViewers()
 
