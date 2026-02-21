@@ -74,6 +74,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload to CurseForge
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          CHANGELOG=$(cat release_notes.txt)
+          METADATA=$(jq -n \
+            --arg changelog "$CHANGELOG" \
+            --arg name "QUI-${{ steps.version.outputs.version }}" \
+            '{
+              changelog: $changelog,
+              changelogType: "markdown",
+              displayName: $name,
+              gameVersions: [13924,14422],
+              releaseType: "release"
+            }')
+          
+          curl --fail-with-body -X POST \
+            "https://wow.curseforge.com/api/projects/${{ secrets.CF_PROJECT_ID }}/upload-file" \
+            -H "X-Api-Token: ${CF_API_TOKEN}" \
+            -F "metadata=${METADATA}" \
+            -F "file=@QUI-${{ steps.version.outputs.version }}.zip"
+
       - name: Notify Discord
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
