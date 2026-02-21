@@ -1099,6 +1099,23 @@ local defaults = {
             hideUntilOutOfRange = false,          -- Only show crosshair when in combat AND out of range
         },
 
+        -- Target Distance Bracket Display
+        rangeCheck = {
+            enabled = false,
+            combatOnly = false,
+            showOnlyWithTarget = true,
+            updateRate = 0.1, -- seconds
+            shortenText = false,
+            dynamicColor = false,
+            font = "Quazii",
+            fontSize = 22,
+            useClassColor = false,
+            textColor = { 0.2, 0.95, 0.55, 1 },
+            strata = "MEDIUM",
+            offsetX = 0,
+            offsetY = -190,
+        },
+
         -- Skyriding Vigor Bar
         skyriding = {
             enabled = true,
