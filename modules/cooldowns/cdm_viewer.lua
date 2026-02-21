@@ -1772,6 +1772,26 @@ _G.QUI_RefreshNCDM = RefreshAll
 _G.QUI_IncrementNCDMVersion = IncrementSettingsVersion
 _G.QUI_ApplyUtilityAnchor = ApplyUtilityAnchor
 
+-- Expose viewer layout state for resource bars, castbars, anchoring, etc.
+-- Reads the __cdm* properties stored by LayoutViewer and returns a structured table.
+_G.QUI_GetCDMViewerState = function(viewer)
+    if not viewer then return nil end
+    if not viewer.__cdmIconWidth then return nil end
+    return {
+        iconWidth              = viewer.__cdmIconWidth,
+        totalHeight            = viewer.__cdmTotalHeight,
+        row1Width              = viewer.__cdmRow1Width,
+        bottomRowWidth         = viewer.__cdmBottomRowWidth,
+        potentialRow1Width     = viewer.__cdmPotentialRow1Width,
+        potentialBottomRowWidth = viewer.__cdmPotentialBottomRowWidth,
+        row1IconHeight         = viewer.__cdmRow1IconHeight,
+        row1BorderSize         = viewer.__cdmRow1BorderSize,
+        bottomRowBorderSize    = viewer.__cdmBottomRowBorderSize,
+        bottomRowYOffset       = viewer.__cdmBottomRowYOffset,
+        layoutDir              = viewer.__cdmLayoutDirection,
+    }
+end
+
 ---------------------------------------------------------------------------
 -- FORCE LOAD CDM: Open settings panel invisibly to force Blizzard init
 -- Shows at alpha 0 so OnShow scripts fire but user sees nothing
