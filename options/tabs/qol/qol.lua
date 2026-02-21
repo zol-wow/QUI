@@ -1651,6 +1651,154 @@ local function BuildGeneralTab(tabContent)
 
     y = y - 10
 
+    -- Target Distance Bracket Display Section
+    GUI:SetSearchSection("Target Distance Bracket Display")
+    local rangeHeader = GUI:CreateSectionHeader(tabContent, "Target Distance Bracket Display")
+    rangeHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - rangeHeader.gap
+
+    local rangeCheckDB = db and db.rangeCheck
+    if rangeCheckDB then
+        local dynamicColorCheck
+        local classColorCheck
+        local textColorPicker
+
+        local function RefreshRangeControls()
+            if rangeCheckDB.dynamicColor and rangeCheckDB.useClassColor then
+                rangeCheckDB.useClassColor = false
+                if classColorCheck and classColorCheck.SetValue then
+                    classColorCheck:SetValue(false, true)
+                end
+            end
+            if dynamicColorCheck and dynamicColorCheck.SetEnabled then
+                dynamicColorCheck:SetEnabled(true)
+            end
+            if classColorCheck and classColorCheck.SetEnabled then
+                classColorCheck:SetEnabled(not rangeCheckDB.dynamicColor)
+            end
+            if textColorPicker and textColorPicker.SetEnabled then
+                textColorPicker:SetEnabled(not rangeCheckDB.dynamicColor and not rangeCheckDB.useClassColor)
+            end
+        end
+
+        local rangeEnableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Distance Bracket Display", "enabled", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        rangeEnableCheck:SetPoint("TOPLEFT", PADDING, y)
+        rangeEnableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local previewState = { enabled = _G.QUI_IsRangeCheckPreviewMode and _G.QUI_IsRangeCheckPreviewMode() or false }
+        local previewCheck = GUI:CreateFormCheckbox(tabContent, "Preview / Move Frame", "enabled", previewState, function(val)
+            if _G.QUI_ToggleRangeCheckPreview then
+                _G.QUI_ToggleRangeCheckPreview(val)
+            end
+        end)
+        previewCheck:SetPoint("TOPLEFT", PADDING, y)
+        previewCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local combatOnlyCheck = GUI:CreateFormCheckbox(tabContent, "Combat Only", "combatOnly", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        combatOnlyCheck:SetPoint("TOPLEFT", PADDING, y)
+        combatOnlyCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local targetOnlyCheck = GUI:CreateFormCheckbox(tabContent, "Only Show With Hostile Target", "showOnlyWithTarget", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        targetOnlyCheck:SetPoint("TOPLEFT", PADDING, y)
+        targetOnlyCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local shortenTextCheck = GUI:CreateFormCheckbox(tabContent, "Shorten Text", "shortenText", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        shortenTextCheck:SetPoint("TOPLEFT", PADDING, y)
+        shortenTextCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        dynamicColorCheck = GUI:CreateFormCheckbox(tabContent, "Dynamic Color (by distance bracket)", "dynamicColor", rangeCheckDB, function(val)
+            if val then
+                rangeCheckDB.useClassColor = false
+                if classColorCheck and classColorCheck.SetValue then
+                    classColorCheck:SetValue(false, true)
+                end
+            end
+            Shared.RefreshRangeCheck()
+            RefreshRangeControls()
+        end)
+        dynamicColorCheck:SetPoint("TOPLEFT", PADDING, y)
+        dynamicColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        classColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color", "useClassColor", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+            RefreshRangeControls()
+        end)
+        classColorCheck:SetPoint("TOPLEFT", PADDING, y)
+        classColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        if not rangeCheckDB.textColor then
+            rangeCheckDB.textColor = { 0.2, 0.95, 0.55, 1 }
+        end
+        textColorPicker = GUI:CreateFormColorPicker(tabContent, "Text Color", "textColor", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        textColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        textColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local fontList = Shared.GetFontList()
+        local fontDropdown = GUI:CreateFormDropdown(tabContent, "Font", fontList, "font", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        fontDropdown:SetPoint("TOPLEFT", PADDING, y)
+        fontDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local fontSizeSlider = GUI:CreateFormSlider(tabContent, "Font Size", 8, 48, 1, "fontSize", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        fontSizeSlider:SetPoint("TOPLEFT", PADDING, y)
+        fontSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local strataOptions = {
+            {value = "BACKGROUND", text = "Background"},
+            {value = "LOW", text = "Low"},
+            {value = "MEDIUM", text = "Medium"},
+            {value = "HIGH", text = "High"},
+            {value = "DIALOG", text = "Dialog"},
+        }
+        local strataDropdown = GUI:CreateFormDropdown(tabContent, "Frame Strata", strataOptions, "strata", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        strataDropdown:SetPoint("TOPLEFT", PADDING, y)
+        strataDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local xOffsetSlider = GUI:CreateFormSlider(tabContent, "X-Offset", -700, 700, 1, "offsetX", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        xOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        xOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local yOffsetSlider = GUI:CreateFormSlider(tabContent, "Y-Offset", -700, 700, 1, "offsetY", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        yOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        yOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - 30
+
+        RefreshRangeControls()
+    end
+
+    y = y - 10
+
     -- QUI Panel Settings
     local panelHeader = GUI:CreateSectionHeader(tabContent, "QUI Panel Settings")
     panelHeader:SetPoint("TOPLEFT", PADDING, y)

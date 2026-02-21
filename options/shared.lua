@@ -464,6 +464,12 @@ local function RefreshReticle()
     end
 end
 
+local function RefreshRangeCheck()
+    if _G.QUI_RefreshRangeCheck then
+        _G.QUI_RefreshRangeCheck()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- EXPORT TO NAMESPACE
 ---------------------------------------------------------------------------
@@ -499,4 +505,5 @@ ns.QUI_Options = {
     RefreshBuffBorders = RefreshBuffBorders,
     RefreshCrosshair = RefreshCrosshair,
     RefreshReticle = RefreshReticle,
+    RefreshRangeCheck = RefreshRangeCheck,
 }

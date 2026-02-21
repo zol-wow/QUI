@@ -384,6 +384,7 @@ local function BuildQoLTab(tabContent)
     local frames = {
         { key = "brezCounter", name = "Brez Counter" },
         { key = "combatTimer", name = "Combat Timer" },
+        { key = "rangeCheck", name = "Target Distance Bracket Display" },
         { key = "skyriding", name = "Skyriding" },
         { key = "petWarning", name = "Pet Warning" },
         { key = "focusCastAlert", name = "Focus Cast Alert" },
