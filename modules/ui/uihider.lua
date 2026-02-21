@@ -288,19 +288,22 @@ local function ApplyHideSettings()
     end
 
     -- Compact Raid Frame Manager
-    -- TAINT SAFETY: CompactRaidFrameManager is a secure frame. NEVER use
-    -- hooksecurefunc on its Show/SetShown — those hooks execute addon code
-    -- in the secure context, tainting CompactUnitFrame values. When Edit Mode
-    -- then reads those values, it causes "secret number tainted by QUI" errors.
-    -- Instead, use an OnUpdate watcher to detect when it reappears.
+    -- TAINT SAFETY: CompactRaidFrameManager is a secure frame. NEVER use Hide()
+    -- on it — Hide() triggers Blizzard's internal update chain on compact unit
+    -- frames (CompactUnitFrame_UpdateHealthColor etc.) in addon execution context,
+    -- tainting health bar color values. When Edit Mode later reads those tainted
+    -- values via ResetRaidFrames, it causes a Lua error ("attempt to compare
+    -- secret number tainted by QUI") that can prevent ExitEditMode from completing.
+    -- Use SetAlpha(0) + EnableMouse(false) instead to make it invisible without
+    -- triggering the compact unit frame update chain.
     if CompactRaidFrameManager then
         if InCombatLockdown() then
             -- Skip protected operations during combat
         elseif settings.hideRaidFrameManager then
-            -- Defer Hide/EnableMouse to break taint chain
+            -- Defer to break taint chain
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
-                CompactRaidFrameManager:Hide()
+                CompactRaidFrameManager:SetAlpha(0)
                 CompactRaidFrameManager:EnableMouse(false)
             end)
             -- Start OnUpdate watcher to re-hide if Blizzard shows it again
@@ -310,28 +313,28 @@ local function ApplyHideSettings()
                 _crfWatcherShown = false
             end
             _crfWatcher:SetScript("OnUpdate", function()
-                local isShown = CompactRaidFrameManager:IsShown()
-                if isShown and not _crfWatcherShown then
+                local alpha = CompactRaidFrameManager:GetAlpha()
+                if alpha > 0 and not _crfWatcherShown then
                     _crfWatcherShown = true
-                    -- Blizzard showed it — re-hide if setting is still on
+                    -- Blizzard restored alpha — re-hide if setting is still on
                     C_Timer.After(0, function()
                         if InCombatLockdown() then return end
                         local s = GetSettings()
                         if s and s.hideRaidFrameManager then
-                            CompactRaidFrameManager:Hide()
+                            CompactRaidFrameManager:SetAlpha(0)
                             CompactRaidFrameManager:EnableMouse(false)
                         end
                         _crfWatcherShown = false
                     end)
-                elseif not isShown then
+                elseif alpha == 0 then
                     _crfWatcherShown = false
                 end
             end)
         else
-            -- Defer Show/EnableMouse to break taint chain from secure context
+            -- Defer to break taint chain from secure context
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
-                CompactRaidFrameManager:Show()
+                CompactRaidFrameManager:SetAlpha(1)
                 CompactRaidFrameManager:EnableMouse(true)
             end)
             -- Stop the watcher if it was running

@@ -4101,13 +4101,19 @@ function QUICore:HookEditMode()
         end)
         
         -- Hook when Edit Mode is exited
+        local _exitCallbacksFired = false
+        local function FireExitCallbacks()
+            if _exitCallbacksFired then return end
+            _exitCallbacksFired = true
+            for _, cb in ipairs(self._editModeExitCallbacks) do
+                pcall(cb)
+            end
+        end
+
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
+            _exitCallbacksFired = false
             -- Dispatch registered exit callbacks
-            C_Timer.After(0, function()
-                for _, cb in ipairs(self._editModeExitCallbacks) do
-                    pcall(cb)
-                end
-            end)
+            C_Timer.After(0, FireExitCallbacks)
 
             C_Timer.After(0.1, function()
                 self:ForceReskinAllViewers()
@@ -4123,7 +4129,21 @@ function QUICore:HookEditMode()
                 end)
             end)
         end)
+
+        -- Safety net: OnUpdate watcher detects Edit Mode has closed even if
+        -- the hooksecurefunc hook didn't fire (e.g. ExitEditMode errored out
+        -- due to taint in CompactUnitFrame_UpdateHealthColor or similar).
+        local editModeExitWatcher = CreateFrame("Frame", nil, UIParent)
+        local _wasEditModeShown = false
+        editModeExitWatcher:SetScript("OnUpdate", function()
+            local isShown = EditModeManagerFrame:IsShown()
+            if _wasEditModeShown and not isShown then
+                -- Edit Mode just closed — ensure callbacks fired
+                C_Timer.After(0, FireExitCallbacks)
             end
+            _wasEditModeShown = isShown
+        end)
+    end
             
     -- Also hook combat end to retry any failed skinning
     local combatEndFrame = CreateFrame("Frame")
