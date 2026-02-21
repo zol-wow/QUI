@@ -26,6 +26,8 @@ local function IsSafeNumber(value)
     return type(value) == "number" and not IsSecret(value)
 end
 
+local EnsureViewerVisibilityHooks
+
 -- Apply swipe/edge settings to one icon.
 -- Intentionally avoids hooking Cooldown:SetCooldown to prevent tainting
 -- Blizzard's secret cooldown/totem values in combat.
@@ -150,6 +152,7 @@ end
 -- Apply settings to all CDM viewers
 local function ApplyAllSettings()
     local settings = GetSettings()
+    EnsureViewerVisibilityHooks()
     local viewers = {
         _G.EssentialCooldownViewer,
         _G.UtilityCooldownViewer,
@@ -215,26 +218,76 @@ refreshEventFrame:SetScript("OnEvent", function(_, event)
 end)
 
 -- Keep swipe state responsive while viewers are visible.
-local pulseFrame = CreateFrame("Frame")
-pulseFrame:SetScript("OnUpdate", function(self, elapsed)
-    self._quiElapsed = (self._quiElapsed or 0) + elapsed
-    if self._quiElapsed < 0.12 then return end
-    self._quiElapsed = 0
+-- Use ticker (0.12s) instead of OnUpdate to avoid per-frame CPU cost (~60-120 invocations/s -> ~8/s)
+local PULSE_INTERVAL = 0.12
+local pulseTicker = nil
+local VIEWER_NAMES = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+    "BuffIconCooldownViewer",
+}
+local StartPulseTicker
 
-    local essential = _G.EssentialCooldownViewer
-    local utility = _G.UtilityCooldownViewer
-    local buff = _G.BuffIconCooldownViewer
-    local anyVisible = (essential and essential:IsShown())
-        or (utility and utility:IsShown())
-        or (buff and buff:IsShown())
-    if anyVisible then
+local function IsAnyViewerVisible()
+    for _, viewerName in ipairs(VIEWER_NAMES) do
+        local viewer = _G[viewerName]
+        if viewer and viewer:IsShown() then
+            return true
+        end
+    end
+    return false
+end
+
+local function StopPulseTicker()
+    if pulseTicker then
+        pulseTicker:Cancel()
+        pulseTicker = nil
+    end
+end
+
+EnsureViewerVisibilityHooks = function()
+    for _, viewerName in ipairs(VIEWER_NAMES) do
+        local viewer = _G[viewerName]
+        if viewer and not viewer._QUI_SwipePulseHooked then
+            viewer._QUI_SwipePulseHooked = true
+
+            viewer:HookScript("OnShow", function()
+                if StartPulseTicker then
+                    StartPulseTicker()
+                end
+                QueueApplyAllSettings(0)
+            end)
+
+            viewer:HookScript("OnHide", function()
+                if not IsAnyViewerVisible() then
+                    StopPulseTicker()
+                end
+            end)
+        end
+    end
+end
+
+StartPulseTicker = function()
+    if pulseTicker then return end
+    pulseTicker = C_Timer.NewTicker(PULSE_INTERVAL, function()
+        if not IsAnyViewerVisible() then
+            StopPulseTicker()
+            return
+        end
+
         if InCombatLockdown() then
             pendingCombatRefresh = true
             return
         end
+
         QueueApplyAllSettings(0)
-    end
-end)
+    end)
+end
+-- Start ticker immediately if viewers are already visible.
+EnsureViewerVisibilityHooks()
+if IsAnyViewerVisible() then
+    StartPulseTicker()
+end
 
 -- Initialize on addon load
 local eventFrame = CreateFrame("Frame")
@@ -243,11 +296,33 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg)
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
+        EnsureViewerVisibilityHooks()
+        if IsAnyViewerVisible() then
+            StartPulseTicker()
+        end
         C_Timer.After(0.5, ApplyAllSettings)
         C_Timer.After(1.5, ApplyAllSettings)  -- Apply again to catch late icons
+        C_Timer.After(0.5, function()
+            EnsureViewerVisibilityHooks()
+            if IsAnyViewerVisible() then
+                StartPulseTicker()
+            end
+        end)
+        C_Timer.After(1.5, EnsureViewerVisibilityHooks)
     elseif event == "PLAYER_ENTERING_WORLD" then
+        EnsureViewerVisibilityHooks()
+        if IsAnyViewerVisible() then
+            StartPulseTicker()
+        end
         C_Timer.After(0.5, ApplyAllSettings)
         C_Timer.After(1.5, ApplyAllSettings)  -- Apply again to catch late icons
+        C_Timer.After(0.5, function()
+            EnsureViewerVisibilityHooks()
+            if IsAnyViewerVisible() then
+                StartPulseTicker()
+            end
+        end)
+        C_Timer.After(1.5, EnsureViewerVisibilityHooks)
     end
 end)
 
