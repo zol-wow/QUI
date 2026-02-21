@@ -8,6 +8,8 @@ local Helpers = ns.Helpers
 ---------------------------------------------------------------------------
 
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
+local eventFrame = CreateFrame("Frame")
+local combatEventsRegistered = false
 
 local function GetSettings()
     return Helpers.GetModuleDB("general")
@@ -238,15 +240,41 @@ local function StopPetWarningPolling()
     PetWarningFrame.dismissedThisFight = false
 end
 
+local function SetCombatEventsRegistered(shouldRegister)
+    if shouldRegister and not combatEventsRegistered then
+        eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+        eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        combatEventsRegistered = true
+    elseif not shouldRegister and combatEventsRegistered then
+        eventFrame:UnregisterEvent("PLAYER_REGEN_DISABLED")
+        eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        combatEventsRegistered = false
+    end
+end
+
+local function UpdatePetWarningEventRegistration()
+    local settings = GetSettings()
+    local enabled = settings and settings.petCombatWarning ~= false
+    SetCombatEventsRegistered(enabled)
+    if not enabled then
+        StopPetWarningPolling()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- EVENT HANDLING
 ---------------------------------------------------------------------------
 
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_REGEN_DISABLED" then
+    if event == "PLAYER_LOGIN" then
+        C_Timer.After(1, function()
+            UpdatePetWarningEventRegistration()
+            if InCombatLockdown() and combatEventsRegistered then
+                StartPetWarningPolling()
+            end
+        end)
+    elseif event == "PLAYER_REGEN_DISABLED" then
         StartPetWarningPolling()
     elseif event == "PLAYER_REGEN_ENABLED" then
         StopPetWarningPolling()
@@ -258,6 +286,15 @@ end)
 ---------------------------------------------------------------------------
 
 _G.QUI_RepositionPetWarning = PositionPetWarningFrame
+_G.QUI_RefreshPetWarning = function()
+    PositionPetWarningFrame()
+    UpdatePetWarningEventRegistration()
+    if InCombatLockdown() and combatEventsRegistered then
+        StartPetWarningPolling()
+    else
+        StopPetWarningPolling()
+    end
+end
 
 _G.QUI_TogglePetWarningPreview = function(show)
     if show then

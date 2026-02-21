@@ -8,6 +8,7 @@ ns.QUI = QUI
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
+local CreateOnUpdateThrottle = Helpers and Helpers.CreateOnUpdateThrottle
 
 ---------------------------------------------------------------------------
 -- State tracking
@@ -19,6 +20,16 @@ local CombatTimerState = {
     isPreviewMode = false,
     isInEncounter = false,  -- Track boss encounter state
 }
+
+local TIMER_UPDATE_INTERVAL = 0.1
+local eventFrame = CreateFrame("Frame")
+local RUNTIME_EVENTS = {
+    PLAYER_REGEN_DISABLED = true,
+    PLAYER_REGEN_ENABLED = true,
+    ENCOUNTER_START = true,
+    ENCOUNTER_END = true,
+}
+local runtimeEventsRegistered = false
 
 ---------------------------------------------------------------------------
 -- Get settings from database
@@ -72,7 +83,7 @@ end
 ---------------------------------------------------------------------------
 -- OnUpdate handler for timer
 ---------------------------------------------------------------------------
-local function OnTimerUpdate(self, elapsed)
+local function UpdateTimerDisplay()
     if not CombatTimerState.isInCombat then return end
 
     local now = GetTime()
@@ -80,6 +91,22 @@ local function OnTimerUpdate(self, elapsed)
 
     if CombatTimerState.timerFrame and CombatTimerState.timerFrame.text then
         CombatTimerState.timerFrame.text:SetText(FormatTime(elapsedTime))
+    end
+end
+
+local OnTimerUpdate
+if CreateOnUpdateThrottle then
+    OnTimerUpdate = CreateOnUpdateThrottle(TIMER_UPDATE_INTERVAL, function()
+        UpdateTimerDisplay()
+    end)
+else
+    local fallbackElapsed = 0
+    OnTimerUpdate = function(_, elapsed)
+        fallbackElapsed = fallbackElapsed + (elapsed or 0)
+        if fallbackElapsed >= TIMER_UPDATE_INTERVAL then
+            fallbackElapsed = 0
+            UpdateTimerDisplay()
+        end
     end
 end
 
@@ -290,11 +317,32 @@ local function OnEncounterEnd()
     end
 end
 
+local function SetRuntimeEventsRegistered(shouldRegister)
+    if shouldRegister and not runtimeEventsRegistered then
+        for eventName in pairs(RUNTIME_EVENTS) do
+            eventFrame:RegisterEvent(eventName)
+        end
+        runtimeEventsRegistered = true
+    elseif not shouldRegister and runtimeEventsRegistered then
+        for eventName in pairs(RUNTIME_EVENTS) do
+            eventFrame:UnregisterEvent(eventName)
+        end
+        runtimeEventsRegistered = false
+    end
+end
+
+local function UpdateEventRegistrations()
+    local settings = GetSettings()
+    local shouldRegister = settings and settings.enabled
+    SetRuntimeEventsRegistered(shouldRegister)
+end
+
 ---------------------------------------------------------------------------
 -- Refresh function (called when settings change)
 ---------------------------------------------------------------------------
 local function RefreshCombatTimer()
     local settings = GetSettings()
+    UpdateEventRegistrations()
 
     -- If disabled and not in preview mode, hide the timer
     if (not settings or not settings.enabled) and not CombatTimerState.isPreviewMode then
@@ -360,16 +408,12 @@ end
 ---------------------------------------------------------------------------
 -- Initialize
 ---------------------------------------------------------------------------
-local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:RegisterEvent("ENCOUNTER_START")
-eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         C_Timer.After(1, function()
             CreateTimerFrame()
+            UpdateEventRegistrations()
         end)
     elseif event == "PLAYER_REGEN_DISABLED" then
         OnCombatStart()

@@ -6,6 +6,7 @@ local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
 local Helpers = ns.Helpers
+local CreateOnUpdateThrottle = Helpers and Helpers.CreateOnUpdateThrottle
 
 local crosshairFrame, horizLine, vertLine, horizBorder, vertBorder
 
@@ -15,8 +16,10 @@ local rangeCheckFrame
 -- Range tracking state
 local isOutOfRange = false
 local isOutOfMidRange = false  -- For 25-yard check
-local rangeCheckElapsed = 0
 local RANGE_CHECK_INTERVAL = 0.1  -- Check range 10 times per second
+local eventFrame = CreateFrame("Frame")
+local eventRegistrationState = {}
+local UpdateEventRegistrations
 
 
 ---------------------------------------------------------------------------
@@ -284,11 +287,7 @@ end
 ---------------------------------------------------------------------------
 -- Range check OnUpdate handler
 ---------------------------------------------------------------------------
-local function OnRangeUpdate(self, elapsed)
-    rangeCheckElapsed = rangeCheckElapsed + elapsed
-    if rangeCheckElapsed < RANGE_CHECK_INTERVAL then return end
-    rangeCheckElapsed = 0
-
+local function PerformRangeUpdate(self)
     local settings = GetSettings()
     if not settings or not settings.enabled or not settings.changeColorOnRange then
         -- Feature disabled, stop checking
@@ -336,6 +335,15 @@ local function OnRangeUpdate(self, elapsed)
     end
 end
 
+local OnRangeUpdate
+if CreateOnUpdateThrottle then
+    OnRangeUpdate = CreateOnUpdateThrottle(RANGE_CHECK_INTERVAL, function(self)
+        PerformRangeUpdate(self)
+    end)
+else
+    OnRangeUpdate = PerformRangeUpdate
+end
+
 ---------------------------------------------------------------------------
 -- Start or stop range checking based on settings
 ---------------------------------------------------------------------------
@@ -353,7 +361,6 @@ local function UpdateRangeChecking()
     local settings = GetSettings()
     if settings and settings.enabled and settings.changeColorOnRange then
         -- Enable range checking on the always-visible frame
-        rangeCheckElapsed = 0
         rangeCheckFrame:SetScript("OnUpdate", OnRangeUpdate)
         
         local inCombat = InCombatLockdown()
@@ -432,6 +439,8 @@ local function UpdateCrosshair()
     local settings = GetSettings()
     if not settings then
         crosshairFrame:Hide()
+        UpdateRangeChecking()
+        UpdateEventRegistrations(nil)
         return
     end
     
@@ -493,6 +502,7 @@ local function UpdateCrosshair()
     
     -- Update range checking state
     UpdateRangeChecking()
+    UpdateEventRegistrations(settings)
 end
 
 ---------------------------------------------------------------------------
@@ -533,19 +543,38 @@ local function OnTargetChanged()
     end
 end
 
+local function SetEventRegistration(eventName, shouldRegister)
+    local isRegistered = eventRegistrationState[eventName] == true
+    if shouldRegister and not isRegistered then
+        eventFrame:RegisterEvent(eventName)
+        eventRegistrationState[eventName] = true
+    elseif not shouldRegister and isRegistered then
+        eventFrame:UnregisterEvent(eventName)
+        eventRegistrationState[eventName] = false
+    end
+end
+
+UpdateEventRegistrations = function(settings)
+    settings = settings or GetSettings()
+    local enabled = settings and settings.enabled
+    local needsCombatEvents = enabled and (settings.onlyInCombat or settings.rangeColorInCombatOnly or settings.hideUntilOutOfRange)
+    local needsTargetEvent = enabled and settings.changeColorOnRange
+
+    SetEventRegistration("PLAYER_REGEN_DISABLED", needsCombatEvents)
+    SetEventRegistration("PLAYER_REGEN_ENABLED", needsCombatEvents)
+    SetEventRegistration("PLAYER_TARGET_CHANGED", needsTargetEvent)
+end
+
 ---------------------------------------------------------------------------
 -- Initialize
 ---------------------------------------------------------------------------
-local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         C_Timer.After(1, function()
             CreateCrosshair()
             UpdateCrosshair()
+            UpdateEventRegistrations()
         end)
     elseif event == "PLAYER_REGEN_DISABLED" then
         OnCombatStart()

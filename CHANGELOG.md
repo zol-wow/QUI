@@ -41,6 +41,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+
+## v2.40.0 - 2026-02-21
+
+### Added
+- added action tracker feature
+- added target distance range bracket display
+- added profile import validation
+
+### Changed
+- improved callback throttling
+
+### Fixed
+- enforce globally set font in all options menus
+## v2.39.1 - 2026-02-21
+
+### Changed
+- updated QUI base edit mode string (now includes all action bars, blizz party and raid frames)
+- updated Discord link to a non-expiring one
+
+### Fixed
+- fixed HUD min width regression
 ## v2.39.0 - 2026-02-21
 
 ### Added

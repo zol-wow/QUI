@@ -6,7 +6,9 @@
     <Script file="consumablecheck.lua"/>
     <Script file="tooltips.lua"/>
     <Script file="combattimer.lua"/>
+    <Script file="actiontracker.lua"/>
     <Script file="crosshair.lua"/>
+    <Script file="rangecheck.lua"/>
     <Script file="reticle.lua"/>
     <Script file="skyriding.lua"/>
     <Script file="focuscastalert.lua"/>

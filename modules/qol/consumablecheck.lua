@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Helpers = ns.Helpers
+local UIKit = ns.UIKit
 
 ---------------------------------------------------------------------------
 -- CONSUMABLE CHECK
@@ -585,6 +586,48 @@ end
 local pickerFrame = nil
 local pickerOverlay = nil
 
+local function CreatePickerRow(parent)
+    local row = CreateFrame("Button", nil, parent, "SecureActionButtonTemplate")
+    row:SetHeight(PICKER_ROW_HEIGHT)
+    row:RegisterForClicks("AnyUp", "AnyDown")
+
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetColorTexture(0.12, 0.12, 0.12, 0.95)
+
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(18, 18)
+    row.icon:SetPoint("LEFT", 5, 0)
+
+    row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.nameText:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+    row.nameText:SetJustifyH("LEFT")
+
+    row.countText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.countText:SetPoint("RIGHT", -6, 0)
+    row.countText:SetTextColor(0.85, 0.85, 0.85, 1)
+
+    row:SetScript("OnEnter", function(self)
+        self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.95)
+    end)
+    row:SetScript("OnLeave", function(self)
+        self.bg:SetColorTexture(0.12, 0.12, 0.12, 0.95)
+    end)
+    row:SetScript("PostClick", function(self, mouseButton, down)
+        if down then return end
+        if mouseButton ~= "LeftButton" and mouseButton ~= "RightButton" then return end
+        if self.itemID then
+            SetPreferredItemID(self.buttonType, self.itemID)
+        end
+        HideConsumablePicker()
+        if UpdateConsumables and ConsumablesFrame:IsShown() then
+            C_Timer.After(0.1, UpdateConsumables)
+        end
+    end)
+
+    return row
+end
+
 local function EnsurePickerFrame()
     if pickerFrame then return end
 
@@ -605,6 +648,7 @@ local function EnsurePickerFrame()
     pickerFrame:SetClampedToScreen(true)
     pickerFrame:Hide()
     pickerFrame.rows = {}
+    pickerFrame.activeRows = {}
     pickerFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -612,6 +656,26 @@ local function EnsurePickerFrame()
     })
     pickerFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
     pickerFrame:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+    if UIKit and UIKit.CreateObjectPool then
+        pickerFrame.rowPool = UIKit.CreateObjectPool(
+            function()
+                return CreatePickerRow(pickerFrame)
+            end,
+            function(row)
+                row.buttonType = nil
+                row.itemID = nil
+                if not InCombatLockdown() then
+                    row:ClearAllPoints()
+                    row:SetAttribute("type1", nil)
+                    row:SetAttribute("macrotext1", nil)
+                    row:SetAttribute("type2", nil)
+                    row:SetAttribute("macrotext2", nil)
+                end
+                row.nameText:SetTextColor(1, 1, 1, 1)
+                row:Hide()
+            end
+        )
+    end
     pickerFrame:SetScript("OnHide", function()
         if pickerOverlay then pickerOverlay:Hide() end
     end)
@@ -619,6 +683,13 @@ end
 
 HideConsumablePicker = function()
     if pickerFrame then
+        if pickerFrame.rowPool and pickerFrame.activeRows then
+            for i = #pickerFrame.activeRows, 1, -1 do
+                local row = pickerFrame.activeRows[i]
+                pickerFrame.rowPool:Release(row)
+                pickerFrame.activeRows[i] = nil
+            end
+        end
         pickerFrame.ownerButton = nil
         if InCombatLockdown() then
             -- Defer hide until combat ends to avoid ADDON_ACTION_BLOCKED
@@ -661,50 +732,33 @@ local function BuildPickerRows(buttonType, ownedItems)
     local rowCount = #ownedItems
     local maxNameWidth = 0
     local preferredItemID = GetPreferredItemID(buttonType)
+    local activeRows = pickerFrame.activeRows or {}
+
+    for i = #activeRows, 1, -1 do
+        local row = activeRows[i]
+        if pickerFrame.rowPool then
+            pickerFrame.rowPool:Release(row)
+        else
+            if row then
+                row:Hide()
+            end
+        end
+        activeRows[i] = nil
+    end
+    pickerFrame.activeRows = activeRows
 
     for i = 1, rowCount do
-        local row = pickerFrame.rows[i]
-        if not row then
-            row = CreateFrame("Button", nil, pickerFrame, "SecureActionButtonTemplate")
-            row:SetHeight(PICKER_ROW_HEIGHT)
-            row:RegisterForClicks("AnyUp", "AnyDown")
-
-            row.bg = row:CreateTexture(nil, "BACKGROUND")
-            row.bg:SetAllPoints()
-            row.bg:SetColorTexture(0.12, 0.12, 0.12, 0.95)
-
-            row.icon = row:CreateTexture(nil, "ARTWORK")
-            row.icon:SetSize(18, 18)
-            row.icon:SetPoint("LEFT", 5, 0)
-
-            row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            row.nameText:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-            row.nameText:SetJustifyH("LEFT")
-
-            row.countText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            row.countText:SetPoint("RIGHT", -6, 0)
-            row.countText:SetTextColor(0.85, 0.85, 0.85, 1)
-
-            row:SetScript("OnEnter", function(self)
-                self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.95)
-            end)
-            row:SetScript("OnLeave", function(self)
-                self.bg:SetColorTexture(0.12, 0.12, 0.12, 0.95)
-            end)
-            row:SetScript("PostClick", function(self, mouseButton, down)
-                if down then return end
-                if mouseButton ~= "LeftButton" and mouseButton ~= "RightButton" then return end
-                if self.itemID then
-                    SetPreferredItemID(self.buttonType, self.itemID)
-                end
-                HideConsumablePicker()
-                if UpdateConsumables and ConsumablesFrame:IsShown() then
-                    C_Timer.After(0.1, UpdateConsumables)
-                end
-            end)
-
-            pickerFrame.rows[i] = row
+        local row
+        if pickerFrame.rowPool then
+            row = pickerFrame.rowPool:Acquire()
+        else
+            row = pickerFrame.rows[i]
+            if not row then
+                row = CreatePickerRow(pickerFrame)
+                pickerFrame.rows[i] = row
+            end
         end
+        activeRows[i] = row
 
         local itemData = ownedItems[i]
         ConfigurePickerRow(row, buttonType, itemData)
@@ -723,8 +777,10 @@ local function BuildPickerRows(buttonType, ownedItems)
         row:Show()
     end
 
-    for i = rowCount + 1, #pickerFrame.rows do
-        pickerFrame.rows[i]:Hide()
+    if not pickerFrame.rowPool then
+        for i = rowCount + 1, #pickerFrame.rows do
+            pickerFrame.rows[i]:Hide()
+        end
     end
 
     local frameWidth = math.max(PICKER_MIN_WIDTH, math.ceil(maxNameWidth) + 70)

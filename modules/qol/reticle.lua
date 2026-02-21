@@ -6,6 +6,7 @@ local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
 local Helpers = ns.Helpers
+local CreateTimeThrottle = Helpers and Helpers.CreateTimeThrottle
 
 -- Locals
 local UIParent = UIParent
@@ -291,6 +292,15 @@ local function UpdateGCDCooldown()
     UpdateRingAppearance()
 end
 
+local ThrottledCooldownRefresh
+if CreateTimeThrottle then
+    ThrottledCooldownRefresh = CreateTimeThrottle(0.05, function()
+        UpdateGCDCooldown()
+    end)
+else
+    ThrottledCooldownRefresh = UpdateGCDCooldown
+end
+
 ---------------------------------------------------------------------------
 -- Update visibility based on settings and combat state
 -- forcedInCombat: optional boolean to override InCombatLockdown() check
@@ -451,7 +461,7 @@ eventFrame:SetScript("OnEvent", function(self, event, unit, _, spellID)
         OnCombatEnd()
 
     elseif event == "SPELL_UPDATE_COOLDOWN" or event == "ACTIONBAR_UPDATE_COOLDOWN" then
-        UpdateGCDCooldown()
+        ThrottledCooldownRefresh()
 
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" and unit == "player" then
         local settings = GetSettings()

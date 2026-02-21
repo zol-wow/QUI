@@ -9,6 +9,204 @@ local QUICore = ns.Addon
 local AceSerializer = LibStub("AceSerializer-3.0", true)
 local LibDeflate    = LibStub("LibDeflate", true)
 
+local MAX_IMPORT_DEPTH = 20
+local MAX_IMPORT_NODES = 50000
+local MAX_SCHEMA_ERRORS = 8
+local MAX_DISPLAY_SCHEMA_ERRORS = 3
+
+local function GetDisplayPath(path, rootLabel)
+    if type(path) ~= "string" or path == "" then
+        return "root"
+    end
+    local prefix = (rootLabel or "profile") .. "."
+    if path:sub(1, #prefix) == prefix then
+        path = path:sub(#prefix + 1)
+    elseif path == (rootLabel or "profile") then
+        return "root"
+    end
+    return path ~= "" and path or "root"
+end
+
+local function FormatTreeValidationError(issue, rootLabel)
+    if type(issue) ~= "table" then
+        return "Import failed validation. The string appears to be malformed."
+    end
+
+    if issue.kind == "unsupported_value_type" then
+        local where = GetDisplayPath(issue.path, rootLabel)
+        return ("Import rejected: unsupported value type '%s' at '%s'."):format(tostring(issue.valueType), where)
+    end
+    if issue.kind == "unsupported_key_type" then
+        local where = GetDisplayPath(issue.path, rootLabel)
+        return ("Import rejected: unsupported key type '%s' at '%s'."):format(tostring(issue.keyType), where)
+    end
+    if issue.kind == "depth_limit" then
+        local where = GetDisplayPath(issue.path, rootLabel)
+        return ("Import rejected: data is nested too deeply at '%s' (limit: %d)."):format(where, issue.limit or MAX_IMPORT_DEPTH)
+    end
+    if issue.kind == "node_limit" then
+        return ("Import rejected: data payload is too large (limit: %d nodes)."):format(issue.limit or MAX_IMPORT_NODES)
+    end
+
+    return "Import failed validation. The string appears to be malformed."
+end
+
+local function FormatTypeMismatchErrors(errors, rootLabel)
+    if type(errors) ~= "table" or #errors == 0 then
+        return nil
+    end
+
+    local samples = {}
+    local shown = math.min(#errors, MAX_DISPLAY_SCHEMA_ERRORS)
+    for i = 1, shown do
+        local err = errors[i]
+        local where = GetDisplayPath(err.path, rootLabel)
+        samples[#samples + 1] = ("%s (expected %s, got %s)"):format(where, err.expected, err.actual)
+    end
+
+    local summary = table.concat(samples, "; ")
+    local remaining = #errors - shown
+    if remaining > 0 then
+        summary = summary .. ("; and %d more"):format(remaining)
+    end
+
+    return "Import rejected: incompatible setting types - " .. summary .. "."
+end
+
+-- Defensive import validation:
+-- 1) Reject unsupported Lua value types in payload trees.
+-- 2) Soft-check imported profile keys against AceDB defaults when available.
+local function ValidateImportTree(value, label, state, depth)
+    state = state or { visited = {}, nodes = 0 }
+    depth = depth or 0
+
+    local valueType = type(value)
+    if valueType ~= "table" then
+        if valueType == "function" or valueType == "thread" or valueType == "userdata" then
+            return false, { kind = "unsupported_value_type", valueType = valueType, path = label or "root" }
+        end
+        return true
+    end
+
+    if state.visited[value] then
+        return true
+    end
+    state.visited[value] = true
+
+    if depth >= MAX_IMPORT_DEPTH then
+        return false, { kind = "depth_limit", limit = MAX_IMPORT_DEPTH, path = label or "root" }
+    end
+
+    state.nodes = state.nodes + 1
+    if state.nodes > MAX_IMPORT_NODES then
+        return false, { kind = "node_limit", limit = MAX_IMPORT_NODES }
+    end
+
+    for k, v in pairs(value) do
+        local keyType = type(k)
+        if keyType ~= "string" and keyType ~= "number" and keyType ~= "boolean" then
+            return false, { kind = "unsupported_key_type", keyType = keyType, path = label or "root" }
+        end
+        local childLabel = ("%s.%s"):format(label or "root", tostring(k))
+        local ok, issue = ValidateImportTree(v, childLabel, state, depth + 1)
+        if not ok then
+            return false, issue
+        end
+    end
+
+    return true
+end
+
+local function ValidateTableTypeShape(candidate, schema, path, errors, depth)
+    if #errors >= MAX_SCHEMA_ERRORS then return end
+    depth = depth or 0
+    if depth > MAX_IMPORT_DEPTH then return end
+    if type(candidate) ~= "table" or type(schema) ~= "table" then return end
+
+    for key, schemaValue in pairs(schema) do
+        if #errors >= MAX_SCHEMA_ERRORS then break end
+
+        local candidateValue = candidate[key]
+        if candidateValue ~= nil then
+            local schemaType = type(schemaValue)
+            local candidateType = type(candidateValue)
+            local keyPath = ("%s.%s"):format(path or "profile", tostring(key))
+
+            if schemaType ~= candidateType then
+                table.insert(errors, { path = keyPath, expected = schemaType, actual = candidateType })
+            elseif schemaType == "table" then
+                ValidateTableTypeShape(candidateValue, schemaValue, keyPath, errors, depth + 1)
+            end
+        end
+    end
+end
+
+local function ValidateProfilePayload(core, profileData)
+    local ok, issue = ValidateImportTree(profileData, "profile")
+    if not ok then
+        return false, FormatTreeValidationError(issue, "profile")
+    end
+
+    local defaults = core and core.db and core.db.defaults and core.db.defaults.profile
+    if type(defaults) ~= "table" then
+        return true
+    end
+
+    local typeErrors = {}
+    ValidateTableTypeShape(profileData, defaults, "profile", typeErrors, 0)
+    if #typeErrors > 0 then
+        return false, FormatTypeMismatchErrors(typeErrors, "profile")
+    end
+
+    return true
+end
+
+local function ValidateTrackerBarPayload(data, multi)
+    local ok, issue = ValidateImportTree(data, "trackers")
+    if not ok then
+        return false, FormatTreeValidationError(issue, "trackers")
+    end
+
+    if multi then
+        if type(data.bars) ~= "table" then
+            return false, "Import rejected: tracker bars payload is missing a valid bars table."
+        end
+        for i, bar in ipairs(data.bars) do
+            if type(bar) ~= "table" then
+                return false, ("Import rejected: tracker bar #%d is invalid."):format(i)
+            end
+        end
+    else
+        if type(data.bar) ~= "table" then
+            return false, "Import rejected: tracker bar payload is missing a valid bar table."
+        end
+    end
+
+    if data.specEntries ~= nil and type(data.specEntries) ~= "table" then
+        return false, "Import rejected: tracker spec entries must be a table."
+    end
+
+    return true
+end
+
+local function ValidateSpellScannerPayload(data)
+    local ok, issue = ValidateImportTree(data, "spellScanner")
+    if not ok then
+        return false, FormatTreeValidationError(issue, "spellScanner")
+    end
+
+    if type(data) ~= "table" then
+        return false, "Import rejected: spell scanner payload is not a table."
+    end
+    if data.spells ~= nil and type(data.spells) ~= "table" then
+        return false, "Import rejected: spell scanner spells must be a table."
+    end
+    if data.items ~= nil and type(data.items) ~= "table" then
+        return false, "Import rejected: spell scanner items must be a table."
+    end
+    return true
+end
+
 ---=================================================================================
 --- PROFILE IMPORT/EXPORT
 ---=================================================================================
@@ -67,6 +265,11 @@ function QUICore:ImportProfileFromString(str)
     local ok, t = AceSerializer:Deserialize(serialized)
     if not ok or type(t) ~= "table" then
         return false, "Could not deserialize profile."
+    end
+
+    local payloadValid, payloadErr = ValidateProfilePayload(self, t)
+    if not payloadValid then
+        return false, payloadErr or "Import failed profile validation."
     end
 
     local profile = self.db.profile
@@ -224,6 +427,11 @@ function QUICore:ImportSingleTrackerBar(str)
         return false, "Could not deserialize bar data."
     end
 
+    local payloadValid, payloadErr = ValidateTrackerBarPayload(data, false)
+    if not payloadValid then
+        return false, payloadErr or "Import failed bar validation."
+    end
+
     -- Ensure customTrackers structure exists
     if not self.db.profile.customTrackers then
         self.db.profile.customTrackers = { bars = {} }
@@ -283,6 +491,11 @@ function QUICore:ImportAllTrackerBars(str, replaceExisting)
     local ok, data = AceSerializer:Deserialize(serialized)
     if not ok or type(data) ~= "table" or not data.bars then
         return false, "Could not deserialize bars data."
+    end
+
+    local payloadValid, payloadErr = ValidateTrackerBarPayload(data, true)
+    if not payloadValid then
+        return false, payloadErr or "Import failed bars validation."
     end
 
     -- Ensure customTrackers structure exists
@@ -414,6 +627,11 @@ function QUICore:ImportSpellScanner(str, replaceExisting)
     local ok, data = AceSerializer:Deserialize(serialized)
     if not ok or type(data) ~= "table" then
         return false, "Could not deserialize spell scanner data."
+    end
+
+    local payloadValid, payloadErr = ValidateSpellScannerPayload(data)
+    if not payloadValid then
+        return false, payloadErr or "Import failed spell scanner validation."
     end
 
     -- Ensure global structure exists

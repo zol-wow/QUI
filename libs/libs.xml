@@ -15,4 +15,5 @@
     <Include file="LibCustomGlow-1.0\LibCustomGlow-1.0.xml"/>
     <Include file="LibKeyBound-1.0\lib.xml"/>
     <Include file="LibOpenRaid\lib.xml"/>
+    <Script file="LibRangeCheck-3.0\LibRangeCheck-3.0.lua"/>
 </Ui>

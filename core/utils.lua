@@ -263,11 +263,18 @@ function Helpers.MigrateHUDMinWidthSettings(frameAnchoring)
     if type(frameAnchoring) ~= "table" then
         return nil
     end
+
+    local cfg = frameAnchoring.hudMinWidth
+    if type(cfg) == "table" then
+        -- Normalize in place so existing widget/db references stay valid.
+        cfg.enabled = (cfg.enabled == true)
+        cfg.width = Helpers.ClampHUDMinWidth(cfg.width)
+        frameAnchoring.hudMinWidthEnabled = nil
+        return cfg
+    end
+
     local enabled, width = Helpers.ParseHUDMinWidth(frameAnchoring)
-    frameAnchoring.hudMinWidth = {
-        enabled = enabled,
-        width = width,
-    }
+    frameAnchoring.hudMinWidth = { enabled = enabled, width = width }
     frameAnchoring.hudMinWidthEnabled = nil
     return frameAnchoring.hudMinWidth
 end
@@ -476,6 +483,43 @@ function Helpers.InCombat()
     return InCombatLockdown()
 end
 
+--- Create an OnUpdate callback throttler.
+--- Returns a function(self, elapsed, ...) that only calls callback at the
+--- requested interval and passes the accumulated elapsed as second argument.
+--- @param interval number Seconds between callback executions
+--- @param callback function Callback(self, accumulatedElapsed, ...)
+--- @return function Throttled OnUpdate handler
+function Helpers.CreateOnUpdateThrottle(interval, callback)
+    interval = tonumber(interval) or 0
+    local elapsedSinceLast = 0
+    return function(self, elapsed, ...)
+        elapsedSinceLast = elapsedSinceLast + (elapsed or 0)
+        if elapsedSinceLast < interval then
+            return
+        end
+        local accumulated = elapsedSinceLast
+        elapsedSinceLast = 0
+        callback(self, accumulated, ...)
+    end
+end
+
+--- Create a time-based throttle wrapper for event-heavy callbacks.
+--- @param interval number Seconds between callback executions
+--- @param callback function Callback(...)
+--- @return function Throttled function
+function Helpers.CreateTimeThrottle(interval, callback)
+    interval = tonumber(interval) or 0
+    local lastRun = 0
+    return function(...)
+        local now = GetTime()
+        if (now - lastRun) < interval then
+            return
+        end
+        lastRun = now
+        return callback(...)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- HUD VISIBILITY HELPERS
 -- Shared checks for CDM, Unitframes, and Custom Trackers visibility
@@ -556,3 +600,5 @@ ns.IsPlayerMounted = Helpers.IsPlayerMounted
 ns.IsPlayerFlying = Helpers.IsPlayerFlying
 ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding
 ns.IsPlayerInDungeonOrRaid = Helpers.IsPlayerInDungeonOrRaid
+ns.CreateOnUpdateThrottle = Helpers.CreateOnUpdateThrottle
+ns.CreateTimeThrottle = Helpers.CreateTimeThrottle

@@ -601,6 +601,380 @@ local function BuildGeneralTab(tabContent)
 
     y = y - 10
 
+    -- Action Tracker Section
+    GUI:SetSearchSection("Action Tracker")
+    local actionTrackerHeader = GUI:CreateSectionHeader(tabContent, "Action Tracker")
+    actionTrackerHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - actionTrackerHeader.gap
+
+    local actionTrackerDesc = GUI:CreateLabel(tabContent,
+        "Shows your recent casts as an animated icon bar, including optional failed/interrupted attempts.",
+        11, C.textMuted)
+    actionTrackerDesc:SetPoint("TOPLEFT", PADDING, y)
+    actionTrackerDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    actionTrackerDesc:SetJustifyH("LEFT")
+    actionTrackerDesc:SetWordWrap(true)
+    actionTrackerDesc:SetHeight(15)
+    y = y - 25
+
+    local actionGeneralDB = db and db.general
+    if actionGeneralDB then
+        if type(actionGeneralDB.actionTracker) ~= "table" then
+            actionGeneralDB.actionTracker = {}
+        end
+        local actionTrackerDB = actionGeneralDB.actionTracker
+
+        if actionTrackerDB.enabled == nil then actionTrackerDB.enabled = false end
+        if actionTrackerDB.onlyInCombat == nil then actionTrackerDB.onlyInCombat = true end
+        if actionTrackerDB.clearOnCombatEnd == nil then actionTrackerDB.clearOnCombatEnd = true end
+        if actionTrackerDB.inactivityFadeEnabled == nil then actionTrackerDB.inactivityFadeEnabled = false end
+        if actionTrackerDB.inactivityFadeSeconds == nil then actionTrackerDB.inactivityFadeSeconds = 20 end
+        if actionTrackerDB.clearOnInactivity == nil then actionTrackerDB.clearOnInactivity = false end
+        if actionTrackerDB.showFailedCasts == nil then actionTrackerDB.showFailedCasts = true end
+        if actionTrackerDB.maxEntries == nil then actionTrackerDB.maxEntries = 6 end
+        if actionTrackerDB.iconSize == nil then actionTrackerDB.iconSize = 28 end
+        if actionTrackerDB.iconSpacing == nil then actionTrackerDB.iconSpacing = 4 end
+        if actionTrackerDB.iconHideBorder == nil then actionTrackerDB.iconHideBorder = false end
+        if actionTrackerDB.iconBorderUseClassColor == nil then actionTrackerDB.iconBorderUseClassColor = false end
+        if actionTrackerDB.iconBorderColor == nil then actionTrackerDB.iconBorderColor = {0, 0, 0, 0.85} end
+        if actionTrackerDB.orientation == nil then actionTrackerDB.orientation = "VERTICAL" end
+        if actionTrackerDB.invertScrollDirection == nil then actionTrackerDB.invertScrollDirection = false end
+        if actionTrackerDB.showBackdrop == nil then actionTrackerDB.showBackdrop = true end
+        if actionTrackerDB.hideBorder == nil then actionTrackerDB.hideBorder = false end
+        if actionTrackerDB.borderSize == nil then actionTrackerDB.borderSize = 1 end
+        if actionTrackerDB.backdropColor == nil then actionTrackerDB.backdropColor = {0, 0, 0, 0.6} end
+        if actionTrackerDB.borderColor == nil then actionTrackerDB.borderColor = {0, 0, 0, 1} end
+        if actionTrackerDB.xOffset == nil then actionTrackerDB.xOffset = 0 end
+        if actionTrackerDB.yOffset == nil then actionTrackerDB.yOffset = -210 end
+        if actionTrackerDB.blocklistText == nil then actionTrackerDB.blocklistText = "" end
+
+        local actionPreviewActive = false
+        local actionPreviewBtn
+
+        local function RefreshActionTracker()
+            if _G.QUI_RefreshActionTracker then
+                _G.QUI_RefreshActionTracker()
+            end
+        end
+
+        local function UpdateActionPreviewButtonState()
+            if not actionPreviewBtn then
+                return
+            end
+            local enabled = actionTrackerDB.enabled == true
+            if actionPreviewBtn.SetEnabled then
+                actionPreviewBtn:SetEnabled(enabled)
+            end
+            actionPreviewBtn:SetAlpha(enabled and 1 or 0.5)
+            if not enabled then
+                actionPreviewActive = false
+                actionPreviewBtn:SetText("Show Preview")
+            end
+        end
+
+        local actionEnabledCheck = GUI:CreateFormCheckbox(tabContent, "Enable Action Tracker", "enabled", actionTrackerDB, function()
+            if not actionTrackerDB.enabled and actionPreviewActive then
+                actionPreviewActive = false
+                if _G.QUI_ToggleActionTrackerPreview then
+                    _G.QUI_ToggleActionTrackerPreview(false)
+                end
+                if actionPreviewBtn then
+                    actionPreviewBtn:SetText("Show Preview")
+                end
+            end
+            RefreshActionTracker()
+            UpdateActionPreviewButtonState()
+        end)
+        actionEnabledCheck:SetPoint("TOPLEFT", PADDING, y)
+        actionEnabledCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local onlyCombatCheck = GUI:CreateFormCheckbox(tabContent, "Only Show In Combat", "onlyInCombat", actionTrackerDB, RefreshActionTracker)
+        onlyCombatCheck:SetPoint("TOPLEFT", PADDING, y)
+        onlyCombatCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local clearOnEndCheck = GUI:CreateFormCheckbox(tabContent, "Clear History On Combat End", "clearOnCombatEnd", actionTrackerDB, RefreshActionTracker)
+        clearOnEndCheck:SetPoint("TOPLEFT", PADDING, y)
+        clearOnEndCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local inactivitySlider
+        local clearOnInactivityCheck
+        local inactivityCheck = GUI:CreateFormCheckbox(tabContent, "Enable Inactivity Fade-Out", "inactivityFadeEnabled", actionTrackerDB, function()
+            if inactivitySlider and inactivitySlider.SetEnabled then
+                inactivitySlider:SetEnabled(actionTrackerDB.inactivityFadeEnabled == true)
+            end
+            if clearOnInactivityCheck and clearOnInactivityCheck.SetEnabled then
+                clearOnInactivityCheck:SetEnabled(actionTrackerDB.inactivityFadeEnabled == true)
+            end
+            RefreshActionTracker()
+        end)
+        inactivityCheck:SetPoint("TOPLEFT", PADDING, y)
+        inactivityCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        inactivitySlider = GUI:CreateFormSlider(tabContent, "Inactivity Timeout (sec)", 10, 60, 1, "inactivityFadeSeconds", actionTrackerDB, RefreshActionTracker)
+        inactivitySlider:SetPoint("TOPLEFT", PADDING, y)
+        inactivitySlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if inactivitySlider.SetEnabled then
+            inactivitySlider:SetEnabled(actionTrackerDB.inactivityFadeEnabled == true)
+        end
+        y = y - FORM_ROW
+
+        clearOnInactivityCheck = GUI:CreateFormCheckbox(tabContent, "Clear History After Inactivity", "clearOnInactivity", actionTrackerDB, RefreshActionTracker)
+        clearOnInactivityCheck:SetPoint("TOPLEFT", PADDING, y)
+        clearOnInactivityCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if clearOnInactivityCheck.SetEnabled then
+            clearOnInactivityCheck:SetEnabled(actionTrackerDB.inactivityFadeEnabled == true)
+        end
+        y = y - FORM_ROW
+
+        local showFailedCheck = GUI:CreateFormCheckbox(tabContent, "Show Failed/Interrupted Casts", "showFailedCasts", actionTrackerDB, RefreshActionTracker)
+        showFailedCheck:SetPoint("TOPLEFT", PADDING, y)
+        showFailedCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local maxEntriesSlider = GUI:CreateFormSlider(tabContent, "Max Entries", 3, 10, 1, "maxEntries", actionTrackerDB, RefreshActionTracker)
+        maxEntriesSlider:SetPoint("TOPLEFT", PADDING, y)
+        maxEntriesSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local iconSizeSlider = GUI:CreateFormSlider(tabContent, "Icon Size", 16, 64, 1, "iconSize", actionTrackerDB, RefreshActionTracker)
+        iconSizeSlider:SetPoint("TOPLEFT", PADDING, y)
+        iconSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local iconSpacingSlider = GUI:CreateFormSlider(tabContent, "Icon Spacing", 0, 24, 1, "iconSpacing", actionTrackerDB, RefreshActionTracker)
+        iconSpacingSlider:SetPoint("TOPLEFT", PADDING, y)
+        iconSpacingSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local iconBorderColorPicker
+        local iconUseClassBorderCheck
+        local function UpdateIconBorderControls()
+            local borderEnabled = actionTrackerDB.iconHideBorder ~= true
+            if iconUseClassBorderCheck and iconUseClassBorderCheck.SetEnabled then
+                iconUseClassBorderCheck:SetEnabled(borderEnabled)
+            end
+            if iconBorderColorPicker and iconBorderColorPicker.SetEnabled then
+                iconBorderColorPicker:SetEnabled(borderEnabled and actionTrackerDB.iconBorderUseClassColor ~= true)
+            end
+        end
+
+        local iconHideBorderCheck = GUI:CreateFormCheckbox(tabContent, "Hide Icon Borders", "iconHideBorder", actionTrackerDB, function()
+            UpdateIconBorderControls()
+            RefreshActionTracker()
+        end)
+        iconHideBorderCheck:SetPoint("TOPLEFT", PADDING, y)
+        iconHideBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        iconUseClassBorderCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color for Icon Borders", "iconBorderUseClassColor", actionTrackerDB, function()
+            UpdateIconBorderControls()
+            RefreshActionTracker()
+        end)
+        iconUseClassBorderCheck:SetPoint("TOPLEFT", PADDING, y)
+        iconUseClassBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        iconBorderColorPicker = GUI:CreateFormColorPicker(tabContent, "Icon Border Color", "iconBorderColor", actionTrackerDB, RefreshActionTracker)
+        iconBorderColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        iconBorderColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        UpdateIconBorderControls()
+
+        local orientationOptions = {
+            { value = "VERTICAL", text = "Vertical" },
+            { value = "HORIZONTAL", text = "Horizontal" },
+        }
+        local orientationDropdown = GUI:CreateFormDropdown(tabContent, "Bar Orientation", orientationOptions, "orientation", actionTrackerDB, RefreshActionTracker)
+        orientationDropdown:SetPoint("TOPLEFT", PADDING, y)
+        orientationDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local invertDirectionCheck = GUI:CreateFormCheckbox(tabContent, "Invert Scroll Direction", "invertScrollDirection", actionTrackerDB, RefreshActionTracker)
+        invertDirectionCheck:SetPoint("TOPLEFT", PADDING, y)
+        invertDirectionCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local backdropColorPicker
+        local backdropCheck = GUI:CreateFormCheckbox(tabContent, "Show Container Background", "showBackdrop", actionTrackerDB, function()
+            if backdropColorPicker and backdropColorPicker.SetEnabled then
+                backdropColorPicker:SetEnabled(actionTrackerDB.showBackdrop == true)
+            end
+            RefreshActionTracker()
+        end)
+        backdropCheck:SetPoint("TOPLEFT", PADDING, y)
+        backdropCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        backdropColorPicker = GUI:CreateFormColorPicker(tabContent, "Container Background Color", "backdropColor", actionTrackerDB, RefreshActionTracker)
+        backdropColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        backdropColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if backdropColorPicker.SetEnabled then
+            backdropColorPicker:SetEnabled(actionTrackerDB.showBackdrop == true)
+        end
+        y = y - FORM_ROW
+
+        local borderColorPicker
+        local borderSizeSlider
+        local hideBorderCheck = GUI:CreateFormCheckbox(tabContent, "Hide Container Border", "hideBorder", actionTrackerDB, function()
+            local enabled = actionTrackerDB.hideBorder ~= true
+            if borderSizeSlider and borderSizeSlider.SetEnabled then
+                borderSizeSlider:SetEnabled(enabled)
+            end
+            if borderColorPicker and borderColorPicker.SetEnabled then
+                borderColorPicker:SetEnabled(enabled)
+            end
+            RefreshActionTracker()
+        end)
+        hideBorderCheck:SetPoint("TOPLEFT", PADDING, y)
+        hideBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        borderSizeSlider = GUI:CreateFormSlider(tabContent, "Border Size", 0, 5, 0.5, "borderSize", actionTrackerDB, RefreshActionTracker)
+        borderSizeSlider:SetPoint("TOPLEFT", PADDING, y)
+        borderSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if borderSizeSlider.SetEnabled then
+            borderSizeSlider:SetEnabled(actionTrackerDB.hideBorder ~= true)
+        end
+        y = y - FORM_ROW
+
+        borderColorPicker = GUI:CreateFormColorPicker(tabContent, "Container Border Color", "borderColor", actionTrackerDB, RefreshActionTracker)
+        borderColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        borderColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if borderColorPicker.SetEnabled then
+            borderColorPicker:SetEnabled(actionTrackerDB.hideBorder ~= true)
+        end
+        y = y - FORM_ROW
+
+        local actionXOffsetSlider = GUI:CreateFormSlider(tabContent, "X Position Offset", -2000, 2000, 1, "xOffset", actionTrackerDB, RefreshActionTracker)
+        actionXOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        actionXOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local actionYOffsetSlider = GUI:CreateFormSlider(tabContent, "Y Position Offset", -2000, 2000, 1, "yOffset", actionTrackerDB, RefreshActionTracker)
+        actionYOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        actionYOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local blocklistContainer = CreateFrame("Frame", nil, tabContent)
+        blocklistContainer:SetHeight(FORM_ROW)
+        blocklistContainer:SetPoint("TOPLEFT", PADDING, y)
+        blocklistContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+
+        local blocklistLabel = blocklistContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        blocklistLabel:SetPoint("LEFT", 0, 0)
+        blocklistLabel:SetText("Spell Blocklist IDs")
+        blocklistLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+        local blocklistBg = CreateFrame("Frame", nil, blocklistContainer, "BackdropTemplate")
+        blocklistBg:SetPoint("LEFT", blocklistContainer, "LEFT", 180, 0)
+        blocklistBg:SetPoint("RIGHT", blocklistContainer, "RIGHT", 0, 0)
+        blocklistBg:SetHeight(24)
+        local pxBlock = 1
+        if QUICore and type(QUICore.GetPixelSize) == "function" then
+            pxBlock = QUICore:GetPixelSize(blocklistBg)
+        end
+        blocklistBg:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = pxBlock,
+        })
+        blocklistBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
+        blocklistBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+
+        local blocklistInput = CreateFrame("EditBox", nil, blocklistBg)
+        blocklistInput:SetPoint("LEFT", 8, 0)
+        blocklistInput:SetPoint("RIGHT", -8, 0)
+        blocklistInput:SetHeight(22)
+        blocklistInput:SetAutoFocus(false)
+        blocklistInput:SetMaxLetters(300)
+        blocklistInput:SetFont(GUI.FONT_PATH, 11, "")
+        blocklistInput:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+        blocklistInput:SetText(actionTrackerDB.blocklistText or "")
+
+        local blocklistPlaceholder = blocklistBg:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+        blocklistPlaceholder:SetPoint("LEFT", blocklistInput, "LEFT", 0, 0)
+        blocklistPlaceholder:SetText("Example: 61304, 75, 133")
+        blocklistPlaceholder:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.7)
+        blocklistPlaceholder:SetShown((actionTrackerDB.blocklistText or "") == "")
+
+        blocklistInput:SetScript("OnEscapePressed", function(self)
+            self:SetText(actionTrackerDB.blocklistText or "")
+            self:ClearFocus()
+            blocklistPlaceholder:SetShown((actionTrackerDB.blocklistText or "") == "")
+        end)
+        blocklistInput:SetScript("OnEnterPressed", function(self)
+            self:ClearFocus()
+        end)
+        blocklistInput:SetScript("OnEditFocusGained", function(self)
+            blocklistBg:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+            self:HighlightText()
+        end)
+        blocklistInput:SetScript("OnEditFocusLost", function()
+            blocklistBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+        end)
+        blocklistInput:SetScript("OnTextChanged", function(self, userInput)
+            if not userInput then return end
+            local value = self:GetText() or ""
+            actionTrackerDB.blocklistText = value
+            blocklistPlaceholder:SetShown(value == "")
+            RefreshActionTracker()
+        end)
+        y = y - FORM_ROW
+
+        local blocklistHelp = GUI:CreateLabel(tabContent,
+            "Comma-separated spell IDs to ignore in the tracker.",
+            11, C.textMuted)
+        blocklistHelp:SetPoint("TOPLEFT", PADDING, y + 4)
+        blocklistHelp:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        blocklistHelp:SetJustifyH("LEFT")
+        blocklistHelp:SetWordWrap(true)
+        blocklistHelp:SetHeight(16)
+        y = y - 22
+
+        actionPreviewBtn = GUI:CreateButton(tabContent, "Show Preview", 140, 24)
+        actionPreviewBtn:SetPoint("TOPLEFT", PADDING, y)
+        actionPreviewBtn:SetScript("OnClick", function(self)
+            if actionTrackerDB.enabled ~= true then
+                actionPreviewActive = false
+                if _G.QUI_ToggleActionTrackerPreview then
+                    _G.QUI_ToggleActionTrackerPreview(false)
+                end
+                self:SetText("Show Preview")
+                return
+            end
+
+            actionPreviewActive = not actionPreviewActive
+            if _G.QUI_ToggleActionTrackerPreview then
+                _G.QUI_ToggleActionTrackerPreview(actionPreviewActive)
+            end
+            if _G.QUI_IsActionTrackerPreviewMode then
+                actionPreviewActive = _G.QUI_IsActionTrackerPreviewMode() == true
+            end
+            self:SetText(actionPreviewActive and "Hide Preview" or "Show Preview")
+        end)
+        UpdateActionPreviewButtonState()
+        y = y - 32
+
+        local existingOnHideActionTracker = tabContent:GetScript("OnHide")
+        tabContent:SetScript("OnHide", function(self)
+            if actionPreviewActive and _G.QUI_ToggleActionTrackerPreview then
+                _G.QUI_ToggleActionTrackerPreview(false)
+                actionPreviewActive = false
+                if actionPreviewBtn then
+                    actionPreviewBtn:SetText("Show Preview")
+                end
+            end
+            if existingOnHideActionTracker then existingOnHideActionTracker(self) end
+        end)
+    end
+
+    y = y - 10
+
     -- QoL Automation Section
     GUI:SetSearchSection("Automation")
     local autoHeader = GUI:CreateSectionHeader(tabContent, "Automation")
@@ -939,7 +1313,13 @@ local function BuildGeneralTab(tabContent)
     y = y - 30
 
     if generalDB then
-        local petCombatCheck = GUI:CreateFormCheckbox(tabContent, "Show Combat Warning in Instances", "petCombatWarning", generalDB)
+        local petCombatCheck = GUI:CreateFormCheckbox(tabContent, "Show Combat Warning in Instances", "petCombatWarning", generalDB, function()
+            if _G.QUI_RefreshPetWarning then
+                _G.QUI_RefreshPetWarning()
+            elseif _G.QUI_RepositionPetWarning then
+                _G.QUI_RepositionPetWarning()
+            end
+        end)
         petCombatCheck:SetPoint("TOPLEFT", PADDING, y)
         petCombatCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         y = y - FORM_ROW
@@ -1052,7 +1432,10 @@ local function BuildGeneralTab(tabContent)
         textInputBg:SetPoint("LEFT", textContainer, "LEFT", 180, 0)
         textInputBg:SetPoint("RIGHT", textContainer, "RIGHT", 0, 0)
         textInputBg:SetHeight(24)
-        local pxText = QUICore:GetPixelSize(textInputBg)
+        local pxText = 1
+        if QUICore and type(QUICore.GetPixelSize) == "function" then
+            pxText = QUICore:GetPixelSize(textInputBg)
+        end
         textInputBg:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1641,6 +2024,154 @@ local function BuildGeneralTab(tabContent)
 
         -- Apply initial border control states
         UpdateBrzBorderControlsEnabled(not brzDB.hideBorder)
+    end
+
+    y = y - 10
+
+    -- Target Distance Bracket Display Section
+    GUI:SetSearchSection("Target Distance Bracket Display")
+    local rangeHeader = GUI:CreateSectionHeader(tabContent, "Target Distance Bracket Display")
+    rangeHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - rangeHeader.gap
+
+    local rangeCheckDB = db and db.rangeCheck
+    if rangeCheckDB then
+        local dynamicColorCheck
+        local classColorCheck
+        local textColorPicker
+
+        local function RefreshRangeControls()
+            if rangeCheckDB.dynamicColor and rangeCheckDB.useClassColor then
+                rangeCheckDB.useClassColor = false
+                if classColorCheck and classColorCheck.SetValue then
+                    classColorCheck:SetValue(false, true)
+                end
+            end
+            if dynamicColorCheck and dynamicColorCheck.SetEnabled then
+                dynamicColorCheck:SetEnabled(true)
+            end
+            if classColorCheck and classColorCheck.SetEnabled then
+                classColorCheck:SetEnabled(not rangeCheckDB.dynamicColor)
+            end
+            if textColorPicker and textColorPicker.SetEnabled then
+                textColorPicker:SetEnabled(not rangeCheckDB.dynamicColor and not rangeCheckDB.useClassColor)
+            end
+        end
+
+        local rangeEnableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Distance Bracket Display", "enabled", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        rangeEnableCheck:SetPoint("TOPLEFT", PADDING, y)
+        rangeEnableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local previewState = { enabled = _G.QUI_IsRangeCheckPreviewMode and _G.QUI_IsRangeCheckPreviewMode() or false }
+        local previewCheck = GUI:CreateFormCheckbox(tabContent, "Preview / Move Frame", "enabled", previewState, function(val)
+            if _G.QUI_ToggleRangeCheckPreview then
+                _G.QUI_ToggleRangeCheckPreview(val)
+            end
+        end)
+        previewCheck:SetPoint("TOPLEFT", PADDING, y)
+        previewCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local combatOnlyCheck = GUI:CreateFormCheckbox(tabContent, "Combat Only", "combatOnly", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        combatOnlyCheck:SetPoint("TOPLEFT", PADDING, y)
+        combatOnlyCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local targetOnlyCheck = GUI:CreateFormCheckbox(tabContent, "Only Show With Hostile Target", "showOnlyWithTarget", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        targetOnlyCheck:SetPoint("TOPLEFT", PADDING, y)
+        targetOnlyCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local shortenTextCheck = GUI:CreateFormCheckbox(tabContent, "Shorten Text", "shortenText", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        shortenTextCheck:SetPoint("TOPLEFT", PADDING, y)
+        shortenTextCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        dynamicColorCheck = GUI:CreateFormCheckbox(tabContent, "Dynamic Color (by distance bracket)", "dynamicColor", rangeCheckDB, function(val)
+            if val then
+                rangeCheckDB.useClassColor = false
+                if classColorCheck and classColorCheck.SetValue then
+                    classColorCheck:SetValue(false, true)
+                end
+            end
+            Shared.RefreshRangeCheck()
+            RefreshRangeControls()
+        end)
+        dynamicColorCheck:SetPoint("TOPLEFT", PADDING, y)
+        dynamicColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        classColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color", "useClassColor", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+            RefreshRangeControls()
+        end)
+        classColorCheck:SetPoint("TOPLEFT", PADDING, y)
+        classColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        if not rangeCheckDB.textColor then
+            rangeCheckDB.textColor = { 0.2, 0.95, 0.55, 1 }
+        end
+        textColorPicker = GUI:CreateFormColorPicker(tabContent, "Text Color", "textColor", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        textColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        textColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local fontList = Shared.GetFontList()
+        local fontDropdown = GUI:CreateFormDropdown(tabContent, "Font", fontList, "font", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        fontDropdown:SetPoint("TOPLEFT", PADDING, y)
+        fontDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local fontSizeSlider = GUI:CreateFormSlider(tabContent, "Font Size", 8, 48, 1, "fontSize", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        fontSizeSlider:SetPoint("TOPLEFT", PADDING, y)
+        fontSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local strataOptions = {
+            {value = "BACKGROUND", text = "Background"},
+            {value = "LOW", text = "Low"},
+            {value = "MEDIUM", text = "Medium"},
+            {value = "HIGH", text = "High"},
+            {value = "DIALOG", text = "Dialog"},
+        }
+        local strataDropdown = GUI:CreateFormDropdown(tabContent, "Frame Strata", strataOptions, "strata", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        strataDropdown:SetPoint("TOPLEFT", PADDING, y)
+        strataDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local xOffsetSlider = GUI:CreateFormSlider(tabContent, "X-Offset", -700, 700, 1, "offsetX", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        xOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        xOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local yOffsetSlider = GUI:CreateFormSlider(tabContent, "Y-Offset", -700, 700, 1, "offsetY", rangeCheckDB, function()
+            Shared.RefreshRangeCheck()
+        end)
+        yOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        yOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - 30
+
+        RefreshRangeControls()
     end
 
     y = y - 10

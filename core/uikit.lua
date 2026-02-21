@@ -361,3 +361,43 @@ function UIKit.CreateIcon(parent, size, borderSizePixels, r, g, b, a)
     parent.iconBorder = border
     return iconFrame
 end
+
+---------------------------------------------------------------------------
+-- OBJECT POOL
+---------------------------------------------------------------------------
+
+--- Create a lightweight reusable object pool.
+--- factory is called when the pool is empty.
+--- resetter is called before an object is returned to the pool.
+--- @param factory function Function that creates a new object
+--- @param resetter function|nil Function called as resetter(object)
+--- @return table Pool object with Acquire/Release/Available methods
+function UIKit.CreateObjectPool(factory, resetter)
+    local free = {}
+
+    return {
+        Acquire = function()
+            local obj = table.remove(free)
+            if not obj then
+                obj = factory()
+            end
+            if obj and obj.Show then
+                obj:Show()
+            end
+            return obj
+        end,
+        Release = function(_, obj)
+            if not obj then return end
+            if resetter then
+                resetter(obj)
+            end
+            if obj.Hide then
+                obj:Hide()
+            end
+            table.insert(free, obj)
+        end,
+        Available = function()
+            return #free
+        end,
+    }
+end

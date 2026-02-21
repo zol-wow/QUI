@@ -91,6 +91,12 @@ local function BuildImportExportTab(tabContent)
     info:SetJustifyH("LEFT")
     y = y - 28
 
+    local validationNote = GUI:CreateLabel(tabContent, "Import now validates payload structure and may reject incompatible or corrupted strings.", 10, C.textMuted)
+    validationNote:SetPoint("TOPLEFT", PAD, y)
+    validationNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    validationNote:SetJustifyH("LEFT")
+    y = y - 20
+
     -- Export Section Header
     local exportHeader = GUI:CreateSectionHeader(tabContent, "Export Current Profile")
     exportHeader:SetPoint("TOPLEFT", PAD, y)
@@ -248,11 +254,14 @@ local function BuildImportExportTab(tabContent)
         local core = GetCore()
         if core and core.ImportProfileFromString then
             local ok, err = core:ImportProfileFromString(str)
-            if ok then
-                print("|cff34D399QUI:|r Profile imported successfully!")
+            local printFeedback = (Shared and Shared.PrintImportFeedback) or ns.PrintImportFeedback
+            if printFeedback then
+                printFeedback(ok, err, ok)
+            elseif ok then
+                print("|cff34D399QUI:|r " .. (err or "Profile imported successfully!"))
                 print("|cff34D399QUI:|r Please type |cFFFFD700/reload|r to apply changes.")
             else
-                print("|cffff0000QUI: Import failed: " .. (err or "Unknown error") .. "|r")
+                print("|cffff4d4dQUI:|r Import failed: " .. tostring(err or "Unknown error"))
             end
         else
             print("|cffff0000QUI: QUICore not available for import.|r")

@@ -80,6 +80,40 @@ function ns.ApplyScrollWheel(scrollFrame)
     end)
 end
 
+-- Shared chat formatter for import success/failure feedback.
+-- showReloadHint is optional and only used by profile imports.
+function ns.PrintImportFeedback(ok, message, showReloadHint)
+    if ok then
+        print("|cff34D399QUI:|r " .. (message or "Import successful"))
+        if showReloadHint then
+            print("|cff34D399QUI:|r Please type |cFFFFD700/reload|r to apply changes.")
+        end
+        return
+    end
+
+    local err = tostring(message or "Import failed")
+    print("|cffff4d4dQUI:|r Import failed.")
+
+    -- Make dense validator output readable in chat.
+    err = err:gsub("^Import failed:%s*", "")
+    err = err:gsub("%s*;%s*", "\n")
+    err = err:gsub("%s+%-%s+", "\n")
+
+    local lineCount = 0
+    for line in err:gmatch("[^\n]+") do
+        line = line:gsub("^%s+", ""):gsub("%s+$", "")
+        if line ~= "" then
+            lineCount = lineCount + 1
+            if lineCount <= 6 then
+                print("|cffff7a7aQUI:|r - " .. line)
+            elseif lineCount == 7 then
+                print("|cffff7a7aQUI:|r - (additional details omitted)")
+                break
+            end
+        end
+    end
+end
+
 -- Nine-point anchor options (used for UI element positioning)
 local NINE_POINT_ANCHOR_OPTIONS = {
     {value = "TOPLEFT", text = "Top Left"},
@@ -430,6 +464,12 @@ local function RefreshReticle()
     end
 end
 
+local function RefreshRangeCheck()
+    if _G.QUI_RefreshRangeCheck then
+        _G.QUI_RefreshRangeCheck()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- EXPORT TO NAMESPACE
 ---------------------------------------------------------------------------
@@ -449,6 +489,7 @@ ns.QUI_Options = {
     GetTextureList = GetTextureList,
     GetFontList = GetFontList,
     GetBorderList = GetBorderList,
+    PrintImportFeedback = ns.PrintImportFeedback,
 
     -- FPS functions
     BackupCurrentFPSSettings = BackupCurrentFPSSettings,
@@ -464,4 +505,5 @@ ns.QUI_Options = {
     RefreshBuffBorders = RefreshBuffBorders,
     RefreshCrosshair = RefreshCrosshair,
     RefreshReticle = RefreshReticle,
+    RefreshRangeCheck = RefreshRangeCheck,
 }
