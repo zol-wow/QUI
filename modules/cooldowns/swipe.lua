@@ -11,6 +11,12 @@ local DEFAULTS = {
     showGCDSwipe = true,
     showCooldownSwipe = true,
     showRechargeEdge = true,
+    -- Overlay color: shown when spell/buff is ACTIVE (aura duration)
+    overlayColorMode = "default",  -- "default" | "class" | "custom"
+    overlayColor = {1, 1, 1, 1},   -- white (matches color picker default)
+    -- Swipe color: shown when spell is ON COOLDOWN (radial darkening)
+    swipeColorMode = "default",
+    swipeColor = {1, 1, 1, 1},
 }
 
 -- Get settings from AceDB via shared helper
@@ -26,11 +32,151 @@ local function IsSafeNumber(value)
     return type(value) == "number" and not IsSecret(value)
 end
 
+-- Get the player's class color at 80% alpha
+local function GetClassColor()
+    local _, class = UnitClass("player")
+    local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+    if classColor then
+        return classColor.r, classColor.g, classColor.b, 0.8
+    end
+    return 1, 1, 1, 0.8
+end
+
+-- Resolve r,g,b,a for a given mode + stored color table; nil = leave Blizzard default.
+-- Falls back to white when mode is "custom" but no color has been picked yet.
+local function ResolveColor(mode, colorTable)
+    if mode == "class" then
+        return GetClassColor()
+    elseif mode == "accent" then
+        local QUI = _G.QUI
+        if QUI and QUI.GetSkinColor then
+            local r, g, b, a = QUI:GetSkinColor()
+            return r, g, b, 0.8
+        end
+        return 0.2, 1.0, 0.6, 0.8  -- fallback mint
+    elseif mode == "custom" then
+        local c = colorTable or {}
+        return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+    end
+    return nil  -- "default": don't override
+end
+
+-- Returns overlay and swipe colors for Essential/Utility icons (nil = Blizzard default).
+--   overlayR..A  →  active/aura state (buff duration showing)
+--   swipeR..A    →  cooldown state (radial darkening)
+local function GetIconColors(viewer, settings)
+    if viewer ~= _G.EssentialCooldownViewer and viewer ~= _G.UtilityCooldownViewer then
+        return nil, nil, nil, nil, nil, nil, nil, nil
+    end
+    local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
+    local sR, sG, sB, sA = ResolveColor(settings.swipeColorMode  or "default", settings.swipeColor)
+    return oR, oG, oB, oA, sR, sG, sB, sA
+end
+
+-- Apply the correct swipe color to one icon based on its wasSetFromAura state.
+-- Called from both the SetCooldown hook (reactive) and the pulse (on settings change).
+local function ApplyColorToIcon(icon, settings)
+    settings = settings or GetSettings()
+    local parent = icon:GetParent()
+    local oR, oG, oB, oA, sR, sG, sB, sA = GetIconColors(parent, settings)
+    if not oR and not sR then return end  -- both "default", nothing to override
+
+    local isActive = type(icon.wasSetFromAura) == "boolean" and icon.wasSetFromAura
+    if isActive then
+        if oR then icon.Cooldown:SetSwipeColor(oR, oG, oB, oA) end
+    else
+        if sR then icon.Cooldown:SetSwipeColor(sR, sG, sB, sA) end
+    end
+end
+
+-- Hook icon.Cooldown:SetCooldown so our color fires after Blizzard sets wasSetFromAura
+-- and its own color in the same update. Safe: we don't read the secret arguments.
+local function HookIconCooldown(icon)
+    if icon._QUI_CDColorHooked then return end
+    icon._QUI_CDColorHooked = true
+    hooksecurefunc(icon.Cooldown, "SetCooldown", function()
+        ApplyColorToIcon(icon)
+    end)
+end
+
+-- Apply swipe/edge/color settings to one icon.
+-- Swipe visibility avoids hooking SetCooldown to prevent tainting secret values.
+-- Color overrides use a SetCooldown hook (safe: we don't read the secret arguments).
 local EnsureViewerVisibilityHooks
 
 -- Apply swipe/edge settings to one icon.
 -- Intentionally avoids hooking Cooldown:SetCooldown to prevent tainting
 -- Blizzard's secret cooldown/totem values in combat.
+-- Get the player's class color at 80% alpha
+local function GetClassColor()
+    local _, class = UnitClass("player")
+    local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+    if classColor then
+        return classColor.r, classColor.g, classColor.b, 0.8
+    end
+    return 1, 1, 1, 0.8
+end
+
+-- Resolve r,g,b,a for a given mode + stored color table; nil = leave Blizzard default.
+-- Falls back to white when mode is "custom" but no color has been picked yet.
+local function ResolveColor(mode, colorTable)
+    if mode == "class" then
+        return GetClassColor()
+    elseif mode == "accent" then
+        local QUI = _G.QUI
+        if QUI and QUI.GetSkinColor then
+            local r, g, b, a = QUI:GetSkinColor()
+            return r, g, b, 0.8
+        end
+        return 0.2, 1.0, 0.6, 0.8  -- fallback mint
+    elseif mode == "custom" then
+        local c = colorTable or {}
+        return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+    end
+    return nil  -- "default": don't override
+end
+
+-- Returns overlay and swipe colors for Essential/Utility icons (nil = Blizzard default).
+--   overlayR..A  →  active/aura state (buff duration showing)
+--   swipeR..A    →  cooldown state (radial darkening)
+local function GetIconColors(viewer, settings)
+    if viewer ~= _G.EssentialCooldownViewer and viewer ~= _G.UtilityCooldownViewer then
+        return nil, nil, nil, nil, nil, nil, nil, nil
+    end
+    local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
+    local sR, sG, sB, sA = ResolveColor(settings.swipeColorMode  or "default", settings.swipeColor)
+    return oR, oG, oB, oA, sR, sG, sB, sA
+end
+
+-- Apply the correct swipe color to one icon based on its wasSetFromAura state.
+-- Called from both the SetCooldown hook (reactive) and the pulse (on settings change).
+local function ApplyColorToIcon(icon, settings)
+    settings = settings or GetSettings()
+    local parent = icon:GetParent()
+    local oR, oG, oB, oA, sR, sG, sB, sA = GetIconColors(parent, settings)
+    if not oR and not sR then return end  -- both "default", nothing to override
+
+    local isActive = type(icon.wasSetFromAura) == "boolean" and icon.wasSetFromAura
+    if isActive then
+        if oR then icon.Cooldown:SetSwipeColor(oR, oG, oB, oA) end
+    else
+        if sR then icon.Cooldown:SetSwipeColor(sR, sG, sB, sA) end
+    end
+end
+
+-- Hook icon.Cooldown:SetCooldown so our color fires after Blizzard sets wasSetFromAura
+-- and its own color in the same update. Safe: we don't read the secret arguments.
+local function HookIconCooldown(icon)
+    if icon._QUI_CDColorHooked then return end
+    icon._QUI_CDColorHooked = true
+    hooksecurefunc(icon.Cooldown, "SetCooldown", function()
+        ApplyColorToIcon(icon)
+    end)
+end
+
+-- Apply swipe/edge/color settings to one icon.
+-- Swipe visibility avoids hooking SetCooldown to prevent tainting secret values.
+-- Color overrides use a SetCooldown hook (safe: we don't read the secret arguments).
 local function ApplySettingsToIcon(icon, settings)
     if not icon or not icon.Cooldown then return end
     if icon.IsForbidden and icon:IsForbidden() then return end
@@ -133,6 +279,12 @@ local function ApplySettingsToIcon(icon, settings)
         icon._QUI_LastDrawEdge = drawEdge
         icon.Cooldown:SetDrawEdge(drawEdge)
     end
+
+    -- Hook SetCooldown to apply overlay/swipe color at the right moment
+    -- (after Blizzard sets wasSetFromAura and its own color in the same update).
+    -- Also apply immediately so settings changes take effect without waiting.
+    HookIconCooldown(icon)
+    ApplyColorToIcon(icon, settings)
 end
 
 -- Process all icons in a viewer
