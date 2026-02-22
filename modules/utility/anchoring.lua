@@ -1072,6 +1072,15 @@ local FRAME_RESOLVERS = {
     end,
 }
 
+-- Blizzard-managed right-side frames are controlled by UIParentPanelManager.
+-- Overriding their anchors from addon code taints managed containers and can
+-- cause ADDON_ACTION_BLOCKED errors in combat (e.g. PetActionBar updates).
+local UNSAFE_BLIZZARD_MANAGED_OVERRIDES = {
+    objectiveTracker = true,
+    buffFrame = true,
+    debuffFrame = true,
+}
+
 -- Frame display info for anchor target registration
 local FRAME_ANCHOR_INFO = {
     cdmEssential    = { displayName = "CDM Essential Viewer",  category = "Cooldown Manager",  order = 1 },
@@ -1487,6 +1496,13 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     end
 
     if not resolved then return end
+
+    -- Never anchor UIParent-managed right-side frames from addon code.
+    -- Keep them on Blizzard defaults to avoid protected layout taint.
+    if UNSAFE_BLIZZARD_MANAGED_OVERRIDES[key] then
+        SetFrameOverride(resolved, false)
+        return
+    end
 
     -- Mark frame as overridden FIRST — blocks any module positioning from this point on
     SetFrameOverride(resolved, true, key)
