@@ -223,7 +223,6 @@ local function ApplyHideSettings()
                 hooksecurefunc(ObjectiveTrackerFrame, "Show", function(self)
                     -- Don't fight Edit Mode — let frames stay visible for positioning
                     if IsInEditMode() then return end
-
                     -- Immediately hide the frame visually to prevent a 1-frame flash.
                     -- The deferred C_Timer.After(0) is still needed to safely call
                     -- Hide() without tainting secure Blizzard code, but setting alpha
@@ -244,7 +243,6 @@ local function ApplyHideSettings()
                     -- Break secure call chains before enforcing hidden state
                     C_Timer.After(0, function()
                         if IsInEditMode() then return end
-
                         local s2 = GetSettings()
                         if s2 then
                             local shouldHideNow = false
