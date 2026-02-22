@@ -302,20 +302,13 @@ end
 
 local function ExtractCastGUIDAndSpellID(...)
     local castGUID, spellID
-    local castGUIDIndex
     local lastNumeric
 
     for i = 1, select("#", ...) do
         local value = select(i, ...)
-        if not castGUID and type(value) == "string" and string.find(value, "Cast%-", 1, true) == 1 then
-            castGUID = value
-            castGUIDIndex = i
-        elseif type(value) == "number" then
+        if type(value) == "number" then
             lastNumeric = value
-            if castGUIDIndex and i > castGUIDIndex then
-                spellID = value
-                break
-            end
+            spellID = value
         end
     end
 
