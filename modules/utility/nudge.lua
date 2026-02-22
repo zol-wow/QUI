@@ -16,6 +16,7 @@ local BLIZZARD_FRAME_LABELS = {
     BuffFrame = "Buff Frame",
     DebuffFrame = "Debuff Frame",
     DamageMeter = "Damage Meter",
+    BossTargetFrameContainer = "Boss Frames",
     BuffBarCooldownViewer = "Tracked Bars",
     -- Action Bars (MainMenuBar renamed to MainActionBar in Midnight 12.0)
     MainActionBar = "Action Bar 1",
@@ -390,6 +391,7 @@ local BLIZZARD_EDITMODE_FRAMES = {
     { name = "BuffFrame", label = "Buff Frame", passthrough = true },
     { name = "DebuffFrame", label = "Debuff Frame", passthrough = true },
     { name = "DamageMeter", label = "Damage Meter", passthrough = true },
+    { name = "BossTargetFrameContainer", label = "Boss Frames", passthrough = true },
     -- Action Bars (MainMenuBar renamed to MainActionBar in Midnight 12.0)
     -- passthrough = true: free movers use click-passthrough like CDM viewers
     -- (EnableMouse false, hide Blizzard .Selection, let Blizzard menu open)

@@ -229,293 +229,282 @@ function QUI_UF:EnableEditMode()
     self.exitEditModeBtn:Show()
 
     for unitKey, frame in pairs(self.frames) do
-        -- Create highlight overlay if not exists
-        if not frame.editOverlay then
-            local overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-            overlay:SetAllPoints()
-            overlay:SetFrameLevel(frame:GetFrameLevel() + 10)
-            local overlayPx = QUICore:GetPixelSize(overlay)
-            overlay:SetBackdrop({
-                bgFile = "Interface\\Buttons\\WHITE8x8",
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = overlayPx * 2,
-            })
-            overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
-            overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+        -- Boss frames are grouped under BossTargetFrameContainer — skip individual
+        -- overlays and drag handlers. They still get shown with preview data below.
+        local isBossFrame = unitKey:match("^boss%d$")
 
-            -- Nudge buttons (arrow buttons around the frame)
-            local nudgeLeft = CreateNudgeButton(overlay, "LEFT", -1, 0, unitKey)
-            nudgeLeft:SetPoint("RIGHT", overlay, "LEFT", -4, 0)
-            overlay.nudgeLeft = nudgeLeft
+        if not isBossFrame then
+            -- Create highlight overlay if not exists
+            if not frame.editOverlay then
+                local overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+                overlay:SetAllPoints()
+                overlay:SetFrameLevel(frame:GetFrameLevel() + 10)
+                local overlayPx = QUICore:GetPixelSize(overlay)
+                overlay:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = overlayPx * 2,
+                })
+                overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
+                overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
 
-            local nudgeRight = CreateNudgeButton(overlay, "RIGHT", 1, 0, unitKey)
-            nudgeRight:SetPoint("LEFT", overlay, "RIGHT", 4, 0)
-            overlay.nudgeRight = nudgeRight
+                -- Nudge buttons (arrow buttons around the frame)
+                local nudgeLeft = CreateNudgeButton(overlay, "LEFT", -1, 0, unitKey)
+                nudgeLeft:SetPoint("RIGHT", overlay, "LEFT", -4, 0)
+                overlay.nudgeLeft = nudgeLeft
 
-            local nudgeUp = CreateNudgeButton(overlay, "UP", 0, 1, unitKey)
-            nudgeUp:SetPoint("BOTTOM", overlay, "TOP", 0, 4)
-            overlay.nudgeUp = nudgeUp
+                local nudgeRight = CreateNudgeButton(overlay, "RIGHT", 1, 0, unitKey)
+                nudgeRight:SetPoint("LEFT", overlay, "RIGHT", 4, 0)
+                overlay.nudgeRight = nudgeRight
 
-            -- Info line above UP arrow (consolidated: name + coords)
-            local infoText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            infoText:SetPoint("BOTTOM", nudgeUp, "TOP", 0, 2)  -- 2px above the up arrow
-            infoText:SetTextColor(0.7, 0.7, 0.7, 1)  -- Subtle grey
-            overlay.infoText = infoText
-            overlay.unitLabel = unitKey:gsub("^%l", string.upper):gsub("(%l)(%u)", "%1 %2")
+                local nudgeUp = CreateNudgeButton(overlay, "UP", 0, 1, unitKey)
+                nudgeUp:SetPoint("BOTTOM", overlay, "TOP", 0, 4)
+                overlay.nudgeUp = nudgeUp
 
-            local nudgeDown = CreateNudgeButton(overlay, "DOWN", 0, -1, unitKey)
-            nudgeDown:SetPoint("TOP", overlay, "BOTTOM", 0, -4)
-            overlay.nudgeDown = nudgeDown
+                -- Info line above UP arrow (consolidated: name + coords)
+                local infoText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                infoText:SetPoint("BOTTOM", nudgeUp, "TOP", 0, 2)  -- 2px above the up arrow
+                infoText:SetTextColor(0.7, 0.7, 0.7, 1)  -- Subtle grey
+                overlay.infoText = infoText
+                overlay.unitLabel = unitKey:gsub("^%l", string.upper):gsub("(%l)(%u)", "%1 %2")
 
-            -- Store unitKey for selection manager
-            overlay.elementKey = unitKey
+                local nudgeDown = CreateNudgeButton(overlay, "DOWN", 0, -1, unitKey)
+                nudgeDown:SetPoint("TOP", overlay, "BOTTOM", 0, -4)
+                overlay.nudgeDown = nudgeDown
 
-            -- Hide nudge buttons initially (will show on click/selection)
-            nudgeLeft:Hide()
-            nudgeRight:Hide()
-            nudgeUp:Hide()
-            nudgeDown:Hide()
-            infoText:Hide()
+                -- Store unitKey for selection manager
+                overlay.elementKey = unitKey
 
-            -- Allow clicks to pass through overlay to frame for dragging
-            overlay:EnableMouse(false)
+                -- Hide nudge buttons initially (will show on click/selection)
+                nudgeLeft:Hide()
+                nudgeRight:Hide()
+                nudgeUp:Hide()
+                nudgeDown:Hide()
+                infoText:Hide()
 
-            frame.editOverlay = overlay
-        end
+                -- Allow clicks to pass through overlay to frame for dragging
+                overlay:EnableMouse(false)
 
-        -- Update info text with current position
-        local settingsKey = unitKey
-        if unitKey:match("^boss%d+$") then
-            settingsKey = "boss"
-        end
-        local settings = GetUnitSettings(settingsKey)
-        if settings and frame.editOverlay.infoText then
-            local label = frame.editOverlay.unitLabel or unitKey
-            local isAnchored = settings.anchorTo and settings.anchorTo ~= "disabled"
-            local isFrameLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
-            if isAnchored and (settingsKey == "player" or settingsKey == "target") then
-                local anchorNames = {essential = "Essential", utility = "Utility", primary = "Primary", secondary = "Secondary"}
-                local anchorName = anchorNames[settings.anchorTo] or settings.anchorTo
-                frame.editOverlay.infoText:SetText(label .. "  (Locked to " .. anchorName .. ")")
-            elseif isFrameLocked then
-                frame.editOverlay.infoText:SetText(label .. "  (Locked)")
-            else
-                local x = settings.offsetX or 0
-                local y = settings.offsetY or 0
-                frame.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
+                frame.editOverlay = overlay
             end
-        end
 
-        frame.editOverlay:Show()
-
-        -- Defer visual indicator updates to break taint chain from Edit Mode enter.
-        -- Unit frames use SecureUnitButtonTemplate — any addon code in their
-        -- script handlers during EnterEditMode taints the secure execution path.
-        C_Timer.After(0, function()
-            if not frame.editOverlay then return end
-            local s = GetUnitSettings(settingsKey)
-            local anchored = s and s.anchorTo and s.anchorTo ~= "disabled"
-            local frameLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
-            local locked = (anchored and (settingsKey == "player" or settingsKey == "target")) or frameLocked
-            if locked then
-                frame.editOverlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
-                frame.editOverlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
-                if frame.editOverlay.infoText then
-                    frame.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 1)
-                    -- Re-anchor info text to overlay center (normally anchored to nudgeUp
-                    -- which is hidden, making text invisible)
-                    frame.editOverlay.infoText:ClearAllPoints()
-                    frame.editOverlay.infoText:SetPoint("CENTER", frame.editOverlay, "CENTER", 0, 0)
-                    frame.editOverlay.infoText:Show()
-                end
-                -- Raise overlay strata so it appears above Blizzard's Edit Mode overlays
-                frame.editOverlay:SetFrameStrata("TOOLTIP")
-            else
-                frame.editOverlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
-                frame.editOverlay:SetBackdropColor(0.2, 0.8, 1, 0.15)
-                if frame.editOverlay.infoText then
-                    frame.editOverlay.infoText:SetTextColor(1, 1, 1, 1)
-                    -- Restore normal anchor: above nudgeUp button (default positioning)
-                    frame.editOverlay.infoText:ClearAllPoints()
-                    frame.editOverlay.infoText:SetPoint("BOTTOM", frame.editOverlay.nudgeUp, "TOP", 0, 2)
-                    frame.editOverlay.infoText:Hide()  -- Hidden until selected
-                end
-                -- Restore normal frame level (was raised to TOOLTIP for locked state)
-                frame.editOverlay:SetFrameStrata("MEDIUM")
-                frame.editOverlay:SetFrameLevel(frame:GetFrameLevel() + 10)
-            end
-        end)
-
-        -- Enable dragging
-        frame:SetMovable(true)
-        frame:EnableMouse(true)
-        frame:RegisterForDrag("LeftButton")
-
-        -- Store unitKey for click handler (in weak table to avoid tainting secure frames)
-        _editModeState[frame] = _editModeState[frame] or {}
-        _editModeState[frame].unitKey = unitKey
-
-        -- Click handler to select this element and show its arrows
-        frame:SetScript("OnMouseDown", function(self, button)
-            if button == "LeftButton" and QUI_UF.editModeActive then
-                local core = GetCore()
-                if core and core.SelectEditModeElement then
-                    local state = _editModeState[self]
-                    local key = state and state.unitKey
-                    core:SelectEditModeElement("unitframe", key)
-                end
-            end
-        end)
-
-        frame:SetScript("OnDragStart", function(self)
-            if QUI_UF.editModeActive then
-                -- Block dragging for anchored or overridden frames
-                local settingsKey = self.unitKey
-                if self.unitKey:match("^boss%d+$") then settingsKey = "boss" end
-                local settings = GetUnitSettings(settingsKey)
-                local isAnchored = settings and settings.anchorTo and settings.anchorTo ~= "disabled"
+            -- Update info text with current position
+            local settingsKey = unitKey
+            local settings = GetUnitSettings(settingsKey)
+            if settings and frame.editOverlay.infoText then
+                local label = frame.editOverlay.unitLabel or unitKey
+                local isAnchored = settings.anchorTo and settings.anchorTo ~= "disabled"
+                local isFrameLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
                 if isAnchored and (settingsKey == "player" or settingsKey == "target") then
-                    return -- Locked to anchor, cannot drag
+                    local anchorNames = {essential = "Essential", utility = "Utility", primary = "Primary", secondary = "Secondary"}
+                    local anchorName = anchorNames[settings.anchorTo] or settings.anchorTo
+                    frame.editOverlay.infoText:SetText(label .. "  (Locked to " .. anchorName .. ")")
+                elseif isFrameLocked then
+                    frame.editOverlay.infoText:SetText(label .. "  (Locked)")
+                else
+                    local x = settings.offsetX or 0
+                    local y = settings.offsetY or 0
+                    frame.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
                 end
-                if _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(self) then
-                    return -- Locked by anchoring system, cannot drag
+            end
+
+            frame.editOverlay:Show()
+
+            -- Defer visual indicator updates to break taint chain from Edit Mode enter.
+            -- Unit frames use SecureUnitButtonTemplate — any addon code in their
+            -- script handlers during EnterEditMode taints the secure execution path.
+            C_Timer.After(0, function()
+                if not frame.editOverlay then return end
+                local s = GetUnitSettings(settingsKey)
+                local anchored = s and s.anchorTo and s.anchorTo ~= "disabled"
+                local frameLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
+                local locked = (anchored and (settingsKey == "player" or settingsKey == "target")) or frameLocked
+                if locked then
+                    frame.editOverlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+                    frame.editOverlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
+                    if frame.editOverlay.infoText then
+                        frame.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 1)
+                        -- Re-anchor info text to overlay center (normally anchored to nudgeUp
+                        -- which is hidden, making text invisible)
+                        frame.editOverlay.infoText:ClearAllPoints()
+                        frame.editOverlay.infoText:SetPoint("CENTER", frame.editOverlay, "CENTER", 0, 0)
+                        frame.editOverlay.infoText:Show()
+                    end
+                    -- Raise overlay strata so it appears above Blizzard's Edit Mode overlays
+                    frame.editOverlay:SetFrameStrata("TOOLTIP")
+                else
+                    frame.editOverlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+                    frame.editOverlay:SetBackdropColor(0.2, 0.8, 1, 0.15)
+                    if frame.editOverlay.infoText then
+                        frame.editOverlay.infoText:SetTextColor(1, 1, 1, 1)
+                        -- Restore normal anchor: above nudgeUp button (default positioning)
+                        frame.editOverlay.infoText:ClearAllPoints()
+                        frame.editOverlay.infoText:SetPoint("BOTTOM", frame.editOverlay.nudgeUp, "TOP", 0, 2)
+                        frame.editOverlay.infoText:Hide()  -- Hidden until selected
+                    end
+                    -- Restore normal frame level (was raised to TOOLTIP for locked state)
+                    frame.editOverlay:SetFrameStrata("MEDIUM")
+                    frame.editOverlay:SetFrameLevel(frame:GetFrameLevel() + 10)
                 end
+            end)
 
-                self:StartMoving()
-                self._isMoving = true
+            -- Enable dragging
+            frame:SetMovable(true)
+            frame:EnableMouse(true)
+            frame:RegisterForDrag("LeftButton")
 
-                -- Update position in real-time during drag
-                self:SetScript("OnUpdate", function(self)
-                    if not self._isMoving then
-                        self:SetScript("OnUpdate", nil)
-                        return
+            -- Store unitKey for click handler (in weak table to avoid tainting secure frames)
+            _editModeState[frame] = _editModeState[frame] or {}
+            _editModeState[frame].unitKey = unitKey
+
+            -- Click handler to select this element and show its arrows
+            frame:SetScript("OnMouseDown", function(self, button)
+                if button == "LeftButton" and QUI_UF.editModeActive then
+                    local core = GetCore()
+                    if core and core.SelectEditModeElement then
+                        local state = _editModeState[self]
+                        local key = state and state.unitKey
+                        core:SelectEditModeElement("unitframe", key)
+                    end
+                end
+            end)
+
+            frame:SetScript("OnDragStart", function(self)
+                if QUI_UF.editModeActive then
+                    -- Block dragging for anchored or overridden frames
+                    local settingsKey = self.unitKey
+                    local settings = GetUnitSettings(settingsKey)
+                    local isAnchored = settings and settings.anchorTo and settings.anchorTo ~= "disabled"
+                    if isAnchored and (settingsKey == "player" or settingsKey == "target") then
+                        return -- Locked to anchor, cannot drag
+                    end
+                    if _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(self) then
+                        return -- Locked by anchoring system, cannot drag
                     end
 
-                    -- Calculate offset from UIParent center
-                    local selfX, selfY = self:GetCenter()
-                    local parentX, parentY = UIParent:GetCenter()
-                    if selfX and selfY and parentX and parentY then
-                        local rawX, rawY = selfX - parentX, selfY - parentY
-                        local offsetX = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
-                        local offsetY = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
+                    self:StartMoving()
+                    self._isMoving = true
 
-                        -- Update database in real-time
-                        local settingsKey = self.unitKey
-                        if self.unitKey:match("^boss%d+$") then
-                            settingsKey = "boss"
+                    -- Update position in real-time during drag
+                    self:SetScript("OnUpdate", function(self)
+                        if not self._isMoving then
+                            self:SetScript("OnUpdate", nil)
+                            return
                         end
-                        local settings = GetUnitSettings(settingsKey)
-                        if settings then
-                            settings.offsetX = offsetX
-                            settings.offsetY = offsetY
 
-                            -- Notify options panel of position change (real-time sync)
-                            QUI_UF:NotifyPositionChanged(settingsKey, offsetX, offsetY)
+                        -- Calculate offset from UIParent center
+                        local selfX, selfY = self:GetCenter()
+                        local parentX, parentY = UIParent:GetCenter()
+                        if selfX and selfY and parentX and parentY then
+                            local rawX, rawY = selfX - parentX, selfY - parentY
+                            local offsetX = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
+                            local offsetY = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
 
-                            -- Update anchored frames in real-time so they follow this frame
-                            if _G.QUI_UpdateAnchoredFrames then
-                                _G.QUI_UpdateAnchoredFrames()
+                            -- Update database in real-time
+                            local settingsKey = self.unitKey
+                            local settings = GetUnitSettings(settingsKey)
+                            if settings then
+                                settings.offsetX = offsetX
+                                settings.offsetY = offsetY
+
+                                -- Notify options panel of position change (real-time sync)
+                                QUI_UF:NotifyPositionChanged(settingsKey, offsetX, offsetY)
+
+                                -- Update anchored frames in real-time so they follow this frame
+                                if _G.QUI_UpdateAnchoredFrames then
+                                    _G.QUI_UpdateAnchoredFrames()
+                                end
                             end
                         end
-                    end
-                end)
-            end
-        end)
-
-        frame:SetScript("OnDragStop", function(self)
-            self:StopMovingOrSizing()
-            self._isMoving = false
-            self:SetScript("OnUpdate", nil)
-
-            -- Final position save
-            local selfX, selfY = self:GetCenter()
-            local parentX, parentY = UIParent:GetCenter()
-            if selfX and selfY and parentX and parentY then
-                local rawX, rawY = selfX - parentX, selfY - parentY
-                local offsetX = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
-                local offsetY = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
-
-                -- Boss frames: all boss frames save to "boss" settings
-                local settingsKey = self.unitKey
-                if self.unitKey:match("^boss%d+$") then
-                    settingsKey = "boss"
+                    end)
                 end
-                local settings = GetUnitSettings(settingsKey)
-                if settings then
-                    settings.offsetX = offsetX
-                    settings.offsetY = offsetY
+            end)
 
-                    -- Final notification to options panel
-                    QUI_UF:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
+            frame:SetScript("OnDragStop", function(self)
+                self:StopMovingOrSizing()
+                self._isMoving = false
+                self:SetScript("OnUpdate", nil)
 
-                    -- Update anchored frames to final position
-                    if _G.QUI_UpdateAnchoredFrames then
-                        _G.QUI_UpdateAnchoredFrames()
+                -- Final position save
+                local selfX, selfY = self:GetCenter()
+                local parentX, parentY = UIParent:GetCenter()
+                if selfX and selfY and parentX and parentY then
+                    local rawX, rawY = selfX - parentX, selfY - parentY
+                    local offsetX = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
+                    local offsetY = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
+
+                    local settingsKey = self.unitKey
+                    local settings = GetUnitSettings(settingsKey)
+                    if settings then
+                        settings.offsetX = offsetX
+                        settings.offsetY = offsetY
+
+                        -- Final notification to options panel
+                        QUI_UF:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
+
+                        -- Update anchored frames to final position
+                        if _G.QUI_UpdateAnchoredFrames then
+                            _G.QUI_UpdateAnchoredFrames()
+                        end
                     end
                 end
-            end
-        end)
+            end)
 
-        -- Enable keyboard for arrow key nudging (skip boss frames - SecureUnitButtonTemplate rejects this call)
-        local isBossFrame = frame.unit and frame.unit:match("^boss%d$")
-        if not isBossFrame then
+            -- Enable keyboard for arrow key nudging
             frame:EnableKeyboard(true)
-        end
-        frame:SetScript("OnKeyDown", function(self, key)
-            if not QUI_UF.editModeActive then
-                self:SetPropagateKeyboardInput(true)
-                return
-            end
+            frame:SetScript("OnKeyDown", function(self, key)
+                if not QUI_UF.editModeActive then
+                    self:SetPropagateKeyboardInput(true)
+                    return
+                end
 
-            local deltaX, deltaY = 0, 0
-            if key == "LEFT" then deltaX = -1
-            elseif key == "RIGHT" then deltaX = 1
-            elseif key == "UP" then deltaY = 1
-            elseif key == "DOWN" then deltaY = -1
-            else
-                -- Non-arrow keys: propagate to game (WASD, hotkeys, Escape, etc.)
-                self:SetPropagateKeyboardInput(true)
-                return
-            end
+                local deltaX, deltaY = 0, 0
+                if key == "LEFT" then deltaX = -1
+                elseif key == "RIGHT" then deltaX = 1
+                elseif key == "UP" then deltaY = 1
+                elseif key == "DOWN" then deltaY = -1
+                else
+                    -- Non-arrow keys: propagate to game (WASD, hotkeys, Escape, etc.)
+                    self:SetPropagateKeyboardInput(true)
+                    return
+                end
 
-            -- Consume arrow keys so they nudge instead of moving the camera
-            self:SetPropagateKeyboardInput(false)
+                -- Consume arrow keys so they nudge instead of moving the camera
+                self:SetPropagateKeyboardInput(false)
 
-            -- Use global selection system - nudge the SELECTED element, not this frame
-            local core = GetCore()
-            if core and core.EditModeSelection and core.EditModeSelection.selectedType then
-                -- Delegate to the global nudge function which handles all element types
-                -- Pass raw delta (1 or -1) - NudgeSelectedElement handles shift multiplier
-                core:NudgeSelectedElement(deltaX, deltaY)
-                return
-            end
+                -- Use global selection system - nudge the SELECTED element, not this frame
+                local core = GetCore()
+                if core and core.EditModeSelection and core.EditModeSelection.selectedType then
+                    -- Delegate to the global nudge function which handles all element types
+                    -- Pass raw delta (1 or -1) - NudgeSelectedElement handles shift multiplier
+                    core:NudgeSelectedElement(deltaX, deltaY)
+                    return
+                end
 
-            -- Fallback: no selection, nudge this frame (legacy behavior)
-            local settingsKey = self.unitKey
-            if settingsKey and settingsKey:match("^boss%d+$") then
-                settingsKey = "boss"
-            end
-            local settings = GetUnitSettings(settingsKey)
+                -- Fallback: no selection, nudge this frame (legacy behavior)
+                local settingsKey = self.unitKey
+                local settings = GetUnitSettings(settingsKey)
 
-            -- Block nudging for anchored frames
-            local isAnchored = settings and settings.anchorTo and settings.anchorTo ~= "disabled"
-            if isAnchored and (settingsKey == "player" or settingsKey == "target") then
-                return
-            end
+                -- Block nudging for anchored frames
+                local isAnchored = settings and settings.anchorTo and settings.anchorTo ~= "disabled"
+                if isAnchored and (settingsKey == "player" or settingsKey == "target") then
+                    return
+                end
 
-            local shift = IsShiftKeyDown()
-            local step = shift and 10 or 1
+                local shift = IsShiftKeyDown()
+                local step = shift and 10 or 1
 
-            if settings then
-                settings.offsetX = (settings.offsetX or 0) + (deltaX * step)
-                settings.offsetY = (settings.offsetY or 0) + (deltaY * step)
-                self:ClearAllPoints()
-                self:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX, settings.offsetY)
+                if settings then
+                    settings.offsetX = (settings.offsetX or 0) + (deltaX * step)
+                    settings.offsetY = (settings.offsetY or 0) + (deltaY * step)
+                    self:ClearAllPoints()
+                    self:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX, settings.offsetY)
 
-                -- Notify options panel of position change
-                QUI_UF:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
-            end
-        end)
+                    -- Notify options panel of position change
+                    QUI_UF:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
+                end
+            end)
+        end  -- if not isBossFrame
 
         -- Show frame even if unit doesn't exist (for positioning)
         frame:Show()
@@ -523,6 +512,69 @@ function QUI_UF:EnableEditMode()
         -- Show preview data so frames are visible
         self:ShowPreview(unitKey)
     end
+
+    -- Group boss frames under BossTargetFrameContainer.
+    -- The container already has a .Selection registered with Blizzard's Edit Mode.
+    -- By anchoring Boss1 to the container, all boss frames follow when it's dragged.
+    C_Timer.After(0, function()
+        if not self.editModeActive then return end
+        if not BossTargetFrameContainer then return end
+        local boss1 = self.frames["boss1"]
+        if not boss1 then return end
+
+        -- Calculate group bounds from boss frame dimensions
+        local bossSettings = GetUnitSettings("boss")
+        local spacing = bossSettings and bossSettings.spacing or 40
+        local width = boss1:GetWidth()
+        local height = boss1:GetHeight()
+        local numBosses = 0
+        for i = 1, 5 do
+            if self.frames["boss" .. i] then numBosses = numBosses + 1 end
+        end
+        if numBosses == 0 then return end
+        local totalHeight = numBosses * height + (numBosses - 1) * spacing
+
+        -- Get Boss1's absolute position before re-anchoring
+        local boss1Left = boss1:GetLeft()
+        local boss1Top = boss1:GetTop()
+        if not boss1Left or not boss1Top then return end
+
+        -- Position and size container to cover the boss group
+        BossTargetFrameContainer:ClearAllPoints()
+        BossTargetFrameContainer:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", boss1Left, boss1Top)
+        BossTargetFrameContainer:SetSize(width, totalHeight)
+        BossTargetFrameContainer:Show()
+
+        -- Anchor Boss1 to the container so it follows when the container is dragged
+        boss1:ClearAllPoints()
+        boss1:SetPoint("TOPLEFT", BossTargetFrameContainer, "TOPLEFT", 0, 0)
+
+        -- Re-anchor Boss2-5 stacking below Boss1
+        for i = 2, numBosses do
+            local bf = self.frames["boss" .. i]
+            local prev = self.frames["boss" .. (i - 1)]
+            if bf and prev then
+                bf:ClearAllPoints()
+                bf:SetPoint("TOP", prev, "BOTTOM", 0, -spacing)
+            end
+        end
+
+        -- Show nudge buttons on the QUI overlay when boss frames are free (not locked).
+        -- Locked styling (grey overlay, drag blocking) is handled by nudge.lua passthrough
+        -- system via QUI_IsFrameLocked(BossTargetFrameContainer).
+        if not (_G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(boss1)) then
+            local core = GetCore()
+            if core and core.blizzardOverlays then
+                local overlay = core.blizzardOverlays["BossTargetFrameContainer"]
+                if overlay then
+                    if overlay.nudgeUp then overlay.nudgeUp:Show() end
+                    if overlay.nudgeDown then overlay.nudgeDown:Show() end
+                    if overlay.nudgeLeft then overlay.nudgeLeft:Show() end
+                    if overlay.nudgeRight then overlay.nudgeRight:Show() end
+                end
+            end
+        end
+    end)
 
     print("|cFF56D1FFQUI|r: Edit Mode |cff00ff00ENABLED|r - Drag frames to reposition.")
 end
@@ -588,6 +640,48 @@ function QUI_UF:DisableEditMode()
         end
     end
 
+    -- Save boss group position from container and restore normal anchoring.
+    -- During Edit Mode, Boss1 was anchored to BossTargetFrameContainer.
+    -- Now save the final position and re-anchor to UIParent.
+    local boss1 = self.frames["boss1"]
+    if boss1 and BossTargetFrameContainer then
+        local bossSettings = GetUnitSettings("boss")
+        if bossSettings then
+            -- Calculate offset from UIParent center (same formula as drag stop)
+            local selfX, selfY = boss1:GetCenter()
+            local parentX, parentY = UIParent:GetCenter()
+            if selfX and selfY and parentX and parentY then
+                local rawX, rawY = selfX - parentX, selfY - parentY
+                bossSettings.offsetX = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
+                bossSettings.offsetY = QUICore and QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
+            end
+
+            -- Re-anchor Boss1 to UIParent at saved position
+            boss1:ClearAllPoints()
+            boss1:SetPoint("CENTER", UIParent, "CENTER", bossSettings.offsetX or 0, bossSettings.offsetY or 0)
+
+            -- Re-anchor Boss2-5 stacking
+            local spacing = bossSettings.spacing or 40
+            for i = 2, 5 do
+                local bf = self.frames["boss" .. i]
+                local prev = self.frames["boss" .. (i - 1)]
+                if bf and prev then
+                    bf:ClearAllPoints()
+                    bf:SetPoint("TOP", prev, "BOTTOM", 0, -spacing)
+                end
+            end
+
+            -- Notify options panel of final position
+            self:NotifyPositionChanged("boss", bossSettings.offsetX or 0, bossSettings.offsetY or 0)
+        end
+
+        -- Restore container to safe 1x1 size (prevents GetScaledSelectionSides crashes
+        -- when GetRect() returns nil during magnetic snap calculations)
+        BossTargetFrameContainer:ClearAllPoints()
+        BossTargetFrameContainer:SetSize(1, 1)
+        BossTargetFrameContainer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
+
     print("|cFF56D1FFQUI|r: Edit Mode |cffff0000DISABLED|r - Positions saved.")
 end
 
@@ -603,6 +697,9 @@ end
 function QUI_UF:RestoreEditOverlayIfNeeded(unitKey)
     if not self.editModeActive then return end
     if InCombatLockdown() then return end
+
+    -- Boss frames are grouped under BossTargetFrameContainer — no individual overlays
+    if unitKey and unitKey:match("^boss%d$") then return end
 
     local frame = self.frames[unitKey]
     if not frame then return end

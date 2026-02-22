@@ -1450,6 +1450,11 @@ local function SetFrameOverride(frame, active, key)
         for _, f in ipairs(frame) do
             QUI_Anchoring.overriddenFrames[f] = active and key or nil
         end
+        -- Also mark BossTargetFrameContainer so QUI_IsFrameLocked checks
+        -- on the container (used by Edit Mode overlay/nudge systems) work
+        if BossTargetFrameContainer then
+            QUI_Anchoring.overriddenFrames[BossTargetFrameContainer] = active and key or nil
+        end
     else
         QUI_Anchoring.overriddenFrames[frame] = active and key or nil
     end
