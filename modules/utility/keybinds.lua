@@ -896,6 +896,10 @@ local function ApplyKeybindToIcon(icon, viewerName)
     -- Get spell ID from the icon (wrap in pcall to handle "secret" values)
     local spellID
     local spellName
+    local itemID
+    local itemName
+    local customEntry = icon._customCDMEntry
+    local isItemEntry = customEntry and (customEntry.type == "item" or customEntry.type == "trinket")
     local ok, result = pcall(function()
         local id = icon.spellID
         if not id and icon.GetSpellID then
@@ -910,6 +914,19 @@ local function ApplyKeybindToIcon(icon, viewerName)
             result = nil
         end
         spellID = result
+    end
+
+    -- Custom CDM entries can represent items/trinket slots; resolve those up front
+    if isItemEntry and customEntry and customEntry.id then
+        if customEntry.type == "item" then
+            itemID = tonumber(customEntry.id)
+        elseif customEntry.type == "trinket" then
+            -- entry.id stores slot number (13/14) for trinket entries
+            itemID = GetInventoryItemID("player", customEntry.id)
+        end
+        if itemID then
+            itemName = C_Item.GetItemInfo(itemID)
+        end
     end
 
     -- Try to get from action info if available
@@ -962,7 +979,11 @@ local function ApplyKeybindToIcon(icon, viewerName)
         cdmOverridesEnabled = QUICore_ref.db.profile.keybindOverridesEnabledCDM ~= false
     end
     if cdmOverridesEnabled then
-        overrideKeybind = GetOverrideKeybind(spellID, nil)
+        if isItemEntry and itemID then
+            overrideKeybind = GetOverrideKeybindForItem(itemID)
+        else
+            overrideKeybind = GetOverrideKeybind(spellID, nil)
+        end
     end
     if overrideKeybind then
         if overrideKeybind == "" then
@@ -976,13 +997,21 @@ local function ApplyKeybindToIcon(icon, viewerName)
         keybind = overrideKeybind
     end
 
-    -- Step 2: auto-detection via cache (spellID / base spell)
+    -- Step 2a: item auto-detection for item/trinket custom CDM entries
+    if not keybind and isItemEntry and itemID then
+        keybind = GetKeybindForItem(itemID)
+    end
+    if not keybind and isItemEntry and itemName then
+        keybind = GetKeybindForItemName(itemName)
+    end
+
+    -- Step 2b: spell auto-detection via cache (spellID / base spell)
     if not keybind and spellID then
         keybind = GetKeybindForSpell(spellID)
     end
 
     -- If no keybind found yet, try base spell sources
-    if not keybind and spellID then
+    if not keybind and spellID and not isItemEntry then
         -- Try the BASE spell from cooldownInfo
         -- (CDM icons store the base spell ID even when showing evolved form)
         if icon.cooldownInfo and icon.cooldownInfo.spellID then
@@ -1017,7 +1046,7 @@ local function ApplyKeybindToIcon(icon, viewerName)
 
     -- Try C_Spell.GetBaseSpell API (evolved → base lookup)
     -- e.g., Raze → Ravage, Thunder Blast → Thunder Clap
-    if not keybind and spellID and C_Spell.GetBaseSpell then
+    if not keybind and spellID and C_Spell.GetBaseSpell and not isItemEntry then
         local okBase, resultBase = pcall(C_Spell.GetBaseSpell, spellID)
         if okBase and resultBase then
             -- Use pcall for comparison since spellID may be a secret value
