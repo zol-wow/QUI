@@ -211,14 +211,31 @@ local function ApplyHideSettings()
             if not otState.showHooked then
                 otState.showHooked = true
                 hooksecurefunc(ObjectiveTrackerFrame, "Show", function(self)
+                    -- Immediately hide the frame visually to prevent a 1-frame flash.
+                    -- The deferred C_Timer.After(0) is still needed to safely call
+                    -- Hide() without tainting secure Blizzard code, but setting alpha
+                    -- to 0 right away ensures the player never sees the flash.
+                    local s = GetSettings()
+                    if s then
+                        local shouldHideNow = false
+                        if s.hideObjectiveTrackerAlways then
+                            shouldHideNow = true
+                        elseif ShouldHideInCurrentInstance(s.hideObjectiveTrackerInstanceTypes) then
+                            shouldHideNow = true
+                        end
+                        if shouldHideNow then
+                            self:SetAlpha(0)
+                        end
+                    end
+
                     -- Break secure call chains before enforcing hidden state
                     C_Timer.After(0, function()
-                        local s = GetSettings()
-                        if s then
+                        local s2 = GetSettings()
+                        if s2 then
                             local shouldHideNow = false
-                            if s.hideObjectiveTrackerAlways then
+                            if s2.hideObjectiveTrackerAlways then
                                 shouldHideNow = true
-                            elseif ShouldHideInCurrentInstance(s.hideObjectiveTrackerInstanceTypes) then
+                            elseif ShouldHideInCurrentInstance(s2.hideObjectiveTrackerInstanceTypes) then
                                 shouldHideNow = true
                             end
 
@@ -239,6 +256,7 @@ local function ApplyHideSettings()
         else
             pendingObjectiveTrackerHide = false
             if not (type(InCombatLockdown) == "function" and InCombatLockdown()) then
+                ObjectiveTrackerFrame:SetAlpha(1)  -- Restore alpha in case it was zeroed
                 ObjectiveTrackerFrame:Show()
                 ObjectiveTrackerFrame:EnableMouse(true)  -- Restore mouse when shown
             end
