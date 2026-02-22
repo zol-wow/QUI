@@ -1576,7 +1576,8 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
             return
         end
     end
-    
+
+
     local point = settings.point or "CENTER"
     local relative = settings.relative or "CENTER"
     local offsetX = settings.offsetX or 0
