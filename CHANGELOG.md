@@ -48,6 +48,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.40.6 - 2026-02-22
+
+### Fixed
+- added safety guards for GetName, NumLines and GetRegions in tooltip skinning
+- guarded against applying anchors of blizzard managed frames in combat
+- made edit mode keyhandler only stay active when edit mode is actually active
+- guarded edit mode keyhandler
 ## v2.40.5 - 2026-02-22
 
 ### Changed
