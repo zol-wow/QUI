@@ -1452,6 +1452,37 @@ local function ResetAllButtonTints()
     end
 end
 
+-- Hook SetVertexColor on each action button icon so that when Blizzard's
+-- update cycle resets the vertex color (e.g. on hover / ActionBarActionEventsFrame),
+-- we immediately reapply our range/usability tint in the same frame.
+-- hooksecurefunc is taint-safe: it appends after the original without tainting it,
+-- and SetVertexColor is not a protected function so no taint propagation can occur.
+local function HookButtonIconsForUsability()
+    for i = 1, 8 do
+        local barKey = "bar" .. i
+        local buttons = GetBarButtons(barKey)
+        for _, button in ipairs(buttons) do
+            local icon = button.icon or button.Icon
+            if icon then
+                local state = GetFrameState(button)
+                if not state.usabilityIconHooked then
+                    state.usabilityIconHooked = true
+                    hooksecurefunc(icon, "SetVertexColor", function()
+                        if state.suppressReapply then return end
+                        if not state.tinted then return end
+                        state.suppressReapply = true
+                        local gs = GetGlobalSettings()
+                        if gs then
+                            UpdateButtonUsability(button, gs)
+                        end
+                        state.suppressReapply = nil
+                    end)
+                end
+            end
+        end
+    end
+end
+
 -- Start/stop usability indicator system (event-driven + optional range polling)
 local function UpdateUsabilityPolling()
     local settings = GetGlobalSettings()
@@ -1476,6 +1507,10 @@ local function UpdateUsabilityPolling()
         usabilityCheckFrame:SetScript("OnEvent", function(self, event, ...)
             ScheduleUsabilityUpdate()
         end)
+
+        -- Hook icon SetVertexColor so Blizzard's per-frame updates
+        -- (e.g. on hover) can't reset our range/usability tint.
+        HookButtonIconsForUsability()
 
         -- Initial update
         ScheduleUsabilityUpdate()
