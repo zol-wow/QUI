@@ -1505,6 +1505,20 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     end
 
     local parentFrame = ResolveParentFrame(settings.parent)
+
+    -- Skip repositioning when the parent is a hidden Blizzard Edit Mode system
+    -- frame (e.g. StanceBar anchored to PetActionBar when there is no pet).
+    -- Anchoring a secure frame to a hidden secure frame via SetPoint from addon
+    -- code taints the anchor chain; when Edit Mode reads it in the secure context
+    -- the taint propagates and causes "secret number tainted by QUI" errors.
+    -- Leave the frame at Blizzard's default position instead.
+    if parentFrame and parentFrame ~= UIParent then
+        local parentIsBlizzSystem = parentFrame.system ~= nil or parentFrame.systemIndex ~= nil
+        if parentIsBlizzSystem and parentFrame.IsShown and not parentFrame:IsShown() then
+            return
+        end
+    end
+    
     local point = settings.point or "CENTER"
     local relative = settings.relative or "CENTER"
     local offsetX = settings.offsetX or 0
