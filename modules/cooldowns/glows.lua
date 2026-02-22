@@ -15,6 +15,17 @@ local IsSpellOverlayed = C_SpellActivationOverlay and C_SpellActivationOverlay.I
 -- Track which icons currently have active glows
 local activeGlowIcons = {}  -- [icon] = true
 
+-- TAINT SAFETY: Store per-icon glow state in weak-keyed tables instead of
+-- writing custom properties to Blizzard CDM icon frames.
+local glowIconState   = setmetatable({}, { __mode = "k" })  -- icon → { active, ... }
+local hookedFrames    = setmetatable({}, { __mode = "k" })  -- frame → true (Show hook applied)
+local hookedViewers   = setmetatable({}, { __mode = "k" })  -- viewer → true (scan hooks applied)
+
+-- Expose glow state for cross-module reads (e.g., effects.lua checking _QUICustomGlowActive)
+_G.QUI_GetGlowState = function(icon)
+    return glowIconState[icon]
+end
+
 -- Track active glow spell names from SPELL_ACTIVATION_OVERLAY_GLOW events.
 -- Used for name-based matching since CDM cooldownIDs != actual spell IDs.
 local activeGlowSpellNames = {}  -- [spellName] = true
@@ -104,18 +115,25 @@ end
 -- ======================================================
 local function SuppressBlizzardGlow(icon)
     if not icon then return end
-
+    -- NOTE: No InCombatLockdown() guard needed. SpellActivationAlert and
+    -- OverlayGlow are non-protected animation frames on CDM icons.
+    -- Glows are combat-only proc effects — blocking them in combat would
+    -- make this function useless.
     pcall(function()
         local alert = icon.SpellActivationAlert
         if alert then
             alert:Hide()
             alert:SetAlpha(0)
             -- Persistent hook: keep it hidden even if Blizzard re-shows it
-            if not alert._QUI_NoShow then
-                alert._QUI_NoShow = true
+            if not hookedFrames[alert] then
+                hookedFrames[alert] = true
                 hooksecurefunc(alert, "Show", function(self)
-                    self:Hide()
-                    self:SetAlpha(0)
+                    C_Timer.After(0, function()
+                        if self and self.Hide then
+                            self:Hide()
+                            self:SetAlpha(0)
+                        end
+                    end)
                 end)
             end
         end
@@ -125,11 +143,15 @@ local function SuppressBlizzardGlow(icon)
         if icon.OverlayGlow then
             icon.OverlayGlow:Hide()
             icon.OverlayGlow:SetAlpha(0)
-            if not icon.OverlayGlow._QUI_NoShow then
-                icon.OverlayGlow._QUI_NoShow = true
+            if not hookedFrames[icon.OverlayGlow] then
+                hookedFrames[icon.OverlayGlow] = true
                 hooksecurefunc(icon.OverlayGlow, "Show", function(self)
-                    self:Hide()
-                    self:SetAlpha(0)
+                    C_Timer.After(0, function()
+                        if self and self.Hide then
+                            self:Hide()
+                            self:SetAlpha(0)
+                        end
+                    end)
                 end)
             end
         end
@@ -212,7 +234,9 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
     end
 
     -- Flag already set by StartGlow, just ensure it's there
-    icon._QUICustomGlowActive = true
+    local gis = glowIconState[icon]
+    if not gis then gis = {}; glowIconState[icon] = gis end
+    gis.active = true
     activeGlowIcons[icon] = true
 
     return true
@@ -225,7 +249,8 @@ local function StartGlow(icon)
     if not icon then return end
 
     -- Already has our glow? Skip
-    if icon._QUICustomGlowActive then return end
+    local gis = glowIconState[icon]
+    if gis and gis.active then return end
 
     local viewerType = GetViewerType(icon)
     if not viewerType then return end
@@ -237,7 +262,8 @@ local function StartGlow(icon)
     SuppressBlizzardGlow(icon)
 
     -- Set the flag FIRST so cooldowneffects.lua doesn't interfere
-    icon._QUICustomGlowActive = true
+    if not gis then gis = {}; glowIconState[icon] = gis end
+    gis.active = true
     activeGlowIcons[icon] = true
 
     ApplyLibCustomGlow(icon, viewerSettings)
@@ -254,7 +280,8 @@ StopGlow = function(icon)
         pcall(LCG.ButtonGlow_Stop, icon)
     end
 
-    icon._QUICustomGlowActive = nil
+    local gis = glowIconState[icon]
+    if gis then gis.active = nil end
     activeGlowIcons[icon] = nil
 end
 
@@ -392,9 +419,11 @@ local function ScanViewerGlows(viewerName, targetSpellID)
                     -- Only modify glow state when we could reliably determine it.
                     -- Icons with secret or nil spellIDs keep their current glow state.
                     if canDetermine then
-                        if shouldGlow and not icon._QUICustomGlowActive then
+                        local iconGS = glowIconState[icon]
+                        local isActive = iconGS and iconGS.active
+                        if shouldGlow and not isActive then
                             StartGlow(icon)
-                        elseif not shouldGlow and icon._QUICustomGlowActive then
+                        elseif not shouldGlow and isActive then
                             StopGlow(icon)
                         end
                     end
@@ -444,8 +473,8 @@ end
 
 local function HookViewerForScan(viewerName)
     local viewer = _G[viewerName]
-    if not viewer or viewer._QUIGlowScanHooked then return end
-    viewer._QUIGlowScanHooked = true
+    if not viewer or hookedViewers[viewer] then return end
+    hookedViewers[viewer] = true
 
     -- New icons appear when Blizzard resizes the viewer
     viewer:HookScript("OnSizeChanged", function()

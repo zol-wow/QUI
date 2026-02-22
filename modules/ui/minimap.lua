@@ -32,33 +32,27 @@ local cachedSettings = nil
 local clockTicker = nil
 local coordsTicker = nil
 
+-- Combat-deferred refresh flag
+local pendingMinimapRefresh = false
+
 ---=================================================================================
---- BLIZZARD BUG WORKAROUND: Indicator frames need parent with Layout method
---- When reparenting IndicatorFrame children, the new parent needs Layout method.
---- We ensure Minimap has a Layout method (hiddenButtonParent gets one below).
+--- BLIZZARD LAYOUT NO-OPS
+--- Blizzard's Minimap.lua calls self:Layout() internally (line ~479).
+--- Minimap does not have a Layout method by default — it expects the layout
+--- system or a mixin to provide one. Writing a no-op here prevents the nil
+--- call error. Minimap is NOT in the Edit Mode secure execution chain, so
+--- this does not cause taint for EnterEditMode/CompactUnitFrame paths.
+---
+--- MinimapCluster.IndicatorFrame subframes (MailFrame, CraftingOrderFrame)
+--- are NOT given no-op Layout — they are reparented to hiddenButtonParent
+--- which provides its own Layout. See BUTTON VISIBILITY section below.
 ---=================================================================================
-do
-    local function EnsureLayoutMethods()
-        -- Ensure Minimap has Layout method
-        if Minimap and not Minimap.Layout then
-            Minimap.Layout = function() end
-        end
-        -- Ensure IndicatorFrame has Layout method
-        if MinimapCluster and MinimapCluster.IndicatorFrame and not MinimapCluster.IndicatorFrame.Layout then
-            MinimapCluster.IndicatorFrame.Layout = function() end
-        end
+-- TAINT NOTE: Direct method override on Blizzard frame to suppress unwanted Layout calls.
+-- Minimap is reparented to UIParent by QUI and is not in the Edit Mode secure chain.
+if not InCombatLockdown() then
+    if Minimap and not Minimap.Layout then
+        Minimap.Layout = function() end
     end
-    
-    -- Apply on login and entering world
-    local frame = CreateFrame("Frame")
-    frame:RegisterEvent("PLAYER_LOGIN")
-    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    frame:SetScript("OnEvent", function(self, event)
-        EnsureLayoutMethods()
-    end)
-    
-    -- Try immediately
-    EnsureLayoutMethods()
 end
 
 ---=================================================================================
@@ -847,27 +841,38 @@ hiddenButtonParent:Hide()
 hiddenButtonParent.Layout = function() end  -- Prevent nil errors when Blizzard code calls Layout on children
 
 -- Hook Show() on zoom buttons to prevent Blizzard from re-showing them
-if Minimap.ZoomIn and not Minimap.ZoomIn._QUI_ShowHooked then
-    Minimap.ZoomIn._QUI_ShowHooked = true
+-- Use local guard variables instead of writing properties to Blizzard frames
+local zoomInShowHooked = false
+local zoomOutShowHooked = false
+
+if Minimap.ZoomIn and not zoomInShowHooked then
+    zoomInShowHooked = true
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc(Minimap.ZoomIn, "Show", function(self)
-        local s = GetSettings()
-        if s and not s.showZoomButtons then
-            self:Hide()
-        end
+        C_Timer.After(0, function()
+            local s = GetSettings()
+            if s and not s.showZoomButtons then
+                self:Hide()
+            end
+        end)
     end)
 end
 
-if Minimap.ZoomOut and not Minimap.ZoomOut._QUI_ShowHooked then
-    Minimap.ZoomOut._QUI_ShowHooked = true
+if Minimap.ZoomOut and not zoomOutShowHooked then
+    zoomOutShowHooked = true
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc(Minimap.ZoomOut, "Show", function(self)
-        local s = GetSettings()
-        if s and not s.showZoomButtons then
-            self:Hide()
-        end
+        C_Timer.After(0, function()
+            local s = GetSettings()
+            if s and not s.showZoomButtons then
+                self:Hide()
+            end
+        end)
     end)
 end
 
 local function UpdateButtonVisibility()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -897,12 +902,12 @@ local function UpdateButtonVisibility()
     -- Mail indicator - position at bottom left
     if MinimapCluster and MinimapCluster.IndicatorFrame and MinimapCluster.IndicatorFrame.MailFrame then
         local mailFrame = MinimapCluster.IndicatorFrame.MailFrame
-        
-        -- Ensure frame has Layout method (Blizzard's event handlers call self:Layout())
-        if not mailFrame.Layout then
-            mailFrame.Layout = function() end
-        end
-        
+
+        -- NOTE: Removed direct `mailFrame.Layout = function() end` write which taints
+        -- the Blizzard frame. hiddenButtonParent already has Layout defined on it,
+        -- and when mailFrame is reparented there, Blizzard's Layout calls on the
+        -- child frame itself should be safe since MailFrame typically has its own Layout.
+
         if settings.showMail then
             mailFrame:SetParent(Minimap)
             mailFrame:ClearAllPoints()
@@ -918,12 +923,10 @@ local function UpdateButtonVisibility()
     -- Crafting order indicator - position next to mail
     if MinimapCluster and MinimapCluster.IndicatorFrame and MinimapCluster.IndicatorFrame.CraftingOrderFrame then
         local craftingFrame = MinimapCluster.IndicatorFrame.CraftingOrderFrame
-        
-        -- Ensure frame has Layout method (Blizzard's event handlers call self:Layout())
-        if not craftingFrame.Layout then
-            craftingFrame.Layout = function() end
-        end
-        
+
+        -- NOTE: Removed direct `craftingFrame.Layout = function() end` write which
+        -- taints the Blizzard frame. See mailFrame comment above.
+
         if settings.showCraftingOrder then
             craftingFrame:SetParent(Minimap)
             craftingFrame:ClearAllPoints()
@@ -1039,6 +1042,7 @@ local function RestoreDungeonEye()
 end
 
 local function UpdateDungeonEyePosition()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
@@ -1092,14 +1096,16 @@ local function SetupDungeonEyeHook()
     if dungeonEyeHooked then return end
     if not QueueStatusButton then return end
 
+    -- TAINT SAFETY: Defer ALL addon logic to break taint chain from secure context.
     -- Hook UpdatePosition to re-apply our positioning after Blizzard resets it
     if QueueStatusButton.UpdatePosition then
         hooksecurefunc(QueueStatusButton, "UpdatePosition", function()
-            local settings = GetSettings()
-            if settings and settings.dungeonEye and settings.dungeonEye.enabled then
-                -- Use C_Timer.After to avoid infinite hook recursion
-                C_Timer.After(0, UpdateDungeonEyePosition)
-            end
+            C_Timer.After(0, function()
+                local settings = GetSettings()
+                if settings and settings.dungeonEye and settings.dungeonEye.enabled then
+                    UpdateDungeonEyePosition()
+                end
+            end)
         end)
         dungeonEyeHooked = true
     end
@@ -1137,6 +1143,7 @@ end
 ---=================================================================================
 
 local function UpdateMinimapSize()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -1166,6 +1173,7 @@ local function UpdateMinimapSize()
 end
 
 local function SetupMinimapDragging()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -1228,6 +1236,12 @@ local editModeWasLocked = nil
 function QUICore:EnableMinimapEditMode()
     local settings = GetSettings()
     if not settings then return end
+
+    -- Block movement if minimap is locked by the anchoring system
+    if _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(Minimap) then
+        Minimap:SetMovable(false)
+        return
+    end
 
     -- Remember lock state
     editModeWasLocked = settings.lock
@@ -1292,12 +1306,17 @@ local function SetupAutoZoom()
             C_Timer.After(10, ZoomOut)
         end
     end
-    
+
+    -- TAINT SAFETY: Defer to break taint chain from secure Blizzard context.
     if Minimap.ZoomIn then
-        Minimap.ZoomIn:HookScript("OnClick", OnZoom)
+        Minimap.ZoomIn:HookScript("OnClick", function()
+            C_Timer.After(0, OnZoom)
+        end)
     end
     if Minimap.ZoomOut then
-        Minimap.ZoomOut:HookScript("OnClick", OnZoom)
+        Minimap.ZoomOut:HookScript("OnClick", function()
+            C_Timer.After(0, OnZoom)
+        end)
     end
     
     -- Initial zoom out
@@ -1454,6 +1473,11 @@ function Minimap_Module:Initialize()
 end
 
 function Minimap_Module:Refresh()
+    if InCombatLockdown() then
+        pendingMinimapRefresh = true
+        return
+    end
+
     -- Invalidate cached settings so we get fresh values
     InvalidateSettingsCache()
 
@@ -1532,6 +1556,7 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "Blizzard_HybridMinimap" then
@@ -1545,6 +1570,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         C_Timer.After(0.5, function()
             Minimap_Module:Initialize()
         end)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended: run deferred refresh if one was requested during combat
+        if pendingMinimapRefresh then
+            pendingMinimapRefresh = false
+            Minimap_Module:Refresh()
+        end
     end
 end)
 
@@ -1555,7 +1586,8 @@ calendarFrame:RegisterEvent("CALENDAR_ACTION_PENDING")
 calendarFrame:SetScript("OnEvent", function()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
-    
+    if InCombatLockdown() then return end
+
     if settings.showCalendar and GameTimeFrame then
         if C_Calendar.GetNumPendingInvites() < 1 then
             GameTimeFrame:Hide()

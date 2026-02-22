@@ -74,7 +74,8 @@ local function BuildGeneralTab(tabContent)
     if db and db.general then
         local scaleSlider = GUI:CreateFormSlider(tabContent, "Global UI Scale", 0.3, 2.0, 0.01,
             "uiScale", db.general, function(val)
-                pcall(function() UIParent:SetScale(val) end)
+                if InCombatLockdown() then return end
+                UIParent:SetScale(val)
             end, { deferOnDrag = true, precision = 7 })
         scaleSlider:SetPoint("TOPLEFT", PADDING, y)
         scaleSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
@@ -85,8 +86,9 @@ local function BuildGeneralTab(tabContent)
         presetLabel:SetPoint("TOPLEFT", PADDING, y)
 
         local function ApplyPreset(val, name)
+            if InCombatLockdown() then return end
             db.general.uiScale = val
-            pcall(function() UIParent:SetScale(val) end)
+            UIParent:SetScale(val)
             local msg = "|cff34D399[QUI]|r UI scale set to " .. val
             if name then msg = msg .. " (" .. name .. ")" end
             DEFAULT_CHAT_FRAME:AddMessage(msg)

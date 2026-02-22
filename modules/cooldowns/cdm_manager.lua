@@ -8,6 +8,7 @@ local _, QUI = ...
 -- Local variables
 local viewerPending = {}
 local updateBucket = {}
+local _iconPositions = setmetatable({}, { __mode = "k" })
 
 -- Core function to remove padding and apply modifications
 local function RemovePadding(viewer)
@@ -15,7 +16,10 @@ local function RemovePadding(viewer)
     if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then
         return
     end
-    
+
+    -- Don't modify protected frames during combat
+    if InCombatLockdown() then return end
+
     -- Don't interfere if layout is currently being applied
     if viewer._layoutApplying then
         return
@@ -29,8 +33,9 @@ local function RemovePadding(viewer)
         if child:IsShown() then
             -- Store original position for sorting
             local point, relativeTo, relativePoint, x, y = child:GetPoint(1)
-            child.originalX = x or 0
-            child.originalY = y or 0
+            _iconPositions[child] = _iconPositions[child] or {}
+            _iconPositions[child].originalX = x or 0
+            _iconPositions[child].originalY = y or 0
             table.insert(visibleChildren, child)
         end
     end
@@ -42,18 +47,22 @@ local function RemovePadding(viewer)
     if isHorizontal then
         -- Sort left to right, then top to bottom
         table.sort(visibleChildren, function(a, b)
-            if math.abs(a.originalY - b.originalY) < 1 then
-                return a.originalX < b.originalX
+            local posA = _iconPositions[a] or {}
+            local posB = _iconPositions[b] or {}
+            if math.abs((posA.originalY or 0) - (posB.originalY or 0)) < 1 then
+                return (posA.originalX or 0) < (posB.originalX or 0)
             end
-            return a.originalY > b.originalY
+            return (posA.originalY or 0) > (posB.originalY or 0)
         end)
     else
         -- Sort top to bottom, then left to right
         table.sort(visibleChildren, function(a, b)
-            if math.abs(a.originalX - b.originalX) < 1 then
-                return a.originalY > b.originalY
+            local posA = _iconPositions[a] or {}
+            local posB = _iconPositions[b] or {}
+            if math.abs((posA.originalX or 0) - (posB.originalX or 0)) < 1 then
+                return (posA.originalY or 0) > (posB.originalY or 0)
             end
-            return a.originalX < b.originalX
+            return (posA.originalX or 0) < (posB.originalX or 0)
         end)
     end
     

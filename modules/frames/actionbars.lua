@@ -655,7 +655,7 @@ local function CreateExtraButtonHolder(buttonType, displayName)
     mover:EnableMouse(true)
     mover:SetMovable(true)
     mover:RegisterForDrag("LeftButton")
-    mover:SetFrameStrata("FULLSCREEN_DIALOG")
+    mover:SetFrameStrata("HIGH")
     mover:Hide()
 
     -- Label text
@@ -777,15 +777,18 @@ end
 
 -- Hook Blizzard frames to prevent them from repositioning
 local function HookExtraButtonPositioning()
+    -- TAINT SAFETY: Defer to break taint chain from secure Blizzard context.
     -- Hook ExtraActionBarFrame
     if ExtraActionBarFrame and not extraActionSetPointHooked then
         extraActionSetPointHooked = true
         hooksecurefunc(ExtraActionBarFrame, "SetPoint", function(self)
-            if hookingSetPoint or InCombatLockdown() then return end
-            local settings = GetExtraButtonDB("extraActionButton")
-            if extraActionHolder and settings and settings.enabled then
-                QueueExtraButtonReanchor("extraActionButton")
-            end
+            C_Timer.After(0, function()
+                if hookingSetPoint or InCombatLockdown() then return end
+                local settings = GetExtraButtonDB("extraActionButton")
+                if extraActionHolder and settings and settings.enabled then
+                    QueueExtraButtonReanchor("extraActionButton")
+                end
+            end)
         end)
     end
 
@@ -793,11 +796,13 @@ local function HookExtraButtonPositioning()
     if ZoneAbilityFrame and not zoneAbilitySetPointHooked then
         zoneAbilitySetPointHooked = true
         hooksecurefunc(ZoneAbilityFrame, "SetPoint", function(self)
-            if hookingSetPoint or InCombatLockdown() then return end
-            local settings = GetExtraButtonDB("zoneAbility")
-            if zoneAbilityHolder and settings and settings.enabled then
-                QueueExtraButtonReanchor("zoneAbility")
-            end
+            C_Timer.After(0, function()
+                if hookingSetPoint or InCombatLockdown() then return end
+                local settings = GetExtraButtonDB("zoneAbility")
+                if zoneAbilityHolder and settings and settings.enabled then
+                    QueueExtraButtonReanchor("zoneAbility")
+                end
+            end)
         end)
     end
 
@@ -1447,6 +1452,37 @@ local function ResetAllButtonTints()
     end
 end
 
+-- Hook SetVertexColor on each action button icon so that when Blizzard's
+-- update cycle resets the vertex color (e.g. on hover / ActionBarActionEventsFrame),
+-- we immediately reapply our range/usability tint in the same frame.
+-- hooksecurefunc is taint-safe: it appends after the original without tainting it,
+-- and SetVertexColor is not a protected function so no taint propagation can occur.
+local function HookButtonIconsForUsability()
+    for i = 1, 8 do
+        local barKey = "bar" .. i
+        local buttons = GetBarButtons(barKey)
+        for _, button in ipairs(buttons) do
+            local icon = button.icon or button.Icon
+            if icon then
+                local state = GetFrameState(button)
+                if not state.usabilityIconHooked then
+                    state.usabilityIconHooked = true
+                    hooksecurefunc(icon, "SetVertexColor", function()
+                        if state.suppressReapply then return end
+                        if not state.tinted then return end
+                        state.suppressReapply = true
+                        local gs = GetGlobalSettings()
+                        if gs then
+                            UpdateButtonUsability(button, gs)
+                        end
+                        state.suppressReapply = nil
+                    end)
+                end
+            end
+        end
+    end
+end
+
 -- Start/stop usability indicator system (event-driven + optional range polling)
 local function UpdateUsabilityPolling()
     local settings = GetGlobalSettings()
@@ -1471,6 +1507,10 @@ local function UpdateUsabilityPolling()
         usabilityCheckFrame:SetScript("OnEvent", function(self, event, ...)
             ScheduleUsabilityUpdate()
         end)
+
+        -- Hook icon SetVertexColor so Blizzard's per-frame updates
+        -- (e.g. on hover) can't reset our range/usability tint.
+        HookButtonIconsForUsability()
 
         -- Initial update
         ScheduleUsabilityUpdate()
@@ -2085,11 +2125,14 @@ local function ApplyPageArrowVisibility(hide)
         pageNum:Hide()
         if not pageArrowShowHooked then
             pageArrowShowHooked = true
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
             hooksecurefunc(pageNum, "Show", function(self)
-                local db = GetDB()
-                if db and db.bars and db.bars.bar1 and db.bars.bar1.hidePageArrow then
-                    self:Hide()
-                end
+                C_Timer.After(0, function()
+                    local db = GetDB()
+                    if db and db.bars and db.bars.bar1 and db.bars.bar1.hidePageArrow and self and self.Hide then
+                        self:Hide()
+                    end
+                end)
             end)
         end
     else
@@ -2145,6 +2188,7 @@ function ActionBars:Initialize()
     PatchLibKeyBoundForMidnight()
 
     -- Hook tooltip suppression for action buttons
+    -- NOTE: Synchronous — deferring causes tooltip flash before hide.
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
         local global = GetGlobalSettings()
         if not global or global.showTooltips ~= false then return end
@@ -2340,27 +2384,25 @@ end
 -- Show/hide extra button movers when Edit Mode is entered/exited
 ---------------------------------------------------------------------------
 
-local function SetupEditModeHooks()
-    if not EditModeManagerFrame then return end
+-- Use central Edit Mode dispatcher to avoid taint from multiple hooksecurefunc
+-- callbacks on EnterEditMode/ExitEditMode.
+do
+    local core = GetCore()
+    if core and core.RegisterEditModeEnter then
+        core:RegisterEditModeEnter(function()
+            local extraSettings = GetExtraButtonDB("extraActionButton")
+            local zoneSettings = GetExtraButtonDB("zoneAbility")
+            -- Only show movers if at least one extra button feature is enabled
+            if (extraSettings and extraSettings.enabled) or (zoneSettings and zoneSettings.enabled) then
+                ShowExtraButtonMovers()
+            end
+        end)
 
-    -- Show movers when entering Edit Mode
-    hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-        local extraSettings = GetExtraButtonDB("extraActionButton")
-        local zoneSettings = GetExtraButtonDB("zoneAbility")
-        -- Only show movers if at least one extra button feature is enabled
-        if (extraSettings and extraSettings.enabled) or (zoneSettings and zoneSettings.enabled) then
-            ShowExtraButtonMovers()
-        end
-    end)
-
-    -- Hide movers when exiting Edit Mode
-    hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        HideExtraButtonMovers()
-    end)
+        core:RegisterEditModeExit(function()
+            HideExtraButtonMovers()
+        end)
+    end
 end
-
--- Call setup after a short delay to ensure EditModeManagerFrame exists
-C_Timer.After(1, SetupEditModeHooks)
 
 ---------------------------------------------------------------------------
 -- EXPOSE MODULE

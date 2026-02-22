@@ -106,6 +106,10 @@ end
 --- SAFE BACKDROP UTILITY (Combat/Secret Value Protection)
 ---=================================================================================
 
+-- Weak-keyed table to store pending backdrop data per frame (avoids writing properties
+-- directly onto Blizzard secure frames, which can cause taint).
+local _pendingBackdropData = setmetatable({}, { __mode = "k" })
+
 -- Global SafeSetBackdrop function that defers SetBackdrop calls when frame dimensions
 -- are secret values (Midnight 12.0 protection) or when in combat lockdown.
 -- This prevents the "attempt to perform arithmetic on a secret value" error that occurs
@@ -139,8 +143,7 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
 
     -- If dimensions are secret/invalid, defer the backdrop setup
     if not hasValidSize then
-        frame.__quiBackdropPending = backdropInfo
-        frame.__quiBackdropBorderColor = borderColor
+        _pendingBackdropData[frame] = { info = backdropInfo, borderColor = borderColor }
         QUICore.__pendingBackdrops = QUICore.__pendingBackdrops or {}
         QUICore.__pendingBackdrops[frame] = true
 
@@ -155,7 +158,8 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
 
                 local processed = {}
                 for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
-                    if pendingFrame and pendingFrame.__quiBackdropPending ~= nil then
+                    local pendingData = _pendingBackdropData[pendingFrame]
+                    if pendingFrame and pendingData then
                         -- Re-check if dimensions are now valid
                         local checkOk, checkResult = pcall(function()
                             local w = pendingFrame:GetWidth()
@@ -168,13 +172,12 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                         end)
 
                         if checkOk and checkResult and not InCombatLockdown() then
-                            local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingFrame.__quiBackdropPending)
-                            if setOk and pendingFrame.__quiBackdropPending and pendingFrame.__quiBackdropBorderColor then
-                                local c = pendingFrame.__quiBackdropBorderColor
+                            local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
+                            if setOk and pendingData.info and pendingData.borderColor then
+                                local c = pendingData.borderColor
                                 pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
                             end
-                            pendingFrame.__quiBackdropPending = nil
-                            pendingFrame.__quiBackdropBorderColor = nil
+                            _pendingBackdropData[pendingFrame] = nil
                             table.insert(processed, pendingFrame)
                         end
                     else
@@ -211,8 +214,7 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
     if InCombatLockdown() then
         local alreadyPending = QUICore.__pendingBackdrops and QUICore.__pendingBackdrops[frame]
         if not alreadyPending then
-            frame.__quiBackdropPending = backdropInfo
-            frame.__quiBackdropBorderColor = borderColor
+            _pendingBackdropData[frame] = { info = backdropInfo, borderColor = borderColor }
 
             if not QUICore.__backdropEventFrame then
                 local eventFrame = CreateFrame("Frame")
@@ -220,16 +222,16 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                 eventFrame:SetScript("OnEvent", function(self)
                     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                     for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
-                        if pendingFrame and pendingFrame.__quiBackdropPending ~= nil then
+                        local pendingData = _pendingBackdropData[pendingFrame]
+                        if pendingFrame and pendingData then
                             if not InCombatLockdown() then
-                                local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingFrame.__quiBackdropPending)
-                                if setOk and pendingFrame.__quiBackdropPending and pendingFrame.__quiBackdropBorderColor then
-                                    local c = pendingFrame.__quiBackdropBorderColor
+                                local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
+                                if setOk and pendingData.info and pendingData.borderColor then
+                                    local c = pendingData.borderColor
                                     pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
                                 end
                             end
-                            pendingFrame.__quiBackdropPending = nil
-                            pendingFrame.__quiBackdropBorderColor = nil
+                            _pendingBackdropData[pendingFrame] = nil
                         end
                     end
                     QUICore.__pendingBackdrops = {}
@@ -3324,31 +3326,14 @@ function QUICore:OnProfileChanged(event, db, profileKey)
                 QUICore._scaleRegenFrame:SetScript("OnEvent", function(self)
                     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                     if QUICore._pendingUIScale and not InCombatLockdown() then
-                        pcall(function() UIParent:SetScale(QUICore._pendingUIScale) end)
+                        UIParent:SetScale(QUICore._pendingUIScale)
                         QUICore._pendingUIScale = nil
                     end
                 end)
             end
             QUICore._scaleRegenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         else
-            -- Use pcall to catch protected states not detected by InCombatLockdown
-            -- (e.g., instance transitions during M+ keystone activation)
-            local success = pcall(function() UIParent:SetScale(scale) end)
-            if not success then
-                -- Protected state detected - defer to combat end
-                QUICore._pendingUIScale = scale
-                if not QUICore._scaleRegenFrame then
-                    QUICore._scaleRegenFrame = CreateFrame("Frame")
-                    QUICore._scaleRegenFrame:SetScript("OnEvent", function(self)
-                        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                        if QUICore._pendingUIScale and not InCombatLockdown() then
-                            pcall(function() UIParent:SetScale(QUICore._pendingUIScale) end)
-                            QUICore._pendingUIScale = nil
-                        end
-                    end)
-                end
-                QUICore._scaleRegenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-            end
+            UIParent:SetScale(scale)
         end
     end
 
@@ -3621,6 +3606,27 @@ end
 
 -- Show nudge arrows on the specified element
 function QUICore:ShowSelectionArrows(elementType, elementKey)
+    -- Resolve the actual frame so we can check if it's locked
+    local resolvedFrame
+    if elementType == "unitframe" then
+        resolvedFrame = ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames[elementKey]
+    elseif elementType == "powerbar" then
+        resolvedFrame = (elementKey == "primary") and self.powerBar or self.secondaryPowerBar
+    elseif elementType == "cdm" then
+        resolvedFrame = _G[elementKey]
+    elseif elementType == "blizzard" then
+        resolvedFrame = _G[elementKey]
+    elseif elementType == "minimap" then
+        resolvedFrame = _G["Minimap"]
+    elseif elementType == "castbar" then
+        resolvedFrame = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars[elementKey]
+    end
+
+    -- Don't show nudge arrows on locked frames
+    if resolvedFrame and _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(resolvedFrame) then
+        return
+    end
+
     if elementType == "unitframe" then
         if ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames then
             local frame = ns.QUI_UnitFrames.frames[elementKey]
@@ -3698,6 +3704,7 @@ EditModeKeyHandler:SetPropagateKeyboardInput(true)
 function QUICore:NudgeSelectedElement(deltaX, deltaY)
     local sel = self.EditModeSelection
     if not sel or not sel.selectedType or not sel.selectedKey then return false end
+    if InCombatLockdown() then return false end
 
     local shift = IsShiftKeyDown()
     local step = shift and 10 or 1
@@ -3735,6 +3742,10 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
                 if ns.QUI_UnitFrames and ns.QUI_UnitFrames.NotifyPositionChanged then
                     ns.QUI_UnitFrames:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
                 end
+                -- Update anchored frames to follow nudged element
+                if _G.QUI_UpdateAnchoredFrames then
+                    _G.QUI_UpdateAnchoredFrames()
+                end
                 return true
             end
         end
@@ -3755,6 +3766,10 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
             end
             -- Notify options panel
             self:NotifyPowerBarPositionChanged(sel.selectedKey, cfg.offsetX, cfg.offsetY)
+            -- Update anchored frames to follow nudged element
+            if _G.QUI_UpdateAnchoredFrames then
+                _G.QUI_UpdateAnchoredFrames()
+            end
             return true
         end
     elseif sel.selectedType == "castbar" then
@@ -3780,6 +3795,10 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
                     castbar.editOverlay.infoText:SetText(string.format("%s Castbar  X:%d Y:%d",
                         displayName, castSettings.offsetX, castSettings.offsetY))
                 end
+                -- Update anchored frames to follow nudged element
+                if _G.QUI_UpdateAnchoredFrames then
+                    _G.QUI_UpdateAnchoredFrames()
+                end
                 return true
             end
         end
@@ -3788,6 +3807,7 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
 end
 
 EditModeKeyHandler:SetScript("OnKeyDown", function(self, key)
+    if InCombatLockdown() then return end
     if not QUICore.EditModeSelection or not QUICore.EditModeSelection.selectedType then
         self:SetPropagateKeyboardInput(true)
         return
@@ -3812,17 +3832,24 @@ EditModeKeyHandler:SetScript("OnKeyDown", function(self, key)
 end)
 
 EditModeKeyHandler:SetScript("OnKeyUp", function(self, key)
+    if InCombatLockdown() then return end
     self:SetPropagateKeyboardInput(true)
 end)
 
 -- Enable/disable keyboard handling based on selection
 function QUICore:UpdateEditModeKeyHandler()
+    if InCombatLockdown() then return end
     if self.EditModeSelection and self.EditModeSelection.selectedType then
         EditModeKeyHandler:EnableKeyboard(true)
     else
         EditModeKeyHandler:EnableKeyboard(false)
     end
 end
+
+EditModeKeyHandler:RegisterEvent("PLAYER_REGEN_DISABLED")
+EditModeKeyHandler:SetScript("OnEvent", function(self)
+    self:EnableKeyboard(false)
+end)
 
 -- Hook into selection changes to enable/disable key handler
 local origSelectEditModeElement = QUICore.SelectEditModeElement
@@ -3835,6 +3862,23 @@ local origClearEditModeSelection = QUICore.ClearEditModeSelection
 function QUICore:ClearEditModeSelection()
     origClearEditModeSelection(self)
     self:UpdateEditModeKeyHandler()
+end
+
+-- ============================================================================
+-- EDIT MODE CALLBACK REGISTRY
+-- Modules call RegisterEditModeEnter/Exit to receive notifications when
+-- Edit Mode is toggled, dispatched from the hooksecurefunc hooks below.
+-- ============================================================================
+
+QUICore._editModeEnterCallbacks = {}
+QUICore._editModeExitCallbacks = {}
+
+function QUICore:RegisterEditModeEnter(callback)
+    table.insert(self._editModeEnterCallbacks, callback)
+end
+
+function QUICore:RegisterEditModeExit(callback)
+    table.insert(self._editModeExitCallbacks, callback)
 end
 
 -- ============================================================================
@@ -3872,8 +3916,9 @@ function QUICore:OnEnable()
             end
             self.db.profile.general.uiScale = scaleToApply
         end
-        -- Use pcall to catch protected states
-        pcall(function() UIParent:SetScale(scaleToApply) end)
+        if not InCombatLockdown() then
+            UIParent:SetScale(scaleToApply)
+        end
     end
 
     -- Capture preserved UI scale (after it's been properly applied)
@@ -3996,11 +4041,14 @@ end
 
 -- Viewer skinning, layout, and icon processing functions are in core/viewer_skinning.lua
 
+-- Weak-keyed table to track which CDM viewers have been hooked (avoids tainting Blizzard frames)
+local hookedViewers = setmetatable({}, { __mode = "k" })
+
 function QUICore:HookViewers()
     for _, name in ipairs(self.viewers) do
         local viewer = _G[name]
-        if viewer and not viewer.__cdmHooked then
-            viewer.__cdmHooked = true
+        if viewer and not hookedViewers[viewer] then
+            hookedViewers[viewer] = true
 
             viewer:HookScript("OnShow", function(f)
                 self:ApplyViewerSkin(f)
@@ -4013,20 +4061,18 @@ function QUICore:HookViewers()
             -- Reduced update rate - layout operations don't need high frequency
             -- 1 FPS fallback polling (primary updates via events/hooks)
             local updateInterval = 1.0
+            local cdmElapsed = 0
 
             viewer:HookScript("OnUpdate", function(f, elapsed)
-                f.__cdmElapsed = (f.__cdmElapsed or 0) + elapsed
-                if f.__cdmElapsed > updateInterval then
-                    f.__cdmElapsed = 0
+                cdmElapsed = cdmElapsed + elapsed
+                if cdmElapsed > updateInterval then
+                    cdmElapsed = 0
                     if f:IsShown() then
                         self:RescanViewer(f)
                         -- Only process pending if there actually are pending items
                         if not InCombatLockdown() then
                             if self.__cdmPendingIcons then
                             self:ProcessPendingIcons()
-                            end
-                            if self.__cdmPendingBackdrops then
-                                self:ProcessPendingBackdrops()
                             end
                         end
                     end
@@ -4045,15 +4091,26 @@ function QUICore:HookEditMode()
     
     -- Hook EditModeManagerFrame if it exists
     if EditModeManagerFrame then
+        -- Track whether we've already hooked BossTargetFrameContainer.GetScaledSelectionSides
+        local _bossContainerScaledSidesHooked = false
+
         -- Hook when Edit Mode is entered
         hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
+            -- Dispatch registered enter callbacks
+            C_Timer.After(0, function()
+                for _, cb in ipairs(self._editModeEnterCallbacks) do
+                    pcall(cb)
+                end
+            end)
+
             C_Timer.After(0.1, function()
                 self:ForceReskinAllViewers()
             end)
 
-            -- Fix BossTargetFrameContainer crash: GetScaledSelectionSides fails when GetRect returns nil
-            -- Apply hook here because the method may not exist at addon init time
-            if BossTargetFrameContainer and not BossTargetFrameContainer._quiScaledSidesHooked then
+            -- TAINT NOTE: Direct method replacement on secure frame. Required to prevent nil crash
+            -- when GetRect() returns nil during Edit Mode. Edit Mode is combat-exclusive, so this
+            -- taint cannot propagate to secure combat execution paths.
+            if not InCombatLockdown() and BossTargetFrameContainer and not _bossContainerScaledSidesHooked then
                 if BossTargetFrameContainer.GetScaledSelectionSides then
                     local original = BossTargetFrameContainer.GetScaledSelectionSides
                     BossTargetFrameContainer.GetScaledSelectionSides = function(frame)
@@ -4064,13 +4121,26 @@ function QUICore:HookEditMode()
                         end
                         return original(frame)
                     end
-                    BossTargetFrameContainer._quiScaledSidesHooked = true
+                    _bossContainerScaledSidesHooked = true
                 end
             end
         end)
         
         -- Hook when Edit Mode is exited
+        local _exitCallbacksFired = false
+        local function FireExitCallbacks()
+            if _exitCallbacksFired then return end
+            _exitCallbacksFired = true
+            for _, cb in ipairs(self._editModeExitCallbacks) do
+                pcall(cb)
+            end
+        end
+
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
+            _exitCallbacksFired = false
+            -- Dispatch registered exit callbacks
+            C_Timer.After(0, FireExitCallbacks)
+
             C_Timer.After(0.1, function()
                 self:ForceReskinAllViewers()
 
@@ -4085,7 +4155,21 @@ function QUICore:HookEditMode()
                 end)
             end)
         end)
+
+        -- Safety net: OnUpdate watcher detects Edit Mode has closed even if
+        -- the hooksecurefunc hook didn't fire (e.g. ExitEditMode errored out
+        -- due to taint in CompactUnitFrame_UpdateHealthColor or similar).
+        local editModeExitWatcher = CreateFrame("Frame", nil, UIParent)
+        local _wasEditModeShown = false
+        editModeExitWatcher:SetScript("OnUpdate", function()
+            local isShown = EditModeManagerFrame:IsShown()
+            if _wasEditModeShown and not isShown then
+                -- Edit Mode just closed — ensure callbacks fired
+                C_Timer.After(0, FireExitCallbacks)
             end
+            _wasEditModeShown = isShown
+        end)
+    end
             
     -- Also hook combat end to retry any failed skinning
     local combatEndFrame = CreateFrame("Frame")
@@ -4108,7 +4192,8 @@ function QUICore:HookEditMode()
                     if viewer then
                         local container = viewer.viewerFrame or viewer
                         for _, child in ipairs({ container:GetChildren() }) do
-                            if child.__cdmSkinFailed then
+                            local childSkinState = _G.QUI_GetSkinIconState and _G.QUI_GetSkinIconState(child)
+                            if childSkinState and childSkinState.skinFailed then
                                 needsReskin = true
                                 break
                             end
@@ -4242,54 +4327,11 @@ function QUICore:SetupEncounterWarningsSecretValuePatch()
     self.__encounterWarningsPatchFrame = patchFrame
 end
 
--- Process pending backdrops that were deferred due to secret values
-function QUICore:ProcessPendingBackdrops()
-    if not self.__cdmPendingBackdrops then return end
-
-    local processed = {}
-    for frame, _ in pairs(self.__cdmPendingBackdrops) do
-        if frame then
-            -- Check if dimensions are now valid (must be able to do arithmetic)
-            local ok, isValid = pcall(function()
-                local w = frame:GetWidth()
-                local h = frame:GetHeight()
-                if w and h then
-                    local test = w + h  -- This will error if secret values
-                    return test > 0
-                end
-                return false
-            end)
-            
-            if ok and isValid then
-                -- Dimensions are valid, try to set backdrop
-                local pendingInfo = frame.__cdmBackdropPending
-                local pendingSettings = frame.__cdmBackdropSettings
-                
-                if pendingSettings then
-                    if pendingSettings.backdropInfo then
-                        local setOk = pcall(frame.SetBackdrop, frame, pendingSettings.backdropInfo)
-                        if setOk and pendingSettings.borderColor then
-                            pcall(frame.SetBackdropBorderColor, frame, unpack(pendingSettings.borderColor))
-end
-                    elseif pendingInfo then
-                        pcall(frame.SetBackdrop, frame, pendingInfo)
-                    end
-                elseif pendingInfo then
-                    pcall(frame.SetBackdrop, frame, pendingInfo)
-                end
-                
-                frame.__cdmBackdropPending = nil
-                frame.__cdmBackdropSettings = nil
-                table.insert(processed, frame)
-                end
-            end
-        end
-        
-    -- Remove processed frames
-    for _, frame in ipairs(processed) do
-        self.__cdmPendingBackdrops[frame] = nil
-            end
-        end
+-- DEPRECATED: ProcessPendingBackdrops is dead code. The old backdrop pending system
+-- (frame.__cdmBackdropPending / frame.__cdmBackdropSettings) was replaced by
+-- SafeSetBackdrop which uses a local _pendingBackdrops table. self.__cdmPendingBackdrops
+-- is never populated, so this function was never reached. Removed to eliminate
+-- potential taint from writing __cdm* properties to Blizzard frames.
         
 function QUI:GetGlobalFont()
     local LSM = LibStub("LibSharedMedia-3.0")

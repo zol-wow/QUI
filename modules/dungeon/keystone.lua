@@ -50,7 +50,9 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", function(self, event, addon)
     if addon == "Blizzard_ChallengesUI" then
         if ChallengesKeystoneFrame then
-            ChallengesKeystoneFrame:HookScript("OnShow", InsertKeystone)
+            ChallengesKeystoneFrame:HookScript("OnShow", function()
+                C_Timer.After(0, InsertKeystone)
+            end)
         end
         self:UnregisterEvent("ADDON_LOADED")
     end

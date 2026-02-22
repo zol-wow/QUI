@@ -5,6 +5,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 local LSM = LibStub("LibSharedMedia-3.0")
 
 local tinsert, tremove = tinsert, tremove
@@ -53,6 +54,14 @@ local rollFramePool = {}
 local activeRolls = {}
 local rollAnchor = nil
 local waitingRolls = {}  -- Queue for rolls when all frames are busy
+
+-- TAINT SAFETY: Store per-frame hook guards in weak-keyed tables instead of writing
+-- properties directly to Blizzard frames, which taints them in Midnight (12.0)
+local hookedBorders = setmetatable({}, { __mode = "k" })
+local hookedContainers = setmetatable({}, { __mode = "k" })
+local hookedLootFrames = setmetatable({}, { __mode = "k" })
+local itemBorders = setmetatable({}, { __mode = "k" })  -- item → border frame
+local frameParts = setmetatable({}, { __mode = "k" })  -- frame → { bg, text, etc. }
 
 -- Forward declarations (needed for mutual references)
 local ProcessRollQueue
@@ -730,7 +739,8 @@ local lootHistorySkinned = false
 
 -- Skin individual loot history item elements
 local function SkinLootHistoryElement(button)
-    if button.QUISkinned then return end
+    -- TAINT SAFETY: Use weak-keyed table instead of writing to Blizzard scroll element
+    if hookedLootFrames[button] then return end
 
     -- Strip background textures
     if button.BackgroundArtFrame then
@@ -756,32 +766,38 @@ local function SkinLootHistoryElement(button)
             if item.HighlightTexture then item.HighlightTexture:SetAlpha(0) end
 
             -- Create QUI-style icon border
-            if not item.quiBorder then
-                item.quiBorder = CreateFrame("Frame", nil, item, "BackdropTemplate")
-                item.quiBorder:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
-                item.quiBorder:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
-                local qbPx = QUICore:GetPixelSize(item.quiBorder)
-                item.quiBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = qbPx })
-                item.quiBorder:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+            -- TAINT SAFETY: Use weak-keyed table instead of writing to Blizzard item frame
+            if not itemBorders[item] then
+                local quiBorder = CreateFrame("Frame", nil, item, "BackdropTemplate")
+                quiBorder:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
+                quiBorder:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+                local qbPx = QUICore:GetPixelSize(quiBorder)
+                quiBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = qbPx })
+                quiBorder:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+                itemBorders[item] = quiBorder
             end
 
             -- Apply texcoord
             icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
             -- Hook IconBorder to update our border color
-            if item.IconBorder and not item._quiBorderHooked then
-                item._quiBorderHooked = true
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
+            if item.IconBorder and not hookedBorders[item] then
+                hookedBorders[item] = true
                 hooksecurefunc(item.IconBorder, "SetVertexColor", function(self, r, g, b)
-                    if item.quiBorder then
-                        item.quiBorder:SetBackdropBorderColor(r, g, b, 1)
-                    end
+                    C_Timer.After(0, function()
+                        local border = itemBorders[item]
+                        if border then
+                            border:SetBackdropBorderColor(r, g, b, 1)
+                        end
+                    end)
                 end)
                 item.IconBorder:SetAlpha(0)  -- Hide Blizzard's border
             end
         end
     end
 
-    button.QUISkinned = true
+    hookedLootFrames[button] = true
 end
 
 -- Handle scrollbox updates to skin new elements
@@ -808,19 +824,21 @@ local function SkinGroupLootHistoryFrame()
     end
 
     -- Apply QUI backdrop
-    if not HistoryFrame.quiBackdrop then
-        HistoryFrame.quiBackdrop = CreateFrame("Frame", nil, HistoryFrame, "BackdropTemplate")
-        HistoryFrame.quiBackdrop:SetAllPoints()
-        HistoryFrame.quiBackdrop:SetFrameLevel(HistoryFrame:GetFrameLevel())
-        local hfPx = QUICore:GetPixelSize(HistoryFrame.quiBackdrop)
-        HistoryFrame.quiBackdrop:SetBackdrop({
+    local hfBd = SkinBase.GetFrameData(HistoryFrame, "backdrop")
+    if not hfBd then
+        hfBd = CreateFrame("Frame", nil, HistoryFrame, "BackdropTemplate")
+        hfBd:SetAllPoints()
+        hfBd:SetFrameLevel(HistoryFrame:GetFrameLevel())
+        local hfPx = QUICore:GetPixelSize(hfBd)
+        hfBd:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = hfPx,
         })
+        SkinBase.SetFrameData(HistoryFrame, "backdrop", hfBd)
     end
-    HistoryFrame.quiBackdrop:SetBackdropColor(unpack(bgColor))
-    HistoryFrame.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
+    hfBd:SetBackdropColor(unpack(bgColor))
+    hfBd:SetBackdropBorderColor(unpack(borderColor))
 
     -- Style the timer bar
     local Timer = HistoryFrame.Timer
@@ -834,10 +852,14 @@ local function SkinGroupLootHistoryFrame()
         end
 
         -- Add timer background
-        if not Timer.quiBg then
-            Timer.quiBg = Timer:CreateTexture(nil, "BACKGROUND")
-            Timer.quiBg:SetAllPoints()
-            Timer.quiBg:SetColorTexture(0, 0, 0, 0.5)
+        -- TAINT SAFETY: Store created texture in weak table instead of on Blizzard frame
+        local timerParts = frameParts[Timer]
+        if not timerParts or not timerParts.bg then
+            local bg = Timer:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(0, 0, 0, 0.5)
+            if not timerParts then timerParts = {}; frameParts[Timer] = timerParts end
+            timerParts.bg = bg
         end
     end
 
@@ -862,37 +884,50 @@ local function SkinGroupLootHistoryFrame()
     if ResizeButton then
         if ResizeButton.NineSlice then ResizeButton.NineSlice:SetAlpha(0) end
 
-        if not ResizeButton.quiBackdrop then
-            ResizeButton.quiBackdrop = CreateFrame("Frame", nil, ResizeButton, "BackdropTemplate")
-            ResizeButton.quiBackdrop:SetAllPoints()
-            local rbPx = QUICore:GetPixelSize(ResizeButton.quiBackdrop)
-            ResizeButton.quiBackdrop:SetBackdrop({
+        local rbBd = SkinBase.GetFrameData(ResizeButton, "backdrop")
+        if not rbBd then
+            rbBd = CreateFrame("Frame", nil, ResizeButton, "BackdropTemplate")
+            rbBd:SetAllPoints()
+            local rbPx = QUICore:GetPixelSize(rbBd)
+            rbBd:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
                 edgeSize = rbPx,
             })
-            ResizeButton.quiBackdrop:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
-            ResizeButton.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
+            rbBd:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
+            rbBd:SetBackdropBorderColor(unpack(borderColor))
+            SkinBase.SetFrameData(ResizeButton, "backdrop", rbBd)
 
             -- Add resize text
-            ResizeButton.quiText = ResizeButton:CreateFontString(nil, "OVERLAY")
-            ResizeButton.quiText:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
-            ResizeButton.quiText:SetPoint("CENTER")
-            ResizeButton.quiText:SetText("v v v")
-            ResizeButton.quiText:SetTextColor(unpack(textColor))
+            -- TAINT SAFETY: Store created font string in weak table instead of on Blizzard frame
+            local rbParts = frameParts[ResizeButton]
+            if not rbParts then rbParts = {}; frameParts[ResizeButton] = rbParts end
+            rbParts.text = ResizeButton:CreateFontString(nil, "OVERLAY")
+            rbParts.text:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+            rbParts.text:SetPoint("CENTER")
+            rbParts.text:SetText("v v v")
+            rbParts.text:SetTextColor(unpack(textColor))
         end
     end
 
     -- Hook ScrollBox updates to skin dynamically created elements
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     if HistoryFrame.ScrollBox then
-        hooksecurefunc(HistoryFrame.ScrollBox, "Update", HandleLootHistoryScrollUpdate)
+        hooksecurefunc(HistoryFrame.ScrollBox, "Update", function(scrollBox)
+            C_Timer.After(0, function()
+                HandleLootHistoryScrollUpdate(scrollBox)
+            end)
+        end)
         -- Skin existing elements
         HandleLootHistoryScrollUpdate(HistoryFrame.ScrollBox)
     end
 
     -- Hook Show to re-apply theme each time frame is shown
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc(HistoryFrame, "Show", function()
-        Loot:ApplyLootHistoryTheme()
+        C_Timer.After(0, function()
+            Loot:ApplyLootHistoryTheme()
+        end)
     end)
 
     lootHistorySkinned = true
@@ -907,9 +942,10 @@ function Loot:ApplyLootHistoryTheme()
     local enabled = db.lootResults and db.lootResults.enabled ~= false
 
     -- If disabled, restore Blizzard look
+    local themeBd = SkinBase.GetFrameData(HistoryFrame, "backdrop")
     if not enabled then
-        if HistoryFrame.quiBackdrop then
-            HistoryFrame.quiBackdrop:Hide()
+        if themeBd then
+            themeBd:Hide()
         end
         if HistoryFrame.NineSlice then
             HistoryFrame.NineSlice:SetAlpha(1)
@@ -920,53 +956,59 @@ function Loot:ApplyLootHistoryTheme()
         if HistoryFrame.Timer then
             if HistoryFrame.Timer.Background then HistoryFrame.Timer.Background:SetAlpha(1) end
             if HistoryFrame.Timer.Border then HistoryFrame.Timer.Border:SetAlpha(1) end
-            if HistoryFrame.Timer.quiBg then HistoryFrame.Timer.quiBg:Hide() end
+            local timerParts = frameParts[HistoryFrame.Timer]
+            if timerParts and timerParts.bg then timerParts.bg:Hide() end
         end
-        if HistoryFrame.ResizeButton and HistoryFrame.ResizeButton.quiBackdrop then
-            HistoryFrame.ResizeButton.quiBackdrop:Hide()
+        local disRbBd = HistoryFrame.ResizeButton and SkinBase.GetFrameData(HistoryFrame.ResizeButton, "backdrop")
+        if disRbBd then
+            disRbBd:Hide()
             if HistoryFrame.ResizeButton.NineSlice then
                 HistoryFrame.ResizeButton.NineSlice:SetAlpha(1)
             end
-            if HistoryFrame.ResizeButton.quiText then
-                HistoryFrame.ResizeButton.quiText:Hide()
+            local rbParts = frameParts[HistoryFrame.ResizeButton]
+            if rbParts and rbParts.text then
+                rbParts.text:Hide()
             end
         end
         return
     end
 
     -- Enabled - apply QUI skin
-    if not HistoryFrame.quiBackdrop then return end
+    if not themeBd then return end
 
     local bgColor, borderColor, textColor = GetThemeColors()
 
     -- Show our backdrop, hide Blizzard's
-    HistoryFrame.quiBackdrop:Show()
+    themeBd:Show()
     if HistoryFrame.NineSlice then HistoryFrame.NineSlice:SetAlpha(0) end
     if HistoryFrame.Bg then HistoryFrame.Bg:SetAlpha(0) end
 
-    HistoryFrame.quiBackdrop:SetBackdropColor(unpack(bgColor))
-    HistoryFrame.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
+    themeBd:SetBackdropColor(unpack(bgColor))
+    themeBd:SetBackdropBorderColor(unpack(borderColor))
 
     if HistoryFrame.Timer then
         if HistoryFrame.Timer.Background then HistoryFrame.Timer.Background:SetAlpha(0) end
         if HistoryFrame.Timer.Border then HistoryFrame.Timer.Border:SetAlpha(0) end
-        if HistoryFrame.Timer.quiBg then HistoryFrame.Timer.quiBg:Show() end
+        local timerParts = frameParts[HistoryFrame.Timer]
+        if timerParts and timerParts.bg then timerParts.bg:Show() end
         if HistoryFrame.Timer.Fill then
             HistoryFrame.Timer.Fill:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], 1)
         end
     end
 
-    if HistoryFrame.ResizeButton and HistoryFrame.ResizeButton.quiBackdrop then
-        HistoryFrame.ResizeButton.quiBackdrop:Show()
+    local enRbBd = HistoryFrame.ResizeButton and SkinBase.GetFrameData(HistoryFrame.ResizeButton, "backdrop")
+    if enRbBd then
+        enRbBd:Show()
         if HistoryFrame.ResizeButton.NineSlice then
             HistoryFrame.ResizeButton.NineSlice:SetAlpha(0)
         end
-        HistoryFrame.ResizeButton.quiBackdrop:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
-        HistoryFrame.ResizeButton.quiBackdrop:SetBackdropBorderColor(unpack(borderColor))
-        if HistoryFrame.ResizeButton.quiText then
-            HistoryFrame.ResizeButton.quiText:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
-            HistoryFrame.ResizeButton.quiText:Show()
-            HistoryFrame.ResizeButton.quiText:SetTextColor(unpack(textColor))
+        enRbBd:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
+        enRbBd:SetBackdropBorderColor(unpack(borderColor))
+        local rbParts = frameParts[HistoryFrame.ResizeButton]
+        if rbParts and rbParts.text then
+            rbParts.text:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+            rbParts.text:Show()
+            rbParts.text:SetTextColor(unpack(textColor))
         end
     end
 end
@@ -980,27 +1022,67 @@ end
 --- INITIALIZATION
 ---=================================================================================
 
-local function DisableBlizzardLoot()
+-- Combat deferral: pending flags and event frame for taint safety
+local pendingDisableBlizzard = false
+local pendingEnableBlizzard = false
+local pendingRefreshBlizzard = false
+local DisableBlizzardLoot, EnableBlizzardLoot  -- forward declarations
+
+local combatDeferFrame = CreateFrame("Frame")
+combatDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatDeferFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if pendingDisableBlizzard then
+            pendingDisableBlizzard = false
+            DisableBlizzardLoot()
+        end
+        if pendingEnableBlizzard then
+            pendingEnableBlizzard = false
+            EnableBlizzardLoot()
+        end
+        if pendingRefreshBlizzard then
+            pendingRefreshBlizzard = false
+            if Loot.Refresh then
+                Loot:Refresh()
+            end
+        end
+    end
+end)
+
+DisableBlizzardLoot = function()
+    -- TAINT SAFETY: Defer to after combat if in combat lockdown
+    if InCombatLockdown() then
+        pendingDisableBlizzard = true
+        return
+    end
+
     local db = GetDB()
 
     -- Disable Blizzard Loot Frame
     if db.loot and db.loot.enabled then
-        LootFrame:UnregisterAllEvents()
-        LootFrame:Hide()
+        if not InCombatLockdown() then
+            LootFrame:UnregisterAllEvents()
+            LootFrame:Hide()
+        end
     end
 
     -- Disable Blizzard Roll Frames
     if db.lootRoll and db.lootRoll.enabled then
         -- Hide the container
         if GroupLootContainer then
-            GroupLootContainer:UnregisterAllEvents()
-            GroupLootContainer:Hide()
+            if not InCombatLockdown() then
+                GroupLootContainer:UnregisterAllEvents()
+                GroupLootContainer:Hide()
+            end
             -- Hook to keep it hidden when Blizzard tries to show frames
-            if not GroupLootContainer._quiHooked then
+            -- TAINT SAFETY: Defer to break taint chain from secure context.
+            if not hookedContainers[GroupLootContainer] then
                 hooksecurefunc(GroupLootContainer, "Show", function(self)
-                    self:Hide()
+                    C_Timer.After(0, function()
+                        if self and self.Hide then self:Hide() end
+                    end)
                 end)
-                GroupLootContainer._quiHooked = true
+                hookedContainers[GroupLootContainer] = true
             end
         end
 
@@ -1009,29 +1091,44 @@ local function DisableBlizzardLoot()
         for i = 1, numRollFrames do
             local frame = _G["GroupLootFrame"..i]
             if frame then
-                frame:UnregisterAllEvents()
-                frame:Hide()
-                if not frame._quiHooked then
+                if not InCombatLockdown() then
+                    frame:UnregisterAllEvents()
+                    frame:Hide()
+                end
+                -- TAINT SAFETY: Defer to break taint chain from secure context.
+                if not hookedLootFrames[frame] then
                     hooksecurefunc(frame, "Show", function(self)
-                        self:Hide()
+                        C_Timer.After(0, function()
+                            if self and self.Hide then self:Hide() end
+                        end)
                     end)
-                    frame._quiHooked = true
+                    hookedLootFrames[frame] = true
                 end
             end
         end
     end
 end
 
-local function EnableBlizzardLoot()
+EnableBlizzardLoot = function()
+    -- TAINT SAFETY: Defer to after combat if in combat lockdown
+    if InCombatLockdown() then
+        pendingEnableBlizzard = true
+        return
+    end
+
     -- Re-enable Blizzard Loot Frame
-    LootFrame:RegisterEvent("LOOT_OPENED")
-    LootFrame:RegisterEvent("LOOT_SLOT_CLEARED")
-    LootFrame:RegisterEvent("LOOT_SLOT_CHANGED")
-    LootFrame:RegisterEvent("LOOT_CLOSED")
+    if not InCombatLockdown() then
+        LootFrame:RegisterEvent("LOOT_OPENED")
+        LootFrame:RegisterEvent("LOOT_SLOT_CLEARED")
+        LootFrame:RegisterEvent("LOOT_SLOT_CHANGED")
+        LootFrame:RegisterEvent("LOOT_CLOSED")
+    end
 
     -- Re-enable Blizzard Roll Frames
-    UIParent:RegisterEvent("START_LOOT_ROLL")
-    UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+    if not InCombatLockdown() then
+        UIParent:RegisterEvent("START_LOOT_ROLL")
+        UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+    end
     if GroupLootContainer then
         GroupLootContainer:SetAlpha(1)
     end
@@ -1155,19 +1252,24 @@ function Loot:Refresh()
     RepositionAllRolls()
 
     -- Toggle Blizzard frames based on settings
-    if db.loot and db.loot.enabled then
-        LootFrame:UnregisterAllEvents()
-        LootFrame:Hide()
-    else
-        EnableBlizzardLoot()
-    end
+    -- TAINT SAFETY: Guard secure frame operations against combat lockdown
+    if not InCombatLockdown() then
+        if db.loot and db.loot.enabled then
+            LootFrame:UnregisterAllEvents()
+            LootFrame:Hide()
+        else
+            EnableBlizzardLoot()
+        end
 
-    if db.lootRoll and db.lootRoll.enabled then
-        UIParent:UnregisterEvent("START_LOOT_ROLL")
-        UIParent:UnregisterEvent("CANCEL_LOOT_ROLL")
+        if db.lootRoll and db.lootRoll.enabled then
+            UIParent:UnregisterEvent("START_LOOT_ROLL")
+            UIParent:UnregisterEvent("CANCEL_LOOT_ROLL")
+        else
+            UIParent:RegisterEvent("START_LOOT_ROLL")
+            UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+        end
     else
-        UIParent:RegisterEvent("START_LOOT_ROLL")
-        UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+        pendingRefreshBlizzard = true
     end
 end
 
@@ -1597,16 +1699,20 @@ end
 
 -- Hook Blizzard's Edit Mode
 function Loot:HookBlizzardEditMode()
-    if not EditModeManagerFrame then return end
     if self._editModeHooked then return end
     self._editModeHooked = true
 
+    -- Use central Edit Mode dispatcher to avoid taint from multiple hooksecurefunc
+    -- callbacks on EnterEditMode/ExitEditMode.
     -- Only hook ExitEditMode to auto-hide movers
     -- EnterEditMode intentionally NOT hooked - users toggle movers manually via Skinning options
-    hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-        if InCombatLockdown() then return end
-        self:DisableEditMode()
-    end)
+    local core = ns.Addon
+    if core and core.RegisterEditModeExit then
+        core:RegisterEditModeExit(function()
+            if InCombatLockdown() then return end
+            self:DisableEditMode()
+        end)
+    end
 end
 
 ---=================================================================================

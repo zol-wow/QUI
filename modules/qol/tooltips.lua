@@ -91,14 +91,19 @@ local function GetTooltipContext(owner)
     if not owner then return "npcs" end
 
     -- CDM: Check for skinned CDM icons (Essential, Utility, Buff views)
-    if owner.__cdmSkinned then
+    -- TAINT SAFETY: Use global accessor to check icon state from weak-keyed table
+    -- Note: "skinned" is per-ICON state (iconState), NOT per-viewer state (viewerState)
+    local getIS = _G.QUI_GetCDMIconState
+    local ownerIS = getIS and getIS(owner)
+    if ownerIS and ownerIS.skinned then
         return "cdm"
     end
 
     -- Check parent for CDM (tooltip owner might be child of CDM icon)
     local parent = owner:GetParent()
     if parent then
-        if parent.__cdmSkinned then
+        local parentIS = getIS and getIS(parent)
+        if parentIS and parentIS.skinned then
             return "cdm"
         end
         -- Check if parent is a CDM viewer frame
@@ -232,6 +237,8 @@ end
 -- Intercepts GameTooltip_SetDefaultAnchor to apply cursor anchoring
 ---------------------------------------------------------------------------
 local function SetupTooltipHook()
+    -- NOTE: Tooltip hooks run synchronously — deferring causes visible flashing/repositioning.
+    -- These are NOT a taint source for Edit Mode (tooltips are not in the Edit Mode chain).
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
         local settings = GetSettings()
         if not settings or not settings.enabled then
@@ -258,7 +265,7 @@ local function SetupTooltipHook()
 
     -- Hook SetUnit to suppress tooltips when a UI frame blocks the mouse
     -- PERFORMANCE: Debounced to prevent spam with @mouseover macros (max 20 calls/sec)
-    hooksecurefunc(GameTooltip, "SetUnit", function(tooltip, unit)
+    hooksecurefunc(GameTooltip, "SetUnit", function(tooltip)
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
 
@@ -318,7 +325,7 @@ local function SetupTooltipHook()
     -- Track which tooltip has already had IDs added (to prevent duplicates)
     local tooltipSpellIDAdded = {}
 
-    -- Clear tracking when tooltip hides or is cleared
+    -- Clear tracking when tooltip hides or is cleared (synchronous — lightweight table nil)
     GameTooltip:HookScript("OnHide", function(tooltip)
         tooltipSpellIDAdded[tooltip] = nil
     end)
@@ -339,7 +346,6 @@ local function SetupTooltipHook()
     end
 
     local function CanAccessAuraArgs(unit, token)
-        if InCombatLockdown() then return false end
         if IsBlockedValue(unit) then return false end
         if IsBlockedValue(token) then return false end
         return true
@@ -357,7 +363,6 @@ local function SetupTooltipHook()
     -- Helper function to add spell/icon ID info to a tooltip
     local function AddSpellIDToTooltip(tooltip, spellID, skipShow)
         if not spellID then return end
-        if InCombatLockdown() then return end
 
         local settings = GetSettings()
         if not settings or not settings.enabled or not settings.showSpellIDs then return end
@@ -394,7 +399,6 @@ local function SetupTooltipHook()
 
     -- Use TooltipDataProcessor for Spell tooltips (action bars, spellbook, CDM, etc.)
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Spell, function(tooltip, data)
-        if InCombatLockdown() then return end
         pcall(function()
             if data and data.id and type(data.id) == "number" then
                 AddSpellIDToTooltip(tooltip, data.id)
@@ -405,7 +409,6 @@ local function SetupTooltipHook()
     -- Aura tooltip data (player buffs/debuffs) - guard for optional enum
     if Enum.TooltipDataType.Aura then
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Aura, function(tooltip, data)
-            if InCombatLockdown() then return end
             pcall(function()
                 if data and data.id and type(data.id) == "number" then
                     AddSpellIDToTooltip(tooltip, data.id, false)
@@ -418,99 +421,50 @@ local function SetupTooltipHook()
     -- errors in combat. Use direct hooks on the tooltip methods instead.
     -- Get spell ID from method arguments + C_UnitAuras API.
 
-    if GameTooltip.SetUnitAura and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        hooksecurefunc(GameTooltip, "SetUnitAura", function(tooltip, unit, index, filter)
-            if not CanAccessAuraArgs(unit, index) then return end
+    -- NOTE: Aura tooltip hooks run synchronously — deferring causes spell IDs to appear late/missing.
+    -- These are NOT a taint source for Edit Mode (tooltips are not in the Edit Mode chain).
+
+    -- Helper to create aura tooltip hooks
+    local function HookAuraTooltip(methodName, getAuraFunc, isGeneric)
+        if not GameTooltip[methodName] then return end
+        hooksecurefunc(GameTooltip, methodName, function(tooltip, unit, indexOrID, filter)
+            if not CanAccessAuraArgs(unit, indexOrID) then return end
             pcall(function()
-                local auraData = C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
+                local auraData
+                if filter ~= nil then
+                    auraData = getAuraFunc(unit, indexOrID, filter)
+                else
+                    auraData = getAuraFunc(unit, indexOrID)
+                end
                 if type(canaccesstable) == "function" and auraData and not canaccesstable(auraData) then
                     return
                 end
                 if auraData and auraData.spellId then
-                    AddSpellIDToTooltip(tooltip, auraData.spellId, false)
+                    AddSpellIDToTooltip(tooltip, auraData.spellId, isGeneric or false)
                 end
             end)
         end)
     end
 
-    if GameTooltip.SetUnitBuff then
-        hooksecurefunc(GameTooltip, "SetUnitBuff", function(tooltip, unit, index, filter)
-            if not CanAccessAuraArgs(unit, index) then return end
-            pcall(function()
-                local auraData = C_UnitAuras.GetBuffDataByIndex(unit, index, filter)
-                if type(canaccesstable) == "function" and auraData and not canaccesstable(auraData) then
-                    return
-                end
-                if auraData and auraData.spellId then
-                    AddSpellIDToTooltip(tooltip, auraData.spellId, false)
-                end
-            end)
-        end)
+    if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        HookAuraTooltip("SetUnitAura", C_UnitAuras.GetAuraDataByIndex, false)
     end
-
-    if GameTooltip.SetUnitDebuff then
-        hooksecurefunc(GameTooltip, "SetUnitDebuff", function(tooltip, unit, index, filter)
-            if not CanAccessAuraArgs(unit, index) then return end
-            pcall(function()
-                local auraData = C_UnitAuras.GetDebuffDataByIndex(unit, index, filter)
-                if type(canaccesstable) == "function" and auraData and not canaccesstable(auraData) then
-                    return
-                end
-                if auraData and auraData.spellId then
-                    AddSpellIDToTooltip(tooltip, auraData.spellId, false)
-                end
-            end)
-        end)
+    if C_UnitAuras and C_UnitAuras.GetBuffDataByIndex then
+        HookAuraTooltip("SetUnitBuff", C_UnitAuras.GetBuffDataByIndex, false)
     end
-
-    if GameTooltip.SetUnitBuffByAuraInstanceID then
-        hooksecurefunc(GameTooltip, "SetUnitBuffByAuraInstanceID", function(tooltip, unit, auraInstanceID)
-            if not CanAccessAuraArgs(unit, auraInstanceID) then return end
-            pcall(function()
-                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraInstanceID)
-                if type(canaccesstable) == "function" and auraData and not canaccesstable(auraData) then
-                    return
-                end
-                if auraData and auraData.spellId then
-                    AddSpellIDToTooltip(tooltip, auraData.spellId, false)
-                end
-            end)
-        end)
+    if C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex then
+        HookAuraTooltip("SetUnitDebuff", C_UnitAuras.GetDebuffDataByIndex, false)
     end
-
-    if GameTooltip.SetUnitDebuffByAuraInstanceID then
-        hooksecurefunc(GameTooltip, "SetUnitDebuffByAuraInstanceID", function(tooltip, unit, auraInstanceID)
-            if not CanAccessAuraArgs(unit, auraInstanceID) then return end
-            pcall(function()
-                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraInstanceID)
-                if type(canaccesstable) == "function" and auraData and not canaccesstable(auraData) then
-                    return
-                end
-                if auraData and auraData.spellId then
-                    AddSpellIDToTooltip(tooltip, auraData.spellId, false)
-                end
-            end)
-        end)
-    end
-
-    if GameTooltip.SetUnitAuraByAuraInstanceID then
-        hooksecurefunc(GameTooltip, "SetUnitAuraByAuraInstanceID", function(tooltip, unit, auraInstanceID)
-            if not CanAccessAuraArgs(unit, auraInstanceID) then return end
-            pcall(function()
-                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraInstanceID)
-                if type(canaccesstable) == "function" and auraData and not canaccesstable(auraData) then
-                    return
-                end
-                if auraData and auraData.spellId then
-                    AddSpellIDToTooltip(tooltip, auraData.spellId, true)
-                end
-            end)
-        end)
+    if C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
+        HookAuraTooltip("SetUnitBuffByAuraInstanceID", C_UnitAuras.GetAuraDataByAuraInstanceID, false)
+        HookAuraTooltip("SetUnitDebuffByAuraInstanceID", C_UnitAuras.GetAuraDataByAuraInstanceID, false)
+        HookAuraTooltip("SetUnitAuraByAuraInstanceID", C_UnitAuras.GetAuraDataByAuraInstanceID, true)
     end
 
     -- Hook SetSpellByID to suppress CDM and Custom Tracker tooltips
     -- These icons use SetSpellByID which bypasses GameTooltip_SetDefaultAnchor
-    hooksecurefunc(GameTooltip, "SetSpellByID", function(tooltip, spellID)
+    -- NOTE: Synchronous — deferring causes tooltip flash before hide.
+    hooksecurefunc(GameTooltip, "SetSpellByID", function(tooltip)
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
 
@@ -533,7 +487,7 @@ local function SetupTooltipHook()
     end)
 
     -- Hook SetItemByID to suppress Custom Tracker item tooltips
-    hooksecurefunc(GameTooltip, "SetItemByID", function(tooltip, itemID)
+    hooksecurefunc(GameTooltip, "SetItemByID", function(tooltip)
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
 
@@ -558,9 +512,11 @@ local function SetupTooltipHook()
     -- Hook GameTooltip_Hide as safety net for combat tooltip issues
     -- Runs after original function - if tooltip still visible during combat, force hide
     hooksecurefunc("GameTooltip_Hide", function()
-        if InCombatLockdown() and GameTooltip:IsVisible() then
-            GameTooltip:Hide()
-        end
+        C_Timer.After(0, function()
+            if InCombatLockdown() and GameTooltip:IsVisible() then
+                GameTooltip:Hide()
+            end
+        end)
     end)
 
     -- Tooltip sticking monitor - fixes Midnight 12.0+ combat tooltip issue
@@ -670,27 +626,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.After(0.5, function()
             SetupTooltipHook()
 
-            -- Wrap MoneyFrame functions in pcall to suppress Blizzard secret value bug
-            if MoneyFrame_Update then
-                local originalMoneyFrameUpdate = MoneyFrame_Update
-                MoneyFrame_Update = function(...)
-                    pcall(originalMoneyFrameUpdate, ...)
-                end
-            end
-            if SetTooltipMoney then
-                local originalSetTooltipMoney = SetTooltipMoney
-                SetTooltipMoney = function(...)
-                    pcall(originalSetTooltipMoney, ...)
-                end
-            end
-
-            -- Wrap GameTooltip:SetSpellByID in pcall to suppress Blizzard PTRFeedback secret value bug
-            if GameTooltip and GameTooltip.SetSpellByID then
-                local originalSetSpellByID = GameTooltip.SetSpellByID
-                GameTooltip.SetSpellByID = function(...)
-                    pcall(originalSetSpellByID, ...)
-                end
-            end
+            -- NOTE: MoneyFrame_Update, SetTooltipMoney, and GameTooltip.SetSpellByID
+            -- were previously wrapped in pcall via direct replacement to suppress
+            -- Blizzard secret-value bugs. However, direct global function replacement
+            -- permanently taints the function in Midnight's taint model, causing
+            -- ADDON_ACTION_FORBIDDEN errors throughout Edit Mode and other secure
+            -- execution paths. The pcall wrappers have been removed. If Blizzard's
+            -- own functions error on secret values, that is a Blizzard bug — QUI
+            -- should not absorb the taint cost of working around it.
         end)
     elseif event == "MODIFIER_STATE_CHANGED" then
         OnModifierStateChanged()

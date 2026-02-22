@@ -18,6 +18,10 @@ if playerClass ~= "SHAMAN" then return end
 -- MODULE NAMESPACE
 ---------------------------------------------------------------------------
 local TotemBar = {}
+
+-- TAINT SAFETY: Store per-button state in local weak-keyed tables instead of
+-- writing custom properties to Blizzard totem button frames.
+local buttonBorders = setmetatable({}, { __mode = "k" })  -- button → border texture
 TotemBar.hooked = false
 TotemBar.ticker = nil
 TotemBar.showEnforceQueued = false
@@ -85,6 +89,10 @@ end
 local function ReskinTotemButton(button)
     local db = GetDB()
     if not button or not db then return end
+    -- NOTE: No InCombatLockdown() guard needed here. Totem buttons are
+    -- non-protected pool frames (ObjectPoolMixin), and TotemFrame has been
+    -- reparented to UIParent by HookTotemFrame(). All operations below are
+    -- purely visual (textures, sizes, fonts) on non-secure frames.
 
     local size = db.iconSize or 36
 
@@ -147,19 +155,21 @@ local function ReskinTotemButton(button)
     end
 
     -- Add our border (create once per button)
-    if not button.quiBorder then
-        button.quiBorder = button:CreateTexture(nil, "BACKGROUND", nil, -8)
-        button.quiBorder:SetColorTexture(0, 0, 0, 1)
+    local border = buttonBorders[button]
+    if not border then
+        border = button:CreateTexture(nil, "BACKGROUND", nil, -8)
+        border:SetColorTexture(0, 0, 0, 1)
+        buttonBorders[button] = border
     end
     local bs = db.borderSize or 2
     if bs > 0 then
         local bpx = (QUICore and QUICore.Pixels) and QUICore:Pixels(bs, button) or bs
-        button.quiBorder:Show()
-        button.quiBorder:ClearAllPoints()
-        button.quiBorder:SetPoint("TOPLEFT", -bpx, bpx)
-        button.quiBorder:SetPoint("BOTTOMRIGHT", bpx, -bpx)
+        border:Show()
+        border:ClearAllPoints()
+        border:SetPoint("TOPLEFT", -bpx, bpx)
+        border:SetPoint("BOTTOMRIGHT", bpx, -bpx)
     else
-        button.quiBorder:Hide()
+        border:Hide()
     end
 
     -- Restyle duration text
@@ -190,6 +200,10 @@ end
 local function LayoutTotemButtons()
     local tf = TotemFrame
     if not tf or not tf.totemPool then return end
+    -- NOTE: No InCombatLockdown() guard needed here. Totem buttons are
+    -- non-protected pool frames, and TotemFrame has been reparented to
+    -- UIParent (no longer in the managed frame system). SetSize/SetPoint
+    -- on these frames is safe during combat.
 
     local db = GetDB()
     if not db then return end
@@ -321,6 +335,7 @@ end
 local function PositionTotemFrame()
     local tf = TotemFrame
     if not tf then return end
+    if InCombatLockdown() then return end
 
     local db = GetDB()
     if not db then return end
@@ -333,9 +348,26 @@ local function PositionTotemFrame()
 end
 
 ---------------------------------------------------------------------------
+-- TAINT SAFETY: Defer totem frame hook/refresh until after combat ends
+---------------------------------------------------------------------------
+local totemCombatFrame = CreateFrame("Frame")
+local pendingTotemRefresh = false
+totemCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+totemCombatFrame:SetScript("OnEvent", function()
+    if pendingTotemRefresh then
+        pendingTotemRefresh = false
+        TotemBar:Refresh()
+    end
+end)
+
+---------------------------------------------------------------------------
 -- HOOK SETUP
 ---------------------------------------------------------------------------
 local function HookTotemFrame()
+    if InCombatLockdown() then
+        pendingTotemRefresh = true
+        return
+    end
     if TotemBar.hooked then return end
     local tf = TotemFrame
     if not tf then return end
@@ -348,13 +380,18 @@ local function HookTotemFrame()
 
     -- Satisfy the managed frame system with a no-op layout parent
     -- (UIParent.lua Show/Hide hooks call self.layoutParent:MarkDirty())
-    tf.layoutParent = {
-        MarkDirty = function() end,
-        MarkClean = function() end,
-        AddManagedFrame = function() end,
-        RemoveManagedFrame = function() end,
-        Layout = function() end,
-    }
+    -- TAINT SAFETY: Defer this property write to break taint chain from addon init context.
+    C_Timer.After(0, function()
+        if tf then
+            tf.layoutParent = {
+                MarkDirty = function() end,
+                MarkClean = function() end,
+                AddManagedFrame = function() end,
+                RemoveManagedFrame = function() end,
+                Layout = function() end,
+            }
+        end
+    end)
 
     -- Position
     PositionTotemFrame()
@@ -392,21 +429,28 @@ local function HookTotemFrame()
         PositionTotemFrame()
     end)
 
+    -- TAINT SAFETY: Defer all work to break taint chain from secure context.
     -- Hook Update to reskin after each pool cycle
-    hooksecurefunc(tf, "Update", PostUpdate)
+    hooksecurefunc(tf, "Update", function()
+        C_Timer.After(0, PostUpdate)
+    end)
 
     -- Hook Layout to override with our custom layout
     hooksecurefunc(tf, "Layout", function()
-        local db = GetDB()
-        if db and db.enabled then
-            LayoutTotemButtons()
-        end
+        C_Timer.After(0, function()
+            local db = GetDB()
+            if db and db.enabled then
+                LayoutTotemButtons()
+            end
+        end)
     end)
 
     -- Override show/hide behavior based on our enabled setting.
     -- BUG-011: defer Hide() out of secure Show() chain.
     hooksecurefunc(tf, "Show", function(self)
-        QueueShowEnforcement(self)
+        C_Timer.After(0, function()
+            QueueShowEnforcement(self)
+        end)
     end)
 end
 
@@ -416,7 +460,7 @@ end
 function TotemBar:Refresh()
     local db = GetDB()
     if not db or not db.enabled then
-        if TotemFrame then
+        if TotemFrame and not InCombatLockdown() then
             -- Restore to default hidden behavior
             TotemFrame:Hide()
         end
