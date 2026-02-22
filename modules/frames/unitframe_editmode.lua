@@ -57,8 +57,8 @@ end
 local function CreateNudgeButton(parent, direction, deltaX, deltaY, unitKey)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
-    -- Use TOOLTIP strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("TOOLTIP")
+    -- Use HIGH strata so nudge buttons appear above all other frames
+    btn:SetFrameStrata("HIGH")
     btn:SetFrameLevel(100)
 
     -- Background - dark grey at 70% for visibility over any game content
@@ -163,7 +163,7 @@ function QUI_UF:EnableEditMode()
         local exitBtn = CreateFrame("Button", "QUI_ExitEditModeBtn", UIParent, "BackdropTemplate")
         exitBtn:SetSize(180, 40)
         exitBtn:SetPoint("TOP", UIParent, "TOP", 0, -100)
-        exitBtn:SetFrameStrata("TOOLTIP")
+        exitBtn:SetFrameStrata("HIGH")
         local exitBtnPx = QUICore:GetPixelSize(exitBtn)
         exitBtn:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -349,6 +349,44 @@ function QUI_UF:EnableEditMode()
 
         -- Store unitKey on frame for click handler
         frame._editModeUnitKey = unitKey
+
+            -- Defer visual indicator updates to break taint chain from Edit Mode enter.
+            -- Unit frames use SecureUnitButtonTemplate — any addon code in their
+            -- script handlers during EnterEditMode taints the secure execution path.
+            C_Timer.After(0, function()
+                if not frame.editOverlay then return end
+                local s = GetUnitSettings(settingsKey)
+                local anchored = s and s.anchorTo and s.anchorTo ~= "disabled"
+                local frameLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(frame)
+                local locked = (anchored and (settingsKey == "player" or settingsKey == "target")) or frameLocked
+                if locked then
+                    frame.editOverlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+                    frame.editOverlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
+                    if frame.editOverlay.infoText then
+                        frame.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 1)
+                        -- Re-anchor info text to overlay center (normally anchored to nudgeUp
+                        -- which is hidden, making text invisible)
+                        frame.editOverlay.infoText:ClearAllPoints()
+                        frame.editOverlay.infoText:SetPoint("CENTER", frame.editOverlay, "CENTER", 0, 0)
+                        frame.editOverlay.infoText:Show()
+                    end
+                    -- Raise overlay strata so it appears above Blizzard's Edit Mode overlays
+                    frame.editOverlay:SetFrameStrata("HIGH")
+                else
+                    frame.editOverlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+                    frame.editOverlay:SetBackdropColor(0.2, 0.8, 1, 0.15)
+                    if frame.editOverlay.infoText then
+                        frame.editOverlay.infoText:SetTextColor(1, 1, 1, 1)
+                        -- Restore normal anchor: above nudgeUp button (default positioning)
+                        frame.editOverlay.infoText:ClearAllPoints()
+                        frame.editOverlay.infoText:SetPoint("BOTTOM", frame.editOverlay.nudgeUp, "TOP", 0, 2)
+                        frame.editOverlay.infoText:Hide()  -- Hidden until selected
+                    end
+                    -- Restore normal frame level (was raised to HIGH for locked state)
+                    frame.editOverlay:SetFrameStrata("MEDIUM")
+                    frame.editOverlay:SetFrameLevel(frame:GetFrameLevel() + 10)
+                end
+            end)
 
         -- Click handler to select this element and show its arrows
         frame:SetScript("OnMouseDown", function(self, button)

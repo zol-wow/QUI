@@ -3475,8 +3475,8 @@ end
 local function CreateCastbarNudgeButton(parent, direction, deltaX, deltaY, unitKey)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
-    -- Use TOOLTIP strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("TOOLTIP")
+    -- Use HIGH strata so nudge buttons appear above all other frames
+    btn:SetFrameStrata("HIGH")
     btn:SetFrameLevel(100)
 
     -- Background - dark grey at 70% for visibility over any game content

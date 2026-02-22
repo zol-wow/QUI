@@ -655,7 +655,7 @@ local function CreateExtraButtonHolder(buttonType, displayName)
     mover:EnableMouse(true)
     mover:SetMovable(true)
     mover:RegisterForDrag("LeftButton")
-    mover:SetFrameStrata("FULLSCREEN_DIALOG")
+    mover:SetFrameStrata("HIGH")
     mover:Hide()
 
     -- Label text
