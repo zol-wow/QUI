@@ -2645,6 +2645,13 @@ end)
 ---------------------------------------------------------------------------
 -- VISIBILITY SYSTEM
 ---------------------------------------------------------------------------
+
+-- Check if Blizzard's Edit Mode is currently active.
+-- During Edit Mode, fade-outs are suspended so trackers remain visible.
+local function IsInEditMode()
+    return EditModeManagerFrame and EditModeManagerFrame:IsShown()
+end
+
 local CustomTrackersVisibility = {
     currentlyHidden = false,
     isFading = false,
@@ -2722,6 +2729,9 @@ local function OnCustomTrackersFadeUpdate(self, elapsed)
 end
 
 local function StartCustomTrackersFade(targetAlpha)
+    -- Don't fade out during Edit Mode
+    if targetAlpha < 1 and IsInEditMode() then return end
+
     local frames = GetCustomTrackerFrames()
     if #frames == 0 then return end
 
@@ -2744,6 +2754,16 @@ local function StartCustomTrackersFade(targetAlpha)
 end
 
 local function UpdateCustomTrackersVisibility()
+    -- During Edit Mode, force all trackers visible
+    if IsInEditMode() then
+        local frames = GetCustomTrackerFrames()
+        for _, frame in ipairs(frames) do
+            frame:SetAlpha(1)
+        end
+        CustomTrackersVisibility.currentlyHidden = false
+        return
+    end
+
     local vis = GetCustomTrackersVisibilitySettings()
     if not vis then return end
 
@@ -2845,6 +2865,29 @@ end)
 ---------------------------------------------------------------------------
 _G.QUI_RefreshCustomTrackersVisibility = UpdateCustomTrackersVisibility
 _G.QUI_RefreshCustomTrackersMouseover = SetupCustomTrackersMouseoverDetector
+
+-- Suspend/resume visibility rules during Edit Mode
+C_Timer.After(1.5, function()
+    local core = GetCore()
+    if not core or not core.RegisterEditModeEnter then return end
+
+    core:RegisterEditModeEnter(function()
+        -- Force all trackers to full opacity
+        CustomTrackersVisibility.isFading = false
+        if CustomTrackersVisibility.fadeFrame then
+            CustomTrackersVisibility.fadeFrame:SetScript("OnUpdate", nil)
+        end
+        local frames = GetCustomTrackerFrames()
+        for _, frame in ipairs(frames) do
+            frame:SetAlpha(1)
+        end
+    end)
+
+    core:RegisterEditModeExit(function()
+        -- Re-apply normal visibility rules
+        UpdateCustomTrackersVisibility()
+    end)
+end)
 
 -- Refresh keybind display on all custom tracker icons
 _G.QUI_RefreshCustomTrackerKeybinds = function()

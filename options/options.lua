@@ -443,6 +443,7 @@ function GUI:InitializeOptions()
     end)
 
     GUI:AddActionButton(frame, "Edit Mode", function()
+        if InCombatLockdown() then return end
         if EditModeManagerFrame then
             ShowUIPanel(EditModeManagerFrame)
         end

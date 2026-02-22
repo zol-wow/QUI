@@ -1033,7 +1033,6 @@ local function CreateAlertMover()
     if GroupLootContainer then
         GroupLootContainer:EnableMouse(false)
         -- TAINT SAFETY: Defer ignoreInLayout write to break taint chain.
-        -- This is a Blizzard layout property that taints if set from addon context directly.
         C_Timer.After(0, function()
             if GroupLootContainer then
                 GroupLootContainer.ignoreInLayout = true
@@ -1194,10 +1193,10 @@ local function CreateBNetToastMover()
                 alertDB.bnetToastPosition = { point = point, relPoint = relPoint, x = x, y = y }
             end
             -- Reposition BNet toast frame to follow holder
-            pcall(function()
+            if BNToastFrame then
                 BNToastFrame:ClearAllPoints()
                 BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
-            end)
+            end
         end)
     end
 
@@ -1209,10 +1208,10 @@ local function CreateBNetToastMover()
             C_Timer.After(0, function()
                 local alertDB = GetAlertSettings()
                 if alertDB and alertDB.bnetToastPosition then
-                    pcall(function()
+                    if BNToastFrame then
                         BNToastFrame:ClearAllPoints()
                         BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
-                    end)
+                    end
                 end
             end)
         end
@@ -1228,10 +1227,10 @@ local function CreateBNetToastMover()
 
     -- Apply initial positioning if user has a saved position
     if db.bnetToastPosition then
-        pcall(function()
+        if BNToastFrame then
             BNToastFrame:ClearAllPoints()
             BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
-        end)
+        end
     end
 end
 

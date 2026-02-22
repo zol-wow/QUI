@@ -448,8 +448,10 @@ local function BlockInspectIconBorder(iconBorder)
     if iconBorder.SetTexture then iconBorder:SetTexture(nil) end
     if iconBorder.SetAtlas then
         hooksecurefunc(iconBorder, "SetAtlas", function(self)
-            if self.SetTexture then self:SetTexture(nil) end
-            if self.SetAlpha then self:SetAlpha(0) end
+            C_Timer.After(0, function()
+                if self and self.SetTexture then self:SetTexture(nil) end
+                if self and self.SetAlpha then self:SetAlpha(0) end
+            end)
         end)
     end
 end

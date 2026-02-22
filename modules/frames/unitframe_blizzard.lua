@@ -17,6 +17,10 @@ if not QUI_UF then return end
 -- TAINT SAFETY: Track hook/fix guards in local table, NOT on Blizzard frames.
 local _blizzFrameGuards = {}
 
+-- TAINT SAFETY: Weak-keyed table to track which frames have had their OnShow
+-- hooked via hooksecurefunc, so we never store addon keys on Blizzard frames.
+local _hookedOnShowFrames = setmetatable({}, { __mode = "k" })
+
 ---------------------------------------------------------------------------
 -- LOCAL HELPERS
 ---------------------------------------------------------------------------
@@ -58,10 +62,20 @@ local function KillBlizzardChildFrame(frame)
     -- Set alpha to 0 as fallback
     frame:SetAlpha(0)
 
-    frame:SetScript("OnShow", function(f)
-        pcall(function() f:Hide() end)
-        f:SetAlpha(0)
-    end)
+    -- TAINT SAFETY: Use hooksecurefunc instead of SetScript("OnShow") to avoid
+    -- replacing secure handlers on Blizzard frames. Defer the Hide() via
+    -- C_Timer.After(0) to break the taint chain from the secure execution context.
+    if not _hookedOnShowFrames[frame] then
+        _hookedOnShowFrames[frame] = true
+        hooksecurefunc(frame, "Show", function(self)
+            C_Timer.After(0, function()
+                if self and self.Hide then
+                    pcall(function() self:Hide() end)
+                    if self.SetAlpha then self:SetAlpha(0) end
+                end
+            end)
+        end)
+    end
 end
 
 local function HideBlizzardTargetVisuals()
@@ -155,6 +169,7 @@ end
 -- is guarded so it's only installed once.
 ---------------------------------------------------------------------------
 function QUI_UF:HideBlizzardCastbars()
+    if InCombatLockdown() then return end
     local db = GetDB()
     if not db then return end
     local playerDB = db.player
@@ -187,6 +202,7 @@ function QUI_UF:HideBlizzardCastbars()
             castbarHideWatcher:SetScript("OnUpdate", function()
                 if PlayerCastingBarFrame:IsShown() then
                     C_Timer.After(0, function()
+                        if InCombatLockdown() then return end
                         pcall(function() PlayerCastingBarFrame:Hide() end)
                     end)
                 end
@@ -205,6 +221,7 @@ function QUI_UF:HideBlizzardCastbars()
 end
 
 function QUI_UF:HideBlizzardFrames()
+    if InCombatLockdown() then return end
     local db = GetDB()
     if not db or not db.enabled then return end
 

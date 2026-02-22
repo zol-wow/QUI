@@ -188,7 +188,7 @@ local function BuildCharacterPaneTab(tabContent)
     -- Open Character Panel button
     local openBtn = GUI:CreateButton(tabContent, "Open Character Panel", 200, 32, function()
         -- Open character frame if not open
-        if not CharacterFrame:IsShown() then
+        if not CharacterFrame:IsShown() and not InCombatLockdown() then
             ToggleCharacter("PaperDollFrame")
         end
         -- Show settings panel after a short delay

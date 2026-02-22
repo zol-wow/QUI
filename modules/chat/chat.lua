@@ -23,6 +23,7 @@ local editBoxBackdrops = setmetatable({}, { __mode = "k" })    -- chatFrame -> e
 local editBoxState = setmetatable({}, { __mode = "k" })        -- editBox -> { styled, topModeHooked, historyInitialized, historyPosition, savedMessage, backdropRef }
 local tabBackdrops = setmetatable({}, { __mode = "k" })        -- tab -> backdrop frame
 local copyButtonHookState = setmetatable({}, { __mode = "k" }) -- chatFrame -> true (hover mode hooked)
+local _chatButtonsHidden = setmetatable({}, { __mode = "k" })  -- frame -> true/false (flag for hide-on-show hooks)
 
 -- Localized table functions for performance
 local tinsert = table.insert
@@ -670,18 +671,19 @@ end
 ---------------------------------------------------------------------------
 -- Hide chat buttons (social, channel, scroll)
 ---------------------------------------------------------------------------
--- Hide function to prevent Blizzard from re-showing frames
-local function preventShow(self)
-    self:Hide()
-end
-
 local function HideChatButtons(chatFrame)
     local settings = GetSettings()
     if not settings or not settings.hideButtons then return end
 
     -- Hide button frame and prevent Blizzard from re-showing it
     if chatFrame.buttonFrame then
-        chatFrame.buttonFrame:SetScript("OnShow", preventShow)
+        _chatButtonsHidden[chatFrame.buttonFrame] = true
+        hooksecurefunc(chatFrame.buttonFrame, "Show", function(self)
+            C_Timer.After(0, function()
+                if not _chatButtonsHidden[self] then return end
+                if self and self.Hide then self:Hide() end
+            end)
+        end)
         chatFrame.buttonFrame:Hide()
         chatFrame.buttonFrame:SetWidth(0.1)  -- Collapse to minimal width
     end
@@ -699,7 +701,13 @@ local function HideChatButtons(chatFrame)
     if frameName then
         local buttonFrame = _G[frameName .. "ButtonFrame"]
         if buttonFrame then
-            buttonFrame:SetScript("OnShow", preventShow)
+            _chatButtonsHidden[buttonFrame] = true
+            hooksecurefunc(buttonFrame, "Show", function(self)
+                C_Timer.After(0, function()
+                    if not _chatButtonsHidden[self] then return end
+                    if self and self.Hide then self:Hide() end
+                end)
+            end)
             buttonFrame:Hide()
             buttonFrame:SetWidth(0.1)
         end
@@ -710,15 +718,19 @@ local function HideChatButtons(chatFrame)
 
     -- Hide QuickJoinToastButton (global frame, not per-chat)
     if QuickJoinToastButton then
-        QuickJoinToastButton:SetScript("OnShow", preventShow)
+        _chatButtonsHidden[QuickJoinToastButton] = true
+        hooksecurefunc(QuickJoinToastButton, "Show", function(self)
+            C_Timer.After(0, function()
+                if not _chatButtonsHidden[self] then return end
+                if self and self.Hide then self:Hide() end
+            end)
+        end)
         QuickJoinToastButton:Hide()
     end
 
     -- Remove screen clamping so chat can move to edges
-    if not InCombatLockdown() then
-        chatFrame:SetClampedToScreen(false)
-        chatFrame:SetClampRectInsets(0, 0, 0, 0)
-    end
+    chatFrame:SetClampedToScreen(false)
+    chatFrame:SetClampRectInsets(0, 0, 0, 0)
 end
 
 ---------------------------------------------------------------------------
@@ -726,7 +738,7 @@ end
 ---------------------------------------------------------------------------
 local function ShowChatButtons(chatFrame)
     if chatFrame.buttonFrame then
-        chatFrame.buttonFrame:SetScript("OnShow", nil)  -- Remove hide script
+        _chatButtonsHidden[chatFrame.buttonFrame] = false  -- Disable hide-on-show hook
         chatFrame.buttonFrame:Show()
         chatFrame.buttonFrame:SetWidth(29)  -- Restore default width
     end
@@ -741,7 +753,7 @@ local function ShowChatButtons(chatFrame)
     if frameName then
         local buttonFrame = _G[frameName .. "ButtonFrame"]
         if buttonFrame then
-            buttonFrame:SetScript("OnShow", nil)
+            _chatButtonsHidden[buttonFrame] = false  -- Disable hide-on-show hook
             buttonFrame:Show()
             buttonFrame:SetWidth(29)
         end
@@ -752,14 +764,12 @@ local function ShowChatButtons(chatFrame)
 
     -- Show QuickJoinToastButton
     if QuickJoinToastButton then
-        QuickJoinToastButton:SetScript("OnShow", nil)
+        _chatButtonsHidden[QuickJoinToastButton] = false  -- Disable hide-on-show hook
         QuickJoinToastButton:Show()
     end
 
     -- Restore screen clamping
-    if not InCombatLockdown() then
-        chatFrame:SetClampedToScreen(true)
-    end
+    chatFrame:SetClampedToScreen(true)
 end
 
 ---------------------------------------------------------------------------

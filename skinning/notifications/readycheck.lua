@@ -53,7 +53,7 @@ local function ResetReadyCheckPosition()
     end
     -- Reset to default position
     local frame = _G.ReadyCheckFrame
-    if frame then
+    if frame and not InCombatLockdown() then
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, -10)
     end
@@ -357,26 +357,34 @@ local function SkinReadyCheckFrame()
     SkinBase.GetFrameData(frame, "title"):SetText("Ready Check")
     SkinBase.GetFrameData(frame, "title"):SetTextColor(sr, sg, sb, 1)  -- Use skin color for title
 
-    -- Hook OnShow to reapply hiding and restore position (Blizzard may reset)
-    frame:HookScript("OnShow", function(self)
-        HideBlizzardDecorations()
-        -- Restore saved position
-        local pos = GetReadyCheckPosition()
-        if pos then
-            self:ClearAllPoints()
-            self:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
-        end
+    -- Hook Show to reapply hiding and restore position (Blizzard may reset)
+    -- TAINT SAFETY: Use hooksecurefunc + C_Timer.After(0) to break taint chain from secure context.
+    hooksecurefunc(frame, "Show", function(self)
+        C_Timer.After(0, function()
+            if InCombatLockdown() then return end
+            HideBlizzardDecorations()
+            -- Restore saved position
+            local pos = GetReadyCheckPosition()
+            if pos then
+                self:ClearAllPoints()
+                self:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
+            end
+        end)
     end)
 
     -- Make frame movable (only when unlocked)
-    frame:SetMovable(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self)
+    if not InCombatLockdown() then
+        frame:SetMovable(true)
+        frame:RegisterForDrag("LeftButton")
+    end
+    frame:HookScript("OnDragStart", function(self)
+        if InCombatLockdown() then return end
         if SkinBase.GetFrameData(self, "unlocked") then
             self:StartMoving()
         end
     end)
-    frame:SetScript("OnDragStop", function(self)
+    frame:HookScript("OnDragStop", function(self)
+        if InCombatLockdown() then return end
         if SkinBase.GetFrameData(self, "unlocked") then
             self:StopMovingOrSizing()
             -- Save position (snapped to pixel grid)

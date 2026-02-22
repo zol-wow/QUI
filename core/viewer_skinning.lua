@@ -60,7 +60,12 @@ local function StripBlizzardOverlay(icon)
         if region:IsObjectType("Texture") and region.GetAtlas and region:GetAtlas() == "UI-HUD-CoolDownManager-IconOverlay" then
             region:SetTexture("")
             region:Hide()
-            region.Show = function() end
+            hooksecurefunc(region, "Show", function(self)
+                C_Timer.After(0, function()
+                    if InCombatLockdown() then return end
+                    if self and self.Hide then self:Hide() end
+                end)
+            end)
         end
     end
 end
@@ -118,6 +123,7 @@ function QUICore:SkinIcon(icon, settings)
     -- Get the icon texture frame (handle both .icon and .Icon for compatibility)
     local iconTexture = icon.icon or icon.Icon
     if not icon or not iconTexture then return end
+    if InCombatLockdown() then return false end
 
     -- Calculate icon dimensions from iconSize and aspectRatio (crop slider)
     local iconSize = settings.iconSize or 40
@@ -445,6 +451,7 @@ end
 
 function QUICore:ApplyViewerLayout(viewer)
     if not viewer or not viewer.GetName then return end
+    if InCombatLockdown() then return end
     local name     = viewer:GetName()
     local settings = self.db.profile.viewers[name]
     if not settings or not settings.enabled then return end
@@ -461,10 +468,10 @@ function QUICore:ApplyViewerLayout(viewer)
     local count = #icons
     if count == 0 then return end
 
-    -- Sort icons with fallback to creation order
+    -- Sort icons by layoutIndex or frame ID
     table.sort(icons, function(a, b)
-        local la = a.layoutIndex or a:GetID() or a.__cdmCreationOrder or 0
-        local lb = b.layoutIndex or b:GetID() or b.__cdmCreationOrder or 0
+        local la = a.layoutIndex or a:GetID() or 0
+        local lb = b.layoutIndex or b:GetID() or 0
         return la < lb
     end)
 

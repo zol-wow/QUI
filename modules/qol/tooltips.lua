@@ -346,7 +346,6 @@ local function SetupTooltipHook()
     end
 
     local function CanAccessAuraArgs(unit, token)
-        if InCombatLockdown() then return false end
         if IsBlockedValue(unit) then return false end
         if IsBlockedValue(token) then return false end
         return true
@@ -364,7 +363,6 @@ local function SetupTooltipHook()
     -- Helper function to add spell/icon ID info to a tooltip
     local function AddSpellIDToTooltip(tooltip, spellID, skipShow)
         if not spellID then return end
-        if InCombatLockdown() then return end
 
         local settings = GetSettings()
         if not settings or not settings.enabled or not settings.showSpellIDs then return end
@@ -401,7 +399,6 @@ local function SetupTooltipHook()
 
     -- Use TooltipDataProcessor for Spell tooltips (action bars, spellbook, CDM, etc.)
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Spell, function(tooltip, data)
-        if InCombatLockdown() then return end
         pcall(function()
             if data and data.id and type(data.id) == "number" then
                 AddSpellIDToTooltip(tooltip, data.id)
@@ -412,7 +409,6 @@ local function SetupTooltipHook()
     -- Aura tooltip data (player buffs/debuffs) - guard for optional enum
     if Enum.TooltipDataType.Aura then
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Aura, function(tooltip, data)
-            if InCombatLockdown() then return end
             pcall(function()
                 if data and data.id and type(data.id) == "number" then
                     AddSpellIDToTooltip(tooltip, data.id, false)

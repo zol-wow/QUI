@@ -74,7 +74,8 @@ local function BuildGeneralTab(tabContent)
     if db and db.general then
         local scaleSlider = GUI:CreateFormSlider(tabContent, "Global UI Scale", 0.3, 2.0, 0.01,
             "uiScale", db.general, function(val)
-                pcall(function() UIParent:SetScale(val) end)
+                if InCombatLockdown() then return end
+                UIParent:SetScale(val)
             end, { deferOnDrag = true, precision = 7 })
         scaleSlider:SetPoint("TOPLEFT", PADDING, y)
         scaleSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
@@ -85,8 +86,9 @@ local function BuildGeneralTab(tabContent)
         presetLabel:SetPoint("TOPLEFT", PADDING, y)
 
         local function ApplyPreset(val, name)
+            if InCombatLockdown() then return end
             db.general.uiScale = val
-            pcall(function() UIParent:SetScale(val) end)
+            UIParent:SetScale(val)
             local msg = "|cff34D399[QUI]|r UI scale set to " .. val
             if name then msg = msg .. " (" .. name .. ")" end
             DEFAULT_CHAT_FRAME:AddMessage(msg)
@@ -563,7 +565,7 @@ local function BuildGeneralTab(tabContent)
         useClassColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color for Border", "useClassColorBorder", combatTimerDB, function(val)
             if val then
                 combatTimerDB.useAccentColorBorder = false
-                if useAccentColorCheck and useAccentColorCheck.SetValue then useAccentColorCheck:SetValue(false, true) end
+                if useAccentColorCheck and useAccentColorCheck.SetValue then useAccentColorCheck.SetValue(false, true) end
             end
             if _G.QUI_RefreshCombatTimer then _G.QUI_RefreshCombatTimer() end
             if borderColorPicker and borderColorPicker.SetEnabled then
@@ -577,7 +579,7 @@ local function BuildGeneralTab(tabContent)
         useAccentColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Accent Color for Border", "useAccentColorBorder", combatTimerDB, function(val)
             if val then
                 combatTimerDB.useClassColorBorder = false
-                if useClassColorCheck and useClassColorCheck.SetValue then useClassColorCheck:SetValue(false, true) end
+                if useClassColorCheck and useClassColorCheck.SetValue then useClassColorCheck.SetValue(false, true) end
             end
             if _G.QUI_RefreshCombatTimer then _G.QUI_RefreshCombatTimer() end
             if borderColorPicker and borderColorPicker.SetEnabled then
@@ -1990,7 +1992,7 @@ local function BuildGeneralTab(tabContent)
         brzUseClassBorderCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color for Border", "useClassColorBorder", brzDB, function(val)
             if val then
                 brzDB.useAccentColorBorder = false
-                if brzUseAccentBorderCheck and brzUseAccentBorderCheck.SetValue then brzUseAccentBorderCheck:SetValue(false, true) end
+                if brzUseAccentBorderCheck and brzUseAccentBorderCheck.SetValue then brzUseAccentBorderCheck.SetValue(false, true) end
             end
             if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
             if brzBorderColorPicker and brzBorderColorPicker.SetEnabled then
@@ -2004,7 +2006,7 @@ local function BuildGeneralTab(tabContent)
         brzUseAccentBorderCheck = GUI:CreateFormCheckbox(tabContent, "Use Accent Color for Border", "useAccentColorBorder", brzDB, function(val)
             if val then
                 brzDB.useClassColorBorder = false
-                if brzUseClassBorderCheck and brzUseClassBorderCheck.SetValue then brzUseClassBorderCheck:SetValue(false, true) end
+                if brzUseClassBorderCheck and brzUseClassBorderCheck.SetValue then brzUseClassBorderCheck.SetValue(false, true) end
             end
             if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
             if brzBorderColorPicker and brzBorderColorPicker.SetEnabled then
@@ -2044,7 +2046,7 @@ local function BuildGeneralTab(tabContent)
             if rangeCheckDB.dynamicColor and rangeCheckDB.useClassColor then
                 rangeCheckDB.useClassColor = false
                 if classColorCheck and classColorCheck.SetValue then
-                    classColorCheck:SetValue(false, true)
+                    classColorCheck.SetValue(false, true)
                 end
             end
             if dynamicColorCheck and dynamicColorCheck.SetEnabled then
@@ -2100,7 +2102,7 @@ local function BuildGeneralTab(tabContent)
             if val then
                 rangeCheckDB.useClassColor = false
                 if classColorCheck and classColorCheck.SetValue then
-                    classColorCheck:SetValue(false, true)
+                    classColorCheck.SetValue(false, true)
                 end
             end
             Shared.RefreshRangeCheck()

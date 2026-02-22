@@ -92,10 +92,20 @@ local function ApplyTooltipFontSizeToFrame(tooltip)
     if not tooltip then return end
     local baseSize = GetEffectiveFontSize()
     local headerSize = baseSize + 2
-    local tooltipName = tooltip.GetName and tooltip:GetName()
+    local tooltipName
+    if tooltip.GetName then
+        local ok, name = pcall(tooltip.GetName, tooltip)
+        if ok then
+            tooltipName = name
+        end
+    end
 
     if tooltipName and tooltip.NumLines then
-        local lineCount = tooltip:NumLines() or 0
+        local lineCount = 0
+        local ok, count = pcall(tooltip.NumLines, tooltip)
+        if ok then
+            lineCount = count or 0
+        end
         if lineCount > 0 then
             for i = 1, lineCount do
                 local left = _G[tooltipName .. "TextLeft" .. i]
@@ -109,7 +119,18 @@ local function ApplyTooltipFontSizeToFrame(tooltip)
     end
 
     -- Fallback for unnamed tooltips and named-but-empty tooltips
-    local regions = { tooltip:GetRegions() }
+    local regions = {}
+    if tooltip.GetRegions then
+        local ok, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15,
+            r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30 = pcall(tooltip.GetRegions, tooltip)
+        if ok then
+            regions = {
+                r1, r2, r3, r4, r5, r6, r7, r8, r9, r10,
+                r11, r12, r13, r14, r15, r16, r17, r18, r19, r20,
+                r21, r22, r23, r24, r25, r26, r27, r28, r29, r30
+            }
+        end
+    end
     local isFirst = true
     for _, region in ipairs(regions) do
         if region and region.IsObjectType and region:IsObjectType("FontString") then
@@ -272,6 +293,8 @@ local function ApplyNineSliceColors(nineSlice, sr, sg, sb, sa, bgr, bgg, bgb, bg
 end
 
 -- Prevent Blizzard from re-applying the default NineSlice layout on Show
+-- NOTE: Nil'ing these properties on Blizzard tooltip frames is safe — tooltips are not
+-- protected frames and don't participate in secure execution paths.
 local function ClearNineSliceLayoutInfo(tooltip)
     if not tooltip then return end
 

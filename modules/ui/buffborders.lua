@@ -29,6 +29,9 @@ local BORDER_COLOR_DEBUFF = {0.5, 0, 0, 1}    -- Dark red for debuffs
 -- Track which buttons we've already bordered
 local borderedButtons = {}
 
+-- Store border textures in a weak-keyed table to avoid writing properties to Blizzard aura frames
+local _buttonBorders = setmetatable({}, { __mode = "k" })
+
 -- Hook guards stored locally (NOT on Blizzard frames) to avoid taint
 local buffFrameShowHooked = false
 local debuffFrameShowHooked = false
@@ -67,54 +70,59 @@ local function AddBorderToButton(button, isBuff)
     local borderColor = isBuff and BORDER_COLOR_BUFF or BORDER_COLOR_DEBUFF
     
     -- Create 4 separate edge textures for clean borders around the ICON only
-    if not button.quaziiBorderTop then
+    -- Store in weak-keyed table to avoid writing properties directly to Blizzard frames
+    _buttonBorders[button] = _buttonBorders[button] or {}
+    local borders = _buttonBorders[button]
+    if not borders.top then
         -- Top border
-        button.quaziiBorderTop = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        button.quaziiBorderTop:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
-        button.quaziiBorderTop:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
-        
+        borders.top = button:CreateTexture(nil, "OVERLAY", nil, 7)
+        borders.top:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+        borders.top:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
+
         -- Bottom border
-        button.quaziiBorderBottom = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        button.quaziiBorderBottom:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
-        button.quaziiBorderBottom:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
-        
+        borders.bottom = button:CreateTexture(nil, "OVERLAY", nil, 7)
+        borders.bottom:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
+        borders.bottom:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
+
         -- Left border
-        button.quaziiBorderLeft = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        button.quaziiBorderLeft:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
-        button.quaziiBorderLeft:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
-        
+        borders.left = button:CreateTexture(nil, "OVERLAY", nil, 7)
+        borders.left:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+        borders.left:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
+
         -- Right border
-        button.quaziiBorderRight = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        button.quaziiBorderRight:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
-        button.quaziiBorderRight:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
+        borders.right = button:CreateTexture(nil, "OVERLAY", nil, 7)
+        borders.right:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
+        borders.right:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
     end
-    
+
     -- Update border color based on type
-    button.quaziiBorderTop:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-    button.quaziiBorderBottom:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-    button.quaziiBorderLeft:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-    button.quaziiBorderRight:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-    
+    borders.top:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+    borders.bottom:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+    borders.left:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+    borders.right:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+
     -- Update border size
-    button.quaziiBorderTop:SetHeight(borderSize)
-    button.quaziiBorderBottom:SetHeight(borderSize)
-    button.quaziiBorderLeft:SetWidth(borderSize)
-    button.quaziiBorderRight:SetWidth(borderSize)
-    
-    button.quaziiBorderTop:Show()
-    button.quaziiBorderBottom:Show()
-    button.quaziiBorderLeft:Show()
-    button.quaziiBorderRight:Show()
+    borders.top:SetHeight(borderSize)
+    borders.bottom:SetHeight(borderSize)
+    borders.left:SetWidth(borderSize)
+    borders.right:SetWidth(borderSize)
+
+    borders.top:Show()
+    borders.bottom:Show()
+    borders.left:Show()
+    borders.right:Show()
     
     borderedButtons[button] = true
 end
 
 -- Hide borders on a button
 local function HideBorderOnButton(button)
-    if button.quaziiBorderTop then button.quaziiBorderTop:Hide() end
-    if button.quaziiBorderBottom then button.quaziiBorderBottom:Hide() end
-    if button.quaziiBorderLeft then button.quaziiBorderLeft:Hide() end
-    if button.quaziiBorderRight then button.quaziiBorderRight:Hide() end
+    local borders = _buttonBorders[button]
+    if not borders then return end
+    if borders.top then borders.top:Hide() end
+    if borders.bottom then borders.bottom:Hide() end
+    if borders.left then borders.left:Hide() end
+    if borders.right then borders.right:Hide() end
 end
 
 -- Apply font settings to duration text
@@ -163,6 +171,7 @@ end
 
 -- Hide/show entire BuffFrame or DebuffFrame based on settings
 local function ApplyFrameHiding()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings then return end
 

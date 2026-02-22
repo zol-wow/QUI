@@ -329,13 +329,16 @@ local function SkinPVEFrame()
 
     -- Hook to reposition Tab4 (Delves) - Blizzard repositions it dynamically
     -- Note: Tab4 may not exist in all WoW versions (e.g., 12.x beta)
+    -- TAINT SAFETY: Defer to break taint chain from secure context.
     hooksecurefunc("PVEFrame_ShowFrame", function()
-        local tab4 = _G.PVEFrameTab4
-        if not tab4 or not tab4:IsShown() then return end
-        local twoShown = _G.PVEFrameTab2:IsShown()
-        local threeShown = _G.PVEFrameTab3:IsShown()
-        tab4:ClearAllPoints()
-        tab4:SetPoint("TOPLEFT", (twoShown and threeShown and _G.PVEFrameTab3) or (twoShown and not threeShown and _G.PVEFrameTab2) or _G.PVEFrameTab1, "TOPRIGHT", -5, 0)
+        C_Timer.After(0, function()
+            local tab4 = _G.PVEFrameTab4
+            if not tab4 or not tab4:IsShown() then return end
+            local twoShown = _G.PVEFrameTab2:IsShown()
+            local threeShown = _G.PVEFrameTab3:IsShown()
+            tab4:ClearAllPoints()
+            tab4:SetPoint("TOPLEFT", (twoShown and threeShown and _G.PVEFrameTab3) or (twoShown and not threeShown and _G.PVEFrameTab2) or _G.PVEFrameTab1, "TOPRIGHT", -5, 0)
+        end)
     end)
 
     -- Style GroupFinder buttons
@@ -796,13 +799,16 @@ local function SkinChallengesFrame()
 
     -- Hook to style new dungeon icons when they're created/updated
     if ChallengesFrame.Update and not SkinBase.GetFrameData(ChallengesFrame, "updateHooked") then
+        -- TAINT SAFETY: Defer to break taint chain from secure Update context.
         hooksecurefunc(ChallengesFrame, "Update", function(self)
-            if self.DungeonIcons then
-                local sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2 = SkinBase.GetSkinColors()
-                for _, icon in pairs(self.DungeonIcons) do
-                    StyleDungeonIcon(icon, sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2)
+            C_Timer.After(0, function()
+                if self.DungeonIcons then
+                    local sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2 = SkinBase.GetSkinColors()
+                    for _, icon in pairs(self.DungeonIcons) do
+                        StyleDungeonIcon(icon, sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2)
+                    end
                 end
-            end
+            end)
         end)
         SkinBase.SetFrameData(ChallengesFrame, "updateHooked", true)
     end
@@ -1170,9 +1176,12 @@ local function SkinPVPFrame()
         -- Specific battleground scroll list (shown when "Specific Battlegrounds" is selected)
         if HonorFrame.SpecificScrollBox and not SkinBase.GetFrameData(HonorFrame.SpecificScrollBox, "hooked") then
             -- Hook to style buttons as they're created/recycled
+            -- TAINT SAFETY: Defer to break taint chain from secure Update context.
             hooksecurefunc(HonorFrame.SpecificScrollBox, "Update", function(scrollBox)
-                scrollBox:ForEachFrame(function(button)
-                    StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+                C_Timer.After(0, function()
+                    scrollBox:ForEachFrame(function(button)
+                        StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+                    end)
                 end)
             end)
             -- Style existing buttons
@@ -1264,9 +1273,12 @@ local function SkinPVPFrame()
         local specificList = TrainingGroundsFrame.SpecificTrainingGroundList
         if specificList and specificList.ScrollBox and not SkinBase.GetFrameData(specificList.ScrollBox, "hooked") then
             -- Hook to style buttons as they're created/recycled
+            -- TAINT SAFETY: Defer to break taint chain from secure Update context.
             hooksecurefunc(specificList.ScrollBox, "Update", function(scrollBox)
-                scrollBox:ForEachFrame(function(button)
-                    StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+                C_Timer.After(0, function()
+                    scrollBox:ForEachFrame(function(button)
+                        StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+                    end)
                 end)
             end)
             -- Style existing buttons

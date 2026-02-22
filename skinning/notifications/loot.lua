@@ -1022,21 +1022,58 @@ end
 --- INITIALIZATION
 ---=================================================================================
 
-local function DisableBlizzardLoot()
+-- Combat deferral: pending flags and event frame for taint safety
+local pendingDisableBlizzard = false
+local pendingEnableBlizzard = false
+local pendingRefreshBlizzard = false
+local DisableBlizzardLoot, EnableBlizzardLoot  -- forward declarations
+
+local combatDeferFrame = CreateFrame("Frame")
+combatDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatDeferFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if pendingDisableBlizzard then
+            pendingDisableBlizzard = false
+            DisableBlizzardLoot()
+        end
+        if pendingEnableBlizzard then
+            pendingEnableBlizzard = false
+            EnableBlizzardLoot()
+        end
+        if pendingRefreshBlizzard then
+            pendingRefreshBlizzard = false
+            if Loot.Refresh then
+                Loot:Refresh()
+            end
+        end
+    end
+end)
+
+DisableBlizzardLoot = function()
+    -- TAINT SAFETY: Defer to after combat if in combat lockdown
+    if InCombatLockdown() then
+        pendingDisableBlizzard = true
+        return
+    end
+
     local db = GetDB()
 
     -- Disable Blizzard Loot Frame
     if db.loot and db.loot.enabled then
-        LootFrame:UnregisterAllEvents()
-        LootFrame:Hide()
+        if not InCombatLockdown() then
+            LootFrame:UnregisterAllEvents()
+            LootFrame:Hide()
+        end
     end
 
     -- Disable Blizzard Roll Frames
     if db.lootRoll and db.lootRoll.enabled then
         -- Hide the container
         if GroupLootContainer then
-            GroupLootContainer:UnregisterAllEvents()
-            GroupLootContainer:Hide()
+            if not InCombatLockdown() then
+                GroupLootContainer:UnregisterAllEvents()
+                GroupLootContainer:Hide()
+            end
             -- Hook to keep it hidden when Blizzard tries to show frames
             -- TAINT SAFETY: Defer to break taint chain from secure context.
             if not hookedContainers[GroupLootContainer] then
@@ -1054,8 +1091,10 @@ local function DisableBlizzardLoot()
         for i = 1, numRollFrames do
             local frame = _G["GroupLootFrame"..i]
             if frame then
-                frame:UnregisterAllEvents()
-                frame:Hide()
+                if not InCombatLockdown() then
+                    frame:UnregisterAllEvents()
+                    frame:Hide()
+                end
                 -- TAINT SAFETY: Defer to break taint chain from secure context.
                 if not hookedLootFrames[frame] then
                     hooksecurefunc(frame, "Show", function(self)
@@ -1070,16 +1109,26 @@ local function DisableBlizzardLoot()
     end
 end
 
-local function EnableBlizzardLoot()
+EnableBlizzardLoot = function()
+    -- TAINT SAFETY: Defer to after combat if in combat lockdown
+    if InCombatLockdown() then
+        pendingEnableBlizzard = true
+        return
+    end
+
     -- Re-enable Blizzard Loot Frame
-    LootFrame:RegisterEvent("LOOT_OPENED")
-    LootFrame:RegisterEvent("LOOT_SLOT_CLEARED")
-    LootFrame:RegisterEvent("LOOT_SLOT_CHANGED")
-    LootFrame:RegisterEvent("LOOT_CLOSED")
+    if not InCombatLockdown() then
+        LootFrame:RegisterEvent("LOOT_OPENED")
+        LootFrame:RegisterEvent("LOOT_SLOT_CLEARED")
+        LootFrame:RegisterEvent("LOOT_SLOT_CHANGED")
+        LootFrame:RegisterEvent("LOOT_CLOSED")
+    end
 
     -- Re-enable Blizzard Roll Frames
-    UIParent:RegisterEvent("START_LOOT_ROLL")
-    UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+    if not InCombatLockdown() then
+        UIParent:RegisterEvent("START_LOOT_ROLL")
+        UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+    end
     if GroupLootContainer then
         GroupLootContainer:SetAlpha(1)
     end
@@ -1203,19 +1252,24 @@ function Loot:Refresh()
     RepositionAllRolls()
 
     -- Toggle Blizzard frames based on settings
-    if db.loot and db.loot.enabled then
-        LootFrame:UnregisterAllEvents()
-        LootFrame:Hide()
-    else
-        EnableBlizzardLoot()
-    end
+    -- TAINT SAFETY: Guard secure frame operations against combat lockdown
+    if not InCombatLockdown() then
+        if db.loot and db.loot.enabled then
+            LootFrame:UnregisterAllEvents()
+            LootFrame:Hide()
+        else
+            EnableBlizzardLoot()
+        end
 
-    if db.lootRoll and db.lootRoll.enabled then
-        UIParent:UnregisterEvent("START_LOOT_ROLL")
-        UIParent:UnregisterEvent("CANCEL_LOOT_ROLL")
+        if db.lootRoll and db.lootRoll.enabled then
+            UIParent:UnregisterEvent("START_LOOT_ROLL")
+            UIParent:UnregisterEvent("CANCEL_LOOT_ROLL")
+        else
+            UIParent:RegisterEvent("START_LOOT_ROLL")
+            UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+        end
     else
-        UIParent:RegisterEvent("START_LOOT_ROLL")
-        UIParent:RegisterEvent("CANCEL_LOOT_ROLL")
+        pendingRefreshBlizzard = true
     end
 end
 

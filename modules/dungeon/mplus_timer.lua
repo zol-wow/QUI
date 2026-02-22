@@ -1472,7 +1472,7 @@ function MPlusTimer:Show()
     end
 
     -- Hide Blizzard's timer
-    if ScenarioObjectiveTracker then
+    if ScenarioObjectiveTracker and not InCombatLockdown() then
         ScenarioObjectiveTracker:Hide()
     end
 end
@@ -1484,7 +1484,7 @@ function MPlusTimer:Hide()
     self:StopTimerLoop()
 
     -- Show Blizzard's timer again
-    if ScenarioObjectiveTracker and ObjectiveTrackerFrame then
+    if ScenarioObjectiveTracker and ObjectiveTrackerFrame and not InCombatLockdown() then
         ObjectiveTrackerFrame:Update()
     end
 end

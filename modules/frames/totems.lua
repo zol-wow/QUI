@@ -89,6 +89,10 @@ end
 local function ReskinTotemButton(button)
     local db = GetDB()
     if not button or not db then return end
+    -- NOTE: No InCombatLockdown() guard needed here. Totem buttons are
+    -- non-protected pool frames (ObjectPoolMixin), and TotemFrame has been
+    -- reparented to UIParent by HookTotemFrame(). All operations below are
+    -- purely visual (textures, sizes, fonts) on non-secure frames.
 
     local size = db.iconSize or 36
 
@@ -196,6 +200,10 @@ end
 local function LayoutTotemButtons()
     local tf = TotemFrame
     if not tf or not tf.totemPool then return end
+    -- NOTE: No InCombatLockdown() guard needed here. Totem buttons are
+    -- non-protected pool frames, and TotemFrame has been reparented to
+    -- UIParent (no longer in the managed frame system). SetSize/SetPoint
+    -- on these frames is safe during combat.
 
     local db = GetDB()
     if not db then return end
@@ -327,6 +335,7 @@ end
 local function PositionTotemFrame()
     local tf = TotemFrame
     if not tf then return end
+    if InCombatLockdown() then return end
 
     local db = GetDB()
     if not db then return end
@@ -339,9 +348,26 @@ local function PositionTotemFrame()
 end
 
 ---------------------------------------------------------------------------
+-- TAINT SAFETY: Defer totem frame hook/refresh until after combat ends
+---------------------------------------------------------------------------
+local totemCombatFrame = CreateFrame("Frame")
+local pendingTotemRefresh = false
+totemCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+totemCombatFrame:SetScript("OnEvent", function()
+    if pendingTotemRefresh then
+        pendingTotemRefresh = false
+        TotemBar:Refresh()
+    end
+end)
+
+---------------------------------------------------------------------------
 -- HOOK SETUP
 ---------------------------------------------------------------------------
 local function HookTotemFrame()
+    if InCombatLockdown() then
+        pendingTotemRefresh = true
+        return
+    end
     if TotemBar.hooked then return end
     local tf = TotemFrame
     if not tf then return end
@@ -434,7 +460,7 @@ end
 function TotemBar:Refresh()
     local db = GetDB()
     if not db or not db.enabled then
-        if TotemFrame then
+        if TotemFrame and not InCombatLockdown() then
             -- Restore to default hidden behavior
             TotemFrame:Hide()
         end

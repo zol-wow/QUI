@@ -32,6 +32,9 @@ local cachedSettings = nil
 local clockTicker = nil
 local coordsTicker = nil
 
+-- Combat-deferred refresh flag
+local pendingMinimapRefresh = false
+
 ---=================================================================================
 --- BLIZZARD LAYOUT NO-OPS
 --- Blizzard's Minimap.lua calls self:Layout() internally (line ~479).
@@ -44,8 +47,12 @@ local coordsTicker = nil
 --- are NOT given no-op Layout — they are reparented to hiddenButtonParent
 --- which provides its own Layout. See BUTTON VISIBILITY section below.
 ---=================================================================================
-if Minimap and not Minimap.Layout then
-    Minimap.Layout = function() end
+-- TAINT NOTE: Direct method override on Blizzard frame to suppress unwanted Layout calls.
+-- Minimap is reparented to UIParent by QUI and is not in the Edit Mode secure chain.
+if not InCombatLockdown() then
+    if Minimap and not Minimap.Layout then
+        Minimap.Layout = function() end
+    end
 end
 
 ---=================================================================================
@@ -865,6 +872,7 @@ if Minimap.ZoomOut and not zoomOutShowHooked then
 end
 
 local function UpdateButtonVisibility()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -1034,6 +1042,7 @@ local function RestoreDungeonEye()
 end
 
 local function UpdateDungeonEyePosition()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
@@ -1134,6 +1143,7 @@ end
 ---=================================================================================
 
 local function UpdateMinimapSize()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -1163,6 +1173,7 @@ local function UpdateMinimapSize()
 end
 
 local function SetupMinimapDragging()
+    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -1462,6 +1473,11 @@ function Minimap_Module:Initialize()
 end
 
 function Minimap_Module:Refresh()
+    if InCombatLockdown() then
+        pendingMinimapRefresh = true
+        return
+    end
+
     -- Invalidate cached settings so we get fresh values
     InvalidateSettingsCache()
 
@@ -1540,6 +1556,7 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "Blizzard_HybridMinimap" then
@@ -1553,6 +1570,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         C_Timer.After(0.5, function()
             Minimap_Module:Initialize()
         end)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended: run deferred refresh if one was requested during combat
+        if pendingMinimapRefresh then
+            pendingMinimapRefresh = false
+            Minimap_Module:Refresh()
+        end
     end
 end)
 
@@ -1563,7 +1586,8 @@ calendarFrame:RegisterEvent("CALENDAR_ACTION_PENDING")
 calendarFrame:SetScript("OnEvent", function()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
-    
+    if InCombatLockdown() then return end
+
     if settings.showCalendar and GameTimeFrame then
         if C_Calendar.GetNumPendingInvites() < 1 then
             GameTimeFrame:Hide()

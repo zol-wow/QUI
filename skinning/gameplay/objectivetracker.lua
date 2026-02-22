@@ -176,7 +176,11 @@ local function SyncBlizzardHeight()
     local settings = GetSettings()
     local maxHeight = settings and settings.objectiveTrackerHeight or 600
 
-    -- Set Blizzard's internal height so truncation happens at our max
+    -- Set Blizzard's internal height so truncation happens at our max.
+    -- TAINT NOTE: Direct property write to Blizzard frame — accepted/required because
+    -- Blizzard's UpdateHeight() reads self.editModeHeight. All callers of SyncBlizzardHeight()
+    -- are already guarded by InCombatLockdown() (ApplyLayoutSettingsSafely) or deferred to
+    -- PLAYER_REGEN_ENABLED, so this write never occurs during combat.
     TrackerFrame.editModeHeight = maxHeight
     if TrackerFrame.UpdateHeight then
         TrackerFrame:UpdateHeight()

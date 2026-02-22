@@ -530,7 +530,8 @@ local function CreateCDMSetupPage(parent)
                 if child and child ~= viewer.Selection and not child._isCustomCDMIcon then
                     local iconTex = child.Icon or child.icon
                     if iconTex and (child.Cooldown or child.cooldown) then
-                        if child:IsShown() or child._ncdmHidden then
+                        local cis = _G.QUI_GetIconState and _G.QUI_GetIconState(child)
+                        if child:IsShown() or (cis and cis.ncdmHidden) then
                             table.insert(blizzIcons, child)
                         end
                     end

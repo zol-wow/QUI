@@ -104,6 +104,8 @@ local function ScheduleGlobalFontApply()
 end
 
 function QUICore:ApplyGlobalFont()
+    -- NOTE: No InCombatLockdown() guard needed. Font:SetFont() on Blizzard
+    -- font objects is not a protected operation — safe in combat.
     -- Check if feature is enabled
     if not self.db or not self.db.profile or not self.db.profile.general then return end
     if not self.db.profile.general.applyGlobalFontToBlizzard then return end

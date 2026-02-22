@@ -3475,8 +3475,8 @@ end
 local function CreateCastbarNudgeButton(parent, direction, deltaX, deltaY, unitKey)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
-    -- Use TOOLTIP strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("TOOLTIP")
+    -- Use HIGH strata so nudge buttons appear above all other frames
+    btn:SetFrameStrata("HIGH")
     btn:SetFrameLevel(100)
 
     -- Background - dark grey at 70% for visibility over any game content
@@ -3680,14 +3680,24 @@ local function ShowCastbarEditOverlay(unitKey)
     -- Enable keyboard for arrow key nudging
     castbar:EnableKeyboard(true)
     castbar:SetScript("OnKeyDown", function(self, key)
-        if not EditModeState.active then return end
+        if not EditModeState.active then
+            self:SetPropagateKeyboardInput(true)
+            return
+        end
 
         local deltaX, deltaY = 0, 0
         if key == "LEFT" then deltaX = -1
         elseif key == "RIGHT" then deltaX = 1
         elseif key == "UP" then deltaY = 1
         elseif key == "DOWN" then deltaY = -1
-        else return end  -- Ignore other keys
+        else
+            -- Non-arrow keys: propagate to game (WASD, hotkeys, Escape, etc.)
+            self:SetPropagateKeyboardInput(true)
+            return
+        end
+
+        -- Consume arrow keys so they nudge instead of moving the camera
+        self:SetPropagateKeyboardInput(false)
 
         -- Use global selection system - nudge the SELECTED element, not this castbar
         if QUICore and QUICore.EditModeSelection and QUICore.EditModeSelection.selectedType then

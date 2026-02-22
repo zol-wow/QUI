@@ -115,8 +115,10 @@ end
 -- ======================================================
 local function SuppressBlizzardGlow(icon)
     if not icon then return end
-
-    -- TAINT SAFETY: Defer hook bodies to break taint chain from secure CDM context.
+    -- NOTE: No InCombatLockdown() guard needed. SpellActivationAlert and
+    -- OverlayGlow are non-protected animation frames on CDM icons.
+    -- Glows are combat-only proc effects — blocking them in combat would
+    -- make this function useless.
     pcall(function()
         local alert = icon.SpellActivationAlert
         if alert then

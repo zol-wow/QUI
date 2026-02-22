@@ -15,7 +15,8 @@ local UNIT_ANCHOR_FRAMES = {
 local BLIZZARD_FRAME_LABELS = {
     BuffFrame = "Buff Frame",
     DebuffFrame = "Debuff Frame",
-    DamageMeterSessionWindow1 = "Damage Meter",
+    DamageMeter = "Damage Meter",
+    BossTargetFrameContainer = "Boss Frames",
     BuffBarCooldownViewer = "Tracked Bars",
     -- Action Bars (MainMenuBar renamed to MainActionBar in Midnight 12.0)
     MainActionBar = "Action Bar 1",
@@ -34,10 +35,16 @@ local BLIZZARD_FRAME_LABELS = {
     -- Display
     ObjectiveTrackerFrame = "Objective Tracker",
     GameTooltipDefaultContainer = "HUD Tooltip",
+    TalkingHeadFrame = "Talking Head",
+    ExtraAbilityContainer = "Extra Abilities",
 }
 
 -- CDM viewer names for click detection (populated when CDM_VIEWERS is defined)
 local CDM_VIEWER_LOOKUP = {}
+
+-- Weak-keyed table to track frames we force-showed in Edit Mode
+-- (avoids writing custom properties directly onto protected Blizzard frames)
+local _forceShownFrames = setmetatable({}, { __mode = "k" })
 
 local function IsNudgeTargetFrameName(frameName)
     if not frameName then return false end
@@ -385,7 +392,8 @@ end
 local BLIZZARD_EDITMODE_FRAMES = {
     { name = "BuffFrame", label = "Buff Frame", passthrough = true },
     { name = "DebuffFrame", label = "Debuff Frame", passthrough = true },
-    { name = "DamageMeterSessionWindow1", label = "Damage Meter" },
+    { name = "DamageMeter", label = "Damage Meter", passthrough = true },
+    { name = "BossTargetFrameContainer", label = "Boss Frames", passthrough = true },
     -- Action Bars (MainMenuBar renamed to MainActionBar in Midnight 12.0)
     -- passthrough = true: free movers use click-passthrough like CDM viewers
     -- (EnableMouse false, hide Blizzard .Selection, let Blizzard menu open)
@@ -397,16 +405,24 @@ local BLIZZARD_EDITMODE_FRAMES = {
     { name = "MultiBar5", label = "Action Bar 6", passthrough = true },
     { name = "MultiBar6", label = "Action Bar 7", passthrough = true },
     { name = "MultiBar7", label = "Action Bar 8", passthrough = true },
-    { name = "PetActionBar", label = "Pet Bar", passthrough = true, alwaysShow = true },
-    { name = "StanceBar", label = "Stance Bar", passthrough = true, alwaysShow = true },
+    { name = "PetActionBar", label = "Pet Bar", passthrough = true, requireSelection = true },
+    { name = "StanceBar", label = "Stance Bar", passthrough = true, requireSelection = true },
     { name = "MicroMenuContainer", label = "Micro Menu", passthrough = true },
     { name = "BagsBar", label = "Bag Bar", passthrough = true },
     -- Display
     { name = "ObjectiveTrackerFrame", label = "Objective Tracker", passthrough = true },
     { name = "GameTooltipDefaultContainer", label = "HUD Tooltip", passthrough = true },
+    -- Talking Head: only show overlay when Blizzard's .Selection is active
+    -- (user has it enabled in edit mode settings).  requireSelection gates this.
+    { name = "TalkingHeadFrame", label = "Talking Head", passthrough = true, requireSelection = true },
+    -- Extra Abilities: gated on .Selection like Talking Head.
+    -- resolver needed because ExtraAbilitiesContainer may not be a global;
+    -- find it via ExtraActionBarFrame's parent chain.
+    { name = "ExtraAbilityContainer", label = "Extra Abilities", passthrough = true, requireSelection = true },
 }
 
 local blizzardOverlays = {}
+local _selectionHooked = {}  -- track which .Selection frames we've hooked for requireSelection
 
 ---------------------------------------------------------------------------
 -- MOVEMENT BLOCKING FOR LOCKED FRAMES
@@ -517,6 +533,7 @@ local function HideSelectionIndicator(frame)
     if not frame or not frame.Selection then return end
     if _hiddenSelections[frame] then return end
     _hiddenSelections[frame] = true
+    frame.Selection:SetAlpha(0)
     C_Timer.After(0, function()
         if frame.Selection then
             frame.Selection:SetAlpha(0)
@@ -558,8 +575,8 @@ end
 local function CreateViewerNudgeButton(parent, direction, viewerName)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
-    -- Use TOOLTIP strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("TOOLTIP")
+    -- Use HIGH strata so nudge buttons appear above all other frames
+    btn:SetFrameStrata("HIGH")
     btn:SetFrameLevel(100)
 
     -- Background - dark grey at 70% for visibility over any game content
@@ -630,8 +647,8 @@ local minimapOverlay = nil
 local function CreateMinimapNudgeButton(parent, direction)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
-    -- Use TOOLTIP strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("TOOLTIP")
+    -- Use HIGH strata so nudge buttons appear above all other frames
+    btn:SetFrameStrata("HIGH")
     btn:SetFrameLevel(100)
 
     -- Background - dark grey at 70% for visibility
@@ -702,7 +719,7 @@ local function CreateViewerOverlay(viewerName)
 
     local overlay = CreateFrame("Frame", nil, viewer, "BackdropTemplate")
     overlay:SetAllPoints()
-    overlay:SetFrameStrata("TOOLTIP")
+    overlay:SetFrameStrata("HIGH")
     local px = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -774,7 +791,7 @@ local function CreateBlizzardFrameOverlay(frameInfo)
     else
         overlay:SetAllPoints()
     end
-    overlay:SetFrameStrata("TOOLTIP")
+    overlay:SetFrameStrata("HIGH")
     local px = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -830,7 +847,7 @@ local function CreateMinimapOverlay()
 
     local overlay = CreateFrame("Frame", nil, Minimap, "BackdropTemplate")
     overlay:SetAllPoints()
-    overlay:SetFrameStrata("TOOLTIP")
+    overlay:SetFrameStrata("HIGH")
     local px = QUICore:GetPixelSize(overlay)
     overlay:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -890,6 +907,12 @@ end
 
 -- Show overlays on all CDM viewers
 function QUICore:ShowViewerOverlays()
+    -- Force CDM frames to full alpha so overlays (children) are visible.
+    -- HUD visibility may have faded them to 0; we restore on edit mode exit.
+    if _G.QUI_RefreshCDMVisibility then
+        _G.QUI_RefreshCDMVisibility()
+    end
+
     for _, viewerName in ipairs(CDM_VIEWERS) do
         if not viewerOverlays[viewerName] then
             viewerOverlays[viewerName] = CreateViewerOverlay(viewerName)
@@ -950,7 +973,7 @@ function QUICore:ShowViewerOverlays()
                         overlay:ClearAllPoints()
                         overlay:SetSize(fw, fh)
                         overlay:SetPoint("CENTER", UIParent, "CENTER", cx - usx, cy - usy)
-                        overlay:SetFrameStrata("TOOLTIP")
+                        overlay:SetFrameStrata("HIGH")
                         overlay:SetFrameLevel(100)
                     end
                     -- Visual-only: clicks pass through to .Selection underneath
@@ -1040,11 +1063,48 @@ function QUICore:ShowBlizzardFrameOverlays()
         -- Force-show alwaysShow frames so the bar and .Selection are visible
         -- in Edit Mode (e.g., PetActionBar when pet is dismissed).
         if frame and frameInfo.alwaysShow and not frame:IsShown() then
-            frame:Show()
-            frame.__quiForceShown = true
+            if not InCombatLockdown() then
+                frame:Show()
+                _forceShownFrames[frame] = true
+            end
         end
-        if frame and (frame:IsShown() or frameInfo.alwaysShow) then
+
+        -- Skip frames gated on Selection visibility (e.g., TalkingHead disabled
+        -- in Blizzard's edit mode settings).  If the user hasn't enabled this
+        -- system in edit mode, don't create an overlay — it would be invisible
+        -- but could block clicks on underlying frames.
+        if frame and frameInfo.requireSelection then
+            local sel = frame.Selection
+            -- Hook Selection show/hide so toggling mid-edit-mode refreshes overlays
+            if sel and not _selectionHooked[sel] then
+                _selectionHooked[sel] = true
+                sel:HookScript("OnShow", function()
+                    if EditModeManagerFrame and EditModeManagerFrame:IsShown() then
+                        QUICore:ShowBlizzardFrameOverlays()
+                    end
+                end)
+                sel:HookScript("OnHide", function()
+                    if EditModeManagerFrame and EditModeManagerFrame:IsShown() then
+                        QUICore:ShowBlizzardFrameOverlays()
+                    end
+                end)
+            end
+            if not sel or not sel:IsShown() then
+                -- System is disabled in edit mode settings — hide any existing overlay
+                if blizzardOverlays[frameName] then
+                    blizzardOverlays[frameName]:Hide()
+                    blizzardOverlays[frameName]:EnableMouse(false)
+                end
+                frame = nil  -- skip overlay creation below
+            end
+        end
+
+        if frame and (frame:IsShown() or frameInfo.alwaysShow or frameInfo.passthrough) then
             if not blizzardOverlays[frameName] then
+                blizzardOverlays[frameName] = CreateBlizzardFrameOverlay(frameInfo)
+            elseif not frameInfo.alwaysShow and blizzardOverlays[frameName]:GetParent() ~= frame then
+                -- Frame was recreated by its addon (e.g., Details! damage meter).
+                -- The old overlay is orphaned; rebuild for the new frame.
                 blizzardOverlays[frameName] = CreateBlizzardFrameOverlay(frameInfo)
             end
             local overlay = blizzardOverlays[frameName]
@@ -1063,10 +1123,10 @@ function QUICore:ShowBlizzardFrameOverlays()
                     end
                     -- For force-shown frames, bar buttons eat click-throughs
                     -- so we handle the menu directly on the overlay.
-                    if frame.__quiForceShown then
+                    if _forceShownFrames[frame] then
                         overlay:EnableMouse(true)
                         overlay:SetScript("OnEnter", function(self)
-                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
                             GameTooltip:SetText(overlay.displayName or frameName)
                             GameTooltip:Show()
                         end)
@@ -1098,7 +1158,7 @@ function QUICore:ShowBlizzardFrameOverlays()
                     BlockFrameMovement(frame)
                     -- Hide Blizzard's blue .Selection indicator
                     HideSelectionIndicator(frame)
-                elseif frameInfo.passthrough and not frame.__quiForceShown then
+                elseif frameInfo.passthrough and not _forceShownFrames[frame] then
                     -- Free passthrough: visual-only QUI overlay, clicks pass
                     -- through to Blizzard's .Selection for Edit Mode menu + drag.
                     overlay:Show()
@@ -1128,9 +1188,9 @@ function QUICore:ShowBlizzardFrameOverlays()
                     UnblockFrameMovement(frame)
                     ShowSelectionIndicator(frame)
                     overlay:EnableMouse(true)
-                    if frame.__quiForceShown then
+                    if _forceShownFrames[frame] then
                         overlay:SetScript("OnEnter", function(self)
-                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
                             GameTooltip:SetText(overlay.displayName or frameName)
                             GameTooltip:Show()
                         end)
@@ -1146,7 +1206,7 @@ function QUICore:ShowBlizzardFrameOverlays()
                             QUICore:SelectViewer(frameName)
                             -- Open Blizzard Edit Mode menu on mouse down
                             -- (matches stance bar behavior).
-                            if frame.__quiForceShown and frame.SelectSystem then
+                            if _forceShownFrames[frame] and frame.SelectSystem then
                                 pcall(function()
                                     if EditModeManagerFrame and EditModeManagerFrame.ClearSelectedSystem then
                                         EditModeManagerFrame:ClearSelectedSystem()
@@ -1206,11 +1266,20 @@ function QUICore:HideBlizzardFrameOverlays()
             overlay:SetScript("OnMouseUp", nil)
             overlay:SetScript("OnDragStart", nil)
             overlay:SetScript("OnDragStop", nil)
+            -- Stop watchers when leaving Edit Mode
+            if overlay._passthroughWatcher then
+                overlay._passthroughWatcher:Hide()
+            end
+            if overlay._selectionAlphaWatcher then
+                overlay._selectionAlphaWatcher:Hide()
+            end
         end
         -- Hide frames we force-showed on Edit Mode enter
-        if frame and frame.__quiForceShown then
-            frame:Hide()
-            frame.__quiForceShown = nil
+        if frame and _forceShownFrames[frame] then
+            if not InCombatLockdown() then
+                frame:Hide()
+            end
+            _forceShownFrames[frame] = nil
         end
     end
 end
@@ -1338,6 +1407,7 @@ function QUICore:ShowMinimapOverlay()
                 local tracker = self._minimapDragTracker
                 tracker._yShift = yShift
                 tracker:SetScript("OnUpdate", function(tf)
+                    if InCombatLockdown() then return end
                     if not MinimapCluster then
                         tf:SetScript("OnUpdate", nil)
                         return
@@ -1620,6 +1690,8 @@ function QUICore:NudgeMinimap(direction)
         return
     end
 
+    if InCombatLockdown() then return end
+
     local db = self.db and self.db.profile and self.db.profile.minimap
     if not db or not db.position then return end
 
@@ -1726,6 +1798,11 @@ local function RegisterEditModeCallbacks()
         QUICore:HideBlizzardFrameOverlays()
         QUICore:HideMinimapOverlay()  -- Hide minimap overlay
         QUICore:DisableMinimapEditMode()  -- Restore minimap lock setting
+        -- Restore CDM visibility to match HUD visibility settings.
+        -- Edit mode forced alpha 1; now re-evaluate so hidden frames fade back out.
+        if _G.QUI_RefreshCDMVisibility then
+            _G.QUI_RefreshCDMVisibility()
+        end
         QUICore.selectedViewer = nil
         -- Clear central selection (in case a CDM viewer was selected)
         if QUICore.ClearEditModeSelection then

@@ -69,6 +69,7 @@ local function CreateActionBarsPage(parent)
         y = y - 55
 
         local openSettingsBtn = GUI:CreateButton(tabContent, "Open Game Settings", 160, 26, function()
+            if InCombatLockdown() then return end
             if SettingsPanel then
                 SettingsPanel:Open()
             end
@@ -224,6 +225,7 @@ local function CreateActionBarsPage(parent)
         -- Quick Keybind Mode (prominent tool at top)
         ---------------------------------------------------------
         local keybindModeBtn = GUI:CreateButton(tabContent, "Quick Keybind Mode", 180, 28, function()
+            if InCombatLockdown() then return end
             local LibKeyBound = LibStub("LibKeyBound-1.0", true)
             if LibKeyBound then
                 LibKeyBound:Toggle()
@@ -368,6 +370,7 @@ local function CreateActionBarsPage(parent)
                 end
             end,
             __newindex = function(t, k, v)
+                if InCombatLockdown() then return end
                 if k == "buttonLock" and type(v) == "string" then
                     if v == "unlocked" then
                         SetCVar("lockActionBars", "0")

@@ -912,7 +912,11 @@ local function HideBlizzardDecorations()
             frame:Hide()
             -- Hook to keep hidden (Blizzard may re-show on updates)
             if not (frameState[frame] or EMPTY).hideHooked then
-                hooksecurefunc(frame, "Show", function(self) self:Hide() end)
+                hooksecurefunc(frame, "Show", function(self)
+                    C_Timer.After(0, function()
+                        if self and self.Hide then self:Hide() end
+                    end)
+                end)
                 GetState(frame).hideHooked = true
             end
         end
@@ -926,8 +930,10 @@ local function HideBlizzardDecorations()
         if iconBorder.SetTexture then iconBorder:SetTexture(nil) end
         if iconBorder.SetAtlas then
             hooksecurefunc(iconBorder, "SetAtlas", function(self)
-                if self.SetTexture then self:SetTexture(nil) end
-                if self.SetAlpha then self:SetAlpha(0) end
+                C_Timer.After(0, function()
+                    if self and self.SetTexture then self:SetTexture(nil) end
+                    if self and self.SetAlpha then self:SetAlpha(0) end
+                end)
             end)
         end
     end
@@ -2503,10 +2509,12 @@ local function HookCharacterFrame()
     -- (Blizzard re-shows it when clicking "Character Stats" button)
     if CharacterStatsPane then
         hooksecurefunc(CharacterStatsPane, "Show", function()
-            local settings = GetSettings()
-            if settings.enabled then
-                CharacterStatsPane:Hide()
-            end
+            C_Timer.After(0, function()
+                local settings = GetSettings()
+                if settings.enabled and CharacterStatsPane then
+                    CharacterStatsPane:Hide()
+                end
+            end)
         end)
     end
 
@@ -2625,10 +2633,12 @@ local function HookCharacterFrame()
 
         -- Reposition icon selector popup next to our floating popup
         hooksecurefunc(GearManagerPopupFrame, "Show", function(self)
-            if equipMgrPopup and equipMgrPopup:IsShown() then
-                self:ClearAllPoints()
-                self:SetPoint("TOPLEFT", equipMgrPopup, "TOPRIGHT", 5, 0)
-            end
+            C_Timer.After(0, function()
+                if self and equipMgrPopup and equipMgrPopup:IsShown() then
+                    self:ClearAllPoints()
+                    self:SetPoint("TOPLEFT", equipMgrPopup, "TOPRIGHT", 5, 0)
+                end
+            end)
         end)
     end
 

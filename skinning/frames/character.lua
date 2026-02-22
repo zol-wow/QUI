@@ -309,19 +309,25 @@ local function SetupCharacterFrameSkinning()
 
     -- Hook ScrollBox updates for reputation
     if ReputationFrame and ReputationFrame.ScrollBox then
+        -- TAINT SAFETY: Defer to break taint chain from secure Update context.
         hooksecurefunc(ReputationFrame.ScrollBox, "Update", function(frame)
-            if IsSkinningEnabled() then
-                frame:ForEachFrame(SkinReputationEntry)
-            end
+            C_Timer.After(0, function()
+                if IsSkinningEnabled() then
+                    frame:ForEachFrame(SkinReputationEntry)
+                end
+            end)
         end)
     end
 
     -- Hook ScrollBox updates for currency
     if TokenFrame and TokenFrame.ScrollBox then
+        -- TAINT SAFETY: Defer to break taint chain from secure Update context.
         hooksecurefunc(TokenFrame.ScrollBox, "Update", function(frame)
-            if IsSkinningEnabled() then
-                frame:ForEachFrame(SkinCurrencyEntry)
-            end
+            C_Timer.After(0, function()
+                if IsSkinningEnabled() then
+                    frame:ForEachFrame(SkinCurrencyEntry)
+                end
+            end)
         end)
     end
 
@@ -576,10 +582,13 @@ local function SkinEquipmentManager()
     if pane and pane.ScrollBox then
         -- Hook ScrollBox to skin entries as they're created/recycled
         if not hookedScrollBoxes[pane.ScrollBox] then
+            -- TAINT SAFETY: Defer to break taint chain from secure Update context.
             hooksecurefunc(pane.ScrollBox, "Update", function(scrollBox)
-                if IsSkinningEnabled() then
-                    scrollBox:ForEachFrame(SkinEquipmentSetEntry)
-                end
+                C_Timer.After(0, function()
+                    if IsSkinningEnabled() then
+                        scrollBox:ForEachFrame(SkinEquipmentSetEntry)
+                    end
+                end)
             end)
             hookedScrollBoxes[pane.ScrollBox] = true
         end
@@ -723,9 +732,12 @@ local function SkinTitleManagerPane()
     -- Style ScrollBox entries
     if pane.ScrollBox then
         -- Hook to skin entries as they're created
+        -- TAINT SAFETY: Defer to break taint chain from secure Update context.
         hooksecurefunc(pane.ScrollBox, "Update", function(scrollBox)
-            scrollBox:ForEachFrame(function(button)
-                SkinTitleEntry(button)
+            C_Timer.After(0, function()
+                scrollBox:ForEachFrame(function(button)
+                    SkinTitleEntry(button)
+                end)
             end)
         end)
 

@@ -26,6 +26,7 @@ end
 -- ======================================================
 local function HideCooldownEffects(child)
     if not child then return end
+    if InCombatLockdown() then return end
     
     local effectFrames = {"PandemicIcon", "ProcStartFlipbook", "Finish"}
     
@@ -77,6 +78,7 @@ end
 -- ======================================================
 local function HideBlizzardGlows(button)
     if not button then return end
+    if InCombatLockdown() then return end
     
     -- ALWAYS hide Blizzard's glows - our custom glow uses LibCustomGlow which is separate
     -- Don't call ActionButton_HideOverlayGlow as it may interfere with proc detection

@@ -21,6 +21,7 @@ end
 -- TAINT SAFETY: Weak-keyed tables for per-icon/viewer state instead of writing to Blizzard frames
 local iconSwipeState   = setmetatable({}, { __mode = "k" })
 local hookedViewers    = setmetatable({}, { __mode = "k" })
+local swipePulseHooked = setmetatable({}, { __mode = "k" })
 
 local function IsSecret(value)
     return Helpers.IsSecretValue and Helpers.IsSecretValue(value)
@@ -36,6 +37,7 @@ local EnsureViewerVisibilityHooks
 -- Intentionally avoids hooking Cooldown:SetCooldown to prevent tainting
 -- Blizzard's secret cooldown/totem values in combat.
 local function ApplySettingsToIcon(icon, settings)
+    if InCombatLockdown() then return end
     if not icon or not icon.Cooldown then return end
     if icon.IsForbidden and icon:IsForbidden() then return end
 
@@ -257,8 +259,8 @@ end
 EnsureViewerVisibilityHooks = function()
     for _, viewerName in ipairs(VIEWER_NAMES) do
         local viewer = _G[viewerName]
-        if viewer and not viewer._QUI_SwipePulseHooked then
-            viewer._QUI_SwipePulseHooked = true
+        if viewer and not swipePulseHooked[viewer] then
+            swipePulseHooked[viewer] = true
 
             viewer:HookScript("OnShow", function()
                 if StartPulseTicker then

@@ -267,6 +267,7 @@ end
 --- @return number? y Snapped Y offset
 function QUICore:SnapFramePosition(frame)
     if not frame then return end
+    if InCombatLockdown() then return end
     local point, relativeTo, relativePoint, x, y = frame:GetPoint()
     if not point then return end
     x = self:PixelRound(x or 0, frame)
