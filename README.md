@@ -38,22 +38,17 @@ Since then I added a few features and fixes important to me, and I will continue
 
 ### Installation
 
-1. Download the latest release from [Releases](https://github.com/zol-wow/QUI/releases)
+#### Manual Installation
+
+1. Download the latest release from [Releases](https://github.com/zol-wow/QUI/releases) or CurseForge: (https://www.curseforge.com/wow/addons/qui-community-edition)
 2. Extract to `Interface\AddOns\QUI`
 3. Enable in-game and reload UI (`/rl` or `/reload`)
 
-### Installation via WowUp
+#### Installation via WoWUp or CurseForge
 
-1. Make sure to use the latest BETA(!) version of WowUp (change the update channel in the app settings to beta)
-2. Install Addons > Install from URL > paste this repos URL
-
-### Updating via WowUp
-
-Updating addons that have been installed via URL from public github repos is currently broken. This is an issue with WowUp, not QUI. I already submitted a PR for WowUp to fix this issue - until they merge it or fix it themselves, we'll need to wait. So the recommended way on WowUp's end is to delete and repeat the install workflow.
-
-For everyone who wants a bit more automation: MrMime71 created a little updating tool, you'll find it here: https://github.com/zol-wow/QUI/issues/26#issuecomment-3861104336
-
-Eventually this will go up on CurseForge and Wago, I suppose, but currently bugfixing is my top prio.
+1. Go to "Get Addons"
+2. Search for "QUI Community Edition"
+2. Press Install
 
 
 ## License

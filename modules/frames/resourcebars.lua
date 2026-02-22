@@ -35,6 +35,19 @@ local function GetCDMHiddenAlpha()
     return nil
 end
 
+-- Avoid protected-frame errors in combat when bars become secure.
+local function SafeSetFrameLevel(frame, frameLevel)
+    if not frame or frameLevel == nil then return false end
+    if frame.GetFrameLevel and frame:GetFrameLevel() == frameLevel then
+        return true
+    end
+    if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
+        return false
+    end
+    local ok = pcall(frame.SetFrameLevel, frame, frameLevel)
+    return ok
+end
+
 -- Visibility check for resource bars ("always", "combat", "hostile")
 local function ShouldShowBar(cfg)
     -- CDM visibility overrides (e.g. hide when mounted) take priority
@@ -1066,9 +1079,9 @@ function QUICore:UpdatePowerBar()
     -- Update HUD layer priority dynamically
     local layerPriority = self.db.profile.hudLayering and self.db.profile.hudLayering.primaryPowerBar or 7
     local frameLevel = self:GetHUDFrameLevel(layerPriority)
-    bar:SetFrameLevel(frameLevel)
+    SafeSetFrameLevel(bar, frameLevel)
     if bar.TextFrame then
-        bar.TextFrame:SetFrameLevel(frameLevel + 2)
+        SafeSetFrameLevel(bar.TextFrame, frameLevel + 2)
     end
 
     -- Determine effective orientation (AUTO/HORIZONTAL/VERTICAL)
@@ -2201,9 +2214,9 @@ function QUICore:UpdateSecondaryPowerBar()
     -- Update HUD layer priority dynamically
     local layerPriority = self.db.profile.hudLayering and self.db.profile.hudLayering.secondaryPowerBar or 6
     local frameLevel = self:GetHUDFrameLevel(layerPriority)
-    bar:SetFrameLevel(frameLevel)
+    SafeSetFrameLevel(bar, frameLevel)
     if bar.TextFrame then
-        bar.TextFrame:SetFrameLevel(frameLevel + 2)
+        SafeSetFrameLevel(bar.TextFrame, frameLevel + 2)
     end
 
     -- Determine effective orientation (AUTO/HORIZONTAL/VERTICAL)

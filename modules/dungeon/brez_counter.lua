@@ -163,7 +163,8 @@ local function CreateBrezFrame()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
         local settings = GetSettings()
-        if settings and not settings.locked and not InCombatLockdown() then
+        local locked = settings and settings.locked ~= false
+        if settings and not locked and not InCombatLockdown() then
             self:StartMoving()
         end
     end)
