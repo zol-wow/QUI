@@ -125,33 +125,39 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         text:SetTextColor(unpack(COLORS.text))
     end
 
-    -- Hover effects — read state from local table, not from button properties
-    if not info.hooked then
-        info.hooked = true
-        button:HookScript("OnEnter", function(self)
-            local binfo = buttonOverlays[self]
+    -- Hover effects via IsMouseOver() polling on the overlay.
+    -- HookScript on secure pool buttons doesn't fire reliably in Midnight
+    -- 12.0+, so we poll the overlay's bounds instead.  The overlay keeps
+    -- EnableMouse(false) so clicks pass through to the button underneath.
+    -- OnUpdate only runs while overlayContainer is shown (menu open).
+    if not info.hoverSetup then
+        info.hoverSetup = true
+        info.hovered = false
+        overlay:SetScript("OnUpdate", function(self)
+            local binfo = buttonOverlays[button]
             if not binfo then return end
-            local ov = binfo.overlay
-            if ov then
-                local r, g, b, a = unpack(binfo.bgColor)
-                ov:SetBackdropColor(math.min(r + 0.15, 1), math.min(g + 0.15, 1), math.min(b + 0.15, 1), a)
-                local sr2, sg2, sb2, sa2 = unpack(binfo.skinColor)
-                ov:SetBackdropBorderColor(math.min(sr2 * 1.4, 1), math.min(sg2 * 1.4, 1), math.min(sb2 * 1.4, 1), sa2)
-            end
-            local txt = self:GetFontString()
-            if txt then txt:SetTextColor(1, 1, 1, 1) end
-        end)
 
-        button:HookScript("OnLeave", function(self)
-            local binfo = buttonOverlays[self]
-            if not binfo then return end
-            local ov = binfo.overlay
-            if ov then
-                ov:SetBackdropColor(unpack(binfo.bgColor))
-                ov:SetBackdropBorderColor(unpack(binfo.skinColor))
+            if self:IsMouseOver() then
+                if not binfo.hovered then
+                    binfo.hovered = true
+                    local r, g, b, a = unpack(binfo.bgColor)
+                    self:SetBackdropColor(math.min(r + 0.30, 1), math.min(g + 0.30, 1), math.min(b + 0.30, 1), a)
+                    local sr2, sg2, sb2, sa2 = unpack(binfo.skinColor)
+                    self:SetBackdropBorderColor(math.min(sr2 * 1.6, 1), math.min(sg2 * 1.6, 1), math.min(sb2 * 1.6, 1), sa2)
+                    local txt = button:GetFontString()
+                    if txt then txt:SetTextColor(1, 1, 1, 1) end
+                    if binfo.overlayText then binfo.overlayText:SetTextColor(1, 1, 1, 1) end
+                end
+            else
+                if binfo.hovered then
+                    binfo.hovered = false
+                    self:SetBackdropColor(unpack(binfo.bgColor))
+                    self:SetBackdropBorderColor(unpack(binfo.skinColor))
+                    local txt = button:GetFontString()
+                    if txt then txt:SetTextColor(unpack(COLORS.text)) end
+                    if binfo.overlayText then binfo.overlayText:SetTextColor(unpack(COLORS.text)) end
+                end
             end
-            local txt = self:GetFontString()
-            if txt then txt:SetTextColor(unpack(COLORS.text)) end
         end)
     end
 end
@@ -303,6 +309,11 @@ local function RefreshGameMenuColors()
             UpdateButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
     end
+
+    -- Also refresh the QUI standalone button overlay
+    if quiStandaloneButton then
+        UpdateButtonColors(quiStandaloneButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    end
 end
 
 -- Refresh font size on game menu buttons
@@ -319,6 +330,14 @@ local function RefreshGameMenuFontSize()
             if text then
                 text:SetFont(fontPath, fontSize, FONT_FLAGS)
             end
+        end
+    end
+
+    -- Also refresh the QUI standalone button overlay text
+    if quiStandaloneButton then
+        local info = buttonOverlays[quiStandaloneButton]
+        if info and info.overlayText then
+            info.overlayText:SetFont(fontPath, fontSize, FONT_FLAGS)
         end
     end
 end
@@ -350,12 +369,19 @@ local function GetOrCreateStandaloneButton()
     return quiStandaloneButton
 end
 
--- Position the standalone QUI button below the last GameMenuFrame button
+-- Position the standalone QUI button below the bottom-most GameMenuFrame button.
+-- We cannot insert into Blizzard's layout (taint), so we place our button below
+-- the last pool button and extend the menu backdrop to cover it.
 local function PositionStandaloneButton()
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or settings.addQUIButton == false then
         if quiStandaloneButton then quiStandaloneButton:Hide() end
+        -- Restore backdrop to default (covers GameMenuFrame only)
+        if menuBackdrop then
+            menuBackdrop:ClearAllPoints()
+            menuBackdrop:SetAllPoints(GameMenuFrame)
+        end
         return
     end
 
@@ -363,34 +389,88 @@ local function PositionStandaloneButton()
 
     local btn = GetOrCreateStandaloneButton()
 
-    -- Find the Macros button to position after
-    local macrosButton = nil
+    -- Anchor to GameMenuFrame's BOTTOM edge so the QUI button is entirely
+    -- outside the secure frame's rectangle.  GameMenuFrame has padding below
+    -- its last pool button; if we anchor to the pool button, the top portion
+    -- of our button lands inside GameMenuFrame's bounds and the secure frame
+    -- eats the mouse events (only the bottom half would be clickable).
+    -- We still read a pool button for width/height reference.
+    local refButton = nil
     for button in GameMenuFrame.buttonPool:EnumerateActive() do
-        if button:GetText() == MACROS then
-            macrosButton = button
-            break
+        refButton = button
+        break
+    end
+
+    btn:ClearAllPoints()
+    btn:SetPoint("TOP", GameMenuFrame, "BOTTOM", 0, -2)
+    if refButton then
+        btn:SetWidth(refButton:GetWidth())
+        btn:SetHeight(refButton:GetHeight())
+    end
+    btn:SetFrameLevel(GameMenuFrame:GetFrameLevel() + 10)
+    btn:Show()
+
+    -- Style the QUI button when game menu skinning is enabled.
+    -- Check settings directly (not skinState.skinned) so this works
+    -- regardless of whether SkinGameMenu() has run yet.
+    local core2 = GetCore()
+    local stg2 = core2 and core2.db and core2.db.profile and core2.db.profile.general
+    if stg2 and stg2.skinGameMenu then
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg2, "gameMenu")
+        StyleButton(btn, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+
+        -- Ensure the "QUI" text renders above the overlay backdrop.
+        -- The overlay sits at button level+1, which can hide the button's
+        -- own FontString.  Mirror the text on the overlay so it's always visible.
+        local info = buttonOverlays[btn]
+        if info and info.overlay then
+            if not info.overlayText then
+                local ot = info.overlay:CreateFontString(nil, "OVERLAY")
+                ot:SetPoint("CENTER")
+                ot:SetJustifyH("CENTER")
+                ot:SetJustifyV("MIDDLE")
+                info.overlayText = ot
+            end
+            local QUI2 = _G.QUI
+            local fp = QUI2 and QUI2.GetGlobalFont and QUI2:GetGlobalFont() or STANDARD_TEXT_FONT
+            local fs = GetGameMenuFontSize()
+            info.overlayText:SetFont(fp, fs, FONT_FLAGS)
+            info.overlayText:SetText("QUI")
+            info.overlayText:SetTextColor(unpack(COLORS.text))
+            -- Hide the original button text so it doesn't double-render
+            local origText = btn:GetFontString()
+            if origText then origText:SetAlpha(0) end
+
+            -- Keep overlay EnableMouse(false) (the default) so mouse events
+            -- pass through to the QUI button underneath — exactly like pool
+            -- buttons.  The button's HookScript (set by StyleButton) handles
+            -- hover highlights, and its OnClick handles the click.
+            info.overlay:EnableMouse(false)
         end
     end
 
-    if macrosButton then
-        btn:ClearAllPoints()
-        btn:SetPoint("TOP", macrosButton, "BOTTOM", 0, -2)
-        btn:SetWidth(macrosButton:GetWidth())
-        btn:SetHeight(macrosButton:GetHeight())
-        btn:SetFrameLevel(GameMenuFrame:GetFrameLevel() + 10)
-        btn:Show()
-    else
-        -- Fallback: position at bottom of frame
-        btn:ClearAllPoints()
-        btn:SetPoint("BOTTOM", GameMenuFrame, "BOTTOM", 0, 15)
-        btn:SetFrameLevel(GameMenuFrame:GetFrameLevel() + 10)
-        btn:Show()
-    end
-
-    -- Style it if skinning is active
-    if skinState.skinned then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-        StyleButton(btn, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    -- Extend the menu backdrop to cover the QUI button.
+    -- Deferred by one frame so GetBottom() returns the resolved position.
+    if menuBackdrop then
+        C_Timer.After(0, function()
+            if not quiStandaloneButton or not quiStandaloneButton:IsShown() then
+                if menuBackdrop then
+                    menuBackdrop:ClearAllPoints()
+                    menuBackdrop:SetAllPoints(GameMenuFrame)
+                end
+                return
+            end
+            local gmBottom = GameMenuFrame:GetBottom()
+            local btnBottom = quiStandaloneButton:GetBottom()
+            if gmBottom and btnBottom and btnBottom < gmBottom then
+                local extend = gmBottom - btnBottom + 12 -- 12px padding below button
+                menuBackdrop:ClearAllPoints()
+                menuBackdrop:SetPoint("TOPLEFT", GameMenuFrame, "TOPLEFT")
+                menuBackdrop:SetPoint("TOPRIGHT", GameMenuFrame, "TOPRIGHT")
+                menuBackdrop:SetPoint("BOTTOMLEFT", GameMenuFrame, "BOTTOMLEFT", 0, -extend)
+                menuBackdrop:SetPoint("BOTTOMRIGHT", GameMenuFrame, "BOTTOMRIGHT", 0, -extend)
+            end
+        end)
     end
 end
 
@@ -423,18 +503,23 @@ if GameMenuFrame then
             local oc = GetOverlayContainer()
             oc:Show()
 
-            PositionStandaloneButton()
+            -- Skin pool buttons first so skinState.skinned is true when
+            -- PositionStandaloneButton styles the QUI button.
             SkinGameMenu()
+            PositionStandaloneButton()
 
             if skinState.skinned and GameMenuFrame.buttonPool then
+                local count = 0
                 local core = GetCore()
                 local settings = core and core.db and core.db.profile and core.db.profile.general
                 local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "gameMenu")
                 for button in GameMenuFrame.buttonPool:EnumerateActive() do
+                    count = count + 1
                     if not buttonOverlays[button] then
                         StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
                     end
                 end
+                lastButtonCount = count
             end
         elseif isShown then
             -- Already showing: detect button pool changes and skin new entries.
@@ -447,8 +532,8 @@ if GameMenuFrame then
 
             if count ~= lastButtonCount then
                 lastButtonCount = count
-                PositionStandaloneButton()
                 SkinGameMenu()
+                PositionStandaloneButton()
                 if skinState.skinned and GameMenuFrame.buttonPool then
                     local core = GetCore()
                     local settings = core and core.db and core.db.profile and core.db.profile.general
@@ -472,6 +557,12 @@ if GameMenuFrame then
 
             if quiStandaloneButton then
                 quiStandaloneButton:Hide()
+            end
+
+            -- Reset backdrop to default size (no QUI button extension)
+            if menuBackdrop then
+                menuBackdrop:ClearAllPoints()
+                menuBackdrop:SetAllPoints(GameMenuFrame)
             end
         end
     end)
