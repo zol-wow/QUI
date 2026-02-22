@@ -540,41 +540,25 @@ function Helpers.InCombat()
     return InCombatLockdown()
 end
 
---- Create an OnUpdate callback throttler.
---- Returns a function(self, elapsed, ...) that only calls callback at the
---- requested interval and passes the accumulated elapsed as second argument.
---- @param interval number Seconds between callback executions
---- @param callback function Callback(self, accumulatedElapsed, ...)
---- @return function Throttled OnUpdate handler
-function Helpers.CreateOnUpdateThrottle(interval, callback)
-    interval = tonumber(interval) or 0
-    local elapsedSinceLast = 0
-    return function(self, elapsed, ...)
-        elapsedSinceLast = elapsedSinceLast + (elapsed or 0)
-        if elapsedSinceLast < interval then
-            return
+-- if QUI Player or Target Frames don't exist, find a 3rd party UF
+-- eg Elv, Unhalted, or Blizzard UF for anchoring purposes
+-- @param type string eg player or target
+-- @return frame
+function Helpers.FindAnchorFrame(type)
+    local frameHighestWidth, highestWidth = nil, 0
+    local f = EnumerateFrames()
+    while f do
+        if f.unit == type or f:GetAttribute("unit") == type then
+            if f:IsVisible() and f:IsObjectType("Button") and f:GetName() then
+                local w = f:GetWidth()
+                if w > 20 and w > highestWidth then
+                    frameHighestWidth, highestWidth = f, w
+                end
+            end
         end
-        local accumulated = elapsedSinceLast
-        elapsedSinceLast = 0
-        callback(self, accumulated, ...)
+        f = EnumerateFrames(f)
     end
-end
-
---- Create a time-based throttle wrapper for event-heavy callbacks.
---- @param interval number Seconds between callback executions
---- @param callback function Callback(...)
---- @return function Throttled function
-function Helpers.CreateTimeThrottle(interval, callback)
-    interval = tonumber(interval) or 0
-    local lastRun = 0
-    return function(...)
-        local now = GetTime()
-        if (now - lastRun) < interval then
-            return
-        end
-        lastRun = now
-        return callback(...)
-    end
+    return frameHighestWidth
 end
 
 ---------------------------------------------------------------------------
