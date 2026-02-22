@@ -3821,6 +3821,7 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
 end
 
 EditModeKeyHandler:SetScript("OnKeyDown", function(self, key)
+    if InCombatLockdown() then return end
     if not QUICore.EditModeSelection or not QUICore.EditModeSelection.selectedType then
         return
     end
@@ -3844,17 +3845,24 @@ EditModeKeyHandler:SetScript("OnKeyDown", function(self, key)
 end)
 
 EditModeKeyHandler:SetScript("OnKeyUp", function(self, key)
+    if InCombatLockdown() then return end
     self:SetPropagateKeyboardInput(true)
 end)
 
 -- Enable/disable keyboard handling based on selection
 function QUICore:UpdateEditModeKeyHandler()
+    if InCombatLockdown() then return end
     if self.EditModeSelection and self.EditModeSelection.selectedType then
         EditModeKeyHandler:EnableKeyboard(true)
     else
         EditModeKeyHandler:EnableKeyboard(false)
     end
 end
+
+EditModeKeyHandler:RegisterEvent("PLAYER_REGEN_DISABLED")
+EditModeKeyHandler:SetScript("OnEvent", function(self)
+    self:EnableKeyboard(false)
+end)
 
 -- Hook into selection changes to enable/disable key handler
 local origSelectEditModeElement = QUICore.SelectEditModeElement
