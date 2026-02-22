@@ -1196,6 +1196,8 @@ local FRAME_ANCHOR_INFO = {
 local ANCHOR_PROXY_SOURCES = {
     cdmEssential   = { resolver = function() return _G["EssentialCooldownViewer"] end, cdm = true },
     cdmUtility     = { resolver = function() return _G["UtilityCooldownViewer"] end,   cdm = true },
+    buffIcon       = { resolver = function() return _G["BuffIconCooldownViewer"] end,  cdm = true },
+    buffBar        = { resolver = function() return _G["BuffBarCooldownViewer"] end,   cdm = true },
     primaryPower   = { resolver = function() return QUICore and QUICore.powerBar end },
     secondaryPower = { resolver = function() return QUICore and QUICore.secondaryPowerBar end },
 }
@@ -1317,6 +1319,8 @@ local ANCHOR_PROXY_ORDER = {
     "primaryPower",
     "secondaryPower",
     "cdmUtility",
+    "buffIcon",
+    "buffBar",
 }
 local function UpdateCDMAnchorProxies()
     for _, key in ipairs(ANCHOR_PROXY_ORDER) do
