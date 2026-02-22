@@ -15,7 +15,7 @@ local UNIT_ANCHOR_FRAMES = {
 local BLIZZARD_FRAME_LABELS = {
     BuffFrame = "Buff Frame",
     DebuffFrame = "Debuff Frame",
-    DamageMeterSessionWindow1 = "Damage Meter",
+    DamageMeter = "Damage Meter",
     BuffBarCooldownViewer = "Tracked Bars",
     -- Action Bars (MainMenuBar renamed to MainActionBar in Midnight 12.0)
     MainActionBar = "Action Bar 1",
@@ -385,7 +385,7 @@ end
 local BLIZZARD_EDITMODE_FRAMES = {
     { name = "BuffFrame", label = "Buff Frame", passthrough = true },
     { name = "DebuffFrame", label = "Debuff Frame", passthrough = true },
-    { name = "DamageMeterSessionWindow1", label = "Damage Meter" },
+    { name = "DamageMeter", label = "Damage Meter", passthrough = true },
     -- Action Bars (MainMenuBar renamed to MainActionBar in Midnight 12.0)
     -- passthrough = true: free movers use click-passthrough like CDM viewers
     -- (EnableMouse false, hide Blizzard .Selection, let Blizzard menu open)
@@ -517,6 +517,7 @@ local function HideSelectionIndicator(frame)
     if not frame or not frame.Selection then return end
     if _hiddenSelections[frame] then return end
     _hiddenSelections[frame] = true
+    frame.Selection:SetAlpha(0)
     C_Timer.After(0, function()
         if frame.Selection then
             frame.Selection:SetAlpha(0)
@@ -1043,8 +1044,12 @@ function QUICore:ShowBlizzardFrameOverlays()
             frame:Show()
             frame.__quiForceShown = true
         end
-        if frame and (frame:IsShown() or frameInfo.alwaysShow) then
+        if frame and (frame:IsShown() or frameInfo.alwaysShow or frameInfo.passthrough) then
             if not blizzardOverlays[frameName] then
+                blizzardOverlays[frameName] = CreateBlizzardFrameOverlay(frameInfo)
+            elseif not frameInfo.alwaysShow and blizzardOverlays[frameName]:GetParent() ~= frame then
+                -- Frame was recreated by its addon (e.g., Details! damage meter).
+                -- The old overlay is orphaned; rebuild for the new frame.
                 blizzardOverlays[frameName] = CreateBlizzardFrameOverlay(frameInfo)
             end
             local overlay = blizzardOverlays[frameName]
@@ -1206,6 +1211,13 @@ function QUICore:HideBlizzardFrameOverlays()
             overlay:SetScript("OnMouseUp", nil)
             overlay:SetScript("OnDragStart", nil)
             overlay:SetScript("OnDragStop", nil)
+            -- Stop watchers when leaving Edit Mode
+            if overlay._passthroughWatcher then
+                overlay._passthroughWatcher:Hide()
+            end
+            if overlay._selectionAlphaWatcher then
+                overlay._selectionAlphaWatcher:Hide()
+            end
         end
         -- Hide frames we force-showed on Edit Mode enter
         if frame and frame.__quiForceShown then
