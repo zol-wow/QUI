@@ -46,6 +46,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.40.4 - 2026-02-22
+
+### Fixed
+- fixed calling SetFrameLevel() on protected frames in combat
+- prevent Edit Mode taint from anchoring to hidden system frames
 ## v2.40.3 - 2026-02-22
 
 ### Changed
