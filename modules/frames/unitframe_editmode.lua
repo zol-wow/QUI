@@ -25,6 +25,12 @@ local _editModeState = setmetatable({}, { __mode = "k" })
 ---------------------------------------------------------------------------
 QUI_UF.editModeActive = false
 
+-- Expose edit mode state globally so HUD visibility (cdm_viewer.lua) can
+-- force unit frames to full alpha during edit mode.
+_G.QUI_IsUnitFrameEditModeActive = function()
+    return QUI_UF.editModeActive
+end
+
 -- Edit Mode: Slider registry for real-time sync during drag
 -- Format: { unitKey = { x = sliderRef, y = sliderRef, coordText = fontStringRef } }
 QUI_UF.editModeSliders = {}
@@ -153,6 +159,12 @@ function QUI_UF:EnableEditMode()
     end
 
     self.editModeActive = true
+
+    -- Force unit frames to full alpha so overlays (children) are visible.
+    -- HUD visibility may have faded them to 0; we restore on edit mode exit.
+    if _G.QUI_RefreshUnitframesVisibility then
+        _G.QUI_RefreshUnitframesVisibility()
+    end
 
     -- Hide Blizzard's selection frames (prevents visual conflicts in Edit Mode)
     self:HideBlizzardSelectionFrames()
@@ -581,6 +593,12 @@ end
 
 function QUI_UF:DisableEditMode()
     self.editModeActive = false
+
+    -- Restore unit frame visibility to match HUD visibility settings.
+    -- Edit mode forced alpha 1; now re-evaluate so hidden frames fade back out.
+    if _G.QUI_RefreshUnitframesVisibility then
+        _G.QUI_RefreshUnitframesVisibility()
+    end
 
     -- Clear Edit Mode selection (hides arrows on selected element)
     local core = GetCore()

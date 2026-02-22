@@ -907,6 +907,12 @@ end
 
 -- Show overlays on all CDM viewers
 function QUICore:ShowViewerOverlays()
+    -- Force CDM frames to full alpha so overlays (children) are visible.
+    -- HUD visibility may have faded them to 0; we restore on edit mode exit.
+    if _G.QUI_RefreshCDMVisibility then
+        _G.QUI_RefreshCDMVisibility()
+    end
+
     for _, viewerName in ipairs(CDM_VIEWERS) do
         if not viewerOverlays[viewerName] then
             viewerOverlays[viewerName] = CreateViewerOverlay(viewerName)
@@ -1792,6 +1798,11 @@ local function RegisterEditModeCallbacks()
         QUICore:HideBlizzardFrameOverlays()
         QUICore:HideMinimapOverlay()  -- Hide minimap overlay
         QUICore:DisableMinimapEditMode()  -- Restore minimap lock setting
+        -- Restore CDM visibility to match HUD visibility settings.
+        -- Edit mode forced alpha 1; now re-evaluate so hidden frames fade back out.
+        if _G.QUI_RefreshCDMVisibility then
+            _G.QUI_RefreshCDMVisibility()
+        end
         QUICore.selectedViewer = nil
         -- Clear central selection (in case a CDM viewer was selected)
         if QUICore.ClearEditModeSelection then

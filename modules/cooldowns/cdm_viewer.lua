@@ -2142,6 +2142,13 @@ end
 
 -- Update CDM visibility
 local function UpdateCDMVisibility()
+    -- During Edit Mode, force CDM frames fully visible so overlays (which are
+    -- children and inherit parent alpha) remain visible for repositioning.
+    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then
+        StartCDMFade(1)
+        return
+    end
+
     local shouldShow = ShouldCDMBeVisible()
     local vis = GetCDMVisibilitySettings()
 
@@ -2411,6 +2418,13 @@ end
 
 -- Update Unitframes visibility
 local function UpdateUnitframesVisibility()
+    -- During Edit Mode, force unit frames fully visible so overlays (which are
+    -- children and inherit parent alpha) remain visible for repositioning.
+    if _G.QUI_IsUnitFrameEditModeActive and _G.QUI_IsUnitFrameEditModeActive() then
+        StartUnitframesFade(1)
+        return
+    end
+
     local vis = GetUnitframesVisibilitySettings()
     local shouldShow = ShouldUnitframesBeVisible()
 
