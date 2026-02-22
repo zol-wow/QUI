@@ -462,14 +462,24 @@ function QUI_UF:EnableEditMode()
             frame:EnableKeyboard(true)
         end
         frame:SetScript("OnKeyDown", function(self, key)
-            if not QUI_UF.editModeActive then return end
+            if not QUI_UF.editModeActive then
+                self:SetPropagateKeyboardInput(true)
+                return
+            end
 
             local deltaX, deltaY = 0, 0
             if key == "LEFT" then deltaX = -1
             elseif key == "RIGHT" then deltaX = 1
             elseif key == "UP" then deltaY = 1
             elseif key == "DOWN" then deltaY = -1
-            else return end  -- Ignore other keys
+            else
+                -- Non-arrow keys: propagate to game (WASD, hotkeys, Escape, etc.)
+                self:SetPropagateKeyboardInput(true)
+                return
+            end
+
+            -- Consume arrow keys so they nudge instead of moving the camera
+            self:SetPropagateKeyboardInput(false)
 
             -- Use global selection system - nudge the SELECTED element, not this frame
             local core = GetCore()
