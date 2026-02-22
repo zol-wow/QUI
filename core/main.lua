@@ -3694,6 +3694,11 @@ local EditModeKeyHandler = CreateFrame("Frame", "QUIEditModeKeyHandler", UIParen
 EditModeKeyHandler:EnableKeyboard(false)
 EditModeKeyHandler:SetPropagateKeyboardInput(true)
 
+local function SetKeyPropagationSafe(frame, propagate)
+    if InCombatLockdown() then return end
+    frame:SetPropagateKeyboardInput(propagate)
+end
+
 -- Nudge the currently selected element by deltaX, deltaY
 function QUICore:NudgeSelectedElement(deltaX, deltaY)
     local sel = self.EditModeSelection
@@ -3788,8 +3793,12 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
 end
 
 EditModeKeyHandler:SetScript("OnKeyDown", function(self, key)
+    if InCombatLockdown() then
+        return
+    end
+
     if not QUICore.EditModeSelection or not QUICore.EditModeSelection.selectedType then
-        self:SetPropagateKeyboardInput(true)
+        SetKeyPropagationSafe(self, true)
         return
     end
 
@@ -3805,24 +3814,36 @@ EditModeKeyHandler:SetScript("OnKeyDown", function(self, key)
     end
 
     if handled then
-        self:SetPropagateKeyboardInput(false)
+        SetKeyPropagationSafe(self, false)
     else
-        self:SetPropagateKeyboardInput(true)
+        SetKeyPropagationSafe(self, true)
     end
 end)
 
 EditModeKeyHandler:SetScript("OnKeyUp", function(self, key)
-    self:SetPropagateKeyboardInput(true)
+    SetKeyPropagationSafe(self, true)
 end)
 
 -- Enable/disable keyboard handling based on selection
 function QUICore:UpdateEditModeKeyHandler()
+    if InCombatLockdown() then
+        EditModeKeyHandler:EnableKeyboard(false)
+        return
+    end
+
     if self.EditModeSelection and self.EditModeSelection.selectedType then
         EditModeKeyHandler:EnableKeyboard(true)
     else
         EditModeKeyHandler:EnableKeyboard(false)
     end
 end
+
+local EditModeKeyHandlerCombatWatcher = CreateFrame("Frame")
+EditModeKeyHandlerCombatWatcher:RegisterEvent("PLAYER_REGEN_DISABLED")
+EditModeKeyHandlerCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+EditModeKeyHandlerCombatWatcher:SetScript("OnEvent", function()
+    QUICore:UpdateEditModeKeyHandler()
+end)
 
 -- Hook into selection changes to enable/disable key handler
 local origSelectEditModeElement = QUICore.SelectEditModeElement
