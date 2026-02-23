@@ -1041,9 +1041,36 @@ function QUICore:UpdatePowerBar()
 
     -- Auto-hide primary when secondary is swapped to primary position (per-spec)
     if ShouldHidePrimaryOnSwap() then
-        if self.powerBar then
-            self.powerBar:SetAlpha(0)
-            self.powerBar:Show()  -- Keep shown at alpha 0 so anchored frames retain reference
+        local bar = self:GetPowerBar()
+        bar:SetAlpha(0)
+        bar:Show()  -- Keep shown at alpha 0 so anchored frames retain reference
+
+        -- Keep dimensions current so the proxy anchor system reads correct
+        -- sizes for frames anchored to primaryPower (width tracks Essential
+        -- CDM viewer when no explicit width is configured).
+        local width = cfg.width
+        if not width or width <= 0 then
+            local essentialViewer = _G["EssentialCooldownViewer"]
+            if essentialViewer then
+                local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(essentialViewer)
+                width = (vs and vs.iconWidth)
+            end
+            if not width or width <= 0 then
+                width = self.db.profile.ncdm and self.db.profile.ncdm._lastEssentialWidth
+            end
+            if not width or width <= 0 then
+                width = 200
+            end
+        end
+        local wantedW = QUICore:PixelRound(width, bar)
+        local wantedH = QUICore:PixelRound(cfg.height or 6, bar)
+        if bar._cachedW ~= wantedW then
+            bar:SetWidth(wantedW)
+            bar._cachedW = wantedW
+        end
+        if bar._cachedH ~= wantedH then
+            bar:SetHeight(wantedH)
+            bar._cachedH = wantedH
         end
         return
     end

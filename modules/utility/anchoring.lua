@@ -1555,16 +1555,46 @@ local function GetFrameAnchorRect(frame, key)
     return math.max(1, width), math.max(1, height)
 end
 
-local function GetParentAnchorRect(frame)
+local function GetParentAnchorRect(frame, parentKey)
     if not frame then return 1, 1 end
-    local width = frame.GetWidth and frame:GetWidth() or 1
-    local height = frame.GetHeight and frame:GetHeight() or 1
+
+    local width, height
+
+    -- CDM parent proxies are frozen during combat, but the source viewer's
+    -- logical layout state is always current.  Read through the proxy to the
+    -- source frame so center-offset math uses live dimensions.
+    if parentKey then
+        -- Normalize aliases (settings.parent may store the short form)
+        if parentKey == "essential" then parentKey = "cdmEssential"
+        elseif parentKey == "utility" then parentKey = "cdmUtility" end
+
+        if CDM_LOGICAL_SIZE_KEYS[parentKey] then
+            local source = ANCHOR_PROXY_SOURCES[parentKey]
+            if source then
+                local sourceFrame = source.resolver()
+                if sourceFrame then
+                    local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(sourceFrame)
+                    if vs then
+                        width = vs.row1Width or vs.iconWidth
+                        height = vs.totalHeight
+                    end
+                end
+            end
+        end
+    end
+
+    if not width or width <= 0 then
+        width = frame.GetWidth and frame:GetWidth() or 1
+    end
+    if not height or height <= 0 then
+        height = frame.GetHeight and frame:GetHeight() or 1
+    end
     return math.max(1, width), math.max(1, height)
 end
 
-local function ComputeCenterOffsetsForAnchor(frame, key, parentFrame, sourcePoint, targetPoint, offsetX, offsetY)
+local function ComputeCenterOffsetsForAnchor(frame, key, parentFrame, sourcePoint, targetPoint, offsetX, offsetY, parentKey)
     local frameW, frameH = GetFrameAnchorRect(frame, key)
-    local parentW, parentH = GetParentAnchorRect(parentFrame)
+    local parentW, parentH = GetParentAnchorRect(parentFrame, parentKey)
 
     local targetX, targetY = GetPointOffsetForRect(targetPoint or "CENTER", parentW, parentH)
     local sourceX, sourceY = GetPointOffsetForRect(sourcePoint or "CENTER", frameW, frameH)
@@ -1723,7 +1753,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
                 frame:ClearAllPoints()
                 if useSizeStable then
                     local centerX, centerY = ComputeCenterOffsetsForAnchor(
-                        frame, key, parentFrame, point, relative, offsetX, stackOffsetY
+                        frame, key, parentFrame, point, relative, offsetX, stackOffsetY, settings.parent
                     )
                     frame:SetPoint("CENTER", parentFrame, "CENTER", centerX, centerY)
                 else
@@ -1735,7 +1765,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
             if frameIsEditMode then
                 if useSizeStable then
                     local centerX, centerY = ComputeCenterOffsetsForAnchor(
-                        frame, key, parentFrame, point, relative, offsetX, stackOffsetY
+                        frame, key, parentFrame, point, relative, offsetX, stackOffsetY, settings.parent
                     )
                     TrackSecureFramePosition(frame, parentFrame, "CENTER", "CENTER", centerX, centerY)
                 else
@@ -1762,7 +1792,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         -- so transient Blizzard combat sizes do not skew the result.
         ApplyAutoSizing(resolved, settings, parentFrame, key)
         local centerX, centerY = ComputeCenterOffsetsForAnchor(
-            resolved, key, parentFrame, point, relative, offsetX, offsetY
+            resolved, key, parentFrame, point, relative, offsetX, offsetY, settings.parent
         )
         pcall(function()
             resolved:ClearAllPoints()
