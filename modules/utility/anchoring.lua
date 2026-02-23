@@ -1062,8 +1062,9 @@ end
 
 ---------------------------------------------------------------------------
 -- FRAME ANCHORING SYSTEM (centralized override positioning)
--- Forward declaration (defined below in global callbacks section)
+-- Forward declarations (defined below)
 local DebouncedReapplyOverrides
+local ComputeAnchorApplyOrder
 ---------------------------------------------------------------------------
 -- Lazy resolver functions for all controllable frames
 local FRAME_RESOLVERS = {
@@ -1320,10 +1321,10 @@ local function GetCDMAnchorProxy(parentKey)
 end
 
 -- Refresh all anchor proxy parents (safe in combat).
--- Order matters: upstream proxies must be ready before downstream ones
--- so that the anchor chain (essential → primary → secondary → utility)
--- resolves without transient jumps.
-local ANCHOR_PROXY_ORDER = {
+-- Order follows the anchor dependency graph when available so upstream
+-- proxies are ready before downstream ones regardless of how the user
+-- has configured the anchor chain.
+local ANCHOR_PROXY_DEFAULT_ORDER = {
     "cdmEssential",
     "primaryPower",
     "secondaryPower",
@@ -1332,8 +1333,31 @@ local ANCHOR_PROXY_ORDER = {
     "buffBar",
 }
 local function UpdateCDMAnchorProxies()
-    for _, key in ipairs(ANCHOR_PROXY_ORDER) do
-        GetCDMAnchorProxy(key)
+    -- Try to derive order from the anchor configuration so that proxy
+    -- parents used by other proxied frames are refreshed first.
+    local anchoringDB = QUICore and QUICore.db and QUICore.db.profile
+        and QUICore.db.profile.frameAnchoring
+    if anchoringDB then
+        local sorted = ComputeAnchorApplyOrder(anchoringDB)
+        -- Refresh proxied frames in dependency order, then any remaining
+        -- proxy sources not present in the override system.
+        local refreshed = {}
+        for _, key in ipairs(sorted) do
+            if ANCHOR_PROXY_SOURCES[key] then
+                GetCDMAnchorProxy(key)
+                refreshed[key] = true
+            end
+        end
+        for _, key in ipairs(ANCHOR_PROXY_DEFAULT_ORDER) do
+            if not refreshed[key] then
+                GetCDMAnchorProxy(key)
+            end
+        end
+    else
+        -- Early init fallback before profile is loaded
+        for _, key in ipairs(ANCHOR_PROXY_DEFAULT_ORDER) do
+            GetCDMAnchorProxy(key)
+        end
     end
 end
 
@@ -1762,16 +1786,86 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     end
 end
 
--- Apply all saved frame anchor overrides
+-- Compute dependency-ordered apply sequence for frame anchoring overrides.
+-- Uses Kahn's algorithm (topological sort) so that parent frames are
+-- positioned before their children, preventing transient jumps when frames
+-- are anchored in arbitrary chains (e.g. buffIcon → primaryPower → cdmEssential).
+ComputeAnchorApplyOrder = function(anchoringDB)
+    -- 1. Collect all enabled override keys
+    local enabledSet = {}
+    local enabledList = {}
+    for key, settings in pairs(anchoringDB) do
+        if type(settings) == "table" and FRAME_RESOLVERS[key] and settings.enabled then
+            enabledSet[key] = true
+            enabledList[#enabledList + 1] = key
+        end
+    end
+
+    if #enabledList == 0 then return enabledList end
+
+    -- 2. Build dependency edges (key depends on parent when parent is also overridden)
+    local inDegree  = {}
+    local childrenOf = {}
+    for _, key in ipairs(enabledList) do
+        inDegree[key] = 0
+        childrenOf[key] = {}
+    end
+
+    for _, key in ipairs(enabledList) do
+        local parent = anchoringDB[key].parent
+        -- Normalize aliases used by GetCDMAnchorProxy
+        if parent == "essential" then parent = "cdmEssential" end
+        if parent == "utility"  then parent = "cdmUtility"   end
+
+        if parent and enabledSet[parent] then
+            inDegree[key] = inDegree[key] + 1
+            childrenOf[parent][#childrenOf[parent] + 1] = key
+        end
+    end
+
+    -- 3. Kahn's BFS — roots (no in-system parent) first
+    local sorted = {}
+    local queue  = {}
+    for _, key in ipairs(enabledList) do
+        if inDegree[key] == 0 then
+            queue[#queue + 1] = key
+        end
+    end
+
+    local head = 1
+    while head <= #queue do
+        local key = queue[head]
+        head = head + 1
+        sorted[#sorted + 1] = key
+        for _, child in ipairs(childrenOf[key]) do
+            inDegree[child] = inDegree[child] - 1
+            if inDegree[child] == 0 then
+                queue[#queue + 1] = child
+            end
+        end
+    end
+
+    -- 4. Cycle fallback — append any remaining keys so they still get applied
+    if #sorted < #enabledList then
+        for _, key in ipairs(enabledList) do
+            if inDegree[key] > 0 then
+                sorted[#sorted + 1] = key
+            end
+        end
+    end
+
+    return sorted
+end
+
+-- Apply all saved frame anchor overrides (dependency-ordered)
 function QUI_Anchoring:ApplyAllFrameAnchors()
     if not QUICore or not QUICore.db or not QUICore.db.profile then return end
     local anchoringDB = QUICore.db.profile.frameAnchoring
     if not anchoringDB then return end
 
-    for key, settings in pairs(anchoringDB) do
-        if type(settings) == "table" and FRAME_RESOLVERS[key] and settings.enabled then
-            self:ApplyFrameAnchor(key, settings)
-        end
+    local sorted = ComputeAnchorApplyOrder(anchoringDB)
+    for _, key in ipairs(sorted) do
+        self:ApplyFrameAnchor(key, anchoringDB[key])
     end
 end
 
