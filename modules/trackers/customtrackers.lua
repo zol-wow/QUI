@@ -91,8 +91,8 @@ local function PositionBar(bar)
         local playerFrame = _G["QUI_Player"]
 
         if not playerFrame then
-            findPlayer = Helpers.FindAnchorFrame("player")
-            if(findPlayer) then playerFrame = _G[findPlayer:GetName()] end
+            local findPlayer = Helpers.FindAnchorFrame("player")
+            if findPlayer then playerFrame = findPlayer end
         end
 
         if playerFrame then
@@ -127,8 +127,8 @@ local function PositionBar(bar)
         local targetFrame = _G["QUI_Target"]
 
         if not targetFrame then
-            findTarget = Helpers.FindAnchorFrame("target")
-            if(findTarget) then targetFrame = _G[findTarget:GetName()] end
+            local findTarget = Helpers.FindAnchorFrame("target")
+            if findTarget then targetFrame = findTarget end
         end
 
         if targetFrame then

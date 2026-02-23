@@ -540,6 +540,43 @@ function Helpers.InCombat()
     return InCombatLockdown()
 end
 
+--- Create an OnUpdate callback throttler.
+--- Returns a function(self, elapsed, ...) that only calls callback at the
+--- requested interval and passes the accumulated elapsed as second argument.
+--- @param interval number Seconds between callback executions
+--- @param callback function Callback(self, accumulatedElapsed, ...)
+--- @return function Throttled OnUpdate handler
+function Helpers.CreateOnUpdateThrottle(interval, callback)
+    interval = tonumber(interval) or 0
+    local elapsedSinceLast = 0
+    return function(self, elapsed, ...)
+        elapsedSinceLast = elapsedSinceLast + (elapsed or 0)
+        if elapsedSinceLast < interval then
+            return
+        end
+        local accumulated = elapsedSinceLast
+        elapsedSinceLast = 0
+        callback(self, accumulated, ...)
+    end
+end
+
+--- Create a time-based throttle wrapper for event-heavy callbacks.
+--- @param interval number Seconds between callback executions
+--- @param callback function Callback(...)
+--- @return function Throttled function
+function Helpers.CreateTimeThrottle(interval, callback)
+    interval = tonumber(interval) or 0
+    local lastRun = 0
+    return function(...)
+        local now = GetTime()
+        if (now - lastRun) < interval then
+            return
+        end
+        lastRun = now
+        return callback(...)
+    end
+end
+
 -- if QUI Player or Target Frames don't exist, find a 3rd party UF
 -- eg Elv, Unhalted, or Blizzard UF for anchoring purposes
 -- @param type string eg player or target
@@ -548,7 +585,8 @@ function Helpers.FindAnchorFrame(type)
     local frameHighestWidth, highestWidth = nil, 0
     local f = EnumerateFrames()
     while f do
-        if f.unit == type or f:GetAttribute("unit") == type then
+        local unit = f.unit or (f.GetAttribute and f:GetAttribute("unit"))
+        if unit == type then
             if f:IsVisible() and f:IsObjectType("Button") and f:GetName() then
                 local w = f:GetWidth()
                 if w > 20 and w > highestWidth then
