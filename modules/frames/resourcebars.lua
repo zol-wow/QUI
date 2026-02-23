@@ -125,6 +125,7 @@ end
 -- Custom power type ID for Enhancement Shaman Maelstrom Weapon and Vengeance Demon Hunter Soul Fragments (aura-based, not a Blizzard PowerType)
 Enum.PowerType.MaelstromWeapon = 100
 Enum.PowerType.VengSoulFragments = 101
+local VDH_SOUL_FRAGMENTS_POWER = (Enum.PowerType and type(Enum.PowerType.SoulFragments) == "number") and Enum.PowerType.SoulFragments or nil
 
 local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
@@ -166,6 +167,9 @@ local tickedPowerTypes = {
     [Enum.PowerType.MaelstromWeapon] = true,
     [Enum.PowerType.VengSoulFragments] = true,
 }
+if VDH_SOUL_FRAGMENTS_POWER then
+    tickedPowerTypes[VDH_SOUL_FRAGMENTS_POWER] = true
+end
 
 local fragmentedPowerTypes = {
     [Enum.PowerType.Runes] = true,
@@ -193,6 +197,9 @@ local instantFeedbackTypes = {
     [Enum.PowerType.MaelstromWeapon] = true,
     [Enum.PowerType.VengSoulFragments] = true,
 }
+if VDH_SOUL_FRAGMENTS_POWER then
+    instantFeedbackTypes[VDH_SOUL_FRAGMENTS_POWER] = true
+end
 
 -- Druid utility forms (show spec resource instead of form resource)
 local druidUtilityForms = {
@@ -327,7 +334,7 @@ local function GetSecondaryResource()
     local secondaryResources = {
         ["DEATHKNIGHT"] = Enum.PowerType.Runes,
         ["DEMONHUNTER"] = {
-            [581] = Enum.PowerType.SoulFragments, -- Vengeance
+            [581] = VDH_SOUL_FRAGMENTS_POWER or Enum.PowerType.VengSoulFragments, -- Vengeance
             -- [1480] = "SOUL", -- Aldrachi Reaver
         },
         ["DRUID"]       = {
@@ -407,7 +414,7 @@ local function GetResourceColor(resource)
             else
                 customColor = pc.stagger
             end
-        elseif resource == Enum.PowerType.VengSoulFragments then
+        elseif resource == Enum.PowerType.VengSoulFragments or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER) then
             customColor = pc.soulFragments
         elseif resource == Enum.PowerType.SoulShards then
             customColor = pc.soulShards
@@ -505,6 +512,14 @@ local function GetSecondaryResourceValue(resource)
         local maxHealth = UnitHealthMax("player") or 1
         local staggerPercent = (stagger / maxHealth) * 100
         return 100, staggerPercent, staggerPercent, "percent"
+    end
+
+    if VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER then
+        local current = UnitPower("player", resource) or 0
+        local max = UnitPowerMax("player", resource) or 0
+        if max > 0 then
+            return max, current, current, "number"
+        end
     end
 
     if resource == Enum.PowerType.VengSoulFragments then
@@ -2690,7 +2705,9 @@ end
 function QUICore:OnUnitAura(_, unit)
     if unit and unit ~= "player" then return end
     local resource = GetSecondaryResource()
-    if resource == Enum.PowerType.MaelstromWeapon then
+    if resource == Enum.PowerType.MaelstromWeapon
+        or resource == Enum.PowerType.VengSoulFragments
+        or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER) then
         self:UpdateSecondaryPowerBar()
     end
 end
@@ -2787,7 +2804,6 @@ local function InitializeResourceBars(self)
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "OnSpecChanged")
     self:RegisterEvent("UPDATE_SHAPESHIFT_FORM", "OnShapeshiftChanged")
     self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
-        EnsureDemonHunterSoulBar()
         self:OnUnitPower()
     end)
 
@@ -2808,9 +2824,6 @@ local function InitializeResourceBars(self)
 
     -- Mount state - needed so CDM visibility (hideWhenMounted, etc.) hides resource bars
     self:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", "OnShapeshiftChanged")
-
-    -- Ensure Demon Hunter soul bar is spawned
-    EnsureDemonHunterSoulBar()
 
     -- Initial update
     self:UpdatePowerBar()
@@ -2836,9 +2849,6 @@ end
 
 
 function QUICore:OnSpecChanged()
-    -- Ensure Demon Hunter soul bar is spawned when spec changes
-    EnsureDemonHunterSoulBar()
-
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
 
