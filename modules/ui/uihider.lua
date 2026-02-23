@@ -32,6 +32,7 @@ local DEFAULTS = {
     hideErrorMessages = false,
     hideInfoMessages = false,
     hideWorldMapBlackout = false,
+    hidePlayerFrameInParty = false,
 }
 
 local pendingObjectiveTrackerHide = false
@@ -591,6 +592,35 @@ end
         else
             WorldMapFrame.BlackoutFrame:SetAlpha(1)
             WorldMapFrame.BlackoutFrame:EnableMouse(true)
+        end
+    end
+
+    -- Player Frame: Hide when in a party/raid group
+    if PlayerFrame then
+        local inGroup = IsInGroup() or IsInRaid()
+        if settings.hidePlayerFrameInParty and inGroup then
+            if InCombatLockdown() then
+                -- Defer until combat ends (handled by PLAYER_REGEN_ENABLED re-apply)
+            else
+                PlayerFrame:Hide()
+                -- Hook Show() to prevent Blizzard from re-showing it while in group
+                if not PlayerFrame._QUI_ShowHooked then
+                    PlayerFrame._QUI_ShowHooked = true
+                    hooksecurefunc(PlayerFrame, "Show", function(self)
+                        C_Timer.After(0, function()
+                            if InCombatLockdown() then return end
+                            local s = GetSettings()
+                            if s and s.hidePlayerFrameInParty and (IsInGroup() or IsInRaid()) then
+                                self:Hide()
+                            end
+                        end)
+                    end)
+                end
+            end
+        else
+            if not InCombatLockdown() then
+                PlayerFrame:Show()
+            end
         end
     end
 end

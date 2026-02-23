@@ -87,6 +87,7 @@ local function BuildAutohideTab(tabContent)
             {key = "hideTalkingHead", label = "Hide Talking Head Frame"},
             {key = "muteTalkingHead", label = "Mute Talking Head Voice"},
             {key = "hideWorldMapBlackout", label = "Hide World Map Blackout"},
+            {key = "hidePlayerFrameInParty", label = "Hide Player Frame in Party/Raid"},
         }
 
         for _, opt in ipairs(frameOptions) do
