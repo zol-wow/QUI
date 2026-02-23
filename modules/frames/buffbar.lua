@@ -715,7 +715,11 @@ local function GetBuffBarFrames()
             if not frame:IsShown() and not looksInitialized then
                 -- Skip uninitialized pooled frames.
             else
-                local blizzShown = frame:IsShown() and frame:IsVisible()
+                -- In combat, bars can be intentionally alpha-hidden by QUI while still
+                -- logically shown by Blizzard. Using IsVisible() here would treat
+                -- alpha=0 bars as absent, preventing them from coming back when the
+                -- aura becomes active mid-combat.
+                local blizzShown = frame:IsShown()
 
                 if inCombat then
                     -- In combat, trust Blizzard visibility state and avoid forcing Show/Hide.
@@ -1694,11 +1698,179 @@ local barState = {
 
 LayoutBuffBars = function()
     if not BuffBarCooldownViewer then return end
-    if InCombatLockdown() then return end
     if isBarLayoutRunning then return end  -- Re-entry guard
     if IsLayoutSuppressed() then return end
 
     isBarLayoutRunning = true
+
+    -- Combat-safe refresh path: avoid moving the viewer anchor itself, but still
+    -- keep per-bar style/size/stack positioning in sync so QUI options are honored
+    -- when bars appear mid-combat.
+    if InCombatLockdown() then
+        -- Apply HUD layer priority to bars even during combat.
+        local core = GetCore()
+        local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
+        local layerPriority = hudLayering and hudLayering.buffBar or 5
+        local frameLevel = 200
+        if core and core.GetHUDFrameLevel then
+            frameLevel = core:GetHUDFrameLevel(layerPriority)
+        end
+
+        local settings = GetTrackedBarSettings()
+        local stylingEnabled = settings.enabled
+        local inactiveMode = settings.inactiveMode or "hide"
+        if inactiveMode ~= "always" and inactiveMode ~= "fade" and inactiveMode ~= "hide" then
+            inactiveMode = "always"
+        end
+        local inactiveAlpha = Clamp01(settings.inactiveAlpha, 0.3)
+        local reserveSlotWhenInactive = (settings.reserveSlotWhenInactive == true)
+        local bars = GetBuffBarFrames()
+        local count = #bars
+        if count == 0 then
+            isBarLayoutRunning = false
+            return
+        end
+
+        local refBar = bars[1]
+        if not refBar then
+            isBarLayoutRunning = false
+            return
+        end
+
+        local barWidth = refBar:GetWidth()
+        local resolvedBarWidth = settings.barWidth or barWidth
+        local placement = settings.anchorPlacement or "center"
+        local anchorTo = settings.anchorTo or "disabled"
+        local canAutoWidth = stylingEnabled and settings.autoWidth and (anchorTo ~= "screen")
+        if canAutoWidth then
+            local anchorFrame
+            local widthAnchorType = anchorTo
+            if placement == "onTopResourceBars" then
+                anchorFrame = GetTopVisibleResourceBarFrame()
+                widthAnchorType = nil
+            else
+                anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+            end
+            if not anchorFrame and placement == "onTopResourceBars" then
+                anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+                widthAnchorType = anchorTo
+            end
+            if anchorFrame and anchorFrame:IsShown() then
+                local anchorWidth = GetTrackedBarAnchorWidth(widthAnchorType, anchorFrame)
+                if anchorWidth then
+                    local adjust = settings.autoWidthOffset or 0
+                    resolvedBarWidth = math.max(20, QUICore:PixelRound(anchorWidth + adjust, BuffBarCooldownViewer))
+                end
+            end
+        end
+        if stylingEnabled then
+            barWidth = resolvedBarWidth
+        end
+
+        local barHeight = stylingEnabled and settings.barHeight or refBar:GetHeight()
+        local spacing = stylingEnabled and settings.spacing or (BuffBarCooldownViewer.childYPadding or 0)
+        local growFromBottom = (not stylingEnabled) or (settings.growUp ~= false)
+        local orientation = stylingEnabled and settings.orientation or "horizontal"
+        local isVertical = (orientation == "vertical")
+        if stylingEnabled and ((settings.anchorTo or "disabled") ~= "disabled" or placement == "onTopResourceBars") then
+            if placement == "onTop" or placement == "onTopResourceBars" then
+                growFromBottom = true
+            elseif placement == "below" then
+                growFromBottom = false
+            elseif isVertical and placement == "right" then
+                growFromBottom = true
+            elseif isVertical and placement == "left" then
+                growFromBottom = false
+            end
+        end
+
+        local effectiveBarWidth, effectiveBarHeight
+        if isVertical then
+            effectiveBarWidth = barHeight
+            effectiveBarHeight = stylingEnabled and resolvedBarWidth or 200
+        else
+            effectiveBarWidth = barWidth
+            effectiveBarHeight = barHeight
+        end
+
+        -- Keep Blizzard layout direction state aligned with QUI settings.
+        viewerBuffState[BuffBarCooldownViewer] = viewerBuffState[BuffBarCooldownViewer] or {}
+        local vbsBar = viewerBuffState[BuffBarCooldownViewer]
+        vbsBar.isHorizontal = not isVertical
+        if isVertical then
+            vbsBar.goingRight = growFromBottom
+            vbsBar.goingUp = false
+        else
+            vbsBar.goingRight = true
+            vbsBar.goingUp = growFromBottom
+        end
+
+        for index, frame in ipairs(bars) do
+            if stylingEnabled then
+                ApplyBarStyle(frame, settings, resolvedBarWidth)
+            else
+                pcall(function()
+                    frame:SetAlpha(1)
+                end)
+            end
+
+            -- Keep strata/level in sync with HUD layering.
+            pcall(function()
+                frame:SetFrameStrata("MEDIUM")
+                frame:SetFrameLevel(frameLevel)
+                if frame.Bar then
+                    frame.Bar:SetFrameStrata("MEDIUM")
+                    frame.Bar:SetFrameLevel(frameLevel + 1)
+                end
+                if frame.Icon then
+                    frame.Icon:SetFrameStrata("MEDIUM")
+                    frame.Icon:SetFrameLevel(frameLevel + 1)
+                end
+            end)
+
+            -- Re-apply QUI stack positioning in combat.
+            pcall(function()
+                frame:ClearAllPoints()
+                local offsetIndex = index - 1
+                if isVertical then
+                    local x
+                    if growFromBottom then
+                        x = QUICore:PixelRound(offsetIndex * (effectiveBarWidth + spacing))
+                        frame:SetPoint("LEFT", BuffBarCooldownViewer, "LEFT", x, 0)
+                    else
+                        x = QUICore:PixelRound(-offsetIndex * (effectiveBarWidth + spacing))
+                        frame:SetPoint("RIGHT", BuffBarCooldownViewer, "RIGHT", x, 0)
+                    end
+                else
+                    local y
+                    if growFromBottom then
+                        y = QUICore:PixelRound(offsetIndex * (effectiveBarHeight + spacing))
+                        frame:SetPoint("BOTTOM", BuffBarCooldownViewer, "BOTTOM", 0, y)
+                    else
+                        y = QUICore:PixelRound(-offsetIndex * (effectiveBarHeight + spacing))
+                        frame:SetPoint("TOP", BuffBarCooldownViewer, "TOP", 0, y)
+                    end
+                end
+            end)
+
+            local bfs = barFrameState[frame]
+            local isActive = not (bfs and bfs.isActive == false)
+            local targetAlpha = 1
+            if not isActive then
+                if inactiveMode == "fade" then
+                    targetAlpha = inactiveAlpha
+                elseif inactiveMode == "hide" and not reserveSlotWhenInactive then
+                    targetAlpha = 0
+                end
+            end
+            pcall(function()
+                frame:SetAlpha(targetAlpha)
+            end)
+        end
+
+        isBarLayoutRunning = false
+        return
+    end
 
     -- Apply HUD layer priority (strata + level)
     local core = GetCore()
