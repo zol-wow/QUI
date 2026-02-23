@@ -19,6 +19,7 @@ local GetCore = ns.Helpers.GetCore
 -- Weak-keyed table for edit mode state on SecureUnitButtonTemplate frames
 -- Avoids writing custom properties directly onto protected frames.
 local _editModeState = setmetatable({}, { __mode = "k" })
+local _bossSelectionHooked = false  -- guard: hook BossTargetFrameContainer.Selection once
 
 ---------------------------------------------------------------------------
 -- EDIT MODE: Toggle draggable frames with arrow nudge buttons
@@ -585,6 +586,33 @@ function QUI_UF:EnableEditMode()
                     if overlay.nudgeRight then overlay.nudgeRight:Show() end
                 end
             end
+        end
+
+        -- Hook container's .Selection show/hide so toggling boss frames
+        -- on/off in Blizzard's edit mode menu also hides/shows the
+        -- individual boss unit frames (which are anchored to, not children
+        -- of, the container).
+        local sel = BossTargetFrameContainer.Selection
+        if sel and not _bossSelectionHooked then
+            _bossSelectionHooked = true
+            sel:HookScript("OnHide", function()
+                if not self.editModeActive then return end
+                for i = 1, 5 do
+                    local bf = self.frames["boss" .. i]
+                    if bf then bf:Hide() end
+                end
+            end)
+            sel:HookScript("OnShow", function()
+                if not self.editModeActive then return end
+                for i = 1, 5 do
+                    local bossKey = "boss" .. i
+                    local bf = self.frames[bossKey]
+                    if bf then
+                        bf:Show()
+                        self:ShowPreview(bossKey)
+                    end
+                end
+            end)
         end
     end)
 

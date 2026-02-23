@@ -200,6 +200,10 @@ function QUI_UF:HideBlizzardCastbars()
             _blizzFrameGuards.castbarShowHooked = true
             local castbarHideWatcher = CreateFrame("Frame", nil, UIParent)
             castbarHideWatcher:SetScript("OnUpdate", function()
+                -- Skip re-hiding during Edit Mode — PlayerCastingBarFrame visibility
+                -- is used as a signal for the Cast Bar toggle checkbox. Re-hiding it
+                -- would immediately undo the toggle and cause castbar previews to flash.
+                if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
                 if PlayerCastingBarFrame:IsShown() then
                     C_Timer.After(0, function()
                         if InCombatLockdown() then return end

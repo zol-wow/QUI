@@ -376,6 +376,8 @@ end
 ---------------------------------------------------------------------------
 
 local viewerOverlays = {}
+local viewersForceShown = {}  -- Viewers we force-showed during edit mode
+local _viewerSelectionHooked = {}  -- guard: hook CDM viewer .Selection once each
 
 -- All CDM viewers that should get nudge overlays
 local CDM_VIEWERS = {
@@ -390,10 +392,10 @@ end
 
 -- Blizzard Edit Mode frames that should get nudge overlays
 local BLIZZARD_EDITMODE_FRAMES = {
-    { name = "BuffFrame", label = "Buff Frame", passthrough = true },
-    { name = "DebuffFrame", label = "Debuff Frame", passthrough = true },
+    { name = "BuffFrame", label = "Buff Frame", passthrough = true, requireSelection = true },
+    { name = "DebuffFrame", label = "Debuff Frame", passthrough = true, requireSelection = true },
     { name = "DamageMeter", label = "Damage Meter", passthrough = true },
-    { name = "BossTargetFrameContainer", label = "Boss Frames", passthrough = true },
+    { name = "BossTargetFrameContainer", label = "Boss Frames", passthrough = true, requireSelection = true },
     -- Action Bars (MainMenuBar renamed to MainActionBar in Midnight 12.0)
     -- passthrough = true: free movers use click-passthrough like CDM viewers
     -- (EnableMouse false, hide Blizzard .Selection, let Blizzard menu open)
@@ -410,7 +412,7 @@ local BLIZZARD_EDITMODE_FRAMES = {
     { name = "MicroMenuContainer", label = "Micro Menu", passthrough = true },
     { name = "BagsBar", label = "Bag Bar", passthrough = true },
     -- Display
-    { name = "ObjectiveTrackerFrame", label = "Objective Tracker", passthrough = true },
+    { name = "ObjectiveTrackerFrame", label = "Objective Tracker", passthrough = true, requireSelection = true },
     { name = "GameTooltipDefaultContainer", label = "HUD Tooltip", passthrough = true },
     -- Talking Head: only show overlay when Blizzard's .Selection is active
     -- (user has it enabled in edit mode settings).  requireSelection gates this.
@@ -913,14 +915,80 @@ function QUICore:ShowViewerOverlays()
         _G.QUI_RefreshCDMVisibility()
     end
 
+    -- Force-show hidden CDM viewers so overlays (children) become visible.
+    -- Blizzard may :Hide() viewers with no active content (e.g. BuffIcon with
+    -- no tracked cooldowns).  Alpha alone can't make a hidden frame visible.
+    wipe(viewersForceShown)
+    for _, viewerName in ipairs(CDM_VIEWERS) do
+        local viewer = _G[viewerName]
+        if viewer and not viewer:IsShown() then
+            pcall(function() viewer:Show() end)
+            viewersForceShown[viewerName] = true
+        end
+    end
+
     for _, viewerName in ipairs(CDM_VIEWERS) do
         if not viewerOverlays[viewerName] then
             viewerOverlays[viewerName] = CreateViewerOverlay(viewerName)
         end
         local overlay = viewerOverlays[viewerName]
+        local viewer = _G[viewerName]
+
+        -- Hook .Selection show/hide so toggling a CDM viewer on/off in
+        -- Blizzard's edit mode menu hides/shows THIS viewer's overlay only.
+        -- Per-viewer hooks avoid re-processing all viewers (which can cause
+        -- unrelated overlays to flicker or disappear during Blizzard re-layout).
+        if viewer then
+            local sel = viewer.Selection
+            if sel and not _viewerSelectionHooked[sel] then
+                _viewerSelectionHooked[sel] = true
+                local hookedName = viewerName  -- capture for closure
+                sel:HookScript("OnHide", function()
+                    if not EditModeManagerFrame or not EditModeManagerFrame:IsShown() then return end
+                    local ov = viewerOverlays[hookedName]
+                    if ov then
+                        ov:Hide()
+                        ov:EnableMouse(false)
+                    end
+                    if viewersForceShown[hookedName] then
+                        local v = _G[hookedName]
+                        if v then pcall(function() v:Hide() end) end
+                        viewersForceShown[hookedName] = nil
+                    end
+                end)
+                sel:HookScript("OnShow", function(self)
+                    if not EditModeManagerFrame or not EditModeManagerFrame:IsShown() then return end
+                    local v = _G[hookedName]
+                    -- Re-show viewer if it was hidden (same logic as force-show on enter)
+                    if v and not v:IsShown() then
+                        pcall(function() v:Show() end)
+                        viewersForceShown[hookedName] = true
+                    end
+                    local ov = viewerOverlays[hookedName]
+                    if ov then
+                        ov:Show()
+                    end
+                    -- Keep Blizzard's .Selection visually hidden; QUI overlay is the indicator.
+                    self:SetAlpha(0)
+                end)
+            end
+            -- Skip overlay when .Selection is hidden (viewer disabled in edit mode settings).
+            -- Also re-hide the viewer if we force-showed it on edit mode enter.
+            if sel and not sel:IsShown() then
+                if overlay then
+                    overlay:Hide()
+                    overlay:EnableMouse(false)
+                end
+                if viewersForceShown[viewerName] then
+                    pcall(function() viewer:Hide() end)
+                    viewersForceShown[viewerName] = nil
+                end
+                overlay = nil  -- skip locked/free logic below
+            end
+        end
+
         if overlay then
             -- Check if this viewer is locked by any anchoring system
-            local viewer = _G[viewerName]
             local isLocked = viewer and _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(viewer)
 
             if isLocked then
@@ -980,17 +1048,24 @@ function QUICore:ShowViewerOverlays()
                     overlay:EnableMouse(false)
                     overlay:SetScript("OnMouseDown", nil)
                     overlay:SetScript("OnMouseUp", nil)
-                    -- Continuously sync overlay position to viewer (follows .Selection drag)
+                    -- Continuously sync overlay position and size to viewer frame
                     overlay:SetScript("OnUpdate", function(self)
                         local vcx, vcy = viewer:GetCenter()
                         if not vcx or not vcy then return end
+                        local vw, vh = viewer:GetWidth(), viewer:GetHeight()
                         local usx2, usy2 = UIParent:GetCenter()
                         if not usx2 or not usy2 then return end
+                        -- Sync size
+                        local curW, curH = self:GetWidth(), self:GetHeight()
+                        if math.abs(curW - vw) > 0.5 or math.abs(curH - vh) > 0.5 then
+                            self:SetSize(vw, vh)
+                        end
+                        -- Sync position
                         local curCx, curCy = self:GetCenter()
                         if curCx and curCy then
                             local dx = math.abs((vcx - usx2) - (curCx - usx2))
                             local dy = math.abs((vcy - usy2) - (curCy - usy2))
-                            if dx < 0.5 and dy < 0.5 then return end  -- Skip if no change
+                            if dx < 0.5 and dy < 0.5 then return end
                         end
                         self:ClearAllPoints()
                         self:SetPoint("CENTER", UIParent, "CENTER", vcx - usx2, vcy - usy2)
@@ -1041,7 +1116,15 @@ function QUICore:HideViewerOverlays()
                 end
             end
         end
+        -- Re-hide viewers we force-showed on edit mode enter.
+        if viewersForceShown[viewerName] then
+            local viewer = _G[viewerName]
+            if viewer then
+                pcall(function() viewer:Hide() end)
+            end
+        end
     end
+    wipe(viewersForceShown)
 end
 
 -- Show overlays on all Blizzard Edit Mode frames

@@ -1680,8 +1680,10 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
 
     -- Never anchor UIParent-managed right-side frames from addon code.
     -- Keep them on Blizzard defaults to avoid protected layout taint.
+    -- Still mark them overridden so QUI_IsFrameLocked returns true and
+    -- the Edit Mode overlay shows "(Locked)" / blocks drag.
     if UNSAFE_BLIZZARD_MANAGED_OVERRIDES[key] then
-        SetFrameOverride(resolved, false)
+        SetFrameOverride(resolved, true, key)
         return
     end
 
