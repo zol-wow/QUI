@@ -1143,12 +1143,11 @@ local FRAME_RESOLVERS = {
 }
 
 -- Blizzard-managed right-side frames are controlled by UIParentPanelManager.
--- Overriding their anchors from addon code taints managed containers and can
--- cause ADDON_ACTION_BLOCKED errors in combat (e.g. PetActionBar updates).
+-- Previously objectiveTracker, buffFrame, and debuffFrame were blocked here,
+-- but the existing combat deferral and SecureHandlerStateTemplate taint cleaner
+-- already handle taint safety for Edit Mode system frames, so they now use the
+-- normal ApplyFrameAnchor path.
 local UNSAFE_BLIZZARD_MANAGED_OVERRIDES = {
-    objectiveTracker = true,
-    buffFrame = true,
-    debuffFrame = true,
 }
 
 -- Frame display info for anchor target registration
