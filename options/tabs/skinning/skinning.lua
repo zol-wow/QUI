@@ -154,6 +154,44 @@ local function BuildSkinningTab(tabContent)
             UpdateBorderControlState()
         end
 
+        local function AddModuleBackgroundOverrideControls(title, settings, prefix)
+            local keyPrefix = type(prefix) == "string" and prefix or ""
+            local overrideKey = keyPrefix ~= "" and (keyPrefix .. "BgOverride") or "bgOverride"
+            local hideKey = keyPrefix ~= "" and (keyPrefix .. "HideBackground") or "hideBackground"
+            local colorKey = keyPrefix ~= "" and (keyPrefix .. "BackgroundColor") or "backgroundColor"
+
+            local colorPicker
+            local hideCheck
+
+            local function UpdateBgControlState()
+                local enabled = settings[overrideKey]
+                if hideCheck then hideCheck:SetEnabled(enabled) end
+                if colorPicker then
+                    colorPicker:SetEnabled(enabled and (not settings[hideKey]))
+                end
+            end
+
+            local overrideCheck = GUI:CreateFormCheckbox(tabContent, "Override Global Background Settings", overrideKey, settings, function()
+                UpdateBgControlState()
+                RefreshAllSkinning()
+            end)
+            overrideCheck:SetPoint("TOPLEFT", PAD, y)
+            overrideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            hideCheck = GUI:CreateFormCheckbox(tabContent, "Hide Background", hideKey, settings, RefreshAllSkinning)
+            hideCheck:SetPoint("TOPLEFT", PAD, y)
+            hideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            colorPicker = GUI:CreateFormColorPicker(tabContent, "Background Color", colorKey, settings, RefreshAllSkinning)
+            colorPicker:SetPoint("TOPLEFT", PAD, y)
+            colorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            UpdateBgControlState()
+        end
+
         local useClassColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Colors", "skinUseClassColor", general, function()
             if customColorPicker then
                 customColorPicker:SetEnabled(not general.skinUseClassColor)
@@ -697,6 +735,12 @@ local function BuildSkinningTab(tabContent)
             local fallbackBorder = general.skinBorderColor or general.addonAccentColor or { 0.204, 0.827, 0.6, 1 }
             mplusTimer.borderColor = { fallbackBorder[1], fallbackBorder[2], fallbackBorder[3], fallbackBorder[4] or 1 }
         end
+        if mplusTimer.bgOverride == nil then mplusTimer.bgOverride = false end
+        if mplusTimer.hideBackground == nil then mplusTimer.hideBackground = false end
+        if mplusTimer.backgroundColor == nil then
+            local fallbackBg = general.skinBgColor or { 0.05, 0.05, 0.05, 0.95 }
+            mplusTimer.backgroundColor = { fallbackBg[1], fallbackBg[2], fallbackBg[3], fallbackBg[4] or 0.95 }
+        end
 
         local quiMplusHeader = GUI:CreateSectionHeader(tabContent, "QUI M+ Timer")
         quiMplusHeader:SetPoint("TOPLEFT", PAD, y)
@@ -783,6 +827,9 @@ local function BuildSkinningTab(tabContent)
         y = y - FORM_ROW
 
         AddModuleBorderOverrideControls("QUI M+ Timer", mplusTimer)
+
+        AddModuleBackgroundOverrideControls("QUI M+ Timer", mplusTimer)
+
 
         local quiMplusDeathsCheck = GUI:CreateFormCheckbox(tabContent, "Show Deaths", "showDeaths", mplusTimer, function()
             local MPlusTimer = _G.QUI_MPlusTimer

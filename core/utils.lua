@@ -480,6 +480,42 @@ function Helpers.GetSkinBgColor()
     return bgr, bgg, bgb, bga
 end
 
+--- Get skin background color with optional module-level override
+--- Supports optional per-module override settings tables for background color
+--- @param moduleSettings table|nil Optional module settings table
+--- @param prefix string|nil Optional key prefix for module settings in camelCase
+--- @return number, number, number, number r, g, b, a
+function Helpers.GetSkinBgColorWithOverride(moduleSettings, prefix)
+    local profile = Helpers.GetProfile()
+    local general = profile and profile.general
+
+    local fallbackR, fallbackG, fallbackB, fallbackA = Helpers.GetSkinBgColor()
+    local r, g, b, a = fallbackR, fallbackG, fallbackB, fallbackA
+
+    if type(moduleSettings) == "table" then
+        local keyPrefix = type(prefix) == "string" and prefix or ""
+        local overrideKey = keyPrefix ~= "" and (keyPrefix .. "BgOverride") or "bgOverride"
+        local hideKey = keyPrefix ~= "" and (keyPrefix .. "HideBackground") or "hideBackground"
+        local colorKey = keyPrefix ~= "" and (keyPrefix .. "BackgroundColor") or "backgroundColor"
+
+        if moduleSettings[overrideKey] then
+            if type(moduleSettings[colorKey]) == "table" then
+                local moduleColor = moduleSettings[colorKey]
+                r = moduleColor[1] or r
+                g = moduleColor[2] or g
+                b = moduleColor[3] or b
+                a = moduleColor[4] or a
+            end
+
+            if moduleSettings[hideKey] then
+                a = 0
+            end
+        end
+    end
+
+    return r, g, b, a
+end
+
 --- Get class color for a class token (e.g., "WARRIOR", "MAGE")
 --- @param classToken string The uppercase class token from UnitClass
 --- @return number, number, number r, g, b values (0-1)
