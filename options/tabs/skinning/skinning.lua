@@ -179,7 +179,10 @@ local function BuildSkinningTab(tabContent)
             overrideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
 
-            hideCheck = GUI:CreateFormCheckbox(tabContent, "Hide Background", hideKey, settings, RefreshAllSkinning)
+            hideCheck = GUI:CreateFormCheckbox(tabContent, "Hide Background", hideKey, settings, function()
+                UpdateBgControlState()
+                RefreshAllSkinning()
+            end)
             hideCheck:SetPoint("TOPLEFT", PAD, y)
             hideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
