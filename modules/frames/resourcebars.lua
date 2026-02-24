@@ -335,7 +335,7 @@ local function GetSecondaryResource()
         ["DEATHKNIGHT"] = Enum.PowerType.Runes,
         ["DEMONHUNTER"] = {
             [581] = VDH_SOUL_FRAGMENTS_POWER or Enum.PowerType.VengSoulFragments, -- Vengeance
-            -- [1480] = "SOUL", -- Aldrachi Reaver
+            [1480] = "SOUL", -- Devourer / Aldrachi Reaver
         },
         ["DRUID"]       = {
             [1]    = Enum.PowerType.ComboPoints, -- Cat
@@ -414,7 +414,7 @@ local function GetResourceColor(resource)
             else
                 customColor = pc.stagger
             end
-        elseif resource == Enum.PowerType.VengSoulFragments or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER) then
+        elseif resource == "SOUL" or resource == Enum.PowerType.VengSoulFragments or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER) then
             customColor = pc.soulFragments
         elseif resource == Enum.PowerType.SoulShards then
             customColor = pc.soulShards
@@ -485,6 +485,50 @@ end
 
 -- GET RESOURCE VALUES
 
+local cachedDHSoulBarParent = nil
+local cachedDHSoulBarAlpha = nil
+
+local function EnsureDemonHunterSoulBar()
+    local soulBar = _G["DemonHunterSoulFragmentsBar"]
+    if not soulBar then return nil end
+
+    local isSoulResource = (GetSecondaryResource() == "SOUL")
+
+    -- Restore original Blizzard ownership/state when no longer using SOUL as secondary.
+    if not isSoulResource then
+        if not InCombatLockdown() then
+            if cachedDHSoulBarParent and soulBar.GetParent and soulBar:GetParent() ~= cachedDHSoulBarParent then
+                soulBar:SetParent(cachedDHSoulBarParent)
+            end
+            if cachedDHSoulBarAlpha ~= nil and soulBar.SetAlpha then
+                soulBar:SetAlpha(cachedDHSoulBarAlpha)
+            end
+        end
+        return soulBar
+    end
+
+    -- Keep Blizzard's soul fragment driver alive even when PlayerFrame is hidden.
+    if not InCombatLockdown() then
+        if cachedDHSoulBarParent == nil and soulBar.GetParent then
+            cachedDHSoulBarParent = soulBar:GetParent()
+        end
+        if cachedDHSoulBarAlpha == nil and soulBar.GetAlpha then
+            cachedDHSoulBarAlpha = soulBar:GetAlpha()
+        end
+        if soulBar.GetParent and soulBar:GetParent() ~= UIParent then
+            soulBar:SetParent(UIParent)
+        end
+        if soulBar.IsShown and not soulBar:IsShown() then
+            soulBar:Show()
+        end
+        if soulBar.SetAlpha then
+            soulBar:SetAlpha(0)
+        end
+    end
+
+    return soulBar
+end
+
 local function GetPrimaryResourceValue(resource, cfg)
     if not resource then return nil, nil, nil, nil end
 
@@ -512,6 +556,17 @@ local function GetSecondaryResourceValue(resource)
         local maxHealth = UnitHealthMax("player") or 1
         local staggerPercent = (stagger / maxHealth) * 100
         return 100, staggerPercent, staggerPercent, "percent"
+    end
+
+    if resource == "SOUL" then
+        local soulBar = EnsureDemonHunterSoulBar() or _G["DemonHunterSoulFragmentsBar"]
+        if soulBar and soulBar.GetValue and soulBar.GetMinMaxValues then
+            local current = soulBar:GetValue()
+            local _, max = soulBar:GetMinMaxValues()
+            if max and max > 0 then
+                return max, current, current, "number"
+            end
+        end
     end
 
     if VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER then
@@ -2707,7 +2762,8 @@ function QUICore:OnUnitAura(_, unit)
     local resource = GetSecondaryResource()
     if resource == Enum.PowerType.MaelstromWeapon
         or resource == Enum.PowerType.VengSoulFragments
-        or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER) then
+        or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER)
+        or resource == "SOUL" then
         self:UpdateSecondaryPowerBar()
     end
 end
@@ -2804,6 +2860,7 @@ local function InitializeResourceBars(self)
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "OnSpecChanged")
     self:RegisterEvent("UPDATE_SHAPESHIFT_FORM", "OnShapeshiftChanged")
     self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+        EnsureDemonHunterSoulBar()
         self:OnUnitPower()
     end)
 
@@ -2824,6 +2881,8 @@ local function InitializeResourceBars(self)
 
     -- Mount state - needed so CDM visibility (hideWhenMounted, etc.) hides resource bars
     self:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", "OnShapeshiftChanged")
+
+    EnsureDemonHunterSoulBar()
 
     -- Initial update
     self:UpdatePowerBar()
@@ -2849,6 +2908,8 @@ end
 
 
 function QUICore:OnSpecChanged()
+    EnsureDemonHunterSoulBar()
+
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
 
