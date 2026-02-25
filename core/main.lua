@@ -3340,11 +3340,11 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         if not QUICore._scaleRegenFrame then
             QUICore._scaleRegenFrame = CreateFrame("Frame")
             QUICore._scaleRegenFrame:SetScript("OnEvent", function(self)
-                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                 if QUICore._pendingUIScale and not InCombatLockdown() then
                     local ok = pcall(UIParent.SetScale, UIParent, QUICore._pendingUIScale)
                     if ok then
                         QUICore._pendingUIScale = nil
+                        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                     end
                 end
             end)
