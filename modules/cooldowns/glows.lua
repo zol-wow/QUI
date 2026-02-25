@@ -127,14 +127,7 @@ local function SuppressBlizzardGlow(icon)
             -- Persistent hook: keep it hidden even if Blizzard re-shows it
             if not hookedFrames[alert] then
                 hookedFrames[alert] = true
-                hooksecurefunc(alert, "Show", function(self)
-                    C_Timer.After(0, function()
-                        if self and self.Hide then
-                            self:Hide()
-                            self:SetAlpha(0)
-                        end
-                    end)
-                end)
+                Helpers.DeferredHideOnShow(alert, { clearAlpha = true, combatCheck = false })
             end
         end
     end)
@@ -145,14 +138,7 @@ local function SuppressBlizzardGlow(icon)
             icon.OverlayGlow:SetAlpha(0)
             if not hookedFrames[icon.OverlayGlow] then
                 hookedFrames[icon.OverlayGlow] = true
-                hooksecurefunc(icon.OverlayGlow, "Show", function(self)
-                    C_Timer.After(0, function()
-                        if self and self.Hide then
-                            self:Hide()
-                            self:SetAlpha(0)
-                        end
-                    end)
-                end)
+                Helpers.DeferredHideOnShow(icon.OverlayGlow, { clearAlpha = true, combatCheck = false })
             end
         end
     end)

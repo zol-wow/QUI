@@ -67,14 +67,7 @@ local function KillBlizzardChildFrame(frame)
     -- C_Timer.After(0) to break the taint chain from the secure execution context.
     if not _hookedOnShowFrames[frame] then
         _hookedOnShowFrames[frame] = true
-        hooksecurefunc(frame, "Show", function(self)
-            C_Timer.After(0, function()
-                if self and self.Hide then
-                    pcall(function() self:Hide() end)
-                    if self.SetAlpha then self:SetAlpha(0) end
-                end
-            end)
-        end)
+        Helpers.DeferredHideOnShow(frame, { clearAlpha = true, combatCheck = false })
     end
 end
 
