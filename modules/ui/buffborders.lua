@@ -170,8 +170,21 @@ local function ProcessAuraContainer(container, isBuff)
 end
 
 -- Hide/show entire BuffFrame or DebuffFrame based on settings
+local _frameHidingPendingRegen = false
 local function ApplyFrameHiding()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        if not _frameHidingPendingRegen then
+            _frameHidingPendingRegen = true
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("PLAYER_REGEN_ENABLED")
+            f:SetScript("OnEvent", function(self)
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                _frameHidingPendingRegen = false
+                ApplyFrameHiding()
+            end)
+        end
+        return
+    end
     local settings = GetSettings()
     if not settings then return end
 
