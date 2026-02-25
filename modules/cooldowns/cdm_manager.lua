@@ -10,6 +10,7 @@ local Helpers = QUI.Helpers
 local viewerPending = {}
 local updateBucket = {}
 local _iconPositions = Helpers.CreateStateTable()
+local _pendingCombatViewers
 
 -- Core function to remove padding and apply modifications
 local function RemovePadding(viewer)
@@ -18,8 +19,12 @@ local function RemovePadding(viewer)
         return
     end
 
-    -- Don't modify protected frames during combat
-    if InCombatLockdown() then return end
+    -- Don't modify protected frames during combat — defer to post-combat
+    if InCombatLockdown() then
+        if not _pendingCombatViewers then _pendingCombatViewers = {} end
+        _pendingCombatViewers[viewer] = true
+        return
+    end
 
     -- Don't interfere if layout is currently being applied
     if viewer._layoutApplying then
@@ -168,6 +173,18 @@ end
 
 -- Swipe visibility is now handled centrally by cooldownswipe.lua
 -- This file only handles icon layout (padding removal, scaling, positioning)
+
+-- Post-combat retry for viewers that were scheduled during combat
+local regenFrame = CreateFrame("Frame")
+regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+regenFrame:SetScript("OnEvent", function()
+    if not _pendingCombatViewers then return end
+    local viewers = _pendingCombatViewers
+    _pendingCombatViewers = nil
+    for v in pairs(viewers) do
+        RemovePadding(v)
+    end
+end)
 
 -- Export function to QUI namespace
 QUI.CooldownManager = {
