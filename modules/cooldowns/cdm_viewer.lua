@@ -466,6 +466,26 @@ local function HasValidTexture(icon)
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: Update locked power bars and castbars for a given tracker type
+---------------------------------------------------------------------------
+local function UpdateLockedBarsForViewer(trackerKey)
+    if trackerKey == "essential" then
+        if _G.QUI_UpdateLockedPowerBar then _G.QUI_UpdateLockedPowerBar() end
+        if _G.QUI_UpdateLockedSecondaryPowerBar then _G.QUI_UpdateLockedSecondaryPowerBar() end
+        if _G.QUI_UpdateLockedCastbarToEssential then _G.QUI_UpdateLockedCastbarToEssential() end
+    elseif trackerKey == "utility" then
+        if _G.QUI_UpdateLockedPowerBarToUtility then _G.QUI_UpdateLockedPowerBarToUtility() end
+        if _G.QUI_UpdateLockedSecondaryPowerBarToUtility then _G.QUI_UpdateLockedSecondaryPowerBarToUtility() end
+        if _G.QUI_UpdateLockedCastbarToUtility then _G.QUI_UpdateLockedCastbarToUtility() end
+    end
+end
+
+local function UpdateAllLockedBars()
+    UpdateLockedBarsForViewer("essential")
+    UpdateLockedBarsForViewer("utility")
+end
+
+---------------------------------------------------------------------------
 -- HELPER: Get total icon capacity from row settings
 ---------------------------------------------------------------------------
 local function GetTotalIconCapacity(settings)
@@ -1443,27 +1463,7 @@ local function LayoutViewer(viewerName, trackerKey)
         vs.cdmUpdatePending = true
         C_Timer.After(0.05, function()
             vs.cdmUpdatePending = nil
-            if trackerKey == "essential" then
-                if _G.QUI_UpdateLockedPowerBar then
-                    _G.QUI_UpdateLockedPowerBar()
-                end
-                if _G.QUI_UpdateLockedSecondaryPowerBar then
-                    _G.QUI_UpdateLockedSecondaryPowerBar()
-                end
-                if _G.QUI_UpdateLockedCastbarToEssential then
-                    _G.QUI_UpdateLockedCastbarToEssential()
-                end
-            elseif trackerKey == "utility" then
-                if _G.QUI_UpdateLockedPowerBarToUtility then
-                    _G.QUI_UpdateLockedPowerBarToUtility()
-                end
-                if _G.QUI_UpdateLockedSecondaryPowerBarToUtility then
-                    _G.QUI_UpdateLockedSecondaryPowerBarToUtility()
-                end
-                if _G.QUI_UpdateLockedCastbarToUtility then
-                    _G.QUI_UpdateLockedCastbarToUtility()
-                end
-            end
+            UpdateLockedBarsForViewer(trackerKey)
             -- Unit frames anchored to CDM (can be anchored to either Essential or Utility)
             if _G.QUI_UpdateCDMAnchoredUnitFrames then
                 _G.QUI_UpdateCDMAnchoredUnitFrames()
@@ -1636,13 +1636,7 @@ local function HookViewer(viewerName, trackerKey)
             end
             -- Update power bar WIDTH to match viewer (position is handled by
             -- QUI_UpdateFramesAnchoredTo above, but width is separate).
-            if viewerName == VIEWER_ESSENTIAL then
-                if _G.QUI_UpdateLockedPowerBar then _G.QUI_UpdateLockedPowerBar() end
-                if _G.QUI_UpdateLockedSecondaryPowerBar then _G.QUI_UpdateLockedSecondaryPowerBar() end
-            else
-                if _G.QUI_UpdateLockedPowerBarToUtility then _G.QUI_UpdateLockedPowerBarToUtility() end
-                if _G.QUI_UpdateLockedSecondaryPowerBarToUtility then _G.QUI_UpdateLockedSecondaryPowerBarToUtility() end
-            end
+            UpdateLockedBarsForViewer(viewerName == VIEWER_ESSENTIAL and "essential" or "utility")
             -- Anchor chain diagnostic: CDM viewer → viewer state → proxy → power bars
             local proxyFrame = _G.QUI_GetCDMAnchorProxyFrame and _G.QUI_GetCDMAnchorProxyFrame(anchorKey)
             local proxyW, proxyH = proxyFrame and proxyFrame:GetWidth() or 0, proxyFrame and proxyFrame:GetHeight() or 0
@@ -1854,10 +1848,7 @@ local function HookViewer(viewerName, trackerKey)
                 _G.QUI_UpdateCDMAnchorProxyFrames()
             end
             -- Update ALL power bar variants (each checks its own lock flag)
-            if _G.QUI_UpdateLockedPowerBar then _G.QUI_UpdateLockedPowerBar() end
-            if _G.QUI_UpdateLockedSecondaryPowerBar then _G.QUI_UpdateLockedSecondaryPowerBar() end
-            if _G.QUI_UpdateLockedPowerBarToUtility then _G.QUI_UpdateLockedPowerBarToUtility() end
-            if _G.QUI_UpdateLockedSecondaryPowerBarToUtility then _G.QUI_UpdateLockedSecondaryPowerBarToUtility() end
+            UpdateAllLockedBars()
             -- Snap Utility position relative to Essential (legacy anchor)
             if _G.QUI_ApplyUtilityAnchor then
                 _G.QUI_ApplyUtilityAnchor()
@@ -2093,26 +2084,7 @@ local function RefreshAll()
 
     -- Update locked power bars and castbars after all layouts complete
     C_Timer.After(0.10, function()
-        -- Essential locked items
-        if _G.QUI_UpdateLockedPowerBar then
-            _G.QUI_UpdateLockedPowerBar()
-        end
-        if _G.QUI_UpdateLockedSecondaryPowerBar then
-            _G.QUI_UpdateLockedSecondaryPowerBar()
-        end
-        if _G.QUI_UpdateLockedCastbarToEssential then
-            _G.QUI_UpdateLockedCastbarToEssential()
-        end
-        -- Utility locked items
-        if _G.QUI_UpdateLockedPowerBarToUtility then
-            _G.QUI_UpdateLockedPowerBarToUtility()
-        end
-        if _G.QUI_UpdateLockedSecondaryPowerBarToUtility then
-            _G.QUI_UpdateLockedSecondaryPowerBarToUtility()
-        end
-        if _G.QUI_UpdateLockedCastbarToUtility then
-            _G.QUI_UpdateLockedCastbarToUtility()
-        end
+        UpdateAllLockedBars()
         -- Unit frames anchored to CDM
         if _G.QUI_UpdateCDMAnchoredUnitFrames then
             _G.QUI_UpdateCDMAnchoredUnitFrames()
@@ -2328,13 +2300,7 @@ _G.QUI_RefreshCDMViewerFromBounds = function(viewer, trackerKey)
         _G.QUI_UpdateCDMAnchorProxyFrames()
     end
     -- Update power bars
-    if trackerKey == "essential" then
-        if _G.QUI_UpdateLockedPowerBar then _G.QUI_UpdateLockedPowerBar() end
-        if _G.QUI_UpdateLockedSecondaryPowerBar then _G.QUI_UpdateLockedSecondaryPowerBar() end
-    elseif trackerKey == "utility" then
-        if _G.QUI_UpdateLockedPowerBarToUtility then _G.QUI_UpdateLockedPowerBarToUtility() end
-        if _G.QUI_UpdateLockedSecondaryPowerBarToUtility then _G.QUI_UpdateLockedSecondaryPowerBarToUtility() end
-    end
+    UpdateLockedBarsForViewer(trackerKey)
     -- Update anchored frames
     if _G.QUI_UpdateAnchoredUnitFrames then
         _G.QUI_UpdateAnchoredUnitFrames()
