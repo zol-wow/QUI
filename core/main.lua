@@ -173,12 +173,14 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
 
                         if checkOk and checkResult and not InCombatLockdown() then
                             local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
-                            if setOk and pendingData.info and pendingData.borderColor then
-                                local c = pendingData.borderColor
-                                pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
+                            if setOk then
+                                if pendingData.info and pendingData.borderColor then
+                                    local c = pendingData.borderColor
+                                    pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
+                                end
+                                _pendingBackdropData[pendingFrame] = nil
+                                table.insert(processed, pendingFrame)
                             end
-                            _pendingBackdropData[pendingFrame] = nil
-                            table.insert(processed, pendingFrame)
                         end
                     else
                         table.insert(processed, pendingFrame)
@@ -221,20 +223,33 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
                 eventFrame:SetScript("OnEvent", function(self)
                     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                    local stillPending = false
                     for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
                         local pendingData = _pendingBackdropData[pendingFrame]
                         if pendingFrame and pendingData then
                             if not InCombatLockdown() then
                                 local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
-                                if setOk and pendingData.info and pendingData.borderColor then
-                                    local c = pendingData.borderColor
-                                    pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
+                                if setOk then
+                                    if pendingData.info and pendingData.borderColor then
+                                        local c = pendingData.borderColor
+                                        pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
+                                    end
+                                    _pendingBackdropData[pendingFrame] = nil
+                                    QUICore.__pendingBackdrops[pendingFrame] = nil
+                                else
+                                    stillPending = true
                                 end
+                            else
+                                stillPending = true
                             end
+                        else
                             _pendingBackdropData[pendingFrame] = nil
+                            QUICore.__pendingBackdrops[pendingFrame] = nil
                         end
                     end
-                    QUICore.__pendingBackdrops = {}
+                    if not stillPending then
+                        QUICore.__pendingBackdrops = {}
+                    end
                 end)
                 QUICore.__backdropEventFrame = eventFrame
             end
