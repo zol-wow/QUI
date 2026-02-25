@@ -2249,11 +2249,7 @@ end
 -- changes icon size without firing SetScale/OnSizeChanged on the viewer.
 _G.QUI_SetCDMViewerBounds = function(viewer, boundsW, boundsH)
     if not viewer then return end
-    local vs = _viewerState[viewer]
-    if not vs then
-        vs = {}
-        _viewerState[viewer] = vs
-    end
+    local vs = getViewerState(viewer)
     -- Update internal viewer state (used by proxy system, anchor calculations,
     -- and QUI_GetCDMViewerState which resource bars should use).
     -- Do NOT write __cdm* properties on the viewer frame — that taints
