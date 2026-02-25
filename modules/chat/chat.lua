@@ -195,28 +195,6 @@ local function MakeURLsClickable(text)
 end
 
 ---------------------------------------------------------------------------
--- Hook chat frame AddMessage to process URLs
--- Uses hooksecurefunc (runs AFTER original) to avoid tainting AddMessage.
--- For pre-processing text (timestamps, URLs), we use ChatFrame_AddMessageEventFilter
--- instead of direct method replacement, which would taint the method permanently.
----------------------------------------------------------------------------
--- Track hooked chat frames in a local table (NOT on the frame itself)
-local hookedChatFrames = Helpers.CreateStateTable()
-
-local function HookChatMessages(chatFrame)
-    if hookedChatFrames[chatFrame] then return end
-    hookedChatFrames[chatFrame] = true
-
-    -- NOTE: Direct replacement of chatFrame.AddMessage has been removed because
-    -- it permanently taints the method in Midnight's taint model, causing
-    -- ADDON_ACTION_FORBIDDEN errors throughout Edit Mode and other secure paths.
-    --
-    -- Timestamps and URL detection are now applied via ChatFrame_AddMessageEventFilter
-    -- (see SetupMessageFilters below) which is the Blizzard-approved way to modify
-    -- chat messages before display.
-end
-
----------------------------------------------------------------------------
 -- Create URL copy popup (on demand) - QUI styled
 ---------------------------------------------------------------------------
 local function CreateCopyPopup()
@@ -1241,11 +1219,6 @@ local function SkinChatFrame(chatFrame)
 
     -- Apply font styling (always enabled)
     StyleFontStrings(chatFrame)
-
-    -- Hook URL detection
-    if settings.urls and settings.urls.enabled then
-        HookChatMessages(chatFrame)
-    end
 
     -- Setup message fade (handles both enabling and disabling)
     SetupMessageFade(chatFrame)
