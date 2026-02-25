@@ -529,10 +529,9 @@ function QUICore:ApplyViewerLayout(viewer)
         local alignment = settings.rowAlignment or "CENTER"
         local rowSpacing = iconHeight + spacing
 
-        local vvs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer) or {}
-        vvs.iconWidth = maxW
-        -- Store total height for anchoring (number of rows * row height, minus last spacing)
-        vvs.totalHeight = (#grid * iconHeight) + ((#grid - 1) * spacing)
+        -- Update viewer state dimensions for anchoring/resource bars
+        local totalH = (#grid * iconHeight) + ((#grid - 1) * spacing)
+        if _G.QUI_SetCDMViewerBounds then _G.QUI_SetCDMViewerBounds(viewer, maxW, totalH) end
 
         local y = yOffset
         for rowIdx, row in ipairs(grid) do
@@ -562,9 +561,7 @@ function QUICore:ApplyViewerLayout(viewer)
     elseif rowLimit <= 0 then
         -- Single row (original behavior)
         local totalWidth = count * iconWidth + (count - 1) * spacing
-        local vvs2 = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer) or {}
-        vvs2.iconWidth = totalWidth
-        vvs2.totalHeight = iconHeight  -- Single row height
+        if _G.QUI_SetCDMViewerBounds then _G.QUI_SetCDMViewerBounds(viewer, totalWidth, iconHeight) end
 
         local startX = -totalWidth / 2 + iconWidth / 2
 
@@ -590,9 +587,8 @@ function QUICore:ApplyViewerLayout(viewer)
             end
         end
 
-        local vvs3 = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer) or {}
-        vvs3.iconWidth = maxRowWidth
-        vvs3.totalHeight = (numRows * iconHeight) + ((numRows - 1) * spacing)
+        local totalH3 = (numRows * iconHeight) + ((numRows - 1) * spacing)
+        if _G.QUI_SetCDMViewerBounds then _G.QUI_SetCDMViewerBounds(viewer, maxRowWidth, totalH3) end
 
         local growDirection = "down"
 
