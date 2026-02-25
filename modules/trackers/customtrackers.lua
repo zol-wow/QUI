@@ -2876,9 +2876,14 @@ _G.QUI_RefreshCustomTrackersVisibility = UpdateCustomTrackersVisibility
 _G.QUI_RefreshCustomTrackersMouseover = SetupCustomTrackersMouseoverDetector
 
 -- Suspend/resume visibility rules during Edit Mode
-C_Timer.After(1.5, function()
+-- Retry with a ticker until core is ready, then cancel
+local _editModeRegTicker
+_editModeRegTicker = C_Timer.NewTicker(1.5, function()
     local core = GetCore()
     if not core or not core.RegisterEditModeEnter then return end
+
+    _editModeRegTicker:Cancel()
+    _editModeRegTicker = nil
 
     core:RegisterEditModeEnter(function()
         -- Force all trackers to full opacity
