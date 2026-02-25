@@ -721,7 +721,7 @@ function Helpers.DeferredHideOnShow(frame, opts)
     hooksecurefunc(frame, "Show", function(self)
         C_Timer.After(0, function()
             if combatCheck and InCombatLockdown() then return end
-            if not self then return end
+            if self.IsForbidden and self:IsForbidden() then return end
             pcall(self.Hide, self)
             if clearAlpha and self.SetAlpha then self:SetAlpha(0) end
         end)
