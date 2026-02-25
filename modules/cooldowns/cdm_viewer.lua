@@ -1738,7 +1738,7 @@ local function HookViewer(viewerName, trackerKey)
                     diagMsg = diagMsg .. format(" → util-center=%.0f,%.0f", ux or 0, uy or 0)
                 end
             end
-            QUI:DebugPrint(diagMsg)
+            if QUI and QUI.DebugPrint then QUI:DebugPrint(diagMsg) end
             return
         end
 
