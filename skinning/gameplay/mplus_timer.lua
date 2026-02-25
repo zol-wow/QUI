@@ -71,7 +71,7 @@ local function ApplyBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, showBord
     if not backdrop then
         backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
         backdrop:SetAllPoints()
-        backdrop:SetFrameLevel(math.max(1, frame:GetFrameLevel() - 1))
+        backdrop:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
         backdrop:EnableMouse(false)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
