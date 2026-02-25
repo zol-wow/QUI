@@ -1358,7 +1358,20 @@ local function LayoutViewer(viewerName, trackerKey)
         end
     end
     
-    -- Store dimensions
+    -- Store dimensions — prefer bounds-corrected values if they exist for the
+    -- same icon count (prevents feedback loop between formula and measurement).
+    if vs._boundsCorrectedIconCount == #iconsToLayout
+        and vs._boundsCorrectedW and vs._boundsCorrectedH
+        and math.abs(maxRowWidth - vs._boundsCorrectedW) < 5
+        and math.abs(totalHeight - vs._boundsCorrectedH) < 5 then
+        maxRowWidth = vs._boundsCorrectedW
+        totalHeight = vs._boundsCorrectedH
+    else
+        -- Icon count changed or formula diverged significantly — clear stale correction
+        vs._boundsCorrectedW = nil
+        vs._boundsCorrectedH = nil
+        vs._boundsCorrectedIconCount = nil
+    end
     vs.cdmIconWidth = maxRowWidth
     vs.cdmTotalHeight = totalHeight
     if QUI and QUI.DebugPrint then
@@ -1398,12 +1411,72 @@ local function LayoutViewer(viewerName, trackerKey)
         vs.cdmPotentialBottomRowWidth = potentialBottomRowWidth
     end
 
-    -- LayoutViewer's formula is the authoritative source for dimensions.
-    -- It knows the row structure (per-row icon counts, sizes, padding)
-    -- and produces correct maxRowWidth/totalHeight.  A previous bounds
-    -- verification here measured icon positions post-SetPoint, but those
-    -- coordinates can be stale within the same frame and the bounding-box
-    -- approach loses row structure information in multi-row layouts.
+    -- Schedule a delayed bounds correction: Blizzard's own CDM layout may
+    -- reposition icons after our SetSize, so we measure actual icon bounds
+    -- after a short delay and correct viewer state + proxy if they differ.
+    if not InCombatLockdown() then
+        if vs._boundsCorrectionTimer then
+            vs._boundsCorrectionTimer:Cancel()
+        end
+        vs._boundsCorrectionTimer = C_Timer.NewTimer(0.15, function()
+            vs._boundsCorrectionTimer = nil
+            if InCombatLockdown() then return end
+            local boundsL, boundsR, boundsT, boundsB
+            local iconCount = 0
+            ForEachVisibleIcon(viewer, function(child)
+                local il, ir, it, ib = child:GetLeft(), child:GetRight(), child:GetTop(), child:GetBottom()
+                if il and ir and it and ib then
+                    iconCount = iconCount + 1
+                    boundsL = boundsL and math.min(boundsL, il) or il
+                    boundsR = boundsR and math.max(boundsR, ir) or ir
+                    boundsT = boundsT and math.max(boundsT, it) or it
+                    boundsB = boundsB and math.min(boundsB, ib) or ib
+                end
+            end)
+            if iconCount >= 1 and boundsL and boundsR and boundsT and boundsB then
+                local measuredW = boundsR - boundsL
+                local measuredH = boundsT - boundsB
+                -- Convert screen-space bounds to viewer-local coordinate space.
+                -- GetLeft/GetRight return UIParent-unit values; viewer state stores
+                -- viewer-local values.  When the viewer has a non-1.0 scale (Blizzard
+                -- "Icon Size" slider), screen bounds are larger by that scale factor.
+                local viewerToScreen = viewer:GetEffectiveScale()
+                local uiParentScale = UIParent:GetEffectiveScale()
+                if viewerToScreen and uiParentScale and uiParentScale > 0 then
+                    local scaleRatio = viewerToScreen / uiParentScale
+                    if scaleRatio > 0 and math.abs(scaleRatio - 1.0) > 0.001 then
+                        measuredW = measuredW / scaleRatio
+                        measuredH = measuredH / scaleRatio
+                    end
+                end
+                if measuredW > 1 and measuredH > 1 then
+                    local curW = vs.cdmIconWidth or 0
+                    local curH = vs.cdmTotalHeight or 0
+                    if math.abs(curW - measuredW) > 1 or math.abs(curH - measuredH) > 1 then
+                        vs.cdmIconWidth = measuredW
+                        vs.cdmTotalHeight = measuredH
+                        vs.cdmRow1Width = measuredW
+                        vs.cdmBottomRowWidth = measuredW
+                        vs.cdmPotentialRow1Width = measuredW
+                        vs.cdmPotentialBottomRowWidth = measuredW
+                        vs._boundsCorrectedW = measuredW
+                        vs._boundsCorrectedH = measuredH
+                        vs._boundsCorrectedIconCount = iconCount
+                        if QUI and QUI.DebugPrint then
+                            local vLocalScale = viewer:GetScale() or 0
+                            local vl, vr = viewer:GetLeft(), viewer:GetRight()
+                            local viewerScreenW = (vl and vr) and (vr - vl) or 0
+                            QUI:DebugPrint(format("|cff34D399CDM|r BoundsCorrection %s: formula=%.0fx%.0f actual=%.0fx%.0f icons=%d viewerScale=%.3f viewerScreenW=%.1f",
+                                trackerKey, curW, curH, measuredW, measuredH, iconCount, vLocalScale, viewerScreenW))
+                        end
+                        if _G.QUI_UpdateCDMAnchorProxyFrames then
+                            _G.QUI_UpdateCDMAnchorProxyFrames()
+                        end
+                    end
+                end
+            end
+        end)
+    end
 
     -- Resize viewer (suppress OnSizeChanged triggering another layout)
     if maxRowWidth > 0 and totalHeight > 0 then
@@ -1508,9 +1581,12 @@ local function HookViewer(viewerName, trackerKey)
         end
     end)
 
-    -- Debug: hook SetScale to detect Blizzard's Edit Mode slider changing scale
+    -- Hook SetScale: Blizzard's CDM "Icon Size" slider may call SetScale on
+    -- the viewer.  SetScale does NOT fire OnSizeChanged, so the proxy would
+    -- never learn about the scale change.  Trigger a proxy refresh so the
+    -- effective-scale comparison in GetCDMAnchorProxy can adjust dimensions.
     hooksecurefunc(viewer, "SetScale", function(self, newScale)
-        if Helpers.IsEditModeActive() then
+        if QUI and QUI.DebugPrint then
             local w, h = self:GetWidth(), self:GetHeight()
             local effScale = self:GetEffectiveScale()
             local parentEffScale = UIParent:GetEffectiveScale()
@@ -1519,6 +1595,10 @@ local function HookViewer(viewerName, trackerKey)
             QUI:DebugPrint(format("|cffFF4444CDM SetScale|r %s: newScale=%.3f effScale=%.3f parentEffScale=%.3f logical=%.0fx%.0f boundsW=%.0f",
                 viewerName == VIEWER_ESSENTIAL and "Ess" or "Util",
                 newScale, effScale, parentEffScale, w, h, boundsW))
+        end
+        -- Refresh proxy dimensions to account for the new scale
+        if not InCombatLockdown() and _G.QUI_UpdateCDMAnchorProxyFrames then
+            _G.QUI_UpdateCDMAnchorProxyFrames()
         end
     end)
 
@@ -1736,34 +1816,17 @@ local function HookViewer(viewerName, trackerKey)
                     end
                 end -- if not capturedSize
             end
-            if capturedSize and capturedSize > 1 then
-                -- Only write settings and re-skin if the icon size actually changed
-                if method ~= "unchanged" then
-                    local settings = GetTrackerSettings(trackerKey)
-                    if settings then
-                        for _, rowKey in ipairs({"row1", "row2", "row3"}) do
-                            if settings[rowKey] then
-                                settings[rowKey].iconSize = capturedSize
-                            end
-                        end
-                    end
-                    -- Force all icons to re-skin with the new size
-                    for i = 1, self:GetNumChildren() do
-                        local child = select(i, self:GetChildren())
-                        if child then
-                            local lis = getIconState(child)
-                            if lis then lis.cdmSkinned = nil end
-                        end
-                    end
-                end
-                if QUI and QUI.DebugPrint then
-                    QUI:DebugPrint(format("|cff34D399CDM|r CapturedBlizzardIconSize %s: size=%d method=%s viewer=%.0fx%.0f icons=%d",
-                        viewerName == VIEWER_ESSENTIAL and "Ess" or "Util",
-                        capturedSize, method, w, h, iconCount))
-                end
+            -- Do NOT write capturedSize to settings — QUI's configured icon
+            -- size is the sole source of truth.  Blizzard's slider affects the
+            -- viewer scale (handled by SetScale hook + effective-scale conversion
+            -- in the proxy), not QUI's layout formula.
+            if QUI and QUI.DebugPrint and capturedSize and capturedSize > 1 then
+                QUI:DebugPrint(format("|cff34D399CDM|r CapturedBlizzardIconSize %s: size=%d method=%s viewer=%.0fx%.0f icons=%d (not written)",
+                    viewerName == VIEWER_ESSENTIAL and "Ess" or "Util",
+                    capturedSize, method, w, h, iconCount))
             end
             svs._captureJustCompleted = true
-            -- Fall through to LayoutViewer which uses the updated iconSize
+            -- Fall through to LayoutViewer which uses QUI's configured iconSize
         end
 
         -- During combat, Blizzard fires transient 1x1 resets on CDM viewers.

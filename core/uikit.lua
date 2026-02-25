@@ -461,7 +461,10 @@ function UIKit.CreateAnchorProxy(sourceFrame, opts)
             w = w * scaleFactor
             h = h * scaleFactor
         end
-        if lastWidth ~= w or lastHeight ~= h then
+        -- Use epsilon comparison — WoW's GetWidth/GetHeight can return
+        -- slightly different floats than what was passed to SetSize,
+        -- causing infinite SetSize→OnSizeChanged→SetSize loops.
+        if math.abs(lastWidth - w) > 0.5 or math.abs(lastHeight - h) > 0.5 then
             self:SetSize(w, h)
             lastWidth, lastHeight = w, h
         end
