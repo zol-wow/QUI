@@ -3318,22 +3318,32 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     self._lastKnownSpec = GetSpecialization() or 0
 
     -- Helper to apply UIParent scale safely (defers if in combat or protected state)
-    local function ApplyUIScale(scale)
-        if InCombatLockdown() then
-            QUICore._pendingUIScale = scale
-            if not QUICore._scaleRegenFrame then
-                QUICore._scaleRegenFrame = CreateFrame("Frame")
-                QUICore._scaleRegenFrame:SetScript("OnEvent", function(self)
-                    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                    if QUICore._pendingUIScale and not InCombatLockdown() then
-                        UIParent:SetScale(QUICore._pendingUIScale)
+    -- pcall wraps SetScale because M+ keystone activation can enter a protected
+    -- state while InCombatLockdown() still returns false.
+    local function DeferUIScale(scale)
+        QUICore._pendingUIScale = scale
+        if not QUICore._scaleRegenFrame then
+            QUICore._scaleRegenFrame = CreateFrame("Frame")
+            QUICore._scaleRegenFrame:SetScript("OnEvent", function(self)
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                if QUICore._pendingUIScale and not InCombatLockdown() then
+                    local ok = pcall(UIParent.SetScale, UIParent, QUICore._pendingUIScale)
+                    if ok then
                         QUICore._pendingUIScale = nil
                     end
-                end)
-            end
-            QUICore._scaleRegenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+                end
+            end)
+        end
+        QUICore._scaleRegenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    end
+    local function ApplyUIScale(scale)
+        if InCombatLockdown() then
+            DeferUIScale(scale)
         else
-            UIParent:SetScale(scale)
+            local ok = pcall(UIParent.SetScale, UIParent, scale)
+            if not ok then
+                DeferUIScale(scale)
+            end
         end
     end
 
