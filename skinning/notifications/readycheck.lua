@@ -373,10 +373,21 @@ local function SkinReadyCheckFrame()
     end)
 
     -- Make frame movable (only when unlocked)
-    if not InCombatLockdown() then
+    -- Defer to post-combat if in lockdown so skinning can still proceed
+    local function EnableDragging()
+        if InCombatLockdown() then
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("PLAYER_REGEN_ENABLED")
+            f:SetScript("OnEvent", function(self)
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                EnableDragging()
+            end)
+            return
+        end
         frame:SetMovable(true)
         frame:RegisterForDrag("LeftButton")
     end
+    EnableDragging()
     frame:HookScript("OnDragStart", function(self)
         if InCombatLockdown() then return end
         if SkinBase.GetFrameData(self, "unlocked") then
