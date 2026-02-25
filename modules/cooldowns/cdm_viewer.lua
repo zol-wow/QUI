@@ -69,6 +69,7 @@ local NCDM = {
 local _viewerState, getViewerState = Helpers.CreateStateTable()
 local _iconState, getIconState     = Helpers.CreateStateTable()
 local _mouseoverHooked             = Helpers.CreateStateTable()
+local _keepVisibleSelections       = setmetatable({}, { __mode = "k" })
 
 -- Combat-stable parent used for "Utility below Essential" anchoring.
 -- Out of combat this proxy follows Essential; in combat it stays fixed.
@@ -2230,6 +2231,7 @@ end
 _G.QUI_RefreshNCDM = RefreshAll
 _G.QUI_IncrementNCDMVersion = IncrementSettingsVersion
 _G.QUI_ApplyUtilityAnchor = ApplyUtilityAnchor
+_G.QUI_IsSelectionKeepVisible = function(sel) return _keepVisibleSelections[sel] or false end
 
 -- Expose viewer layout state for resource bars, castbars, anchoring, etc.
 -- Reads from _viewerState weak-keyed table (previously __cdm* properties on frames).
@@ -2409,12 +2411,12 @@ local function Initialize()
         if bv and not NCDM.hooked[bvName] then
             NCDM.hooked[bvName] = true
             -- On Edit Mode enter: show Selection (invisible) so we can read its size.
-            -- Flag _quiKeepVisible prevents nudge.lua from re-hiding it.
+            -- _keepVisibleSelections flag prevents nudge.lua from re-hiding it.
             if QUICore and QUICore.RegisterEditModeEnter then
                 QUICore:RegisterEditModeEnter(function()
                     local sel = bv.Selection
                     if sel then
-                        sel._quiKeepVisible = true
+                        _keepVisibleSelections[sel] = true
                         sel:Show()
                         sel:SetAlpha(0)
                     end
@@ -2648,7 +2650,7 @@ local function Initialize()
                     -- Clear keep-visible flag
                     local sel = bv.Selection
                     if sel then
-                        sel._quiKeepVisible = nil
+                        _keepVisibleSelections[sel] = nil
                     end
 
                     -- Read Blizzard's Edit Mode padding from icon positions and
