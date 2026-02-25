@@ -2235,23 +2235,29 @@ _G.QUI_IsSelectionKeepVisible = function(sel) return _keepVisibleSelections[sel]
 
 -- Expose viewer layout state for resource bars, castbars, anchoring, etc.
 -- Reads from _viewerState weak-keyed table (previously __cdm* properties on frames).
+-- Reuses a per-viewer snapshot table to avoid allocating a new table per call.
+local _stateSnapshots = setmetatable({}, { __mode = "k" })
 _G.QUI_GetCDMViewerState = function(viewer)
     if not viewer then return nil end
     local vs = _viewerState[viewer]
     if not vs or not vs.cdmIconWidth then return nil end
-    return {
-        iconWidth              = vs.cdmIconWidth,
-        totalHeight            = vs.cdmTotalHeight,
-        row1Width              = vs.cdmRow1Width,
-        bottomRowWidth         = vs.cdmBottomRowWidth,
-        potentialRow1Width     = vs.cdmPotentialRow1Width,
-        potentialBottomRowWidth = vs.cdmPotentialBottomRowWidth,
-        row1IconHeight         = vs.cdmRow1IconHeight,
-        row1BorderSize         = vs.cdmRow1BorderSize,
-        bottomRowBorderSize    = vs.cdmBottomRowBorderSize,
-        bottomRowYOffset       = vs.cdmBottomRowYOffset,
-        layoutDir              = vs.cdmLayoutDirection,
-    }
+    local snap = _stateSnapshots[viewer]
+    if not snap then
+        snap = {}
+        _stateSnapshots[viewer] = snap
+    end
+    snap.iconWidth              = vs.cdmIconWidth
+    snap.totalHeight            = vs.cdmTotalHeight
+    snap.row1Width              = vs.cdmRow1Width
+    snap.bottomRowWidth         = vs.cdmBottomRowWidth
+    snap.potentialRow1Width     = vs.cdmPotentialRow1Width
+    snap.potentialBottomRowWidth = vs.cdmPotentialBottomRowWidth
+    snap.row1IconHeight         = vs.cdmRow1IconHeight
+    snap.row1BorderSize         = vs.cdmRow1BorderSize
+    snap.bottomRowBorderSize    = vs.cdmBottomRowBorderSize
+    snap.bottomRowYOffset       = vs.cdmBottomRowYOffset
+    snap.layoutDir              = vs.cdmLayoutDirection
+    return snap
 end
 
 -- Update viewer state dimensions from externally-measured icon bounds.
