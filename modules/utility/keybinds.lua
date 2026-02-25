@@ -1269,6 +1269,7 @@ local function ClearStoredKeybinds(viewerName)
         if cks then
             cks.keybind = nil
             cks.spellID = nil
+            if cks.text then cks.text:Hide() end
         end
     end
 end
