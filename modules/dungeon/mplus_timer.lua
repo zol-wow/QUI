@@ -182,6 +182,7 @@ local DEFAULTS = {
     forcesLabel = "Forces",
     forcesFont = "Poppins",
     forcesFontSize = 11,
+    maxDungeonNameLength = 18,
 }
 
 local function GetSettings()
@@ -1625,14 +1626,16 @@ function MPlusTimer:RenderKeyDetails()
     local compact = IsCompactMode()
     local sleek = IsSleekMode()
 
+    local dungeonName = Helpers.TruncateUTF8(self.state.dungeonName, settings.maxDungeonNameLength)
+
     if compact or sleek then
         if self.frames.dungeonText then
-            local headerText = string.format("+%d %s", self.state.level, self.state.dungeonName or "")
+            local headerText = string.format("+%d %s", self.state.level, dungeonName or "")
             self.frames.dungeonText:SetText(headerText)
         end
     else
         if self.frames.dungeonText then
-            self.frames.dungeonText:SetText(self.state.dungeonName or "")
+            self.frames.dungeonText:SetText(dungeonName or "")
         end
         self.frames.keyText:SetText(string.format("[%d]", self.state.level))
     end

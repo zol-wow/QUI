@@ -464,6 +464,7 @@ local defaults = {
             forcesLabel = "Forces",
             forcesFont = "Poppins",
             forcesFontSize = 11,
+            maxDungeonNameLength = 18,
         },
 
         -- Character Pane Settings

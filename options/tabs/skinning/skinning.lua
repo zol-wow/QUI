@@ -763,6 +763,7 @@ local function BuildSkinningTab(tabContent)
             local fallbackBar = general.skinBorderColor or general.addonAccentColor or { 0.204, 0.827, 0.6, 1 }
             mplusTimer.barColor = { fallbackBar[1], fallbackBar[2], fallbackBar[3], fallbackBar[4] or 1 }
         end
+        if mplusTimer.maxDungeonNameLength == nil then mplusTimer.maxDungeonNameLength = 18 end
 
         local quiMplusHeader = GUI:CreateSectionHeader(tabContent, "QUI M+ Timer")
         quiMplusHeader:SetPoint("TOPLEFT", PAD, y)
@@ -825,6 +826,16 @@ local function BuildSkinningTab(tabContent)
         end, { deferOnDrag = true })
         scaleSlider:SetPoint("TOPLEFT", PAD, y)
         scaleSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local dungeonNameSlider = GUI:CreateFormSlider(tabContent, "Max Dungeon Name Length", 0, 40, 1, "maxDungeonNameLength", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.RenderKeyDetails then
+                MPlusTimer:RenderKeyDetails()
+            end
+        end)
+        dungeonNameSlider:SetPoint("TOPLEFT", PAD, y)
+        dungeonNameSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         -- Show Timer checkbox (full mode only)

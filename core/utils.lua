@@ -749,3 +749,57 @@ ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding
 ns.IsPlayerInDungeonOrRaid = Helpers.IsPlayerInDungeonOrRaid
 ns.CreateOnUpdateThrottle = Helpers.CreateOnUpdateThrottle
 ns.CreateTimeThrottle = Helpers.CreateTimeThrottle
+
+ ---------------------------------------------------------------------------
+-- TEXT TRUNCATION HELPERS
+-- UTF-8 safe text truncation for names and labels
+ ---------------------------------------------------------------------------
+
+ --- Truncate text to max character length (UTF-8 safe)
+ --- Handles secret values from combat-restricted APIs in Patch 12.0+
+ --- @param text string|any The text to truncate
+ --- @param maxLength number Maximum character count (0 or nil = no limit)
+ --- @return string The truncated text, or original if no truncation needed
+ function Helpers.TruncateUTF8(text, maxLength)
+     if not text or type(text) ~= "string" then return text or "" end
+     if not maxLength or maxLength <= 0 then return text end
+
+     if Helpers.IsSecretValue(text) then
+         return string.format("%." .. maxLength .. "s", text)
+     end
+
+     local lenOk, textLen = pcall(function() return #text end)
+     if not lenOk then
+         return string.format("%." .. maxLength .. "s", text)
+     end
+
+     if textLen <= maxLength then
+         return text
+     end
+
+     local byte = string.byte
+     local i = 1
+     local c = 0
+     while i <= textLen and c < maxLength do
+         c = c + 1
+         local b = byte(text, i)
+         if b < 0x80 then
+             i = i + 1
+         elseif b < 0xE0 then
+             i = i + 2
+         elseif b < 0xF0 then
+             i = i + 3
+         else
+             i = i + 4
+         end
+     end
+
+     local subOk, truncated = pcall(string.sub, text, 1, i - 1)
+     if subOk and truncated then
+         return truncated
+     end
+
+     return string.format("%." .. maxLength .. "s", text)
+ end
+
+ ns.TruncateUTF8 = Helpers.TruncateUTF8
