@@ -26,20 +26,20 @@ end
 -- ======================================================
 local function HideCooldownEffects(child)
     if not child then return end
-    if InCombatLockdown() then return end
-    
+
     local effectFrames = {"PandemicIcon", "ProcStartFlipbook", "Finish"}
-    
+
     for _, frameName in ipairs(effectFrames) do
         local frame = child[frameName]
         if frame then
-            frame:Hide()
-            frame:SetAlpha(0)
-            
+            -- pcall to handle protected-state failures during combat
+            pcall(frame.Hide, frame)
+            pcall(frame.SetAlpha, frame, 0)
+
             -- Hook to keep it hidden
             if not hookedFrames[frame] then
                 hookedFrames[frame] = true
-                
+
                 -- TAINT SAFETY: Defer to break taint chain from secure CDM context.
                 Helpers.DeferredHideOnShow(frame, { clearAlpha = true })
 
@@ -47,11 +47,10 @@ local function HideCooldownEffects(child)
                 if child.HookScript then
                     child:HookScript("OnShow", function(self)
                         C_Timer.After(0, function()
-                            if InCombatLockdown() then return end
                             if self and self[frameName] then
                                 local f = self[frameName]
-                                f:Hide()
-                                f:SetAlpha(0)
+                                pcall(f.Hide, f)
+                                pcall(f.SetAlpha, f, 0)
                             end
                         end)
                     end)
@@ -67,30 +66,31 @@ end
 -- ======================================================
 local function HideBlizzardGlows(button)
     if not button then return end
-    if InCombatLockdown() then return end
     
     -- ALWAYS hide Blizzard's glows - our custom glow uses LibCustomGlow which is separate
     -- Don't call ActionButton_HideOverlayGlow as it may interfere with proc detection
 
+    -- pcall to handle protected-state failures during combat
+
     -- Hide the SpellActivationAlert overlay (the golden swirl glow frame)
     if button.SpellActivationAlert then
-        button.SpellActivationAlert:Hide()
-        button.SpellActivationAlert:SetAlpha(0)
+        pcall(button.SpellActivationAlert.Hide, button.SpellActivationAlert)
+        pcall(button.SpellActivationAlert.SetAlpha, button.SpellActivationAlert, 0)
     end
 
     -- Hide OverlayGlow frame if it exists (Blizzard's default)
     if button.OverlayGlow then
-        button.OverlayGlow:Hide()
-        button.OverlayGlow:SetAlpha(0)
+        pcall(button.OverlayGlow.Hide, button.OverlayGlow)
+        pcall(button.OverlayGlow.SetAlpha, button.OverlayGlow, 0)
     end
-    
+
     -- Hide _ButtonGlow only when it's Blizzard's frame, not LibCustomGlow's.
     -- LibCustomGlow's ButtonGlow_Start uses the same _ButtonGlow property,
     -- so skip hiding when our custom glow is active on this icon.
     -- NOTE: _QUICustomGlowActive is checked via the glows module's shared table
     local glowState = _G.QUI_GetGlowState and _G.QUI_GetGlowState(button)
     if button._ButtonGlow and not (glowState and glowState.active) then
-        button._ButtonGlow:Hide()
+        pcall(button._ButtonGlow.Hide, button._ButtonGlow)
     end
 end
 
