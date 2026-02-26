@@ -3353,6 +3353,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             end)
         end
         QUICore._scaleRegenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        QUICore._scaleRegenFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     end
     local function ApplyUIScale(scale)
         if InCombatLockdown() then
