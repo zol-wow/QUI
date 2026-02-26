@@ -134,10 +134,10 @@ function QUICore:NotifyPowerBarPositionChanged(barKey, offsetX, offsetY)
     local sliders = PowerBarEditMode.sliders[barKey]
     if sliders then
         if sliders.x and sliders.x.SetValue then
-            sliders.x.SetValue(offsetX, true)  -- true = skip onChange callback
+            sliders.x:SetValue(offsetX, true)  -- true = skip onChange callback
         end
         if sliders.y and sliders.y.SetValue then
-            sliders.y.SetValue(offsetY, true)
+            sliders.y:SetValue(offsetY, true)
         end
     end
 
