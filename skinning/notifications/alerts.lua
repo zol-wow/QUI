@@ -856,20 +856,21 @@ local function SkinBonusRollFrames()
 
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
         local moneyIconBorder = SkinBase.GetFrameData(moneyFrame.Icon, "border")
-        if not moneyIconBorder then return end
-        local backdrop = CreateFrame("Frame", nil, moneyFrame, "BackdropTemplate")
-        backdrop:SetFrameLevel(moneyFrame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", moneyIconBorder, "TOPLEFT", -4, 4)
-        backdrop:SetPoint("BOTTOMRIGHT", moneyIconBorder, "BOTTOMRIGHT", 180, -4)
-        local mfPx = SafeGetPixelSize(backdrop)
-        backdrop:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = mfPx,
-        })
-        backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        SkinBase.SetFrameData(moneyFrame, "backdrop", backdrop)
+        if moneyIconBorder then
+            local backdrop = CreateFrame("Frame", nil, moneyFrame, "BackdropTemplate")
+            backdrop:SetFrameLevel(moneyFrame:GetFrameLevel())
+            backdrop:SetPoint("TOPLEFT", moneyIconBorder, "TOPLEFT", -4, 4)
+            backdrop:SetPoint("BOTTOMRIGHT", moneyIconBorder, "BOTTOMRIGHT", 180, -4)
+            local mfPx = SafeGetPixelSize(backdrop)
+            backdrop:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = mfPx,
+            })
+            backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
+            backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+            SkinBase.SetFrameData(moneyFrame, "backdrop", backdrop)
+        end
         SkinBase.MarkSkinned(moneyFrame)
     end
 
