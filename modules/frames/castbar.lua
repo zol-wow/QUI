@@ -634,16 +634,27 @@ local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, ico
         border:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
 
         -- Only show border if borderSize > 0 (edgeSize=0 causes WoW to use texture's natural size)
+        local core = GetCore()
+        local SSB = core and core.SafeSetBackdrop
         if borderSize > 0 then
-            border:SetBackdrop({
+            local backdropInfo = {
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
                 edgeSize = borderSize,
-            })
+            }
             local r, g, b, a = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
-            border:SetBackdropBorderColor(r, g, b, a)
+            if SSB then
+                SSB(border, backdropInfo, { r, g, b, a })
+            else
+                border:SetBackdrop(backdropInfo)
+                border:SetBackdropBorderColor(r, g, b, a)
+            end
             border:Show()
         else
-            border:SetBackdrop(nil)
+            if SSB then
+                SSB(border, nil)
+            else
+                border:SetBackdrop(nil)
+            end
             border:Hide()
         end
     end

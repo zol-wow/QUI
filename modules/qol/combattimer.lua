@@ -198,8 +198,14 @@ local function UpdateTimerAppearance()
     local hideBorder = settings.hideBorder
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder
     
+    local SSB = QUICore and QUICore.SafeSetBackdrop
     if showBackdrop or effectiveUseLSMBorder then
-        frame:SetBackdrop(UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame))
+        local backdropInfo = UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame)
+        if SSB then
+            SSB(frame, backdropInfo, effectiveUseLSMBorder and borderColor or nil)
+        else
+            frame:SetBackdrop(backdropInfo)
+        end
 
         if showBackdrop then
             local bgColor = settings.backdropColor or {0, 0, 0, 0.6}
@@ -208,11 +214,15 @@ local function UpdateTimerAppearance()
             frame:SetBackdropColor(0, 0, 0, 0)
         end
 
-        if effectiveUseLSMBorder then
+        if effectiveUseLSMBorder and not SSB then
             frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
         end
     else
-        frame:SetBackdrop(nil)
+        if SSB then
+            SSB(frame, nil)
+        else
+            frame:SetBackdrop(nil)
+        end
     end
 
     -- Update manual border lines (only used when no LSM border is selected)

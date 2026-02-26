@@ -809,9 +809,10 @@ local function ApplyExtraButtonSettings(buttonType)
     blizzFrame:SetPoint("CENTER", holder, "CENTER", offsetX, offsetY)
     hookingSetPoint = false
 
-    -- Update holder size to match scaled frame
-    local width = (blizzFrame:GetWidth() or 64) * scale
-    local height = (blizzFrame:GetHeight() or 64) * scale
+    -- Update holder size to match scaled frame (SafeToNumber guards against
+    -- secret values that GetWidth/GetHeight can return during combat lockdown)
+    local width = Helpers.SafeToNumber(blizzFrame:GetWidth(), 64) * scale
+    local height = Helpers.SafeToNumber(blizzFrame:GetHeight(), 64) * scale
     holder:SetSize(math.max(width, 64), math.max(height, 64))
 
     -- Hide artwork if enabled

@@ -287,11 +287,20 @@ end
 ---------------------------------------------------------------------------
 -- Range check OnUpdate handler
 ---------------------------------------------------------------------------
-local function PerformRangeUpdate(self)
+local rangeCheckTicker
+
+local function StopRangeCheckTicker()
+    if rangeCheckTicker then
+        rangeCheckTicker:Cancel()
+        rangeCheckTicker = nil
+    end
+end
+
+local function PerformRangeUpdate()
     local settings = GetSettings()
     if not settings or not settings.enabled or not settings.changeColorOnRange then
         -- Feature disabled, stop checking
-        self:SetScript("OnUpdate", nil)
+        StopRangeCheckTicker()
         return
     end
 
@@ -335,36 +344,28 @@ local function PerformRangeUpdate(self)
     end
 end
 
-local OnRangeUpdate
-if CreateOnUpdateThrottle then
-    OnRangeUpdate = CreateOnUpdateThrottle(RANGE_CHECK_INTERVAL, function(self)
-        PerformRangeUpdate(self)
-    end)
-else
-    OnRangeUpdate = PerformRangeUpdate
-end
-
 ---------------------------------------------------------------------------
 -- Start or stop range checking based on settings
 ---------------------------------------------------------------------------
 local function UpdateRangeChecking()
     if not crosshairFrame then return end
-    
-    -- Create the range check frame if needed (separate frame so OnUpdate runs even when crosshair is hidden)
+
+    -- Create the range check frame if needed (used as a named anchor for the crosshair system)
     if not rangeCheckFrame then
         rangeCheckFrame = CreateFrame("Frame", "QUI_CrosshairRangeCheck", UIParent)
         rangeCheckFrame:SetSize(1, 1)
         rangeCheckFrame:SetPoint("CENTER")
-        rangeCheckFrame:Show()  -- Always visible
+        rangeCheckFrame:Show()
     end
-    
+
     local settings = GetSettings()
     if settings and settings.enabled and settings.changeColorOnRange then
-        -- Enable range checking on the always-visible frame
-        rangeCheckFrame:SetScript("OnUpdate", OnRangeUpdate)
-        
+        -- Replace any existing ticker with a fresh one
+        StopRangeCheckTicker()
+        rangeCheckTicker = C_Timer.NewTicker(RANGE_CHECK_INTERVAL, PerformRangeUpdate)
+
         local inCombat = InCombatLockdown()
-        
+
         -- Immediately check range (respecting combat-only setting)
         local meleeCheck = settings.enableMeleeRangeCheck ~= false
         local midCheck = settings.enableMidRangeCheck == true
@@ -378,7 +379,7 @@ local function UpdateRangeChecking()
             isOutOfMidRange = midCheck and IsOutOfMidRange() or false
             ApplyCrosshairColor(settings, isOutOfRange, isOutOfMidRange)
         end
-        
+
         -- Handle hideUntilOutOfRange initial visibility
         if settings.hideUntilOutOfRange then
             if inCombat and isOutOfRange then
@@ -389,6 +390,7 @@ local function UpdateRangeChecking()
         end
     else
         -- Disable range checking
+        StopRangeCheckTicker()
         if rangeCheckFrame then
             rangeCheckFrame:SetScript("OnUpdate", nil)
         end

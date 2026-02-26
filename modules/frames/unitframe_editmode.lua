@@ -22,6 +22,11 @@ local GetCore = Helpers.GetCore
 local _editModeState = Helpers.CreateStateTable()
 local _bossSelectionHooked = false  -- guard: hook BossTargetFrameContainer.Selection once
 
+-- Weak-keyed table for edit mode state on SecureUnitButtonTemplate frames
+-- Avoids writing custom properties directly onto protected frames.
+local _editModeState = setmetatable({}, { __mode = "k" })
+local _bossSelectionHooked = false  -- guard: hook BossTargetFrameContainer.Selection once
+
 ---------------------------------------------------------------------------
 -- EDIT MODE: Toggle draggable frames with arrow nudge buttons
 ---------------------------------------------------------------------------
@@ -531,6 +536,7 @@ function QUI_UF:EnableEditMode()
     -- The container already has a .Selection registered with Blizzard's Edit Mode.
     -- By anchoring Boss1 to the container, all boss frames follow when it's dragged.
     C_Timer.After(0, function()
+        if InCombatLockdown() then return end
         if not self.editModeActive then return end
         if not BossTargetFrameContainer then return end
         local boss1 = self.frames["boss1"]
@@ -539,8 +545,9 @@ function QUI_UF:EnableEditMode()
         -- Calculate group bounds from boss frame dimensions
         local bossSettings = GetUnitSettings("boss")
         local spacing = bossSettings and bossSettings.spacing or 40
-        local width = boss1:GetWidth()
-        local height = boss1:GetHeight()
+        local width = Helpers.SafeValue(boss1:GetWidth(), 0)
+        local height = Helpers.SafeValue(boss1:GetHeight(), 0)
+        if width <= 0 or height <= 0 then return end
         local numBosses = 0
         for i = 1, 5 do
             if self.frames["boss" .. i] then numBosses = numBosses + 1 end
@@ -564,8 +571,8 @@ function QUI_UF:EnableEditMode()
         else
             -- FREE: Anchor boss1 to the container so dragging the container
             -- (via Blizzard's .Selection) moves all boss frames together.
-            local boss1Left = boss1:GetLeft()
-            local boss1Top = boss1:GetTop()
+            local boss1Left = Helpers.SafeValue(boss1:GetLeft(), nil)
+            local boss1Top = Helpers.SafeValue(boss1:GetTop(), nil)
             if not boss1Left or not boss1Top then return end
 
             BossTargetFrameContainer:ClearAllPoints()

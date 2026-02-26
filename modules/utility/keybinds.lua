@@ -993,11 +993,14 @@ local function ApplyKeybindToIcon(icon, viewerName)
     end
     if overrideKeybind then
         if overrideKeybind == "" then
-            -- Explicit clear: hide keybind text and return
+            -- Explicit clear: hide keybind text (cache-aware) and return
             local iks = iconKeybindState[icon]
             if iks and iks.text then
-                iks.text:SetText("")
-                iks.text:Hide()
+                if iks.shownText then
+                    iks.text:SetText("")
+                    iks.shownText = nil
+                end
+                if iks.text:IsShown() then iks.text:Hide() end
             end
             return
         end
@@ -1039,8 +1042,11 @@ local function ApplyKeybindToIcon(icon, viewerName)
                     if overrideKeybind == "" then
                         local iks = iconKeybindState[icon]
                         if iks and iks.text then
-                            iks.text:SetText("")
-                            iks.text:Hide()
+                            if iks.shownText then
+                                iks.text:SetText("")
+                                iks.shownText = nil
+                            end
+                            if iks.text:IsShown() then iks.text:Hide() end
                         end
                         return
                     end
@@ -1073,8 +1079,11 @@ local function ApplyKeybindToIcon(icon, viewerName)
                     if overrideKeybind == "" then
                         local iks = iconKeybindState[icon]
                         if iks and iks.text then
-                            iks.text:SetText("")
-                            iks.text:Hide()
+                            if iks.shownText then
+                                iks.text:SetText("")
+                                iks.shownText = nil
+                            end
+                            if iks.text:IsShown() then iks.text:Hide() end
                         end
                         return
                     end
@@ -1105,15 +1114,18 @@ local function ApplyKeybindToIcon(icon, viewerName)
         print("|cFF00FF00[KB Debug] Using keybind:|r " .. keybind)
     end
     
-    -- If no keybind at all, just hide and return
+    -- If no keybind at all, just hide (cache-aware) and return
     if not keybind then
         if KEYBIND_DEBUG then
             print("|cFFFF0000[KB Debug] No keybind found, hiding|r")
         end
         local iks = iconKeybindState[icon]
         if iks and iks.text then
-            iks.text:SetText("")
-            iks.text:Hide()
+            if iks.shownText then
+                iks.text:SetText("")
+                iks.shownText = nil
+            end
+            if iks.text:IsShown() then iks.text:Hide() end
         end
         return
     end
@@ -1139,23 +1151,40 @@ local function ApplyKeybindToIcon(icon, viewerName)
         iks.text:SetShadowColor(0, 0, 0, 1)
     end
 
-    -- Update position (clear and re-anchor in case anchor changed)
-    iks.text:ClearAllPoints()
-    iks.text:SetPoint(anchor, icon, anchor, offsetX, offsetY)
+    -- Skip redundant work: only touch the FontString when something changed.
+    -- ClearAllPoints/SetPoint every call causes visible flicker.
+    local curFont = GetGeneralFont()
+    local curOutline = GetGeneralFontOutline()
+    local r, g, b, a = textColor[1], textColor[2], textColor[3], textColor[4] or 1
 
-    -- Set font size
-    iks.text:SetFont(GetGeneralFont(), fontSize, GetGeneralFontOutline())
+    if iks.anchor ~= anchor or iks.offsetX ~= offsetX or iks.offsetY ~= offsetY then
+        iks.text:ClearAllPoints()
+        iks.text:SetPoint(anchor, icon, anchor, offsetX, offsetY)
+        iks.anchor, iks.offsetX, iks.offsetY = anchor, offsetX, offsetY
+    end
 
-    -- Set text color
-    iks.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+    if iks.font ~= curFont or iks.fontSize ~= fontSize or iks.fontOutline ~= curOutline then
+        iks.text:SetFont(curFont, fontSize, curOutline)
+        iks.font, iks.fontSize, iks.fontOutline = curFont, fontSize, curOutline
+    end
 
-    -- Set text
+    if iks.r ~= r or iks.g ~= g or iks.b ~= b or iks.a ~= a then
+        iks.text:SetTextColor(r, g, b, a)
+        iks.r, iks.g, iks.b, iks.a = r, g, b, a
+    end
+
     if keybind then
-        iks.text:SetText(keybind)
-        iks.text:Show()
+        if iks.shownText ~= keybind then
+            iks.text:SetText(keybind)
+            iks.shownText = keybind
+        end
+        if not iks.text:IsShown() then iks.text:Show() end
     else
-        iks.text:SetText("")
-        iks.text:Hide()
+        if iks.shownText then
+            iks.text:SetText("")
+            iks.shownText = nil
+        end
+        if iks.text:IsShown() then iks.text:Hide() end
     end
 end
 
@@ -1256,20 +1285,24 @@ local function UpdateViewerKeybinds(viewerName)
     end
 end
 
--- Clear stored keybinds from all icons (called when bindings change)
+-- Clear stored keybinds from all icons (called when bindings change).
+-- Does NOT hide the FontString — the text stays visible with its old
+-- value until the next ApplyKeybindToIcon re-evaluates and either
+-- confirms or changes it.  Hiding here caused a visible blink because
+-- the ThrottledUpdate that re-shows text runs 0.5 s later.
 local function ClearStoredKeybinds(viewerName)
     local viewer = _G[viewerName]
     if not viewer then return end
-    
+
     local container = viewer.viewerFrame or viewer
     local children = { container:GetChildren() }
-    
+
     for _, child in ipairs(children) do
         local cks = iconKeybindState[child]
         if cks then
             cks.keybind = nil
             cks.spellID = nil
-            if cks.text then cks.text:Hide() end
+            cks.shownText = nil  -- clear cached text so next apply re-evaluates
         end
     end
 end
@@ -1357,17 +1390,9 @@ local function HookViewerLayout(viewerName)
     local viewer = _G[viewerName]
     if not viewer then return end
 
-    -- TAINT SAFETY: Defer ALL addon logic to break taint chain from secure CDM context.
-    -- TAINT SAFETY: Use weak-keyed table for hook guard instead of writing to viewer frame
-    if viewer.Layout and not hookedKeybindViewers[viewer] then
-        hookedKeybindViewers[viewer] = true
-        hooksecurefunc(viewer, "Layout", function()
-            C_Timer.After(0.25, function()  -- 250ms debounce for CPU efficiency
-                if not IsAnyKeybindFeatureEnabled() then return end
-                UpdateViewerKeybinds(viewerName)
-            end)
-        end)
-    end
+    -- Layout hook removed: CooldownViewerSettings:RefreshLayout hook in
+    -- cdm_viewer.lua triggers LayoutViewer → QUI_UpdateViewerKeybinds.
+    hookedKeybindViewers[viewer] = true  -- mark hooked so we don't retry
 end
 
 -- Initialize hooks when viewers are available

@@ -4,6 +4,14 @@
 local _, ns = ...
 local Helpers = ns.Helpers
 
+-- Debug logging (only active when /qui debug is enabled)
+local function DebugLog(...)
+    local qui = _G.QUI
+    if qui and qui.DEBUG_MODE then
+        qui:Print("|cFF56D1FF[Swipe]|r", ...)
+    end
+end
+
 -- Default settings
 local DEFAULTS = {
     showBuffSwipe = true,
@@ -104,14 +112,128 @@ local function HookIconCooldown(icon)
     end)
 end
 
+-- Apply swipe/edge visibility from SetCooldown hook (safe to run in combat).
+-- Uses the hook's duration argument instead of reading secret frame properties.
+-- TAINT SAFETY: Only reads duration via safe number checks and boolean frame flags
+-- (wasSetFromAura etc. are plain booleans). Guard flag in weak-keyed table.
+local function ApplySwipeFromHook(icon, durationArg)
+    local settings = GetSettings()
+    if not settings then return end
+    if icon.IsForbidden and icon:IsForbidden() then return end
+
+    local parent = icon:GetParent()
+    local isBuffIconViewer = (parent == _G.BuffIconCooldownViewer)
+    local mode = nil
+
+    -- Aura detection via boolean flags (always safe to read)
+    if isBuffIconViewer then
+        local wasSetFromAura = (type(icon.wasSetFromAura) == "boolean") and icon.wasSetFromAura or false
+        local useAuraDisplayTime = (type(icon.cooldownUseAuraDisplayTime) == "boolean") and icon.cooldownUseAuraDisplayTime or false
+        if wasSetFromAura or useAuraDisplayTime then
+            mode = "aura"
+        end
+    end
+
+    -- GCD detection: use the hook's duration argument (avoids reading secret frame props)
+    if not mode then
+        local duration = nil
+        if IsSafeNumber(durationArg) then
+            duration = durationArg
+        elseif Helpers.SafeToNumber then
+            duration = Helpers.SafeToNumber(durationArg, nil)
+        end
+        if IsSafeNumber(duration) and duration > 0 and duration <= 2.5 then
+            mode = "gcd"
+        end
+    end
+
+    -- Blizzard boolean flags for explicit cooldown classification
+    if not mode then
+        local wasSetFromCooldown = (type(icon.wasSetFromCooldown) == "boolean") and icon.wasSetFromCooldown or false
+        local wasSetFromCharges = (type(icon.wasSetFromCharges) == "boolean") and icon.wasSetFromCharges or false
+        if wasSetFromCooldown or wasSetFromCharges then
+            mode = "cooldown"
+        end
+    end
+
+    -- Fall back to cached mode when all detection fails (e.g. all values secret)
+    local iState = iconSwipeState[icon]
+    if not iState then iState = {}; iconSwipeState[icon] = iState end
+    if not mode then
+        mode = iState.lastSwipeMode or "cooldown"
+    end
+    iState.lastSwipeMode = mode
+
+    -- Determine swipe visibility
+    local showSwipe
+    if mode == "aura" then
+        if isBuffIconViewer then
+            showSwipe = settings.showBuffIconSwipe
+        else
+            showSwipe = settings.showBuffSwipe
+        end
+    elseif mode == "gcd" then
+        showSwipe = settings.showGCDSwipe
+    else
+        showSwipe = settings.showCooldownSwipe
+    end
+
+    -- Apply only when changed to avoid redundant writes / visual jitter
+    if iState.lastDrawSwipe ~= showSwipe then
+        local iName = icon.GetName and icon:GetName() or "?"
+        local durSecret = (durationArg ~= nil and not IsSafeNumber(durationArg)) and " dur=SECRET" or ""
+        DebugLog(iName, "mode=", mode, "showSwipe=", tostring(showSwipe), durSecret,
+            InCombatLockdown() and "(COMBAT)" or "(ooc)")
+        iState.lastDrawSwipe = showSwipe
+        icon.Cooldown:SetDrawSwipe(showSwipe)
+    end
+
+    -- Edge
+    local drawEdge
+    if mode == "aura" then
+        drawEdge = showSwipe
+    else
+        drawEdge = settings.showRechargeEdge
+    end
+    if iState.lastDrawEdge ~= drawEdge then
+        iState.lastDrawEdge = drawEdge
+        icon.Cooldown:SetDrawEdge(drawEdge)
+    end
+end
+
+-- Hook icon.Cooldown:SetCooldown for swipe visibility during combat.
+-- Separate from the color hook so it can receive the duration argument.
+-- TAINT SAFETY: Guard flag stored in weak-keyed table, not on Blizzard frame.
+local function HookIconSwipe(icon)
+    local iState = iconSwipeState[icon]
+    if not iState then iState = {}; iconSwipeState[icon] = iState end
+    if iState.swipeHooked then return end
+    iState.swipeHooked = true
+    local iName = icon.GetName and icon:GetName() or "?"
+    DebugLog("Hook installed:", iName)
+    hooksecurefunc(icon.Cooldown, "SetCooldown", function(_, _, durationArg)
+        DebugLog("SetCooldown fired:", iName,
+            InCombatLockdown() and "(COMBAT)" or "(ooc)",
+            (icon.IsForbidden and icon:IsForbidden()) and "FORBIDDEN" or "ok")
+        -- Blizzard's SetCooldown resets DrawSwipe to true internally,
+        -- so invalidate the cache to force re-application of our setting.
+        local iState = iconSwipeState[icon]
+        if iState then
+            iState.lastDrawSwipe = nil
+            iState.lastDrawEdge = nil
+        end
+        ApplySwipeFromHook(icon, durationArg)
+    end)
+end
+
 -- Apply swipe/edge/color settings to one icon.
--- Swipe visibility avoids hooking SetCooldown to prevent tainting secret values.
--- Color overrides use a SetCooldown hook (safe: we don't read the secret arguments).
+-- Color and swipe hooks on SetCooldown handle reactive updates during combat.
+-- This function handles out-of-combat full refresh and installs the hooks.
 local EnsureViewerVisibilityHooks
 
--- Apply swipe/edge settings to one icon.
--- Intentionally avoids hooking Cooldown:SetCooldown to prevent tainting
--- Blizzard's secret cooldown/totem values in combat.
+-- Apply swipe/edge settings to one icon (out-of-combat full refresh).
+-- Reads frame properties directly, which is safe outside combat lockdown.
+-- During combat, the SetCooldown hooks (HookIconSwipe/HookIconCooldown) handle updates.
 local function ApplySettingsToIcon(icon, settings)
     if InCombatLockdown() then return end
     if not icon or not icon.Cooldown then return end
@@ -169,6 +291,13 @@ local function ApplySettingsToIcon(icon, settings)
             isGCD = true
             mode = "gcd"
         end
+        -- Debug: log GCD detection results
+        local iName = icon.GetName and icon:GetName() or "?"
+        if duration then
+            DebugLog(iName, "dur=", format("%.2f", duration), isGCD and "→ GCD" or "→ cooldown")
+        elseif durationRaw ~= nil then
+            DebugLog(iName, "dur=SECRET (raw unreadable), fallthrough to cooldown")
+        end
     end
 
     -- Use explicit Blizzard flags for cooldowns when available.
@@ -201,6 +330,13 @@ local function ApplySettingsToIcon(icon, settings)
         showSwipe = settings.showCooldownSwipe
     end
 
+    -- Debug: log final mode → swipe decision when it changes
+    if iState.lastDrawSwipe ~= showSwipe then
+        local iName = icon.GetName and icon:GetName() or "?"
+        DebugLog(iName, "mode=", mode, "showSwipe=", tostring(showSwipe),
+            InCombatLockdown() and "(COMBAT)" or "(ooc)")
+    end
+
     -- Avoid reapplying unchanged values every pulse; frequent redundant writes can
     -- produce subtle visual jitter on the radial edge animation.
     -- TAINT SAFETY: Read/write cached values from weak-keyed table, not icon frame
@@ -224,6 +360,7 @@ local function ApplySettingsToIcon(icon, settings)
     -- (after Blizzard sets wasSetFromAura and its own color in the same update).
     -- Also apply immediately so settings changes take effect without waiting.
     HookIconCooldown(icon)
+    HookIconSwipe(icon)
     ApplyColorToIcon(icon, settings)
 end
 

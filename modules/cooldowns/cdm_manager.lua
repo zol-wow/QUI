@@ -5,6 +5,7 @@
 
 local _, QUI = ...
 local Helpers = QUI.Helpers
+local SafeValue = Helpers.SafeValue
 
 -- Local variables
 local viewerPending = {}
@@ -84,15 +85,20 @@ local function RemovePadding(viewer)
         if child.Icon then
             child.Icon:ClearAllPoints()
             child.Icon:SetPoint("CENTER", child, "CENTER", 0, 0)
-            child.Icon:SetSize(child:GetWidth() * iconScale, child:GetHeight() * iconScale)
+            local cw = SafeValue(child:GetWidth(), 0)
+            local ch = SafeValue(child:GetHeight(), 0)
+            if cw > 0 and ch > 0 then
+                child.Icon:SetSize(cw * iconScale, ch * iconScale)
+            end
         end
         
         -- Swipe visibility is now handled by cooldownswipe.lua
     end
     
     -- Reposition buttons respecting orientation and stride
-    local buttonWidth = visibleChildren[1]:GetWidth()
-    local buttonHeight = visibleChildren[1]:GetHeight()
+    local buttonWidth = SafeValue(visibleChildren[1]:GetWidth(), 0)
+    local buttonHeight = SafeValue(visibleChildren[1]:GetHeight(), 0)
+    if buttonWidth <= 0 or buttonHeight <= 0 then return end
     
     -- Calculate grid dimensions
     local numIcons = #visibleChildren

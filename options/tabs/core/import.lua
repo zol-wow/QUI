@@ -83,7 +83,7 @@ local function BuildImportExportTab(tabContent)
     local y = -10
     local PAD = 10
 
-    GUI:SetSearchContext({tabIndex = 11, tabName = "Import & Export Strings", subTabIndex = 1, subTabName = "Import/Export"})
+    GUI:SetSearchContext({tabIndex = 12, tabName = "Import & Export Strings", subTabIndex = 1, subTabName = "Import/Export"})
 
     local info = GUI:CreateLabel(tabContent, "Import and export QUI profiles", 11, C.textMuted)
     info:SetPoint("TOPLEFT", PAD, y)
@@ -281,7 +281,7 @@ local function BuildQuaziiStringsTab(tabContent)
     local PAD = 10
     local BOX_HEIGHT = 70
 
-    GUI:SetSearchContext({tabIndex = 11, tabName = "Import & Export Strings", subTabIndex = 2, subTabName = "Quazii's Strings"})
+    GUI:SetSearchContext({tabIndex = 12, tabName = "Import & Export Strings", subTabIndex = 2, subTabName = "Quazii's Strings"})
 
     -- Disclaimer banner
     local warnBg = CreateFrame("Frame", nil, tabContent, "BackdropTemplate")

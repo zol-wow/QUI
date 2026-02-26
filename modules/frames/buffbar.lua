@@ -894,6 +894,13 @@ local function ApplyIconStyle(icon, settings)
         width = size * aspectRatio
     end
 
+    -- Reset any scale Blizzard may have applied (Edit Mode slider can set
+    -- per-icon scale, which persists after exit and makes icons visually
+    -- larger even though GetWidth/GetHeight returns QUI's configured size).
+    if icon.GetScale and icon:GetScale() ~= 1 then
+        icon:SetScale(1)
+    end
+
     icon:SetSize(width, height)
 
     -- Create or update border (using BACKGROUND texture to avoid secret value errors during combat)
@@ -1591,20 +1598,22 @@ LayoutBuffIcons = function()
         totalHeight = iconHeight
     end
 
-    -- Calculate starting position for centering within the viewer
+    -- Calculate starting position — icons anchor at CENTER of viewer.
+    -- This keeps icons stable regardless of Blizzard's auto-sized viewer height
+    -- (same approach as Essential/Utility viewers).
     local startX, startY
     if isVertical then
         startX = 0
         if growthDirection == "UP" then
-            -- Grow up: icon 1 at bottom, icons stack upward
-            startY = -totalHeight / 2 + iconHeight / 2
+            -- Grow up: icon 1 at bottom of stack, icons stack upward
+            startY = -(totalHeight / 2) + iconHeight / 2
         else -- DOWN
-            -- Grow down: icon 1 at top, icons stack downward
-            startY = totalHeight / 2 - iconHeight / 2
+            -- Grow down: icon 1 at top of stack, icons stack downward
+            startY = (totalHeight / 2) - iconHeight / 2
         end
         startY = QUICore:PixelRound(startY)
     else
-        -- Horizontal (centered)
+        -- Horizontal: centered both ways
         startX = -totalWidth / 2 + iconWidth / 2
         startX = QUICore:PixelRound(startX)
         startY = 0
@@ -1614,22 +1623,20 @@ LayoutBuffIcons = function()
     -- Prevents jitter from floating-point drift (allows 2px tolerance)
     local needsReposition = false
     for i, icon in ipairs(icons) do
-        local expectedX, expectedY
         if isVertical then
-            expectedX = 0
+            local expectedY
             if growthDirection == "UP" then
                 expectedY = QUICore:PixelRound(startY + (i - 1) * (iconHeight + padding))
             else -- DOWN
                 expectedY = QUICore:PixelRound(startY - (i - 1) * (iconHeight + padding))
             end
-            -- Check Y position for vertical layout
             local point, _, _, xOfs, yOfs = icon:GetPoint(1)
-            if not point or abs((yOfs or 0) - expectedY) > 2 then
+            if not point or point ~= "CENTER" or abs((yOfs or 0) - expectedY) > 2 then
                 needsReposition = true
                 break
             end
         else
-            expectedX = QUICore:PixelRound(startX + (i - 1) * (iconWidth + padding))
+            local expectedX = QUICore:PixelRound(startX + (i - 1) * (iconWidth + padding))
             if not PositionMatchesTolerance(icon, expectedX, 2) then
                 needsReposition = true
                 break
@@ -1657,7 +1664,7 @@ LayoutBuffIcons = function()
                 icon:SetPoint("CENTER", BuffIconCooldownViewer, "CENTER", 0, QUICore:PixelRound(y))
             else
                 local x = startX + (i - 1) * (iconWidth + padding)
-                icon:SetPoint("CENTER", BuffIconCooldownViewer, "CENTER", QUICore:PixelRound(x), 0)
+                icon:SetPoint("CENTER", BuffIconCooldownViewer, "CENTER", QUICore:PixelRound(x), QUICore:PixelRound(startY))
             end
         end
     else
@@ -1667,22 +1674,13 @@ LayoutBuffIcons = function()
         end
     end
 
-    -- Update viewer size to match icon grid (for Edit Mode)
-    -- Wrap with suppression to prevent OnSizeChanged from triggering recursive layouts
-    if not InCombatLockdown() then
-        SuppressLayout()
-        BuffIconCooldownViewer:SetSize(QUICore:PixelRound(totalWidth), QUICore:PixelRound(totalHeight))
-        UnsuppressLayout()
-
-        -- Also resize Selection child if it exists
-        -- Skip during Edit Mode to avoid tainting Blizzard's execution path
-        if BuffIconCooldownViewer.Selection
-            and not Helpers.IsEditModeActive() then
-            BuffIconCooldownViewer.Selection:ClearAllPoints()
-            BuffIconCooldownViewer.Selection:SetPoint("TOPLEFT", BuffIconCooldownViewer, "TOPLEFT", 0, 0)
-            BuffIconCooldownViewer.Selection:SetPoint("BOTTOMRIGHT", BuffIconCooldownViewer, "BOTTOMRIGHT", 0, 0)
-            BuffIconCooldownViewer.Selection:SetFrameLevel(BuffIconCooldownViewer:GetFrameLevel())
-        end
+    -- No SetSize on the viewer frame — Blizzard auto-sizes it from children.
+    -- This prevents the SetSize → RefreshLayout → re-layout loop.
+    -- Write calculated dimensions to viewer state so the proxy sizeResolver
+    -- (CDMSizeResolver) reads our formula dimensions instead of falling back
+    -- to Blizzard's auto-sized frame dimensions.
+    if _G.QUI_SetCDMViewerBounds then
+        _G.QUI_SetCDMViewerBounds(BuffIconCooldownViewer, totalWidth, totalHeight)
     end
 
     isIconLayoutRunning = false
@@ -2113,34 +2111,28 @@ LayoutBuffBars = function()
         end
     end
 
-    -- Update container dimensions to prevent Blizzard's Layout() from resizing and causing drift
-    -- Both vertical and horizontal set ONE dimension fixed, letting bars overflow the other dimension
-    -- This prevents CENTER-anchor drift because container size never changes with bar count
+    -- No SetSize on the viewer frame — Blizzard auto-sizes it from children.
+    -- This prevents the SetSize → RefreshLayout → re-layout loop.
+    -- Ensure Blizzard's Layout() uses correct direction flags.
     if isVertical then
-        SuppressLayout()
-
-        -- Only set HEIGHT, leave width alone so bars overflow horizontally
-        local currentWidth = BuffBarCooldownViewer:GetWidth()
-        BuffBarCooldownViewer:SetSize(currentWidth, QUICore:PixelRound(effectiveBarHeight))
-
-        -- Ensure isHorizontal flag stays correct for subsequent Layout() calls
         vbsBar.isHorizontal = false
-
-        UnsuppressLayout()
     else
-        -- HORIZONTAL BARS: Fix BOTH dimensions to single bar size
-        -- Unlike vertical (which only fixes HEIGHT), horizontal needs both because
-        -- bars anchor to BOTTOM/TOP edges - if HEIGHT changes, those edges move
-        SuppressLayout()
-
-        -- Set both dimensions to single bar size - bars overflow, edges stay fixed
-        BuffBarCooldownViewer:SetSize(QUICore:PixelRound(effectiveBarWidth), QUICore:PixelRound(effectiveBarHeight))
-
-        -- Ensure Blizzard's Layout() uses correct flags
         vbsBar.isHorizontal = true
         vbsBar.goingUp = growFromBottom
+    end
 
-        UnsuppressLayout()
+    -- Write calculated dimensions to viewer state so the proxy sizeResolver
+    -- reads our formula dimensions instead of Blizzard's auto-sized frame size.
+    if _G.QUI_SetCDMViewerBounds then
+        local bw, bh
+        if isVertical then
+            bw = totalSize
+            bh = effectiveBarHeight
+        else
+            bw = effectiveBarWidth
+            bh = totalSize
+        end
+        _G.QUI_SetCDMViewerBounds(BuffBarCooldownViewer, bw, bh)
     end
 
     isBarLayoutRunning = false
@@ -2337,17 +2329,10 @@ local function Initialize()
     -- TAINT SAFETY: ALL hooks on Blizzard CDM viewer frames must defer via C_Timer.After(0)
     -- to break taint chain from secure CDM context. CDM viewers are Edit Mode managed frames.
 
-    -- CRITICAL: OnSizeChanged hook - response when Blizzard resizes viewer
-    if BuffIconCooldownViewer then
-        BuffIconCooldownViewer:HookScript("OnSizeChanged", function(self)
-            C_Timer.After(0, function()
-                if InCombatLockdown() then return end
-                if IsLayoutSuppressed() then return end
-                if isIconLayoutRunning then return end
-                LayoutBuffIcons()
-            end)
-        end)
-    end
+    -- OnSizeChanged removed: Blizzard auto-sizes the viewer from children,
+    -- which would create a loop (LayoutBuffIcons → icon SetPoint → auto-size
+    -- → OnSizeChanged → LayoutBuffIcons). The Layout hook below covers
+    -- Blizzard-initiated layout changes.
 
     -- OnShow hook - refresh when viewer becomes visible
     if BuffIconCooldownViewer then
@@ -2482,6 +2467,29 @@ C_Timer.After(0, function()
         Initialize()
     end
 end)
+
+---------------------------------------------------------------------------
+-- EDIT MODE CALLBACKS: Re-apply QUI icon size / padding on exit
+---------------------------------------------------------------------------
+
+do
+    local core = GetCore()
+    if core and core.RegisterEditModeExit then
+        core:RegisterEditModeExit(function()
+            -- Reset hash so the next CheckIconChanges() triggers a full re-layout
+            lastIconHash = ""
+            iconState.isInitialized = false
+            barState.lastCount = 0
+
+            -- Deferred: Blizzard may still be tearing down Edit Mode on this frame
+            C_Timer.After(0.1, function()
+                if InCombatLockdown() then return end
+                LayoutBuffIcons()
+                LayoutBuffBars()
+            end)
+        end)
+    end
+end
 
 ---------------------------------------------------------------------------
 -- PUBLIC API

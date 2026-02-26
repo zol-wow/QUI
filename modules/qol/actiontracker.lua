@@ -747,9 +747,16 @@ local function RefreshAppearance()
     end
     state.frame:SetSize(width, height)
 
+    local QUICore = ns.Addon
+    local SSB = QUICore and QUICore.SafeSetBackdrop
     if settings.showBackdrop ~= false then
         if UIKit and UIKit.GetBackdropInfo then
-            state.frame:SetBackdrop(UIKit.GetBackdropInfo(nil, nil, state.frame))
+            local backdropInfo = UIKit.GetBackdropInfo(nil, nil, state.frame)
+            if SSB then
+                SSB(state.frame, backdropInfo)
+            else
+                state.frame:SetBackdrop(backdropInfo)
+            end
         end
         state.frame:SetBackdropColor(
             settings.backdropColor[1],
@@ -758,7 +765,11 @@ local function RefreshAppearance()
             settings.backdropColor[4]
         )
     else
-        state.frame:SetBackdrop(nil)
+        if SSB then
+            SSB(state.frame, nil)
+        else
+            state.frame:SetBackdrop(nil)
+        end
     end
 
     if UIKit and UIKit.CreateBorderLines and UIKit.UpdateBorderLines then

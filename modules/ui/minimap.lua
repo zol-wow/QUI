@@ -661,8 +661,9 @@ local function CreateZoneText()
         MinimapCluster.ZoneTextButton:Hide()
     end
     if MinimapCluster and MinimapCluster.BorderTop then
-        MinimapCluster.BorderTop:SetParent(CreateFrame("Frame"))
-        MinimapCluster.BorderTop:Hide()
+        local hiddenBorder = CreateFrame("Frame")
+        hiddenBorder:Hide()
+        MinimapCluster.BorderTop:SetParent(hiddenBorder)
     end
     
     zoneTextFrame:RegisterEvent("ZONE_CHANGED")
@@ -1187,11 +1188,14 @@ local function SetupMinimapDragging()
     Minimap:SetFixedFrameStrata(true)
     Minimap:SetFixedFrameLevel(true)
     
-    -- Disable MinimapCluster mouse interaction — QUI manages the minimap
-    -- independently. Do NOT modify MinimapCluster anchors here; anchor
-    -- changes are handled through secure code in nudge.lua
-    -- (SecureFixMinimapClusterAnchor) to avoid tainting the frame.
+    -- Reparent MinimapCluster to a hidden frame — QUI manages the minimap
+    -- independently. This makes MinimapCluster permanently invisible
+    -- regardless of Blizzard alpha resets during Edit Mode, eliminating
+    -- the need for a secure proxy to keep it hidden.
     if MinimapCluster then
+        local hiddenCluster = CreateFrame("Frame")
+        hiddenCluster:Hide()
+        MinimapCluster:SetParent(hiddenCluster)
         MinimapCluster:EnableMouse(false)
     end
     

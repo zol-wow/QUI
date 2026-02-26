@@ -6,6 +6,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local UIKit = ns.UIKit
+local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- MODULE TABLE
@@ -80,15 +81,21 @@ local function BigWigsAnchorResolver(proxy, source)
     end)
     if not ok then
         pcall(function()
-            local cx, cy = source:GetCenter()
-            local ux, uy = UIParent:GetCenter()
+            local cx = Helpers.SafeValue(source:GetCenter(), nil)
+            local _, cy = source:GetCenter()
+            cy = Helpers.SafeValue(cy, nil)
+            local ux = Helpers.SafeValue(UIParent:GetCenter(), nil)
+            local _, uy = UIParent:GetCenter()
+            uy = Helpers.SafeValue(uy, nil)
             proxy:ClearAllPoints()
             if cx and cy and ux and uy then
                 proxy:SetPoint("CENTER", UIParent, "CENTER", cx - ux, cy - uy)
             else
                 proxy:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
             end
-            proxy:SetSize(math.max(1, source:GetWidth() or 1), math.max(1, source:GetHeight() or 1))
+            local sw = Helpers.SafeValue(source:GetWidth(), 1)
+            local sh = Helpers.SafeValue(source:GetHeight(), 1)
+            proxy:SetSize(math.max(1, sw), math.max(1, sh))
         end)
     end
 end

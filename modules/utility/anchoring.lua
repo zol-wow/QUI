@@ -1274,11 +1274,31 @@ local function CDMSizeResolver(source)
         width = (vs and vs.iconWidth) or source:GetWidth() or 0
         height = (vs and vs.totalHeight) or source:GetHeight() or 0
     end
+    -- Viewer state stores logical (un-scaled) dimensions.  Return
+    -- source-local values so proxy Sync's effective-scale conversion
+    -- produces the correct visual-space proxy size.
+    -- Min-width is in visual (UIParent) space, so compare there.
+    local scale = source:GetScale() or 1
+    if scale <= 0 then scale = 1 end
     local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
     if minWidthEnabled and IsHUDAnchoredToCDM() then
-        width = math.max(width, minWidth)
+        local visualW = width * scale
+        if visualW < minWidth then
+            width = minWidth / scale
+        end
     end
     return width, height
+end
+
+-- Anchor resolver for CDM proxies: offsets the proxy vertically so it
+-- covers icons shifted by per-row yOffset settings.  Without this the
+-- proxy is centered on the viewer, but the icon bounding box may be
+-- shifted upward/downward.
+local function CDMAnchorResolver(proxy, source)
+    local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(source)
+    local yOff = (vs and vs.proxyYOffset) or 0
+    proxy:ClearAllPoints()
+    proxy:SetPoint("CENTER", source, "CENTER", 0, yOff)
 end
 
 local function GetCDMAnchorProxy(parentKey)
@@ -1301,6 +1321,7 @@ local function GetCDMAnchorProxy(parentKey)
         proxy = UIKit.CreateAnchorProxy(sourceFrame, {
             deferCreation = true,
             sizeResolver = sourceInfo.cdm and CDMSizeResolver or nil,
+            anchorResolver = sourceInfo.cdm and CDMAnchorResolver or nil,
         })
         if not proxy then
             cdmAnchorProxyPendingAfterCombat[parentKey] = true
@@ -2362,15 +2383,27 @@ local function CheckCDMViewerBoundsChanged(viewer, viewerKey, proxyKey)
     -- Also track viewer center for position changes (drag)
     local cx, cy = viewer:GetCenter()
 
+    local isBuffViewer = viewerKey == "buffIcon" or viewerKey == "buffBar"
     local last = _editModeLastBounds[viewerKey]
-    if last and math.abs(last.w - boundsW) < 0.5 and math.abs(last.h - boundsH) < 0.5
+    -- For buffIcon/buffBar, also check if icon bounds changed.  Blizzard's
+    -- slider may change icon scale without resizing the viewer frame, so the
+    -- viewer size stays constant while the visual icon extent changes.
+    local ibMatch = true
+    if isBuffViewer and last then
+        ibMatch = math.abs((last.ibW or 0) - (iconBoundsW or 0)) < 0.5
+             and math.abs((last.ibH or 0) - (iconBoundsH or 0)) < 0.5
+    end
+    if last and ibMatch and math.abs(last.w - boundsW) < 0.5 and math.abs(last.h - boundsH) < 0.5
            and math.abs((last.cx or 0) - (cx or 0)) < 0.5
            and math.abs((last.cy or 0) - (cy or 0)) < 0.5 then
         return  -- No change
     end
 
     -- Bounds changed — update everything
-    _editModeLastBounds[viewerKey] = { w = boundsW, h = boundsH, cx = cx, cy = cy }
+    _editModeLastBounds[viewerKey] = {
+        w = boundsW, h = boundsH, cx = cx, cy = cy,
+        ibW = iconBoundsW, ibH = iconBoundsH,
+    }
 
     if QUI and QUI.DebugPrint then
         local scale = viewer.GetScale and viewer:GetScale() or 1
@@ -2382,6 +2415,24 @@ local function CheckCDMViewerBoundsChanged(viewer, viewerKey, proxyKey)
     -- cdm_viewer.lua exposes QUI_SetCDMViewerBounds for this purpose.
     if _G.QUI_SetCDMViewerBounds then
         _G.QUI_SetCDMViewerBounds(viewer, boundsW, boundsH)
+    end
+
+    -- For buffIcon/buffBar, sync the Edit Mode overlay to the measured
+    -- icon bounds.  The overlay starts with SetAllPoints (= viewer size)
+    -- but during Edit Mode the viewer's logical size includes Blizzard's
+    -- slider padding, which is larger than the actual icon extent.
+    -- Convert from UIParent coordinate space to overlay local space by
+    -- dividing by the viewer's own scale.
+    if isBuffViewer and iconCount > 0 then
+        local viewerName = viewerKey == "buffIcon" and "BuffIconCooldownViewer" or "BuffBarCooldownViewer"
+        local overlay = _G.QUI_GetCDMViewerOverlay and _G.QUI_GetCDMViewerOverlay(viewerName)
+        if overlay and iconBoundsW > 1 and iconBoundsH > 1 then
+            local vScale = viewer:GetScale() or 1
+            if vScale <= 0 then vScale = 1 end
+            overlay:ClearAllPoints()
+            overlay:SetPoint("CENTER", viewer, "CENTER", 0, 0)
+            overlay:SetSize(iconBoundsW / vScale, iconBoundsH / vScale)
+        end
     end
 
     -- Update proxies (they read viewer state or frame bounds)

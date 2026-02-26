@@ -13,6 +13,10 @@ local GetCore = Helpers.GetCore
 -- writing custom properties to Blizzard dungeon icon frames.
 local iconOverlays = Helpers.CreateStateTable()  -- dungeonIcon → overlay
 
+-- TAINT SAFETY: Store per-icon state in local weak-keyed tables instead of
+-- writing custom properties to Blizzard dungeon icon frames.
+local iconOverlays = setmetatable({}, { __mode = "k" })  -- dungeonIcon → overlay
+
 ---------------------------------------------------------------------------
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
