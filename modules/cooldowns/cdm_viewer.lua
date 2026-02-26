@@ -2583,7 +2583,7 @@ HookFrameForMouseover = function(frame)
             end
 
             -- Delay fade to allow OnEnter on next icon to fire first
-            CDMVisibility.leaveTimer = C_Timer.After(0.5, function()
+            CDMVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
                 CDMVisibility.leaveTimer = nil
                 -- Re-check hoverCount - may have been incremented by OnEnter
                 if CDMVisibility.hoverCount == 0 then
@@ -2887,7 +2887,7 @@ local function SetupUnitframesMouseoverDetector()
                     if UnitframesVisibility.leaveTimer then
                         UnitframesVisibility.leaveTimer:Cancel()
                     end
-                    UnitframesVisibility.leaveTimer = C_Timer.After(0.5, function()
+                    UnitframesVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
                         UnitframesVisibility.leaveTimer = nil
                         if hoverCount == 0 then
                             UnitframesVisibility.mouseOver = false
