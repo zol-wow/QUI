@@ -283,6 +283,9 @@ local function SetupTooltipHook()
     -- Apply class color to player names in tooltips (WoW 10.0+)
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
         if tooltip ~= GameTooltip then return end
+        -- Skip during combat — SetTextColor inside the TooltipDataProcessor
+        -- securecall chain taints the line object, breaking other addons
+        if InCombatLockdown() then return end
 
         local settings = GetSettings()
         if not settings or not settings.enabled or not settings.classColorName then return end
@@ -310,6 +313,7 @@ local function SetupTooltipHook()
     -- Hide tooltip health bar based on settings
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
         if tooltip ~= GameTooltip then return end
+        if InCombatLockdown() then return end
 
         local settings = GetSettings()
         if not settings or not settings.enabled then return end

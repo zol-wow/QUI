@@ -83,7 +83,11 @@ local function ResolveColor(mode, colorTable)
     return nil  -- "default": don't override
 end
 
--- Returns overlay and swipe colors for Essential/Utility icons (nil = Blizzard default).
+-- CDM default swipe color (dark overlay) — must match what SkinIcon previously hardcoded.
+-- swipe.lua is the single source of truth for swipe color on CDM icons.
+local CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A = 0, 0, 0, 0.8
+
+-- Returns overlay and swipe colors for Essential/Utility icons.
 --   overlayR..A  →  active/aura state (buff duration showing)
 --   swipeR..A    →  cooldown state (radial darkening)
 local function GetIconColors(viewer, settings)
@@ -92,6 +96,11 @@ local function GetIconColors(viewer, settings)
     end
     local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
     local sR, sG, sB, sA = ResolveColor(settings.swipeColorMode  or "default", settings.swipeColor)
+    -- Fill CDM default when mode is "default" (ResolveColor returns nil).
+    -- This ensures swipe.lua always sets the color, preventing race conditions
+    -- with SkinIcon which sets SetSwipeTexture but defers color to us.
+    if not oR then oR, oG, oB, oA = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A end
+    if not sR then sR, sG, sB, sA = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A end
     return oR, oG, oB, oA, sR, sG, sB, sA
 end
 

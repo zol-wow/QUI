@@ -465,8 +465,12 @@ local function HookTooltipOnShow(tooltip)
     -- NOTE: Tooltip OnShow runs synchronously — deferring causes unskinned tooltip flash.
     -- Tooltip skinning is NOT in the Edit Mode taint chain.
     tooltip:HookScript("OnShow", function(self)
-        ApplyTooltipFontSize()
-        ApplyTooltipFontSizeToFrame(self)
+        -- Skip font modifications during combat — SetFont on tooltip line
+        -- FontStrings inside the tooltip show chain can propagate taint
+        if not InCombatLockdown() then
+            ApplyTooltipFontSize()
+            ApplyTooltipFontSizeToFrame(self)
+        end
         if not IsEnabled() then return end
         if not skinnedTooltips[self] then
             SkinTooltip(self)
@@ -493,6 +497,7 @@ end
 local function UpdateHealthBarVisibility(tooltip)
     if not ShouldHideHealthBar() then return end
     if not tooltip then return end
+    if InCombatLockdown() then return end
 
     local statusBar = tooltip.StatusBar or (tooltip == GameTooltip and GameTooltipStatusBar)
     if statusBar then
@@ -507,30 +512,39 @@ local function SetupTooltipPostProcessor()
     end
 
     -- This fires after any tooltip is populated with data
+    -- NOTE: These callbacks run inside Blizzard's securecallfunction chain.
+    -- Modifying tooltip line properties (SetFont, SetTextColor, etc.) during combat
+    -- taints the line objects and breaks other addons (e.g. Altoholic).
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
-        ApplyTooltipFontSizeToFrame(tooltip)
-        if IsEnabled() and not skinnedTooltips[tooltip] then
-            SkinTooltip(tooltip)
+        if not InCombatLockdown() then
+            ApplyTooltipFontSizeToFrame(tooltip)
+            if IsEnabled() and not skinnedTooltips[tooltip] then
+                SkinTooltip(tooltip)
+            end
         end
     end)
 
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Spell, function(tooltip)
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
-        ApplyTooltipFontSizeToFrame(tooltip)
-        if IsEnabled() and not skinnedTooltips[tooltip] then
-            SkinTooltip(tooltip)
+        if not InCombatLockdown() then
+            ApplyTooltipFontSizeToFrame(tooltip)
+            if IsEnabled() and not skinnedTooltips[tooltip] then
+                SkinTooltip(tooltip)
+            end
         end
     end)
 
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
-        ApplyTooltipFontSizeToFrame(tooltip)
-        if IsEnabled() and not skinnedTooltips[tooltip] then
-            SkinTooltip(tooltip)
+        if not InCombatLockdown() then
+            ApplyTooltipFontSizeToFrame(tooltip)
+            if IsEnabled() and not skinnedTooltips[tooltip] then
+                SkinTooltip(tooltip)
+            end
         end
         -- Health bar hiding works independently of skinning
         UpdateHealthBarVisibility(tooltip)
