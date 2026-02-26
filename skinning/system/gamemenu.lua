@@ -375,7 +375,11 @@ local function PositionStandaloneButton()
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or settings.addQUIButton == false then
-        if quiStandaloneButton then quiStandaloneButton:Hide() end
+        if quiStandaloneButton then
+            quiStandaloneButton:Hide()
+            local info = buttonOverlays[quiStandaloneButton]
+            if info and info.overlay then info.overlay:Hide() end
+        end
         -- Restore backdrop to default (covers GameMenuFrame only)
         if menuBackdrop then
             menuBackdrop:ClearAllPoints()
