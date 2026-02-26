@@ -518,6 +518,13 @@ if GameMenuFrame then
             local oc = GetOverlayContainer()
             oc:Show()
 
+            -- Restore OnUpdate handlers that were saved when menu was hidden
+            for button, info in pairs(buttonOverlays) do
+                if info and info.overlay and info._savedOnUpdate then
+                    info.overlay:SetScript("OnUpdate", info._savedOnUpdate)
+                end
+            end
+
             -- Skin pool buttons first so skinState.skinned is true when
             -- PositionStandaloneButton styles the QUI button.
             SkinGameMenu()
@@ -568,6 +575,21 @@ if GameMenuFrame then
 
             local oc = GetOverlayContainer()
             oc:Hide()
+
+            -- Memory cleanup: nil out OnUpdate handlers on overlay frames to release
+            -- closures that hold references to potentially-recycled pool buttons.
+            -- overlayContainer:Hide() already stops OnUpdate from firing, but nilling
+            -- the script drops the closure references entirely.
+            -- Save the handler functions so we can restore them when menu reopens.
+            for button, info in pairs(buttonOverlays) do
+                if info and info.overlay then
+                    if not info._savedOnUpdate then
+                        info._savedOnUpdate = info.overlay:GetScript("OnUpdate")
+                    end
+                    info.overlay:SetScript("OnUpdate", nil)
+                    info.hovered = false
+                end
+            end
 
             if quiStandaloneButton then
                 quiStandaloneButton:Hide()

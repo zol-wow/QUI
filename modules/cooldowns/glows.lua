@@ -506,6 +506,11 @@ local function SetupGlowDetection()
             ScheduleGlowScan(spellID)
         else
             -- Full scan for world entry, combat end, etc.
+            -- Memory cleanup: wipe activeGlowSpellNames on world entry / combat end
+            -- to prevent orphaned entries from missed GLOW_HIDE events (e.g. disconnect).
+            if event == "PLAYER_ENTERING_WORLD" then
+                wipe(activeGlowSpellNames)
+            end
             ScheduleGlowScan()
         end
     end)

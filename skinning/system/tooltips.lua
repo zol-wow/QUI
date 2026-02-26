@@ -19,6 +19,16 @@ local GetCore = ns.Helpers.GetCore
 
 local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
+-- Memory optimization: reusable backdrop table for legacy BackdropTemplate tooltips.
+-- Updated in-place instead of allocating a new table on every tooltip show.
+local _cachedBackdropInsets = { left = 1, right = 1, top = 1, bottom = 1 }
+local _cachedBackdrop = {
+    bgFile = FLAT_TEXTURE,
+    edgeFile = FLAT_TEXTURE,
+    edgeSize = 1,
+    insets = _cachedBackdropInsets,
+}
+
 -- Get skinning colors (uses unified color system)
 local function GetTooltipColors()
     local sr, sg, sb, sa = Helpers.GetSkinBorderColor()
@@ -328,15 +338,16 @@ local function SkinTooltip(tooltip)
         ns:Show()
     elseif tooltip.SetBackdrop then
         -- Legacy BackdropTemplate path (fallback)
+        -- Memory optimization: reuse cached backdrop table (updated in-place)
         local core = GetCore()
         local px = core and core.GetPixelSize and core:GetPixelSize(tooltip) or 1
         local edge = thickness * px
-        tooltip:SetBackdrop({
-            bgFile = FLAT_TEXTURE,
-            edgeFile = FLAT_TEXTURE,
-            edgeSize = edge,
-            insets = { left = edge, right = edge, top = edge, bottom = edge }
-        })
+        _cachedBackdrop.edgeSize = edge
+        _cachedBackdropInsets.left = edge
+        _cachedBackdropInsets.right = edge
+        _cachedBackdropInsets.top = edge
+        _cachedBackdropInsets.bottom = edge
+        tooltip:SetBackdrop(_cachedBackdrop)
         tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
         tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
     else
@@ -361,15 +372,16 @@ local function ReapplySkin(tooltip)
         ApplyNineSliceColors(ns, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         ns:Show()
     elseif tooltip.SetBackdrop then
+        -- Memory optimization: reuse cached backdrop table (updated in-place)
         local core = GetCore()
         local px = core and core.GetPixelSize and core:GetPixelSize(tooltip) or 1
         local edge = thickness * px
-        tooltip:SetBackdrop({
-            bgFile = FLAT_TEXTURE,
-            edgeFile = FLAT_TEXTURE,
-            edgeSize = edge,
-            insets = { left = edge, right = edge, top = edge, bottom = edge }
-        })
+        _cachedBackdrop.edgeSize = edge
+        _cachedBackdropInsets.left = edge
+        _cachedBackdropInsets.right = edge
+        _cachedBackdropInsets.top = edge
+        _cachedBackdropInsets.bottom = edge
+        tooltip:SetBackdrop(_cachedBackdrop)
         tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
         tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
     end

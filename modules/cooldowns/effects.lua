@@ -13,6 +13,11 @@ local hookedFrames   = Helpers.CreateStateTable()  -- frame → true (Show hook 
 local processedIcons = Helpers.CreateStateTable()  -- icon  → true (effects hidden)
 local hookedViewers  = Helpers.CreateStateTable()  -- viewer → { layout, show }
 
+-- Performance: coalescing flag for per-icon OnShow deferred hide.
+-- All icon OnShow hooks share this single flag so rapid icon appearances
+-- (e.g. 20 icons showing during a CDM Layout) produce only ONE deferred call.
+local _iconShowHidePending = false
+
 -- Default settings
 local DEFAULTS = { hideEssential = true, hideUtility = true }
 
@@ -43,14 +48,27 @@ local function HideCooldownEffects(child)
                 -- TAINT SAFETY: Defer to break taint chain from secure CDM context.
                 Helpers.DeferredHideOnShow(frame, { clearAlpha = true })
 
-                -- Also hook parent OnShow
+                -- Also hook parent OnShow — coalesced via module-level flag to avoid
+                -- creating a new timer on every icon OnShow (icons show frequently in combat).
                 if child.HookScript then
-                    child:HookScript("OnShow", function(self)
+                    child:HookScript("OnShow", function()
+                        if _iconShowHidePending then return end
+                        _iconShowHidePending = true
                         C_Timer.After(0, function()
-                            if self and self[frameName] then
-                                local f = self[frameName]
-                                pcall(f.Hide, f)
-                                pcall(f.SetAlpha, f, 0)
+                            _iconShowHidePending = false
+                            -- Re-process all visible icons to catch any newly-shown effects
+                            for _, vn in ipairs(viewers) do
+                                local v = _G[vn]
+                                if v then
+                                    local nc = v:GetNumChildren()
+                                    for ci = 1, nc do
+                                        local ch = select(ci, v:GetChildren())
+                                        if ch and ch:IsShown() then
+                                            HideCooldownEffects(ch)
+                                            pcall(HideBlizzardGlows, ch)
+                                        end
+                                    end
+                                end
                             end
                         end)
                     end)

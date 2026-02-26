@@ -2574,6 +2574,13 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
     -- Spec change: refresh all bars to load spec-appropriate spells
     -- PLAYER_SPECIALIZATION_CHANGED only fires for player, no unit check needed
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
+        -- Memory cleanup: wipe charge-spell and info caches on spec change.
+        -- Data is cheap to re-derive from the next DoUpdate cycle and prevents
+        -- unbounded accumulation across specs.
+        wipe(knownChargeSpells)
+        wipe(chargeSpellLastCast)
+        wipe(CustomTrackers.infoCache)
+
         -- Small delay to ensure spec info is fully updated
         C_Timer.After(0.1, function()
             -- Rebuild active icon sets for all bars (performance optimization)
@@ -2760,6 +2767,11 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
         if core then
             core.CustomTrackers = CustomTrackers
         end
+
+        -- Memory cleanup: wipe caches on world entry to prevent unbounded growth
+        -- across long play sessions. Data re-populates naturally from DoUpdate.
+        wipe(chargeSpellLastCast)
+        wipe(CustomTrackers.infoCache)
 
         C_Timer.After(0.6, function()
             CustomTrackers:RefreshAll()
