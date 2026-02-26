@@ -460,9 +460,19 @@ end
 function TotemBar:Refresh()
     local db = GetDB()
     if not db or not db.enabled then
-        if TotemFrame and not InCombatLockdown() then
-            -- Restore to default hidden behavior
-            TotemFrame:Hide()
+        if TotemFrame then
+            if not InCombatLockdown() then
+                TotemFrame:Hide()
+            else
+                local f = CreateFrame("Frame")
+                f:RegisterEvent("PLAYER_REGEN_ENABLED")
+                f:SetScript("OnEvent", function(self)
+                    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                    if TotemFrame and not InCombatLockdown() then
+                        TotemFrame:Hide()
+                    end
+                end)
+            end
         end
         if self.ticker then
             self.ticker:Cancel()
