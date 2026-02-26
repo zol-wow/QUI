@@ -19,15 +19,15 @@ if playerClass ~= "SHAMAN" then return end
 ---------------------------------------------------------------------------
 local TotemBar = {}
 
+local QUICore = ns.Addon
+local Helpers = ns.Helpers
+
 -- TAINT SAFETY: Store per-button state in local weak-keyed tables instead of
 -- writing custom properties to Blizzard totem button frames.
 local buttonBorders = Helpers.CreateStateTable()  -- button → border texture
 TotemBar.hooked = false
 TotemBar.ticker = nil
 TotemBar.showEnforceQueued = false
-
-local QUICore = ns.Addon
-local Helpers = ns.Helpers
 local BASE_CROP = 0.08
 
 ---------------------------------------------------------------------------
