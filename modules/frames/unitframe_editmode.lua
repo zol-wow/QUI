@@ -200,7 +200,7 @@ function QUI_UF:EnableEditMode()
         -- Hint text below button
         local hintText = exitBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         hintText:SetPoint("TOP", exitBtn, "BOTTOM", 0, -5)
-        hintText:SetText("Drag frames or click arrow buttons to nudge (Shift=1px)")
+        hintText:SetText("Drag frames or click arrow buttons to nudge (Shift=10px)")
         hintText:SetTextColor(0.7, 0.7, 0.7, 1)
         exitBtn.hint = hintText
 
