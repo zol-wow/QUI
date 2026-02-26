@@ -1701,7 +1701,16 @@ function Loot:HookBlizzardEditMode()
     local core = ns.Addon
     if core and core.RegisterEditModeExit then
         core:RegisterEditModeExit(function()
-            if InCombatLockdown() then return end
+            if InCombatLockdown() then
+                -- Defer via a one-shot PLAYER_REGEN_ENABLED handler
+                local f = CreateFrame("Frame")
+                f:RegisterEvent("PLAYER_REGEN_ENABLED")
+                f:SetScript("OnEvent", function(ef)
+                    ef:UnregisterAllEvents()
+                    self:DisableEditMode()
+                end)
+                return
+            end
             self:DisableEditMode()
         end)
     end
