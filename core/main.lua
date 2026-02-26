@@ -222,7 +222,6 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                 local eventFrame = CreateFrame("Frame")
                 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
                 eventFrame:SetScript("OnEvent", function(self)
-                    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                     local stillPending = false
                     for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
                         local pendingData = _pendingBackdropData[pendingFrame]
@@ -247,7 +246,11 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
                             QUICore.__pendingBackdrops[pendingFrame] = nil
                         end
                     end
-                    if not stillPending then
+                    if stillPending then
+                        -- Re-register so we retry on next combat exit
+                        self:RegisterEvent("PLAYER_REGEN_ENABLED")
+                    else
+                        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                         QUICore.__pendingBackdrops = {}
                     end
                 end)
