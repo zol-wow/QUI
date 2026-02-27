@@ -668,10 +668,7 @@ local function SkinIcon(icon, size, aspectRatioCrop, zoom, borderSize, borderCol
             if not hookedCooldownFlash[icon.CooldownFlash] then
                 hookedCooldownFlash[icon.CooldownFlash] = true
                 hooksecurefunc(icon.CooldownFlash, "Show", function(self)
-                    C_Timer.After(0, function()
-                        if InCombatLockdown() then return end
-                        self:SetAlpha(0)
-                    end)
+                    self:SetAlpha(0)
                 end)
             end
         end
@@ -1145,6 +1142,7 @@ local function LayoutViewer(viewerName, trackerKey)
     local totalCapacity = GetTotalIconCapacity(settings)
     
     -- Icons to layout
+    local inCombat = InCombatLockdown()
     local iconsToLayout = {}
     for i = 1, math.min(#allIcons, totalCapacity) do
         local icon = allIcons[i]
@@ -1392,7 +1390,13 @@ local function LayoutViewer(viewerName, trackerKey)
 
             -- Always enforce QUI's icon size and scale so Blizzard's
             -- Layout() / Edit Mode changes never persist.
-            ApplyIconSizeOnly(icon, rowConfig.size, rowConfig.aspectRatioCrop)
+            -- Defer SetSize during combat to avoid OnSizeChanged handler taint cascade.
+            if inCombat then
+                local sz, ar = rowConfig.size, rowConfig.aspectRatioCrop
+                C_Timer.After(0, function() ApplyIconSizeOnly(icon, sz, ar) end)
+            else
+                ApplyIconSizeOnly(icon, rowConfig.size, rowConfig.aspectRatioCrop)
+            end
             if icon.GetScale and icon:GetScale() ~= 1 then
                 icon:SetScale(1)
             end
@@ -2756,12 +2760,18 @@ end
 local function ApplyUnitframeVisibilityAlpha(frame, alpha)
     if not frame then return end
 
-    -- Respect castbar runtime visibility state so HUD visibility logic doesn't
-    -- resurrect inactive castbars (especially player castbar alpha-fallback mode).
-    -- Only castbars using alpha-fallback mode should be forced hidden this way.
-    if frame._quiCastbar and frame._quiUseAlphaVisibility and frame._quiDesiredVisible == false then
-        frame:SetAlpha(0)
-        return
+    if frame._quiCastbar then
+        -- Castbar is actively showing a cast — don't override its alpha.
+        -- The castbar module owns visibility during casts; letting HUD
+        -- visibility set alpha to 0 here is what caused castbars to
+        -- silently disappear when unit frames were faded out.
+        if frame._quiDesiredVisible then return end
+
+        -- Idle castbar using alpha-fallback mode — keep it hidden.
+        if frame._quiUseAlphaVisibility then
+            frame:SetAlpha(0)
+            return
+        end
     end
 
     frame:SetAlpha(alpha)
