@@ -210,6 +210,7 @@ end
 -- TAINT SAFETY: Track skinned state in local tables, NOT on Blizzard frames.
 local skinnedTooltips = Helpers.CreateStateTable()   -- tooltip → true
 local hookedTooltips = Helpers.CreateStateTable()    -- tooltip → true (OnShow hooked)
+local pendingCombatSkinTooltips = Helpers.CreateStateTable() -- tooltip → true (deferred reskin queued)
 
 -- NineSlice piece names used by Blizzard tooltips
 local NINE_SLICE_PIECES = {
@@ -349,11 +350,6 @@ local function SkinTooltip(tooltip)
     skinnedTooltips[tooltip] = true
 end
 
--- Track last-applied thickness per tooltip to skip redundant NineSlice rebuilds.
--- Blizzard resets NineSlice layout on Show, so we must reapply — but we only need
--- the full rebuild (textures + coords) when thickness changes. Otherwise, colors only.
-local _lastTooltipThickness = {}
-
 -- Re-apply skin to an already-skinned tooltip (called on every Show)
 local function ReapplySkin(tooltip)
     if not tooltip then return end
@@ -364,11 +360,9 @@ local function ReapplySkin(tooltip)
     local ns = tooltip.NineSlice
     if ns then
         ClearNineSliceLayoutInfo(tooltip)
-        -- Only rebuild NineSlice textures when thickness changed; otherwise just recolor
-        if _lastTooltipThickness[tooltip] ~= thickness then
-            _lastTooltipThickness[tooltip] = thickness
-            ApplyFlatNineSlice(ns, thickness)
-        end
+        -- Re-apply flat textures/geometry every show because Blizzard can restore
+        -- default rounded NineSlice piece settings between tooltip displays.
+        ApplyFlatNineSlice(ns, thickness)
         ApplyNineSliceColors(ns, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         ns:Show()
     elseif tooltip.SetBackdrop then
@@ -385,6 +379,26 @@ local function ReapplySkin(tooltip)
         tooltip:SetBackdropColor(bgr, bgg, bgb, bga)
         tooltip:SetBackdropBorderColor(sr, sg, sb, sa)
     end
+end
+
+-- During combat, avoid mutating tooltip internals directly inside the secure
+-- OnShow/PostCall chain. Queue skinning to the next frame instead.
+local function QueueCombatTooltipSkin(tooltip)
+    if not tooltip or pendingCombatSkinTooltips[tooltip] then return end
+    pendingCombatSkinTooltips[tooltip] = true
+
+    C_Timer.After(0, function()
+        pendingCombatSkinTooltips[tooltip] = nil
+        if not tooltip then return end
+        if tooltip.IsShown and not tooltip:IsShown() then return end
+        if not IsEnabled() then return end
+
+        if not skinnedTooltips[tooltip] then
+            SkinTooltip(tooltip)
+        else
+            ReapplySkin(tooltip)
+        end
+    end)
 end
 
 -- List of tooltips to skin
@@ -431,10 +445,8 @@ local function SkinAllTooltips()
     end
 end
 
--- Refresh colors on all skinned tooltips (rebuilds textures for thickness changes)
+-- Refresh colors/geometry on all skinned tooltips
 local function RefreshAllTooltipColors()
-    -- Invalidate thickness cache so next ReapplySkin does a full NineSlice rebuild
-    wipe(_lastTooltipThickness)
     -- Refresh named tooltips from the static list
     for _, name in ipairs(tooltipsToSkin) do
         local tooltip = _G[name]
@@ -465,11 +477,14 @@ local function HookTooltipOnShow(tooltip)
     -- NOTE: Tooltip OnShow runs synchronously — deferring causes unskinned tooltip flash.
     -- Tooltip skinning is NOT in the Edit Mode taint chain.
     tooltip:HookScript("OnShow", function(self)
-        -- Skip all tooltip modifications during combat — modifying NineSlice children
-        -- (SetTexture, SetSize, SetPoint) inside the OnShow securecall chain taints
-        -- sibling FontStrings, causing other addons (e.g. Altoholic) to get secret values
-        -- when they read tooltip lines.
-        if InCombatLockdown() then return end
+        -- In combat, queue skinning out of the secure OnShow chain to avoid
+        -- taint propagation to tooltip line FontStrings.
+        if InCombatLockdown() then
+            if IsEnabled() then
+                QueueCombatTooltipSkin(self)
+            end
+            return
+        end
 
         ApplyTooltipFontSize()
         ApplyTooltipFontSizeToFrame(self)
@@ -525,6 +540,8 @@ local function SetupTooltipPostProcessor()
             if IsEnabled() and not skinnedTooltips[tooltip] then
                 SkinTooltip(tooltip)
             end
+        elseif IsEnabled() then
+            QueueCombatTooltipSkin(tooltip)
         end
     end)
 
@@ -536,6 +553,8 @@ local function SetupTooltipPostProcessor()
             if IsEnabled() and not skinnedTooltips[tooltip] then
                 SkinTooltip(tooltip)
             end
+        elseif IsEnabled() then
+            QueueCombatTooltipSkin(tooltip)
         end
     end)
 
@@ -547,6 +566,8 @@ local function SetupTooltipPostProcessor()
             if IsEnabled() and not skinnedTooltips[tooltip] then
                 SkinTooltip(tooltip)
             end
+        elseif IsEnabled() then
+            QueueCombatTooltipSkin(tooltip)
         end
         -- Health bar hiding works independently of skinning
         UpdateHealthBarVisibility(tooltip)
