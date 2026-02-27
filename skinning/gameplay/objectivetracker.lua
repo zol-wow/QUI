@@ -459,93 +459,13 @@ local function ApplyLayoutSettingsSafely(settings)
     return true
 end
 
--- Reposition all lines within a block based on their actual heights
--- This fixes overlap caused by font changes affecting text wrapping
-local isRepositioning = false
-local function RepositionBlockLines(block)
-    if not block or not block.usedLines then return end
-
-    -- Collect lines with their objectiveKey for stable sorting
-    local lines = {}
-    for key, line in pairs(block.usedLines) do
-        if line and line:IsShown() then
-            table.insert(lines, { line = line, key = key })
-        end
-    end
-
-    -- Sort by objectiveKey (deterministic, not affected by frame position)
-    table.sort(lines, function(a, b)
-        if type(a.key) == "number" and type(b.key) == "number" then
-            return a.key < b.key
-        end
-        return tostring(a.key) < tostring(b.key)
-    end)
-
-    -- Reposition each line based on actual heights
-    local yOffset = 0
-    local headerHeight = 0
-    if block.HeaderText then
-        headerHeight = block.HeaderText:GetStringHeight() or 0
-        yOffset = -(headerHeight + 5)  -- Start below header with padding
-    end
-
-    for i, entry in ipairs(lines) do
-        entry.line:ClearAllPoints()
-        entry.line:SetPoint("TOPLEFT", block, "TOPLEFT", 0, yOffset)
-        entry.line:SetPoint("RIGHT", block, "RIGHT", 0, 0)
-
-        -- Use text-based height (deterministic) instead of frame height
-        -- which Blizzard may reset between layout passes
-        local lineHeight = 14
-        if entry.line.Text then
-            local textHeight = entry.line.Text:GetStringHeight()
-            if textHeight and textHeight > 0 then
-                lineHeight = textHeight + 4
-            end
-        end
-        yOffset = yOffset - lineHeight - 2  -- Move down by line height + small gap
-    end
-
-    -- Update block height only if it changed significantly (prevents layout thrashing)
-    local totalHeight = math.abs(yOffset) + 5
-    local currentBlockHeight = block:GetHeight() or 0
-    if math.abs(totalHeight - currentBlockHeight) > 1 then
-        block:SetHeight(totalHeight)
-    end
-end
-
--- Debounced line repositioning for all visible blocks
-local pendingLineReposition = false
-local function ScheduleLineReposition()
-    if pendingLineReposition or isRepositioning then return end
-    pendingLineReposition = true
-    -- Small delay to batch multiple style changes
-    C_Timer.After(0.05, function()
-        pendingLineReposition = false
-        -- Keep guard active through Blizzard's async relayout cycle triggered by SetHeight.
-        -- Without this, AddObjective hooks fire after our synchronous reposition finishes
-        -- and schedule another pass, causing the bottom line to oscillate.
-        isRepositioning = true
-
-        for _, trackerName in ipairs(trackerModules) do
-            local tracker = _G[trackerName]
-            if tracker and tracker:IsShown() and tracker.usedBlocks then
-                for template, blocks in pairs(tracker.usedBlocks) do
-                    for blockID, block in pairs(blocks) do
-                        if block:IsShown() then
-                            RepositionBlockLines(block)
-                        end
-                    end
-                end
-            end
-        end
-
-        -- Also update backdrop after repositioning
-        ScheduleBackdropUpdate()
-        -- Release guard after Blizzard's relayout settles (~2 frames at 60fps)
-        C_Timer.After(0.1, function() isRepositioning = false end)
-    end)
-end
+-- NOTE: Manual line repositioning (RepositionBlockLines / ScheduleLineReposition)
+-- was removed because it caused an oscillation feedback loop:
+--   AddObjective hook → StyleLine height change → reposition → SetHeight on block
+--   → Blizzard async relayout → AddObjective fires again → repeat
+-- Blizzard anchors each objective line to the previous line's BOTTOMLEFT, so
+-- setting the correct line height in StyleLine is sufficient — subsequent lines
+-- shift down automatically through the anchor chain.
 
 -- Kill all textures in a NineSlice frame
 local function KillNineSlice(nineSlice)
@@ -704,12 +624,11 @@ local function HookLineCreation()
                     local currentTextSize = currentSettings and currentSettings.objectiveTrackerTextFontSize or 0
                     local currentTextColor = currentSettings and currentSettings.objectiveTrackerTextColor
                     if currentTextSize > 0 then
-                        local heightChanged = StyleLine(line, GetFontPath(), currentTextSize, currentTextColor)
-                        -- Only reposition when height actually changed to avoid
-                        -- fighting Blizzard's layout on every tracker event
-                        if heightChanged then
-                            ScheduleLineReposition()
-                        end
+                        -- Style the line (font + color + height). Do NOT trigger
+                        -- manual repositioning — Blizzard anchors each line to
+                        -- the previous line's bottom, so height changes cascade
+                        -- automatically through the anchor chain.
+                        StyleLine(line, GetFontPath(), currentTextSize, currentTextColor)
                     end
                 end
             end)
