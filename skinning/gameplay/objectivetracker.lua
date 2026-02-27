@@ -485,7 +485,6 @@ local function RepositionBlockLines(block)
         yOffset = -(headerHeight + 5)  -- Start below header with padding
     end
 
-    isRepositioning = true
     for i, entry in ipairs(lines) do
         entry.line:ClearAllPoints()
         entry.line:SetPoint("TOPLEFT", block, "TOPLEFT", 0, yOffset)
@@ -501,7 +500,6 @@ local function RepositionBlockLines(block)
     if math.abs(totalHeight - currentBlockHeight) > 1 then
         block:SetHeight(totalHeight)
     end
-    isRepositioning = false
 end
 
 -- Debounced line repositioning for all visible blocks
@@ -512,6 +510,10 @@ local function ScheduleLineReposition()
     -- Small delay to batch multiple style changes
     C_Timer.After(0.05, function()
         pendingLineReposition = false
+        -- Keep guard active through Blizzard's async relayout cycle triggered by SetHeight.
+        -- Without this, AddObjective hooks fire after our synchronous reposition finishes
+        -- and schedule another pass, causing the bottom line to oscillate.
+        isRepositioning = true
 
         for _, trackerName in ipairs(trackerModules) do
             local tracker = _G[trackerName]
@@ -528,6 +530,8 @@ local function ScheduleLineReposition()
 
         -- Also update backdrop after repositioning
         ScheduleBackdropUpdate()
+        -- Release guard after Blizzard's relayout settles (~2 frames at 60fps)
+        C_Timer.After(0.1, function() isRepositioning = false end)
     end)
 end
 
