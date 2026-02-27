@@ -34,8 +34,12 @@ end
 ---------------------------------------------------------------------------
 function SkinBase.GetSkinColors(moduleSettings, prefix)
     local sr, sg, sb, sa = Helpers.GetSkinBorderColor(moduleSettings, prefix)
-    local bgr, bgg, bgb, bga = Helpers.GetSkinBgColor()
+    local bgr, bgg, bgb, bga = Helpers.GetSkinBgColorWithOverride(moduleSettings, prefix)
     return sr, sg, sb, sa, bgr, bgg, bgb, bga
+end
+
+function SkinBase.GetSkinBarColor(moduleSettings, prefix)
+    return Helpers.GetSkinBarColor(moduleSettings, prefix)
 end
 
 ---------------------------------------------------------------------------

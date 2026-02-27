@@ -154,6 +154,47 @@ local function BuildSkinningTab(tabContent)
             UpdateBorderControlState()
         end
 
+        local function AddModuleBackgroundOverrideControls(title, settings, prefix)
+            local keyPrefix = type(prefix) == "string" and prefix or ""
+            local overrideKey = keyPrefix ~= "" and (keyPrefix .. "BgOverride") or "bgOverride"
+            local hideKey = keyPrefix ~= "" and (keyPrefix .. "HideBackground") or "hideBackground"
+            local colorKey = keyPrefix ~= "" and (keyPrefix .. "BackgroundColor") or "backgroundColor"
+
+            local colorPicker
+            local hideCheck
+
+            local function UpdateBgControlState()
+                local enabled = settings[overrideKey]
+                if hideCheck then hideCheck:SetEnabled(enabled) end
+                if colorPicker then
+                    colorPicker:SetEnabled(enabled and (not settings[hideKey]))
+                end
+            end
+
+            local overrideCheck = GUI:CreateFormCheckbox(tabContent, "Override Global Background Settings", overrideKey, settings, function()
+                UpdateBgControlState()
+                RefreshAllSkinning()
+            end)
+            overrideCheck:SetPoint("TOPLEFT", PAD, y)
+            overrideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            hideCheck = GUI:CreateFormCheckbox(tabContent, "Hide Background", hideKey, settings, function()
+                UpdateBgControlState()
+                RefreshAllSkinning()
+            end)
+            hideCheck:SetPoint("TOPLEFT", PAD, y)
+            hideCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            colorPicker = GUI:CreateFormColorPicker(tabContent, "Background Color", colorKey, settings, RefreshAllSkinning)
+            colorPicker:SetPoint("TOPLEFT", PAD, y)
+            colorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            UpdateBgControlState()
+        end
+
         local useClassColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Colors", "skinUseClassColor", general, function()
             if customColorPicker then
                 customColorPicker:SetEnabled(not general.skinUseClassColor)
@@ -682,6 +723,13 @@ local function BuildSkinningTab(tabContent)
                 showAffixes = true,
                 showObjectives = true,
                 scale = 1.0,
+                forcesBarEnabled = true,
+                forcesDisplayMode = "bar",
+                forcesPosition = "after_timer",
+                forcesTextFormat = "both",
+                forcesLabel = "Forces",
+                forcesFont = "Poppins",
+                forcesFontSize = 11,
             }
             mplusTimer = db.mplusTimer
         end
@@ -697,6 +745,25 @@ local function BuildSkinningTab(tabContent)
             local fallbackBorder = general.skinBorderColor or general.addonAccentColor or { 0.204, 0.827, 0.6, 1 }
             mplusTimer.borderColor = { fallbackBorder[1], fallbackBorder[2], fallbackBorder[3], fallbackBorder[4] or 1 }
         end
+        if mplusTimer.bgOverride == nil then mplusTimer.bgOverride = false end
+        if mplusTimer.hideBackground == nil then mplusTimer.hideBackground = false end
+        if mplusTimer.backgroundColor == nil then
+            local fallbackBg = general.skinBgColor or { 0.05, 0.05, 0.05, 0.95 }
+            mplusTimer.backgroundColor = { fallbackBg[1], fallbackBg[2], fallbackBg[3], fallbackBg[4] or 0.95 }
+        end
+        if mplusTimer.forcesBarEnabled == nil then mplusTimer.forcesBarEnabled = true end
+        if mplusTimer.forcesDisplayMode == nil then mplusTimer.forcesDisplayMode = "bar" end
+        if mplusTimer.forcesPosition == nil then mplusTimer.forcesPosition = "after_timer" end
+        if mplusTimer.forcesTextFormat == nil then mplusTimer.forcesTextFormat = "both" end
+        if mplusTimer.forcesLabel == nil then mplusTimer.forcesLabel = "Forces" end
+        if mplusTimer.forcesFont == nil then mplusTimer.forcesFont = "Poppins" end
+        if mplusTimer.forcesFontSize == nil then mplusTimer.forcesFontSize = 11 end
+        if mplusTimer.barUseClassColor == nil then mplusTimer.barUseClassColor = false end
+        if mplusTimer.barColor == nil then
+            local fallbackBar = general.skinBorderColor or general.addonAccentColor or { 0.204, 0.827, 0.6, 1 }
+            mplusTimer.barColor = { fallbackBar[1], fallbackBar[2], fallbackBar[3], fallbackBar[4] or 1 }
+        end
+        if mplusTimer.maxDungeonNameLength == nil then mplusTimer.maxDungeonNameLength = 18 end
 
         local quiMplusHeader = GUI:CreateSectionHeader(tabContent, "QUI M+ Timer")
         quiMplusHeader:SetPoint("TOPLEFT", PAD, y)
@@ -761,6 +828,16 @@ local function BuildSkinningTab(tabContent)
         scaleSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local dungeonNameSlider = GUI:CreateFormSlider(tabContent, "Max Dungeon Name Length", 0, 40, 1, "maxDungeonNameLength", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.RenderKeyDetails then
+                MPlusTimer:RenderKeyDetails()
+            end
+        end)
+        dungeonNameSlider:SetPoint("TOPLEFT", PAD, y)
+        dungeonNameSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         -- Show Timer checkbox (full mode only)
         local quiMplusTimerCheck = GUI:CreateFormCheckbox(tabContent, "Show Timer Text (Full mode)", "showTimer", mplusTimer, function()
             local MPlusTimer = _G.QUI_MPlusTimer
@@ -783,6 +860,9 @@ local function BuildSkinningTab(tabContent)
         y = y - FORM_ROW
 
         AddModuleBorderOverrideControls("QUI M+ Timer", mplusTimer)
+
+        AddModuleBackgroundOverrideControls("QUI M+ Timer", mplusTimer)
+
 
         local quiMplusDeathsCheck = GUI:CreateFormCheckbox(tabContent, "Show Deaths", "showDeaths", mplusTimer, function()
             local MPlusTimer = _G.QUI_MPlusTimer
@@ -828,7 +908,150 @@ local function BuildSkinningTab(tabContent)
         quiMplusDemoInfo:SetPoint("TOPLEFT", PAD, y)
         quiMplusDemoInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         quiMplusDemoInfo:SetJustifyH("LEFT")
+        y = y - 35
+
+        -- ═══════════════════════════════════════════════════════════════
+        -- FORCES BAR CUSTOMIZATION
+        -- ═══════════════════════════════════════════════════════════════
+        GUI:SetSearchSection("Forces Bar")
+
+        local forcesHeader = GUI:CreateSectionHeader(tabContent, "Forces Bar")
+        forcesHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - forcesHeader.gap
+
+        local forcesDesc = GUI:CreateLabel(tabContent, "Customize the enemy forces progress bar position, format, and appearance.", 11, C.textMuted)
+        forcesDesc:SetPoint("TOPLEFT", PAD, y)
+        forcesDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        forcesDesc:SetJustifyH("LEFT")
+        forcesDesc:SetWordWrap(true)
+        forcesDesc:SetHeight(20)
+        y = y - 28
+
+        local forcesEnabledCheck = GUI:CreateFormCheckbox(tabContent, "Show Forces Bar", "forcesBarEnabled", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.UpdateLayout then
+                MPlusTimer:UpdateLayout()
+            end
+        end)
+        forcesEnabledCheck:SetPoint("TOPLEFT", PAD, y)
+        forcesEnabledCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local forcesDisplayModeOptions = {
+            { text = "Progress Bar", value = "bar" },
+            { text = "Text Only", value = "text" },
+        }
+        local forcesDisplayModeDropdown = GUI:CreateFormDropdown(tabContent, "Display Mode", forcesDisplayModeOptions, "forcesDisplayMode", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.UpdateLayout then
+                MPlusTimer:UpdateLayout()
+            end
+        end)
+        forcesDisplayModeDropdown:SetPoint("TOPLEFT", PAD, y)
+        forcesDisplayModeDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local forcesPositionOptions = {
+            { text = "After Timer Bars", value = "after_timer" },
+            { text = "Before Timer Bars", value = "before_timer" },
+            { text = "Before Objectives", value = "before_objectives" },
+            { text = "After Objectives", value = "after_objectives" },
+        }
+        local forcesPosDropdown = GUI:CreateFormDropdown(tabContent, "Position", forcesPositionOptions, "forcesPosition", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.UpdateLayout then
+                MPlusTimer:UpdateLayout()
+            end
+        end)
+        forcesPosDropdown:SetPoint("TOPLEFT", PAD, y)
+        forcesPosDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local forcesFormatOptions = {
+            { text = "Count (123/273)", value = "count" },
+            { text = "Percentage (45.32%)", value = "percentage" },
+            { text = "Both (45.32% (123/273))", value = "both" },
+        }
+        local forcesFormatDropdown = GUI:CreateFormDropdown(tabContent, "Text Format", forcesFormatOptions, "forcesTextFormat", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.RenderForces then
+                MPlusTimer:RenderForces()
+            end
+        end)
+        forcesFormatDropdown:SetPoint("TOPLEFT", PAD, y)
+        forcesFormatDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local forcesFontList = {}
+        local LSM = LibStub("LibSharedMedia-3.0", true)
+        if LSM then
+            for name in pairs(LSM:HashTable("font")) do
+                table.insert(forcesFontList, {value = name, text = name})
+            end
+            table.sort(forcesFontList, function(a, b) return a.text < b.text end)
+        else
+            forcesFontList = {{value = "Poppins", text = "Poppins"}}
+        end
+        local forcesFontDropdown = GUI:CreateFormDropdown(tabContent, "Font", forcesFontList, "forcesFont", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.UpdateLayout then
+                MPlusTimer:UpdateLayout()
+            end
+        end)
+        forcesFontDropdown:SetPoint("TOPLEFT", PAD, y)
+        forcesFontDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local forcesFontSizeSlider = GUI:CreateFormSlider(tabContent, "Font Size", 8, 18, 1, "forcesFontSize", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.UpdateLayout then
+                MPlusTimer:UpdateLayout()
+            end
+        end)
+        forcesFontSizeSlider:SetPoint("TOPLEFT", PAD, y)
+        forcesFontSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local forcesColorPicker = GUI:CreateFormColorPicker(tabContent, "Text Color", "forcesTextColor", mplusTimer, function()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.RenderForces then
+                MPlusTimer:RenderForces()
+            end
+            if _G.QUI_ApplyMPlusTimerSkin then
+                _G.QUI_ApplyMPlusTimerSkin()
+            end
+        end)
+        forcesColorPicker:SetPoint("TOPLEFT", PAD, y)
+        forcesColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local forcesColorNote = GUI:CreateLabel(tabContent, "Leave text color unset to inherit from contrast-aware system.", 10, C.textMuted)
+        forcesColorNote:SetPoint("TOPLEFT", PAD, y)
+        forcesColorNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        forcesColorNote:SetJustifyH("LEFT")
         y = y - 25
+
+        local barColorPicker
+
+        local barUseClassColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color for Bar Fill", "barUseClassColor", mplusTimer, function()
+            if barColorPicker then
+                barColorPicker:SetEnabled(not mplusTimer.barUseClassColor)
+            end
+            RefreshAllSkinning()
+        end)
+        barUseClassColorCheck:SetPoint("TOPLEFT", PAD, y)
+        barUseClassColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        barColorPicker = GUI:CreateFormColorPicker(tabContent, "Bar Fill Color", "barColor", mplusTimer, function()
+            if _G.QUI_ApplyMPlusTimerSkin then
+                _G.QUI_ApplyMPlusTimerSkin()
+            end
+        end, { noAlpha = true })
+        barColorPicker:SetPoint("TOPLEFT", PAD, y)
+        barColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        barColorPicker:SetEnabled(not mplusTimer.barUseClassColor)
+        y = y - 40
 
         -- ═══════════════════════════════════════════════════════════════
         -- REPUTATION/CURRENCY SECTION

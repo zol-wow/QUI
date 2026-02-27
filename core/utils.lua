@@ -473,6 +473,36 @@ function Helpers.GetSkinBorderColor(moduleSettings, prefix)
     return r, g, b, a
 end
 
+--- Get skin bar color from dedicated bar settings.
+--- Falls back to border color so existing profiles keep current visuals.
+--- Supports optional per-module override settings tables.
+--- @param moduleSettings table|nil Optional module settings table
+--- @param prefix string|nil Optional key prefix for module settings in camelCase
+--- @return number, number, number, number r, g, b, a
+function Helpers.GetSkinBarColor(moduleSettings, prefix)
+    local fallbackR, fallbackG, fallbackB, fallbackA = Helpers.GetSkinBorderColor(moduleSettings, prefix)
+    local r, g, b, a = fallbackR, fallbackG, fallbackB, fallbackA
+
+    if type(moduleSettings) == "table" then
+        local keyPrefix = type(prefix) == "string" and prefix or ""
+        local useClassKey = keyPrefix ~= "" and (keyPrefix .. "BarUseClassColor") or "barUseClassColor"
+        local colorKey = keyPrefix ~= "" and (keyPrefix .. "BarColor") or "barColor"
+
+        if moduleSettings[useClassKey] then
+            r, g, b = Helpers.GetPlayerClassColor()
+            a = 1
+        elseif type(moduleSettings[colorKey]) == "table" then
+            local moduleColor = moduleSettings[colorKey]
+            r = moduleColor[1] or r
+            g = moduleColor[2] or g
+            b = moduleColor[3] or b
+            a = moduleColor[4] or a
+        end
+    end
+
+    return r, g, b, a
+end
+
 --- Get the addon-wide accent color (from options panel color picker)
 --- @return number, number, number, number r, g, b, a
 function Helpers.GetAddonAccentColor()
@@ -488,6 +518,42 @@ end
 function Helpers.GetSkinBgColor()
     local _, _, _, _, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
     return bgr, bgg, bgb, bga
+end
+
+--- Get skin background color with optional module-level override
+--- Supports optional per-module override settings tables for background color
+--- @param moduleSettings table|nil Optional module settings table
+--- @param prefix string|nil Optional key prefix for module settings in camelCase
+--- @return number, number, number, number r, g, b, a
+function Helpers.GetSkinBgColorWithOverride(moduleSettings, prefix)
+    local profile = Helpers.GetProfile()
+    local general = profile and profile.general
+
+    local fallbackR, fallbackG, fallbackB, fallbackA = Helpers.GetSkinBgColor()
+    local r, g, b, a = fallbackR, fallbackG, fallbackB, fallbackA
+
+    if type(moduleSettings) == "table" then
+        local keyPrefix = type(prefix) == "string" and prefix or ""
+        local overrideKey = keyPrefix ~= "" and (keyPrefix .. "BgOverride") or "bgOverride"
+        local hideKey = keyPrefix ~= "" and (keyPrefix .. "HideBackground") or "hideBackground"
+        local colorKey = keyPrefix ~= "" and (keyPrefix .. "BackgroundColor") or "backgroundColor"
+
+        if moduleSettings[overrideKey] then
+            if type(moduleSettings[colorKey]) == "table" then
+                local moduleColor = moduleSettings[colorKey]
+                r = moduleColor[1] or r
+                g = moduleColor[2] or g
+                b = moduleColor[3] or b
+                a = moduleColor[4] or a
+            end
+
+            if moduleSettings[hideKey] then
+                a = 0
+            end
+        end
+    end
+
+    return r, g, b, a
 end
 
 --- Get class color for a class token (e.g., "WARRIOR", "MAGE")
@@ -683,6 +749,7 @@ ns.GetModuleSettings = Helpers.GetModuleSettings
 ns.CreateDBGetter = Helpers.CreateDBGetter
 ns.GetSkinColors = Helpers.GetSkinColors
 ns.GetSkinBorderColor = Helpers.GetSkinBorderColor
+ns.GetSkinBarColor = Helpers.GetSkinBarColor
 ns.GetClassColor = Helpers.GetClassColor
 ns.GetPlayerClassColor = Helpers.GetPlayerClassColor
 ns.GetItemQualityColor = Helpers.GetItemQualityColor
@@ -695,6 +762,60 @@ ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding
 ns.IsPlayerInDungeonOrRaid = Helpers.IsPlayerInDungeonOrRaid
 ns.CreateOnUpdateThrottle = Helpers.CreateOnUpdateThrottle
 ns.CreateTimeThrottle = Helpers.CreateTimeThrottle
+
+ ---------------------------------------------------------------------------
+-- TEXT TRUNCATION HELPERS
+-- UTF-8 safe text truncation for names and labels
+ ---------------------------------------------------------------------------
+
+ --- Truncate text to max character length (UTF-8 safe)
+ --- Handles secret values from combat-restricted APIs in Patch 12.0+
+ --- @param text string|any The text to truncate
+ --- @param maxLength number Maximum character count (0 or nil = no limit)
+ --- @return string The truncated text, or original if no truncation needed
+ function Helpers.TruncateUTF8(text, maxLength)
+     if not text or type(text) ~= "string" then return text or "" end
+     if not maxLength or maxLength <= 0 then return text end
+
+     if Helpers.IsSecretValue(text) then
+         return string.format("%." .. maxLength .. "s", text)
+     end
+
+     local lenOk, textLen = pcall(function() return #text end)
+     if not lenOk then
+         return string.format("%." .. maxLength .. "s", text)
+     end
+
+     if textLen <= maxLength then
+         return text
+     end
+
+     local byte = string.byte
+     local i = 1
+     local c = 0
+     while i <= textLen and c < maxLength do
+         c = c + 1
+         local b = byte(text, i)
+         if b < 0x80 then
+             i = i + 1
+         elseif b < 0xE0 then
+             i = i + 2
+         elseif b < 0xF0 then
+             i = i + 3
+         else
+             i = i + 4
+         end
+     end
+
+     local subOk, truncated = pcall(string.sub, text, 1, i - 1)
+     if subOk and truncated then
+         return truncated
+     end
+
+     return string.format("%." .. maxLength .. "s", text)
+ end
+
+ ns.TruncateUTF8 = Helpers.TruncateUTF8
 
 ---------------------------------------------------------------------------
 -- TAINT-SAFETY UTILITIES
