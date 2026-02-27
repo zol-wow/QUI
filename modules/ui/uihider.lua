@@ -32,6 +32,7 @@ local DEFAULTS = {
     hideErrorMessages = false,
     hideInfoMessages = false,
     hideWorldMapBlackout = false,
+    hidePlayerFrameInParty = false,
 }
 
 local pendingObjectiveTrackerHide = false
@@ -706,6 +707,24 @@ end
             WorldMapFrame.BlackoutFrame:EnableMouse(true)
         end
     end
+
+    -- Player Frame: Hide when in a party/raid group
+    -- Try QUI's custom player frame first, fall back to Blizzard's PlayerFrame
+    local QUI_UF = ns and ns.QUI_UnitFrames
+    local playerFrame = (QUI_UF and QUI_UF.frames and QUI_UF.frames.player) or PlayerFrame
+    if playerFrame and not InCombatLockdown() then
+        local pfState = hookedSecureFrames[playerFrame]
+        if not pfState then pfState = {}; hookedSecureFrames[playerFrame] = pfState end
+        if settings.hidePlayerFrameInParty then
+            -- [group] matches party or raid
+            RegisterStateDriver(playerFrame, "visibility", "[group] hide; show")
+        elseif pfState.partyHideActive then
+            -- Remove our state driver and restore default visibility
+            UnregisterStateDriver(playerFrame, "visibility")
+            playerFrame:Show()
+        end
+        pfState.partyHideActive = settings.hidePlayerFrameInParty
+    end
 end
 
 -- Initialize
@@ -744,15 +763,21 @@ eventFrame:SetScript("OnEvent", function(self, event, addon)
         return
     end
 
-    -- Handle raid permission/role changes - re-hide CompactRaidFrameManager
+    -- Handle raid permission/role changes - re-hide CompactRaidFrameManager & player frame
     -- BUG-008: Wrap in C_Timer.After(0) to break taint chain from secure event context
     if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
-        if settings and settings.hideRaidFrameManager and CompactRaidFrameManager then
+        if settings then
             C_Timer.After(0, function()
                 if IsInEditMode() then return end
-                if not InCombatLockdown() then
-                    CompactRaidFrameManager:Hide()
+                if InCombatLockdown() then return end
+                -- Re-hide CompactRaidFrameManager if needed
+                if settings.hideRaidFrameManager and CompactRaidFrameManager then
+                    CompactRaidFrameManager:SetAlpha(0)
                     CompactRaidFrameManager:EnableMouse(false)
+                end
+                -- Re-evaluate player frame visibility on group changes
+                if settings.hidePlayerFrameInParty then
+                    ApplyHideSettings()
                 end
             end)
         end
@@ -796,6 +821,16 @@ local function ShowAllHiddenForEditMode()
             ObjectiveTrackerFrame:SetAlpha(1)
             ObjectiveTrackerFrame:Show()
             ObjectiveTrackerFrame:EnableMouse(true)
+        end
+    end
+
+    -- Player Frame
+    if settings.hidePlayerFrameInParty then
+        local QUI_UF = ns and ns.QUI_UnitFrames
+        local playerFrame = (QUI_UF and QUI_UF.frames and QUI_UF.frames.player) or PlayerFrame
+        if playerFrame then
+            UnregisterStateDriver(playerFrame, "visibility")
+            playerFrame:Show()
         end
     end
 
