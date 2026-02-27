@@ -76,7 +76,8 @@ local function BuildXPTrackerTab(tabContent)
     end)
     previewToggle:SetPoint("TOPLEFT", PADDING, y)
     previewToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
-    previewToggle:SetValue(isPreview, true)
+    -- Use dot-call here: CreateFormToggle.SetValue(val, skipCallback) is not a colon method.
+    previewToggle.SetValue(isPreview, true)
     y = y - FORM_ROW
 
     local previewDesc = GUI:CreateLabel(tabContent, "Shows the tracker with sample data for positioning and styling.", 10, C.textMuted)

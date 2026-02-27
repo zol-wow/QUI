@@ -68,6 +68,13 @@ local function FormatPercent(value)
     return string.format("%.1f%%", value)
 end
 
+local function RoundNearest(value)
+    if value >= 0 then
+        return math.floor(value + 0.5)
+    end
+    return math.ceil(value - 0.5)
+end
+
 ---------------------------------------------------------------------------
 -- XP Rate calculation (ring buffer)
 ---------------------------------------------------------------------------
@@ -349,11 +356,24 @@ local function CreateFrame_XPTracker()
         -- Save position back to DB
         local s = GetSettings()
         if s then
-            local point, _, _, x, y = self:GetPoint(1)
-            if point then
-                s.offsetX = math.floor((x or 0) + 0.5)
-                s.offsetY = math.floor((y or 0) + 0.5)
+            -- Always save center-relative offsets so reload positioning is stable
+            -- regardless of which anchor point WoW uses during drag movement.
+            local cx, cy = self:GetCenter()
+            local ux, uy = UIParent:GetCenter()
+            if cx and cy and ux and uy then
+                s.offsetX = RoundNearest(cx - ux)
+                s.offsetY = RoundNearest(cy - uy)
+            else
+                local point, _, _, x, y = self:GetPoint(1)
+                if point then
+                    s.offsetX = RoundNearest(x or 0)
+                    s.offsetY = RoundNearest(y or 0)
+                end
             end
+
+            -- Normalize to CENTER anchor now to match reload restoration path.
+            self:ClearAllPoints()
+            self:SetPoint("CENTER", UIParent, "CENTER", s.offsetX or 0, s.offsetY or 0)
         end
         UpdateDetailsDirection(self)
     end)
@@ -369,10 +389,13 @@ local function UpdateDisplay()
     local frame = XPTrackerState.frame
     if not frame then return end
 
-    local settings = GetSettings()
-    if not settings then return end
-
     local isPreview = XPTrackerState.isPreviewMode
+    local settings = GetSettings()
+    if (not settings or not settings.enabled) and not isPreview then
+        frame:Hide()
+        return
+    end
+    if not settings then return end
 
     local currentXP, maxXP, exhaustion, level, isAtCap, isXPDisabled
 
@@ -732,6 +755,7 @@ local function TogglePreview(enable)
     CreateFrame_XPTracker()
     if not XPTrackerState.frame then return end
 
+    enable = (enable == true)
     XPTrackerState.isPreviewMode = enable
 
     if enable then
