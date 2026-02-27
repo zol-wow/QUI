@@ -129,6 +129,12 @@ local function CreateActionBarsPage(parent)
         combatCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local leaveVehicleCheck = GUI:CreateFormCheckbox(tabContent, "Keep Leave Vehicle Button Visible",
+            "keepLeaveVehicleVisible", fade, RefreshActionBars)
+        leaveVehicleCheck:SetPoint("TOPLEFT", PAD, y)
+        leaveVehicleCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         local maxLevelCheck = GUI:CreateFormCheckbox(tabContent, "Disable Below Max Level",
             "disableBelowMaxLevel", fade, RefreshActionBars)
         maxLevelCheck:SetPoint("TOPLEFT", PAD, y)

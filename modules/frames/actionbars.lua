@@ -158,6 +158,33 @@ local function ShouldSuppressMouseoverHideForLevel()
     return fadeSettings and fadeSettings.disableBelowMaxLevel and IsPlayerBelowMaxLevel()
 end
 
+local function IsLeaveVehicleButtonVisible()
+    if CanExitVehicle and CanExitVehicle() then
+        return true
+    end
+
+    local mainLeaveButton = _G.MainMenuBarVehicleLeaveButton
+    if mainLeaveButton and mainLeaveButton.IsShown and mainLeaveButton:IsShown() then
+        return true
+    end
+
+    local overrideBar = _G.OverrideActionBar
+    local overrideLeaveButton = overrideBar and overrideBar.LeaveButton
+    if overrideLeaveButton and overrideLeaveButton.IsShown and overrideLeaveButton:IsShown() then
+        return true
+    end
+
+    return false
+end
+
+local function ShouldKeepLeaveVehicleVisible()
+    local fadeSettings = GetFadeSettings()
+    if not (fadeSettings and fadeSettings.keepLeaveVehicleVisible) then
+        return false
+    end
+    return IsLeaveVehicleButtonVisible()
+end
+
 local function UpdateLevelSuppressionState()
     local suppress = ShouldSuppressMouseoverHideForLevel()
     if ActionBars.levelSuppressionActive == suppress then
@@ -1676,6 +1703,10 @@ end
 
 -- Apply alpha to all buttons in a bar
 local function SetBarAlpha(barKey, alpha)
+    if barKey == "bar1" and alpha < 1 and ShouldKeepLeaveVehicleVisible() then
+        alpha = 1
+    end
+
     local buttons = GetBarButtons(barKey)
     local settings = GetGlobalSettings()
     local hideEmptyEnabled = settings and settings.hideEmptySlots
@@ -2376,6 +2407,9 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("CURSOR_CHANGED")
 eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+eventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
+eventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -2450,6 +2484,18 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 _G.QUI_RefreshActionBars()
             end
         end
+
+    elseif event == "UPDATE_VEHICLE_ACTIONBAR" then
+        C_Timer.After(0.05, function()
+            SetupBarMouseover("bar1")
+        end)
+
+    elseif event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
+        local unit = ...
+        if unit ~= "player" then return end
+        C_Timer.After(0.05, function()
+            SetupBarMouseover("bar1")
+        end)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Process pending initialization (from /reload during combat)
