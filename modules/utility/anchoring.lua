@@ -60,17 +60,20 @@ end
 -- Edit Mode's secureexecuterange calls SetPointBase during combat.
 --
 -- Solution: Track positions of overridden Edit Mode system frames, then
--- use a SecureHandlerStateTemplate combat state driver to re-stamp those
--- same positions through secure code when combat starts.  This clears
--- the taint before Edit Mode could ever encounter it during combat.
+-- use a SecureHandlerStateTemplate to re-stamp those same positions
+-- through secure code, clearing the taint.  Two triggers:
+--   1. Combat enter (state driver) — clears taint before combat APIs run.
+--   2. Edit Mode exit (hooksecurefunc on ExitEditMode) — clears taint
+--      synchronously before Blizzard's UpdateLayoutInfo/InitSystemAnchors
+--      re-layouts, which is the primary scenario that hits the block.
 -- Normal (non-combat) positioning still uses the direct pcall(SetPoint)
 -- path — only the taint is cleaned up.
 ---------------------------------------------------------------------------
 local secureTaintCleaner = CreateFrame("Frame", "QUI_SecureTaintCleaner", UIParent, "SecureHandlerStateTemplate")
-RegisterStateDriver(secureTaintCleaner, "combat", "[combat]1;0")
-secureTaintCleaner:SetAttribute("_onstate-combat", [[
-    if newstate ~= "1" then return end
-    -- Entering combat: re-stamp all tracked positions through secure code
+
+-- Shared secure snippet: re-stamp all tracked positions through secure code
+-- to clear taint left by addon-side ClearAllPoints/SetPoint calls.
+local SECURE_RESTAMP_SNIPPET = [[
     local count = self:GetAttribute("frameCount") or 0
     for i = 1, count do
         local bar = self:GetFrameRef("bar" .. i)
@@ -84,7 +87,35 @@ secureTaintCleaner:SetAttribute("_onstate-combat", [[
             bar:SetPoint(point, parent, relPoint, offsetX, offsetY)
         end
     end
+]]
+
+RegisterStateDriver(secureTaintCleaner, "combat", "[combat]1;0")
+secureTaintCleaner:SetAttribute("_onstate-combat", [[
+    if newstate ~= "1" then return end
+]] .. SECURE_RESTAMP_SNIPPET)
+
+-- Allow manual trigger via SetAttribute("clean-now", value).
+-- hooksecurefunc on ExitEditMode (below) uses this to clean taint
+-- synchronously before Blizzard's InitSystemAnchors re-layouts.
+secureTaintCleaner:SetAttribute("_onattributechanged", [[
+    if name == "clean-now" then
+]] .. SECURE_RESTAMP_SNIPPET .. [[
+    end
 ]])
+
+-- Hook EditModeManagerFrame.ExitEditMode to clean taint before
+-- Blizzard's UpdateLayoutInfo -> InitSystemAnchors hits tainted
+-- SetPointBase.  hooksecurefunc fires right after ExitEditMode
+-- returns, and SetAttribute triggers _onattributechanged synchronously
+-- in secure context — so positions are re-stamped before any
+-- subsequent layout re-apply reads the anchor data.
+if EditModeManagerFrame then
+    hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
+        if not InCombatLockdown() then
+            secureTaintCleaner:SetAttribute("clean-now", GetTime())
+        end
+    end)
+end
 
 local _trackedSecureFrames = {}  -- frame -> index
 local _trackedCount = 0
