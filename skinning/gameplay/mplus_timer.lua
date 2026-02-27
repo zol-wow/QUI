@@ -138,7 +138,7 @@ local function ApplyBarSkin(bar, sr, sg, sb, br, bg, bb, colors, isTimerBar, bar
     end
 
     if bar.text then
-        if not isTimerBar and settings and settings.forcesTextColor then
+        if not isTimerBar and settings and type(settings.forcesTextColor) == "table" then
             local r, g, b, a = unpack(settings.forcesTextColor)
             bar.text:SetTextColor(r, g, b, a)
         else
@@ -230,7 +230,7 @@ local function ApplyMPlusTimerSkin()
         )
     end
     if MPlusTimer.frames.forcesValueText then
-        if settings and settings.forcesTextColor then
+        if settings and type(settings.forcesTextColor) == "table" then
             local r, g, b, a = unpack(settings.forcesTextColor)
             MPlusTimer.frames.forcesValueText:SetTextColor(r, g, b, a)
         else

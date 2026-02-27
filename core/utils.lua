@@ -774,7 +774,10 @@ ns.CreateTimeThrottle = Helpers.CreateTimeThrottle
  --- @param maxLength number Maximum character count (0 or nil = no limit)
  --- @return string The truncated text, or original if no truncation needed
  function Helpers.TruncateUTF8(text, maxLength)
-     if not text or type(text) ~= "string" then return text or "" end
+     if text == nil then return "" end
+     if type(text) ~= "string" then
+         return Helpers.SafeToString(text, "")
+     end
      if not maxLength or maxLength <= 0 then return text end
 
      if Helpers.IsSecretValue(text) then
