@@ -554,23 +554,6 @@ local function SetupIconOnce(icon)
     if is.ncdmSetup then return end
     is.ncdmSetup = true
 
-    -- BLIZZARD BUG WORKAROUND: CooldownViewer.lua OnCooldownIDCleared calls
-    -- C_Spell.EnableSpellRangeCheck after ClearCooldownID already nil'd the
-    -- spell identifier, producing "bad argument #1" errors during RefreshLayout
-    -- pool releases.  Wrap in pcall to suppress the nil-spellID error only.
-    if type(icon.OnCooldownIDCleared) == "function" then
-        local origOnCleared = icon.OnCooldownIDCleared
-        icon.OnCooldownIDCleared = function(self, ...)
-            local ok, err = pcall(origOnCleared, self, ...)
-            if not ok then
-                if type(err) == "string" and err:find("EnableSpellRangeCheck") then
-                    return
-                end
-                error(err, 2)
-            end
-        end
-    end
-
     -- Remove Blizzard's mask textures
     local textures = { icon.Icon, icon.icon }
     for _, tex in ipairs(textures) do
@@ -1796,16 +1779,6 @@ local function HookViewer(viewerName, trackerKey)
     layoutEventFrame:SetScript("OnEvent", function()
         DebouncedLayoutFromEvent(viewerName, trackerKey)
     end)
-
-    -- Pending icon ticker is now global and self-canceling (started in QueueIconForSkinning)
-    -- Clean up any old per-viewer ticker from previous versions (legacy property on frame)
-    if viewer.__pendingTicker then
-        viewer.__pendingTicker:Cancel()
-        -- NOTE: We intentionally nil-out this legacy property (one-time cleanup).
-        -- This write is acceptable because it only clears an addon-created property
-        -- that was set by a previous QUI version, not a Blizzard property.
-        viewer.__pendingTicker = nil
-    end
 
     -- Initial layout - single deferred layout
     C_Timer.After(0.02, function()
