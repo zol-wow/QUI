@@ -1038,8 +1038,9 @@ local function RestoreDungeonEye()
         end
     end
 
-    -- Reset scale
+    -- Reset scale and strata
     btn:SetScale(1.0)
+    btn:SetFrameStrata("MEDIUM")
 end
 
 local function UpdateDungeonEyePosition()
@@ -1086,6 +1087,7 @@ local function UpdateDungeonEyePosition()
         -- Apply scale
         local scale = eyeSettings.scale or 1.0
         btn:SetScale(scale)
+        btn:SetFrameStrata("MEDIUM")
         -- Do NOT call btn:Show() - let Blizzard control visibility based on queue status
     else
         -- Restore original position
