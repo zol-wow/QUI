@@ -553,7 +553,24 @@ local function SetupIconOnce(icon)
     local is = getIconState(icon)
     if is.ncdmSetup then return end
     is.ncdmSetup = true
-    
+
+    -- BLIZZARD BUG WORKAROUND: CooldownViewer.lua OnCooldownIDCleared calls
+    -- C_Spell.EnableSpellRangeCheck after ClearCooldownID already nil'd the
+    -- spell identifier, producing "bad argument #1" errors during RefreshLayout
+    -- pool releases.  Wrap in pcall to suppress the nil-spellID error only.
+    if type(icon.OnCooldownIDCleared) == "function" then
+        local origOnCleared = icon.OnCooldownIDCleared
+        icon.OnCooldownIDCleared = function(self, ...)
+            local ok, err = pcall(origOnCleared, self, ...)
+            if not ok then
+                if type(err) == "string" and err:find("EnableSpellRangeCheck") then
+                    return
+                end
+                error(err, 2)
+            end
+        end
+    end
+
     -- Remove Blizzard's mask textures
     local textures = { icon.Icon, icon.icon }
     for _, tex in ipairs(textures) do

@@ -304,8 +304,14 @@ local function SetupTooltipHook()
         local classColor = class and RAID_CLASS_COLORS[class]
         if classColor then
             local nameLine = GameTooltipTextLeft1
-            if nameLine and nameLine:GetText() then
-                nameLine:SetTextColor(classColor.r, classColor.g, classColor.b)
+            if nameLine then
+                -- pcall guards against TOCTOU race: combat can start between
+                -- InCombatLockdown() check and here, making GetText() return
+                -- a secret value and tainting the fontstring for other addons.
+                local okText, text = pcall(nameLine.GetText, nameLine)
+                if okText and text and not Helpers.IsSecretValue(text) then
+                    nameLine:SetTextColor(classColor.r, classColor.g, classColor.b)
+                end
             end
         end
     end)

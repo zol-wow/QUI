@@ -300,6 +300,24 @@ function QUICore:SkinIcon(icon, settings)
     -- Strip Blizzard overlay
     StripBlizzardOverlay(icon)
 
+    -- BLIZZARD BUG WORKAROUND: OnCooldownIDCleared calls EnableSpellRangeCheck
+    -- with a nil spell identifier after ClearCooldownID already cleared it.
+    local iStateRPC = skinIconState[icon]
+    if not (iStateRPC and iStateRPC.rangeCheckPatched)
+       and type(icon.OnCooldownIDCleared) == "function" then
+        local origOnCleared = icon.OnCooldownIDCleared
+        icon.OnCooldownIDCleared = function(self, ...)
+            local ok, err = pcall(origOnCleared, self, ...)
+            if not ok then
+                if type(err) == "string" and err:find("EnableSpellRangeCheck") then
+                    return
+                end
+                error(err, 2)
+            end
+        end
+        GetSkinIconState(icon).rangeCheckPatched = true
+    end
+
     -- Border (using BACKGROUND texture to avoid secret value errors during combat)
     -- BackdropTemplate causes "arithmetic on secret value" crashes when frame is resized during combat
     if icon.IsForbidden and icon:IsForbidden() then
