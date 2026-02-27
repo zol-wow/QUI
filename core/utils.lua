@@ -746,6 +746,31 @@ end
 --               clearAlpha (default false): also call SetAlpha(0) after Hide.
 --               combatCheck (default true): skip hide if InCombatLockdown().
 local _deferredHideHooked = setmetatable({}, { __mode = "k" })
+
+-- Queue for frames that need Hide() deferred until combat ends.
+-- When combatCheck=false and we're in combat, we alpha-hide immediately
+-- and queue the real Hide() for PLAYER_REGEN_ENABLED.
+local _combatHideQueue = {}  -- [frame] = clearAlpha (bool)
+local _combatHideFrame
+local function FlushCombatHideQueue()
+    for frame, shouldClearAlpha in pairs(_combatHideQueue) do
+        if not (frame.IsForbidden and frame:IsForbidden()) then
+            pcall(frame.Hide, frame)
+            if shouldClearAlpha and frame.SetAlpha then frame:SetAlpha(0) end
+        end
+    end
+    wipe(_combatHideQueue)
+    _combatHideFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+end
+local function QueueCombatHide(frame, clearAlpha)
+    _combatHideQueue[frame] = clearAlpha or false
+    if not _combatHideFrame then
+        _combatHideFrame = CreateFrame("Frame")
+        _combatHideFrame:SetScript("OnEvent", FlushCombatHideQueue)
+    end
+    _combatHideFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
 function Helpers.DeferredHideOnShow(frame, opts)
     if not frame or not frame.Show then return end
     if _deferredHideHooked[frame] then return end
@@ -754,11 +779,16 @@ function Helpers.DeferredHideOnShow(frame, opts)
     local combatCheck = not opts or opts.combatCheck ~= false
     hooksecurefunc(frame, "Show", function(self)
         C_Timer.After(0, function()
-            if combatCheck and InCombatLockdown() then return end
             if self.IsForbidden and self:IsForbidden() then return end
-            -- Protected frames cannot be hidden from addon code during combat;
-            -- attempting it fires ADDON_ACTION_BLOCKED even inside pcall.
-            if InCombatLockdown() and self.IsProtected and self:IsProtected() then return end
+            if InCombatLockdown() then
+                if combatCheck then return end
+                -- Visually hide via alpha now; defer real Hide() to combat end.
+                -- Calling Hide() during combat fires ADDON_ACTION_BLOCKED even
+                -- inside pcall — IsProtected() doesn't catch all restricted frames.
+                if self.SetAlpha then self:SetAlpha(0) end
+                QueueCombatHide(self, clearAlpha)
+                return
+            end
             pcall(self.Hide, self)
             if clearAlpha and self.SetAlpha then self:SetAlpha(0) end
         end)
