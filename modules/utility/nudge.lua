@@ -799,6 +799,12 @@ local function CreateBlizzardFrameOverlay(frameInfo)
     if frameInfo.alwaysShow then
         overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
         overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    elseif frameName == "ChatFrame1" then
+        overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", -8, 2)
+        overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 8, -8)
+    elseif frame.Selection and frame.Selection:GetRect() then
+        overlay:SetPoint("TOPLEFT", frame.Selection, "TOPLEFT", 0, 0)
+        overlay:SetPoint("BOTTOMRIGHT", frame.Selection, "BOTTOMRIGHT", 0, 0)
     else
         overlay:SetAllPoints()
     end
