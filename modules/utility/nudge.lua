@@ -421,6 +421,7 @@ local BLIZZARD_EDITMODE_FRAMES = {
     -- Display
     { name = "ObjectiveTrackerFrame", label = "Objective Tracker", passthrough = true, requireSelection = true },
     { name = "GameTooltipDefaultContainer", label = "HUD Tooltip", passthrough = true },
+    { name = "ChatFrame1", label = "Chat Frame", passthrough = true, requireSelection = true },
     -- Talking Head: only show overlay when Blizzard's .Selection is active
     -- (user has it enabled in edit mode settings).  requireSelection gates this.
     { name = "TalkingHeadFrame", label = "Talking Head", passthrough = true, requireSelection = true },
