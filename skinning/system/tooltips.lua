@@ -201,7 +201,6 @@ end
 -- TAINT SAFETY: Track skinned state in local tables, NOT on Blizzard frames.
 local skinnedTooltips = Helpers.CreateStateTable()   -- tooltip → true
 local hookedTooltips = Helpers.CreateStateTable()    -- tooltip → true (OnShow hooked)
-local pendingCombatSkinTooltips = Helpers.CreateStateTable() -- tooltip → true (deferred reskin queued)
 
 -- NineSlice piece names used by Blizzard tooltips
 local NINE_SLICE_PIECES = {
@@ -290,6 +289,9 @@ end
 -- and modifying frame properties during combat propagates taint to line FontStrings.
 local function ClearNineSliceLayoutInfo(tooltip)
     if not tooltip then return end
+    -- TAINT SAFETY: Writing nil to Blizzard frame keys during combat propagates taint.
+    -- After fix #1 this should never be called in combat, but guard as defense-in-depth.
+    if InCombatLockdown() then return end
 
     -- Clear layout info that Blizzard uses to re-apply defaults
     local ns = tooltip.NineSlice
@@ -373,23 +375,35 @@ local function ReapplySkin(tooltip)
 end
 
 -- During combat, avoid mutating tooltip internals directly inside the secure
--- OnShow/PostCall chain. Queue skinning to the next frame instead.
-local function QueueCombatTooltipSkin(tooltip)
-    if not tooltip or pendingCombatSkinTooltips[tooltip] then return end
-    pendingCombatSkinTooltips[tooltip] = true
+-- OnShow/PostCall chain. Defer all skinning until combat ends via PLAYER_REGEN_ENABLED.
+-- C_Timer.After(0) does NOT escape taint propagation — it fires on the same frame.
+local combatSkinQueue = {}
+local combatSkinEventFrame
 
-    C_Timer.After(0, function()
-        pendingCombatSkinTooltips[tooltip] = nil
-        if not tooltip then return end
-        if tooltip.IsShown and not tooltip:IsShown() then return end
-        if not IsEnabled() then return end
-
-        if not skinnedTooltips[tooltip] then
-            SkinTooltip(tooltip)
-        else
-            ReapplySkin(tooltip)
+local function FlushCombatSkinQueue()
+    if InCombatLockdown() then return end
+    for tooltip in pairs(combatSkinQueue) do
+        if tooltip and tooltip.IsShown and tooltip:IsShown() and IsEnabled() then
+            if not skinnedTooltips[tooltip] then
+                SkinTooltip(tooltip)
+            else
+                ReapplySkin(tooltip)
+            end
+            ApplyTooltipFontSizeToFrame(tooltip)
         end
-    end)
+    end
+    wipe(combatSkinQueue)
+    combatSkinEventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+end
+
+local function QueueCombatTooltipSkin(tooltip)
+    if not tooltip or combatSkinQueue[tooltip] then return end
+    combatSkinQueue[tooltip] = true
+    if not combatSkinEventFrame then
+        combatSkinEventFrame = CreateFrame("Frame")
+        combatSkinEventFrame:SetScript("OnEvent", FlushCombatSkinQueue)
+    end
+    combatSkinEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 end
 
 -- List of tooltips to skin
@@ -476,13 +490,16 @@ local function HookTooltipOnShow(tooltip)
             return
         end
 
-        ApplyTooltipFontSizeToFrame(self)
+        -- TAINT SAFETY: Wrap mutations in pcall — if combat starts mid-execution
+        -- and a frame mutation fails, it fails silently. The tooltip will be
+        -- reskinned on next show or on combat end via the queue.
+        pcall(ApplyTooltipFontSizeToFrame, self)
         if not IsEnabled() then return end
         if not skinnedTooltips[self] then
-            SkinTooltip(self)
+            pcall(SkinTooltip, self)
         else
             -- Re-apply full skin — Blizzard resets NineSlice layout on every Show
-            ReapplySkin(self)
+            pcall(ReapplySkin, self)
         end
     end)
 
@@ -573,7 +590,9 @@ local function SetupHealthBarHook()
     if statusBar then
         hooksecurefunc(statusBar, "Show", function(self)
             if ShouldHideHealthBar() then
-                self:Hide()
+                -- TAINT SAFETY: Use SafeHide to avoid calling Hide() inside a secure
+                -- call chain during combat, which would propagate taint.
+                Helpers.SafeHide(self)
             end
         end)
     end
@@ -607,7 +626,8 @@ eventFrame:SetScript("OnEvent", function(self, event)
     end
 end)
 
--- Expose refresh function globally for live color updates
--- This rebuilds textures (for thickness changes) and recolors
-_G.QUI_RefreshTooltipSkinColors = RefreshAllTooltipColors
-_G.QUI_RefreshTooltipFontSize = RefreshAllTooltipFonts
+-- Expose refresh functions on the addon namespace for live color updates.
+-- Avoids writing to _G which can introduce taint if Blizzard code touches those keys
+-- during secure execution.
+ns.QUI_RefreshTooltipSkinColors = RefreshAllTooltipColors
+ns.QUI_RefreshTooltipFontSize = RefreshAllTooltipFonts
