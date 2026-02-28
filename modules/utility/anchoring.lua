@@ -1802,6 +1802,11 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     if not settings.enabled then
         if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): DISABLED", key)) end
         SetFrameOverride(resolved, false)
+        
+        -- Reposition extra buttons back to their holders when anchoring is disabled
+        if (key == "extraActionButton" or key == "zoneAbility") and _G.QUI_RefreshExtraButtons then
+            _G.QUI_RefreshExtraButtons()
+        end
         return
     end
 

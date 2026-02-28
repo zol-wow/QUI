@@ -779,6 +779,9 @@ local function CreateExtraButtonHolder(buttonType, displayName)
     local nudgeRight = CreateExtraButtonNudgeButton(mover, "RIGHT", holder, buttonType)
     nudgeRight:SetPoint("LEFT", mover, "RIGHT", 4, 0)
 
+    -- Store nudge buttons on mover for lock state management
+    mover.nudgeButtons = { nudgeUp, nudgeDown, nudgeLeft, nudgeRight }
+
     -- Drag handlers
     mover:SetScript("OnDragStart", function(self)
         holder:StartMoving()
@@ -866,76 +869,126 @@ local function ApplyExtraButtonSettings(buttonType)
     end
 end
 
--- Flag to prevent recursive SetPoint hooks
-local pendingExtraButtonReanchor = {}
+-- Check if QUI's Frame Anchoring system is enabled for a given key
+local function IsFrameAnchoringEnabled(key)
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return false end
+    local anchoring = core.db.profile.frameAnchoring
+    return anchoring and anchoring[key] and anchoring[key].enabled
+end
 
--- Re-anchor extra buttons outside Blizzard's SetPoint call chain.
--- Directly mutating anchors inside managed-frame SetPoint hooks can taint
--- UIParent managed frame containers and trigger ADDON_ACTION_BLOCKED in combat.
-local function QueueExtraButtonReanchor(buttonType)
-    if pendingExtraButtonReanchor[buttonType] then return end
-    pendingExtraButtonReanchor[buttonType] = true
-
-    C_Timer.After(0, function()
-        pendingExtraButtonReanchor[buttonType] = false
-
-        if InCombatLockdown() then
-            ActionBars.pendingExtraButtonRefresh = true
-            return
+-- Lock mover when Frame Anchoring is enabled (grey color, no drag, no nudge)
+local function LockExtraButtonMover(mover, displayName)
+    mover:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
+    mover:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+    if mover.text then
+        mover.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+        mover.text:SetText(displayName .. "  (Locked)")
+    end
+    mover:EnableMouse(false)
+    mover:SetMovable(false)
+    if mover.nudgeButtons then
+        for _, btn in ipairs(mover.nudgeButtons) do
+            btn:Hide()
         end
+    end
+end
 
-        local settings = GetExtraButtonDB(buttonType)
-        if settings and settings.enabled then
-            ApplyExtraButtonSettings(buttonType)
+-- Unlock mover when Frame Anchoring is disabled (mint color, drag enabled)
+local function UnlockExtraButtonMover(mover, displayName)
+    mover:SetBackdropColor(0.2, 0.8, 0.6, 0.5)
+    mover:SetBackdropBorderColor(0.2, 1.0, 0.6, 1)
+    if mover.text then
+        mover.text:SetTextColor(1, 1, 1, 1)
+        mover.text:SetText(displayName)
+    end
+    mover:EnableMouse(true)
+    mover:SetMovable(true)
+    mover:RegisterForDrag("LeftButton")
+    if mover.nudgeButtons then
+        for _, btn in ipairs(mover.nudgeButtons) do
+            btn:Show()
         end
-    end)
+    end
 end
 
 -- Hook Blizzard frames to prevent them from repositioning
+-- Uses immediate repositioning (not deferred) to prevent visible bouncing in Edit Mode.
+-- The hookingSetPoint guard prevents recursive hook firing.
+-- When Frame Anchoring is enabled for a frame, let the anchoring system control position.
 local function HookExtraButtonPositioning()
-    -- TAINT SAFETY: Defer to break taint chain from secure Blizzard context.
-    -- Hook ExtraActionBarFrame
     if ExtraActionBarFrame and not extraActionSetPointHooked then
         extraActionSetPointHooked = true
         hooksecurefunc(ExtraActionBarFrame, "SetPoint", function(self)
-            if hookingSetPoint then return end
-            C_Timer.After(0, function()
-                if hookingSetPoint or InCombatLockdown() then return end
-                local settings = GetExtraButtonDB("extraActionButton")
-                if extraActionHolder and settings and settings.enabled then
-                    QueueExtraButtonReanchor("extraActionButton")
-                end
-            end)
+            if hookingSetPoint or InCombatLockdown() then return end
+            if IsFrameAnchoringEnabled("extraActionButton") then return end
+            local settings = GetExtraButtonDB("extraActionButton")
+            if extraActionHolder and settings and settings.enabled then
+                local offsetX = settings.offsetX or 0
+                local offsetY = settings.offsetY or 0
+                hookingSetPoint = true
+                self:ClearAllPoints()
+                self:SetPoint("CENTER", extraActionHolder, "CENTER", offsetX, offsetY)
+                hookingSetPoint = false
+            end
         end)
     end
 
-    -- Hook ZoneAbilityFrame
     if ZoneAbilityFrame and not zoneAbilitySetPointHooked then
         zoneAbilitySetPointHooked = true
         hooksecurefunc(ZoneAbilityFrame, "SetPoint", function(self)
-            if hookingSetPoint then return end
-            C_Timer.After(0, function()
-                if hookingSetPoint or InCombatLockdown() then return end
-                local settings = GetExtraButtonDB("zoneAbility")
-                if zoneAbilityHolder and settings and settings.enabled then
-                    QueueExtraButtonReanchor("zoneAbility")
-                end
-            end)
+            if hookingSetPoint or InCombatLockdown() then return end
+            if IsFrameAnchoringEnabled("zoneAbility") then return end
+            local settings = GetExtraButtonDB("zoneAbility")
+            if zoneAbilityHolder and settings and settings.enabled then
+                local offsetX = settings.offsetX or 0
+                local offsetY = settings.offsetY or 0
+                hookingSetPoint = true
+                self:ClearAllPoints()
+                self:SetPoint("CENTER", zoneAbilityHolder, "CENTER", offsetX, offsetY)
+                hookingSetPoint = false
+            end
         end)
     end
-
-    -- NOTE: Previously attempted to remove ExtraAbilityContainer from UIParentBottomManagedFrameContainer.showingFrames
-    -- to prevent Edit Mode interference. However, modifying Blizzard's internal showingFrames table spreads taint
-    -- to the entire UIParent frame management system, causing ADDON_ACTION_BLOCKED errors during combat
-    -- when PetActionBar or other secure frames update. The Edit Mode interference is a minor cosmetic issue;
-    -- the combat taint errors are game-breaking. Removed the problematic code.
 end
 
 -- Show/hide mover overlays
 local function ShowExtraButtonMovers()
     extraButtonMoversVisible = true
-    if extraActionMover then extraActionMover:Show() end
-    if zoneAbilityMover then zoneAbilityMover:Show() end
+    
+    -- Extra Action Button
+    if extraActionMover and extraActionHolder then
+        if IsFrameAnchoringEnabled("extraActionButton") then
+            -- Frame Anchoring controls position - sync mover to Blizzard frame
+            if ExtraActionBarFrame then
+                extraActionMover:ClearAllPoints()
+                extraActionMover:SetAllPoints(ExtraActionBarFrame)
+            end
+            LockExtraButtonMover(extraActionMover, "Extra Action Button")
+        else
+            -- Holder controls position - sync mover to holder
+            extraActionMover:ClearAllPoints()
+            extraActionMover:SetAllPoints(extraActionHolder)
+            UnlockExtraButtonMover(extraActionMover, "Extra Action Button")
+        end
+        extraActionMover:Show()
+    end
+    
+    -- Zone Ability
+    if zoneAbilityMover and zoneAbilityHolder then
+        if IsFrameAnchoringEnabled("zoneAbility") then
+            if ZoneAbilityFrame then
+                zoneAbilityMover:ClearAllPoints()
+                zoneAbilityMover:SetAllPoints(ZoneAbilityFrame)
+            end
+            LockExtraButtonMover(zoneAbilityMover, "Zone Ability")
+        else
+            zoneAbilityMover:ClearAllPoints()
+            zoneAbilityMover:SetAllPoints(zoneAbilityHolder)
+            UnlockExtraButtonMover(zoneAbilityMover, "Zone Ability")
+        end
+        zoneAbilityMover:Show()
+    end
 end
 
 local function HideExtraButtonMovers()
