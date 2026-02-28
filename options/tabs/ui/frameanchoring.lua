@@ -371,6 +371,7 @@ local function BuildDisplayTab(tabContent)
         { key = "objectiveTracker", name = "Objective Tracker" },
         { key = "buffFrame",        name = "Buff Frame" },
         { key = "debuffFrame",      name = "Debuff Frame" },
+        { key = "chatFrame1",       name = "Chat Frame" },
     }
 
     for _, frameDef in ipairs(frames) do

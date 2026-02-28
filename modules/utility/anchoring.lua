@@ -1188,6 +1188,7 @@ local FRAME_RESOLVERS = {
     objectiveTracker = function() return _G["ObjectiveTrackerFrame"] end,
     buffFrame = function() return _G["BuffFrame"] end,
     debuffFrame = function() return _G["DebuffFrame"] end,
+    chatFrame1 = function() return _G["ChatFrame1"] end,
     -- External (DandersFrames)
     dandersParty = function()
         if ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable() then
@@ -1256,6 +1257,7 @@ local FRAME_ANCHOR_INFO = {
     objectiveTracker = { displayName = "Objective Tracker",    category = "Display",           order = 2 },
     buffFrame       = { displayName = "Buff Frame",            category = "Display",           order = 3 },
     debuffFrame     = { displayName = "Debuff Frame",          category = "Display",           order = 4 },
+    chatFrame1      = { displayName = "Chat Frame",            category = "Display",           order = 5 },
     dandersParty    = { displayName = "DandersFrames Party",   category = "External",          order = 1 },
     dandersRaid     = { displayName = "DandersFrames Raid",    category = "External",          order = 2 },
 }
