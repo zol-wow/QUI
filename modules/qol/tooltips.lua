@@ -107,11 +107,12 @@ local function GetTooltipContext(owner)
             return "cdm"
         end
         -- Check if parent is a CDM viewer frame
-        local parentName = parent:GetName() or ""
-        if parentName == "EssentialCooldownViewer" or
-           parentName == "UtilityCooldownViewer" or
-           parentName == "BuffIconCooldownViewer" or
-           parentName == "BuffBarCooldownViewer" then
+        local getViewer = _G.QUI_GetCDMViewerFrame
+        if getViewer and (
+           parent == getViewer("essential") or
+           parent == getViewer("utility") or
+           parent == getViewer("buffIcon") or
+           parent == getViewer("buffBar")) then
             return "cdm"
         end
     end

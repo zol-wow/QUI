@@ -122,7 +122,7 @@ end
 
 local function GetAnchorFrame(anchorTo)
     if anchorTo == "essential" then
-        return _G["EssentialCooldownViewer"]
+        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
     end
 
     if anchorTo == "focus" then

@@ -592,6 +592,9 @@ local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function(self, event, arg)
+    -- Only run when classic CDM engine is active
+    if ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "classic" then return end
+
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
         EnsureGlowSetup()
     elseif event == "PLAYER_LOGIN" then

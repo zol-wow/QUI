@@ -1033,7 +1033,7 @@ function QUICore:GetPowerBar()
     -- Use the safe chain: viewer state → saved width from DB → fallback.
     local width = cfg.width or 0
     if width <= 0 then
-        local essentialViewer = _G["EssentialCooldownViewer"]
+        local essentialViewer = _G.QUI_GetCDMViewerFrame("essential")
         if essentialViewer then
             local evs = GetViewerState(essentialViewer)
             width = (evs and evs.iconWidth) or 0
@@ -1152,11 +1152,11 @@ function QUICore:UpdatePowerBar()
     -- For AUTO, check if locked to a CDM viewer and inherit its orientation
     if orientation == "AUTO" then
         if cfg.lockedToEssential then
-            local viewer = _G.EssentialCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("essential")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         elseif cfg.lockedToUtility then
-            local viewer = _G.UtilityCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("utility")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         end
@@ -1169,7 +1169,7 @@ function QUICore:UpdatePowerBar()
     local width = cfg.width
     if not width or width <= 0 then
         -- Try to get Essential Cooldowns width
-        local essentialViewer = _G["EssentialCooldownViewer"]
+        local essentialViewer = _G.QUI_GetCDMViewerFrame("essential")
         if essentialViewer then
             local evs = GetViewerState(essentialViewer)
             width = evs and evs.iconWidth
@@ -1191,7 +1191,7 @@ function QUICore:UpdatePowerBar()
     -- Debug: log power bar width calculation during Edit Mode
     local isEditMode = Helpers.IsEditModeActive()
     if isEditMode and QUI and QUI.DebugPrint then
-        local essViewer = _G["EssentialCooldownViewer"]
+        local essViewer = _G.QUI_GetCDMViewerFrame("essential")
         local essLogW = essViewer and essViewer:GetWidth() or 0
         local essScale = essViewer and essViewer.GetScale and essViewer:GetScale() or 1
         local essL, essR = essViewer and essViewer:GetLeft(), essViewer and essViewer:GetRight()
@@ -1416,11 +1416,11 @@ function QUICore:UpdatePowerBarTicks(bar, resource, max)
     local isVertical = (orientation == "VERTICAL")
     if orientation == "AUTO" then
         if cfg.lockedToEssential then
-            local viewer = _G.EssentialCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("essential")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         elseif cfg.lockedToUtility then
-            local viewer = _G.UtilityCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("utility")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         end
@@ -1475,7 +1475,7 @@ _G.QUI_UpdateLockedPowerBar = function()
     local cfg = core.db.profile.powerBar
     if not cfg.enabled or not cfg.lockedToEssential then return end
 
-    local essentialViewer = _G.EssentialCooldownViewer
+    local essentialViewer = _G.QUI_GetCDMViewerFrame("essential")
     if not essentialViewer or not essentialViewer:IsShown() then return end
 
     local evs = GetViewerState(essentialViewer)
@@ -1583,7 +1583,7 @@ _G.QUI_UpdateLockedPowerBarToUtility = function()
     local cfg = core.db.profile.powerBar
     if not cfg.enabled or not cfg.lockedToUtility then return end
 
-    local utilityViewer = _G.UtilityCooldownViewer
+    local utilityViewer = _G.QUI_GetCDMViewerFrame("utility")
     if not utilityViewer or not utilityViewer:IsShown() then return end
 
     local uvs = GetViewerState(utilityViewer)
@@ -1686,7 +1686,7 @@ _G.QUI_UpdateLockedSecondaryPowerBar = function()
     local cfg = core.db.profile.secondaryPowerBar
     if not cfg.enabled or not cfg.lockedToEssential then return end
 
-    local essentialViewer = _G.EssentialCooldownViewer
+    local essentialViewer = _G.QUI_GetCDMViewerFrame("essential")
     if not essentialViewer or not essentialViewer:IsShown() then return end
 
     local evs = GetViewerState(essentialViewer)
@@ -1788,7 +1788,7 @@ _G.QUI_UpdateLockedSecondaryPowerBarToUtility = function()
     local cfg = core.db.profile.secondaryPowerBar
     if not cfg.enabled or not cfg.lockedToUtility then return end
 
-    local utilityViewer = _G.UtilityCooldownViewer
+    local utilityViewer = _G.QUI_GetCDMViewerFrame("utility")
     if not utilityViewer or not utilityViewer:IsShown() then return end
 
     local uvs = GetViewerState(utilityViewer)
@@ -1901,7 +1901,7 @@ function QUICore:GetSecondaryPowerBar()
     -- Use the safe chain: viewer state → saved width from DB → fallback.
     local width = cfg.width or 0
     if width <= 0 then
-        local essentialViewer = _G["EssentialCooldownViewer"]
+        local essentialViewer = _G.QUI_GetCDMViewerFrame("essential")
         if essentialViewer then
             local evs = GetViewerState(essentialViewer)
             width = (evs and evs.iconWidth) or 0
@@ -2261,22 +2261,22 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
     local isVertical = (orientation == "VERTICAL")
     if orientation == "AUTO" then
         if cfg.lockedToEssential then
-            local viewer = _G.EssentialCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("essential")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         elseif cfg.lockedToUtility then
-            local viewer = _G.UtilityCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("utility")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         elseif cfg.lockedToPrimary then
             local primaryCfg = self.db.profile.powerBar
             if primaryCfg then
                 if primaryCfg.lockedToEssential then
-                    local viewer = _G.EssentialCooldownViewer
+                    local viewer = _G.QUI_GetCDMViewerFrame("essential")
                     local vs = GetViewerState(viewer)
                     isVertical = (vs and vs.layoutDir) == "VERTICAL"
                 elseif primaryCfg.lockedToUtility then
-                    local viewer = _G.UtilityCooldownViewer
+                    local viewer = _G.QUI_GetCDMViewerFrame("utility")
                     local vs = GetViewerState(viewer)
                     isVertical = (vs and vs.layoutDir) == "VERTICAL"
                 end
@@ -2393,11 +2393,11 @@ function QUICore:UpdateSecondaryPowerBar()
     -- For AUTO, check if locked to a CDM viewer and inherit its orientation
     if orientation == "AUTO" then
         if cfg.lockedToEssential then
-            local viewer = _G.EssentialCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("essential")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         elseif cfg.lockedToUtility then
-            local viewer = _G.UtilityCooldownViewer
+            local viewer = _G.QUI_GetCDMViewerFrame("utility")
             local vs = GetViewerState(viewer)
             isVertical = (vs and vs.layoutDir) == "VERTICAL"
         elseif cfg.lockedToPrimary then
@@ -2405,11 +2405,11 @@ function QUICore:UpdateSecondaryPowerBar()
             local primaryCfg = self.db.profile.powerBar
             if primaryCfg then
                 if primaryCfg.lockedToEssential then
-                    local viewer = _G.EssentialCooldownViewer
+                    local viewer = _G.QUI_GetCDMViewerFrame("essential")
                     local vs = GetViewerState(viewer)
                     isVertical = (vs and vs.layoutDir) == "VERTICAL"
                 elseif primaryCfg.lockedToUtility then
-                    local viewer = _G.UtilityCooldownViewer
+                    local viewer = _G.QUI_GetCDMViewerFrame("utility")
                     local vs = GetViewerState(viewer)
                     isVertical = (vs and vs.layoutDir) == "VERTICAL"
                 end
@@ -2615,8 +2615,7 @@ function QUICore:UpdateSecondaryPowerBar()
     -- =====================================================
     if not lockedToPrimaryHandled then
         -- Get anchor frame (needed for autoAttach positioning)
-        local anchorName = cfg.autoAttach and "EssentialCooldownViewer" or cfg.attachTo
-        local anchor = _G[anchorName]
+        local anchor = cfg.autoAttach and _G.QUI_GetCDMViewerFrame("essential") or _G[cfg.attachTo]
 
         -- In standalone mode, don't hide when anchor is hidden (bar is independent)
         -- Otherwise, hide if anchor doesn't exist or isn't shown.
@@ -2697,7 +2696,7 @@ function QUICore:UpdateSecondaryPowerBar()
             width = cfg.width
             if not width or width <= 0 then
                 -- Try to get Essential Cooldowns width
-                local essentialViewer = _G["EssentialCooldownViewer"]
+                local essentialViewer = _G.QUI_GetCDMViewerFrame("essential")
                 if essentialViewer then
                     local evs = GetViewerState(essentialViewer)
                     width = evs and evs.iconWidth

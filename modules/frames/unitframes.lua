@@ -3592,9 +3592,9 @@ _G.QUI_Castbars = QUI_UF.castbars
 -- Helper: Get anchor frame by type
 local function GetAnchorFrame(anchorType)
     if anchorType == "essential" then
-        return _G["EssentialCooldownViewer"]
+        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
     elseif anchorType == "utility" then
-        return _G["UtilityCooldownViewer"]
+        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
     elseif anchorType == "primary" then
         local core = GetCore()
         return core and core.powerBar

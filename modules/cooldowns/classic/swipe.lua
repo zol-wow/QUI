@@ -526,10 +526,13 @@ StartPulseTicker = function()
         QueueApplyAllSettings(0)
     end)
 end
--- Start ticker immediately if viewers are already visible.
-EnsureViewerVisibilityHooks()
-if IsAnyViewerVisible() then
-    StartPulseTicker()
+-- Start ticker immediately if viewers are already visible (classic engine only).
+-- Gate on provider: if owned engine is selected, skip Blizzard viewer hooks.
+if not (ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "classic") then
+    EnsureViewerVisibilityHooks()
+    if IsAnyViewerVisible() then
+        StartPulseTicker()
+    end
 end
 
 -- Initialize on addon load
@@ -538,6 +541,9 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg)
+    -- Only run when classic CDM engine is active
+    if ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "classic" then return end
+
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
         EnsureViewerVisibilityHooks()
         if IsAnyViewerVisible() then

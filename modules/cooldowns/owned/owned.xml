@@ -1,7 +1,8 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
-    <Script file="cdm_provider.lua"/>
-    <Script file="hud_visibility.lua"/>
-    <Include file="classic\classic.xml"/>
-    <Include file="owned\owned.xml"/>
+    <Script file="cdm_spelldata.lua"/>
+    <Script file="cdm_icons.lua"/>
+    <Script file="cdm_containers.lua"/>
+    <Script file="glows.lua"/>
+    <Script file="swipe.lua"/>
 </Ui>
