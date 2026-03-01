@@ -512,7 +512,17 @@ local function CreateIcon(parent, spellEntry)
     icon:SetScript("OnEnter", function(self)
         local entry = self._spellEntry
         if not entry then return end
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
+        if tooltipSettings and tooltipSettings.anchorToCursor then
+            local anchorTooltip = _G.QUI_AnchorTooltipToCursor
+            if anchorTooltip then
+                anchorTooltip(GameTooltip, self, tooltipSettings)
+            else
+                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            end
+        else
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        end
         local sid = entry.overrideSpellID or entry.spellID or (entry.type and entry.id)
         if sid then
             if entry.type == "item" or entry.type == "trinket" then
