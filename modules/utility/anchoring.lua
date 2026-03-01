@@ -1359,6 +1359,9 @@ local function GetCDMAnchorProxy(parentKey)
     else
         proxy = UIKit.CreateAnchorProxy(sourceFrame, {
             deferCreation = true,
+            -- CDM + HUD proxy frames are addon-owned and safe to resize/anchor in combat.
+            -- Keeping them live avoids stale bounds when CDM reflows during combat.
+            combatFreeze = false,
             sizeResolver = sourceInfo.cdm and CDMSizeResolver or nil,
             anchorResolver = sourceInfo.cdm and CDMAnchorResolver or nil,
         })
@@ -1530,8 +1533,44 @@ _G.QUI_GetCDMAnchorProxyFrame = GetCDMAnchorProxy
 
 -- Re-sync frozen proxy anchors after combat ends.
 local cdmProxyCombatFrame = CreateFrame("Frame")
+cdmProxyCombatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdmProxyCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-cdmProxyCombatFrame:SetScript("OnEvent", function()
+local function ReanchorCombatCastbarOverrides()
+    local anchoringDB = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.frameAnchoring
+    if not anchoringDB or not QUI_Anchoring then return end
+
+    local castbarKeys = { "playerCastbar", "targetCastbar", "focusCastbar" }
+    for _, key in ipairs(castbarKeys) do
+        local settings = anchoringDB[key]
+        if type(settings) == "table" and settings.enabled
+            and (settings.parent == "cdmEssential" or settings.parent == "cdmUtility" or settings.parent == "buffIcon" or settings.parent == "buffBar")
+        then
+            QUI_Anchoring:ApplyFrameAnchor(key, settings)
+        end
+    end
+end
+
+cdmProxyCombatFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        -- Combat start: force a live proxy sync and re-apply castbar overrides
+        -- anchored to CDM, then repeat briefly as CDM state settles.
+        UpdateCDMAnchorProxies()
+        ReanchorCombatCastbarOverrides()
+        C_Timer.After(0.05, function()
+            if InCombatLockdown() then
+                UpdateCDMAnchorProxies()
+                ReanchorCombatCastbarOverrides()
+            end
+        end)
+        C_Timer.After(0.20, function()
+            if InCombatLockdown() then
+                UpdateCDMAnchorProxies()
+                ReanchorCombatCastbarOverrides()
+            end
+        end)
+        return
+    end
+
     local needsRefresh = false
     for key, pending in pairs(cdmAnchorProxyPendingAfterCombat) do
         if pending then
@@ -1607,6 +1646,11 @@ local CDM_LOGICAL_SIZE_KEYS = {
     cdmUtility = true,
     buffIcon = true,
     buffBar = true,
+}
+local CASTBAR_ANCHOR_KEYS = {
+    playerCastbar = true,
+    targetCastbar = true,
+    focusCastbar = true,
 }
 
 local function GetPointOffsetForRect(point, width, height)
@@ -1854,7 +1898,10 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     -- Defer in combat for most frames.
     -- CDM viewers are allowed to attempt re-anchoring in combat so morph/layout
     -- churn can be corrected immediately instead of waiting for combat end.
-    local allowCombatApply = (key == "cdmEssential" or key == "cdmUtility" or key == "buffIcon" or key == "buffBar")
+    local allowCombatApply = (
+        key == "cdmEssential" or key == "cdmUtility" or key == "buffIcon" or key == "buffBar"
+        or key == "playerCastbar" or key == "targetCastbar" or key == "focusCastbar"
+    )
     if InCombatLockdown() and allowCombatApply then
         -- CDM viewers are normally safe to reposition in combat, but if the
         -- resolved frame is actually protected (e.g. Blizzard's secure CDM
@@ -1904,6 +1951,13 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
+    if CASTBAR_ANCHOR_KEYS[key] then
+        -- Castbars should preserve the explicit point relation (e.g. TOP->BOTTOM)
+        -- so they track parent edge movement automatically in combat.
+        -- Center-converted size-stable mode requires re-apply on parent size changes
+        -- and can drift when combat-safe reapply paths are constrained.
+        useSizeStable = false
+    end
 
     -- Boss frames: single setting applied to all with stacking Y offset
     if key == "bossFrames" and type(resolved) == "table" and not resolved.GetObjectType then
@@ -2282,7 +2336,6 @@ end
 -- Updates both legacy anchored frames and frame anchoring overrides.
 _G.QUI_UpdateFramesAnchoredTo = function(targetKeyOrFrame)
     if not targetKeyOrFrame then return end
-    if InCombatLockdown() then return end
 
     -- Resolve frame object to key via reverse lookup
     local targetKey = targetKeyOrFrame
@@ -2297,6 +2350,14 @@ _G.QUI_UpdateFramesAnchoredTo = function(targetKeyOrFrame)
             end
         end
         if not targetKey then return end
+    end
+
+    -- In combat, only process CDM-driven targets. ApplyFrameAnchor keeps its own
+    -- safety checks and will defer unsafe frame types automatically.
+    if InCombatLockdown() then
+        if targetKey ~= "cdmEssential" and targetKey ~= "cdmUtility" and targetKey ~= "buffIcon" and targetKey ~= "buffBar" then
+            return
+        end
     end
 
     local anchoringDB = QUICore and QUICore.db and QUICore.db.profile

@@ -111,6 +111,8 @@ end
 local function GetUtilityAnchorProxy()
     if not UtilityAnchorProxy then
         UtilityAnchorProxy = UIKit.CreateAnchorProxy(nil, {
+            -- Utility↔Essential spacing must track live Essential bounds in combat.
+            combatFreeze = false,
             mirrorVisibility = false,
             sizeResolver = function(source)
                 local vs = viewerState[source]
