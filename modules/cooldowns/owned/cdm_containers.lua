@@ -1037,6 +1037,14 @@ local function ForceBuffIconsVisible()
 end
 
 _G.QUI_OnEditModeEnterCDM = function()
+    -- Force a buff scan + rebuild BEFORE setting _editModeActive,
+    -- because LayoutContainer bails out when _editModeActive is true.
+    -- This ensures buff icons exist for the user to see during edit mode.
+    if ns.CDMSpellData and ns.CDMSpellData.ForceScan then
+        ns.CDMSpellData:ForceScan()
+    end
+    LayoutContainer("buff")
+
     _editModeActive = true
 
     -- Hide Blizzard .Selection frames so only QUI overlays show.
@@ -1340,55 +1348,6 @@ if ns.CDMProvider then
 end
 
 ---------------------------------------------------------------------------
--- DEBUG: /cdmbuffdebug — print buff icon pool state
----------------------------------------------------------------------------
-SLASH_CDMBUFFDEBUG1 = "/cdmbuffdebug"
-SlashCmdList["CDMBUFFDEBUG"] = function()
-    local P = "|cff00ccff[CDM-BuffDebug]|r"
-    local pool = ns.CDMIcons and ns.CDMIcons:GetIconPool("buff") or {}
-    local container = containers.buff
-    local editMode = Helpers.IsEditModeActive()
-
-    print(P, "editModeActive:", tostring(_editModeActive),
-        "IsEditModeActive:", tostring(editMode))
-    print(P, "buff container:", tostring(container and container:GetName() or "nil"),
-        "shown:", tostring(container and container:IsShown()),
-        "alpha:", tostring(container and container:GetAlpha()),
-        "size:", container and string.format("%.0fx%.0f", container:GetWidth(), container:GetHeight()) or "n/a")
-    print(P, "buff icon pool size:", #pool)
-
-    for i, icon in ipairs(pool) do
-        local entry = icon._spellEntry
-        local blizzChild = entry and entry._blizzChild
-        print(P, string.format("  [%d] spell:%s shown:%s alpha:%.2f blizzChild:%s blizzAlpha:%s blizzShown:%s",
-            i,
-            tostring(entry and entry.spellID or "nil"),
-            tostring(icon:IsShown()),
-            icon:GetAlpha(),
-            tostring(blizzChild ~= nil),
-            tostring(blizzChild and blizzChild:GetAlpha() or "nil"),
-            tostring(blizzChild and blizzChild:IsShown() or "nil")))
-    end
-
-    -- Also check Blizzard viewer state
-    local bv = _G["BuffIconCooldownViewer"]
-    if bv then
-        local cnt = bv.viewerFrame or bv
-        local nChildren = cnt:GetNumChildren()
-        local shownCount = 0
-        for j = 1, nChildren do
-            local child = select(j, cnt:GetChildren())
-            if child and child ~= bv.Selection and child:IsShown() then
-                shownCount = shownCount + 1
-            end
-        end
-        print(P, "Blizzard BuffIconCooldownViewer: alpha:", bv:GetAlpha(),
-            "children:", nChildren, "shown:", shownCount)
-    else
-        print(P, "Blizzard BuffIconCooldownViewer: NOT FOUND")
-    end
-end
-
 ---------------------------------------------------------------------------
 -- NAMESPACE EXPORT
 ---------------------------------------------------------------------------

@@ -1365,15 +1365,22 @@ function CDMIcons:UpdateAllCooldowns()
             local entry = icon._spellEntry
             if entry and entry._blizzChild then
                 if entry.viewerType == "buff" then
-                    -- Buff icons: mirror Blizzard child alpha outside edit mode.
+                    -- Buff icons: mirror Blizzard child visibility outside edit mode.
                     -- During edit mode, force full visibility so user can see all icons.
                     if editMode then
                         icon:SetAlpha(1)
+                        icon:Show()
                     else
-                        local blizzAlpha = entry._blizzChild:GetAlpha()
-                        if not IsSecretValue(blizzAlpha) then
+                        local blizzShown = entry._blizzChild:IsShown()
+                        if blizzShown then
+                            local blizzAlpha = entry._blizzChild:GetAlpha()
                             local rowOpacity = icon._rowOpacity or 1
-                            icon:SetAlpha(blizzAlpha * rowOpacity)
+                            if not IsSecretValue(blizzAlpha) then
+                                icon:SetAlpha(blizzAlpha * rowOpacity)
+                            end
+                            if not icon:IsShown() then icon:Show() end
+                        else
+                            if icon:IsShown() then icon:Hide() end
                         end
                     end
                 else

@@ -197,11 +197,13 @@ local function ScanCooldownViewer(viewerType)
         for i = 1, numChildren do
             local child = select(i, scanContainer:GetChildren())
             if child and child ~= sel and not child._isCustomCDMIcon and IsIconFrame(child) then
-                local shown = child:IsShown()
                 local hasTex = HasValidTexture(child)
                 local hasCDInfo = (child.cooldownInfo ~= nil)
 
-                if shown and hasTex and (hasTex or hasCDInfo) then
+                -- Harvest ALL children regardless of shown state.
+                -- QUI mirrors Blizzard child alpha for visibility; pool size
+                -- and container dimensions are always based on all icons.
+                if hasTex or hasCDInfo then
                     local spellID, overrideSpellID, name, isAura
                     local layoutIndex = child.layoutIndex or 9999
 
