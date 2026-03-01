@@ -612,8 +612,8 @@ end
 local function CreateViewerNudgeButton(parent, direction, viewerName)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
-    -- Use HIGH strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("HIGH")
+    -- Use DIALOG strata so nudge buttons appear above overlays (HIGH)
+    btn:SetFrameStrata("DIALOG")
     btn:SetFrameLevel(100)
 
     -- Background - dark grey at 70% for visibility over any game content
@@ -684,8 +684,8 @@ local minimapOverlay = nil
 local function CreateMinimapNudgeButton(parent, direction)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
-    -- Use HIGH strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("HIGH")
+    -- Use DIALOG strata so nudge buttons appear above overlays (HIGH)
+    btn:SetFrameStrata("DIALOG")
     btn:SetFrameLevel(100)
 
     -- Background - dark grey at 70% for visibility
