@@ -472,23 +472,40 @@ local function RegisterEditModeCallbacks()
 
     if QUICore.RegisterEditModeEnter then
         QUICore:RegisterEditModeEnter(function()
-            -- Show Blizzard viewers so Edit Mode can interact with them.
-            -- Position them at the owned containers' current position so
-            -- the user sees them where QUI had them.
+            -- Position Blizzard viewers at QUI container positions.
+            -- Viewers stay at alpha 0 — only .Selection matters for
+            -- click interaction (context menu, drag).  Enable mouse
+            -- so .Selection can receive clicks during Edit Mode.
             if _G.QUI_OnEditModeEnterCDM then
                 _G.QUI_OnEditModeEnterCDM()
             end
-            ShowBlizzardViewers()
+            for _, viewerName in pairs(VIEWER_NAMES) do
+                local viewer = _G[viewerName]
+                if viewer then
+                    viewer:EnableMouse(true)
+                    if viewer.SetMouseClickEnabled then
+                        viewer:SetMouseClickEnabled(true)
+                    end
+                end
+            end
         end)
     end
 
     if QUICore.RegisterEditModeExit then
         QUICore:RegisterEditModeExit(function()
-            -- Read new position from Blizzard viewers, hide them again,
-            -- show owned containers at the new position.
-            HideBlizzardViewers()
+            -- Read positions from Blizzard viewers (user may have dragged),
+            -- then re-disable mouse on viewers (owned containers handle display).
             if _G.QUI_OnEditModeExitCDM then
                 _G.QUI_OnEditModeExitCDM()
+            end
+            for _, viewerName in pairs(VIEWER_NAMES) do
+                local viewer = _G[viewerName]
+                if viewer then
+                    viewer:EnableMouse(false)
+                    if viewer.SetMouseClickEnabled then
+                        viewer:SetMouseClickEnabled(false)
+                    end
+                end
             end
             -- Rescan after Edit Mode (Blizzard may have changed settings)
             C_Timer.After(0.3, ScanAll)

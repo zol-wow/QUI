@@ -851,13 +851,36 @@ function QUICore:EnablePowerBarEditMode()
             CreatePowerBarEditOverlay(bar, barKey)
             bar.editOverlay:Show()
 
+            -- Check if this bar is locked by the anchoring system
+            local isLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(bar)
+
             -- Update info text with current position
             if bar.editOverlay.infoText then
                 local label = (barKey == "primary") and "Primary" or "Secondary"
                 local x = cfg.offsetX or 0
                 local y = cfg.offsetY or 0
-                bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
+                if isLocked then
+                    bar.editOverlay.infoText:SetText(string.format("%s  (Locked)", label))
+                else
+                    bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
+                end
             end
+
+            if isLocked then
+                -- Locked: grey overlay, no drag
+                bar.editOverlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
+                bar.editOverlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+                if bar.editOverlay.infoText then
+                    bar.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                    bar.editOverlay.infoText:Show()
+                end
+                bar:SetMovable(false)
+                bar:EnableMouse(false)
+                bar:RegisterForDrag()
+                bar:SetScript("OnMouseDown", nil)
+                bar:SetScript("OnDragStart", nil)
+                bar:SetScript("OnDragStop", nil)
+            else
 
             -- Enable dragging
             bar:SetMovable(true)
@@ -964,6 +987,7 @@ function QUICore:EnablePowerBarEditMode()
                     QUICore:NudgeSelectedElement(deltaX, deltaY)
                 end
             end)
+            end -- else (free)
         end
     end
 end

@@ -462,7 +462,8 @@ local _selectionHooked = {}  -- track which .Selection frames we've hooked for r
 local _blockedFrames = {}        -- frame -> true
 local _savedDragScripts = {}     -- child frame -> {start, stop} original scripts
 
--- Replace OnDragStart + OnDragStop with no-ops (saves originals for restore)
+-- Replace OnDragStart + OnDragStop with no-ops and unregister drag
+-- so the event never fires (works even on secure frames).
 local function DisableChildDrag(child)
     if not child then return end
     if _savedDragScripts[child] ~= nil then return end  -- already disabled
@@ -472,9 +473,10 @@ local function DisableChildDrag(child)
     }
     child:SetScript("OnDragStart", function() end)  -- no-op
     child:SetScript("OnDragStop", function() end)    -- no-op
+    pcall(function() child:RegisterForDrag() end)    -- unregister drag
 end
 
--- Restore original OnDragStart + OnDragStop on a child frame
+-- Restore original OnDragStart + OnDragStop and re-register drag
 local function RestoreChildDrag(child)
     if not child then return end
     local saved = _savedDragScripts[child]
@@ -482,6 +484,7 @@ local function RestoreChildDrag(child)
     _savedDragScripts[child] = nil
     child:SetScript("OnDragStart", saved.start or nil)
     child:SetScript("OnDragStop", saved.stop or nil)
+    pcall(function() child:RegisterForDrag("LeftButton") end)  -- re-register drag
 end
 
 local function BlockFrameMovement(frame)
@@ -540,6 +543,15 @@ local function UnblockAllFrameMovement()
         end
     end
     wipe(_blockedFrames)
+    -- Restore any remaining drag scripts that weren't caught above
+    -- (e.g., reparented .Selection frames where container.Selection was
+    -- cleared before unblock ran).
+    for child, saved in pairs(_savedDragScripts) do
+        pcall(function()
+            child:SetScript("OnDragStart", saved.start or nil)
+            child:SetScript("OnDragStop", saved.stop or nil)
+        end)
+    end
     wipe(_savedDragScripts)
 end
 
@@ -1055,14 +1067,38 @@ function QUICore:ShowViewerOverlays()
                     overlay.label:SetTextColor(0.5, 0.5, 0.5, 0.8)
                     overlay.label:SetText((overlay.displayName or viewerName) .. "  (Locked)")
                 end
-                overlay:EnableMouse(false)
-                overlay:SetScript("OnMouseDown", nil)
-                overlay:SetScript("OnMouseUp", nil)
-                -- Block drag by overriding OnDragStart on selection children
                 if viewer then
                     BlockFrameMovement(viewer)
-                    -- Hide Blizzard's blue .Selection indicator
+                    -- Disable mouse on .Selection to suppress drag (secure
+                    -- frames ignore SetScript/RegisterForDrag overrides).
+                    if viewer.Selection then
+                        viewer.Selection:EnableMouse(false)
+                    end
                     HideSelectionIndicator(viewer)
+                end
+                -- .Selection mouse is off → overlay handles clicks and
+                -- forwards to the Blizzard viewer's SelectSystem for the
+                -- Edit Mode context menu (same pattern as forceShown frames).
+                local blizzViewer = _G[viewerName]
+                if blizzViewer and blizzViewer.SelectSystem then
+                    overlay:EnableMouse(true)
+                    overlay:SetScript("OnMouseDown", function(self, button)
+                        pcall(function()
+                            if EditModeManagerFrame and EditModeManagerFrame.ClearSelectedSystem then
+                                EditModeManagerFrame:ClearSelectedSystem()
+                            end
+                            blizzViewer.isSelected = false
+                            blizzViewer:SelectSystem()
+                            if blizzViewer.Selection then
+                                blizzViewer.Selection:SetAlpha(0)
+                            end
+                        end)
+                    end)
+                    overlay:SetScript("OnMouseUp", nil)
+                else
+                    overlay:EnableMouse(false)
+                    overlay:SetScript("OnMouseDown", nil)
+                    overlay:SetScript("OnMouseUp", nil)
                 end
             else
                 -- Free: show blue QUI overlay as visual-only indicator.
@@ -1148,6 +1184,11 @@ function QUICore:ShowViewerOverlays()
                 -- Ensure movement is unblocked for free frames
                 if viewer then
                     UnblockFrameMovement(viewer)
+                    -- Re-enable mouse on .Selection for free frames
+                    -- (may have been disabled when previously locked).
+                    if viewer.Selection then
+                        viewer.Selection:EnableMouse(true)
+                    end
                     -- Hide Blizzard's .Selection visually (alpha 0) but keep
                     -- it clickable for Edit Mode menu and drag-to-move.
                     HideSelectionIndicator(viewer)

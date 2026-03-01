@@ -57,11 +57,10 @@ local recyclePool = {}
 local iconCounter = 0
 local updateTicker = nil
 
--- TAINT SAFETY: Blizzard CD adoption state tracked in a weak-keyed table
--- instead of writing _quiIcon/_quiBypass/_quiHooked directly to Blizzard's
--- Cooldown widget. Direct writes taint the frame, causing module-level
--- CooldownViewer state (wasOnGCDLookup, chargeGainedAlertTimes) to become
--- forbidden tables.
+-- TAINT SAFETY: Blizzard CD mirror state tracked in a weak-keyed table.
+-- Maps Blizzard CooldownFrame → { icon = quiIcon, hooked = bool } so mirror
+-- hooks can forward SetCooldown/SetCooldownFromDurationObject calls to the
+-- addon-owned CooldownFrame without writing to the Blizzard frame.
 local blizzCDState = setmetatable({}, { __mode = "k" })
 
 -- TAINT SAFETY: Blizzard Icon texture hook state tracked in a weak-keyed table.
@@ -230,36 +229,12 @@ end
 CDMIcons.GetBestSpellCooldown = GetBestSpellCooldown
 
 ---------------------------------------------------------------------------
--- BLIZZARD COOLDOWN ADOPTION
--- Reparent Blizzard viewer children's Cooldown frames onto QUI icons.
--- This gives us a secure CooldownFrame that can render secret values
--- natively (charge recharge, aura durations, etc.), while our icon
--- controls the position and size.
---
--- For charge+aura spells: aura duration shows while active. When the
--- aura expires, the ticker forces charge recharge display.
--- _auraActive flag is set by the SetCooldownFromDurationObject hook
--- using the isAura parameter (a regular boolean from Blizzard's CDM
--- Lua code, NOT a restricted API secret value).
+-- SWIPE STYLING
 ---------------------------------------------------------------------------
 
--- Force charge recharge display on an adopted CD.
--- Returns true if charges were applied.
-local function ForceChargeRecharge(cd, entry)
-    if not entry or not entry.hasCharges then return false end
-    local sid = entry.overrideSpellID or entry.spellID or entry.id
-    if not sid or not C_Spell.GetSpellCharges then return false end
-    local chargeInfo = C_Spell.GetSpellCharges(sid)
-    if not chargeInfo then return false end
-    local state = blizzCDState[cd]
-    if state then state.bypass = true end
-    pcall(cd.SetCooldown, cd, chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration)
-    if state then state.bypass = false end
-    return true
-end
-
--- Re-apply QUI swipe styling after Blizzard resets texture/color.
+-- Re-apply QUI swipe styling to the addon-owned CooldownFrame.
 local function ReapplySwipeStyle(cd, icon)
+    if not cd then return end
     cd:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
     local CooldownSwipe = QUI.CooldownSwipe
     if CooldownSwipe and CooldownSwipe.ApplyToIcon then
@@ -267,53 +242,44 @@ local function ReapplySwipeStyle(cd, icon)
     end
 end
 
-local function AdoptBlizzCooldown(icon, blizzChild)
+---------------------------------------------------------------------------
+-- BLIZZARD COOLDOWN MIRRORING
+-- Instead of reparenting Blizzard's CooldownFrame onto our icon (which
+-- taints it and causes isActive / wasOnGCDLookup errors in
+-- Blizzard_CooldownViewer), we leave the Blizzard CooldownFrame
+-- untouched and mirror its updates to our addon-owned CooldownFrame
+-- via hooksecurefunc.  The hooks receive the same parameters Blizzard
+-- passes (including secret values during combat) and forward them to
+-- the addon CD's C-side SetCooldown/SetCooldownFromDurationObject,
+-- which handles secret values natively.
+---------------------------------------------------------------------------
+local function MirrorBlizzCooldown(icon, blizzChild)
     if not blizzChild or not blizzChild.Cooldown then return end
     local blizzCD = blizzChild.Cooldown
 
-    -- Store our addon-created CD so we can restore on release
-    icon._addonCooldown = icon.Cooldown
-    icon._addonCooldown:Hide()
-
-    -- TAINT SAFETY: Track CD→icon association in a weak-keyed table instead
-    -- of writing directly to Blizzard's Cooldown widget.
-    -- Set bypass BEFORE reparenting so post-hooks (installed on re-adoption)
-    -- don't fight the new anchor target.
+    -- TAINT SAFETY: Track CD→icon association in a weak-keyed table.
     local state = blizzCDState[blizzCD]
     if not state then
         state = {}
         blizzCDState[blizzCD] = state
     end
-    state.bypass = true
+    state.icon = icon
 
-    -- Reparent Blizzard's secure CooldownFrame onto our icon.
-    -- The viewer is alpha=0 (not hidden), so Blizzard's CDM system
-    -- continues updating this frame. It renders at our icon's position.
-    blizzCD:SetParent(icon)
-    blizzCD:ClearAllPoints()
-    blizzCD:SetAllPoints(icon)
-    blizzCD:SetFrameLevel(icon:GetFrameLevel() + 1)
-    blizzCD:Show()
+    -- The addon-created CooldownFrame stays as icon.Cooldown (the display).
+    -- Style it to match QUI defaults.
+    local addonCD = icon.Cooldown
+    addonCD:SetDrawSwipe(true)
+    addonCD:SetHideCountdownNumbers(false)
+    addonCD:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+    addonCD:SetSwipeColor(0, 0, 0, 0.8)
+    addonCD:Show()
 
-    -- Style it to match QUI defaults
-    blizzCD:SetDrawSwipe(true)
-    blizzCD:SetHideCountdownNumbers(false)
-    blizzCD:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
-    blizzCD:SetSwipeColor(0, 0, 0, 0.8)
-
-    -- Replace icon.Cooldown so all existing code operates on the secure frame
-    icon.Cooldown = blizzCD
+    -- Track the Blizzard CD reference for cleanup
     icon._blizzCooldown = blizzCD
 
-    -- Update icon reference and clear bypass
-    state.icon = icon
-    state.bypass = false
-
-    -- Install hooks (once per CD, survives re-adoption).
-    -- SetCooldownFromDurationObject: tracks _auraActive via the isAura param.
-    --   When isAura=true, the aura display stands (ticker skips).
-    --   When isAura=false (aura expired), forces charge recharge immediately.
-    -- SetCooldown: only re-applies QUI styling (doesn't touch aura state).
+    -- Install mirror hooks (once per Blizzard CD, survives re-assignment).
+    -- These forward Blizzard's cooldown updates to the addon-owned
+    -- CooldownFrame WITHOUT writing to the Blizzard frame at all.
     if not state.hooked then
         state.hooked = true
 
@@ -322,17 +288,21 @@ local function AdoptBlizzCooldown(icon, blizzChild)
                 local s = blizzCDState[self]
                 if not s or s.bypass then return end
                 local targetIcon = s.icon
-                if not targetIcon or not targetIcon._spellEntry then return end
-                local entry = targetIcon._spellEntry
+                if not targetIcon then return end
+
+                -- Mirror to addon-owned CD
+                local cd = targetIcon.Cooldown
+                if cd and cd.SetCooldownFromDurationObject then
+                    pcall(cd.SetCooldownFromDurationObject, cd, durationObj, isAura)
+                end
 
                 -- Track aura state for swipe color classification
                 -- (swipe.lua uses _auraActive to pick overlay vs swipe color).
-                -- Let Blizzard's CooldownFrame handle the actual display.
                 -- isAura may be secret in combat; only update when safe
                 if not IsSecretValue(isAura) then
                     targetIcon._auraActive = isAura or false
                 end
-                ReapplySwipeStyle(self, targetIcon)
+                ReapplySwipeStyle(cd, targetIcon)
             end)
         end
 
@@ -340,7 +310,13 @@ local function AdoptBlizzCooldown(icon, blizzChild)
             local s = blizzCDState[self]
             if not s or s.bypass then return end
             local targetIcon = s.icon
-            if not targetIcon or not targetIcon._spellEntry then return end
+            if not targetIcon then return end
+
+            -- Mirror to addon-owned CD
+            local cd = targetIcon.Cooldown
+            if cd then
+                pcall(cd.SetCooldown, cd, start, duration)
+            end
 
             -- Capture cooldown values from Blizzard's native update so
             -- the desaturation ticker uses hook-driven data instead of
@@ -354,74 +330,23 @@ local function AdoptBlizzCooldown(icon, blizzChild)
                 targetIcon._lastDuration = 0
             end
 
-            ReapplySwipeStyle(self, targetIcon)
+            ReapplySwipeStyle(cd, targetIcon)
         end)
 
-        -- Prevent Blizzard from re-anchoring the adopted CooldownFrame back
-        -- to its original parent during combat layout updates.
-        -- If Blizzard calls SetAllPoints(blizzChild) or SetPoint to a non-icon
-        -- frame, immediately re-anchor to our addon icon.
-        hooksecurefunc(blizzCD, "SetAllPoints", function(self, relativeTo)
-            local s = blizzCDState[self]
-            if not s or s.bypass then return end
-            local targetIcon = s.icon
-            if targetIcon and relativeTo ~= targetIcon then
-                s.bypass = true
-                self:ClearAllPoints()
-                self:SetAllPoints(targetIcon)
-                s.bypass = false
-            end
-        end)
-
-        hooksecurefunc(blizzCD, "SetPoint", function(self, _, relativeTo)
-            local s = blizzCDState[self]
-            if not s or s.bypass then return end
-            local targetIcon = s.icon
-            if targetIcon and relativeTo and relativeTo ~= targetIcon then
-                s.bypass = true
-                self:ClearAllPoints()
-                self:SetAllPoints(targetIcon)
-                s.bypass = false
-            end
-        end)
-
-        hooksecurefunc(blizzCD, "SetParent", function(self, newParent)
-            local s = blizzCDState[self]
-            if not s or s.bypass then return end
-            local targetIcon = s.icon
-            if targetIcon and newParent ~= targetIcon then
-                s.bypass = true
-                self:SetParent(targetIcon)
-                self:ClearAllPoints()
-                self:SetAllPoints(targetIcon)
-                self:SetFrameLevel(targetIcon:GetFrameLevel() + 1)
-                s.bypass = false
-            end
-        end)
+        -- No SetAllPoints/SetPoint/SetParent hooks: the Blizzard
+        -- CooldownFrame stays on its original parent frame.  Nothing
+        -- to guard against re-anchoring because we never moved it.
     end
 end
 
-local function RestoreAddonCooldown(icon)
+local function UnmirrorBlizzCooldown(icon)
     if not icon._blizzCooldown then return end
 
-    -- Disconnect hook references before returning (via weak table)
+    -- Disconnect hook references (hooks become no-ops via nil check)
     local state = blizzCDState[icon._blizzCooldown]
     if state then state.icon = nil end
 
-    -- Return Blizzard's CD to its original parent
-    local blizzChild = icon._spellEntry and icon._spellEntry._blizzChild
-    if blizzChild then
-        icon._blizzCooldown:SetParent(blizzChild)
-        icon._blizzCooldown:ClearAllPoints()
-        icon._blizzCooldown:SetAllPoints(blizzChild)
-    end
-
-    -- Restore our addon-created CD (was hidden during adoption)
-    if icon._addonCooldown then
-        icon.Cooldown = icon._addonCooldown
-        icon.Cooldown:Show()
-        icon._addonCooldown = nil
-    end
+    -- No reparenting to undo — the Blizzard CD was never moved.
     icon._blizzCooldown = nil
     icon._auraActive = nil
 end
@@ -508,7 +433,7 @@ local function HookBlizzVisibility(icon, blizzChild)
 
     -- Sync initial state (safe — BuildIcons runs out of combat only)
     if blizzChild:IsShown() then
-        icon:SetAlpha(icon:GetAlpha())  -- keep current alpha
+        icon:SetAlpha(1)
     else
         icon:SetAlpha(0)
     end
@@ -786,13 +711,13 @@ local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
     if entry._blizzChild then
-        -- Adopted Blizzard CooldownFrame: Blizzard drives the display
-        -- natively (aura duration, charge recharge, transitions).
+        -- Mirrored Blizzard CooldownFrame: Blizzard drives the hidden
+        -- viewer; our hooks forward updates to the addon-owned CD.
         -- We only track state for swipe color classification.
 
         -- Track duration + start for swipe classification and desaturation.
         -- Primary source during combat is the SetCooldown hook in
-        -- AdoptBlizzCooldown; this API query is a fallback that works
+        -- MirrorBlizzCooldown; this API query is a fallback that works
         -- outside combat (secrets → no update).
         local sid = entry.overrideSpellID or entry.spellID or entry.id
         if sid and not (entry.type == "item" or entry.type == "trinket") then
@@ -844,13 +769,7 @@ local function UpdateIconCooldown(icon)
                 local baseID = entry.spellID or entry.id
                 if baseID then
                     local overrideID = C_Spell.GetOverrideSpell(baseID)
-                    local texID = GetSpellTexture(overrideID or baseID)
-                    if texID and not IsSecretValue(texID) then
-                        local curTex = icon.Icon:GetTexture()
-                        if texID ~= curTex then
-                            icon.Icon:SetTexture(texID)
-                        end
-                    end
+                    icon.Icon:SetTexture(GetSpellTexture(overrideID or baseID))
                 end
             end
         end
@@ -1031,7 +950,7 @@ end
 function CDMIcons:ReleaseIcon(icon)
     if not icon then return end
     -- Disconnect hooks before clearing _spellEntry (needs blizzChild ref)
-    RestoreAddonCooldown(icon)
+    UnmirrorBlizzCooldown(icon)
     UnhookBlizzTexture(icon)
     UnhookBlizzVisibility(icon)
     icon:Hide()
@@ -1174,14 +1093,16 @@ function CDMIcons:BuildIcons(viewerType, container)
         end
     end
 
-    -- Adopt Blizzard viewer children's CooldownFrames and texture hooks onto
-    -- QUI icons.  Cooldown adoption gives us secure frames that render secret
-    -- values natively.  Texture hooks mirror spell-replacement icon changes
-    -- (e.g., Judgment → Hammer of Wrath) without polling restricted frames.
+    -- Mirror Blizzard viewer children's CooldownFrame updates and texture
+    -- hooks onto QUI icons.  Mirror hooks forward SetCooldown /
+    -- SetCooldownFromDurationObject calls (including secret values) to our
+    -- addon-owned CooldownFrames without touching the Blizzard frames.
+    -- Texture hooks mirror spell-replacement icon changes (e.g.,
+    -- Judgment → Hammer of Wrath) without polling restricted frames.
     for _, icon in ipairs(pool) do
         local entry = icon._spellEntry
         if entry and entry._blizzChild then
-            AdoptBlizzCooldown(icon, entry._blizzChild)
+            MirrorBlizzCooldown(icon, entry._blizzChild)
             HookBlizzTexture(icon, entry._blizzChild)
             -- Buff icons are always auras — initialize _auraActive so the
             -- swipe module classifies them correctly before the

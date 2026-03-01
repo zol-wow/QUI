@@ -773,82 +773,182 @@ _G.QUI_OnBuffLayoutReady = _G.QUI_OnBuffLayoutReady or function() end
 
 ---------------------------------------------------------------------------
 -- EDIT MODE INTEGRATION
--- On enter: release addon-owned buff icons (restoring CooldownFrames),
---           hide owned containers, show Blizzard viewers at containers' positions.
--- On exit: read new position from Blizzard viewers, restore owned
---          containers, rebuild addon-owned icons via RefreshAll.
+-- QUI containers stay visible during Edit Mode (overlays parent to them).
+-- Blizzard .Selection frames are reparented to the QUI containers so that
+-- click-through works identically to unit frames: the nudge overlay has
+-- EnableMouse(false), clicks reach .Selection (alpha 0 but clickable),
+-- and Blizzard's context menu / drag work natively.
+-- A drag-sync OnUpdate keeps containers following the Blizzard viewer
+-- during Edit Mode drag (since .Selection's drag moves the viewer via
+-- self.system, not the container).
 ---------------------------------------------------------------------------
-_G.QUI_OnEditModeEnterCDM = function()
-    -- Position Blizzard viewers at owned containers' positions
-    local function SyncBlizzardToContainer(viewerType, blizzViewerName)
-        local container = containers[viewerType]
-        local viewer = _G[blizzViewerName]
-        if not container or not viewer then return end
 
-        local cx, cy = container:GetCenter()
-        local sx, sy = UIParent:GetCenter()
-        if cx and cy and sx and sy then
-            local ox = cx - sx
-            local oy = cy - sy
-            pcall(function()
-                viewer:ClearAllPoints()
-                viewer:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
-            end)
-        end
+-- Track reparented .Selection frames for cleanup on Edit Mode exit
+local _reparentedSelections = {}
 
-        -- Size the Blizzard viewer to match the QUI container so .Selection
-        -- covers the full content area during Edit Mode.
-        local cw = container:GetWidth()
-        local ch = container:GetHeight()
-        if cw and ch and cw > 1 and ch > 1 then
-            pcall(function() viewer:SetSize(cw, ch) end)
+-- OnUpdate frame to sync QUI container positions to Blizzard viewers
+-- during Edit Mode (handles drag: viewer moves → container follows).
+-- Locked frames have drag unregistered via RegisterForDrag() so
+-- their viewers never move — the sync is effectively a no-op for them.
+local dragSyncFrame = CreateFrame("Frame")
+dragSyncFrame:Hide()
+dragSyncFrame:SetScript("OnUpdate", function()
+    for _, info in pairs(_reparentedSelections) do
+        local viewer = info.viewer
+        local container = info.container
+        if viewer and container then
+            local cx, cy = viewer:GetCenter()
+            local sx, sy = UIParent:GetCenter()
+            if cx and cy and sx and sy then
+                local ox, oy = cx - sx, cy - sy
+                local ccx, ccy = container:GetCenter()
+                if ccx and ccy then
+                    local curOx, curOy = ccx - sx, ccy - sy
+                    if math.abs(curOx - ox) > 0.5 or math.abs(curOy - oy) > 0.5 then
+                        container:ClearAllPoints()
+                        container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+                    end
+                end
+            end
         end
     end
+end)
 
+-- Sync Blizzard viewer position + size to match a QUI container
+local function SyncBlizzardToContainer(viewerType, blizzViewerName)
+    local container = containers[viewerType]
+    local viewer = _G[blizzViewerName]
+    if not container or not viewer then return end
+
+    local cx, cy = container:GetCenter()
+    local sx, sy = UIParent:GetCenter()
+    if cx and cy and sx and sy then
+        local ox = cx - sx
+        local oy = cy - sy
+        pcall(function()
+            viewer:ClearAllPoints()
+            viewer:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+        end)
+    end
+
+    -- Size the Blizzard viewer to match the QUI container so .Selection
+    -- covers the full content area during Edit Mode.
+    local cw = container:GetWidth()
+    local ch = container:GetHeight()
+    if cw and ch and cw > 1 and ch > 1 then
+        pcall(function() viewer:SetSize(cw, ch) end)
+    end
+end
+
+-- Sync QUI container position from the Blizzard viewer (after drag)
+local function SyncContainerToBlizzard(viewerType, blizzViewerName)
+    local container = containers[viewerType]
+    local viewer = _G[blizzViewerName]
+    if not container or not viewer then return end
+
+    local cx, cy = viewer:GetCenter()
+    local sx, sy = UIParent:GetCenter()
+    if cx and cy and sx and sy then
+        local ox = cx - sx
+        local oy = cy - sy
+        container:ClearAllPoints()
+        container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+    end
+end
+
+-- Reparent a Blizzard viewer's .Selection to the corresponding QUI container.
+-- This makes .Selection a child of the container (like unit frames), so clicks
+-- pass through the nudge overlay (EnableMouse false) to .Selection.
+local function ReparentSelectionToContainer(viewerType, blizzViewerName)
+    local container = containers[viewerType]
+    local viewer = _G[blizzViewerName]
+    if not container or not viewer or not viewer.Selection then return end
+
+    local sel = viewer.Selection
+
+    -- Reparent .Selection to the QUI container
+    sel:SetParent(container)
+    sel:ClearAllPoints()
+    sel:SetAllPoints(container)
+    sel:SetAlpha(0)
+    -- HIGH strata + level 50 puts .Selection above icon children (MEDIUM strata,
+    -- EnableMouse true for tooltips) but below nudge buttons (HIGH level 100).
+    -- EnableMouse(false) overlay doesn't block regardless of level.
+    sel:SetFrameStrata("HIGH")
+    sel:SetFrameLevel(50)
+
+    -- Expose via container.Selection so nudge.lua's ShowViewerOverlays()
+    -- can find it, install OnShow/OnHide hooks, and run locked/free logic.
+    container.Selection = sel
+
+    _reparentedSelections[viewerType] = {
+        viewer = viewer,
+        container = container,
+        selection = sel,
+    }
+end
+
+-- Restore a .Selection back to its Blizzard viewer (Edit Mode exit).
+local function RestoreSelectionToViewer(viewerType)
+    local info = _reparentedSelections[viewerType]
+    if not info then return end
+
+    local viewer = info.viewer
+    local container = info.container
+    local sel = info.selection
+
+    if sel and viewer then
+        sel:SetParent(viewer)
+        sel:ClearAllPoints()
+        sel:SetAllPoints(viewer)
+        sel:SetAlpha(1)
+        -- Restore strata to match viewer (Blizzard default)
+        pcall(function() sel:SetFrameStrata(viewer:GetFrameStrata()) end)
+    end
+
+    if container then
+        container.Selection = nil
+    end
+
+    _reparentedSelections[viewerType] = nil
+end
+
+_G.QUI_OnEditModeEnterCDM = function()
+    -- Position Blizzard viewers at owned container positions so
+    -- .Selection overlays line up for click-through interaction.
     SyncBlizzardToContainer("essential", "EssentialCooldownViewer")
     SyncBlizzardToContainer("utility", "UtilityCooldownViewer")
     SyncBlizzardToContainer("buff", "BuffIconCooldownViewer")
 
-    -- Release addon-owned buff icons (restores Blizzard CooldownFrames to viewer)
-    if ns.CDMIcons then
-        ns.CDMIcons:ClearPool("buff")
-    end
-    -- Reset fingerprint so icons rebuild on Edit Mode exit
-    if containers then containers._buffFingerprint = nil end
+    -- Reparent Blizzard .Selection frames to QUI containers.
+    -- This mirrors how unit frames work: .Selection is a child of the
+    -- visible frame, alpha 0 but clickable.  The nudge overlay sits
+    -- above with EnableMouse(false), letting clicks reach .Selection
+    -- for Blizzard's Edit Mode context menu and drag.
+    ReparentSelectionToContainer("essential", "EssentialCooldownViewer")
+    ReparentSelectionToContainer("utility", "UtilityCooldownViewer")
+    ReparentSelectionToContainer("buff", "BuffIconCooldownViewer")
 
-    -- Hide all owned containers
-    for _, cont in pairs(containers) do
-        cont:Hide()
-    end
+    -- Start drag sync so containers follow viewer movement during drag.
+    dragSyncFrame:Show()
 end
 
 _G.QUI_OnEditModeExitCDM = function()
-    -- Read new position from Blizzard viewers and apply to owned containers
-    local function SyncContainerToBlizzard(viewerType, blizzViewerName)
-        local container = containers[viewerType]
-        local viewer = _G[blizzViewerName]
-        if not container or not viewer then return end
+    -- Stop drag sync.
+    dragSyncFrame:Hide()
 
-        local cx, cy = viewer:GetCenter()
-        local sx, sy = UIParent:GetCenter()
-        if cx and cy and sx and sy then
-            local ox = cx - sx
-            local oy = cy - sy
-            container:ClearAllPoints()
-            container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
-        end
-    end
-
+    -- Read final position from Blizzard viewers (user may have dragged
+    -- via .Selection) and apply to owned containers.
     SyncContainerToBlizzard("essential", "EssentialCooldownViewer")
     SyncContainerToBlizzard("utility", "UtilityCooldownViewer")
     SyncContainerToBlizzard("buff", "BuffIconCooldownViewer")
 
-    -- Show all owned containers
-    for _, cont in pairs(containers) do
-        cont:Show()
-    end
+    -- Restore .Selection frames back to Blizzard viewers.
+    RestoreSelectionToViewer("essential")
+    RestoreSelectionToViewer("utility")
+    RestoreSelectionToViewer("buff")
 
-    -- Refresh layout (rebuilds addon-owned icons for all trackers)
+    -- Refresh layout (reapply positions, rebuild buff icons if needed)
     RefreshAll()
 end
 

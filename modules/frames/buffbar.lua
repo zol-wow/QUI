@@ -1745,6 +1745,16 @@ LayoutBuffIcons = function()
         end
     end
 
+    -- Re-sync buff icon visibility after styling. ConfigureIcon sets
+    -- icon:SetAlpha(opacity) which overwrites the initial SetAlpha(0) from
+    -- HookBlizzVisibility. Read IsShown() once here — safe, always out of combat.
+    for _, icon in ipairs(icons) do
+        local entry = icon._spellEntry
+        if entry and entry._blizzChild and not entry._blizzChild:IsShown() then
+            icon:SetAlpha(0)
+        end
+    end
+
     -- Owned containers need explicit sizing (Blizzard viewers auto-size from children).
     if IsOwnedEngine() then
         viewer:SetSize(totalWidth, totalHeight)
