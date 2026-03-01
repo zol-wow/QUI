@@ -14,10 +14,12 @@ local VIEWER_DB_KEY = {
     essential = "EssentialCooldownViewer",
     utility   = "UtilityCooldownViewer",
 }
--- Reverse map: legacy frame names → resolver keys (for backward-compat exports)
+-- Reverse map: frame/container names → resolver keys (for exports + layout callbacks)
 local VIEWER_RESOLVER_KEY = {
     EssentialCooldownViewer = "essential",
     UtilityCooldownViewer   = "utility",
+    QUI_EssentialContainer  = "essential",
+    QUI_UtilityContainer    = "utility",
 }
 
 -- Cache for spell ID to keybind mapping
