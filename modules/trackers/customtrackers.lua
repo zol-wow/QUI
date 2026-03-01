@@ -416,6 +416,211 @@ CustomTrackers.GetAllClassSpecs = GetAllClassSpecs
 CustomTrackers.GetBarEntries = GetBarEntries
 
 ---------------------------------------------------------------------------
+-- AUTO-TRINKET TRACKING
+---------------------------------------------------------------------------
+local function GetTrinketSpellIDs()
+    local trinketSpells = {}
+    for slot = 13, 14 do
+        local itemID = GetInventoryItemID("player", slot)
+        if itemID then
+            local spellID = select(2, C_Item.GetItemSpell(itemID))
+            if spellID then
+                table.insert(trinketSpells, {
+                    itemID = itemID,
+                    spellID = spellID,
+                    slot = slot
+                })
+            end
+        end
+    end
+    return trinketSpells
+end
+
+function CustomTrackers:SyncAutoTrinketEntries(barID, trinketSpells, skipRefresh)
+    local db = GetDB()
+    if not db or not db.bars then return end
+
+    local barConfig
+    for _, bc in ipairs(db.bars) do
+        if bc.id == barID then
+            barConfig = bc
+            break
+        end
+    end
+
+    if not barConfig or not barConfig.autoTrackTrinkets then return end
+
+    local specKey = barConfig.specSpecificSpells and GetCurrentSpecKey() or nil
+    local entries = GetBarEntries(barConfig, specKey)
+
+    local currentAuto = {}
+    for i, entry in ipairs(entries) do
+        if entry.autoDetected and entry.sourceSlot then
+            currentAuto[entry.sourceSlot] = {
+                index = i,
+                itemID = entry.sourceItemID,
+                spellID = entry.id
+            }
+        end
+    end
+
+    local newTrinkets = {}
+    for _, t in ipairs(trinketSpells) do
+        newTrinkets[t.slot] = t
+    end
+
+    local changed = false
+
+    for slot, data in pairs(currentAuto) do
+        local newTrinket = newTrinkets[slot]
+        if not newTrinket or newTrinket.itemID ~= data.itemID then
+            self:RemoveEntry(barID, "spell", data.spellID, specKey)
+            changed = true
+        end
+    end
+
+    if changed then
+        entries = GetBarEntries(barConfig, specKey)
+        for i, entry in ipairs(entries) do
+            if entry.autoDetected and entry.sourceSlot then
+                currentAuto[entry.sourceSlot] = {
+                    index = i,
+                    itemID = entry.sourceItemID,
+                    spellID = entry.id
+                }
+            end
+        end
+    end
+
+    for slot, t in pairs(newTrinkets) do
+        local existing = currentAuto[slot]
+        if not existing then
+            self:AddEntry(barID, "spell", t.spellID, specKey)
+
+            entries = GetBarEntries(barConfig, specKey)
+            for _, e in ipairs(entries) do
+                if e.id == t.spellID and not e.autoDetected then
+                    e.autoDetected = true
+                    e.sourceItemID = t.itemID
+                    e.sourceSlot = t.slot
+                    break
+                end
+            end
+            changed = true
+        end
+    end
+
+    if not skipRefresh and self.activeBars[barID] then
+        self:UpdateBar(self.activeBars[barID].config.id)
+    end
+end
+
+CustomTrackers.GetTrinketSpellIDs = GetTrinketSpellIDs
+
+local function GetPassiveTrinketItems()
+    local trinkets = {}
+    for slot = 13, 14 do
+        local itemID = GetInventoryItemID("player", slot)
+        if itemID then
+            local spellID = select(2, C_Item.GetItemSpell(itemID))
+            if not spellID then
+                table.insert(trinkets, {
+                    itemID = itemID,
+                    slot = slot
+                })
+            end
+        end
+    end
+    return trinkets
+end
+
+function CustomTrackers:SyncPassiveTrinketEntries(barID, skipRefresh)
+    local db = GetDB()
+    if not db or not db.bars then return end
+
+    local barConfig
+    for _, bc in ipairs(db.bars) do
+        if bc.id == barID then
+            barConfig = bc
+            break
+        end
+    end
+
+    if not barConfig or not barConfig.autoTrackTrinkets or not barConfig.showPassiveTrinkets then return end
+
+    local specKey = barConfig.specSpecificSpells and GetCurrentSpecKey() or nil
+    local entries = GetBarEntries(barConfig, specKey)
+
+    local currentPassive = {}
+    for i, entry in ipairs(entries) do
+        if entry.autoDetected and entry.sourceSlot and entry.isPassiveTrinket then
+            currentPassive[entry.sourceSlot] = {
+                index = i,
+                itemID = entry.sourceItemID,
+                entryID = entry.id
+            }
+        end
+    end
+
+    local passiveTrinkets = GetPassiveTrinketItems()
+    local newPassive = {}
+    for _, t in ipairs(passiveTrinkets) do
+        newPassive[t.slot] = t
+    end
+
+    local changed = false
+
+    for slot, data in pairs(currentPassive) do
+        local newTrinket = newPassive[slot]
+        if not newTrinket or newTrinket.itemID ~= data.itemID then
+            self:RemoveEntry(barID, "spell", data.entryID, specKey)
+            changed = true
+        end
+    end
+
+    if changed then
+        entries = GetBarEntries(barConfig, specKey)
+        for i, entry in ipairs(entries) do
+            if entry.autoDetected and entry.sourceSlot and entry.isPassiveTrinket then
+                currentPassive[entry.sourceSlot] = {
+                    index = i,
+                    itemID = entry.sourceItemID,
+                    entryID = entry.id
+                }
+            end
+        end
+    end
+
+    for slot, t in pairs(newPassive) do
+        local existing = currentPassive[slot]
+        if not existing then
+            local passiveEntryID = -t.itemID
+            self:AddEntry(barID, "spell", passiveEntryID, specKey)
+
+            entries = GetBarEntries(barConfig, specKey)
+            for _, e in ipairs(entries) do
+                if e.id == passiveEntryID and not e.autoDetected then
+                    e.autoDetected = true
+                    e.sourceItemID = t.itemID
+                    e.sourceSlot = t.slot
+                    e.isPassiveTrinket = true
+                    break
+                end
+            end
+            changed = true
+        end
+    end
+
+    if not skipRefresh and self.activeBars[barID] then
+        self:UpdateBar(self.activeBars[barID].config.id)
+    end
+end
+
+CustomTrackers.GetPassiveTrinketItems = GetPassiveTrinketItems
+
+---------------------------------------------------------------------------
+-- ENTRY MANAGEMENT
+---------------------------------------------------------------------------
 -- FONT HELPERS (uses shared helpers)
 ---------------------------------------------------------------------------
 local GetGeneralFont = Helpers.GetGeneralFont
@@ -883,7 +1088,11 @@ local function CreateTrackerIcon(parent, clickable)
                 GameTooltip_SetDefaultAnchor(GameTooltip, iconFrame)
             end
             if iconFrame.entry.type == "spell" then
-                GameTooltip:SetSpellByID(iconFrame.entry.id)
+                if iconFrame.entry.isPassiveTrinket and iconFrame.entry.id < 0 then
+                    pcall(GameTooltip.SetItemByID, GameTooltip, -iconFrame.entry.id)
+                else
+                    GameTooltip:SetSpellByID(iconFrame.entry.id)
+                end
             elseif iconFrame.entry.type == "item" then
                 -- pcall to handle Blizzard MoneyFrame secret value bug in Midnight beta
                 pcall(GameTooltip.SetItemByID, GameTooltip, iconFrame.entry.id)
@@ -893,7 +1102,9 @@ local function CreateTrackerIcon(parent, clickable)
 
     -- Tooltip on mouseover (skip if icon is hidden via alpha for showOnlyOnCooldown mode)
     icon:SetScript("OnEnter", function(self)
-        SetupIconTooltip(self)
+        if not (self.entry and self.entry.isPassiveTrinket and self.entry.id < 0) then
+            SetupIconTooltip(self)
+        end
     end)
 
     icon:SetScript("OnLeave", function()
@@ -998,14 +1209,19 @@ local function UpdateIconSecureAttributes(icon, entry, config)
 
     -- Set up secure attributes based on entry type
     if entry.type == "spell" then
-        local info = GetCachedSpellInfo(entry.id)
-        if info and info.name then
-            icon.clickButton:SetAttribute("type", "spell")
-            icon.clickButton:SetAttribute("spell", info.name)
-            icon.clickButton:Show()
-        else
+        if entry.isPassiveTrinket and entry.id < 0 then
             ClearClickButtonAttributes()
             icon.clickButton:Hide()
+        else
+            local info = GetCachedSpellInfo(entry.id)
+            if info and info.name then
+                icon.clickButton:SetAttribute("type", "spell")
+                icon.clickButton:SetAttribute("spell", info.name)
+                icon.clickButton:Show()
+            else
+                ClearClickButtonAttributes()
+                icon.clickButton:Hide()
+            end
         end
     elseif entry.type == "item" then
         local info = GetCachedItemInfo(entry.id)
@@ -1458,7 +1674,11 @@ function CustomTrackers:UpdateBarIcons(bar)
         -- Set icon texture
         local info
         if entry.type == "spell" then
-            info = GetCachedSpellInfo(entry.id)
+            if entry.isPassiveTrinket and entry.id < 0 then
+                info = GetCachedItemInfo(-entry.id)
+            else
+                info = GetCachedSpellInfo(entry.id)
+            end
         else
             info = GetCachedItemInfo(entry.id)
         end
@@ -1544,7 +1764,11 @@ local function RebuildActiveSet(bar)
             if entry.type == "spell" then hasSpells = true end
             local isUsable = true
             if entry.type == "spell" then
-                isUsable = IsSpellUsable(entry.id)
+                if entry.isPassiveTrinket and entry.id < 0 then
+                    isUsable = true
+                else
+                    isUsable = IsSpellUsable(entry.id)
+                end
             elseif entry.type == "item" then
                 -- Items: equipment check is stable, consumables always in active set
                 if IsEquipmentItem(entry.id) then
@@ -1643,8 +1867,14 @@ function CustomTrackers:StartCooldownPolling(bar)
                 local chargeStartTime, chargeDuration = 0, 0  -- For charge spell recharge display
 
                 if entry.type == "spell" then
-                    startTime, duration, enabled, isOnGCD = GetSpellCooldownInfo(entry.id)
-                    count, maxCharges, chargeStartTime, chargeDuration = GetSpellChargeCount(entry.id)
+                    if entry.isPassiveTrinket and entry.id < 0 then
+                        startTime, duration, enabled = 0, 0, true
+                        count, maxCharges = 1, 1
+                        isOnGCD = false
+                    else
+                        startTime, duration, enabled, isOnGCD = GetSpellCooldownInfo(entry.id)
+                        count, maxCharges, chargeStartTime, chargeDuration = GetSpellChargeCount(entry.id)
+                    end
                 else
                     startTime, duration, enabled = GetItemCooldownInfo(entry.id)
                     count = GetItemStackCount(entry.id, config.showItemCharges)
@@ -2323,6 +2553,19 @@ function CustomTrackers:RefreshAll()
         end
     end
 
+    -- Initial sync for auto-tracked trinkets (after PLAYER_ENTERING_WORLD)
+    C_Timer.After(1.5, function()
+        for barID, bar in pairs(CustomTrackers.activeBars) do
+            if bar.config and bar.config.autoTrackTrinkets then
+                local trinketSpells = GetTrinketSpellIDs()
+                CustomTrackers:SyncAutoTrinketEntries(barID, trinketSpells)
+                if bar.config.showPassiveTrinkets then
+                    CustomTrackers:SyncPassiveTrinketEntries(barID)
+                end
+            end
+        end
+    end)
+
     -- Performance: Update lazy event registrations after all bars are created
     if CustomTrackers.UpdateEventRegistrations then
         CustomTrackers.UpdateEventRegistrations()
@@ -2822,6 +3065,37 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
                     end
                 end
             end
+        end
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        local slot = ...
+        if slot == 13 or slot == 14 then
+            C_Timer.After(0.3, function()
+                local trinketSpells = GetTrinketSpellIDs()
+                local synced = {}
+
+                for barID, bar in pairs(CustomTrackers.activeBars) do
+                    if bar.config and bar.config.autoTrackTrinkets and not synced[barID] then
+                        CustomTrackers:SyncAutoTrinketEntries(barID, trinketSpells)
+                        if bar.config.showPassiveTrinkets then
+                            CustomTrackers:SyncPassiveTrinketEntries(barID)
+                        end
+                        synced[barID] = true
+                    end
+                end
+
+                local db = GetDB()
+                if db and db.bars then
+                    for _, bc in ipairs(db.bars) do
+                        if bc.autoTrackTrinkets and not synced[bc.id] and CustomTrackers.activeBars[bc.id] then
+                            CustomTrackers:SyncAutoTrinketEntries(bc.id, trinketSpells)
+                            if bc.showPassiveTrinkets then
+                                CustomTrackers:SyncPassiveTrinketEntries(bc.id)
+                            end
+                            synced[bc.id] = true
+                        end
+                    end
+                end
+            end)
         end
     end
 end)
