@@ -468,7 +468,7 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
         local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
         local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
         local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
-        local viewer = _G["EssentialCooldownViewer"]
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
         if viewer then
             -- Use the CDM anchor proxy for edge-based dual anchoring. The proxy has
             -- frozen dimensions during combat so the castbar width stays stable when
@@ -497,7 +497,7 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
         local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
         local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
         local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
-        local viewer = _G["UtilityCooldownViewer"]
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
         if viewer then
             -- Use the CDM anchor proxy (same reasoning as Essential above).
             local anchorTarget = (_G.QUI_GetCDMAnchorProxyFrame and _G.QUI_GetCDMAnchorProxyFrame("cdmUtility")) or viewer

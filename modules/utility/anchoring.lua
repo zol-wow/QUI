@@ -1129,10 +1129,10 @@ local ComputeAnchorApplyOrder
 -- Lazy resolver functions for all controllable frames
 local FRAME_RESOLVERS = {
     -- CDM Viewers
-    cdmEssential = function() return _G["EssentialCooldownViewer"] end,
-    cdmUtility = function() return _G["UtilityCooldownViewer"] end,
-    buffIcon = function() return _G["BuffIconCooldownViewer"] end,
-    buffBar = function() return _G["BuffBarCooldownViewer"] end,
+    cdmEssential = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential") end,
+    cdmUtility = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility") end,
+    buffIcon = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon") end,
+    buffBar = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar") end,
     -- Resource Bars
     primaryPower = function() return QUICore and QUICore.powerBar end,
     secondaryPower = function() return QUICore and QUICore.secondaryPowerBar end,
@@ -1267,10 +1267,10 @@ local FRAME_ANCHOR_INFO = {
 -- can still respect configured min-width even when source frames are protected.
 -- CDM viewers use viewer-state sizing; other frames mirror size directly.
 local ANCHOR_PROXY_SOURCES = {
-    cdmEssential   = { resolver = function() return _G["EssentialCooldownViewer"] end, cdm = true },
-    cdmUtility     = { resolver = function() return _G["UtilityCooldownViewer"] end,   cdm = true },
-    buffIcon       = { resolver = function() return _G["BuffIconCooldownViewer"] end,  cdm = true },
-    buffBar        = { resolver = function() return _G["BuffBarCooldownViewer"] end,   cdm = true },
+    cdmEssential   = { resolver = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential") end, cdm = true },
+    cdmUtility     = { resolver = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility") end,   cdm = true },
+    buffIcon       = { resolver = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon") end,  cdm = true },
+    buffBar        = { resolver = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar") end,   cdm = true },
     primaryPower   = { resolver = function() return QUICore and QUICore.powerBar end },
     secondaryPower = { resolver = function() return QUICore and QUICore.secondaryPowerBar end },
 }
@@ -1762,7 +1762,7 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
 
     -- Auto-height: match CDM Essential row 1 icon height (player/target only)
     if settings.autoHeight then
-        local viewer = _G["EssentialCooldownViewer"]
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
         if viewer then
             local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
             local iconHeight = vs and vs.row1IconHeight
@@ -2463,8 +2463,9 @@ local function CheckCDMViewerBoundsChanged(viewer, viewerKey, proxyKey)
     -- Convert from UIParent coordinate space to overlay local space by
     -- dividing by the viewer's own scale.
     if isBuffViewer and iconCount > 0 then
-        local viewerName = viewerKey == "buffIcon" and "BuffIconCooldownViewer" or "BuffBarCooldownViewer"
-        local overlay = _G.QUI_GetCDMViewerOverlay and _G.QUI_GetCDMViewerOverlay(viewerName)
+        local viewerFrame = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerKey)
+        local viewerName = viewerFrame and viewerFrame:GetName()
+        local overlay = viewerName and _G.QUI_GetCDMViewerOverlay and _G.QUI_GetCDMViewerOverlay(viewerName)
         if overlay and iconBoundsW > 1 and iconBoundsH > 1 then
             local vScale = viewer:GetScale() or 1
             if vScale <= 0 then vScale = 1 end
@@ -2519,10 +2520,10 @@ local function StartEditModeTicker()
 
         -- Poll CDM viewer bounds for changes (Blizzard's slider doesn't fire
         -- SetScale or OnSizeChanged, so we detect changes via bounds polling)
-        CheckCDMViewerBoundsChanged(_G["EssentialCooldownViewer"], "essential", "cdmEssential")
-        CheckCDMViewerBoundsChanged(_G["UtilityCooldownViewer"], "utility", "cdmUtility")
-        CheckCDMViewerBoundsChanged(_G["BuffIconCooldownViewer"], "buffIcon", "buffIcon")
-        CheckCDMViewerBoundsChanged(_G["BuffBarCooldownViewer"], "buffBar", "buffBar")
+        CheckCDMViewerBoundsChanged(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential"), "essential", "cdmEssential")
+        CheckCDMViewerBoundsChanged(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility"), "utility", "cdmUtility")
+        CheckCDMViewerBoundsChanged(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon"), "buffIcon", "buffIcon")
+        CheckCDMViewerBoundsChanged(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar"), "buffBar", "buffBar")
 
         _editModeTickerSilent = true
     end)

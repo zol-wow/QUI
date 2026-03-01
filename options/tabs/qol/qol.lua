@@ -56,8 +56,10 @@ local function BuildGeneralTab(tabContent)
         -- Trigger CDM layout refresh
         C_Timer.After(0.1, function()
             if QUICore and QUICore.ApplyViewerLayout then
-                QUICore:ApplyViewerLayout("EssentialCooldownViewer")
-                QUICore:ApplyViewerLayout("UtilityCooldownViewer")
+                local essV = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
+                local utilV = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
+                if essV then QUICore:ApplyViewerLayout(essV) end
+                if utilV then QUICore:ApplyViewerLayout(utilV) end
             end
         end)
     end

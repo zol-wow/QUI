@@ -1,10 +1,17 @@
 ---------------------------------------------------------------------------
--- QUI Viewer Skinning & Layout
+-- QUI Viewer Skinning & Layout (Classic CDM Engine)
 -- Icon skinning, aspect-ratio crop, row-pattern layout, and viewer rescan.
 -- Extracted from core/main.lua for maintainability.
+-- Only active when the classic CDM engine is selected.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
+
+-- Gate: viewer_skinning is only relevant for the classic engine.
+-- At file load time the provider may not have initialized yet, so we
+-- defer the check to runtime via a lazy guard in the public functions.
+-- The file still loads (WoW loads all XML-referenced Lua unconditionally)
+-- but its functions will no-op when the owned engine is active.
 
 ---------------------------------------------------------------------------
 -- TAINT SAFETY: Weak-keyed tables for per-icon and per-viewer state
@@ -526,7 +533,7 @@ function QUICore:ApplyViewerLayout(viewer)
     -- Calculate Y offset if Utility is anchored to Essential
     local yOffset = 0
     if name == "UtilityCooldownViewer" and settings.anchorToEssential then
-        local essentialViewer = _G.EssentialCooldownViewer
+        local essentialViewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
         local essVS = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(essentialViewer)
         if essentialViewer and essVS and essVS.totalHeight then
             local anchorGap = settings.anchorGap or 10
@@ -759,7 +766,7 @@ end
 ---------------------------------------------------------------------------
 
 function QUICore:ForceRefreshBuffIcons()
-    local viewer = _G["BuffIconCooldownViewer"]
+    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon")
     if viewer and viewer:IsShown() then
         GetSkinViewerState(viewer).iconCount = nil
         self:RescanViewer(viewer)

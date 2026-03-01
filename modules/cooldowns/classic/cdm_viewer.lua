@@ -34,10 +34,8 @@ local ASPECT_RATIOS = {
     rectangle = { w = 4, h = 3 },   -- 4:3 (wider)
 }
 
--- Forward declaration for mouseover hook (defined later in visibility section)
-local HookFrameForMouseover
-local UpdateCDMVisibility
-local UpdateUnitframesVisibility
+-- Mouseover hook provided by hud_visibility.lua (loads before this file)
+local HookFrameForMouseover = ns.HookFrameForMouseover
 
 -- Migrate old 'shape' setting to 'aspectRatioCrop' for CDM rows
 local function MigrateRowAspect(rowData)
@@ -69,19 +67,11 @@ local NCDM = {
 ---------------------------------------------------------------------------
 local _viewerState, getViewerState = Helpers.CreateStateTable()
 local _iconState, getIconState     = Helpers.CreateStateTable()
-local _mouseoverHooked             = Helpers.CreateStateTable()
 local _keepVisibleSelections       = setmetatable({}, { __mode = "k" })
 
 ---------------------------------------------------------------------------
 -- CACHES: Avoid per-frame allocations in OnUpdate paths
 ---------------------------------------------------------------------------
--- GetCDMFrames() cache – rebuilt only when dirty flag is set
-local _cdmFramesCache = {}
-local _cdmFramesDirty = true
-
--- GetCDMVisibilitySettings() cache – invalidated on settings / profile change
-local _visSettingsCache = nil
-
 -- Combat-stable parent used for "Utility below Essential" anchoring.
 -- Out of combat this proxy follows Essential; in combat it stays fixed.
 local UtilityAnchorProxy = nil
@@ -382,10 +372,8 @@ local function GetHUDMinWidth()
     return false, HUD_MIN_WIDTH_DEFAULT
 end
 
--- Shared helper exports so other modules (anchoring, buffbar) can use the
--- exact same min-width and HUD-anchor semantics.
-_G.QUI_IsHUDAnchoredToCDM = IsHUDAnchoredToCDM
-_G.QUI_GetHUDMinWidthSettings = GetHUDMinWidth
+-- NOTE: IsHUDAnchoredToCDM and GetHUDMinWidth are exposed via classicEngine
+-- methods and wired to _G globals by cdm_provider.lua.
 
 ---------------------------------------------------------------------------
 -- HELPER: Update Blizzard cooldownViewerEnabled CVar based on settings
@@ -1949,16 +1937,26 @@ local function ApplyUtilityAnchor()
     end
 end
 
-_G.QUI_RefreshNCDM = RefreshAll
-_G.QUI_ApplyUtilityAnchor = ApplyUtilityAnchor
-_G.QUI_IsSelectionKeepVisible = function(sel) return _keepVisibleSelections[sel] or false end
-
--- Expose viewer layout state for resource bars, castbars, anchoring, etc.
--- Reads from _viewerState weak-keyed table (previously __cdm* properties on frames).
--- IMPORTANT: Returns a reused mutable snapshot table — callers MUST NOT cache
--- the returned table across frames. Read values immediately or copy them.
+---------------------------------------------------------------------------
+-- ENGINE CONTRACT METHODS (wired to _G.QUI_* by cdm_provider.lua)
+---------------------------------------------------------------------------
 local _stateSnapshots = setmetatable({}, { __mode = "k" })
-_G.QUI_GetCDMViewerState = function(viewer)
+
+local classicEngine = {}
+
+function classicEngine:Refresh()
+    RefreshAll()
+end
+
+function classicEngine:ApplyUtilityAnchor()
+    ApplyUtilityAnchor()
+end
+
+function classicEngine:IsSelectionKeepVisible(sel)
+    return _keepVisibleSelections[sel] or false
+end
+
+function classicEngine:GetViewerState(viewer)
     if not viewer then return nil end
     local vs = _viewerState[viewer]
     if not vs or not vs.cdmIconWidth then return nil end
@@ -1982,16 +1980,9 @@ _G.QUI_GetCDMViewerState = function(viewer)
     return snap
 end
 
--- Update viewer state dimensions from externally-measured icon bounds.
--- Called by the Edit Mode ticker in anchoring.lua when Blizzard's slider
--- changes icon size without firing SetScale/OnSizeChanged on the viewer.
-_G.QUI_SetCDMViewerBounds = function(viewer, boundsW, boundsH)
+function classicEngine:SetViewerBounds(viewer, boundsW, boundsH)
     if not viewer then return end
     local vs = getViewerState(viewer)
-    -- Update internal viewer state (used by proxy system, anchor calculations,
-    -- and QUI_GetCDMViewerState which resource bars should use).
-    -- Do NOT write __cdm* properties on the viewer frame — that taints
-    -- Blizzard protected frames in the Midnight (12.0) taint model.
     vs.cdmIconWidth = boundsW
     vs.cdmRow1Width = boundsW
     vs.cdmBottomRowWidth = boundsW
@@ -2000,19 +1991,12 @@ _G.QUI_SetCDMViewerBounds = function(viewer, boundsW, boundsH)
     vs.cdmTotalHeight = boundsH
 end
 
--- Refresh proxies and dependent frames after Edit Mode exit.
--- LayoutViewer's formula is the authoritative source for viewer state
--- dimensions — this function just ensures proxies and dependent frames
--- are re-synced without overriding viewer state from icon bounds.
-_G.QUI_RefreshCDMViewerFromBounds = function(viewer, trackerKey)
+function classicEngine:RefreshViewerFromBounds(viewer, trackerKey)
     if not viewer then return end
-    -- Update proxies
     if _G.QUI_UpdateCDMAnchorProxyFrames then
         _G.QUI_UpdateCDMAnchorProxyFrames()
     end
-    -- Update power bars
     UpdateLockedBarsForViewer(trackerKey)
-    -- Update anchored frames
     if _G.QUI_UpdateAnchoredUnitFrames then
         _G.QUI_UpdateAnchoredUnitFrames()
     end
@@ -2022,16 +2006,56 @@ _G.QUI_RefreshCDMViewerFromBounds = function(viewer, trackerKey)
     end
 end
 
--- Expose icon state accessor for other modules (cdm_custom, cdm_manager, options).
-_G.QUI_GetIconState = function(icon)
+function classicEngine:GetIconState(icon)
     if not icon then return nil end
     return _iconState[icon]
 end
 
--- Clear icon state (used by cdm_custom when rebuilding icons).
-_G.QUI_ClearIconState = function(icon)
+function classicEngine:ClearIconState(icon)
     if not icon then return end
     _iconState[icon] = nil
+end
+
+function classicEngine:IsHUDAnchoredToCDM()
+    return IsHUDAnchoredToCDM()
+end
+
+function classicEngine:GetHUDMinWidthSettings()
+    return GetHUDMinWidth()
+end
+
+function classicEngine:GetViewerFrame(key)
+    local blizzNames = {
+        essential = VIEWER_ESSENTIAL,
+        utility   = VIEWER_UTILITY,
+        buffIcon  = "BuffIconCooldownViewer",
+        buffBar   = "BuffBarCooldownViewer",
+    }
+    local name = blizzNames[key]
+    return name and _G[name] or nil
+end
+
+function classicEngine:GetViewerFrames()
+    local frames = {}
+    local names = {VIEWER_ESSENTIAL, VIEWER_UTILITY, "BuffIconCooldownViewer", "BuffBarCooldownViewer"}
+    for _, name in ipairs(names) do
+        if _G[name] then
+            frames[#frames + 1] = _G[name]
+        end
+    end
+    return frames
+end
+
+function classicEngine:GetNCDM()
+    return NCDM
+end
+
+function classicEngine:GetCustomCDM()
+    return ns.CustomCDM
+end
+
+function classicEngine:LayoutViewer(name, key)
+    LayoutViewer(name, key)
 end
 
 ---------------------------------------------------------------------------
@@ -2053,7 +2077,7 @@ local function ForceLoadCDM()
                 settingsFrame:SetAlpha(1)
             end
             -- CDM frames may now exist after force-load
-            _cdmFramesDirty = true
+            if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
         end)
     end
 end
@@ -2066,7 +2090,7 @@ local function Initialize()
     NCDM.initialized = true
 
     -- Viewers are now available — invalidate frames cache
-    _cdmFramesDirty = true
+    if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
 
     if _G[VIEWER_ESSENTIAL] then
         HookViewer(VIEWER_ESSENTIAL, "essential")
@@ -2125,7 +2149,7 @@ local function Initialize()
         if bv and not NCDM.hooked[bvName] then
             NCDM.hooked[bvName] = true
             -- New buff viewer hooked — invalidate frames cache
-            _cdmFramesDirty = true
+            if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
             -- On Edit Mode enter: show Selection (invisible) so we can read its size.
             -- _keepVisibleSelections flag prevents nudge.lua from re-hiding it.
             if QUICore and QUICore.RegisterEditModeEnter then
@@ -2379,681 +2403,69 @@ _G.QUI_CDMDriftDebugDump = function()
     return _G.QUI_FrameDriftDebugDump(VIEWER_UTILITY)
 end
 
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("CHALLENGE_MODE_START")
-eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-eventFrame:RegisterEvent("CINEMATIC_STOP")
-eventFrame:RegisterEvent("STOP_MOVIE")
-eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
-        -- Force load CDM first, then initialize our hooks
-        C_Timer.After(0.3, ForceLoadCDM)
-        C_Timer.After(0.5, Initialize)
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        local isLogin, isReload = ...
-        -- Skip on initial login/reload (Initialize already schedules RefreshAll at 2.5s)
-        -- But DO refresh on zone changes (M+ dungeons, instance portals, etc.)
-        if not isLogin and not isReload then
-            -- Zone change: refresh layout for new zone (icon state cleared by RefreshAll)
-            C_Timer.After(0.3, RefreshAll)
-        end
-    elseif event == "CHALLENGE_MODE_START" then
-        -- M+ keystone: refresh after scenario setup
-        C_Timer.After(0.5, RefreshAll)
-    elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        -- Spec change: cooldowns differ per spec, full rebuild needed
-        C_Timer.After(0.5, RefreshAll)
-    elseif event == "ZONE_CHANGED_NEW_AREA" then
-        -- Zone change without loading screen (walking between open-world zones)
-        C_Timer.After(0.3, RefreshAll)
-    elseif event == "CINEMATIC_STOP" or event == "STOP_MOVIE" then
-        -- Quest cinematics can invalidate/recreate CDM frames while they are hidden.
-        -- Re-load, re-hook, and refresh after the scene ends.
-        C_Timer.After(0.2, ForceLoadCDM)
-        C_Timer.After(0.4, function()
-            HookViewer(VIEWER_ESSENTIAL, "essential")
-            HookViewer(VIEWER_UTILITY, "utility")
-            _cdmFramesDirty = true
-            RefreshAll()
-            if UpdateCDMVisibility then
-                UpdateCDMVisibility()
-            end
-            if UpdateUnitframesVisibility then
-                UpdateUnitframesVisibility()
-            end
-        end)
-    end
-end)
-
-C_Timer.After(0, function()
-    if _G[VIEWER_ESSENTIAL] or _G[VIEWER_UTILITY] then
+---------------------------------------------------------------------------
+-- ENGINE INITIALIZATION (called by cdm_provider.lua)
+---------------------------------------------------------------------------
+function classicEngine:Initialize()
+    -- Force load CDM first, then initialize our hooks
+    C_Timer.After(0.3, ForceLoadCDM)
+    C_Timer.After(0.5, function()
         Initialize()
-    end
-end)
-
----------------------------------------------------------------------------
--- VISIBILITY CONTROLLERS (CDM and Unitframes - Independent)
----------------------------------------------------------------------------
-
--- Helper: Check if player is in a group (party or raid)
-local function IsPlayerInGroup()
-    return IsInGroup() or IsInRaid()
-end
-
--- Housing instance types - excluded from "Show in Instance" detection
-local HOUSING_INSTANCE_TYPES = {
-    ["neighborhood"] = true,  -- Founder's Point, Razorwind Shores
-    ["interior"] = true,      -- Inside player houses
-}
-
--- Helper: Check if player is in an instance (dungeon, raid, arena, pvp, scenario)
--- Excludes housing zones which are technically instances but shouldn't trigger "Show In Instance"
-local function IsPlayerInInstance()
-    local _, instanceType = GetInstanceInfo()
-    if instanceType == "none" or instanceType == nil then
-        return false
-    end
-    -- Exclude housing from instance detection
-    if HOUSING_INSTANCE_TYPES[instanceType] then
-        return false
-    end
-    return true
-end
-
----------------------------------------------------------------------------
--- CDM VISIBILITY CONTROLLER
----------------------------------------------------------------------------
-local CDMVisibility = {
-    currentlyHidden = false,
-    isFading = false,
-    fadeStart = 0,
-    fadeStartAlpha = 1,
-    fadeTargetAlpha = 1,
-    fadeFrame = nil,
-    mouseOver = false,
-    mouseoverDetector = nil,
-    hoverCount = 0,
-    leaveTimer = nil,
-}
-
--- Get CDM frames (viewers + power bars) — cached to avoid per-frame allocations
-local function GetCDMFrames()
-    if not _cdmFramesDirty then
-        return _cdmFramesCache
-    end
-
-    wipe(_cdmFramesCache)
-
-    -- Blizzard CDM frames
-    if _G.EssentialCooldownViewer then
-        _cdmFramesCache[#_cdmFramesCache + 1] = _G.EssentialCooldownViewer
-    end
-    if _G.UtilityCooldownViewer then
-        _cdmFramesCache[#_cdmFramesCache + 1] = _G.UtilityCooldownViewer
-    end
-    if _G.BuffIconCooldownViewer then
-        _cdmFramesCache[#_cdmFramesCache + 1] = _G.BuffIconCooldownViewer
-    end
-    if _G.BuffBarCooldownViewer then
-        _cdmFramesCache[#_cdmFramesCache + 1] = _G.BuffBarCooldownViewer
-    end
-
-    _cdmFramesDirty = false
-    return _cdmFramesCache
-end
-
--- Get cdmVisibility settings from profile — cached to avoid repeated table lookups
-local function GetCDMVisibilitySettings()
-    if _visSettingsCache then return _visSettingsCache end
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility then
-        _visSettingsCache = QUICore.db.profile.cdmVisibility
-        return _visSettingsCache
-    end
-    return nil
-end
-
--- Determine if CDM should be visible (SHOW logic)
-local function ShouldCDMBeVisible()
-    local vis = GetCDMVisibilitySettings()
-    if not vis then return true end
-
-    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-    if not ignoreHideRules then
-        -- Hide rules override show conditions.
-        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
-        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-    end
-
-    -- Show Always overrides all other conditions
-    if vis.showAlways then return true end
-
-    -- OR logic: visible if ANY enabled condition is met
-    if vis.showWhenTargetExists and UnitExists("target") then return true end
-    if vis.showInCombat and UnitAffectingCombat("player") then return true end
-    if vis.showInGroup and IsPlayerInGroup() then return true end
-    if vis.showInInstance and IsPlayerInInstance() then return true end
-    if vis.showOnMouseover and CDMVisibility.mouseOver then return true end
-
-    return false  -- No condition met = hidden
-end
-
--- OnUpdate handler for CDM fade animation
-local function OnCDMFadeUpdate(self, elapsed)
-    local vis = GetCDMVisibilitySettings()
-    local duration = (vis and vis.fadeDuration) or 0.2
-    if duration <= 0 then duration = 0.01 end
-
-    local now = GetTime()
-    local elapsedTime = now - CDMVisibility.fadeStart
-    local progress = math.min(elapsedTime / duration, 1)
-
-    -- Linear interpolation
-    local alpha = CDMVisibility.fadeStartAlpha +
-        (CDMVisibility.fadeTargetAlpha - CDMVisibility.fadeStartAlpha) * progress
-
-    -- Apply to CDM frames
-    local frames = GetCDMFrames()
-    for i = #frames, 1, -1 do
-        local frame = frames[i]
-        local ok = false
-        if frame and frame.SetAlpha and (not frame.IsForbidden or not frame:IsForbidden()) then
-            ok = pcall(frame.SetAlpha, frame, alpha)
-        end
-        if not ok then
-            -- Remove stale/forbidden references to avoid repeat-error loops in OnUpdate.
-            table.remove(frames, i)
-            _cdmFramesDirty = true
-        end
-    end
-
-    -- Check if fade complete
-    if progress >= 1 then
-        CDMVisibility.isFading = false
-        CDMVisibility.currentlyHidden = (CDMVisibility.fadeTargetAlpha < 1)
-        self:SetScript("OnUpdate", nil)
-    end
-end
-
--- Start CDM fade animation
-local function StartCDMFade(targetAlpha)
-    local frames = GetCDMFrames()
-    if #frames == 0 then return end
-
-    -- Get current alpha from first frame
-    local currentAlpha = frames[1]:GetAlpha()
-
-    -- Skip if already at target
-    if math.abs(currentAlpha - targetAlpha) < 0.01 then
-        CDMVisibility.currentlyHidden = (targetAlpha < 1)
-        return
-    end
-
-    CDMVisibility.isFading = true
-    CDMVisibility.fadeStart = GetTime()
-    CDMVisibility.fadeStartAlpha = currentAlpha
-    CDMVisibility.fadeTargetAlpha = targetAlpha
-
-    -- Create fade frame if needed
-    if not CDMVisibility.fadeFrame then
-        CDMVisibility.fadeFrame = CreateFrame("Frame")
-    end
-    CDMVisibility.fadeFrame:SetScript("OnUpdate", OnCDMFadeUpdate)
-end
-
--- Update CDM visibility
-UpdateCDMVisibility = function()
-    -- During Edit Mode, force CDM frames fully visible so overlays (which are
-    -- children and inherit parent alpha) remain visible for repositioning.
-    if Helpers.IsEditModeActive() then
-        StartCDMFade(1)
-        return
-    end
-
-    local shouldShow = ShouldCDMBeVisible()
-    local vis = GetCDMVisibilitySettings()
-
-    if shouldShow then
-        StartCDMFade(1)  -- Fade in
-    else
-        StartCDMFade(vis and vis.fadeOutAlpha or 0)  -- Fade to configured alpha
-    end
-
-    -- Resource bars own their positioning/visibility logic in resourcebars.lua.
-    -- Refresh them explicitly so CDM visibility changes apply immediately
-    -- without alpha conflicts that can expose fallback center positions.
-    if QUICore then
-        if QUICore.UpdatePowerBar then
-            QUICore:UpdatePowerBar()
-        end
-        if QUICore.UpdateSecondaryPowerBar then
-            QUICore:UpdateSecondaryPowerBar()
-        end
-    end
-end
-
--- Helper: Hook a single frame for mouseover detection
-HookFrameForMouseover = function(frame)
-    if not frame or _mouseoverHooked[frame] then return end
-
-    _mouseoverHooked[frame] = true
-
-    frame:HookScript("OnEnter", function()
-        local vis = GetCDMVisibilitySettings()
-        if not vis or vis.showAlways or not vis.showOnMouseover then return end
-
-        -- Cancel any pending leave timer
-        if CDMVisibility.leaveTimer then
-            CDMVisibility.leaveTimer:Cancel()
-            CDMVisibility.leaveTimer = nil
-        end
-
-        CDMVisibility.hoverCount = CDMVisibility.hoverCount + 1
-        if CDMVisibility.hoverCount == 1 then
-            CDMVisibility.mouseOver = true
-            UpdateCDMVisibility()
+        -- Also try immediate init if viewers already exist
+        if not NCDM.initialized and (_G[VIEWER_ESSENTIAL] or _G[VIEWER_UTILITY]) then
+            Initialize()
         end
     end)
 
-    frame:HookScript("OnLeave", function()
-        local vis = GetCDMVisibilitySettings()
-        if not vis or vis.showAlways or not vis.showOnMouseover then return end
-
-        CDMVisibility.hoverCount = math.max(0, CDMVisibility.hoverCount - 1)
-
-        if CDMVisibility.hoverCount == 0 then
-            -- Cancel any existing timer
-            if CDMVisibility.leaveTimer then
-                CDMVisibility.leaveTimer:Cancel()
+    -- Register runtime event handlers (spec change, zone change, cinematics, etc.)
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("CHALLENGE_MODE_START")
+    eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    eventFrame:RegisterEvent("CINEMATIC_STOP")
+    eventFrame:RegisterEvent("STOP_MOVIE")
+    eventFrame:SetScript("OnEvent", function(self, event, ...)
+        if event == "PLAYER_ENTERING_WORLD" then
+            local isLogin, isReload = ...
+            if not isLogin and not isReload then
+                C_Timer.After(0.3, RefreshAll)
             end
-
-            -- Delay fade to allow OnEnter on next icon to fire first
-            CDMVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
-                CDMVisibility.leaveTimer = nil
-                -- Re-check hoverCount - may have been incremented by OnEnter
-                if CDMVisibility.hoverCount == 0 then
-                    CDMVisibility.mouseOver = false
-                    UpdateCDMVisibility()
+        elseif event == "CHALLENGE_MODE_START" then
+            C_Timer.After(0.5, RefreshAll)
+        elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+            C_Timer.After(0.5, RefreshAll)
+        elseif event == "ZONE_CHANGED_NEW_AREA" then
+            C_Timer.After(0.3, RefreshAll)
+        elseif event == "CINEMATIC_STOP" or event == "STOP_MOVIE" then
+            C_Timer.After(0.2, ForceLoadCDM)
+            C_Timer.After(0.4, function()
+                HookViewer(VIEWER_ESSENTIAL, "essential")
+                HookViewer(VIEWER_UTILITY, "utility")
+                if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
+                RefreshAll()
+                if _G.QUI_RefreshCDMVisibility then
+                    _G.QUI_RefreshCDMVisibility()
+                end
+                if _G.QUI_RefreshUnitframesVisibility then
+                    _G.QUI_RefreshUnitframesVisibility()
                 end
             end)
         end
     end)
 end
-
--- Setup CDM mouseover detector
-local function SetupCDMMouseoverDetector()
-    local vis = GetCDMVisibilitySettings()
-
-    -- Remove existing detector
-    if CDMVisibility.mouseoverDetector then
-        CDMVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
-        CDMVisibility.mouseoverDetector:Hide()
-        CDMVisibility.mouseoverDetector = nil
-    end
-
-    -- Cancel any pending leave timer
-    if CDMVisibility.leaveTimer then
-        CDMVisibility.leaveTimer:Cancel()
-        CDMVisibility.leaveTimer = nil
-    end
-
-    CDMVisibility.mouseOver = false
-    CDMVisibility.hoverCount = 0  -- Reset counter
-
-    -- Only create if mouseover is enabled and showAlways is disabled
-    if not vis or vis.showAlways or not vis.showOnMouseover then
-        return
-    end
-
-    -- Hook container frames
-    local cdmFrames = GetCDMFrames()
-    for _, frame in ipairs(cdmFrames) do
-        HookFrameForMouseover(frame)
-    end
-
-    -- Hook existing icons from each viewer
-    local viewerToTracker = {
-        EssentialCooldownViewer = "essential",
-        UtilityCooldownViewer = "utility",
-    }
-    local viewers = {"EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer"}
-    for _, viewerName in ipairs(viewers) do
-        local viewer = _G[viewerName]
-        if viewer then
-            local icons = CollectIcons(viewer, viewerToTracker[viewerName])
-            for _, icon in ipairs(icons) do
-                HookFrameForMouseover(icon)
-            end
-        end
-    end
-
-    -- Create minimal detector frame (just for cleanup tracking, no OnUpdate)
-    local detector = CreateFrame("Frame", nil, UIParent)
-    detector:EnableMouse(false)
-    CDMVisibility.mouseoverDetector = detector
-end
-
----------------------------------------------------------------------------
--- UNITFRAMES VISIBILITY CONTROLLER
----------------------------------------------------------------------------
-local UnitframesVisibility = {
-    currentlyHidden = false,
-    isFading = false,
-    fadeStart = 0,
-    fadeStartAlpha = 1,
-    fadeTargetAlpha = 1,
-    fadeFrame = nil,
-    mouseOver = false,
-    mouseoverDetector = nil,
-    leaveTimer = nil,
-}
-
--- Get unitframesVisibility settings from profile
-local function GetUnitframesVisibilitySettings()
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.unitframesVisibility then
-        return QUICore.db.profile.unitframesVisibility
-    end
-    return nil
-end
-
--- Get unit frames and castbars for visibility control
-local function GetUnitframeFrames()
-    local frames = {}
-
-    -- Collect unit frames
-    if _G.QUI_UnitFrames then
-        for unitKey, frame in pairs(_G.QUI_UnitFrames) do
-            if frame then
-                table.insert(frames, frame)
-            end
-        end
-    end
-
-    -- Collect castbars unless "Always Show Castbars" is enabled
-    local vis = GetUnitframesVisibilitySettings()
-    if not (vis and vis.alwaysShowCastbars) then
-        if _G.QUI_Castbars then
-            for unitKey, castbar in pairs(_G.QUI_Castbars) do
-                if castbar then
-                    table.insert(frames, castbar)
-                end
-            end
-        end
-    end
-
-    return frames
-end
-
-local function ApplyUnitframeVisibilityAlpha(frame, alpha)
-    if not frame then return end
-
-    if frame._quiCastbar then
-        -- Castbar is actively showing a cast — don't override its alpha.
-        -- The castbar module owns visibility during casts; letting HUD
-        -- visibility set alpha to 0 here is what caused castbars to
-        -- silently disappear when unit frames were faded out.
-        if frame._quiDesiredVisible then return end
-
-        -- Idle castbar using alpha-fallback mode — keep it hidden.
-        if frame._quiUseAlphaVisibility then
-            frame:SetAlpha(0)
-            return
-        end
-    end
-
-    frame:SetAlpha(alpha)
-end
-
--- Determine if Unitframes should be visible (SHOW logic)
-local function ShouldUnitframesBeVisible()
-    local vis = GetUnitframesVisibilitySettings()
-    if not vis then return true end
-
-    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-    if not ignoreHideRules then
-        -- Hide rules override show conditions.
-        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
-        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-    end
-
-    -- Show Always overrides all other conditions
-    if vis.showAlways then return true end
-
-    -- OR logic: visible if ANY enabled condition is met
-    if vis.showWhenTargetExists and UnitExists("target") then return true end
-    if vis.showInCombat and UnitAffectingCombat("player") then return true end
-    if vis.showInGroup and IsPlayerInGroup() then return true end
-    if vis.showInInstance and IsPlayerInInstance() then return true end
-    if vis.showOnMouseover and UnitframesVisibility.mouseOver then return true end
-
-    return false  -- No condition met = hidden
-end
-
--- OnUpdate handler for Unitframes fade animation
-local function OnUnitframesFadeUpdate(self, elapsed)
-    local vis = GetUnitframesVisibilitySettings()
-    local duration = (vis and vis.fadeDuration) or 0.2
-    if duration <= 0 then duration = 0.01 end
-
-    local now = GetTime()
-    local elapsedTime = now - UnitframesVisibility.fadeStart
-    local progress = math.min(elapsedTime / duration, 1)
-
-    -- Linear interpolation
-    local alpha = UnitframesVisibility.fadeStartAlpha +
-        (UnitframesVisibility.fadeTargetAlpha - UnitframesVisibility.fadeStartAlpha) * progress
-
-    -- Apply to unit frames
-    local frames = GetUnitframeFrames()
-    for _, frame in ipairs(frames) do
-        ApplyUnitframeVisibilityAlpha(frame, alpha)
-    end
-
-    -- Check if fade complete
-    if progress >= 1 then
-        UnitframesVisibility.isFading = false
-        UnitframesVisibility.currentlyHidden = (UnitframesVisibility.fadeTargetAlpha < 1)
-        self:SetScript("OnUpdate", nil)
-    end
-end
-
--- Start Unitframes fade animation
-local function StartUnitframesFade(targetAlpha)
-    local frames = GetUnitframeFrames()
-    if #frames == 0 then return end
-
-    -- Get current alpha from first frame
-    local currentAlpha = frames[1]:GetAlpha()
-
-    -- Skip if already at target
-    if math.abs(currentAlpha - targetAlpha) < 0.01 then
-        UnitframesVisibility.currentlyHidden = (targetAlpha < 1)
-        return
-    end
-
-    UnitframesVisibility.isFading = true
-    UnitframesVisibility.fadeStart = GetTime()
-    UnitframesVisibility.fadeStartAlpha = currentAlpha
-    UnitframesVisibility.fadeTargetAlpha = targetAlpha
-
-    -- Create fade frame if needed
-    if not UnitframesVisibility.fadeFrame then
-        UnitframesVisibility.fadeFrame = CreateFrame("Frame")
-    end
-    UnitframesVisibility.fadeFrame:SetScript("OnUpdate", OnUnitframesFadeUpdate)
-end
-
--- Update Unitframes visibility
-UpdateUnitframesVisibility = function()
-    -- During Edit Mode, force unit frames fully visible so overlays (which are
-    -- children and inherit parent alpha) remain visible for repositioning.
-    if _G.QUI_IsUnitFrameEditModeActive and _G.QUI_IsUnitFrameEditModeActive() then
-        StartUnitframesFade(1)
-        return
-    end
-
-    local vis = GetUnitframesVisibilitySettings()
-    local shouldShow = ShouldUnitframesBeVisible()
-
-    -- Sync castbar alpha based on "Always Show Castbars" setting
-    if _G.QUI_Castbars then
-        local targetAlpha = 1  -- Default to visible
-
-        if vis and vis.alwaysShowCastbars then
-            targetAlpha = 1  -- Always visible when enabled
-        else
-            -- Match unit frame alpha when disabled
-            if _G.QUI_UnitFrames then
-                for _, frame in pairs(_G.QUI_UnitFrames) do
-                    if frame then
-                        targetAlpha = frame:GetAlpha()
-                        break
-                    end
-                end
-            end
-        end
-
-        for unitKey, castbar in pairs(_G.QUI_Castbars) do
-            if castbar then
-                ApplyUnitframeVisibilityAlpha(castbar, targetAlpha)
-            end
-        end
-    end
-
-    if shouldShow then
-        StartUnitframesFade(1)  -- Fade in
-    else
-        StartUnitframesFade(vis and vis.fadeOutAlpha or 0)  -- Fade to configured alpha
-    end
-end
-
--- Setup Unitframes mouseover detector
-local function SetupUnitframesMouseoverDetector()
-    local vis = GetUnitframesVisibilitySettings()
-
-    -- Remove existing detector
-    if UnitframesVisibility.mouseoverDetector then
-        UnitframesVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
-        UnitframesVisibility.mouseoverDetector:Hide()
-        UnitframesVisibility.mouseoverDetector = nil
-    end
-
-    if UnitframesVisibility.leaveTimer then
-        UnitframesVisibility.leaveTimer:Cancel()
-        UnitframesVisibility.leaveTimer = nil
-    end
-    UnitframesVisibility.mouseOver = false
-
-    -- Only create if mouseover is enabled and showAlways is disabled
-    if not vis or vis.showAlways or not vis.showOnMouseover then
-        return
-    end
-
-    -- Performance: Use OnEnter/OnLeave hooks instead of 50ms polling
-    -- This is event-driven and more efficient
-    local ufFrames = GetUnitframeFrames()
-    local hoverCount = 0
-
-    for _, frame in ipairs(ufFrames) do
-        if frame and not _mouseoverHooked[frame] then
-            _mouseoverHooked[frame] = true
-
-            -- Hook OnEnter
-            frame:HookScript("OnEnter", function()
-                if UnitframesVisibility.leaveTimer then
-                    UnitframesVisibility.leaveTimer:Cancel()
-                    UnitframesVisibility.leaveTimer = nil
-                end
-                hoverCount = hoverCount + 1
-                if hoverCount == 1 then
-                    UnitframesVisibility.mouseOver = true
-                    UpdateUnitframesVisibility()
-                end
-            end)
-
-            -- Hook OnLeave
-            frame:HookScript("OnLeave", function()
-                hoverCount = math.max(0, hoverCount - 1)
-                if hoverCount == 0 then
-                    if UnitframesVisibility.leaveTimer then
-                        UnitframesVisibility.leaveTimer:Cancel()
-                    end
-                    UnitframesVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
-                        UnitframesVisibility.leaveTimer = nil
-                        if hoverCount == 0 then
-                            UnitframesVisibility.mouseOver = false
-                            UpdateUnitframesVisibility()
-                        end
-                    end)
-                end
-            end)
-        end
-    end
-
-    -- Create minimal detector frame (just for cleanup tracking, no OnUpdate)
-    local detector = CreateFrame("Frame", nil, UIParent)
-    detector:EnableMouse(false)
-    UnitframesVisibility.mouseoverDetector = detector
-end
-
----------------------------------------------------------------------------
--- SHARED EVENT HANDLING
----------------------------------------------------------------------------
-local visibilityEventFrame = CreateFrame("Frame")
-visibilityEventFrame:RegisterEvent("PLAYER_LOGIN")
-visibilityEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-visibilityEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-visibilityEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-visibilityEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-visibilityEventFrame:RegisterEvent("GROUP_JOINED")
-visibilityEventFrame:RegisterEvent("GROUP_LEFT")
-visibilityEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-visibilityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-visibilityEventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
-visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
-visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
-
-visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_FLAGS_CHANGED" then
-        local unit = ...
-        if unit ~= "player" then return end
-    end
-
-    if event == "PLAYER_LOGIN" then
-        -- Delay initial check to ensure frames exist
-        C_Timer.After(1.5, function()
-            SetupCDMMouseoverDetector()
-            SetupUnitframesMouseoverDetector()
-            UpdateCDMVisibility()
-            UpdateUnitframesVisibility()
-        end)
-    else
-        -- All other events: update both controllers
-        UpdateCDMVisibility()
-        UpdateUnitframesVisibility()
-    end
-end)
-
--- Global refresh functions for options panel
--- Wrap CDM refresh to invalidate caches (called on profile switch & settings change)
-_G.QUI_RefreshCDMVisibility = function()
-    _visSettingsCache = nil   -- profile may have changed — drop cached reference
-    _cdmFramesDirty = true    -- viewers may differ after profile switch
-    UpdateCDMVisibility()
-end
-_G.QUI_RefreshUnitframesVisibility = UpdateUnitframesVisibility
-_G.QUI_RefreshCDMMouseover = SetupCDMMouseoverDetector
-_G.QUI_RefreshUnitframesMouseover = SetupUnitframesMouseoverDetector
-_G.QUI_ShouldCDMBeVisible = ShouldCDMBeVisible
 
 ---------------------------------------------------------------------------
 -- EXPOSE MODULE
 ---------------------------------------------------------------------------
 NCDM.Refresh = RefreshAll
 NCDM.LayoutViewer = LayoutViewer
+
+-- Register with CDM provider
+if ns.CDMProvider then
+    ns.CDMProvider:RegisterEngine("classic", classicEngine)
+end
+
+-- Set ns.NCDM eagerly so other files loading after this can reference it.
+-- The provider will also set it during InitializeEngine() for the active engine.
 ns.NCDM = NCDM

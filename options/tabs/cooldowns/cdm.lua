@@ -2497,7 +2497,7 @@ local function CreateCDMSetupPage(parent)
             if _G.QUI_RefreshNCDM then
                 _G.QUI_RefreshNCDM()
             end
-            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, primary, "essential", primary.orientation)
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential"), primary, "essential", primary.orientation)
             if err then
                 print(err)
                 return
@@ -2547,7 +2547,7 @@ local function CreateCDMSetupPage(parent)
             if _G.QUI_RefreshNCDM then
                 _G.QUI_RefreshNCDM()
             end
-            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, primary, "utility", primary.orientation)
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility"), primary, "utility", primary.orientation)
             if err then
                 print(err)
                 return
@@ -2667,7 +2667,7 @@ local function CreateCDMSetupPage(parent)
                 if _G.QUI_RefreshNCDM then
                     _G.QUI_RefreshNCDM()
                 end
-                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, primary, "essential", primary.orientation)
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential"), primary, "essential", primary.orientation)
                 if err then
                     print(err)
                     return
@@ -2704,7 +2704,7 @@ local function CreateCDMSetupPage(parent)
                 if _G.QUI_RefreshNCDM then
                     _G.QUI_RefreshNCDM()
                 end
-                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, primary, "utility", primary.orientation)
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility"), primary, "utility", primary.orientation)
                 if err then
                     print(err)
                     return
@@ -2993,7 +2993,7 @@ local function CreateCDMSetupPage(parent)
         end)
         snapSecEssentialBtn:SetScript("OnClick", function()
             if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, secondary, "essential", secondary.orientation)
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential"), secondary, "essential", secondary.orientation)
             if err then
                 print(err)
                 return
@@ -3037,7 +3037,7 @@ local function CreateCDMSetupPage(parent)
         end)
         snapSecUtilityBtn:SetScript("OnClick", function()
             if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, secondary, "utility", secondary.orientation)
+            local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility"), secondary, "utility", secondary.orientation)
             if err then
                 print(err)
                 return
@@ -3261,7 +3261,7 @@ local function CreateCDMSetupPage(parent)
                 UpdateSecLockButtonStates()
             else
                 if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.EssentialCooldownViewer, secondary, "essential", secondary.orientation)
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential"), secondary, "essential", secondary.orientation)
                 if err then
                     print(err)
                     return
@@ -3291,7 +3291,7 @@ local function CreateCDMSetupPage(parent)
                 UpdateSecLockButtonStates()
             else
                 if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.UtilityCooldownViewer, secondary, "utility", secondary.orientation)
+                local offsetX, offsetY, width, err = CalculateSnapPosition(_G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility"), secondary, "utility", secondary.orientation)
                 if err then
                     print(err)
                     return
@@ -4058,6 +4058,35 @@ local function CreateCDMSetupPage(parent)
         tabContent:SetHeight(math.abs(y) + 60)
     end
 
+    -- Engine selection dropdown (above sub-tabs)
+    local PAD = 10
+    local ENGINE_ROW = 32
+    local engineY = -8
+
+    GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager"})
+
+    local engineOptions = {
+        {value = "owned", text = "QUI CDM Engine"},
+        {value = "classic", text = "Classic (Blizzard Hooks)"},
+    }
+    local engineDropdown = GUI:CreateFormDropdown(content, "CDM Engine", engineOptions, "engine", db.ncdm, function()
+        QUI:SafeReload()
+    end)
+    engineDropdown:SetPoint("TOPLEFT", PAD, engineY)
+    engineDropdown:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    engineY = engineY - ENGINE_ROW
+
+    local reloadHint = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    reloadHint:SetPoint("TOPLEFT", PAD, engineY)
+    reloadHint:SetTextColor(0.5, 0.5, 0.5, 1)
+    reloadHint:SetText("Changing the engine requires a UI reload.")
+    engineY = engineY - 18
+
+    -- Host frame for sub-tabs, offset below the engine dropdown
+    local subTabHost = CreateFrame("Frame", nil, content)
+    subTabHost:SetPoint("TOPLEFT", 0, engineY)
+    subTabHost:SetPoint("BOTTOMRIGHT", 0, 0)
+
     -- Create sub-tabs
     local subTabs = {
         {name = "Essential", builder = BuildEssentialTab},
@@ -4079,9 +4108,9 @@ local function CreateCDMSetupPage(parent)
         table.insert(subTabs, {name = "Rotation Assist", builder = ns.QUI_KeybindsOptions.BuildRotationAssistTab})
     end
 
-    GUI:CreateSubTabs(content, subTabs)
+    GUI:CreateSubTabs(subTabHost, subTabs)
 
-    content:SetHeight(700)
+    content:SetHeight(760)
 end
 
 --------------------------------------------------------------------------------

@@ -126,9 +126,9 @@ function QUI_DandersFrames:GetAnchorFrame(anchorName)
 
     -- Hardcoded QUI element map
     if anchorName == "essential" then
-        return _G["EssentialCooldownViewer"]
+        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
     elseif anchorName == "utility" then
-        return _G["UtilityCooldownViewer"]
+        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
     elseif anchorName == "primary" then
         return QUICore and QUICore.powerBar
     elseif anchorName == "secondary" then

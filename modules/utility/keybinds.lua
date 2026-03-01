@@ -9,6 +9,17 @@ local function GetCore()
     return (QUI and QUI.QUICore) or (_G.QUI and _G.QUI.QUICore)
 end
 
+-- Map resolver keys ("essential"/"utility") to DB profile keys
+local VIEWER_DB_KEY = {
+    essential = "EssentialCooldownViewer",
+    utility   = "UtilityCooldownViewer",
+}
+-- Reverse map: legacy frame names → resolver keys (for backward-compat exports)
+local VIEWER_RESOLVER_KEY = {
+    EssentialCooldownViewer = "essential",
+    UtilityCooldownViewer   = "utility",
+}
+
 -- Cache for spell ID to keybind mapping
 local spellToKeybind = {}
 -- Cache for spell NAME to keybind mapping (fallback for macros)
@@ -74,7 +85,7 @@ local function GetViewerSettings(viewerName)
     if not QUICore or not QUICore.db or not QUICore.db.profile then return nil end
     local viewers = QUICore.db.profile.viewers
     if not viewers then return nil end
-    return viewers[viewerName]
+    return viewers[VIEWER_DB_KEY[viewerName] or viewerName]
 end
 
 -- Helper: get current specialization ID
@@ -1272,7 +1283,7 @@ end
 
 -- Update keybinds on all icons in a viewer
 local function UpdateViewerKeybinds(viewerName)
-    local viewer = _G[viewerName]
+    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
     if not viewer then return end
     
     local container = viewer.viewerFrame or viewer
@@ -1291,7 +1302,7 @@ end
 -- confirms or changes it.  Hiding here caused a visible blink because
 -- the ThrottledUpdate that re-shows text runs 0.5 s later.
 local function ClearStoredKeybinds(viewerName)
-    local viewer = _G[viewerName]
+    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
     if not viewer then return end
 
     local container = viewer.viewerFrame or viewer
@@ -1308,8 +1319,8 @@ local function ClearStoredKeybinds(viewerName)
 end
 
 local function ClearAllStoredKeybinds()
-    ClearStoredKeybinds("EssentialCooldownViewer")
-    ClearStoredKeybinds("UtilityCooldownViewer")
+    ClearStoredKeybinds("essential")
+    ClearStoredKeybinds("utility")
 end
 
 -- Update keybinds on Essential and Utility viewers
@@ -1318,8 +1329,8 @@ local function UpdateAllKeybinds()
     lastCacheUpdate = 0
     RebuildCache()
     
-    UpdateViewerKeybinds("EssentialCooldownViewer")
-    UpdateViewerKeybinds("UtilityCooldownViewer")
+    UpdateViewerKeybinds("essential")
+    UpdateViewerKeybinds("utility")
 end
 
 -- Throttle for event-driven updates
@@ -1387,7 +1398,7 @@ end)
 
 -- Hook into viewer layout updates
 local function HookViewerLayout(viewerName)
-    local viewer = _G[viewerName]
+    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
     if not viewer then return end
 
     -- Layout hook removed: CooldownViewerSettings:RefreshLayout hook in
@@ -1403,8 +1414,8 @@ initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:SetScript("OnEvent", function(self, event, arg)
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
         C_Timer.After(0.5, function()
-            HookViewerLayout("EssentialCooldownViewer")
-            HookViewerLayout("UtilityCooldownViewer")
+            HookViewerLayout("essential")
+            HookViewerLayout("utility")
             -- Only do initial keybind update if features are enabled
             if IsAnyKeybindFeatureEnabled() then
                 UpdateAllKeybinds()
@@ -1412,8 +1423,8 @@ initFrame:SetScript("OnEvent", function(self, event, arg)
         end)
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(1.0, function()
-            HookViewerLayout("EssentialCooldownViewer")
-            HookViewerLayout("UtilityCooldownViewer")
+            HookViewerLayout("essential")
+            HookViewerLayout("utility")
             -- Only do initial keybind update if features are enabled
             if IsAnyKeybindFeatureEnabled() then
                 UpdateAllKeybinds()
@@ -1423,10 +1434,11 @@ initFrame:SetScript("OnEvent", function(self, event, arg)
 end)
 
 -- Export for NCDM integration (allows LayoutViewer to trigger keybind updates)
+-- Accepts both resolver keys ("essential") and legacy frame names ("EssentialCooldownViewer")
 _G.QUI_UpdateViewerKeybinds = function(viewerName)
     -- PERFORMANCE: Skip if no keybind features are enabled
     if not IsAnyKeybindFeatureEnabled() then return end
-    UpdateViewerKeybinds(viewerName)
+    UpdateViewerKeybinds(VIEWER_RESOLVER_KEY[viewerName] or viewerName)
 end
 
 -- Debug function to see what's in the cache
@@ -1996,7 +2008,7 @@ local function ApplyRotationHelperToIcon(icon, viewerName, nextSpellID)
     
     local viewers = core.db.profile.viewers
     if not viewers then return end
-    local settings = viewers[viewerName]
+    local settings = viewers[VIEWER_DB_KEY[viewerName] or viewerName]
     if not settings or not settings.showRotationHelper then
         -- Hide overlay if disabled
         local iks = iconKeybindState[icon]
@@ -2009,7 +2021,11 @@ local function ApplyRotationHelperToIcon(icon, viewerName, nextSpellID)
     -- Get the icon's spell ID
     local iconSpellID
     local ok, result = pcall(function()
-        -- Try cooldownID first (CDM uses this)
+        -- Try owned engine _spellEntry first
+        if icon._spellEntry then
+            return icon._spellEntry.overrideSpellID or icon._spellEntry.spellID or icon._spellEntry.id
+        end
+        -- Try cooldownID (classic CDM uses this)
         if icon.cooldownID then
             return icon.cooldownID
         end
@@ -2048,10 +2064,19 @@ local function ApplyRotationHelperToIcon(icon, viewerName, nextSpellID)
             isNextSpell = true
         end
         -- Check overrideSpellID (some spells morph)
-        if not isNextSpell and icon.cooldownInfo and icon.cooldownInfo.overrideSpellID then
-            local compareOk, isMatch = pcall(function() return icon.cooldownInfo.overrideSpellID == nextSpellID end)
-            if compareOk and isMatch then
-                isNextSpell = true
+        if not isNextSpell then
+            local overrideID
+            if icon._spellEntry then
+                -- Owned engine: check both base and override
+                overrideID = icon._spellEntry.spellID  -- base ID (iconSpellID used override above)
+            elseif icon.cooldownInfo then
+                overrideID = icon.cooldownInfo.overrideSpellID
+            end
+            if overrideID then
+                local compareOk, isMatch = pcall(function() return overrideID == nextSpellID end)
+                if compareOk and isMatch then
+                    isNextSpell = true
+                end
             end
         end
     end
@@ -2071,7 +2096,7 @@ end
 
 -- Update rotation helper on all icons in a viewer
 local function UpdateViewerRotationHelper(viewerName, nextSpellID)
-    local viewer = _G[viewerName]
+    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
     if not viewer then return end
     
     local container = viewer.viewerFrame or viewer
@@ -2107,8 +2132,8 @@ local function UpdateAllRotationHelpers()
     end
     lastNextSpellID = nextSpellID
     
-    UpdateViewerRotationHelper("EssentialCooldownViewer", nextSpellID)
-    UpdateViewerRotationHelper("UtilityCooldownViewer", nextSpellID)
+    UpdateViewerRotationHelper("essential", nextSpellID)
+    UpdateViewerRotationHelper("utility", nextSpellID)
 end
 
 -- Check if rotation helper should be running
@@ -2151,8 +2176,8 @@ local function RefreshRotationHelper()
     if not rotationHelperEnabled then
         -- Hide all overlays and stop ticker
         lastNextSpellID = nil
-        UpdateViewerRotationHelper("EssentialCooldownViewer", nil)
-        UpdateViewerRotationHelper("UtilityCooldownViewer", nil)
+        UpdateViewerRotationHelper("essential", nil)
+        UpdateViewerRotationHelper("utility", nil)
         StopRotationHelperTicker()
     else
         -- Start ticker when enabled

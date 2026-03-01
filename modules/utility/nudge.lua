@@ -302,7 +302,7 @@ local function CreateNudgeUI()
     -- Update info display
     function NudgeFrame:UpdateInfo()
         local viewerName = QUICore.selectedViewer
-        local viewer = viewerName and _G[viewerName]
+        local viewer = viewerName and ResolveCDMFrame(viewerName)
 
         if viewer then
             local displayName = GetNudgeDisplayName(viewerName)
@@ -387,14 +387,28 @@ _G.QUI_GetCDMViewerOverlay = function(viewerName)
 end
 
 -- All CDM viewers that should get nudge overlays
+-- Each entry maps a resolver key to its display name. The actual frame is
+-- obtained at runtime via _G.QUI_GetCDMViewerFrame(key).
 local CDM_VIEWERS = {
-    "EssentialCooldownViewer",
-    "UtilityCooldownViewer",
-    "BuffIconCooldownViewer",
-    "BuffBarCooldownViewer",
+    { key = "essential", name = "EssentialCooldownViewer" },
+    { key = "utility",   name = "UtilityCooldownViewer" },
+    { key = "buffIcon",  name = "BuffIconCooldownViewer" },
+    { key = "buffBar",   name = "BuffBarCooldownViewer" },
 }
-for _, name in ipairs(CDM_VIEWERS) do
-    CDM_VIEWER_LOOKUP[name] = true
+-- Reverse lookup: name -> key (used by generic functions that receive a name)
+local CDM_NAME_TO_KEY = {}
+for _, entry in ipairs(CDM_VIEWERS) do
+    CDM_VIEWER_LOOKUP[entry.name] = true
+    CDM_NAME_TO_KEY[entry.name] = entry.key
+end
+
+-- Resolve a CDM viewer frame by name (checks CDM_NAME_TO_KEY first, falls back to _G)
+local function ResolveCDMFrame(viewerName)
+    local key = CDM_NAME_TO_KEY[viewerName]
+    if key and _G.QUI_GetCDMViewerFrame then
+        return _G.QUI_GetCDMViewerFrame(key)
+    end
+    return _G[viewerName]
 end
 
 -- Blizzard Edit Mode frames that should get nudge overlays
@@ -725,7 +739,7 @@ end
 
 -- Create overlay for a single CDM viewer
 local function CreateViewerOverlay(viewerName)
-    local viewer = _G[viewerName]
+    local viewer = ResolveCDMFrame(viewerName)
     if not viewer then return nil end
 
     local overlay = CreateFrame("Frame", nil, viewer, "BackdropTemplate")
@@ -934,8 +948,9 @@ function QUICore:ShowViewerOverlays()
     -- Blizzard may :Hide() viewers with no active content (e.g. BuffIcon with
     -- no tracked cooldowns).  Alpha alone can't make a hidden frame visible.
     wipe(viewersForceShown)
-    for _, viewerName in ipairs(CDM_VIEWERS) do
-        local viewer = _G[viewerName]
+    for _, entry in ipairs(CDM_VIEWERS) do
+        local viewerName = entry.name
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)
         if viewer and not viewer:IsShown() then
             C_Timer.After(0, function()
                 if viewer and not viewer:IsShown() then
@@ -946,12 +961,13 @@ function QUICore:ShowViewerOverlays()
         end
     end
 
-    for _, viewerName in ipairs(CDM_VIEWERS) do
+    for _, entry in ipairs(CDM_VIEWERS) do
+        local viewerName = entry.name
         if not viewerOverlays[viewerName] then
             viewerOverlays[viewerName] = CreateViewerOverlay(viewerName)
         end
         local overlay = viewerOverlays[viewerName]
-        local viewer = _G[viewerName]
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)
 
         -- Hook .Selection show/hide so toggling a CDM viewer on/off in
         -- Blizzard's edit mode menu hides/shows THIS viewer's overlay only.
@@ -962,6 +978,7 @@ function QUICore:ShowViewerOverlays()
             if sel and not _viewerSelectionHooked[sel] then
                 _viewerSelectionHooked[sel] = true
                 local hookedName = viewerName  -- capture for closure
+                local hookedKey = entry.key    -- capture resolver key for closure
                 sel:HookScript("OnHide", function()
                     if not EditModeManagerFrame or not EditModeManagerFrame:IsShown() then return end
                     local ov = viewerOverlays[hookedName]
@@ -970,7 +987,7 @@ function QUICore:ShowViewerOverlays()
                         ov:EnableMouse(false)
                     end
                     if viewersForceShown[hookedName] then
-                        local v = _G[hookedName]
+                        local v = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(hookedKey)
                         if v then
                             C_Timer.After(0, function()
                                 if v then
@@ -983,7 +1000,7 @@ function QUICore:ShowViewerOverlays()
                 end)
                 sel:HookScript("OnShow", function(self)
                     if not EditModeManagerFrame or not EditModeManagerFrame:IsShown() then return end
-                    local v = _G[hookedName]
+                    local v = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(hookedKey)
                     -- Re-show viewer if it was hidden (same logic as force-show on enter)
                     if v and not v:IsShown() then
                         C_Timer.After(0, function()
@@ -1170,7 +1187,8 @@ end
 
 -- Hide all viewer overlays
 function QUICore:HideViewerOverlays()
-    for _, viewerName in ipairs(CDM_VIEWERS) do
+    for _, entry in ipairs(CDM_VIEWERS) do
+        local viewerName = entry.name
         local overlay = viewerOverlays[viewerName]
         if overlay then
             overlay:Hide()
@@ -1181,7 +1199,7 @@ function QUICore:HideViewerOverlays()
             -- Re-parent BuffBarCooldownViewer overlay back to viewer
             -- (was detached to UIParent during Edit Mode)
             if viewerName == "BuffBarCooldownViewer" then
-                local viewer = _G[viewerName]
+                local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)
                 if viewer then
                     overlay:SetParent(viewer)
                     overlay:ClearAllPoints()
@@ -1191,7 +1209,7 @@ function QUICore:HideViewerOverlays()
         end
         -- Re-hide viewers we force-showed on edit mode enter.
         if viewersForceShown[viewerName] then
-            local viewer = _G[viewerName]
+            local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)
             if viewer then
                 C_Timer.After(0, function()
                     if viewer then
@@ -1661,7 +1679,7 @@ end
 
 -- Select a viewer for nudging
 function QUICore:SelectViewer(viewerName)
-    if not viewerName or not _G[viewerName] then
+    if not viewerName or not ResolveCDMFrame(viewerName) then
         self.selectedViewer = nil
         if self.nudgeFrame then
             self.nudgeFrame:UpdateInfo()
@@ -1814,7 +1832,7 @@ end
 function QUICore:SyncDetachedOverlay(viewerName)
     if viewerName ~= "BuffBarCooldownViewer" then return end
     local overlay = viewerOverlays[viewerName]
-    local viewer = _G[viewerName]
+    local viewer = ResolveCDMFrame(viewerName)
     if not overlay or not viewer then return end
     -- Only sync if overlay is parented to UIParent (detached)
     if overlay:GetParent() ~= UIParent then return end
@@ -1830,7 +1848,7 @@ end
 function QUICore:NudgeSelectedViewer(direction)
     if not self.selectedViewer then return false end
 
-    local viewer = _G[self.selectedViewer]
+    local viewer = ResolveCDMFrame(self.selectedViewer)
     if not viewer then return false end
 
     -- Block nudging if frame is locked by any anchoring system
@@ -2170,7 +2188,7 @@ local function RegisterEditModeCallbacks()
             local uiCenterX, uiCenterY = UIParent:GetCenter()
 
             -- Fix BuffIconCooldownViewer
-            local buffViewer = _G["BuffIconCooldownViewer"]
+            local buffViewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon")
             if buffViewer then
                 local point = buffViewer:GetPoint(1)
                 if point == "TOPLEFT" then
@@ -2197,7 +2215,7 @@ local function RegisterEditModeCallbacks()
             end
 
             -- Fix BuffBarCooldownViewer (tracked bars)
-            local barViewer = _G["BuffBarCooldownViewer"]
+            local barViewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar")
             if barViewer then
                 local point = barViewer:GetPoint(1)
                 if point == "TOPLEFT" then
@@ -2242,7 +2260,7 @@ viewerAnchorFixFrame:SetScript("OnEvent", function(self, event, isInitialLogin, 
         local uiCenterX, uiCenterY = UIParent:GetCenter()
 
         -- Fix BuffBarCooldownViewer anchor using GetCenter() for exact position
-        local barViewer = _G["BuffBarCooldownViewer"]
+        local barViewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar")
         if barViewer then
             local point = barViewer:GetPoint(1)
             if point == "TOPLEFT" then
@@ -2261,7 +2279,7 @@ viewerAnchorFixFrame:SetScript("OnEvent", function(self, event, isInitialLogin, 
         end
 
         -- Same fix for BuffIconCooldownViewer
-        local iconViewer = _G["BuffIconCooldownViewer"]
+        local iconViewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon")
         if iconViewer then
             local point = iconViewer:GetPoint(1)
             if point == "TOPLEFT" then

@@ -269,6 +269,9 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:SetScript("OnEvent", function(self, event, arg)
+    -- Only run when classic CDM engine is active
+    if ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "classic" then return end
+
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
         EnsureGlowHooks()
         -- Consolidated timer: apply settings and hide glows together
