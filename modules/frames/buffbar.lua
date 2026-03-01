@@ -275,6 +275,7 @@ local function ApplyBuffIconAnchor(settings)
     local viewer = GetBuffIconViewer()
     if not viewer then return end
     if InCombatLockdown() then return end
+    if Helpers.IsEditModeActive() then return end
 
     local anchorTo = settings.anchorTo or "disabled"
     local sourcePoint = settings.anchorSourcePoint or "CENTER"

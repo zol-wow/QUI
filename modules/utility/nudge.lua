@@ -390,10 +390,10 @@ end
 -- Each entry maps a resolver key to its display name. The actual frame is
 -- obtained at runtime via _G.QUI_GetCDMViewerFrame(key).
 local CDM_VIEWERS = {
-    { key = "essential", name = "EssentialCooldownViewer" },
-    { key = "utility",   name = "UtilityCooldownViewer" },
-    { key = "buffIcon",  name = "BuffIconCooldownViewer" },
-    { key = "buffBar",   name = "BuffBarCooldownViewer" },
+    { key = "essential", name = "EssentialCooldownViewer", anchorKey = "cdmEssential" },
+    { key = "utility",   name = "UtilityCooldownViewer",   anchorKey = "cdmUtility" },
+    { key = "buffIcon",  name = "BuffIconCooldownViewer",  anchorKey = "buffIcon" },
+    { key = "buffBar",   name = "BuffBarCooldownViewer",   anchorKey = "buffBar" },
 }
 -- Reverse lookup: name -> key (used by generic functions that receive a name)
 local CDM_NAME_TO_KEY = {}
@@ -750,8 +750,10 @@ local function CreateMinimapNudgeButton(parent, direction)
 end
 
 -- Create overlay for a single CDM viewer
+-- Parent to the QUI container (always visible).  Blizzard viewers stay
+-- at alpha 0 — overlays on QUI containers track the visible frame.
 local function CreateViewerOverlay(viewerName)
-    local viewer = ResolveCDMFrame(viewerName)
+    local viewer = ResolveCDMFrame(viewerName) or _G[viewerName]
     if not viewer then return nil end
 
     local overlay = CreateFrame("Frame", nil, viewer, "BackdropTemplate")
@@ -956,9 +958,7 @@ function QUICore:ShowViewerOverlays()
         _G.QUI_RefreshCDMVisibility()
     end
 
-    -- Force-show hidden CDM viewers so overlays (children) become visible.
-    -- Blizzard may :Hide() viewers with no active content (e.g. BuffIcon with
-    -- no tracked cooldowns).  Alpha alone can't make a hidden frame visible.
+    -- Force-show hidden CDM containers so overlays become visible.
     wipe(viewersForceShown)
     for _, entry in ipairs(CDM_VIEWERS) do
         local viewerName = entry.name
@@ -1015,8 +1015,8 @@ function QUICore:ShowViewerOverlays()
                 end)
                 sel:HookScript("OnShow", function(self)
                     if not EditModeManagerFrame or not EditModeManagerFrame:IsShown() then return end
+                    -- Re-show QUI container if it was hidden
                     local v = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(hookedKey)
-                    -- Re-show viewer if it was hidden (same logic as force-show on enter)
                     if v and not v:IsShown() then
                         C_Timer.After(0, function()
                             if v and not v:IsShown() then
@@ -1028,12 +1028,6 @@ function QUICore:ShowViewerOverlays()
                     local ov = viewerOverlays[hookedName]
                     if ov then
                         ov:Show()
-                    end
-                    -- Keep Blizzard's .Selection visually hidden; QUI overlay is the indicator.
-                    -- Skip for BuffIcon/BuffBar when flagged to keep Selection visible
-                    -- (cdm_viewer Edit Mode resize needs Selection shown to read MOH size).
-                    if not (_G.QUI_IsSelectionKeepVisible and _G.QUI_IsSelectionKeepVisible(self)) then
-                        self:SetAlpha(0)
                     end
                 end)
             end
@@ -1061,8 +1055,7 @@ function QUICore:ShowViewerOverlays()
             local isLocked = viewer and _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(viewer)
 
             if isLocked then
-                -- Locked: grey overlay, drag disabled on selection children
-                -- to prevent drag initiation
+                -- Locked: grey overlay, clickable to open CDM settings
                 overlay:Show()
                 overlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
                 overlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
@@ -1072,45 +1065,72 @@ function QUICore:ShowViewerOverlays()
                 end
                 if viewer then
                     BlockFrameMovement(viewer)
-                    -- Disable mouse on .Selection to suppress drag (secure
-                    -- frames ignore SetScript/RegisterForDrag overrides).
-                    -- Selection lives on the Blizzard viewer, not the QUI container.
-                    if blizzViewer and blizzViewer.Selection then
-                        blizzViewer.Selection:EnableMouse(false)
-                    end
-                    HideSelectionIndicator(blizzViewer or viewer)
                 end
-                -- Locked: overlay is visual-only indicator.  Clicks pass
-                -- through (EnableMouse false) to Blizzard's .Selection which
-                -- handles the Edit Mode context menu in secure context.
-                -- TAINT SAFETY: We never call SelectSystem() or write to
-                -- Blizzard frames from addon code — that taints the frame
-                -- and breaks Edit Mode menu buttons.
-                overlay:EnableMouse(false)
+                -- Clickable overlay — opens CDM settings panel
+                overlay:EnableMouse(true)
                 overlay:SetScript("OnMouseDown", nil)
-                overlay:SetScript("OnMouseUp", nil)
+                overlay:SetScript("OnMouseUp", function()
+                    if _G.CooldownViewerSettings and _G.CooldownViewerSettings.Show then
+                        _G.CooldownViewerSettings:Show()
+                    end
+                end)
             else
-                -- Free: show blue QUI overlay as visual-only indicator.
-                -- EnableMouse(false) lets clicks pass through to Blizzard's
-                -- .Selection underneath, which handles Edit Mode menu + drag.
-                -- .Selection is made invisible so only the QUI overlay shows.
+                -- Free: show blue QUI overlay, draggable to move QUI container.
+                -- Click (no drag) opens CDM settings panel.
                 overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
                 overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
                 if overlay.label then
                     overlay.label:SetTextColor(0.2, 0.8, 1, 1)
                     overlay.label:SetText(overlay.displayName or viewerName)
                 end
-                overlay:EnableMouse(false)
-                overlay:SetScript("OnMouseDown", nil)
-                overlay:SetScript("OnMouseUp", nil)
+                overlay:EnableMouse(true)
+                overlay:SetMovable(true)
+                overlay:RegisterForDrag("LeftButton")
+                local capturedViewer = viewer  -- closure capture
+                local capturedName = viewerName
+                overlay:SetScript("OnMouseDown", function(self, button)
+                    if button == "LeftButton" then
+                        self.__dragging = false
+                        QUICore:SelectViewer(capturedName)
+                    end
+                end)
+                overlay:SetScript("OnDragStart", function(self)
+                    self.__dragging = true
+                    if capturedViewer then
+                        capturedViewer:SetMovable(true)
+                        capturedViewer:StartMoving()
+                    end
+                end)
+                overlay:SetScript("OnDragStop", function(self)
+                    self.__dragging = false
+                    if capturedViewer then
+                        pcall(function() capturedViewer:StopMovingOrSizing() end)
+                    end
+                    -- Save position after drag
+                    if _G.QUI_SaveCDMPosition then
+                        _G.QUI_SaveCDMPosition(capturedName)
+                    end
+                    -- Update dependent anchors
+                    if _G.QUI_UpdateCDMAnchorProxyFrames then
+                        _G.QUI_UpdateCDMAnchorProxyFrames()
+                    end
+                    if _G.QUI_UpdateFramesAnchoredTo then
+                        _G.QUI_UpdateFramesAnchoredTo(capturedViewer)
+                    end
+                end)
+                overlay:SetScript("OnMouseUp", function(self, button)
+                    if button == "LeftButton" and not self.__dragging then
+                        if _G.CooldownViewerSettings and _G.CooldownViewerSettings.Show then
+                            _G.CooldownViewerSettings:Show()
+                        end
+                    end
+                end)
                 -- BuffBarCooldownViewer repositions dynamically (LayoutBuffBars).
                 -- ApplyTrackedBarAnchor is guarded during Edit Mode so QUI won't
                 -- move it, but Blizzard's own Edit Mode may reposition to saved coords.
                 --
-                -- Strategy: detach overlay to UIParent as visual-only (EnableMouse false).
-                -- Let .Selection stay visible and handle all clicks/drag natively — zero
-                -- addon code touching .Selection = zero taint.  After .Selection drag
-                -- moves the viewer, an OnUpdate syncs the overlay to follow.
+                -- Strategy: detach overlay to UIParent.  After viewer moves,
+                -- an OnUpdate syncs the overlay to follow.
                 if viewerName == "BuffBarCooldownViewer" and viewer then
                     local cx = Helpers.SafeValue(viewer:GetCenter(), nil)
                     local _, cy = viewer:GetCenter()
@@ -1128,10 +1148,6 @@ function QUICore:ShowViewerOverlays()
                         overlay:SetFrameStrata("HIGH")
                         overlay:SetFrameLevel(100)
                     end
-                    -- Visual-only: clicks pass through to .Selection underneath
-                    overlay:EnableMouse(false)
-                    overlay:SetScript("OnMouseDown", nil)
-                    overlay:SetScript("OnMouseUp", nil)
                     -- Continuously sync overlay position and size to viewer frame
                     overlay:SetScript("OnUpdate", function(self)
                         if InCombatLockdown() then return end
@@ -1164,26 +1180,12 @@ function QUICore:ShowViewerOverlays()
                         self:ClearAllPoints()
                         self:SetPoint("CENTER", UIParent, "CENTER", vcx - usx2, vcy - usy2)
                     end)
-                    -- Do NOT hide .Selection — it must be clickable for Blizzard menu + drag.
-                    -- .Selection is NOT made invisible for this viewer.
                     overlay:Show()
                 else
                     overlay:Show()
                 end
-                -- Ensure movement is unblocked for free frames
                 if viewer then
                     UnblockFrameMovement(viewer)
-                    -- Re-enable mouse on .Selection for free frames
-                    -- (may have been disabled when previously locked).
-                    -- Selection lives on the Blizzard viewer, not the QUI container.
-                    if blizzViewer and blizzViewer.Selection then
-                        blizzViewer.Selection:EnableMouse(true)
-                    end
-                    -- Hide Blizzard's .Selection visually (alpha 0) but keep
-                    -- it clickable for Edit Mode menu and drag-to-move.
-                    HideSelectionIndicator(blizzViewer or viewer)
-                    -- Switch all proxies to direct-anchor mode so the
-                    -- full anchor chain follows viewer drag in realtime.
                     if _G.QUI_UpdateCDMAnchorProxyFrames then
                         _G.QUI_UpdateCDMAnchorProxyFrames()
                     end
@@ -1214,6 +1216,7 @@ function QUICore:ShowViewerOverlays()
     end
     -- Store reference for selection manager access
     self.cdmOverlays = viewerOverlays
+
 end
 
 -- Hide all viewer overlays
@@ -1227,12 +1230,13 @@ function QUICore:HideViewerOverlays()
             overlay:SetScript("OnMouseDown", nil)
             overlay:SetScript("OnMouseUp", nil)
             overlay:SetScript("OnUpdate", nil)
-            -- Re-parent BuffBar overlay back to viewer
-            -- (was detached to UIParent during Edit Mode)
-            if viewerName == "BuffBarCooldownViewer" then
-                local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)
-                if viewer then
-                    overlay:SetParent(viewer)
+            -- Re-parent overlay back to QUI container if it was
+            -- detached to UIParent during Edit Mode (BuffBarCooldownViewer).
+            if overlay:GetParent() == UIParent then
+                local quiContainer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)
+                local parent = quiContainer or _G[viewerName]
+                if parent then
+                    overlay:SetParent(parent)
                     overlay:ClearAllPoints()
                     overlay:SetAllPoints()
                 end
@@ -1955,6 +1959,11 @@ function QUICore:NudgeSelectedViewer(direction)
 
     if _G.QUI_UpdateFramesAnchoredTo then
         _G.QUI_UpdateFramesAnchoredTo(viewer)
+    end
+
+    -- Save CDM container position to DB after nudge
+    if CDM_VIEWER_LOOKUP[self.selectedViewer] and _G.QUI_SaveCDMPosition then
+        _G.QUI_SaveCDMPosition(self.selectedViewer)
     end
 
     return true

@@ -29,6 +29,9 @@ QUI_Anchoring.overriddenFrames = {}
 
 local Helpers = {}
 
+-- Forward-declared tables (populated later, referenced by ResolveFrameForKey)
+local CDM_LOGICAL_SIZE_KEYS = {}
+
 -- Edit Mode hook state (declared early so ApplyFrameAnchor can set the guard)
 local _editModeReapplyGuard = false  -- prevents recursive reapply during QUI's own SetPoint
 local _editModeTickerSilent = false  -- suppress per-tick debug after first pass
@@ -1493,9 +1496,12 @@ local FRAME_ANCHOR_FALLBACKS = {
 
 -- Helper: resolve a single key to a visible frame (nil if unavailable)
 local function ResolveFrameForKey(key)
-    -- CDM proxy check
-    local cdmProxy = GetCDMAnchorProxy(key)
-    if cdmProxy then return cdmProxy end
+    -- Always use CDM proxy frames — GetViewerFrame returns QUI containers
+    -- both in and out of Edit Mode, so proxies work identically.
+    do
+        local cdmProxy = GetCDMAnchorProxy(key)
+        if cdmProxy then return cdmProxy end
+    end
 
     -- Frame resolver
     local resolver = FRAME_RESOLVERS[key]
@@ -1666,12 +1672,10 @@ end
 -- Track which parent frames have been hooked for OnSizeChanged
 local hookedParentFrames = {}
 
-local CDM_LOGICAL_SIZE_KEYS = {
-    cdmEssential = true,
-    cdmUtility = true,
-    buffIcon = true,
-    buffBar = true,
-}
+CDM_LOGICAL_SIZE_KEYS.cdmEssential = true
+CDM_LOGICAL_SIZE_KEYS.cdmUtility = true
+CDM_LOGICAL_SIZE_KEYS.buffIcon = true
+CDM_LOGICAL_SIZE_KEYS.buffBar = true
 local CASTBAR_ANCHOR_KEYS = {
     playerCastbar = true,
     targetCastbar = true,
@@ -1891,6 +1895,18 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         return
     end
 
+    -- Detect Blizzard Edit Mode system frames early (needed for CDM guards below).
+    local isBlizzEditModeSystem = resolved.system ~= nil or resolved.systemIndex ~= nil
+
+    -- During Edit Mode, free-floating CDM viewers (screen/disabled parent) are
+    -- entirely handled by Blizzard's native drag system.  Don't mark them as
+    -- overridden (keeps them "unlocked" and draggable) and don't call SetPoint.
+    if isBlizzEditModeSystem and inEditMode
+        and CDM_LOGICAL_SIZE_KEYS[key]
+        and (not settings.parent or settings.parent == "screen" or settings.parent == "disabled") then
+        if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP free-floating CDM viewer in EditMode", key)) end
+        return
+    end
 
     -- Mark frame as overridden FIRST — blocks any module positioning from this point on
     SetFrameOverride(resolved, true, key)
@@ -1899,24 +1915,20 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     -- OnSystemPositionChange which reads GetPoint() and errors on nil offsetY.
     -- Still mark them overridden (above) so QUI_IsFrameLocked returns true and
     -- the Edit Mode overlay shows "(Locked)", but skip the actual repositioning.
-    local isBlizzEditModeSystem = resolved.system ~= nil or resolved.systemIndex ~= nil
     if isBlizzEditModeSystem and resolved.IsShown and not resolved:IsShown() then
         if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): HIDDEN system frame (system=%s sysIdx=%s)", key, tostring(resolved.system), tostring(resolved.systemIndex))) end
         return
     end
 
-    -- During Edit Mode, skip repositioning CDM viewer frames that have no
-    -- QUI anchor parent — Blizzard actively controls their layout/position
-    -- during resize and ClearAllPoints/SetPoint would fight it.  However,
-    -- CDM viewers that ARE anchored to another frame via QUI's anchoring
-    -- system must follow their parent in real-time (otherwise they overlap
-    -- when the parent is dragged).  All OTHER system frames with QUI
-    -- overrides (boss frames, objective tracker, etc.) are "Locked" in
-    -- Edit Mode and should follow the anchor chain in real-time.
+    -- During Edit Mode, anchored CDM viewers are marked overridden above so
+    -- nudge overlays show "(Locked)", but we skip ClearAllPoints/SetPoint.
+    -- Calling these on Blizzard's secure CDM viewer frames from addon code
+    -- taints their geometry; HideSystemSelections reads the tainted position
+    -- via secureexecuterange on exit, propagating taint and triggering
+    -- ADDON_ACTION_FORBIDDEN on ClearTarget().
     if isBlizzEditModeSystem and inEditMode
-        and CDM_LOGICAL_SIZE_KEYS[key]
-        and (not settings.parent or settings.parent == "screen" or settings.parent == "disabled") then
-        if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP CDM viewer in EditMode (no QUI parent)", key)) end
+        and CDM_LOGICAL_SIZE_KEYS[key] then
+        if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP anchored CDM viewer in EditMode (taint safety)", key)) end
         return
     end
 

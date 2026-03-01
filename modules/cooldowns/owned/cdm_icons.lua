@@ -604,17 +604,14 @@ end)
 -- BLIZZARD BUFF VISIBILITY
 -- Buff icon visibility is driven by the rescan mechanism: aura events
 -- trigger ScanCooldownViewer → LayoutContainer which rebuilds the icon
--- pool.  Icons are always alpha=1 while in the pool.  The parent
--- Blizzard viewer is alpha=0, so Blizzard hides its children — their
--- IsShown()/GetAlpha() state is unreliable for polling.
+-- pool.  Icons start at alpha=1 on init; during normal gameplay the
+-- update ticker mirrors the Blizzard child's alpha (multiplied by row
+-- opacity).  During Edit Mode, icons stay at full visibility.
 ---------------------------------------------------------------------------
 local function InitBuffVisibility(icon, blizzChild)
     if not blizzChild then return end
-    -- Buff icons are always visible while in the pool — the rescan
-    -- mechanism (OnBuffAuraEvent → ScanCooldownViewer → LayoutContainer)
-    -- handles adding/removing icons when buffs change.  The Blizzard
-    -- child's IsShown() is unreliable because the parent viewer is
-    -- alpha=0, causing Blizzard's CDM to hide children.
+    -- Start at full alpha — the update ticker will mirror Blizzard child
+    -- alpha outside Edit Mode.
     icon:SetAlpha(1)
 end
 
@@ -863,6 +860,7 @@ local function ConfigureIcon(icon, rowConfig)
     -- Apply row opacity
     local opacity = rowConfig.opacity or 1.0
     icon:SetAlpha(opacity)
+    icon._rowOpacity = opacity
 end
 
 ---------------------------------------------------------------------------
@@ -1367,11 +1365,17 @@ function CDMIcons:UpdateAllCooldowns()
             local entry = icon._spellEntry
             if entry and entry._blizzChild then
                 if entry.viewerType == "buff" then
-                    -- Buff icons: no alpha polling.  The parent viewer is
-                    -- alpha=0 so Blizzard hides its children — IsShown() is
-                    -- unreliable.  Visibility is driven entirely by the
-                    -- rescan mechanism (aura events rebuild the icon pool).
-                    -- noop
+                    -- Buff icons: mirror Blizzard child alpha outside edit mode.
+                    -- During edit mode, force full visibility so user can see all icons.
+                    if editMode then
+                        icon:SetAlpha(1)
+                    else
+                        local blizzAlpha = entry._blizzChild:GetAlpha()
+                        if not IsSecretValue(blizzAlpha) then
+                            local rowOpacity = icon._rowOpacity or 1
+                            icon:SetAlpha(blizzAlpha * rowOpacity)
+                        end
+                    end
                 else
                     -- Essential/Utility: Show/Hide sync.
                     local blizzShown = entry._blizzChild:IsShown()

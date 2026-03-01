@@ -96,8 +96,8 @@ end
 
 ---------------------------------------------------------------------------
 -- HIDE / SHOW BLIZZARD VIEWERS
--- During normal gameplay: hidden (alpha 0, no mouse).
--- During Edit Mode: visible (restored) so Blizzard's Edit Mode can interact.
+-- Blizzard viewers are ALWAYS alpha 0 (including during Edit Mode).
+-- QUI's own containers stay visible with overlays during Edit Mode.
 -- SetAlpha hooks prevent Blizzard's CDM code from restoring viewer visibility
 -- during combat (cooldown activation triggers SetAlpha(1) internally).
 ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ local function HookViewerAlpha(viewer, viewerName)
     if viewerAlphaHooked[viewerName] then return end
     viewerAlphaHooked[viewerName] = true
     hooksecurefunc(viewer, "SetAlpha", function(self, alpha)
-        if viewersHidden and alpha > 0 and not Helpers.IsEditModeActive() then
+        if viewersHidden and alpha > 0 then
             self:SetAlpha(0)
         end
     end)
@@ -115,11 +115,11 @@ end
 
 -- Periodic alpha enforcer: catches cases where Blizzard restores alpha
 -- via internal paths that don't trigger the SetAlpha hook.
--- Runs only while viewers are hidden; stops when shown (Edit Mode).
+-- Runs only while viewers are hidden (always, including Edit Mode).
 local alphaEnforcerFrame = CreateFrame("Frame")
 local alphaEnforcerElapsed = 0
 alphaEnforcerFrame:SetScript("OnUpdate", function(self, dt)
-    if not viewersHidden or Helpers.IsEditModeActive() then return end
+    if not viewersHidden then return end
     alphaEnforcerElapsed = alphaEnforcerElapsed + dt
     if alphaEnforcerElapsed < 0.1 then return end
     alphaEnforcerElapsed = 0
@@ -481,39 +481,19 @@ local function RegisterEditModeCallbacks()
 
     if QUICore.RegisterEditModeEnter then
         QUICore:RegisterEditModeEnter(function()
-            -- Sync container positions → Blizzard viewers, reparent .Selection.
-            -- Viewers stay at alpha 0 — QUI owned icons remain visible.
-            -- .Selection handles click interaction (context menu, drag).
+            -- Blizzard viewers stay at alpha 0 — QUI containers + overlays
+            -- handle all display during Edit Mode. Zero Blizzard frame writes.
             if _G.QUI_OnEditModeEnterCDM then
                 _G.QUI_OnEditModeEnterCDM()
-            end
-            for _, viewerName in pairs(VIEWER_NAMES) do
-                local viewer = _G[viewerName]
-                if viewer then
-                    viewer:EnableMouse(true)
-                    if viewer.SetMouseClickEnabled then
-                        viewer:SetMouseClickEnabled(true)
-                    end
-                end
             end
         end)
     end
 
     if QUICore.RegisterEditModeExit then
         QUICore:RegisterEditModeExit(function()
-            -- Read positions from Blizzard viewers (user may have dragged),
-            -- then re-disable mouse on viewers (owned containers handle display).
+            -- Save QUI container positions, rebuild layout.
             if _G.QUI_OnEditModeExitCDM then
                 _G.QUI_OnEditModeExitCDM()
-            end
-            for _, viewerName in pairs(VIEWER_NAMES) do
-                local viewer = _G[viewerName]
-                if viewer then
-                    viewer:EnableMouse(false)
-                    if viewer.SetMouseClickEnabled then
-                        viewer:SetMouseClickEnabled(false)
-                    end
-                end
             end
             -- Rescan after Edit Mode (Blizzard may have changed settings)
             C_Timer.After(0.3, ScanAll)
