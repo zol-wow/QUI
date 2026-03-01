@@ -1096,6 +1096,9 @@ end
 _G.QUI_OnEditModeExitCDM = function()
     _editModeHidden = false
 
+    -- Restore mouse interaction on icons/containers disabled during Edit Mode.
+    RestoreMouseAfterEditMode()
+
     -- Read final Blizzard viewer positions (user may have dragged via
     -- .Selection) and apply to QUI containers.  During Edit Mode the
     -- Blizzard viewer is the authoritative position source.

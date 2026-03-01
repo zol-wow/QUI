@@ -2805,30 +2805,10 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.After(0.6, function()
             CustomTrackers:RefreshAll()
             -- Apply HUD visibility instantly to prevent flash on /reload while mounted.
-            -- Can't reference ShouldCustomTrackersBeVisible (defined later in file),
-            -- so inline the visibility check using GetCore/Helpers.
-            local core = GetCore()
-            local vis = core and core.db and core.db.profile and core.db.profile.customTrackersVisibility
-            if vis then
-                local shouldShow = true
-                -- Hide rules (highest priority)
-                if vis.hideWhenMounted and Helpers.IsPlayerMounted() then shouldShow = false
-                elseif vis.hideWhenFlying and Helpers.IsPlayerFlying() then shouldShow = false
-                elseif vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then shouldShow = false
-                elseif vis.showAlways then shouldShow = true
-                else
-                    -- Show conditions (OR logic)
-                    shouldShow = false
-                    if vis.showWhenTargetExists and UnitExists("target") then shouldShow = true end
-                    if vis.showInCombat and UnitAffectingCombat("player") then shouldShow = true end
-                    if vis.showInGroup and (IsInGroup() or IsInRaid()) then shouldShow = true end
-                end
-                if not shouldShow then
-                    local alpha = vis.fadeOutAlpha or 0
-                    for _, bar in pairs(CustomTrackers.activeBars) do
-                        if bar and bar.SetAlpha then bar:SetAlpha(alpha) end
-                    end
-                end
+            -- UpdateCustomTrackersVisibility is defined later in this file but exists
+            -- by the time this 0.6s timer fires.
+            if UpdateCustomTrackersVisibility then
+                UpdateCustomTrackersVisibility()
             end
         end)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
