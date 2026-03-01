@@ -1333,9 +1333,34 @@ end
 -- covers icons shifted by per-row yOffset settings.  Without this the
 -- proxy is centered on the viewer, but the icon bounding box may be
 -- shifted upward/downward.
+local function IsFrameProtectedSafe(frame)
+    if not (frame and frame.IsProtected) then return false end
+    local ok, protected = pcall(frame.IsProtected, frame)
+    return ok and protected == true
+end
+
 local function CDMAnchorResolver(proxy, source)
     local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(source)
     local yOff = (vs and vs.proxyYOffset) or 0
+
+    -- Some Blizzard CDM frames can become protected in combat, which propagates
+    -- protection to anchored proxies. Mutating points in that state triggers
+    -- ADDON_ACTION_BLOCKED on ClearAllPoints/SetPoint.
+    if InCombatLockdown() and (IsFrameProtectedSafe(proxy) or IsFrameProtectedSafe(source)) then
+        return
+    end
+
+    -- Avoid redundant point churn.
+    if proxy:GetNumPoints() == 1 then
+        local pt, relTo, relPt, ox, oy = proxy:GetPoint(1)
+        if pt == "CENTER" and relTo == source and relPt == "CENTER"
+            and math.abs((ox or 0) - 0) < 0.1
+            and math.abs((oy or 0) - (yOff or 0)) < 0.1
+        then
+            return
+        end
+    end
+
     proxy:ClearAllPoints()
     proxy:SetPoint("CENTER", source, "CENTER", 0, yOff)
 end
