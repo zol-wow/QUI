@@ -1155,11 +1155,43 @@ local function ApplyKeybindToIcon(icon, viewerName)
         iconKeybindState[icon] = iks
     end
 
+    -- Ensure keybind text sits above cooldown swipe/darkening overlays.
+    if not iks.textLayer then
+        local layer = CreateFrame("Frame", nil, icon)
+        layer:SetAllPoints(icon)
+        iks.textLayer = layer
+    end
+    if iks.textLayer then
+        local cooldownLevel = (icon.Cooldown and icon.Cooldown.GetFrameLevel and icon.Cooldown:GetFrameLevel()) or icon:GetFrameLevel()
+        local desiredLevel = cooldownLevel + 20
+        if iks.textLayer:GetFrameLevel() ~= desiredLevel then
+            iks.textLayer:SetFrameLevel(desiredLevel)
+        end
+        if icon.GetFrameStrata and iks.textLayer.GetFrameStrata and iks.textLayer:GetFrameStrata() ~= icon:GetFrameStrata() then
+            iks.textLayer:SetFrameStrata(icon:GetFrameStrata())
+        end
+    end
+
     -- Create keybind text FontString if it doesn't exist
     if not iks.text then
-        iks.text = icon:CreateFontString(nil, "OVERLAY")
+        local textParent = iks.textLayer or icon
+        iks.text = textParent:CreateFontString(nil, "OVERLAY", nil, 7)
         iks.text:SetShadowOffset(1, -1)
         iks.text:SetShadowColor(0, 0, 0, 1)
+    elseif iks.textLayer and iks.text:GetParent() ~= iks.textLayer then
+        -- Parent may have changed if icon state was rebuilt.
+        local existingText = iks.text:GetText()
+        local shown = iks.text:IsShown()
+        iks.text:Hide()
+        iks.text = iks.textLayer:CreateFontString(nil, "OVERLAY", nil, 7)
+        iks.text:SetShadowOffset(1, -1)
+        iks.text:SetShadowColor(0, 0, 0, 1)
+        iks.text:SetText(existingText or "")
+        if shown then iks.text:Show() end
+        -- Force a full style/anchor refresh after reparenting.
+        iks.anchor, iks.offsetX, iks.offsetY = nil, nil, nil
+        iks.font, iks.fontSize, iks.fontOutline = nil, nil, nil
+        iks.r, iks.g, iks.b, iks.a = nil, nil, nil, nil
     end
 
     -- Skip redundant work: only touch the FontString when something changed.
@@ -1170,7 +1202,8 @@ local function ApplyKeybindToIcon(icon, viewerName)
 
     if iks.anchor ~= anchor or iks.offsetX ~= offsetX or iks.offsetY ~= offsetY then
         iks.text:ClearAllPoints()
-        iks.text:SetPoint(anchor, icon, anchor, offsetX, offsetY)
+        local anchorParent = iks.textLayer or icon
+        iks.text:SetPoint(anchor, anchorParent, anchor, offsetX, offsetY)
         iks.anchor, iks.offsetX, iks.offsetY = anchor, offsetX, offsetY
     end
 
