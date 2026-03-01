@@ -980,13 +980,16 @@ function QUICore:ShowViewerOverlays()
         end
         local overlay = viewerOverlays[viewerName]
         local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)
+        -- Blizzard viewer (for .Selection access — Selection stays on the
+        -- Blizzard frame, not reparented to QUI containers).
+        local blizzViewer = _G[viewerName]
 
         -- Hook .Selection show/hide so toggling a CDM viewer on/off in
         -- Blizzard's edit mode menu hides/shows THIS viewer's overlay only.
         -- Per-viewer hooks avoid re-processing all viewers (which can cause
         -- unrelated overlays to flicker or disappear during Blizzard re-layout).
         if viewer then
-            local sel = viewer.Selection
+            local sel = blizzViewer and blizzViewer.Selection
             if sel and not _viewerSelectionHooked[sel] then
                 _viewerSelectionHooked[sel] = true
                 local hookedName = viewerName  -- capture for closure
@@ -1071,35 +1074,21 @@ function QUICore:ShowViewerOverlays()
                     BlockFrameMovement(viewer)
                     -- Disable mouse on .Selection to suppress drag (secure
                     -- frames ignore SetScript/RegisterForDrag overrides).
-                    if viewer.Selection then
-                        viewer.Selection:EnableMouse(false)
+                    -- Selection lives on the Blizzard viewer, not the QUI container.
+                    if blizzViewer and blizzViewer.Selection then
+                        blizzViewer.Selection:EnableMouse(false)
                     end
-                    HideSelectionIndicator(viewer)
+                    HideSelectionIndicator(blizzViewer or viewer)
                 end
-                -- .Selection mouse is off → overlay handles clicks and
-                -- forwards to the Blizzard viewer's SelectSystem for the
-                -- Edit Mode context menu (same pattern as forceShown frames).
-                local blizzViewer = _G[viewerName]
-                if blizzViewer and blizzViewer.SelectSystem then
-                    overlay:EnableMouse(true)
-                    overlay:SetScript("OnMouseDown", function(self, button)
-                        pcall(function()
-                            if EditModeManagerFrame and EditModeManagerFrame.ClearSelectedSystem then
-                                EditModeManagerFrame:ClearSelectedSystem()
-                            end
-                            blizzViewer.isSelected = false
-                            blizzViewer:SelectSystem()
-                            if blizzViewer.Selection then
-                                blizzViewer.Selection:SetAlpha(0)
-                            end
-                        end)
-                    end)
-                    overlay:SetScript("OnMouseUp", nil)
-                else
-                    overlay:EnableMouse(false)
-                    overlay:SetScript("OnMouseDown", nil)
-                    overlay:SetScript("OnMouseUp", nil)
-                end
+                -- Locked: overlay is visual-only indicator.  Clicks pass
+                -- through (EnableMouse false) to Blizzard's .Selection which
+                -- handles the Edit Mode context menu in secure context.
+                -- TAINT SAFETY: We never call SelectSystem() or write to
+                -- Blizzard frames from addon code — that taints the frame
+                -- and breaks Edit Mode menu buttons.
+                overlay:EnableMouse(false)
+                overlay:SetScript("OnMouseDown", nil)
+                overlay:SetScript("OnMouseUp", nil)
             else
                 -- Free: show blue QUI overlay as visual-only indicator.
                 -- EnableMouse(false) lets clicks pass through to Blizzard's
@@ -1186,12 +1175,13 @@ function QUICore:ShowViewerOverlays()
                     UnblockFrameMovement(viewer)
                     -- Re-enable mouse on .Selection for free frames
                     -- (may have been disabled when previously locked).
-                    if viewer.Selection then
-                        viewer.Selection:EnableMouse(true)
+                    -- Selection lives on the Blizzard viewer, not the QUI container.
+                    if blizzViewer and blizzViewer.Selection then
+                        blizzViewer.Selection:EnableMouse(true)
                     end
                     -- Hide Blizzard's .Selection visually (alpha 0) but keep
                     -- it clickable for Edit Mode menu and drag-to-move.
-                    HideSelectionIndicator(viewer)
+                    HideSelectionIndicator(blizzViewer or viewer)
                     -- Switch all proxies to direct-anchor mode so the
                     -- full anchor chain follows viewer drag in realtime.
                     if _G.QUI_UpdateCDMAnchorProxyFrames then
@@ -1237,7 +1227,7 @@ function QUICore:HideViewerOverlays()
             overlay:SetScript("OnMouseDown", nil)
             overlay:SetScript("OnMouseUp", nil)
             overlay:SetScript("OnUpdate", nil)
-            -- Re-parent BuffBarCooldownViewer overlay back to viewer
+            -- Re-parent BuffBar overlay back to viewer
             -- (was detached to UIParent during Edit Mode)
             if viewerName == "BuffBarCooldownViewer" then
                 local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(entry.key)

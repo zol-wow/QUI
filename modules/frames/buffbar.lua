@@ -249,21 +249,26 @@ local function ApplyTrackedBarAnchor(settings)
         return
     end
 
-    pcall(function()
+    local ok = pcall(function()
         viewer:ClearAllPoints()
         viewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
     end)
 
-    viewerBuffState[viewer] = viewerBuffState[viewer] or {}
-    viewerBuffState[viewer].anchorCache = {
-        anchorTo = anchorTo,
-        placement = placement,
-        anchorFrame = anchorFrame,
-        sourcePoint = sourcePoint,
-        targetPoint = targetPoint,
-        offsetX = offsetX,
-        offsetY = offsetY,
-    }
+    -- Only write cache when the SetPoint actually succeeded.  If pcall
+    -- swallowed an error (e.g., anchor frame not fully initialised), leaving
+    -- the cache empty lets the 20-fps OnUpdate poll retry next tick.
+    if ok then
+        viewerBuffState[viewer] = viewerBuffState[viewer] or {}
+        viewerBuffState[viewer].anchorCache = {
+            anchorTo = anchorTo,
+            placement = placement,
+            anchorFrame = anchorFrame,
+            sourcePoint = sourcePoint,
+            targetPoint = targetPoint,
+            offsetX = offsetX,
+            offsetY = offsetY,
+        }
+    end
 end
 
 local function ApplyBuffIconAnchor(settings)
@@ -367,21 +372,25 @@ local function ApplyBuffIconAnchor(settings)
         viewerBuffState[viewer].originalPoints = originalPoints
     end
 
-    pcall(function()
+    local ok = pcall(function()
         viewer:ClearAllPoints()
         viewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
     end)
 
-    viewerBuffState[viewer] = viewerBuffState[viewer] or {}
-    viewerBuffState[viewer].anchorCache = {
-        anchorTo = anchorTo,
-        placement = placement,
-        anchorFrame = anchorFrame,
-        sourcePoint = sourcePoint,
-        targetPoint = targetPoint,
-        offsetX = offsetX,
-        offsetY = offsetY,
-    }
+    -- Only write cache when SetPoint succeeded — a failed pcall (e.g., anchor
+    -- frame not fully ready) must not block the OnUpdate retry loop.
+    if ok then
+        viewerBuffState[viewer] = viewerBuffState[viewer] or {}
+        viewerBuffState[viewer].anchorCache = {
+            anchorTo = anchorTo,
+            placement = placement,
+            anchorFrame = anchorFrame,
+            sourcePoint = sourcePoint,
+            targetPoint = targetPoint,
+            offsetX = offsetX,
+            offsetY = offsetY,
+        }
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -518,7 +527,7 @@ local function GetBuffIconFrames()
 
         local visible = {}
         for _, icon in ipairs(pool) do
-            if icon:IsShown() then
+            if icon:IsShown() and icon:GetAlpha() > 0 then
                 visible[#visible + 1] = icon
             end
         end
@@ -1745,13 +1754,18 @@ LayoutBuffIcons = function()
         end
     end
 
-    -- Re-sync buff icon visibility after styling. ConfigureIcon sets
-    -- icon:SetAlpha(opacity) which overwrites the initial SetAlpha(0) from
-    -- HookBlizzVisibility. Read IsShown() once here — safe, always out of combat.
-    for _, icon in ipairs(icons) do
-        local entry = icon._spellEntry
-        if entry and entry._blizzChild and not entry._blizzChild:IsShown() then
-            icon:SetAlpha(0)
+    -- Re-sync buff icon visibility after styling.
+    if IsOwnedEngine() then
+        -- No alpha re-sync needed for owned buff icons.  The parent viewer
+        -- is alpha=0 so Blizzard children's IsShown() is unreliable.
+        -- Visibility is driven by the rescan mechanism (aura events rebuild
+        -- the icon pool).  Icons are always alpha=1 while in the pool.
+    else
+        for _, icon in ipairs(icons) do
+            local entry = icon._spellEntry
+            if entry and entry._blizzChild and not Helpers.SafeValue(entry._blizzChild:IsShown(), true) then
+                icon:SetAlpha(0)
+            end
         end
     end
 
@@ -2270,7 +2284,7 @@ local function CheckIconChanges()
         local pool = ns.CDMIcons and ns.CDMIcons:GetIconPool("buff")
         if pool then
             for _, icon in ipairs(pool) do
-                if icon:IsShown() then visibleCount = visibleCount + 1 end
+                if icon:IsShown() and icon:GetAlpha() > 0 then visibleCount = visibleCount + 1 end
             end
         end
     else
@@ -2579,8 +2593,24 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if isInitialLogin or isReloadingUi then
             C_Timer.After(1.5, function()
                 ForcePopulateBuffIcons()
+                -- Invalidate anchor cache so ApplyBuffIconAnchor re-applies
+                -- even if a prior call silently failed (anchor frame unavailable).
+                local viewer = GetBuffIconViewer()
+                if viewer and viewerBuffState[viewer] then
+                    viewerBuffState[viewer].anchorCache = nil
+                end
                 LayoutBuffIcons()  -- Direct calls
                 LayoutBuffBars()
+            end)
+            -- Staggered retry: anchor frame or proxy may not exist at 1.5s.
+            -- By 3.5s all CDM containers, proxies, and Blizzard layout are settled.
+            C_Timer.After(3.5, function()
+                if InCombatLockdown() then return end
+                local viewer = GetBuffIconViewer()
+                if viewer and viewerBuffState[viewer] then
+                    viewerBuffState[viewer].anchorCache = nil
+                end
+                LayoutBuffIcons()
             end)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -2601,6 +2631,36 @@ _G.QUI_OnBuffContainerReady = function()
     -- Container was just created; re-initialize if we haven't yet
     if not initialized then
         Initialize()
+    else
+        -- Already initialized but hooks may be missing — set them up now
+        local iconViewer = GetBuffIconViewer()
+        if iconViewer then
+            local iconVbs = viewerBuffState[iconViewer] or {}
+            viewerBuffState[iconViewer] = iconVbs
+            if not iconVbs.onUpdateHooked then
+                iconVbs.onUpdateHooked = true
+                iconViewer:HookScript("OnUpdate", BuffIconViewer_OnUpdate)
+            end
+            if not iconVbs.onShowHooked then
+                iconVbs.onShowHooked = true
+                iconViewer:HookScript("OnShow", function(self)
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then return end
+                        if IsLayoutSuppressed() then return end
+                        if isIconLayoutRunning then return end
+                        LayoutBuffIcons()
+                    end)
+                end)
+            end
+            -- Invalidate anchor cache — the container was just created and
+            -- any prior ApplyBuffIconAnchor may have failed (viewer didn't
+            -- exist yet) or positioned a stale frame.
+            iconVbs.anchorCache = nil
+
+            -- Force initial layout on the new container
+            ForcePopulateBuffIcons()
+            C_Timer.After(0.3, LayoutBuffIcons)
+        end
     end
 end
 
@@ -2630,6 +2690,14 @@ do
             lastIconHash = ""
             iconState.isInitialized = false
             barState.lastCount = 0
+
+            -- Invalidate the anchor cache so ApplyBuffIconAnchor re-applies
+            -- the saved anchor settings.  Edit Mode may have moved the
+            -- container via SyncContainerToBlizzard or drag.
+            local viewer = GetBuffIconViewer()
+            if viewer and viewerBuffState[viewer] then
+                viewerBuffState[viewer].anchorCache = nil
+            end
 
             -- Deferred: Blizzard may still be tearing down Edit Mode on this frame
             C_Timer.After(0.1, function()

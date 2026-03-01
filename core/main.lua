@@ -628,6 +628,7 @@ local defaults = {
             engine = "owned",  -- CDM engine: "classic" (Blizzard hooks) or "owned" (addon-owned frames)
             essential = {
                 enabled = true,
+                pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
                 desaturateOnCooldown = true,
                 rangeIndicator = true,
                 rangeColor = {0.8, 0.1, 0.1, 1},
@@ -700,6 +701,7 @@ local defaults = {
             },
             utility = {
                 enabled = true,
+                pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
                 desaturateOnCooldown = true,
                 rangeIndicator = true,
                 rangeColor = {0.8, 0.1, 0.1, 1},
@@ -774,6 +776,7 @@ local defaults = {
             },
             buff = {
                 enabled = true,
+                pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
                 iconSize = 32,      -- Icon size in pixels
                 borderSize = 1,     -- Border thickness (0 to 8)
                 shape = "square",   -- DEPRECATED: use aspectRatioCrop instead

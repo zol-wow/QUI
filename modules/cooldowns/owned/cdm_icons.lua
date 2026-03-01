@@ -69,11 +69,6 @@ local blizzCDState = setmetatable({}, { __mode = "k" })
 -- to the addon-owned icon without reading restricted frames during combat.
 local blizzTexState = setmetatable({}, { __mode = "k" })
 
--- TAINT SAFETY: Blizzard buff child visibility hook state tracked in a weak-keyed table.
--- Maps Blizzard buff children → { icon = quiIcon, hooked = bool } so Hide/Show hooks
--- can mirror visibility to the addon-owned icon via SetAlpha without polling.
-local blizzVisState = setmetatable({}, { __mode = "k" })
-
 ---------------------------------------------------------------------------
 -- DB ACCESS
 ---------------------------------------------------------------------------
@@ -416,48 +411,21 @@ local function UnhookBlizzTexture(icon)
 end
 
 ---------------------------------------------------------------------------
--- BLIZZARD BUFF VISIBILITY HOOK
--- Mirrors Blizzard buff child Show/Hide to addon-owned icon alpha.
--- Uses hooksecurefunc (one-time install) so we never call IsShown()
--- during combat — only out-of-combat initial sync.
+-- BLIZZARD BUFF VISIBILITY
+-- Buff icon visibility is driven by the rescan mechanism: aura events
+-- trigger ScanCooldownViewer → LayoutContainer which rebuilds the icon
+-- pool.  Icons are always alpha=1 while in the pool.  The parent
+-- Blizzard viewer is alpha=0, so Blizzard hides its children — their
+-- IsShown()/GetAlpha() state is unreliable for polling.
 ---------------------------------------------------------------------------
-local function HookBlizzVisibility(icon, blizzChild)
+local function InitBuffVisibility(icon, blizzChild)
     if not blizzChild then return end
-
-    local state = blizzVisState[blizzChild]
-    if not state then
-        state = {}
-        blizzVisState[blizzChild] = state
-    end
-    state.icon = icon
-
-    -- Sync initial state (safe — BuildIcons runs out of combat only)
-    if blizzChild:IsShown() then
-        icon:SetAlpha(1)
-    else
-        icon:SetAlpha(0)
-    end
-
-    if not state.hooked then
-        state.hooked = true
-        hooksecurefunc(blizzChild, "Hide", function(self)
-            local s = blizzVisState[self]
-            if not s or not s.icon then return end
-            s.icon:SetAlpha(0)
-        end)
-        hooksecurefunc(blizzChild, "Show", function(self)
-            local s = blizzVisState[self]
-            if not s or not s.icon then return end
-            s.icon:SetAlpha(1)
-        end)
-    end
-end
-
-local function UnhookBlizzVisibility(icon)
-    local entry = icon._spellEntry
-    if not entry or not entry._blizzChild then return end
-    local state = blizzVisState[entry._blizzChild]
-    if state then state.icon = nil end
+    -- Buff icons are always visible while in the pool — the rescan
+    -- mechanism (OnBuffAuraEvent → ScanCooldownViewer → LayoutContainer)
+    -- handles adding/removing icons when buffs change.  The Blizzard
+    -- child's IsShown() is unreliable because the parent viewer is
+    -- alpha=0, causing Blizzard's CDM to hide children.
+    icon:SetAlpha(1)
 end
 
 ---------------------------------------------------------------------------
@@ -952,7 +920,7 @@ function CDMIcons:ReleaseIcon(icon)
     -- Disconnect hooks before clearing _spellEntry (needs blizzChild ref)
     UnmirrorBlizzCooldown(icon)
     UnhookBlizzTexture(icon)
-    UnhookBlizzVisibility(icon)
+    -- (Buff visibility is now poll-based — no per-icon unhook needed.)
     icon:Hide()
     icon:ClearAllPoints()
     icon._spellEntry = nil
@@ -1109,7 +1077,7 @@ function CDMIcons:BuildIcons(viewerType, container)
             -- SetCooldownFromDurationObject hook fires.
             if entry.viewerType == "buff" then
                 icon._auraActive = true
-                HookBlizzVisibility(icon, entry._blizzChild)
+                InitBuffVisibility(icon, entry._blizzChild)
             end
         end
     end
@@ -1127,18 +1095,26 @@ end
 -- UPDATE ALL COOLDOWNS
 ---------------------------------------------------------------------------
 function CDMIcons:UpdateAllCooldowns()
+    local editMode = Helpers.IsEditModeActive()
     for _, pool in pairs(iconPools) do
         for _, icon in ipairs(pool) do
-            -- Sync non-buff icon visibility with Blizzard child.
-            -- Buff icons use hook-based approach (HookBlizzVisibility).
             local entry = icon._spellEntry
-            if entry and entry._blizzChild and entry.viewerType ~= "buff" then
-                local blizzShown = entry._blizzChild:IsShown()
-                local iconShown = icon:IsShown()
-                if blizzShown and not iconShown then
-                    icon:Show()
-                elseif not blizzShown and iconShown then
-                    icon:Hide()
+            if entry and entry._blizzChild then
+                if entry.viewerType == "buff" then
+                    -- Buff icons: no alpha polling.  The parent viewer is
+                    -- alpha=0 so Blizzard hides its children — IsShown() is
+                    -- unreliable.  Visibility is driven entirely by the
+                    -- rescan mechanism (aura events rebuild the icon pool).
+                    -- noop
+                else
+                    -- Essential/Utility: Show/Hide sync.
+                    local blizzShown = entry._blizzChild:IsShown()
+                    local iconShown = icon:IsShown()
+                    if blizzShown and not iconShown then
+                        icon:Show()
+                    elseif not blizzShown and iconShown then
+                        icon:Hide()
+                    end
                 end
             end
             UpdateIconCooldown(icon)

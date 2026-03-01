@@ -107,7 +107,7 @@ local function HookViewerAlpha(viewer, viewerName)
     if viewerAlphaHooked[viewerName] then return end
     viewerAlphaHooked[viewerName] = true
     hooksecurefunc(viewer, "SetAlpha", function(self, alpha)
-        if viewersHidden and alpha > 0 then
+        if viewersHidden and alpha > 0 and not Helpers.IsEditModeActive() then
             self:SetAlpha(0)
         end
     end)
@@ -119,7 +119,7 @@ end
 local alphaEnforcerFrame = CreateFrame("Frame")
 local alphaEnforcerElapsed = 0
 alphaEnforcerFrame:SetScript("OnUpdate", function(self, dt)
-    if not viewersHidden then return end
+    if not viewersHidden or Helpers.IsEditModeActive() then return end
     alphaEnforcerElapsed = alphaEnforcerElapsed + dt
     if alphaEnforcerElapsed < 0.1 then return end
     alphaEnforcerElapsed = 0
@@ -434,7 +434,16 @@ function CDMSpellData:GetSpellList(viewerType)
 end
 
 function CDMSpellData:ForceScan()
-    ScanAll()
+    -- Scan all three viewers synchronously but do NOT fire QUI_OnSpellDataChanged.
+    -- This prevents a feedback loop: RefreshAll → ForceScan → changed → callback → RefreshAll.
+    -- Update lastSpellCounts so the periodic ScanAll ticker won't re-detect the same change.
+    if InCombatLockdown() then return end
+    ScanViewer("essential")
+    ScanViewer("utility")
+    ScanViewer("buff")
+    for viewerType, list in pairs(spellLists) do
+        lastSpellCounts[viewerType] = type(list) == "table" and #list or 0
+    end
 end
 
 function CDMSpellData:IsViewerHidden()
@@ -472,10 +481,9 @@ local function RegisterEditModeCallbacks()
 
     if QUICore.RegisterEditModeEnter then
         QUICore:RegisterEditModeEnter(function()
-            -- Position Blizzard viewers at QUI container positions.
-            -- Viewers stay at alpha 0 — only .Selection matters for
-            -- click interaction (context menu, drag).  Enable mouse
-            -- so .Selection can receive clicks during Edit Mode.
+            -- Sync container positions → Blizzard viewers, reparent .Selection.
+            -- Viewers stay at alpha 0 — QUI owned icons remain visible.
+            -- .Selection handles click interaction (context menu, drag).
             if _G.QUI_OnEditModeEnterCDM then
                 _G.QUI_OnEditModeEnterCDM()
             end

@@ -40,6 +40,7 @@ end
 local containers = {}  -- { essential = frame, utility = frame, buff = frame }
 local viewerState = {} -- keyed by container frame
 local applying = {}    -- re-entry guard per tracker
+local refreshTimers = {} -- stored timer handles so overlapping RefreshAll calls cancel prior timers
 local initialized = false
 
 -- Anchor proxy for Utility below Essential
@@ -148,6 +149,160 @@ local function CreateContainer(name)
     return frame
 end
 
+-- Tracker key → frameAnchoring key mapping
+local ANCHOR_KEY_MAP = {
+    essential = "cdmEssential",
+    utility   = "cdmUtility",
+    buff      = "buffIcon",
+}
+
+-- Save a QUI container's current position to the DB.
+-- Called after Edit Mode exit so positions persist across sessions.
+-- Also updates frameAnchoring offsets (if enabled) so the anchoring
+-- system doesn't overwrite the container with stale values on next refresh.
+local function SaveContainerPosition(trackerKey)
+    local container = containers[trackerKey]
+    if not container then return end
+    local db = GetTrackerSettings(trackerKey)
+    if not db then return end
+    local cx, cy = container:GetCenter()
+    local sx, sy = UIParent:GetCenter()
+    if cx and cy and sx and sy then
+        local ox = cx - sx
+        local oy = cy - sy
+        db.pos = { ox = ox, oy = oy }
+
+        -- Keep frameAnchoring in sync so ApplyAllFrameAnchors uses the
+        -- updated position instead of overwriting with a stale offset.
+        -- Only sync when parent is screen (offsets are UIParent-center based).
+        local anchorKey = ANCHOR_KEY_MAP[trackerKey]
+        if anchorKey then
+            local profile = QUICore and QUICore.db and QUICore.db.profile
+            local anchoringDB = profile and profile.frameAnchoring
+            local settings = anchoringDB and anchoringDB[anchorKey]
+            if settings and settings.enabled then
+                local parent = settings.parent or "screen"
+                if parent == "screen" or parent == "disabled" then
+                    settings.offsetX = ox
+                    settings.offsetY = oy
+                    settings.point = "CENTER"
+                    settings.relative = "CENTER"
+                end
+            end
+        end
+    end
+end
+
+-- Restore a QUI container's position from the DB.
+-- Checks frameAnchoring first (if enabled with screen parent, its offsets
+-- are the authoritative source since it would overwrite us on next refresh).
+-- Falls back to ncdm.pos.  Returns true if a position was applied.
+local function RestoreContainerPosition(container, trackerKey)
+    if not container then return false end
+
+    -- If the centralized frame anchoring system has an enabled override for
+    -- this CDM key with a screen parent, use its CENTER offsets directly.
+    -- When anchored to another frame (e.g. "playerFrame"), the offsets are
+    -- relative to that parent — let the anchoring system handle it later.
+    local anchorKey = ANCHOR_KEY_MAP[trackerKey]
+    if anchorKey then
+        local profile = QUICore and QUICore.db and QUICore.db.profile
+        local anchoringDB = profile and profile.frameAnchoring
+        local settings = anchoringDB and anchoringDB[anchorKey]
+        if settings and settings.enabled then
+            local parent = settings.parent or "screen"
+            if parent == "screen" or parent == "disabled" then
+                local ox = settings.offsetX or 0
+                local oy = settings.offsetY or 0
+                container:ClearAllPoints()
+                container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+                return true
+            end
+            -- Anchored to another frame — return true to skip Blizzard seeding;
+            -- the anchoring system will position us on the next refresh pass.
+            return true
+        end
+    end
+
+    -- Fall back to ncdm.pos
+    local db = GetTrackerSettings(trackerKey)
+    if not db or not db.pos then return false end
+    local ox = db.pos.ox
+    local oy = db.pos.oy
+    if ox and oy then
+        container:ClearAllPoints()
+        container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+        return true
+    end
+    return false
+end
+
+-- One-time fallback: seed a QUI container's position from the Blizzard viewer.
+-- Only used on first-ever init when no saved DB position exists yet.
+-- After seeding, immediately saves to DB so future loads use the DB path.
+local function SeedPositionFromViewer(container, trackerKey, blizzViewerName)
+    if not container then return end
+    local viewer = _G[blizzViewerName]
+    if not viewer then return end
+    local cx, cy = viewer:GetCenter()
+    local sx, sy = UIParent:GetCenter()
+    if cx and cy and sx and sy then
+        local ox = cx - sx
+        local oy = cy - sy
+        container:ClearAllPoints()
+        container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+        -- Persist so this is the last time we read from Blizzard
+        SaveContainerPosition(trackerKey)
+    end
+end
+
+-- Restore container position from DB; fall back to Blizzard viewer if no
+-- saved position exists (first-ever init).  The QUI container is always
+-- the source of truth — Blizzard viewers are synced FROM the container.
+local function InitContainerPosition(container, trackerKey, blizzViewerName)
+    if RestoreContainerPosition(container, trackerKey) then return end
+    SeedPositionFromViewer(container, trackerKey, blizzViewerName)
+end
+
+-- Blizzard viewer name lookup (shared by SyncViewerPositions and Edit Mode)
+local VIEWER_NAMES_MAP = {
+    essential = "EssentialCooldownViewer",
+    utility   = "UtilityCooldownViewer",
+    buff      = "BuffIconCooldownViewer",
+}
+
+-- Sync Blizzard viewer positions FROM QUI containers (the source of truth).
+-- Keeps the invisible Blizzard frames aligned with QUI containers so that
+-- .Selection lines up correctly when Edit Mode is entered.
+local function SyncViewerPositions()
+    if InCombatLockdown() then return end
+    -- Never write to Blizzard viewers during Edit Mode — they're in
+    -- secure context and any addon writes would taint them.
+    if Helpers.IsEditModeActive() then return end
+    for key, blizzName in pairs(VIEWER_NAMES_MAP) do
+        local container = containers[key]
+        local viewer = _G[blizzName]
+        if container and viewer then
+            local cx, cy = container:GetCenter()
+            local sx, sy = UIParent:GetCenter()
+            if cx and cy and sx and sy then
+                local ox = cx - sx
+                local oy = cy - sy
+                pcall(function()
+                    viewer:ClearAllPoints()
+                    viewer:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+                end)
+            end
+            -- Size sync: keep viewer sized to container for .Selection coverage
+            local cw = container:GetWidth()
+            local ch = container:GetHeight()
+            if cw and ch and cw > 1 and ch > 1 then
+                pcall(function() viewer:SetSize(cw, ch) end)
+            end
+        end
+    end
+end
+
 local function InitContainers()
     if containers.essential then return end -- already created
 
@@ -156,23 +311,14 @@ local function InitContainers()
     containers.buff      = CreateContainer("QUI_BuffContainer")
     _G["QUI_BuffIconContainer"] = containers.buff
 
-    -- Migrate position from Blizzard viewers (one-time)
-    local function MigratePosition(container, blizzViewerName)
-        local viewer = _G[blizzViewerName]
-        if not viewer then return end
-        local cx, cy = viewer:GetCenter()
-        local sx, sy = UIParent:GetCenter()
-        if cx and cy and sx and sy then
-            local ox = cx - sx
-            local oy = cy - sy
-            container:ClearAllPoints()
-            container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
-        end
+    InitContainerPosition(containers.essential, "essential", "EssentialCooldownViewer")
+    InitContainerPosition(containers.utility, "utility", "UtilityCooldownViewer")
+    -- Buff: skip position init when anchored — ApplyBuffIconAnchor manages position.
+    local db = GetDB()
+    local anchorTo = db and db.buff and db.buff.anchorTo or "disabled"
+    if anchorTo == "disabled" then
+        InitContainerPosition(containers.buff, "buff", "BuffIconCooldownViewer")
     end
-
-    MigratePosition(containers.essential, "EssentialCooldownViewer")
-    MigratePosition(containers.utility, "UtilityCooldownViewer")
-    MigratePosition(containers.buff, "BuffIconCooldownViewer")
 end
 
 -- Deferred init for buff container (viewer may load after us)
@@ -183,6 +329,13 @@ local function InitBuffContainer()
         -- InitContainers hasn't run yet -- create the container now
         containers.buff = CreateContainer("QUI_BuffContainer")
         _G["QUI_BuffIconContainer"] = containers.buff
+    end
+    -- Restore position from DB (or seed from Blizzard viewer on first-ever init).
+    -- Skip when anchored — ApplyBuffIconAnchor manages position.
+    local db = GetDB()
+    local anchorTo = db and db.buff and db.buff.anchorTo or "disabled"
+    if anchorTo == "disabled" then
+        InitContainerPosition(containers.buff, "buff", "BuffIconCooldownViewer")
     end
     if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
     -- Notify buffbar.lua to set up hooks on the new container
@@ -199,14 +352,16 @@ local function LayoutContainer(trackerKey)
     local container = containers[trackerKey]
     if not container then return end
 
-    -- Never layout during Edit Mode
-    if Helpers.IsEditModeActive() then return end
-
     -- Never rebuild during combat — Blizzard CooldownFrames adopted onto our
     -- icons are updated natively.  Rebuilding mid-combat destroys the working
     -- layout (ClearPool) and may produce wrong positions.
     -- A full rebuild fires on PLAYER_REGEN_ENABLED via _G.QUI_RefreshNCDM.
     if InCombatLockdown() then return end
+
+    -- Edit Mode: QUI containers are hidden (Blizzard viewers handle display).
+    -- Skip layout to avoid re-showing hidden containers.  RefreshAll()
+    -- on Edit Mode exit rebuilds everything.
+    if _editModeHidden then return end
 
     local settings = GetTrackerSettings(trackerKey)
     if not settings or not settings.enabled then
@@ -273,6 +428,12 @@ local function LayoutContainer(trackerKey)
         local allIcons = ns.CDMIcons:BuildIcons("buff", container)
         for _, icon in ipairs(allIcons) do
             icon:Show()
+            -- During Edit Mode, new icons need mouse disabled so clicks
+            -- reach Blizzard's .Selection in secure context.
+            if Helpers.IsEditModeActive() then
+                icon:EnableMouse(false)
+                _disabledMouseFrames[icon] = true
+            end
         end
 
         applying[trackerKey] = false
@@ -291,10 +452,15 @@ local function LayoutContainer(trackerKey)
 
 
     -- Select icons to layout (up to capacity)
+    local editModeActive = Helpers.IsEditModeActive()
     local iconsToLayout = {}
     for i = 1, math.min(#allIcons, totalCapacity) do
         iconsToLayout[i] = allIcons[i]
         allIcons[i]:Show()
+        if editModeActive then
+            allIcons[i]:EnableMouse(false)
+            _disabledMouseFrames[allIcons[i]] = true
+        end
     end
 
     -- Hide overflow icons
@@ -608,9 +774,26 @@ local function RefreshAll()
     -- PLAYER_REGEN_ENABLED, which routes here and provides recovery.
     if InCombatLockdown() then return end
 
+    -- Cancel any pending refresh timers from a prior overlapping RefreshAll call.
+    -- This prevents interleaved layouts when e.g. a 0.2s profile-change refresh
+    -- races against a 0.5s spec-change refresh.
+    for i, handle in pairs(refreshTimers) do
+        if handle and handle.Cancel then
+            handle:Cancel()
+        end
+        refreshTimers[i] = nil
+    end
+
+    -- Force-scan spell data synchronously BEFORE scheduling layouts.
+    -- This ensures layouts read fresh spec data instead of stale lists.
     if ns.CDMSpellData then
         ns.CDMSpellData:UpdateCVar()
+        ns.CDMSpellData:ForceScan()
     end
+
+    -- Sync Blizzard viewer positions from QUI containers (source of truth).
+    -- Keeps invisible viewers aligned for Edit Mode .Selection click-through.
+    SyncViewerPositions()
 
     applying["essential"] = false
     applying["utility"] = false
@@ -619,21 +802,25 @@ local function RefreshAll()
     -- Reset buff fingerprint so the rebuild goes through
     if containers then containers._buffFingerprint = nil end
 
-    C_Timer.After(0.01, function()
+    refreshTimers[1] = C_Timer.NewTimer(0.01, function()
+        refreshTimers[1] = nil
         LayoutContainer("essential")
     end)
-    C_Timer.After(0.02, function()
+    refreshTimers[2] = C_Timer.NewTimer(0.02, function()
+        refreshTimers[2] = nil
         LayoutContainer("utility")
         if _G.QUI_ApplyUtilityAnchor then
             _G.QUI_ApplyUtilityAnchor()
         end
     end)
-    C_Timer.After(0.03, function()
+    refreshTimers[3] = C_Timer.NewTimer(0.03, function()
+        refreshTimers[3] = nil
         LayoutContainer("buff")
     end)
 
     -- Update locked bars and refresh swipe/glow after all layouts complete
-    C_Timer.After(0.10, function()
+    refreshTimers[4] = C_Timer.NewTimer(0.10, function()
+        refreshTimers[4] = nil
         UpdateAllLockedBars()
         if _G.QUI_UpdateCDMAnchoredUnitFrames then
             _G.QUI_UpdateCDMAnchoredUnitFrames()
@@ -760,31 +947,41 @@ _G.QUI_OnSpellDataChanged = function()
 end
 
 -- Callback for buff aura events (from hooks on Blizzard buff children).
--- Runs LayoutContainer to reparent children, then notifies buffbar.
+-- Runs LayoutContainer to rebuild buff icons, then notifies buffbar.
 _G.QUI_OnBuffDataChanged = function()
     if initialized and not applying["buff"] then
         LayoutContainer("buff")
     end
 end
 
--- Callback for buffbar.lua to style and position reparented children.
--- Fired by LayoutContainer("buff") after reparent completes.
+-- Callback for buffbar.lua to style and position buff icons.
+-- Fired by LayoutContainer("buff") after icon build completes.
 _G.QUI_OnBuffLayoutReady = _G.QUI_OnBuffLayoutReady or function() end
 
 ---------------------------------------------------------------------------
 -- EDIT MODE INTEGRATION
--- QUI containers stay visible during Edit Mode (overlays parent to them).
--- Blizzard .Selection frames are reparented to the QUI containers so that
--- click-through works identically to unit frames: the nudge overlay has
--- EnableMouse(false), clicks reach .Selection (alpha 0 but clickable),
--- and Blizzard's context menu / drag work natively.
+-- QUI containers stay visible during Edit Mode with their icons.
+-- Blizzard viewers are positioned behind QUI containers (same location,
+-- shown but alpha=0).  EnableMouse(false) on QUI containers + icons
+-- removes them from hit testing entirely, so clicks fall through to
+-- Blizzard's .Selection in fully secure context (required for Edit Mode).
 -- A drag-sync OnUpdate keeps containers following the Blizzard viewer
--- during Edit Mode drag (since .Selection's drag moves the viewer via
--- self.system, not the container).
+-- during drag (since .Selection's drag moves the viewer, not the
+-- container).  No Selection reparenting required.
 ---------------------------------------------------------------------------
 
--- Track reparented .Selection frames for cleanup on Edit Mode exit
-local _reparentedSelections = {}
+-- Viewer/container pairs tracked during Edit Mode for drag sync
+local _editModePairs = {}
+
+-- Frames that had EnableMouse(false) applied for click pass-through (for cleanup on exit)
+local _disabledMouseFrames = {}
+
+-- Flag: true when QUI containers are hidden during Edit Mode.
+-- During Edit Mode, Blizzard viewers + .Selection handle all interaction
+-- in secure context.  QUI containers are fully hidden so nothing blocks
+-- Blizzard's secure click chain.
+local _editModeHidden = false
+_G.QUI_IsCDMEditModeHidden = function() return _editModeHidden end
 
 -- OnUpdate frame to sync QUI container positions to Blizzard viewers
 -- during Edit Mode (handles drag: viewer moves → container follows).
@@ -793,7 +990,7 @@ local _reparentedSelections = {}
 local dragSyncFrame = CreateFrame("Frame")
 dragSyncFrame:Hide()
 dragSyncFrame:SetScript("OnUpdate", function()
-    for _, info in pairs(_reparentedSelections) do
+    for _, info in pairs(_editModePairs) do
         local viewer = info.viewer
         local container = info.container
         if viewer and container then
@@ -814,33 +1011,27 @@ dragSyncFrame:SetScript("OnUpdate", function()
     end
 end)
 
--- Sync Blizzard viewer position + size to match a QUI container
-local function SyncBlizzardToContainer(viewerType, blizzViewerName)
+-- Register a viewer/container pair for drag sync during Edit Mode.
+-- TAINT SAFETY: We do NOT modify the Blizzard viewer here.  Blizzard's
+-- own Edit Mode code shows/positions viewers in secure context.  Any
+-- addon writes (SetAlpha, SetPoint, EnableMouse, etc.) to Blizzard
+-- frames would taint them and cause errors when Edit Mode menus read
+-- the tainted properties.  SyncViewerPositions() keeps viewers aligned
+-- during normal gameplay so they're already positioned correctly when
+-- Edit Mode starts.
+local function RegisterEditModePair(viewerType, blizzViewerName)
     local container = containers[viewerType]
     local viewer = _G[blizzViewerName]
     if not container or not viewer then return end
 
-    local cx, cy = container:GetCenter()
-    local sx, sy = UIParent:GetCenter()
-    if cx and cy and sx and sy then
-        local ox = cx - sx
-        local oy = cy - sy
-        pcall(function()
-            viewer:ClearAllPoints()
-            viewer:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
-        end)
-    end
-
-    -- Size the Blizzard viewer to match the QUI container so .Selection
-    -- covers the full content area during Edit Mode.
-    local cw = container:GetWidth()
-    local ch = container:GetHeight()
-    if cw and ch and cw > 1 and ch > 1 then
-        pcall(function() viewer:SetSize(cw, ch) end)
-    end
+    _editModePairs[viewerType] = {
+        viewer = viewer,
+        container = container,
+    }
 end
 
--- Sync QUI container position from the Blizzard viewer (after drag)
+-- Sync QUI container position from the Blizzard viewer (after drag).
+-- Only writes to QUI-owned frames — never writes to Blizzard frames.
 local function SyncContainerToBlizzard(viewerType, blizzViewerName)
     local container = containers[viewerType]
     local viewer = _G[blizzViewerName]
@@ -856,99 +1047,88 @@ local function SyncContainerToBlizzard(viewerType, blizzViewerName)
     end
 end
 
--- Reparent a Blizzard viewer's .Selection to the corresponding QUI container.
--- This makes .Selection a child of the container (like unit frames), so clicks
--- pass through the nudge overlay (EnableMouse false) to .Selection.
-local function ReparentSelectionToContainer(viewerType, blizzViewerName)
+-- Disable mouse on a container and all its icon pool children so clicks
+-- fall through to Blizzard's .Selection in fully secure context.
+-- EnableMouse(false) removes the frame from hit testing entirely — the
+-- WoW C-side input system skips it, preserving the secure click chain
+-- that Edit Mode requires.
+local function DisableMouseForEditMode(viewerType)
     local container = containers[viewerType]
-    local viewer = _G[blizzViewerName]
-    if not container or not viewer or not viewer.Selection then return end
+    if not container then return end
 
-    local sel = viewer.Selection
+    container:EnableMouse(false)
+    _disabledMouseFrames[container] = true
 
-    -- Reparent .Selection to the QUI container
-    sel:SetParent(container)
-    sel:ClearAllPoints()
-    sel:SetAllPoints(container)
-    sel:SetAlpha(0)
-    -- HIGH strata + level 50 puts .Selection above icon children (MEDIUM strata,
-    -- EnableMouse true for tooltips) but below nudge buttons (HIGH level 100).
-    -- EnableMouse(false) overlay doesn't block regardless of level.
-    sel:SetFrameStrata("HIGH")
-    sel:SetFrameLevel(50)
-
-    -- Expose via container.Selection so nudge.lua's ShowViewerOverlays()
-    -- can find it, install OnShow/OnHide hooks, and run locked/free logic.
-    container.Selection = sel
-
-    _reparentedSelections[viewerType] = {
-        viewer = viewer,
-        container = container,
-        selection = sel,
-    }
+    -- Disable mouse on all icons in this pool
+    local pool = ns.CDMIcons and ns.CDMIcons:GetIconPool(viewerType) or {}
+    for _, icon in ipairs(pool) do
+        icon:EnableMouse(false)
+        _disabledMouseFrames[icon] = true
+    end
 end
 
--- Restore a .Selection back to its Blizzard viewer (Edit Mode exit).
-local function RestoreSelectionToViewer(viewerType)
-    local info = _reparentedSelections[viewerType]
-    if not info then return end
-
-    local viewer = info.viewer
-    local container = info.container
-    local sel = info.selection
-
-    if sel and viewer then
-        sel:SetParent(viewer)
-        sel:ClearAllPoints()
-        sel:SetAllPoints(viewer)
-        sel:SetAlpha(1)
-        -- Restore strata to match viewer (Blizzard default)
-        pcall(function() sel:SetFrameStrata(viewer:GetFrameStrata()) end)
+-- Restore mouse on all frames we disabled
+local function RestoreMouseAfterEditMode()
+    for frame in pairs(_disabledMouseFrames) do
+        frame:EnableMouse(true)
     end
-
-    if container then
-        container.Selection = nil
-    end
-
-    _reparentedSelections[viewerType] = nil
+    wipe(_disabledMouseFrames)
 end
 
 _G.QUI_OnEditModeEnterCDM = function()
-    -- Position Blizzard viewers at owned container positions so
-    -- .Selection overlays line up for click-through interaction.
-    SyncBlizzardToContainer("essential", "EssentialCooldownViewer")
-    SyncBlizzardToContainer("utility", "UtilityCooldownViewer")
-    SyncBlizzardToContainer("buff", "BuffIconCooldownViewer")
+    _editModeHidden = true
 
-    -- Reparent Blizzard .Selection frames to QUI containers.
-    -- This mirrors how unit frames work: .Selection is a child of the
-    -- visible frame, alpha 0 but clickable.  The nudge overlay sits
-    -- above with EnableMouse(false), letting clicks reach .Selection
-    -- for Blizzard's Edit Mode context menu and drag.
-    ReparentSelectionToContainer("essential", "EssentialCooldownViewer")
-    ReparentSelectionToContainer("utility", "UtilityCooldownViewer")
-    ReparentSelectionToContainer("buff", "BuffIconCooldownViewer")
+    -- Register viewer/container pairs (for position sync on exit).
+    RegisterEditModePair("essential", "EssentialCooldownViewer")
+    RegisterEditModePair("utility", "UtilityCooldownViewer")
+    RegisterEditModePair("buff", "BuffIconCooldownViewer")
 
-    -- Start drag sync so containers follow viewer movement during drag.
-    dragSyncFrame:Show()
+    -- Hide QUI containers entirely.  Blizzard viewers + .Selection handle
+    -- all display and interaction during Edit Mode in secure context.
+    -- No addon frames block clicks → no taint.
+    for _, container in pairs(containers) do
+        if container and container.Hide then
+            container:Hide()
+        end
+    end
 end
 
 _G.QUI_OnEditModeExitCDM = function()
-    -- Stop drag sync.
-    dragSyncFrame:Hide()
+    _editModeHidden = false
 
-    -- Read final position from Blizzard viewers (user may have dragged
-    -- via .Selection) and apply to owned containers.
+    -- Read final Blizzard viewer positions (user may have dragged via
+    -- .Selection) and apply to QUI containers.  During Edit Mode the
+    -- Blizzard viewer is the authoritative position source.
     SyncContainerToBlizzard("essential", "EssentialCooldownViewer")
     SyncContainerToBlizzard("utility", "UtilityCooldownViewer")
-    SyncContainerToBlizzard("buff", "BuffIconCooldownViewer")
+    -- Buff: skip position sync when anchored — ApplyBuffIconAnchor manages
+    -- the container position.  Overwriting it here would destroy the anchor,
+    -- and the anchor cache prevents reapplication.
+    local db = GetDB()
+    local buffAnchorTo = db and db.buff and db.buff.anchorTo or "disabled"
+    if buffAnchorTo == "disabled" then
+        SyncContainerToBlizzard("buff", "BuffIconCooldownViewer")
+    end
 
-    -- Restore .Selection frames back to Blizzard viewers.
-    RestoreSelectionToViewer("essential")
-    RestoreSelectionToViewer("utility")
-    RestoreSelectionToViewer("buff")
+    -- Persist final container positions to DB (source of truth for next load).
+    SaveContainerPosition("essential")
+    SaveContainerPosition("utility")
+    if buffAnchorTo == "disabled" then
+        SaveContainerPosition("buff")
+    end
 
-    -- Refresh layout (reapply positions, rebuild buff icons if needed)
+    -- Show QUI containers again (were hidden on Edit Mode enter).
+    for _, container in pairs(containers) do
+        if container and container.Show then
+            container:Show()
+        end
+    end
+
+    -- Clean up edit mode pairs.
+    wipe(_editModePairs)
+
+    -- Refresh layout (reapply positions, rebuild icons).
+    -- Also calls SyncViewerPositions() to re-align Blizzard viewers.
     RefreshAll()
 end
 
@@ -1029,6 +1209,29 @@ function ownedEngine:Initialize()
         end
 
         RefreshAll()
+
+        -- Apply HUD visibility now that containers exist (covers /reload while mounted).
+        -- Set alpha instantly first so StartCDMFade sees "already at target" and skips
+        -- the animation — prevents a 1-frame flash of fully-visible icons.
+        if _G.QUI_ShouldCDMBeVisible and not _G.QUI_ShouldCDMBeVisible() then
+            local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
+            local alpha = vis and vis.fadeOutAlpha or 0
+            if containers.essential then containers.essential:SetAlpha(alpha) end
+            if containers.utility then containers.utility:SetAlpha(alpha) end
+            if containers.buff then containers.buff:SetAlpha(alpha) end
+            if _G.BuffBarCooldownViewer then _G.BuffBarCooldownViewer:SetAlpha(alpha) end
+        end
+        if _G.QUI_RefreshCDMVisibility then
+            _G.QUI_RefreshCDMVisibility()
+        end
+    end)
+
+    -- Defensive: sync Blizzard viewer positions from QUI containers after
+    -- Blizzard's layout system has fully settled.
+    C_Timer.After(3.0, function()
+        if initialized and not InCombatLockdown() then
+            SyncViewerPositions()
+        end
     end)
 
     -- Register runtime events (spec change, zone change, cinematics, addon loads)
