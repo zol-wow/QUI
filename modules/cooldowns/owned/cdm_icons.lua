@@ -468,10 +468,15 @@ local function HookBlizzTexture(icon, blizzChild)
             if not quiIcon.Icon then return end
             local entry = quiIcon._spellEntry
             if not entry then return end
-            if entry.viewerType == "buff" or (entry.isAura and quiIcon._auraActive) then
+            local viewerType = entry.viewerType
+            if viewerType == "buff" or (entry.isAura and quiIcon._auraActive) then
                 return
             end
-            quiIcon.Icon:SetDesaturated(desaturated)
+            local db = GetDB()
+            local settings = db and db[viewerType]
+            if settings and settings.desaturateOnCooldown then
+                quiIcon.Icon:SetDesaturated(desaturated)
+            end
         end)
     end
 end
@@ -925,34 +930,41 @@ local function UpdateIconCooldown(icon)
 
         -- Skip buff viewer icons and aura-active icons (they show buff timers)
         if viewerType ~= "buff" and not icon._auraActive and not icon._rangeTinted and not icon._usabilityTinted then
-            local dur = icon._lastDuration or 0
-            local start = icon._lastStart or 0
+            local db = GetDB()
+            local settings = db and db[viewerType]
+            if settings and settings.desaturateOnCooldown then
+                local dur = icon._lastDuration or 0
+                local start = icon._lastStart or 0
 
-            local ok, shouldDesat = pcall(function()
                 if dur > 1.5 and start > 0 then
                     local remaining = (start + dur) - GetTime()
                     if remaining > 0 then
-                        local sid = entry.overrideSpellID or entry.spellID or entry.id
-                        if sid and C_Spell.GetSpellCharges then
-                            local chargeInfo = C_Spell.GetSpellCharges(sid)
-                            if chargeInfo and chargeInfo.currentCharges > 0 then
-                                return false
+                        -- On cooldown — check charges before desaturating
+                        local spellID = entry.overrideSpellID or entry.spellID or entry.id
+                        if spellID and C_Spell.GetSpellCharges then
+                            local chargeInfo = C_Spell.GetSpellCharges(spellID)
+                            if chargeInfo then
+                                -- Secret charge data → keep current state (don't flicker)
+                                if IsSecretValue(chargeInfo.currentCharges) then
+                                    return
+                                end
+                                local current = SafeToNumber(chargeInfo.currentCharges, 0)
+                                if current > 0 then
+                                    icon.Icon:SetDesaturated(false)
+                                    icon._cdDesaturated = nil
+                                    return
+                                end
                             end
                         end
-                        return true
+                        icon.Icon:SetDesaturated(true)
+                        icon._cdDesaturated = true
+                        return
                     end
                 end
-                return false
-            end)
 
-            if ok then
-                if shouldDesat then
-                    icon.Icon:SetDesaturated(true)
-                    icon._cdDesaturated = true
-                else
-                    icon.Icon:SetDesaturated(false)
-                    icon._cdDesaturated = nil
-                end
+                -- Off cooldown or GCD-only — clear desaturation
+                icon.Icon:SetDesaturated(false)
+                icon._cdDesaturated = nil
             else
                 icon.Icon:SetDesaturated(false)
                 icon._cdDesaturated = nil
@@ -1442,7 +1454,29 @@ local function UpdateIconVisualState(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
     local viewerType = entry.viewerType
-    if not viewerType or viewerType == "buff" then return end
+    if not viewerType then return end
+
+    local settings = GetTrackerSettings(viewerType)
+    if not settings then
+        if icon._rangeTinted or icon._usabilityTinted then
+            ResetIconVisuals(icon)
+        end
+        return
+    end
+
+    local rangeEnabled = settings.rangeIndicator
+    local usabilityEnabled = settings.usabilityIndicator
+
+    -- Nothing enabled — reset and bail
+    if not rangeEnabled and not usabilityEnabled then
+        if icon._rangeTinted or icon._usabilityTinted then
+            ResetIconVisuals(icon)
+        end
+        return
+    end
+
+    -- Skip buff viewer icons
+    if viewerType == "buff" then return end
 
     -- Skip items/trinkets (self-use, no range/usability concept)
     if entry.type == "item" or entry.type == "trinket" then return end
@@ -1458,7 +1492,7 @@ local function UpdateIconVisualState(icon)
     ---------------------------------------------------------------------------
     -- Priority 1: Out of range (red tint) — only when target exists + ranged
     ---------------------------------------------------------------------------
-    if UnitExists("target") then
+    if rangeEnabled and UnitExists("target") then
         local hasRange = true
         if C_Spell.SpellHasRange then
             hasRange = C_Spell.SpellHasRange(spellID)
@@ -1470,8 +1504,7 @@ local function UpdateIconVisualState(icon)
                 if icon._usabilityTinted then
                     icon._usabilityTinted = nil
                 end
-                local settings = GetTrackerSettings(viewerType)
-                local c = settings and settings.rangeColor
+                local c = settings.rangeColor
                 local r = c and c[1] or 0.8
                 local g = c and c[2] or 0.1
                 local b = c and c[3] or 0.1
@@ -1490,29 +1523,11 @@ local function UpdateIconVisualState(icon)
     end
 
     ---------------------------------------------------------------------------
-    -- Priority 2: Unusable / resource-starved (darken + desaturate)
+    -- Priority 2: Unusable / resource-starved (darken)
     ---------------------------------------------------------------------------
-    local isUsable, insufficientPower
-    if C_Spell and C_Spell.IsSpellUsable then
-        isUsable, insufficientPower = C_Spell.IsSpellUsable(spellID)
-    end
-
-    -- Try to evaluate usability (works when values aren't secret)
-    local ok, notUsable = pcall(function()
-        if not isUsable then return true end
-        -- C_Spell.IsSpellUsable returns true for charge spells even at 0 charges.
-        -- Check charges explicitly: 0 charges remaining = not usable.
-        if entry.hasCharges and C_Spell.GetSpellCharges then
-            local chargeInfo = C_Spell.GetSpellCharges(spellID)
-            if chargeInfo and chargeInfo.currentCharges == 0 then
-                return true
-            end
-        end
-        return false
-    end)
-    if ok then
-        -- Clean values: full visual logic
-        if notUsable then
+    if usabilityEnabled then
+        local isUsable = SafeIsSpellUsable(spellID)
+        if not isUsable then
             -- Clear cooldown desaturation so vertex color darkening is visible
             if icon._cdDesaturated then
                 icon.Icon:SetDesaturated(false)
@@ -1522,13 +1537,6 @@ local function UpdateIconVisualState(icon)
             icon._usabilityTinted = true
             return
         end
-    elseif insufficientPower ~= nil and not icon._cdDesaturated then
-        -- Secret values (combat): pass raw insufficientPower to SetDesaturated.
-        -- insufficientPower is already correct polarity (true = can't cast).
-        -- Gate on not _cdDesaturated to avoid clearing cooldown desaturation
-        -- when the spell has enough resources but is on CD.
-        icon.Icon:SetDesaturated(insufficientPower)
-        return
     end
 
     -- If was usability-tinted but now usable, clear it
@@ -1570,10 +1578,18 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 -- Visual state polling: 250ms OnUpdate for range + usability checks.
--- Always on for owned engine icons.
+-- Only runs when at least one tracker has rangeIndicator or usabilityIndicator.
 cdEventFrame:SetScript("OnUpdate", function(self, elapsed)
     rangePollElapsed = rangePollElapsed + elapsed
     if rangePollElapsed < RANGE_POLL_INTERVAL then return end
     rangePollElapsed = 0
+
+    -- Quick check: is any visual state indicator enabled?
+    local db = GetDB()
+    if not db then return end
+    local anyEnabled = (db.essential and (db.essential.rangeIndicator or db.essential.usabilityIndicator))
+        or (db.utility and (db.utility.rangeIndicator or db.utility.usabilityIndicator))
+    if not anyEnabled then return end
+
     CDMIcons:UpdateAllIconRanges()
 end)
