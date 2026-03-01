@@ -177,6 +177,12 @@ local function CreateCustomTrackersPage(parent)
 
     -- Helper: Get entry display name (prefers customName if set)
     local function GetEntryDisplayName(entry)
+        -- Auto-detected entries show source trinket name
+        if entry.autoDetected and entry.sourceItemID then
+            local itemName = C_Item.GetItemInfo(entry.sourceItemID)
+            return "Auto-detected: " .. (itemName or "Unknown Trinket")
+        end
+
         -- Use custom name if set
         if entry.customName and entry.customName ~= "" then
             return entry.customName
@@ -336,6 +342,64 @@ local function CreateCustomTrackersPage(parent)
         deleteBtn:SetPoint("LEFT", exportBarBtn, "RIGHT", 10, 0)
         y = y - 36
 
+
+        -----------------------------------------------------------------------
+        -- TRINKET TRACKING SECTION
+        -----------------------------------------------------------------------
+        local trinketHeader = GUI:CreateSectionHeader(tabContent, "Trinket Tracking")
+        trinketHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - trinketHeader.gap
+
+        -- Auto-Track Equipped Trinkets checkbox
+        local autoTrinketCheck = GUI:CreateFormCheckbox(tabContent, "Auto-Track Equipped Trinkets", "autoTrackTrinkets", barConfig, function()
+            RefreshThisBar()
+            if barConfig.autoTrackTrinkets then
+                C_Timer.After(0.3, function()
+                    if QUICore and QUICore.CustomTrackers then
+                        local trinketSpells = {}
+                        for slot = 13, 14 do
+                            local itemID = GetInventoryItemID("player", slot)
+                            if itemID then
+                                local spellID = select(2, C_Item.GetItemSpell(itemID))
+                                if spellID then
+                                    table.insert(trinketSpells, { itemID = itemID, spellID = spellID, slot = slot })
+                                end
+                            end
+                        end
+                        QUICore.CustomTrackers:SyncAutoTrinketEntries(barConfig.id, trinketSpells)
+                    end
+                end)
+            end
+        end)
+        autoTrinketCheck:SetPoint("TOPLEFT", PAD, y)
+        autoTrinketCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local autoTrinketDesc = GUI:CreateLabel(tabContent, "Automatically adds on-use spells from equipped trinkets. Removes them when unequipped.", 10, C.textMuted)
+        autoTrinketDesc:SetPoint("TOPLEFT", PAD, y + 4)
+        autoTrinketDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - 22
+
+        -- Show Passive Trinkets checkbox
+        local showPassiveCheck = GUI:CreateFormCheckbox(tabContent, "Show Passive Trinkets", "showPassiveTrinkets", barConfig, function()
+            RefreshThisBar()
+            if barConfig.showPassiveTrinkets and barConfig.autoTrackTrinkets then
+                C_Timer.After(0.3, function()
+                    if QUICore and QUICore.CustomTrackers and QUICore.CustomTrackers.SyncPassiveTrinketEntries then
+                        QUICore.CustomTrackers:SyncPassiveTrinketEntries(barConfig.id)
+                    end
+                end)
+            end
+        end)
+        showPassiveCheck:SetPoint("TOPLEFT", PAD, y)
+        showPassiveCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local showPassiveDesc = GUI:CreateLabel(tabContent, "Also show equipped trinkets without on-use effects.", 10, C.textMuted)
+        showPassiveDesc:SetPoint("TOPLEFT", PAD, y + 4)
+        showPassiveDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - 22
+
         -----------------------------------------------------------------------
         -- ADD ITEMS/SPELLS SECTION (moved up for better UX flow)
         -----------------------------------------------------------------------
@@ -440,6 +504,16 @@ local function CreateCustomTrackersPage(parent)
                 end
                 iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 entryFrame.iconTex = iconTex  -- Store reference for name resolution
+
+                -- Auto-detected indicator
+                if entry.autoDetected then
+                    local autoIndicator = entryFrame:CreateTexture(nil, "OVERLAY")
+                    autoIndicator:SetSize(12, 12)
+                    autoIndicator:SetTexture("Interface\\Icons\\INV_Misc_Gear_01")
+                    autoIndicator:SetPoint("BOTTOMRIGHT", iconTex, "BOTTOMRIGHT", 1, -1)
+                    autoIndicator:SetVertexColor(0.2, 0.85, 0.2, 1)
+                    autoIndicator:SetTexCoord(0.15, 0.85, 0.15, 0.85)
+                end
 
                 -- Name (editable input box with subtle styling)
                 local nameInputBg = CreateFrame("Frame", nil, entryFrame, "BackdropTemplate")
