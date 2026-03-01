@@ -4066,8 +4066,8 @@ local function CreateCDMSetupPage(parent)
     GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager"})
 
     local engineOptions = {
+        {value = "owned", text = "QUI CDM Engine"},
         {value = "classic", text = "Classic (Blizzard Hooks)"},
-        {value = "owned", text = "Owned Frames (Experimental)"},
     }
     local engineDropdown = GUI:CreateFormDropdown(content, "CDM Engine", engineOptions, "engine", db.ncdm, function()
         QUI:SafeReload()

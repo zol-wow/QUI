@@ -625,7 +625,7 @@ local defaults = {
         -- QUI New Cooldown Display Manager (NCDM)
         -- Per-row configuration for Essential and Utility viewers
         ncdm = {
-            engine = "classic",  -- CDM engine: "classic" (Blizzard hooks) or "owned" (addon-owned frames)
+            engine = "owned",  -- CDM engine: "classic" (Blizzard hooks) or "owned" (addon-owned frames)
             essential = {
                 enabled = true,
                 layoutDirection = "HORIZONTAL",
@@ -3397,7 +3397,7 @@ function QUICore:OnInitialize()
     self._lastKnownProfile = self.db:GetCurrentProfile()
 
     -- Track CDM engine so profile switches to a different engine trigger reload
-    self._lastKnownEngine = self.db.profile.ncdm and self.db.profile.ncdm.engine or "classic"
+    self._lastKnownEngine = self.db.profile.ncdm and self.db.profile.ncdm.engine or "owned"
 
     self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
     self.db.RegisterCallback(self, "OnProfileCopied",  "OnProfileChanged")
@@ -3456,7 +3456,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     self._lastKnownSpec = GetSpecialization() or 0
 
     -- Check if CDM engine changed — requires reload since engines can't hot-swap
-    local newEngine = self.db.profile.ncdm and self.db.profile.ncdm.engine or "classic"
+    local newEngine = self.db.profile.ncdm and self.db.profile.ncdm.engine or "owned"
     if newEngine ~= self._lastKnownEngine then
         self._lastKnownEngine = newEngine
         self:SafeReload()

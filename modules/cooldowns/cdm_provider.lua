@@ -119,9 +119,9 @@ function CDMProvider:InitializeEngine()
 
     -- Read engine selection from profile
     local QUICore = ns.Addon
-    local engineName = "classic"
+    local engineName = "owned"
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm then
-        engineName = QUICore.db.profile.ncdm.engine or "classic"
+        engineName = QUICore.db.profile.ncdm.engine or "owned"
     end
 
     local engine = self.engines[engineName]
