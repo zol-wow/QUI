@@ -58,6 +58,28 @@ local function BuildTooltipTab(tabContent)
         {value = "ALT", text = "Alt"},
     }
 
+    local cursorAnchorOptions = {
+        {value = "TOPLEFT", text = "Top Left"},
+        {value = "TOP", text = "Top"},
+        {value = "TOPRIGHT", text = "Top Right"},
+        {value = "LEFT", text = "Left"},
+        {value = "CENTER", text = "Center"},
+        {value = "RIGHT", text = "Right"},
+        {value = "BOTTOMLEFT", text = "Bottom Left"},
+        {value = "BOTTOM", text = "Bottom"},
+        {value = "BOTTOMRIGHT", text = "Bottom Right"},
+    }
+
+    if not tooltip.cursorAnchor then
+        tooltip.cursorAnchor = "TOPLEFT"
+    end
+    if tooltip.cursorOffsetX == nil then
+        tooltip.cursorOffsetX = 16
+    end
+    if tooltip.cursorOffsetY == nil then
+        tooltip.cursorOffsetY = -16
+    end
+
     -- SECTION: Enable/Disable
     GUI:SetSearchSection("Enable/Disable")
     local enableHeader = GUI:CreateSectionHeader(tabContent, "Enable/Disable QUI Tooltip Module")
@@ -202,6 +224,18 @@ local function BuildTooltipTab(tabContent)
     spellIDInfo:SetPoint("TOPLEFT", PADDING, y)
     spellIDInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     spellIDInfo:SetJustifyH("LEFT")
+    y = y - FORM_ROW
+
+    -- Class Color Name option
+    local classColorCheck = GUI:CreateFormCheckbox(tabContent, "Class Color Player Names", "classColorName", tooltip, RefreshTooltips)
+    classColorCheck:SetPoint("TOPLEFT", PADDING, y)
+    classColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local classColorInfo = GUI:CreateLabel(tabContent, "Color player names in tooltips by their class.", 10, C.textMuted)
+    classColorInfo:SetPoint("TOPLEFT", PADDING, y)
+    classColorInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    classColorInfo:SetJustifyH("LEFT")
     y = y - 20
 
     -- SECTION: Cursor Anchor
@@ -215,22 +249,25 @@ local function BuildTooltipTab(tabContent)
     cursorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     y = y - FORM_ROW
 
-    local cursorInfo = GUI:CreateLabel(tabContent, "Tooltip follows your mouse cursor instead of default position.", 10, C.textMuted)
+    local cursorAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Cursor Anchor Point", cursorAnchorOptions, "cursorAnchor", tooltip, RefreshTooltips)
+    cursorAnchorDropdown:SetPoint("TOPLEFT", PADDING, y)
+    cursorAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cursorOffsetXSlider = GUI:CreateFormSlider(tabContent, "Cursor X Offset", -200, 200, 1, "cursorOffsetX", tooltip, RefreshTooltips)
+    cursorOffsetXSlider:SetPoint("TOPLEFT", PADDING, y)
+    cursorOffsetXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cursorOffsetYSlider = GUI:CreateFormSlider(tabContent, "Cursor Y Offset", -200, 200, 1, "cursorOffsetY", tooltip, RefreshTooltips)
+    cursorOffsetYSlider:SetPoint("TOPLEFT", PADDING, y)
+    cursorOffsetYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cursorInfo = GUI:CreateLabel(tabContent, "Tooltip follows your mouse cursor with configurable anchor point and offsets.", 10, C.textMuted)
     cursorInfo:SetPoint("TOPLEFT", PADDING, y)
     cursorInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     cursorInfo:SetJustifyH("LEFT")
-    y = y - 20
-
-    -- Class Color Name option
-    local classColorCheck = GUI:CreateFormCheckbox(tabContent, "Class Color Player Names", "classColorName", tooltip, RefreshTooltips)
-    classColorCheck:SetPoint("TOPLEFT", PADDING, y)
-    classColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
-    y = y - FORM_ROW
-
-    local classColorInfo = GUI:CreateLabel(tabContent, "Color player names in tooltips by their class.", 10, C.textMuted)
-    classColorInfo:SetPoint("TOPLEFT", PADDING, y)
-    classColorInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
-    classColorInfo:SetJustifyH("LEFT")
     y = y - 20
 
     -- SECTION: Tooltip Visibility

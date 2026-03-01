@@ -10,6 +10,7 @@ local Helpers = ns.Helpers
 -- Locals for performance
 local GameTooltip = GameTooltip
 local UIParent = UIParent
+local GetCursorPosition = GetCursorPosition
 local IsShiftKeyDown = IsShiftKeyDown
 local IsControlKeyDown = IsControlKeyDown
 local IsAltKeyDown = IsAltKeyDown
@@ -81,6 +82,81 @@ end
 -- Cache invalidation (called on profile change or settings update)
 local function InvalidateCache()
     cachedSettings = nil
+end
+
+---------------------------------------------------------------------------
+-- Cursor Anchor Positioning
+---------------------------------------------------------------------------
+local CURSOR_ANCHOR_POINTS = {
+    TOPLEFT = true,
+    TOP = true,
+    TOPRIGHT = true,
+    LEFT = true,
+    CENTER = true,
+    RIGHT = true,
+    BOTTOMLEFT = true,
+    BOTTOM = true,
+    BOTTOMRIGHT = true,
+}
+
+local DEFAULT_CURSOR_ANCHOR = "TOPLEFT"
+local DEFAULT_CURSOR_OFFSET_X = 16
+local DEFAULT_CURSOR_OFFSET_Y = -16
+
+local cursorFollowActive = setmetatable({}, {__mode = "k"})
+local cursorFollowHooked = setmetatable({}, {__mode = "k"})
+
+local function GetCursorAnchorConfig(settings)
+    local anchor = settings and settings.cursorAnchor
+    if type(anchor) ~= "string" or not CURSOR_ANCHOR_POINTS[anchor] then
+        anchor = DEFAULT_CURSOR_ANCHOR
+    end
+
+    local offsetX = tonumber(settings and settings.cursorOffsetX) or DEFAULT_CURSOR_OFFSET_X
+    local offsetY = tonumber(settings and settings.cursorOffsetY) or DEFAULT_CURSOR_OFFSET_Y
+    return anchor, offsetX, offsetY
+end
+
+local function PositionTooltipAtCursor(tooltip, settings)
+    if not tooltip then return end
+
+    local cursorX, cursorY = GetCursorPosition()
+    if not cursorX or not cursorY then return end
+
+    local scale = UIParent:GetEffectiveScale()
+    if not scale or scale == 0 then return end
+
+    local anchor, offsetX, offsetY = GetCursorAnchorConfig(settings)
+    tooltip:ClearAllPoints()
+    tooltip:SetPoint(anchor, UIParent, "BOTTOMLEFT", (cursorX / scale) + offsetX, (cursorY / scale) + offsetY)
+end
+
+local function EnsureCursorFollowHooks(tooltip)
+    if not tooltip or cursorFollowHooked[tooltip] then return end
+    cursorFollowHooked[tooltip] = true
+
+    tooltip:HookScript("OnUpdate", function(self)
+        if not cursorFollowActive[self] then return end
+        local settings = GetSettings()
+        if not settings or not settings.enabled or not settings.anchorToCursor then
+            cursorFollowActive[self] = nil
+            return
+        end
+        PositionTooltipAtCursor(self, settings)
+    end)
+
+    tooltip:HookScript("OnHide", function(self)
+        cursorFollowActive[self] = nil
+    end)
+end
+
+local function AnchorTooltipToCursor(tooltip, parent, settings)
+    if not tooltip then return false end
+    EnsureCursorFollowHooks(tooltip)
+    tooltip:SetOwner(parent or UIParent, "ANCHOR_NONE")
+    cursorFollowActive[tooltip] = true
+    PositionTooltipAtCursor(tooltip, settings or GetSettings())
+    return true
 end
 
 ---------------------------------------------------------------------------
@@ -237,6 +313,8 @@ end
 -- Intercepts GameTooltip_SetDefaultAnchor to apply cursor anchoring
 ---------------------------------------------------------------------------
 local function SetupTooltipHook()
+    _G.QUI_AnchorTooltipToCursor = AnchorTooltipToCursor
+
     -- NOTE: Tooltip hooks run synchronously — deferring causes visible flashing/repositioning.
     -- These are NOT a taint source for Edit Mode (tooltips are not in the Edit Mode chain).
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
@@ -258,8 +336,9 @@ local function SetupTooltipHook()
 
         -- Cursor anchor logic
         if settings.anchorToCursor then
-            -- Use WoW's built-in cursor anchor (handles positioning automatically)
-            tooltip:SetOwner(parent, "ANCHOR_CURSOR")
+            AnchorTooltipToCursor(tooltip, parent, settings)
+        else
+            cursorFollowActive[tooltip] = nil
         end
     end)
 
