@@ -881,6 +881,13 @@ function QUICore:EnablePowerBarEditMode()
                 bar:SetScript("OnDragStart", nil)
                 bar:SetScript("OnDragStop", nil)
             else
+            -- Restore default (unlocked) overlay visuals
+            bar.editOverlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
+            bar.editOverlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+            if bar.editOverlay.infoText then
+                bar.editOverlay.infoText:SetTextColor(0.7, 0.7, 0.7, 1)
+                bar.editOverlay.infoText:Show()
+            end
 
             -- Enable dragging
             bar:SetMovable(true)
