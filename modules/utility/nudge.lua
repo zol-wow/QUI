@@ -545,14 +545,15 @@ local function UnblockAllFrameMovement()
     wipe(_blockedFrames)
     -- Restore any remaining drag scripts that weren't caught above
     -- (e.g., reparented .Selection frames where container.Selection was
-    -- cleared before unblock ran).
-    for child, saved in pairs(_savedDragScripts) do
-        pcall(function()
-            child:SetScript("OnDragStart", saved.start or nil)
-            child:SetScript("OnDragStop", saved.stop or nil)
-        end)
+    -- cleared before unblock ran).  Use RestoreChildDrag so re-register
+    -- logic (RegisterForDrag) runs too.
+    local leftovers = {}
+    for child in pairs(_savedDragScripts) do
+        leftovers[#leftovers + 1] = child
     end
-    wipe(_savedDragScripts)
+    for _, child in ipairs(leftovers) do
+        RestoreChildDrag(child)
+    end
 end
 
 ---------------------------------------------------------------------------
