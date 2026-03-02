@@ -96,8 +96,8 @@ end
 
 ---------------------------------------------------------------------------
 -- HIDE / SHOW BLIZZARD VIEWERS
--- During normal gameplay: hidden (alpha 0, no mouse).
--- During Edit Mode: visible (restored) so Blizzard's Edit Mode can interact.
+-- Blizzard viewers are ALWAYS alpha 0 (including during Edit Mode).
+-- QUI's own containers stay visible with overlays during Edit Mode.
 -- SetAlpha hooks prevent Blizzard's CDM code from restoring viewer visibility
 -- during combat (cooldown activation triggers SetAlpha(1) internally).
 ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ end
 
 -- Periodic alpha enforcer: catches cases where Blizzard restores alpha
 -- via internal paths that don't trigger the SetAlpha hook.
--- Runs only while viewers are hidden; stops when shown (Edit Mode).
+-- Runs only while viewers are hidden (always, including Edit Mode).
 local alphaEnforcerFrame = CreateFrame("Frame")
 local alphaEnforcerElapsed = 0
 alphaEnforcerFrame:SetScript("OnUpdate", function(self, dt)
@@ -197,11 +197,13 @@ local function ScanCooldownViewer(viewerType)
         for i = 1, numChildren do
             local child = select(i, scanContainer:GetChildren())
             if child and child ~= sel and not child._isCustomCDMIcon and IsIconFrame(child) then
-                local shown = child:IsShown()
                 local hasTex = HasValidTexture(child)
                 local hasCDInfo = (child.cooldownInfo ~= nil)
 
-                if shown and hasTex and (hasTex or hasCDInfo) then
+                -- Harvest ALL children regardless of shown state.
+                -- QUI mirrors Blizzard child alpha for visibility; pool size
+                -- and container dimensions are always based on all icons.
+                if hasTex or hasCDInfo then
                     local spellID, overrideSpellID, name, isAura
                     local layoutIndex = child.layoutIndex or 9999
 
@@ -434,7 +436,16 @@ function CDMSpellData:GetSpellList(viewerType)
 end
 
 function CDMSpellData:ForceScan()
-    ScanAll()
+    -- Scan all three viewers synchronously but do NOT fire QUI_OnSpellDataChanged.
+    -- This prevents a feedback loop: RefreshAll → ForceScan → changed → callback → RefreshAll.
+    -- Update lastSpellCounts so the periodic ScanAll ticker won't re-detect the same change.
+    if InCombatLockdown() then return end
+    ScanViewer("essential")
+    ScanViewer("utility")
+    ScanViewer("buff")
+    for viewerType, list in pairs(spellLists) do
+        lastSpellCounts[viewerType] = type(list) == "table" and #list or 0
+    end
 end
 
 function CDMSpellData:IsViewerHidden()
@@ -472,21 +483,17 @@ local function RegisterEditModeCallbacks()
 
     if QUICore.RegisterEditModeEnter then
         QUICore:RegisterEditModeEnter(function()
-            -- Show Blizzard viewers so Edit Mode can interact with them.
-            -- Position them at the owned containers' current position so
-            -- the user sees them where QUI had them.
+            -- Blizzard viewers stay at alpha 0 — QUI containers + overlays
+            -- handle all display during Edit Mode. Zero Blizzard frame writes.
             if _G.QUI_OnEditModeEnterCDM then
                 _G.QUI_OnEditModeEnterCDM()
             end
-            ShowBlizzardViewers()
         end)
     end
 
     if QUICore.RegisterEditModeExit then
         QUICore:RegisterEditModeExit(function()
-            -- Read new position from Blizzard viewers, hide them again,
-            -- show owned containers at the new position.
-            HideBlizzardViewers()
+            -- Save QUI container positions, rebuild layout.
             if _G.QUI_OnEditModeExitCDM then
                 _G.QUI_OnEditModeExitCDM()
             end

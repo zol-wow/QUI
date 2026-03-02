@@ -82,7 +82,13 @@ local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleCol
     if not block then return end
 
     if titleFontSize > 0 and block.HeaderText then
-        block.HeaderText:SetFont(fontPath, titleFontSize, GetFontFlags())
+        -- Idempotent guard: skip SetFont when font is already correct to prevent
+        -- reflow → Blizzard relayout → AddBlock hook → StyleBlock → oscillation loop
+        local curFont, curSize, curFlags = block.HeaderText:GetFont()
+        local targetFlags = GetFontFlags()
+        if curFont ~= fontPath or curSize ~= titleFontSize or curFlags ~= targetFlags then
+            block.HeaderText:SetFont(fontPath, titleFontSize, targetFlags)
+        end
         SafeSetTextColor(block.HeaderText, titleColor)
     end
 
@@ -592,7 +598,11 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
         if tracker then
             -- Style module header text (e.g., "QUESTS", "ACHIEVEMENTS")
             if moduleFontSize > 0 and tracker.Header and tracker.Header.Text then
-                tracker.Header.Text:SetFont(fontPath, moduleFontSize, GetFontFlags())
+                local curFont, curSize, curFlags = tracker.Header.Text:GetFont()
+                local targetFlags = GetFontFlags()
+                if curFont ~= fontPath or curSize ~= moduleFontSize or curFlags ~= targetFlags then
+                    tracker.Header.Text:SetFont(fontPath, moduleFontSize, targetFlags)
+                end
                 SafeSetTextColor(tracker.Header.Text, moduleColor)
             end
 
@@ -611,7 +621,11 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if TrackerFrame and TrackerFrame.Header and TrackerFrame.Header.Text then
         if moduleFontSize > 0 then
-            TrackerFrame.Header.Text:SetFont(fontPath, moduleFontSize, GetFontFlags())
+            local curFont, curSize, curFlags = TrackerFrame.Header.Text:GetFont()
+            local targetFlags = GetFontFlags()
+            if curFont ~= fontPath or curSize ~= moduleFontSize or curFlags ~= targetFlags then
+                TrackerFrame.Header.Text:SetFont(fontPath, moduleFontSize, targetFlags)
+            end
             SafeSetTextColor(TrackerFrame.Header.Text, moduleColor)
         end
     end
@@ -661,7 +675,14 @@ local function HookLineCreation()
                 local currentTitleSize = currentSettings and currentSettings.objectiveTrackerTitleFontSize or 0
                 local currentTitleColor = currentSettings and currentSettings.objectiveTrackerTitleColor
                 if currentTitleSize > 0 and block.HeaderText then
-                    block.HeaderText:SetFont(GetFontPath(), currentTitleSize, GetFontFlags())
+                    -- Idempotent guard: skip SetFont when font is already correct to prevent
+                    -- reflow → Blizzard relayout → SetHeader hook → oscillation loop
+                    local curFont, curSize, curFlags = block.HeaderText:GetFont()
+                    local targetFont = GetFontPath()
+                    local targetFlags = GetFontFlags()
+                    if curFont ~= targetFont or curSize ~= currentTitleSize or curFlags ~= targetFlags then
+                        block.HeaderText:SetFont(targetFont, currentTitleSize, targetFlags)
+                    end
                     SafeSetTextColor(block.HeaderText, currentTitleColor)
                 end
             end)

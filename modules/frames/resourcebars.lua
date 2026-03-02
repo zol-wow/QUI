@@ -851,12 +851,42 @@ function QUICore:EnablePowerBarEditMode()
             CreatePowerBarEditOverlay(bar, barKey)
             bar.editOverlay:Show()
 
+            -- Check if this bar is locked by the anchoring system
+            local isLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(bar)
+
             -- Update info text with current position
             if bar.editOverlay.infoText then
                 local label = (barKey == "primary") and "Primary" or "Secondary"
                 local x = cfg.offsetX or 0
                 local y = cfg.offsetY or 0
-                bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
+                if isLocked then
+                    bar.editOverlay.infoText:SetText(string.format("%s  (Locked)", label))
+                else
+                    bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
+                end
+            end
+
+            if isLocked then
+                -- Locked: grey overlay, no drag
+                bar.editOverlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
+                bar.editOverlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+                if bar.editOverlay.infoText then
+                    bar.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                    bar.editOverlay.infoText:Show()
+                end
+                bar:SetMovable(false)
+                bar:EnableMouse(false)
+                bar:RegisterForDrag()
+                bar:SetScript("OnMouseDown", nil)
+                bar:SetScript("OnDragStart", nil)
+                bar:SetScript("OnDragStop", nil)
+            else
+            -- Restore default (unlocked) overlay visuals
+            bar.editOverlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
+            bar.editOverlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+            if bar.editOverlay.infoText then
+                bar.editOverlay.infoText:SetTextColor(0.7, 0.7, 0.7, 1)
+                bar.editOverlay.infoText:Show()
             end
 
             -- Enable dragging
@@ -964,6 +994,7 @@ function QUICore:EnablePowerBarEditMode()
                     QUICore:NudgeSelectedElement(deltaX, deltaY)
                 end
             end)
+            end -- else (free)
         end
     end
 end
@@ -1465,9 +1496,11 @@ _G.QUI_UpdateLockedPowerBar = function()
     -- During combat, Blizzard mutates CDM viewer sizes so GetCenter()
     -- returns incorrect positions.  Defer to post-combat RefreshAll.
     if InCombatLockdown() then return end
-    -- During Edit Mode, viewer dimensions are transient — don't persist them
-    -- to cfg.width or the bar will flash at the Edit Mode width on next load.
-    if Helpers.IsEditModeActive() then return end
+    -- During CDM Edit Mode, viewer dimensions are transient — don't persist
+    -- them to cfg.width or the bar will flash at the Edit Mode width on
+    -- next load.  Use QUI's own flag (not Blizzard's IsEditModeActive which
+    -- can lag behind our exit callback).
+    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
 
     local core = GetCore()
     if not core or not core.db then return end
@@ -1575,7 +1608,7 @@ end
 -- Global callback for NCDM to update power bar locked to Utility
 _G.QUI_UpdateLockedPowerBarToUtility = function()
     if InCombatLockdown() then return end
-    if Helpers.IsEditModeActive() then return end
+    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
 
     local core = GetCore()
     if not core or not core.db then return end
@@ -1678,7 +1711,7 @@ local cachedPrimaryDimensions = {
 -- Global callback for NCDM to update SECONDARY power bar locked to Essential
 _G.QUI_UpdateLockedSecondaryPowerBar = function()
     if InCombatLockdown() then return end
-    if Helpers.IsEditModeActive() then return end
+    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
 
     local core = GetCore()
     if not core or not core.db then return end
@@ -1780,7 +1813,7 @@ end
 -- Global callback for NCDM to update SECONDARY power bar locked to Utility
 _G.QUI_UpdateLockedSecondaryPowerBarToUtility = function()
     if InCombatLockdown() then return end
-    if Helpers.IsEditModeActive() then return end
+    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
 
     local core = GetCore()
     if not core or not core.db then return end

@@ -3444,6 +3444,24 @@ function QUI_UF:Initialize()
     -- Performance: Removed 200ms health polling ticker
     -- UNIT_HEALTH and UNIT_POWER_UPDATE events already handle updates reliably
     -- The ticker was polling ALL unit frames 5x/sec even when no health changed
+
+    -- Apply HUD visibility now that unit frames exist (covers /reload while mounted).
+    -- Set alpha instantly first so StartUnitframesFade sees "already at target" and
+    -- skips the animation — prevents a 1-frame flash of fully-visible frames.
+    if _G.QUI_ShouldUnitframesBeVisible and not _G.QUI_ShouldUnitframesBeVisible() then
+        local core = GetCore()
+        local vis = core and core.db and core.db.profile and core.db.profile.unitframesVisibility
+        local alpha = vis and vis.fadeOutAlpha or 0
+        for _, frame in pairs(self.frames) do
+            if frame then frame:SetAlpha(alpha) end
+        end
+        for _, castbar in pairs(self.castbars) do
+            if castbar then castbar:SetAlpha(alpha) end
+        end
+    end
+    if _G.QUI_RefreshUnitframesVisibility then
+        _G.QUI_RefreshUnitframesVisibility()
+    end
 end
 
 ---------------------------------------------------------------------------

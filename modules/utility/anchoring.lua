@@ -29,6 +29,9 @@ QUI_Anchoring.overriddenFrames = {}
 
 local Helpers = {}
 
+-- Forward-declared tables (populated later, referenced by ResolveFrameForKey)
+local CDM_LOGICAL_SIZE_KEYS = {}
+
 -- Edit Mode hook state (declared early so ApplyFrameAnchor can set the guard)
 local _editModeReapplyGuard = false  -- prevents recursive reapply during QUI's own SetPoint
 local _editModeTickerSilent = false  -- suppress per-tick debug after first pass
@@ -1333,9 +1336,34 @@ end
 -- covers icons shifted by per-row yOffset settings.  Without this the
 -- proxy is centered on the viewer, but the icon bounding box may be
 -- shifted upward/downward.
+local function IsFrameProtectedSafe(frame)
+    if not (frame and frame.IsProtected) then return false end
+    local ok, protected = pcall(frame.IsProtected, frame)
+    return ok and protected == true
+end
+
 local function CDMAnchorResolver(proxy, source)
     local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(source)
     local yOff = (vs and vs.proxyYOffset) or 0
+
+    -- Some Blizzard CDM frames can become protected in combat, which propagates
+    -- protection to anchored proxies. Mutating points in that state triggers
+    -- ADDON_ACTION_BLOCKED on ClearAllPoints/SetPoint.
+    if InCombatLockdown() and (IsFrameProtectedSafe(proxy) or IsFrameProtectedSafe(source)) then
+        return
+    end
+
+    -- Avoid redundant point churn.
+    if proxy:GetNumPoints() == 1 then
+        local pt, relTo, relPt, ox, oy = proxy:GetPoint(1)
+        if pt == "CENTER" and relTo == source and relPt == "CENTER"
+            and math.abs((ox or 0) - 0) < 0.1
+            and math.abs((oy or 0) - (yOff or 0)) < 0.1
+        then
+            return
+        end
+    end
+
     proxy:ClearAllPoints()
     proxy:SetPoint("CENTER", source, "CENTER", 0, yOff)
 end
@@ -1359,6 +1387,9 @@ local function GetCDMAnchorProxy(parentKey)
     else
         proxy = UIKit.CreateAnchorProxy(sourceFrame, {
             deferCreation = true,
+            -- CDM + HUD proxy frames are addon-owned and safe to resize/anchor in combat.
+            -- Keeping them live avoids stale bounds when CDM reflows during combat.
+            combatFreeze = false,
             sizeResolver = sourceInfo.cdm and CDMSizeResolver or nil,
             anchorResolver = sourceInfo.cdm and CDMAnchorResolver or nil,
         })
@@ -1465,9 +1496,12 @@ local FRAME_ANCHOR_FALLBACKS = {
 
 -- Helper: resolve a single key to a visible frame (nil if unavailable)
 local function ResolveFrameForKey(key)
-    -- CDM proxy check
-    local cdmProxy = GetCDMAnchorProxy(key)
-    if cdmProxy then return cdmProxy end
+    -- Always use CDM proxy frames — GetViewerFrame returns QUI containers
+    -- both in and out of Edit Mode, so proxies work identically.
+    do
+        local cdmProxy = GetCDMAnchorProxy(key)
+        if cdmProxy then return cdmProxy end
+    end
 
     -- Frame resolver
     local resolver = FRAME_RESOLVERS[key]
@@ -1530,8 +1564,48 @@ _G.QUI_GetCDMAnchorProxyFrame = GetCDMAnchorProxy
 
 -- Re-sync frozen proxy anchors after combat ends.
 local cdmProxyCombatFrame = CreateFrame("Frame")
+cdmProxyCombatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdmProxyCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-cdmProxyCombatFrame:SetScript("OnEvent", function()
+local function ReanchorCombatCastbarOverrides()
+    local anchoringDB = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.frameAnchoring
+    if not anchoringDB or not QUI_Anchoring then return end
+
+    local castbarKeys = { "playerCastbar", "targetCastbar", "focusCastbar" }
+    for _, key in ipairs(castbarKeys) do
+        local settings = anchoringDB[key]
+        if type(settings) == "table" and settings.enabled then
+            -- Normalize legacy aliases (settings.parent may store the short form)
+            local parent = settings.parent
+            if parent == "essential" then parent = "cdmEssential"
+            elseif parent == "utility" then parent = "cdmUtility" end
+            if parent == "cdmEssential" or parent == "cdmUtility" or parent == "buffIcon" or parent == "buffBar" then
+                QUI_Anchoring:ApplyFrameAnchor(key, settings)
+            end
+        end
+    end
+end
+
+cdmProxyCombatFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        -- Combat start: force a live proxy sync and re-apply castbar overrides
+        -- anchored to CDM, then repeat briefly as CDM state settles.
+        UpdateCDMAnchorProxies()
+        ReanchorCombatCastbarOverrides()
+        C_Timer.After(0.05, function()
+            if InCombatLockdown() then
+                UpdateCDMAnchorProxies()
+                ReanchorCombatCastbarOverrides()
+            end
+        end)
+        C_Timer.After(0.20, function()
+            if InCombatLockdown() then
+                UpdateCDMAnchorProxies()
+                ReanchorCombatCastbarOverrides()
+            end
+        end)
+        return
+    end
+
     local needsRefresh = false
     for key, pending in pairs(cdmAnchorProxyPendingAfterCombat) do
         if pending then
@@ -1602,11 +1676,14 @@ end
 -- Track which parent frames have been hooked for OnSizeChanged
 local hookedParentFrames = {}
 
-local CDM_LOGICAL_SIZE_KEYS = {
-    cdmEssential = true,
-    cdmUtility = true,
-    buffIcon = true,
-    buffBar = true,
+CDM_LOGICAL_SIZE_KEYS.cdmEssential = true
+CDM_LOGICAL_SIZE_KEYS.cdmUtility = true
+CDM_LOGICAL_SIZE_KEYS.buffIcon = true
+CDM_LOGICAL_SIZE_KEYS.buffBar = true
+local CASTBAR_ANCHOR_KEYS = {
+    playerCastbar = true,
+    targetCastbar = true,
+    focusCastbar = true,
 }
 
 local function GetPointOffsetForRect(point, width, height)
@@ -1822,6 +1899,18 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         return
     end
 
+    -- Detect Blizzard Edit Mode system frames early (needed for CDM guards below).
+    local isBlizzEditModeSystem = resolved.system ~= nil or resolved.systemIndex ~= nil
+
+    -- During Edit Mode, free-floating CDM viewers (screen/disabled parent) are
+    -- entirely handled by Blizzard's native drag system.  Don't mark them as
+    -- overridden (keeps them "unlocked" and draggable) and don't call SetPoint.
+    if isBlizzEditModeSystem and inEditMode
+        and CDM_LOGICAL_SIZE_KEYS[key]
+        and (not settings.parent or settings.parent == "screen" or settings.parent == "disabled") then
+        if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP free-floating CDM viewer in EditMode", key)) end
+        return
+    end
 
     -- Mark frame as overridden FIRST — blocks any module positioning from this point on
     SetFrameOverride(resolved, true, key)
@@ -1830,31 +1919,30 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     -- OnSystemPositionChange which reads GetPoint() and errors on nil offsetY.
     -- Still mark them overridden (above) so QUI_IsFrameLocked returns true and
     -- the Edit Mode overlay shows "(Locked)", but skip the actual repositioning.
-    local isBlizzEditModeSystem = resolved.system ~= nil or resolved.systemIndex ~= nil
     if isBlizzEditModeSystem and resolved.IsShown and not resolved:IsShown() then
         if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): HIDDEN system frame (system=%s sysIdx=%s)", key, tostring(resolved.system), tostring(resolved.systemIndex))) end
         return
     end
 
-    -- During Edit Mode, skip repositioning CDM viewer frames that have no
-    -- QUI anchor parent — Blizzard actively controls their layout/position
-    -- during resize and ClearAllPoints/SetPoint would fight it.  However,
-    -- CDM viewers that ARE anchored to another frame via QUI's anchoring
-    -- system must follow their parent in real-time (otherwise they overlap
-    -- when the parent is dragged).  All OTHER system frames with QUI
-    -- overrides (boss frames, objective tracker, etc.) are "Locked" in
-    -- Edit Mode and should follow the anchor chain in real-time.
+    -- During Edit Mode, anchored CDM viewers are marked overridden above so
+    -- nudge overlays show "(Locked)", but we skip ClearAllPoints/SetPoint.
+    -- Calling these on Blizzard's secure CDM viewer frames from addon code
+    -- taints their geometry; HideSystemSelections reads the tainted position
+    -- via secureexecuterange on exit, propagating taint and triggering
+    -- ADDON_ACTION_FORBIDDEN on ClearTarget().
     if isBlizzEditModeSystem and inEditMode
-        and CDM_LOGICAL_SIZE_KEYS[key]
-        and (not settings.parent or settings.parent == "screen" or settings.parent == "disabled") then
-        if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP CDM viewer in EditMode (no QUI parent)", key)) end
+        and CDM_LOGICAL_SIZE_KEYS[key] then
+        if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP anchored CDM viewer in EditMode (taint safety)", key)) end
         return
     end
 
     -- Defer in combat for most frames.
     -- CDM viewers are allowed to attempt re-anchoring in combat so morph/layout
     -- churn can be corrected immediately instead of waiting for combat end.
-    local allowCombatApply = (key == "cdmEssential" or key == "cdmUtility" or key == "buffIcon" or key == "buffBar")
+    local allowCombatApply = (
+        key == "cdmEssential" or key == "cdmUtility" or key == "buffIcon" or key == "buffBar"
+        or key == "playerCastbar" or key == "targetCastbar" or key == "focusCastbar"
+    )
     if InCombatLockdown() and allowCombatApply then
         -- CDM viewers are normally safe to reposition in combat, but if the
         -- resolved frame is actually protected (e.g. Blizzard's secure CDM
@@ -1904,6 +1992,13 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
+    if CASTBAR_ANCHOR_KEYS[key] then
+        -- Castbars should preserve the explicit point relation (e.g. TOP->BOTTOM)
+        -- so they track parent edge movement automatically in combat.
+        -- Center-converted size-stable mode requires re-apply on parent size changes
+        -- and can drift when combat-safe reapply paths are constrained.
+        useSizeStable = false
+    end
 
     -- Boss frames: single setting applied to all with stacking Y offset
     if key == "bossFrames" and type(resolved) == "table" and not resolved.GetObjectType then
@@ -2282,7 +2377,6 @@ end
 -- Updates both legacy anchored frames and frame anchoring overrides.
 _G.QUI_UpdateFramesAnchoredTo = function(targetKeyOrFrame)
     if not targetKeyOrFrame then return end
-    if InCombatLockdown() then return end
 
     -- Resolve frame object to key via reverse lookup
     local targetKey = targetKeyOrFrame
@@ -2297,6 +2391,14 @@ _G.QUI_UpdateFramesAnchoredTo = function(targetKeyOrFrame)
             end
         end
         if not targetKey then return end
+    end
+
+    -- In combat, only process CDM-driven targets. ApplyFrameAnchor keeps its own
+    -- safety checks and will defer unsafe frame types automatically.
+    if InCombatLockdown() then
+        if targetKey ~= "cdmEssential" and targetKey ~= "cdmUtility" and targetKey ~= "buffIcon" and targetKey ~= "buffBar" then
+            return
+        end
     end
 
     local anchoringDB = QUICore and QUICore.db and QUICore.db.profile

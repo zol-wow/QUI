@@ -30,8 +30,8 @@ local function BuildTooltipTab(tabContent)
     end
 
     local function RefreshTooltipFontSize()
-        if _G.QUI_RefreshTooltipFontSize then
-            _G.QUI_RefreshTooltipFontSize()
+        if ns.QUI_RefreshTooltipFontSize then
+            ns.QUI_RefreshTooltipFontSize()
         else
             -- Fallback path if skinning module has not initialized yet.
             RefreshTooltips()
@@ -124,8 +124,8 @@ local function BuildTooltipTab(tabContent)
 
     -- Refresh callback for live tooltip skin updates
     local function RefreshTooltipSkin()
-        if _G.QUI_RefreshTooltipSkinColors then
-            _G.QUI_RefreshTooltipSkinColors()
+        if ns.QUI_RefreshTooltipSkinColors then
+            ns.QUI_RefreshTooltipSkinColors()
         end
     end
 

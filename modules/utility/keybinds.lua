@@ -14,10 +14,12 @@ local VIEWER_DB_KEY = {
     essential = "EssentialCooldownViewer",
     utility   = "UtilityCooldownViewer",
 }
--- Reverse map: legacy frame names → resolver keys (for backward-compat exports)
+-- Reverse map: frame/container names → resolver keys (for exports + layout callbacks)
 local VIEWER_RESOLVER_KEY = {
     EssentialCooldownViewer = "essential",
     UtilityCooldownViewer   = "utility",
+    QUI_EssentialContainer  = "essential",
+    QUI_UtilityContainer    = "utility",
 }
 
 -- Cache for spell ID to keybind mapping
@@ -915,22 +917,37 @@ local function ApplyKeybindToIcon(icon, viewerName)
     local spellName
     local itemID
     local itemName
-    local customEntry = icon._customCDMEntry
+
+    -- New CDM icons (cdm_icons.lua) store data in _spellEntry
+    local spellEntry = icon._spellEntry
+    local customEntry = icon._customCDMEntry or (spellEntry and spellEntry._isCustomEntry and spellEntry)
     local isItemEntry = customEntry and (customEntry.type == "item" or customEntry.type == "trinket")
-    local ok, result = pcall(function()
-        local id = icon.spellID
-        if not id and icon.GetSpellID then
-            id = icon:GetSpellID()
+
+    -- Try _spellEntry first (new addon-owned CDM icons)
+    if spellEntry then
+        spellID = spellEntry.overrideSpellID or spellEntry.spellID
+        if spellEntry.name and type(spellEntry.name) == "string" and spellEntry.name ~= "" then
+            spellName = spellEntry.name
         end
-        return id
-    end)
-    
-    if ok and result then
-        -- Verify result isn't a secret value (can't be used as table key)
-        if type(issecretvalue) == "function" and issecretvalue(result) then
-            result = nil
+    end
+
+    -- Fallback: legacy icon properties
+    if not spellID then
+        local ok, result = pcall(function()
+            local id = icon.spellID
+            if not id and icon.GetSpellID then
+                id = icon:GetSpellID()
+            end
+            return id
+        end)
+
+        if ok and result then
+            -- Verify result isn't a secret value (can't be used as table key)
+            if type(issecretvalue) == "function" and issecretvalue(result) then
+                result = nil
+            end
+            spellID = result
         end
-        spellID = result
     end
 
     -- Custom CDM entries can represent items/trinket slots; resolve those up front
@@ -960,26 +977,28 @@ local function ApplyKeybindToIcon(icon, viewerName)
     
     -- Try to get spell name from icon (for fallback matching)
     -- Must validate that name is a real string (not a secret value)
-    pcall(function()
-        -- Try cooldownInfo first (CDM uses this)
-        if icon.cooldownInfo and icon.cooldownInfo.name then
-            -- Validate it's a usable string by attempting string operation
-            local testOk, _ = pcall(function() return icon.cooldownInfo.name:len() end)
-            if testOk then
-                spellName = icon.cooldownInfo.name
-            end
-        end
-        -- Try getting name from spell ID
-        if not spellName and spellID then
-            local info = C_Spell.GetSpellInfo(spellID)
-            if info and info.name then
-                local testOk, _ = pcall(function() return info.name:len() end)
+    if not spellName then
+        pcall(function()
+            -- Try cooldownInfo first (legacy CDM uses this)
+            if icon.cooldownInfo and icon.cooldownInfo.name then
+                -- Validate it's a usable string by attempting string operation
+                local testOk, _ = pcall(function() return icon.cooldownInfo.name:len() end)
                 if testOk then
-                    spellName = info.name
+                    spellName = icon.cooldownInfo.name
                 end
             end
-        end
-    end)
+            -- Try getting name from spell ID
+            if not spellName and spellID then
+                local info = C_Spell.GetSpellInfo(spellID)
+                if info and info.name then
+                    local testOk, _ = pcall(function() return info.name:len() end)
+                    if testOk then
+                        spellName = info.name
+                    end
+                end
+            end
+        end)
+    end
     
     -- Get keybind for this spell:
     -- 1) User override (by baseSpellID / spellID)
@@ -1033,10 +1052,10 @@ local function ApplyKeybindToIcon(icon, viewerName)
 
     -- If no keybind found yet, try base spell sources
     if not keybind and spellID and not isItemEntry then
-        -- Try the BASE spell from cooldownInfo
+        -- Try the BASE spell from _spellEntry or cooldownInfo
         -- (CDM icons store the base spell ID even when showing evolved form)
-        if icon.cooldownInfo and icon.cooldownInfo.spellID then
-            local baseFromInfo = icon.cooldownInfo.spellID
+        local baseFromInfo = (spellEntry and spellEntry.spellID) or (icon.cooldownInfo and icon.cooldownInfo.spellID)
+        if baseFromInfo then
             -- Use pcall for comparison since spellID may be a secret value
             local compareOk, isDifferent = pcall(function() return baseFromInfo ~= spellID end)
             if compareOk and isDifferent then
@@ -1155,11 +1174,43 @@ local function ApplyKeybindToIcon(icon, viewerName)
         iconKeybindState[icon] = iks
     end
 
+    -- Ensure keybind text sits above cooldown swipe/darkening overlays.
+    if not iks.textLayer then
+        local layer = CreateFrame("Frame", nil, icon)
+        layer:SetAllPoints(icon)
+        iks.textLayer = layer
+    end
+    if iks.textLayer then
+        local cooldownLevel = (icon.Cooldown and icon.Cooldown.GetFrameLevel and icon.Cooldown:GetFrameLevel()) or icon:GetFrameLevel()
+        local desiredLevel = cooldownLevel + 20
+        if iks.textLayer:GetFrameLevel() ~= desiredLevel then
+            iks.textLayer:SetFrameLevel(desiredLevel)
+        end
+        if icon.GetFrameStrata and iks.textLayer.GetFrameStrata and iks.textLayer:GetFrameStrata() ~= icon:GetFrameStrata() then
+            iks.textLayer:SetFrameStrata(icon:GetFrameStrata())
+        end
+    end
+
     -- Create keybind text FontString if it doesn't exist
     if not iks.text then
-        iks.text = icon:CreateFontString(nil, "OVERLAY")
+        local textParent = iks.textLayer or icon
+        iks.text = textParent:CreateFontString(nil, "OVERLAY", nil, 7)
         iks.text:SetShadowOffset(1, -1)
         iks.text:SetShadowColor(0, 0, 0, 1)
+    elseif iks.textLayer and iks.text:GetParent() ~= iks.textLayer then
+        -- Parent may have changed if icon state was rebuilt.
+        local existingText = iks.text:GetText()
+        local shown = iks.text:IsShown()
+        iks.text:Hide()
+        iks.text = iks.textLayer:CreateFontString(nil, "OVERLAY", nil, 7)
+        iks.text:SetShadowOffset(1, -1)
+        iks.text:SetShadowColor(0, 0, 0, 1)
+        iks.text:SetText(existingText or "")
+        if shown then iks.text:Show() end
+        -- Force a full style/anchor refresh after reparenting.
+        iks.anchor, iks.offsetX, iks.offsetY = nil, nil, nil
+        iks.font, iks.fontSize, iks.fontOutline = nil, nil, nil
+        iks.r, iks.g, iks.b, iks.a = nil, nil, nil, nil
     end
 
     -- Skip redundant work: only touch the FontString when something changed.
@@ -1170,7 +1221,8 @@ local function ApplyKeybindToIcon(icon, viewerName)
 
     if iks.anchor ~= anchor or iks.offsetX ~= offsetX or iks.offsetY ~= offsetY then
         iks.text:ClearAllPoints()
-        iks.text:SetPoint(anchor, icon, anchor, offsetX, offsetY)
+        local anchorParent = iks.textLayer or icon
+        iks.text:SetPoint(anchor, anchorParent, anchor, offsetX, offsetY)
         iks.anchor, iks.offsetX, iks.offsetY = anchor, offsetX, offsetY
     end
 

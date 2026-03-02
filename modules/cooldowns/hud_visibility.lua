@@ -593,23 +593,34 @@ visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
 
+local _pendingSetupTimer = nil
+
 visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_FLAGS_CHANGED" then
         local unit = ...
         if unit ~= "player" then return end
     end
 
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(1.5, function()
+    if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+        -- Schedule delayed setup so CDM/UF frames have time to initialize.
+        -- PLAYER_LOGIN only fires on first login, NOT on /reload — so we
+        -- must also schedule on PLAYER_ENTERING_WORLD to cover reloads.
+        if _pendingSetupTimer then
+            _pendingSetupTimer:Cancel()
+        end
+        _pendingSetupTimer = C_Timer.NewTimer(2.0, function()
+            _pendingSetupTimer = nil
             SetupCDMMouseoverDetector()
             SetupUnitframesMouseoverDetector()
             UpdateCDMVisibility()
             UpdateUnitframesVisibility()
         end)
-    else
-        UpdateCDMVisibility()
-        UpdateUnitframesVisibility()
     end
+
+    -- Always try an immediate update too (works for events where frames
+    -- already exist, e.g. target changes, combat, zone transitions).
+    UpdateCDMVisibility()
+    UpdateUnitframesVisibility()
 end)
 
 ---------------------------------------------------------------------------
@@ -624,6 +635,7 @@ _G.QUI_RefreshUnitframesVisibility = UpdateUnitframesVisibility
 _G.QUI_RefreshCDMMouseover = SetupCDMMouseoverDetector
 _G.QUI_RefreshUnitframesMouseover = SetupUnitframesMouseoverDetector
 _G.QUI_ShouldCDMBeVisible = ShouldCDMBeVisible
+_G.QUI_ShouldUnitframesBeVisible = ShouldUnitframesBeVisible
 
 ---------------------------------------------------------------------------
 -- NAMESPACE EXPORTS

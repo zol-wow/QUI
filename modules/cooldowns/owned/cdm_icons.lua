@@ -57,11 +57,10 @@ local recyclePool = {}
 local iconCounter = 0
 local updateTicker = nil
 
--- TAINT SAFETY: Blizzard CD adoption state tracked in a weak-keyed table
--- instead of writing _quiIcon/_quiBypass/_quiHooked directly to Blizzard's
--- Cooldown widget. Direct writes taint the frame, causing module-level
--- CooldownViewer state (wasOnGCDLookup, chargeGainedAlertTimes) to become
--- forbidden tables.
+-- TAINT SAFETY: Blizzard CD mirror state tracked in a weak-keyed table.
+-- Maps Blizzard CooldownFrame → { icon = quiIcon, hooked = bool } so mirror
+-- hooks can forward SetCooldown/SetCooldownFromDurationObject calls to the
+-- addon-owned CooldownFrame without writing to the Blizzard frame.
 local blizzCDState = setmetatable({}, { __mode = "k" })
 
 -- TAINT SAFETY: Blizzard Icon texture hook state tracked in a weak-keyed table.
@@ -70,10 +69,12 @@ local blizzCDState = setmetatable({}, { __mode = "k" })
 -- to the addon-owned icon without reading restricted frames during combat.
 local blizzTexState = setmetatable({}, { __mode = "k" })
 
--- TAINT SAFETY: Blizzard buff child visibility hook state tracked in a weak-keyed table.
--- Maps Blizzard buff children → { icon = quiIcon, hooked = bool } so Hide/Show hooks
--- can mirror visibility to the addon-owned icon via SetAlpha without polling.
-local blizzVisState = setmetatable({}, { __mode = "k" })
+-- TAINT SAFETY: Blizzard stack/charge text hook state tracked in a weak-keyed
+-- table.  Maps Blizzard _blizzChild → { icon, chargeVisible, appVisible, hooked }.
+-- Hooks on Show/Hide/SetText receive parameters from Blizzard's secure calling
+-- code — not tainted — unlike polling IsShown()/GetText() on the alpha=0 viewer
+-- children which always returns QUI-tainted secret values.
+local blizzStackState = setmetatable({}, { __mode = "k" })
 
 ---------------------------------------------------------------------------
 -- DB ACCESS
@@ -230,36 +231,12 @@ end
 CDMIcons.GetBestSpellCooldown = GetBestSpellCooldown
 
 ---------------------------------------------------------------------------
--- BLIZZARD COOLDOWN ADOPTION
--- Reparent Blizzard viewer children's Cooldown frames onto QUI icons.
--- This gives us a secure CooldownFrame that can render secret values
--- natively (charge recharge, aura durations, etc.), while our icon
--- controls the position and size.
---
--- For charge+aura spells: aura duration shows while active. When the
--- aura expires, the ticker forces charge recharge display.
--- _auraActive flag is set by the SetCooldownFromDurationObject hook
--- using the isAura parameter (a regular boolean from Blizzard's CDM
--- Lua code, NOT a restricted API secret value).
+-- SWIPE STYLING
 ---------------------------------------------------------------------------
 
--- Force charge recharge display on an adopted CD.
--- Returns true if charges were applied.
-local function ForceChargeRecharge(cd, entry)
-    if not entry or not entry.hasCharges then return false end
-    local sid = entry.overrideSpellID or entry.spellID or entry.id
-    if not sid or not C_Spell.GetSpellCharges then return false end
-    local chargeInfo = C_Spell.GetSpellCharges(sid)
-    if not chargeInfo then return false end
-    local state = blizzCDState[cd]
-    if state then state.bypass = true end
-    pcall(cd.SetCooldown, cd, chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration)
-    if state then state.bypass = false end
-    return true
-end
-
--- Re-apply QUI swipe styling after Blizzard resets texture/color.
+-- Re-apply QUI swipe styling to the addon-owned CooldownFrame.
 local function ReapplySwipeStyle(cd, icon)
+    if not cd then return end
     cd:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
     local CooldownSwipe = QUI.CooldownSwipe
     if CooldownSwipe and CooldownSwipe.ApplyToIcon then
@@ -267,53 +244,44 @@ local function ReapplySwipeStyle(cd, icon)
     end
 end
 
-local function AdoptBlizzCooldown(icon, blizzChild)
+---------------------------------------------------------------------------
+-- BLIZZARD COOLDOWN MIRRORING
+-- Instead of reparenting Blizzard's CooldownFrame onto our icon (which
+-- taints it and causes isActive / wasOnGCDLookup errors in
+-- Blizzard_CooldownViewer), we leave the Blizzard CooldownFrame
+-- untouched and mirror its updates to our addon-owned CooldownFrame
+-- via hooksecurefunc.  The hooks receive the same parameters Blizzard
+-- passes (including secret values during combat) and forward them to
+-- the addon CD's C-side SetCooldown/SetCooldownFromDurationObject,
+-- which handles secret values natively.
+---------------------------------------------------------------------------
+local function MirrorBlizzCooldown(icon, blizzChild)
     if not blizzChild or not blizzChild.Cooldown then return end
     local blizzCD = blizzChild.Cooldown
 
-    -- Store our addon-created CD so we can restore on release
-    icon._addonCooldown = icon.Cooldown
-    icon._addonCooldown:Hide()
-
-    -- TAINT SAFETY: Track CD→icon association in a weak-keyed table instead
-    -- of writing directly to Blizzard's Cooldown widget.
-    -- Set bypass BEFORE reparenting so post-hooks (installed on re-adoption)
-    -- don't fight the new anchor target.
+    -- TAINT SAFETY: Track CD→icon association in a weak-keyed table.
     local state = blizzCDState[blizzCD]
     if not state then
         state = {}
         blizzCDState[blizzCD] = state
     end
-    state.bypass = true
+    state.icon = icon
 
-    -- Reparent Blizzard's secure CooldownFrame onto our icon.
-    -- The viewer is alpha=0 (not hidden), so Blizzard's CDM system
-    -- continues updating this frame. It renders at our icon's position.
-    blizzCD:SetParent(icon)
-    blizzCD:ClearAllPoints()
-    blizzCD:SetAllPoints(icon)
-    blizzCD:SetFrameLevel(icon:GetFrameLevel() + 1)
-    blizzCD:Show()
+    -- The addon-created CooldownFrame stays as icon.Cooldown (the display).
+    -- Style it to match QUI defaults.
+    local addonCD = icon.Cooldown
+    addonCD:SetDrawSwipe(true)
+    addonCD:SetHideCountdownNumbers(false)
+    addonCD:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+    addonCD:SetSwipeColor(0, 0, 0, 0.8)
+    addonCD:Show()
 
-    -- Style it to match QUI defaults
-    blizzCD:SetDrawSwipe(true)
-    blizzCD:SetHideCountdownNumbers(false)
-    blizzCD:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
-    blizzCD:SetSwipeColor(0, 0, 0, 0.8)
-
-    -- Replace icon.Cooldown so all existing code operates on the secure frame
-    icon.Cooldown = blizzCD
+    -- Track the Blizzard CD reference for cleanup
     icon._blizzCooldown = blizzCD
 
-    -- Update icon reference and clear bypass
-    state.icon = icon
-    state.bypass = false
-
-    -- Install hooks (once per CD, survives re-adoption).
-    -- SetCooldownFromDurationObject: tracks _auraActive via the isAura param.
-    --   When isAura=true, the aura display stands (ticker skips).
-    --   When isAura=false (aura expired), forces charge recharge immediately.
-    -- SetCooldown: only re-applies QUI styling (doesn't touch aura state).
+    -- Install mirror hooks (once per Blizzard CD, survives re-assignment).
+    -- These forward Blizzard's cooldown updates to the addon-owned
+    -- CooldownFrame WITHOUT writing to the Blizzard frame at all.
     if not state.hooked then
         state.hooked = true
 
@@ -322,17 +290,21 @@ local function AdoptBlizzCooldown(icon, blizzChild)
                 local s = blizzCDState[self]
                 if not s or s.bypass then return end
                 local targetIcon = s.icon
-                if not targetIcon or not targetIcon._spellEntry then return end
-                local entry = targetIcon._spellEntry
+                if not targetIcon then return end
+
+                -- Mirror to addon-owned CD
+                local cd = targetIcon.Cooldown
+                if cd and cd.SetCooldownFromDurationObject then
+                    pcall(cd.SetCooldownFromDurationObject, cd, durationObj, isAura)
+                end
 
                 -- Track aura state for swipe color classification
                 -- (swipe.lua uses _auraActive to pick overlay vs swipe color).
-                -- Let Blizzard's CooldownFrame handle the actual display.
                 -- isAura may be secret in combat; only update when safe
                 if not IsSecretValue(isAura) then
                     targetIcon._auraActive = isAura or false
                 end
-                ReapplySwipeStyle(self, targetIcon)
+                ReapplySwipeStyle(cd, targetIcon)
             end)
         end
 
@@ -340,7 +312,13 @@ local function AdoptBlizzCooldown(icon, blizzChild)
             local s = blizzCDState[self]
             if not s or s.bypass then return end
             local targetIcon = s.icon
-            if not targetIcon or not targetIcon._spellEntry then return end
+            if not targetIcon then return end
+
+            -- Mirror to addon-owned CD
+            local cd = targetIcon.Cooldown
+            if cd then
+                pcall(cd.SetCooldown, cd, start, duration)
+            end
 
             -- Capture cooldown values from Blizzard's native update so
             -- the desaturation ticker uses hook-driven data instead of
@@ -354,74 +332,23 @@ local function AdoptBlizzCooldown(icon, blizzChild)
                 targetIcon._lastDuration = 0
             end
 
-            ReapplySwipeStyle(self, targetIcon)
+            ReapplySwipeStyle(cd, targetIcon)
         end)
 
-        -- Prevent Blizzard from re-anchoring the adopted CooldownFrame back
-        -- to its original parent during combat layout updates.
-        -- If Blizzard calls SetAllPoints(blizzChild) or SetPoint to a non-icon
-        -- frame, immediately re-anchor to our addon icon.
-        hooksecurefunc(blizzCD, "SetAllPoints", function(self, relativeTo)
-            local s = blizzCDState[self]
-            if not s or s.bypass then return end
-            local targetIcon = s.icon
-            if targetIcon and relativeTo ~= targetIcon then
-                s.bypass = true
-                self:ClearAllPoints()
-                self:SetAllPoints(targetIcon)
-                s.bypass = false
-            end
-        end)
-
-        hooksecurefunc(blizzCD, "SetPoint", function(self, _, relativeTo)
-            local s = blizzCDState[self]
-            if not s or s.bypass then return end
-            local targetIcon = s.icon
-            if targetIcon and relativeTo and relativeTo ~= targetIcon then
-                s.bypass = true
-                self:ClearAllPoints()
-                self:SetAllPoints(targetIcon)
-                s.bypass = false
-            end
-        end)
-
-        hooksecurefunc(blizzCD, "SetParent", function(self, newParent)
-            local s = blizzCDState[self]
-            if not s or s.bypass then return end
-            local targetIcon = s.icon
-            if targetIcon and newParent ~= targetIcon then
-                s.bypass = true
-                self:SetParent(targetIcon)
-                self:ClearAllPoints()
-                self:SetAllPoints(targetIcon)
-                self:SetFrameLevel(targetIcon:GetFrameLevel() + 1)
-                s.bypass = false
-            end
-        end)
+        -- No SetAllPoints/SetPoint/SetParent hooks: the Blizzard
+        -- CooldownFrame stays on its original parent frame.  Nothing
+        -- to guard against re-anchoring because we never moved it.
     end
 end
 
-local function RestoreAddonCooldown(icon)
+local function UnmirrorBlizzCooldown(icon)
     if not icon._blizzCooldown then return end
 
-    -- Disconnect hook references before returning (via weak table)
+    -- Disconnect hook references (hooks become no-ops via nil check)
     local state = blizzCDState[icon._blizzCooldown]
     if state then state.icon = nil end
 
-    -- Return Blizzard's CD to its original parent
-    local blizzChild = icon._spellEntry and icon._spellEntry._blizzChild
-    if blizzChild then
-        icon._blizzCooldown:SetParent(blizzChild)
-        icon._blizzCooldown:ClearAllPoints()
-        icon._blizzCooldown:SetAllPoints(blizzChild)
-    end
-
-    -- Restore our addon-created CD (was hidden during adoption)
-    if icon._addonCooldown then
-        icon.Cooldown = icon._addonCooldown
-        icon.Cooldown:Show()
-        icon._addonCooldown = nil
-    end
+    -- No reparenting to undo — the Blizzard CD was never moved.
     icon._blizzCooldown = nil
     icon._auraActive = nil
 end
@@ -468,10 +395,15 @@ local function HookBlizzTexture(icon, blizzChild)
             if not quiIcon.Icon then return end
             local entry = quiIcon._spellEntry
             if not entry then return end
-            if entry.viewerType == "buff" or (entry.isAura and quiIcon._auraActive) then
+            local viewerType = entry.viewerType
+            if viewerType == "buff" or (entry.isAura and quiIcon._auraActive) then
                 return
             end
-            quiIcon.Icon:SetDesaturated(desaturated)
+            local db = GetDB()
+            local settings = db and db[viewerType]
+            if settings and settings.desaturateOnCooldown then
+                quiIcon.Icon:SetDesaturated(desaturated)
+            end
         end)
     end
 end
@@ -486,48 +418,201 @@ local function UnhookBlizzTexture(icon)
 end
 
 ---------------------------------------------------------------------------
--- BLIZZARD BUFF VISIBILITY HOOK
--- Mirrors Blizzard buff child Show/Hide to addon-owned icon alpha.
--- Uses hooksecurefunc (one-time install) so we never call IsShown()
--- during combat — only out-of-combat initial sync.
+-- BLIZZARD STACK/CHARGE TEXT HOOK
+-- Mirrors charge counts and application stacks from Blizzard's hidden
+-- viewer children to our addon-owned icon.StackText via hooksecurefunc.
+-- Polling IsShown()/GetText() is impossible — QUI's SetAlpha(0) hook on
+-- the viewer taints the entire child hierarchy, making all reads return
+-- secret values.  Hook parameters come from Blizzard's secure calling
+-- code and are clean.  No initial seeding — hooks fire when Blizzard
+-- first updates the frames (next charge/aura change after BuildIcons).
 ---------------------------------------------------------------------------
-local function HookBlizzVisibility(icon, blizzChild)
-    if not blizzChild then return end
-
-    local state = blizzVisState[blizzChild]
-    if not state then
-        state = {}
-        blizzVisState[blizzChild] = state
-    end
-    state.icon = icon
-
-    -- Sync initial state (safe — BuildIcons runs out of combat only)
-    if blizzChild:IsShown() then
-        icon:SetAlpha(icon:GetAlpha())  -- keep current alpha
+local function SyncStackText(state)
+    local icon = state.icon
+    if not icon then return end
+    -- When apiOverride is set, the API has authoritatively confirmed zero
+    -- stacks/charges.  Hooks may still fire with stale data from Blizzard's
+    -- alpha-0 CDM viewer — ignore them until the API sees a non-zero value.
+    if state.apiOverride then return end
+    -- Visibility is driven by SetText content, not Show/Hide hooks.
+    -- Blizzard calls Show/Hide once during initial layout (before our hooks)
+    -- and never again, but calls SetText whenever charges/stacks change.
+    -- ChargeCount takes priority over Applications.
+    if state.chargeText and state.chargeText ~= "" then
+        icon.StackText:SetText(state.chargeText)
+        icon.StackText:Show()
+    elseif state.appText and state.appText ~= "" then
+        icon.StackText:SetText(state.appText)
+        icon.StackText:Show()
     else
-        icon:SetAlpha(0)
-    end
-
-    if not state.hooked then
-        state.hooked = true
-        hooksecurefunc(blizzChild, "Hide", function(self)
-            local s = blizzVisState[self]
-            if not s or not s.icon then return end
-            s.icon:SetAlpha(0)
-        end)
-        hooksecurefunc(blizzChild, "Show", function(self)
-            local s = blizzVisState[self]
-            if not s or not s.icon then return end
-            s.icon:SetAlpha(1)
-        end)
+        icon.StackText:SetText("")
+        icon.StackText:Hide()
     end
 end
 
-local function UnhookBlizzVisibility(icon)
+local function HookBlizzStackText(icon, blizzChild)
+    if not blizzChild then return end
+
+    local state = blizzStackState[blizzChild]
+    if not state then
+        state = {}
+        blizzStackState[blizzChild] = state
+    end
+    state.icon = icon
+
+    if not state.hooked then
+        state.hooked = true
+
+        -- Log what children exist on this blizzChild
+        local chargeFrame = blizzChild.ChargeCount
+        local appFrame = blizzChild.Applications
+        -- Hook ChargeCount (e.g., DH Soul Fragments on Soul Cleave)
+        if chargeFrame then
+            hooksecurefunc(chargeFrame, "Show", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.chargeVisible = true
+                SyncStackText(s)
+            end)
+            hooksecurefunc(chargeFrame, "Hide", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.chargeVisible = false
+                s.chargeText = nil
+                SyncStackText(s)
+            end)
+            if chargeFrame.Current then
+                hooksecurefunc(chargeFrame.Current, "SetText", function(_, text)
+                    local s = blizzStackState[blizzChild]
+                    if not s or not s.icon then return end
+                    s.lastHookTime = GetTime()
+                    s.chargeText = text
+                    -- New stacks arrived — clear API zero-override so hooks drive again
+                    if s.apiOverride and text and text ~= "" and text ~= "0" then
+                        s.apiOverride = nil
+                    end
+                    SyncStackText(s)
+                end)
+            end
+        end
+
+        -- Hook Applications (e.g., Renewing Mists stacks, Sheilun's Gift)
+        if appFrame then
+            hooksecurefunc(appFrame, "Show", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.appVisible = true
+                SyncStackText(s)
+            end)
+            hooksecurefunc(appFrame, "Hide", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.appVisible = false
+                s.appText = nil
+                SyncStackText(s)
+            end)
+            if appFrame.Applications then
+                hooksecurefunc(appFrame.Applications, "SetText", function(_, text)
+                    local s = blizzStackState[blizzChild]
+                    if not s or not s.icon then return end
+                    s.lastHookTime = GetTime()
+                    s.appText = text
+                    if s.apiOverride and text and text ~= "" and text ~= "0" then
+                        s.apiOverride = nil
+                    end
+                    SyncStackText(s)
+                end)
+            end
+        end
+    end
+
+    -- No seeding — frames are tainted by QUI's SetAlpha(0) on the viewer,
+    -- making all reads (IsShown, GetText) return secret values.  Hooks will
+    -- populate state on the next Blizzard update.  Apply any existing hook
+    -- state from a previous icon that used this blizzChild.
+    SyncStackText(state)
+end
+
+local function UnhookBlizzStackText(icon)
     local entry = icon._spellEntry
     if not entry or not entry._blizzChild then return end
-    local state = blizzVisState[entry._blizzChild]
+    local state = blizzStackState[entry._blizzChild]
     if state then state.icon = nil end
+end
+
+---------------------------------------------------------------------------
+-- CAST-BASED STALE STACK DETECTION
+-- When stacks drop to 0 (e.g., casting Sheilun's Gift consumes all Clouds
+-- of Mist), Blizzard's CDM doesn't call SetText("0") or Hide() — our
+-- hooks never fire.  The API (GetSpellCastCount) returns secret values in
+-- combat, so it can't help either.
+--
+-- Detect this by listening for UNIT_SPELLCAST_SUCCEEDED: if the player
+-- casts a spell that matches a CDM icon showing stack text, schedule a
+-- deferred check.  If no hook fires within 0.3s confirming a new count,
+-- the stacks were consumed — clear the display.
+---------------------------------------------------------------------------
+local stackCastFrame = CreateFrame("Frame")
+stackCastFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+stackCastFrame:SetScript("OnEvent", function(_, _, _, _, castSpellID)
+    if not castSpellID then return end
+    for blizzChild, state in pairs(blizzStackState) do
+        if state.icon and ((state.chargeText and state.chargeText ~= "")
+                        or (state.appText and state.appText ~= "")) then
+            local entry = state.icon._spellEntry
+            if entry then
+                -- Match cast spell against tracked spell and its overrides
+                local baseID = entry.spellID or entry.id
+                local match = (baseID == castSpellID)
+                if not match and entry.overrideSpellID then
+                    match = (entry.overrideSpellID == castSpellID)
+                end
+                if not match and baseID and C_Spell and C_Spell.GetOverrideSpell then
+                    local ok, overrideID = pcall(C_Spell.GetOverrideSpell, baseID)
+                    if ok and overrideID and overrideID == castSpellID then
+                        match = true
+                    end
+                end
+                if match then
+                    local castTime = GetTime()
+                    state.castTime = castTime
+                    C_Timer.After(0.3, function()
+                        -- If this cast was superseded by a newer one, skip
+                        if state.castTime ~= castTime then return end
+                        state.castTime = nil
+                        -- If a hook fired after the cast, stacks are confirmed
+                        if state.lastHookTime and state.lastHookTime > castTime then
+                            return
+                        end
+                        -- No hook fired — stacks were likely consumed
+                        state.chargeText = nil
+                        state.appText = nil
+                        state.apiOverride = true
+                        local icon = state.icon
+                        if icon then
+                            icon.StackText:SetText("")
+                            icon.StackText:Hide()
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+---------------------------------------------------------------------------
+-- BLIZZARD BUFF VISIBILITY
+-- Buff icon visibility is driven by the rescan mechanism: aura events
+-- trigger ScanCooldownViewer → LayoutContainer which rebuilds the icon
+-- pool.  Icons start at alpha=1 on init; during normal gameplay the
+-- update ticker mirrors the Blizzard child's alpha (multiplied by row
+-- opacity).  During Edit Mode, icons stay at full visibility.
+---------------------------------------------------------------------------
+local function InitBuffVisibility(icon, blizzChild)
+    if not blizzChild then return end
+    -- Start at full alpha — the update ticker will mirror Blizzard child
+    -- alpha outside Edit Mode.
+    icon:SetAlpha(1)
 end
 
 ---------------------------------------------------------------------------
@@ -614,7 +699,17 @@ local function CreateIcon(parent, spellEntry)
     icon:SetScript("OnEnter", function(self)
         local entry = self._spellEntry
         if not entry then return end
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
+        if tooltipSettings and tooltipSettings.anchorToCursor then
+            local anchorTooltip = _G.QUI_AnchorTooltipToCursor
+            if anchorTooltip then
+                anchorTooltip(GameTooltip, self, tooltipSettings)
+            else
+                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            end
+        else
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        end
         local sid = entry.overrideSpellID or entry.spellID or (entry.type and entry.id)
         if sid then
             if entry.type == "item" or entry.type == "trinket" then
@@ -765,6 +860,7 @@ local function ConfigureIcon(icon, rowConfig)
     -- Apply row opacity
     local opacity = rowConfig.opacity or 1.0
     icon:SetAlpha(opacity)
+    icon._rowOpacity = opacity
 end
 
 ---------------------------------------------------------------------------
@@ -781,13 +877,13 @@ local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
     if entry._blizzChild then
-        -- Adopted Blizzard CooldownFrame: Blizzard drives the display
-        -- natively (aura duration, charge recharge, transitions).
+        -- Mirrored Blizzard CooldownFrame: Blizzard drives the hidden
+        -- viewer; our hooks forward updates to the addon-owned CD.
         -- We only track state for swipe color classification.
 
         -- Track duration + start for swipe classification and desaturation.
         -- Primary source during combat is the SetCooldown hook in
-        -- AdoptBlizzCooldown; this API query is a fallback that works
+        -- MirrorBlizzCooldown; this API query is a fallback that works
         -- outside combat (secrets → no update).
         local sid = entry.overrideSpellID or entry.spellID or entry.id
         if sid and not (entry.type == "item" or entry.type == "trinket") then
@@ -839,13 +935,7 @@ local function UpdateIconCooldown(icon)
                 local baseID = entry.spellID or entry.id
                 if baseID then
                     local overrideID = C_Spell.GetOverrideSpell(baseID)
-                    local texID = GetSpellTexture(overrideID or baseID)
-                    if texID and not IsSecretValue(texID) then
-                        local curTex = icon.Icon:GetTexture()
-                        if texID ~= curTex then
-                            icon.Icon:SetTexture(texID)
-                        end
-                    end
+                    icon.Icon:SetTexture(GetSpellTexture(overrideID or baseID))
                 end
             end
         end
@@ -876,40 +966,105 @@ local function UpdateIconCooldown(icon)
         end
     end
 
-    -- Mirror charge/stack/resource text from Blizzard's native FontStrings.
-    -- Check ChargeCount first — secondary resources like DH Soul Fragments
-    -- use ChargeCount without registering via C_Spell.GetSpellCharges.
-    -- Only use ChargeCount when Blizzard is actually showing it (IsShown);
-    -- spells like Wraith Walk have ChargeCount with spurious text (alpha=1)
-    -- but Blizzard keeps the frame hidden (shown=false).
-    -- IsShown() may return a secret boolean in combat but we only write to
-    -- addon-owned StackText so taint spread is harmless.
-    -- Fall through to Applications for aura stacks if ChargeCount is hidden.
+    -- Stack/charge text: hook-driven (HookBlizzStackText captures SetText
+    -- calls from Blizzard's secure code) + API supplement on each tick.
+    -- Polling the tainted viewer frames directly is impossible.
+    --
+    -- The API supplement runs ALWAYS (not just OOC) to catch cases where
+    -- Blizzard's CDM doesn't fire SetText — e.g., consuming all Clouds of
+    -- Mist or Soul Fragments doesn't trigger a SetText("0") / Hide().
+    -- GetSpellCastCount/GetSpellCharges are standalone APIs that don't
+    -- touch the tainted viewer hierarchy.
     if entry._blizzChild then
-        local shown = false
-        local chargeFrame = entry._blizzChild.ChargeCount
-        local appFrame = entry._blizzChild.Applications
-
-        if chargeFrame and chargeFrame.Current then
-            if SafeValue(chargeFrame:IsShown(), false) then
-               icon.StackText:SetText(chargeFrame.Current:GetText())
-               icon.StackText:Show()
-               shown = true
+        -- Resolve the active override spell (e.g., Vivify → Sheilun's Gift)
+        -- so API calls query the right spell for charges/cast counts.
+        local baseID = entry.spellID or entry.id
+        local spellID = entry.overrideSpellID or baseID
+        if baseID and C_Spell.GetOverrideSpell then
+            local overrideID = C_Spell.GetOverrideSpell(baseID)
+            if overrideID and overrideID ~= baseID then
+                spellID = overrideID
             end
         end
-        if not shown then
-            if appFrame and appFrame.Applications then
-                if SafeValue(appFrame:IsShown(), false) then
-                   icon.StackText:SetText(appFrame.Applications:GetText())
-                   icon.StackText:Show()
-                   shown = true
+        local apiText = nil
+
+        -- 1) Spell charges (Demon Spikes 2, Fracture 2, etc.)
+        --    maxCharges can be secret in combat — guard with IsSecretValue.
+        if spellID and C_Spell.GetSpellCharges then
+            local ok, chargeInfo = pcall(C_Spell.GetSpellCharges, spellID)
+            if ok and chargeInfo and chargeInfo.maxCharges then
+                if not IsSecretValue(chargeInfo.maxCharges) and chargeInfo.maxCharges > 1 then
+                    local current = chargeInfo.currentCharges
+                    if not IsSecretValue(current) and current and current >= 0 then
+                        apiText = tostring(current)
+                    end
                 end
             end
         end
-        if not shown then
+
+        -- 2) Secondary resource counts (Soul Fragments, Clouds of Mist, etc.)
+        --    GetSpellCastCount with the resolved override ID (e.g., Sheilun's
+        --    Gift 399491 returns cloud count). Override result is authoritative.
+        if not apiText and C_Spell.GetSpellCastCount then
+            local castCount
+            -- Try resolved spell first (override ID returns correct count
+            -- for spell replacements like Vivify → Sheilun's Gift)
+            if spellID then
+                local ok, val = pcall(C_Spell.GetSpellCastCount, spellID)
+                if ok and val and not IsSecretValue(val) then
+                    castCount = val
+                end
+            end
+            -- No base fallback: when an override is active (resolved != base),
+            -- the resolved result is authoritative (e.g., Sheilun's Gift=0
+            -- means clouds consumed; Vivify base returns an unrelated count).
+            -- When no override, resolved == base so the above already covers it.
+            if castCount then
+                if castCount > 0 then
+                    apiText = tostring(castCount)
+                elseif castCount == 0 then
+                    -- Explicitly 0 — only clear if hooks had data for this
+                    -- icon (confirming it uses this mechanic). Spells that
+                    -- don't use secondary resources also return 0.
+                    local state = blizzStackState[entry._blizzChild]
+                    if state and (state.chargeText or state.apiOverride) then
+                        apiText = ""
+                    end
+                end
+            end
+        end
+
+        -- 3) Aura stacks on self (self-buff stacking spells) — OOC only
+        if not apiText and not InCombatLockdown() and spellID
+            and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+            local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+            if ok and auraData and auraData.applications and auraData.applications > 1 then
+                apiText = tostring(auraData.applications)
+            end
+        end
+
+        -- Apply API result.  nil = API had no data (let hooks drive).
+        -- "" = API confirms zero count (clear display + stale hook data).
+        -- "N" = API has a count (show it, sync to hook state).
+        if apiText and apiText ~= "" then
+            icon.StackText:SetText(apiText)
+            icon.StackText:Show()
+            local state = blizzStackState[entry._blizzChild]
+            if state then
+                state.chargeText = apiText
+                state.apiOverride = nil  -- non-zero: let hooks drive again
+            end
+        elseif apiText == "" then
             icon.StackText:SetText("")
             icon.StackText:Hide()
+            local state = blizzStackState[entry._blizzChild]
+            if state then
+                state.chargeText = nil
+                state.appText = nil
+                state.apiOverride = true  -- suppress stale hook reassertion
+            end
         end
+        -- apiText == nil: no API data, hooks are sole driver (no change)
     else
         icon.StackText:SetText("")
         icon.StackText:Hide()
@@ -925,34 +1080,41 @@ local function UpdateIconCooldown(icon)
 
         -- Skip buff viewer icons and aura-active icons (they show buff timers)
         if viewerType ~= "buff" and not icon._auraActive and not icon._rangeTinted and not icon._usabilityTinted then
-            local dur = icon._lastDuration or 0
-            local start = icon._lastStart or 0
+            local db = GetDB()
+            local settings = db and db[viewerType]
+            if settings and settings.desaturateOnCooldown then
+                local dur = icon._lastDuration or 0
+                local start = icon._lastStart or 0
 
-            local ok, shouldDesat = pcall(function()
                 if dur > 1.5 and start > 0 then
                     local remaining = (start + dur) - GetTime()
                     if remaining > 0 then
-                        local sid = entry.overrideSpellID or entry.spellID or entry.id
-                        if sid and C_Spell.GetSpellCharges then
-                            local chargeInfo = C_Spell.GetSpellCharges(sid)
-                            if chargeInfo and chargeInfo.currentCharges > 0 then
-                                return false
+                        -- On cooldown — check charges before desaturating
+                        local spellID = entry.overrideSpellID or entry.spellID or entry.id
+                        if spellID and C_Spell.GetSpellCharges then
+                            local chargeInfo = C_Spell.GetSpellCharges(spellID)
+                            if chargeInfo then
+                                -- Secret charge data → keep current state (don't flicker)
+                                if IsSecretValue(chargeInfo.currentCharges) then
+                                    return
+                                end
+                                local current = SafeToNumber(chargeInfo.currentCharges, 0)
+                                if current > 0 then
+                                    icon.Icon:SetDesaturated(false)
+                                    icon._cdDesaturated = nil
+                                    return
+                                end
                             end
                         end
-                        return true
+                        icon.Icon:SetDesaturated(true)
+                        icon._cdDesaturated = true
+                        return
                     end
                 end
-                return false
-            end)
 
-            if ok then
-                if shouldDesat then
-                    icon.Icon:SetDesaturated(true)
-                    icon._cdDesaturated = true
-                else
-                    icon.Icon:SetDesaturated(false)
-                    icon._cdDesaturated = nil
-                end
+                -- Off cooldown or GCD-only — clear desaturation
+                icon.Icon:SetDesaturated(false)
+                icon._cdDesaturated = nil
             else
                 icon.Icon:SetDesaturated(false)
                 icon._cdDesaturated = nil
@@ -1019,9 +1181,9 @@ end
 function CDMIcons:ReleaseIcon(icon)
     if not icon then return end
     -- Disconnect hooks before clearing _spellEntry (needs blizzChild ref)
-    RestoreAddonCooldown(icon)
+    UnmirrorBlizzCooldown(icon)
     UnhookBlizzTexture(icon)
-    UnhookBlizzVisibility(icon)
+    UnhookBlizzStackText(icon)
     icon:Hide()
     icon:ClearAllPoints()
     icon._spellEntry = nil
@@ -1162,21 +1324,24 @@ function CDMIcons:BuildIcons(viewerType, container)
         end
     end
 
-    -- Adopt Blizzard viewer children's CooldownFrames and texture hooks onto
-    -- QUI icons.  Cooldown adoption gives us secure frames that render secret
-    -- values natively.  Texture hooks mirror spell-replacement icon changes
-    -- (e.g., Judgment → Hammer of Wrath) without polling restricted frames.
+    -- Mirror Blizzard viewer children's CooldownFrame updates and texture
+    -- hooks onto QUI icons.  Mirror hooks forward SetCooldown /
+    -- SetCooldownFromDurationObject calls (including secret values) to our
+    -- addon-owned CooldownFrames without touching the Blizzard frames.
+    -- Texture hooks mirror spell-replacement icon changes (e.g.,
+    -- Judgment → Hammer of Wrath) without polling restricted frames.
     for _, icon in ipairs(pool) do
         local entry = icon._spellEntry
         if entry and entry._blizzChild then
-            AdoptBlizzCooldown(icon, entry._blizzChild)
+            MirrorBlizzCooldown(icon, entry._blizzChild)
             HookBlizzTexture(icon, entry._blizzChild)
+            HookBlizzStackText(icon, entry._blizzChild)
             -- Buff icons are always auras — initialize _auraActive so the
             -- swipe module classifies them correctly before the
             -- SetCooldownFromDurationObject hook fires.
             if entry.viewerType == "buff" then
                 icon._auraActive = true
-                HookBlizzVisibility(icon, entry._blizzChild)
+                InitBuffVisibility(icon, entry._blizzChild)
             end
         end
     end
@@ -1194,18 +1359,39 @@ end
 -- UPDATE ALL COOLDOWNS
 ---------------------------------------------------------------------------
 function CDMIcons:UpdateAllCooldowns()
+    local editMode = Helpers.IsEditModeActive()
     for _, pool in pairs(iconPools) do
         for _, icon in ipairs(pool) do
-            -- Sync non-buff icon visibility with Blizzard child.
-            -- Buff icons use hook-based approach (HookBlizzVisibility).
             local entry = icon._spellEntry
-            if entry and entry._blizzChild and entry.viewerType ~= "buff" then
-                local blizzShown = entry._blizzChild:IsShown()
-                local iconShown = icon:IsShown()
-                if blizzShown and not iconShown then
-                    icon:Show()
-                elseif not blizzShown and iconShown then
-                    icon:Hide()
+            if entry and entry._blizzChild then
+                if entry.viewerType == "buff" then
+                    -- Buff icons: mirror Blizzard child visibility outside edit mode.
+                    -- During edit mode, force full visibility so user can see all icons.
+                    if editMode then
+                        icon:SetAlpha(1)
+                        icon:Show()
+                    else
+                        local blizzShown = entry._blizzChild:IsShown()
+                        if blizzShown then
+                            local blizzAlpha = entry._blizzChild:GetAlpha()
+                            local rowOpacity = icon._rowOpacity or 1
+                            if not IsSecretValue(blizzAlpha) then
+                                icon:SetAlpha(blizzAlpha * rowOpacity)
+                            end
+                            if not icon:IsShown() then icon:Show() end
+                        else
+                            if icon:IsShown() then icon:Hide() end
+                        end
+                    end
+                else
+                    -- Essential/Utility: Show/Hide sync.
+                    local blizzShown = entry._blizzChild:IsShown()
+                    local iconShown = icon:IsShown()
+                    if blizzShown and not iconShown then
+                        icon:Show()
+                    elseif not blizzShown and iconShown then
+                        icon:Hide()
+                    end
                 end
             end
             UpdateIconCooldown(icon)
@@ -1442,7 +1628,29 @@ local function UpdateIconVisualState(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
     local viewerType = entry.viewerType
-    if not viewerType or viewerType == "buff" then return end
+    if not viewerType then return end
+
+    local settings = GetTrackerSettings(viewerType)
+    if not settings then
+        if icon._rangeTinted or icon._usabilityTinted then
+            ResetIconVisuals(icon)
+        end
+        return
+    end
+
+    local rangeEnabled = settings.rangeIndicator
+    local usabilityEnabled = settings.usabilityIndicator
+
+    -- Nothing enabled — reset and bail
+    if not rangeEnabled and not usabilityEnabled then
+        if icon._rangeTinted or icon._usabilityTinted then
+            ResetIconVisuals(icon)
+        end
+        return
+    end
+
+    -- Skip buff viewer icons
+    if viewerType == "buff" then return end
 
     -- Skip items/trinkets (self-use, no range/usability concept)
     if entry.type == "item" or entry.type == "trinket" then return end
@@ -1458,7 +1666,7 @@ local function UpdateIconVisualState(icon)
     ---------------------------------------------------------------------------
     -- Priority 1: Out of range (red tint) — only when target exists + ranged
     ---------------------------------------------------------------------------
-    if UnitExists("target") then
+    if rangeEnabled and UnitExists("target") then
         local hasRange = true
         if C_Spell.SpellHasRange then
             hasRange = C_Spell.SpellHasRange(spellID)
@@ -1470,8 +1678,7 @@ local function UpdateIconVisualState(icon)
                 if icon._usabilityTinted then
                     icon._usabilityTinted = nil
                 end
-                local settings = GetTrackerSettings(viewerType)
-                local c = settings and settings.rangeColor
+                local c = settings.rangeColor
                 local r = c and c[1] or 0.8
                 local g = c and c[2] or 0.1
                 local b = c and c[3] or 0.1
@@ -1490,29 +1697,11 @@ local function UpdateIconVisualState(icon)
     end
 
     ---------------------------------------------------------------------------
-    -- Priority 2: Unusable / resource-starved (darken + desaturate)
+    -- Priority 2: Unusable / resource-starved (darken)
     ---------------------------------------------------------------------------
-    local isUsable, insufficientPower
-    if C_Spell and C_Spell.IsSpellUsable then
-        isUsable, insufficientPower = C_Spell.IsSpellUsable(spellID)
-    end
-
-    -- Try to evaluate usability (works when values aren't secret)
-    local ok, notUsable = pcall(function()
-        if not isUsable then return true end
-        -- C_Spell.IsSpellUsable returns true for charge spells even at 0 charges.
-        -- Check charges explicitly: 0 charges remaining = not usable.
-        if entry.hasCharges and C_Spell.GetSpellCharges then
-            local chargeInfo = C_Spell.GetSpellCharges(spellID)
-            if chargeInfo and chargeInfo.currentCharges == 0 then
-                return true
-            end
-        end
-        return false
-    end)
-    if ok then
-        -- Clean values: full visual logic
-        if notUsable then
+    if usabilityEnabled then
+        local isUsable = SafeIsSpellUsable(spellID)
+        if not isUsable then
             -- Clear cooldown desaturation so vertex color darkening is visible
             if icon._cdDesaturated then
                 icon.Icon:SetDesaturated(false)
@@ -1522,13 +1711,6 @@ local function UpdateIconVisualState(icon)
             icon._usabilityTinted = true
             return
         end
-    elseif insufficientPower ~= nil and not icon._cdDesaturated then
-        -- Secret values (combat): pass raw insufficientPower to SetDesaturated.
-        -- insufficientPower is already correct polarity (true = can't cast).
-        -- Gate on not _cdDesaturated to avoid clearing cooldown desaturation
-        -- when the spell has enough resources but is on CD.
-        icon.Icon:SetDesaturated(insufficientPower)
-        return
     end
 
     -- If was usability-tinted but now usable, clear it
@@ -1570,10 +1752,18 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 -- Visual state polling: 250ms OnUpdate for range + usability checks.
--- Always on for owned engine icons.
+-- Only runs when at least one tracker has rangeIndicator or usabilityIndicator.
 cdEventFrame:SetScript("OnUpdate", function(self, elapsed)
     rangePollElapsed = rangePollElapsed + elapsed
     if rangePollElapsed < RANGE_POLL_INTERVAL then return end
     rangePollElapsed = 0
+
+    -- Quick check: is any visual state indicator enabled?
+    local db = GetDB()
+    if not db then return end
+    local anyEnabled = (db.essential and (db.essential.rangeIndicator or db.essential.usabilityIndicator))
+        or (db.utility and (db.utility.rangeIndicator or db.utility.usabilityIndicator))
+    if not anyEnabled then return end
+
     CDMIcons:UpdateAllIconRanges()
 end)

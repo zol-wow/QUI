@@ -242,7 +242,18 @@ local function CreateCustomIcon(parent, entry, initialSize)
         if not e then return end
 
         pcall(function()
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            local core = GetCore()
+            local tooltipSettings = core and core.db and core.db.profile and core.db.profile.tooltip
+            if tooltipSettings and tooltipSettings.anchorToCursor then
+                local anchorTooltip = _G.QUI_AnchorTooltipToCursor
+                if anchorTooltip then
+                    anchorTooltip(GameTooltip, self, tooltipSettings)
+                else
+                    GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                end
+            else
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            end
             if e.type == "spell" then
                 GameTooltip:SetSpellByID(e.id)
             elseif e.type == "item" then

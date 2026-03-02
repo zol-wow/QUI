@@ -1675,16 +1675,14 @@ local function SetupMiddleClickMenu()
     if middleClickMenuHooked then return end
     middleClickMenuHooked = true
 
-    minimapOriginalOnMouseUp = Minimap:GetScript("OnMouseUp")
-    Minimap:SetScript("OnMouseUp", function(self, button)
+    -- TAINT SAFETY: Use HookScript instead of SetScript so Blizzard's
+    -- original OnMouseUp handler keeps running in secure context.
+    -- SetScript would replace the handler, causing PingLocation() to
+    -- execute in QUI's addon context → ADDON_ACTION_FORBIDDEN.
+    Minimap:HookScript("OnMouseUp", function(self, button)
         local settings = GetSettings()
         if settings and settings.enabled and settings.middleClickMenuEnabled and button == "MiddleButton" then
             ShowMiddleClickMenu()
-            return
-        end
-
-        if minimapOriginalOnMouseUp then
-            minimapOriginalOnMouseUp(self, button)
         end
     end)
 end

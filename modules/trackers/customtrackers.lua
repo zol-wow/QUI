@@ -2804,6 +2804,12 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
 
         C_Timer.After(0.6, function()
             CustomTrackers:RefreshAll()
+            -- Apply HUD visibility instantly to prevent flash on /reload while mounted.
+            -- UpdateCustomTrackersVisibility is defined later in this file but exists
+            -- by the time this 0.6s timer fires.
+            if UpdateCustomTrackersVisibility then
+                UpdateCustomTrackersVisibility()
+            end
         end)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         -- Item info loaded, refresh bars to update any "?" icons
