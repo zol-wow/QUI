@@ -1092,11 +1092,13 @@ function QUICore:ShowViewerOverlays()
                 overlay:SetScript("OnMouseDown", function(self, button)
                     if button == "LeftButton" then
                         self.__dragging = false
+                        self.__didDrag = false
                         QUICore:SelectViewer(capturedName)
                     end
                 end)
                 overlay:SetScript("OnDragStart", function(self)
                     self.__dragging = true
+                    self.__didDrag = true
                     if capturedViewer then
                         capturedViewer:SetMovable(true)
                         capturedViewer:StartMoving()
@@ -1120,7 +1122,7 @@ function QUICore:ShowViewerOverlays()
                     end
                 end)
                 overlay:SetScript("OnMouseUp", function(self, button)
-                    if button == "LeftButton" and not self.__dragging then
+                    if button == "LeftButton" and not self.__didDrag then
                         if _G.CooldownViewerSettings and _G.CooldownViewerSettings.Show then
                             _G.CooldownViewerSettings:Show()
                         end
