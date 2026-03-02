@@ -69,6 +69,13 @@ local blizzCDState = setmetatable({}, { __mode = "k" })
 -- to the addon-owned icon without reading restricted frames during combat.
 local blizzTexState = setmetatable({}, { __mode = "k" })
 
+-- TAINT SAFETY: Blizzard stack/charge text hook state tracked in a weak-keyed
+-- table.  Maps Blizzard _blizzChild → { icon, chargeVisible, appVisible, hooked }.
+-- Hooks on Show/Hide/SetText receive parameters from Blizzard's secure calling
+-- code — not tainted — unlike polling IsShown()/GetText() on the alpha=0 viewer
+-- children which always returns QUI-tainted secret values.
+local blizzStackState = setmetatable({}, { __mode = "k" })
+
 ---------------------------------------------------------------------------
 -- DB ACCESS
 ---------------------------------------------------------------------------
@@ -409,6 +416,189 @@ local function UnhookBlizzTexture(icon)
     local state = blizzTexState[iconRegion]
     if state then state.icon = nil end
 end
+
+---------------------------------------------------------------------------
+-- BLIZZARD STACK/CHARGE TEXT HOOK
+-- Mirrors charge counts and application stacks from Blizzard's hidden
+-- viewer children to our addon-owned icon.StackText via hooksecurefunc.
+-- Polling IsShown()/GetText() is impossible — QUI's SetAlpha(0) hook on
+-- the viewer taints the entire child hierarchy, making all reads return
+-- secret values.  Hook parameters come from Blizzard's secure calling
+-- code and are clean.  No initial seeding — hooks fire when Blizzard
+-- first updates the frames (next charge/aura change after BuildIcons).
+---------------------------------------------------------------------------
+local function SyncStackText(state)
+    local icon = state.icon
+    if not icon then return end
+    -- When apiOverride is set, the API has authoritatively confirmed zero
+    -- stacks/charges.  Hooks may still fire with stale data from Blizzard's
+    -- alpha-0 CDM viewer — ignore them until the API sees a non-zero value.
+    if state.apiOverride then return end
+    -- Visibility is driven by SetText content, not Show/Hide hooks.
+    -- Blizzard calls Show/Hide once during initial layout (before our hooks)
+    -- and never again, but calls SetText whenever charges/stacks change.
+    -- ChargeCount takes priority over Applications.
+    if state.chargeText and state.chargeText ~= "" then
+        icon.StackText:SetText(state.chargeText)
+        icon.StackText:Show()
+    elseif state.appText and state.appText ~= "" then
+        icon.StackText:SetText(state.appText)
+        icon.StackText:Show()
+    else
+        icon.StackText:SetText("")
+        icon.StackText:Hide()
+    end
+end
+
+local function HookBlizzStackText(icon, blizzChild)
+    if not blizzChild then return end
+
+    local state = blizzStackState[blizzChild]
+    if not state then
+        state = {}
+        blizzStackState[blizzChild] = state
+    end
+    state.icon = icon
+
+    if not state.hooked then
+        state.hooked = true
+
+        -- Log what children exist on this blizzChild
+        local chargeFrame = blizzChild.ChargeCount
+        local appFrame = blizzChild.Applications
+        -- Hook ChargeCount (e.g., DH Soul Fragments on Soul Cleave)
+        if chargeFrame then
+            hooksecurefunc(chargeFrame, "Show", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.chargeVisible = true
+                SyncStackText(s)
+            end)
+            hooksecurefunc(chargeFrame, "Hide", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.chargeVisible = false
+                s.chargeText = nil
+                SyncStackText(s)
+            end)
+            if chargeFrame.Current then
+                hooksecurefunc(chargeFrame.Current, "SetText", function(_, text)
+                    local s = blizzStackState[blizzChild]
+                    if not s or not s.icon then return end
+                    s.lastHookTime = GetTime()
+                    s.chargeText = text
+                    -- New stacks arrived — clear API zero-override so hooks drive again
+                    if s.apiOverride and text and text ~= "" and text ~= "0" then
+                        s.apiOverride = nil
+                    end
+                    SyncStackText(s)
+                end)
+            end
+        end
+
+        -- Hook Applications (e.g., Renewing Mists stacks, Sheilun's Gift)
+        if appFrame then
+            hooksecurefunc(appFrame, "Show", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.appVisible = true
+                SyncStackText(s)
+            end)
+            hooksecurefunc(appFrame, "Hide", function()
+                local s = blizzStackState[blizzChild]
+                if not s or not s.icon then return end
+                s.appVisible = false
+                s.appText = nil
+                SyncStackText(s)
+            end)
+            if appFrame.Applications then
+                hooksecurefunc(appFrame.Applications, "SetText", function(_, text)
+                    local s = blizzStackState[blizzChild]
+                    if not s or not s.icon then return end
+                    s.lastHookTime = GetTime()
+                    s.appText = text
+                    if s.apiOverride and text and text ~= "" and text ~= "0" then
+                        s.apiOverride = nil
+                    end
+                    SyncStackText(s)
+                end)
+            end
+        end
+    end
+
+    -- No seeding — frames are tainted by QUI's SetAlpha(0) on the viewer,
+    -- making all reads (IsShown, GetText) return secret values.  Hooks will
+    -- populate state on the next Blizzard update.  Apply any existing hook
+    -- state from a previous icon that used this blizzChild.
+    SyncStackText(state)
+end
+
+local function UnhookBlizzStackText(icon)
+    local entry = icon._spellEntry
+    if not entry or not entry._blizzChild then return end
+    local state = blizzStackState[entry._blizzChild]
+    if state then state.icon = nil end
+end
+
+---------------------------------------------------------------------------
+-- CAST-BASED STALE STACK DETECTION
+-- When stacks drop to 0 (e.g., casting Sheilun's Gift consumes all Clouds
+-- of Mist), Blizzard's CDM doesn't call SetText("0") or Hide() — our
+-- hooks never fire.  The API (GetSpellCastCount) returns secret values in
+-- combat, so it can't help either.
+--
+-- Detect this by listening for UNIT_SPELLCAST_SUCCEEDED: if the player
+-- casts a spell that matches a CDM icon showing stack text, schedule a
+-- deferred check.  If no hook fires within 0.3s confirming a new count,
+-- the stacks were consumed — clear the display.
+---------------------------------------------------------------------------
+local stackCastFrame = CreateFrame("Frame")
+stackCastFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+stackCastFrame:SetScript("OnEvent", function(_, _, _, _, castSpellID)
+    if not castSpellID then return end
+    for blizzChild, state in pairs(blizzStackState) do
+        if state.icon and ((state.chargeText and state.chargeText ~= "")
+                        or (state.appText and state.appText ~= "")) then
+            local entry = state.icon._spellEntry
+            if entry then
+                -- Match cast spell against tracked spell and its overrides
+                local baseID = entry.spellID or entry.id
+                local match = (baseID == castSpellID)
+                if not match and entry.overrideSpellID then
+                    match = (entry.overrideSpellID == castSpellID)
+                end
+                if not match and baseID and C_Spell and C_Spell.GetOverrideSpell then
+                    local ok, overrideID = pcall(C_Spell.GetOverrideSpell, baseID)
+                    if ok and overrideID and overrideID == castSpellID then
+                        match = true
+                    end
+                end
+                if match then
+                    local castTime = GetTime()
+                    state.castTime = castTime
+                    C_Timer.After(0.3, function()
+                        -- If this cast was superseded by a newer one, skip
+                        if state.castTime ~= castTime then return end
+                        state.castTime = nil
+                        -- If a hook fired after the cast, stacks are confirmed
+                        if state.lastHookTime and state.lastHookTime > castTime then
+                            return
+                        end
+                        -- No hook fired — stacks were likely consumed
+                        state.chargeText = nil
+                        state.appText = nil
+                        state.apiOverride = true
+                        local icon = state.icon
+                        if icon then
+                            icon.StackText:SetText("")
+                            icon.StackText:Hide()
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end)
 
 ---------------------------------------------------------------------------
 -- BLIZZARD BUFF VISIBILITY
@@ -778,40 +968,105 @@ local function UpdateIconCooldown(icon)
         end
     end
 
-    -- Mirror charge/stack/resource text from Blizzard's native FontStrings.
-    -- Check ChargeCount first — secondary resources like DH Soul Fragments
-    -- use ChargeCount without registering via C_Spell.GetSpellCharges.
-    -- Only use ChargeCount when Blizzard is actually showing it (IsShown);
-    -- spells like Wraith Walk have ChargeCount with spurious text (alpha=1)
-    -- but Blizzard keeps the frame hidden (shown=false).
-    -- IsShown() may return a secret boolean in combat but we only write to
-    -- addon-owned StackText so taint spread is harmless.
-    -- Fall through to Applications for aura stacks if ChargeCount is hidden.
+    -- Stack/charge text: hook-driven (HookBlizzStackText captures SetText
+    -- calls from Blizzard's secure code) + API supplement on each tick.
+    -- Polling the tainted viewer frames directly is impossible.
+    --
+    -- The API supplement runs ALWAYS (not just OOC) to catch cases where
+    -- Blizzard's CDM doesn't fire SetText — e.g., consuming all Clouds of
+    -- Mist or Soul Fragments doesn't trigger a SetText("0") / Hide().
+    -- GetSpellCastCount/GetSpellCharges are standalone APIs that don't
+    -- touch the tainted viewer hierarchy.
     if entry._blizzChild then
-        local shown = false
-        local chargeFrame = entry._blizzChild.ChargeCount
-        local appFrame = entry._blizzChild.Applications
-
-        if chargeFrame and chargeFrame.Current then
-            if SafeValue(chargeFrame:IsShown(), false) then
-               icon.StackText:SetText(chargeFrame.Current:GetText())
-               icon.StackText:Show()
-               shown = true
+        -- Resolve the active override spell (e.g., Vivify → Sheilun's Gift)
+        -- so API calls query the right spell for charges/cast counts.
+        local baseID = entry.spellID or entry.id
+        local spellID = entry.overrideSpellID or baseID
+        if baseID and C_Spell.GetOverrideSpell then
+            local overrideID = C_Spell.GetOverrideSpell(baseID)
+            if overrideID and overrideID ~= baseID then
+                spellID = overrideID
             end
         end
-        if not shown then
-            if appFrame and appFrame.Applications then
-                if SafeValue(appFrame:IsShown(), false) then
-                   icon.StackText:SetText(appFrame.Applications:GetText())
-                   icon.StackText:Show()
-                   shown = true
+        local apiText = nil
+
+        -- 1) Spell charges (Demon Spikes 2, Fracture 2, etc.)
+        --    maxCharges can be secret in combat — guard with IsSecretValue.
+        if spellID and C_Spell.GetSpellCharges then
+            local ok, chargeInfo = pcall(C_Spell.GetSpellCharges, spellID)
+            if ok and chargeInfo and chargeInfo.maxCharges then
+                if not IsSecretValue(chargeInfo.maxCharges) and chargeInfo.maxCharges > 1 then
+                    local current = chargeInfo.currentCharges
+                    if not IsSecretValue(current) and current and current >= 0 then
+                        apiText = tostring(current)
+                    end
                 end
             end
         end
-        if not shown then
+
+        -- 2) Secondary resource counts (Soul Fragments, Clouds of Mist, etc.)
+        --    GetSpellCastCount with the resolved override ID (e.g., Sheilun's
+        --    Gift 399491 returns cloud count). Override result is authoritative.
+        if not apiText and C_Spell.GetSpellCastCount then
+            local castCount
+            -- Try resolved spell first (override ID returns correct count
+            -- for spell replacements like Vivify → Sheilun's Gift)
+            if spellID then
+                local ok, val = pcall(C_Spell.GetSpellCastCount, spellID)
+                if ok and val and not IsSecretValue(val) then
+                    castCount = val
+                end
+            end
+            -- No base fallback: when an override is active (resolved != base),
+            -- the resolved result is authoritative (e.g., Sheilun's Gift=0
+            -- means clouds consumed; Vivify base returns an unrelated count).
+            -- When no override, resolved == base so the above already covers it.
+            if castCount then
+                if castCount > 0 then
+                    apiText = tostring(castCount)
+                elseif castCount == 0 then
+                    -- Explicitly 0 — only clear if hooks had data for this
+                    -- icon (confirming it uses this mechanic). Spells that
+                    -- don't use secondary resources also return 0.
+                    local state = blizzStackState[entry._blizzChild]
+                    if state and (state.chargeText or state.apiOverride) then
+                        apiText = ""
+                    end
+                end
+            end
+        end
+
+        -- 3) Aura stacks on self (self-buff stacking spells) — OOC only
+        if not apiText and not InCombatLockdown() and spellID
+            and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+            local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+            if ok and auraData and auraData.applications and auraData.applications > 1 then
+                apiText = tostring(auraData.applications)
+            end
+        end
+
+        -- Apply API result.  nil = API had no data (let hooks drive).
+        -- "" = API confirms zero count (clear display + stale hook data).
+        -- "N" = API has a count (show it, sync to hook state).
+        if apiText and apiText ~= "" then
+            icon.StackText:SetText(apiText)
+            icon.StackText:Show()
+            local state = blizzStackState[entry._blizzChild]
+            if state then
+                state.chargeText = apiText
+                state.apiOverride = nil  -- non-zero: let hooks drive again
+            end
+        elseif apiText == "" then
             icon.StackText:SetText("")
             icon.StackText:Hide()
+            local state = blizzStackState[entry._blizzChild]
+            if state then
+                state.chargeText = nil
+                state.appText = nil
+                state.apiOverride = true  -- suppress stale hook reassertion
+            end
         end
+        -- apiText == nil: no API data, hooks are sole driver (no change)
     else
         icon.StackText:SetText("")
         icon.StackText:Hide()
@@ -930,7 +1185,7 @@ function CDMIcons:ReleaseIcon(icon)
     -- Disconnect hooks before clearing _spellEntry (needs blizzChild ref)
     UnmirrorBlizzCooldown(icon)
     UnhookBlizzTexture(icon)
-    -- (Buff visibility is now poll-based — no per-icon unhook needed.)
+    UnhookBlizzStackText(icon)
     icon:Hide()
     icon:ClearAllPoints()
     icon._spellEntry = nil
@@ -1082,6 +1337,7 @@ function CDMIcons:BuildIcons(viewerType, container)
         if entry and entry._blizzChild then
             MirrorBlizzCooldown(icon, entry._blizzChild)
             HookBlizzTexture(icon, entry._blizzChild)
+            HookBlizzStackText(icon, entry._blizzChild)
             -- Buff icons are always auras — initialize _auraActive so the
             -- swipe module classifies them correctly before the
             -- SetCooldownFromDurationObject hook fires.
