@@ -1573,10 +1573,14 @@ local function ReanchorCombatCastbarOverrides()
     local castbarKeys = { "playerCastbar", "targetCastbar", "focusCastbar" }
     for _, key in ipairs(castbarKeys) do
         local settings = anchoringDB[key]
-        if type(settings) == "table" and settings.enabled
-            and (settings.parent == "cdmEssential" or settings.parent == "cdmUtility" or settings.parent == "buffIcon" or settings.parent == "buffBar")
-        then
-            QUI_Anchoring:ApplyFrameAnchor(key, settings)
+        if type(settings) == "table" and settings.enabled then
+            -- Normalize legacy aliases (settings.parent may store the short form)
+            local parent = settings.parent
+            if parent == "essential" then parent = "cdmEssential"
+            elseif parent == "utility" then parent = "cdmUtility" end
+            if parent == "cdmEssential" or parent == "cdmUtility" or parent == "buffIcon" or parent == "buffBar" then
+                QUI_Anchoring:ApplyFrameAnchor(key, settings)
+            end
         end
     end
 end
