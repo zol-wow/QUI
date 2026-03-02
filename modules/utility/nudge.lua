@@ -1055,8 +1055,36 @@ function QUICore:ShowViewerOverlays()
             -- Check if this viewer is locked by any anchoring system
             local isLocked = viewer and _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(viewer)
 
+            -- Helper: anchor .Selection behind the overlay and hook it to
+            -- re-enable the overlay after the taint-free click fires.
+            -- .Selection stays at its original MEDIUM strata (below the HIGH
+            -- overlay).  When the overlay disables its mouse, the next click
+            -- falls through to .Selection whose OnMouseDown runs in Blizzard's
+            -- secure context — no secureexecuterange taint.
+            local sel = blizzViewer and blizzViewer.Selection
+            if sel then
+                sel:ClearAllPoints()
+                sel:SetAllPoints(overlay)
+                sel:EnableMouse(true)
+                -- One-time hook: after .Selection handles the click, re-enable
+                -- the overlay so drag works again on subsequent interactions.
+                if not sel._quiOverlayHooked then
+                    sel._quiOverlayHooked = true
+                    sel:HookScript("OnMouseDown", function()
+                        local ov = sel._quiOverlay
+                        if ov then
+                            C_Timer.After(0, function()
+                                if ov then ov:EnableMouse(true) end
+                            end)
+                        end
+                    end)
+                end
+                sel._quiOverlay = overlay
+            end
+
             if isLocked then
-                -- Locked: grey overlay, clickable to open CDM settings
+                -- Locked: grey overlay.  Click disables overlay so next click
+                -- hits .Selection (taint-free Blizzard settings dialog).
                 overlay:Show()
                 overlay:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
                 overlay:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
@@ -1067,17 +1095,19 @@ function QUICore:ShowViewerOverlays()
                 if viewer then
                     BlockFrameMovement(viewer)
                 end
-                -- Clickable overlay — opens CDM settings panel
                 overlay:EnableMouse(true)
                 overlay:SetScript("OnMouseDown", nil)
                 overlay:SetScript("OnMouseUp", function()
-                    if _G.CooldownViewerSettings and _G.CooldownViewerSettings.Show then
-                        _G.CooldownViewerSettings:Show()
-                    end
+                    overlay:EnableMouse(false)
+                    -- Fallback: re-enable after 5s if user doesn't click .Selection
+                    C_Timer.After(5, function()
+                        if overlay then overlay:EnableMouse(true) end
+                    end)
                 end)
             else
-                -- Free: show blue QUI overlay, draggable to move QUI container.
-                -- Click (no drag) opens CDM settings panel.
+                -- Free: blue QUI overlay, draggable to move QUI container.
+                -- Click (no drag) disables overlay so the next click falls
+                -- through to .Selection (taint-free settings).
                 overlay:SetBackdropColor(0.2, 0.8, 1, 0.3)
                 overlay:SetBackdropBorderColor(0.2, 0.8, 1, 1)
                 if overlay.label then
@@ -1123,9 +1153,12 @@ function QUICore:ShowViewerOverlays()
                 end)
                 overlay:SetScript("OnMouseUp", function(self, button)
                     if button == "LeftButton" and not self.__didDrag then
-                        if _G.CooldownViewerSettings and _G.CooldownViewerSettings.Show then
-                            _G.CooldownViewerSettings:Show()
-                        end
+                        -- Disable overlay so next click reaches .Selection
+                        self:EnableMouse(false)
+                        -- Fallback: re-enable after 5s
+                        C_Timer.After(5, function()
+                            if self then self:EnableMouse(true) end
+                        end)
                     end
                 end)
                 -- BuffBarCooldownViewer repositions dynamically (LayoutBuffBars).
