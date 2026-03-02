@@ -185,6 +185,41 @@ local function ShouldKeepLeaveVehicleVisible()
     return IsLeaveVehicleButtonVisible()
 end
 
+local function IsSpellBookVisible()
+    local spellBookFrame = _G.SpellBookFrame
+    if spellBookFrame and spellBookFrame.IsShown and spellBookFrame:IsShown() then
+        return true
+    end
+
+    local playerSpellsFrame = _G.PlayerSpellsFrame
+    if playerSpellsFrame and playerSpellsFrame.IsShown and playerSpellsFrame:IsShown() then
+        local embeddedSpellBook = playerSpellsFrame.SpellBookFrame
+        if embeddedSpellBook and embeddedSpellBook.IsShown then
+            return embeddedSpellBook:IsShown()
+        end
+        return true
+    end
+
+    return false
+end
+
+local function ShouldForceShowForSpellBook()
+    local fadeSettings = GetFadeSettings()
+    return fadeSettings and fadeSettings.showWhenSpellBookOpen and IsSpellBookVisible()
+end
+
+local function CancelBarFadeTimers(state)
+    if not state then return end
+    if state.delayTimer then
+        state.delayTimer:Cancel()
+        state.delayTimer = nil
+    end
+    if state.leaveCheckTimer then
+        state.leaveCheckTimer:Cancel()
+        state.leaveCheckTimer = nil
+    end
+end
+
 local function UpdateLevelSuppressionState()
     local suppress = ShouldSuppressMouseoverHideForLevel()
     if ActionBars.levelSuppressionActive == suppress then
@@ -1703,6 +1738,10 @@ end
 
 -- Apply alpha to all buttons in a bar
 local function SetBarAlpha(barKey, alpha)
+    if alpha < 1 and ShouldForceShowForSpellBook() then
+        alpha = 1
+    end
+
     if barKey == "bar1" and alpha < 1 and ShouldKeepLeaveVehicleVisible() then
         alpha = 1
     end
@@ -1733,6 +1772,7 @@ end
 local function StartBarFade(barKey, targetAlpha)
     -- Don't fade bars out during Edit Mode — keep everything visible
     if targetAlpha < 1 and IsInEditMode() then return end
+    if targetAlpha < 1 and ShouldForceShowForSpellBook() then return end
 
     local state = GetBarFadeState(barKey)
     local fadeSettings = GetFadeSettings()
@@ -1839,6 +1879,10 @@ local function ShowLinkedBarDirect(barKey)
     local fadeSettings = GetFadeSettings()
 
     if not barSettings then return end
+    if ShouldForceShowForSpellBook() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
     if ShouldSuppressMouseoverHideForLevel() then
         SetBarAlpha(barKey, 1)
         return
@@ -1854,14 +1898,7 @@ local function ShowLinkedBarDirect(barKey)
     local state = GetBarFadeState(barKey)
 
     -- Cancel pending fade-out timers
-    if state.delayTimer then
-        state.delayTimer:Cancel()
-        state.delayTimer = nil
-    end
-    if state.leaveCheckTimer then
-        state.leaveCheckTimer:Cancel()
-        state.leaveCheckTimer = nil
-    end
+    CancelBarFadeTimers(state)
 
     StartBarFade(barKey, 1)
 end
@@ -1869,6 +1906,10 @@ end
 -- Start fade-out for a linked bar
 local function FadeLinkedBarDirect(barKey)
     if IsInEditMode() then return end
+    if ShouldForceShowForSpellBook() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
 
     local barSettings = GetBarSettings(barKey)
     local fadeSettings = GetFadeSettings()
@@ -1919,6 +1960,10 @@ local function OnBarMouseEnter(barKey)
         SetBarAlpha(barKey, 1)
         return
     end
+    if ShouldForceShowForSpellBook() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
 
     -- If bar should always be visible, skip fade logic entirely
     if barSettings and barSettings.alwaysShow then return end
@@ -1942,14 +1987,7 @@ local function OnBarMouseEnter(barKey)
     end
 
     -- Cancel any pending fade-out
-    if state.delayTimer then
-        state.delayTimer:Cancel()
-        state.delayTimer = nil
-    end
-    if state.leaveCheckTimer then
-        state.leaveCheckTimer:Cancel()
-        state.leaveCheckTimer = nil
-    end
+    CancelBarFadeTimers(state)
 
     StartBarFade(barKey, 1)
 end
@@ -1963,6 +2001,10 @@ local function OnBarMouseLeave(barKey)
     local barSettings = GetBarSettings(barKey)
 
     if ShouldSuppressMouseoverHideForLevel() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForSpellBook() then
         SetBarAlpha(barKey, 1)
         return
     end
@@ -2079,14 +2121,14 @@ local function SetupBarMouseover(barKey)
 
     if ShouldSuppressMouseoverHideForLevel() then
         state.isFading = false
-        if state.delayTimer then
-            state.delayTimer:Cancel()
-            state.delayTimer = nil
-        end
-        if state.leaveCheckTimer then
-            state.leaveCheckTimer:Cancel()
-            state.leaveCheckTimer = nil
-        end
+        CancelBarFadeTimers(state)
+        SetBarAlpha(barKey, 1)
+        return
+    end
+
+    if ShouldForceShowForSpellBook() then
+        state.isFading = false
+        CancelBarFadeTimers(state)
         SetBarAlpha(barKey, 1)
         return
     end
@@ -2145,6 +2187,61 @@ local function SetupBarMouseover(barKey)
     if not IsMouseOverBar(barKey) then
         SetBarAlpha(barKey, fadeOutAlpha)
     end
+end
+
+local SPELLBOOK_UI_ADDONS = {
+    Blizzard_PlayerSpells = true,
+    Blizzard_SpellBook = true,
+}
+
+local function RefreshBarsForSpellBookVisibility()
+    if not ActionBars.initialized then return end
+
+    local forceShow = ShouldForceShowForSpellBook()
+    for barKey, _ in pairs(BAR_FRAMES) do
+        local state = GetBarFadeState(barKey)
+        state.isFading = false
+        CancelBarFadeTimers(state)
+
+        if forceShow then
+            SetBarAlpha(barKey, 1)
+        else
+            SetupBarMouseover(barKey)
+        end
+    end
+end
+
+local function HookSpellBookVisibilityFrame(frame)
+    if not frame then return end
+
+    local state = GetFrameState(frame)
+    if state.spellBookVisibilityHooked then return end
+    state.spellBookVisibilityHooked = true
+
+    frame:HookScript("OnShow", function()
+        C_Timer.After(0, RefreshBarsForSpellBookVisibility)
+    end)
+    frame:HookScript("OnHide", function()
+        C_Timer.After(0, RefreshBarsForSpellBookVisibility)
+    end)
+end
+
+local function HookSpellBookVisibilityFrames()
+    HookSpellBookVisibilityFrame(_G.SpellBookFrame)
+
+    local playerSpellsFrame = _G.PlayerSpellsFrame
+    HookSpellBookVisibilityFrame(playerSpellsFrame)
+    if playerSpellsFrame and playerSpellsFrame.SpellBookFrame then
+        HookSpellBookVisibilityFrame(playerSpellsFrame.SpellBookFrame)
+    end
+end
+
+local function HandleSpellBookAddonLoaded(addonName)
+    if not SPELLBOOK_UI_ADDONS[addonName] then return end
+    C_Timer.After(0, function()
+        HookSpellBookVisibilityFrames()
+        RefreshBarsForSpellBookVisibility()
+    end)
 end
 
 ---------------------------------------------------------------------------
@@ -2295,6 +2392,7 @@ function ActionBars:Refresh()
 
     SkinAllBars()
     ApplyBarLayoutSettings()
+    RefreshBarsForSpellBookVisibility()
 
     -- Apply page arrow visibility
     local db = GetDB()
@@ -2344,6 +2442,10 @@ function ActionBars:Initialize()
 
     -- Apply bar layout settings (scale, lock, range indicator, empty slots)
     ApplyBarLayoutSettings()
+
+    -- Keep bars visible while Spellbook UI is open (optional setting).
+    HookSpellBookVisibilityFrames()
+    RefreshBarsForSpellBookVisibility()
 
     -- Apply page arrow visibility
     if db.bars and db.bars.bar1 then
@@ -2410,6 +2512,7 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
 eventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
 eventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+eventFrame:RegisterEvent("ADDON_LOADED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -2496,6 +2599,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.After(0.05, function()
             SetupBarMouseover("bar1")
         end)
+
+    elseif event == "ADDON_LOADED" then
+        local addonName = ...
+        HandleSpellBookAddonLoaded(addonName)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Process pending initialization (from /reload during combat)
