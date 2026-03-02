@@ -867,6 +867,7 @@ local function CreateTrackerIcon(parent, clickable)
     icon.lastKnownCDEnd = 0
 
     local function SetupIconTooltip(iconFrame)
+        if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
         if iconFrame:GetAlpha() == 0 then return end  -- Don't show tooltip when visually hidden
         if iconFrame.entry then
             -- Respect tooltip anchor setting
@@ -883,7 +884,7 @@ local function CreateTrackerIcon(parent, clickable)
                 GameTooltip_SetDefaultAnchor(GameTooltip, iconFrame)
             end
             if iconFrame.entry.type == "spell" then
-                GameTooltip:SetSpellByID(iconFrame.entry.id)
+                pcall(GameTooltip.SetSpellByID, GameTooltip, iconFrame.entry.id)
             elseif iconFrame.entry.type == "item" then
                 -- pcall to handle Blizzard MoneyFrame secret value bug in Midnight beta
                 pcall(GameTooltip.SetItemByID, GameTooltip, iconFrame.entry.id)
@@ -897,7 +898,7 @@ local function CreateTrackerIcon(parent, clickable)
     end)
 
     icon:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        pcall(GameTooltip.Hide, GameTooltip)
     end)
 
     -- Forward drag events to parent bar (so clicking on icons still allows dragging)
