@@ -182,7 +182,7 @@ local function CreateSpecProfilesPage(parent)
                         end
                     end
                     -- Unit frame castbar positions
-                    for _, unit in ipairs({"player", "target"}) do
+                    for _, unit in ipairs({"player", "target", "focus"}) do
                         if p.quiUnitFrames[unit] and p.quiUnitFrames[unit].castbar then
                             p.quiUnitFrames[unit].castbar.offsetX = nil
                             p.quiUnitFrames[unit].castbar.offsetY = nil
