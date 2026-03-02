@@ -144,6 +144,27 @@ local function BuildHUDVisibilityTab(tabContent)
     cdmMountedHint:SetJustifyH("LEFT")
     y = y - 20
 
+    if cdmVis.hideWhenInVehicle == nil then cdmVis.hideWhenInVehicle = false end
+    local cdmVehicleCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Hide When In Vehicle",
+        "hideWhenInVehicle",
+        cdmVis,
+        RefreshCDMVisibility,
+        BuildSearchInfo("cdm", "vehicle", "in vehicle", "vehicle ui", "override bar")
+    )
+    cdmVehicleCheck:SetPoint("TOPLEFT", PADDING, y)
+    cdmVehicleCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local cdmVehicleHint = GUI:CreateLabel(tabContent,
+        "When enabled, elements hide while you are in a vehicle.",
+        11, C.textMuted)
+    cdmVehicleHint:SetPoint("TOPLEFT", PADDING, y)
+    cdmVehicleHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    cdmVehicleHint:SetJustifyH("LEFT")
+    y = y - 20
+
     if cdmVis.hideWhenFlying == nil then cdmVis.hideWhenFlying = false end
     local cdmFlyingCheck = GUI:CreateFormCheckbox(
         tabContent,

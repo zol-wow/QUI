@@ -851,6 +851,7 @@ local defaults = {
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
             hideWhenMounted = false,
+            hideWhenInVehicle = false,
             hideWhenFlying = false,
             hideWhenSkyriding = false,
             dontHideInDungeonsRaids = false,
