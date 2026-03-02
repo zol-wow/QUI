@@ -53,6 +53,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.44.0 - 2026-03-02
+
+### Added
+- added option to hide CDM when in a vehicle
+- added option to show hidden action bars when spellbook is open
+
+### Fixed
+- fixed a lot of issues with Edit Mode, make sure to enter Edit Mode once and hit save (massive thanks to Drew again)
+- fixed stack/charge text for CDM icons in new CDM engine
+- fixed keybind text being overlayed by radial swipes
 ## v2.43.0 - 2026-03-01
 
 ### Added
