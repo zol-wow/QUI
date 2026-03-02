@@ -718,6 +718,15 @@ function Helpers.IsPlayerSkyriding()
     return ok and gliding
 end
 
+--- Check if player is in a vehicle.
+--- Covers both UnitInVehicle and vehicle-UI states.
+--- @return boolean True when player is controlling or riding a vehicle
+function Helpers.IsPlayerInVehicle()
+    if UnitInVehicle and UnitInVehicle("player") then return true end
+    if UnitHasVehicleUI and UnitHasVehicleUI("player") then return true end
+    return false
+end
+
 --- Check if player is inside a dungeon or raid instance.
 --- Used by HUD visibility hide-rule overrides.
 --- @return boolean True when instance type is party or raid
@@ -759,6 +768,7 @@ ns.GetCore = Helpers.GetCore
 ns.IsPlayerMounted = Helpers.IsPlayerMounted
 ns.IsPlayerFlying = Helpers.IsPlayerFlying
 ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding
+ns.IsPlayerInVehicle = Helpers.IsPlayerInVehicle
 ns.IsPlayerInDungeonOrRaid = Helpers.IsPlayerInDungeonOrRaid
 ns.CreateOnUpdateThrottle = Helpers.CreateOnUpdateThrottle
 ns.CreateTimeThrottle = Helpers.CreateTimeThrottle

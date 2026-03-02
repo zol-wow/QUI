@@ -130,6 +130,7 @@ local function ShouldCDMBeVisible()
         if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
         if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
         if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
     end
 
     if vis.showAlways then return true end
@@ -589,6 +590,8 @@ visibilityEventFrame:RegisterEvent("GROUP_LEFT")
 visibilityEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 visibilityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 visibilityEventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+visibilityEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
+visibilityEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
@@ -597,6 +600,10 @@ local _pendingSetupTimer = nil
 
 visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_FLAGS_CHANGED" then
+        local unit = ...
+        if unit ~= "player" then return end
+    end
+    if event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
         local unit = ...
         if unit ~= "player" then return end
     end
