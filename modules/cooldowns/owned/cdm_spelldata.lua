@@ -98,35 +98,25 @@ end
 -- HIDE / SHOW BLIZZARD VIEWERS
 -- Blizzard viewers are ALWAYS alpha 0 (including during Edit Mode).
 -- QUI's own containers stay visible with overlays during Edit Mode.
--- SetAlpha hooks prevent Blizzard's CDM code from restoring viewer visibility
--- during combat (cooldown activation triggers SetAlpha(1) internally).
+-- An OnUpdate enforcer prevents Blizzard's CDM code from restoring viewer
+-- visibility during combat (cooldown activation triggers SetAlpha(1) internally).
 ---------------------------------------------------------------------------
-local viewerAlphaHooked = {} -- [viewerName] = true
-
-local function HookViewerAlpha(viewer, viewerName)
-    if viewerAlphaHooked[viewerName] then return end
-    viewerAlphaHooked[viewerName] = true
-    hooksecurefunc(viewer, "SetAlpha", function(self, alpha)
-        if viewersHidden and alpha > 0 then
-            self:SetAlpha(0)
-        end
-    end)
-end
-
--- Periodic alpha enforcer: catches cases where Blizzard restores alpha
--- via internal paths that don't trigger the SetAlpha hook.
--- Runs only while viewers are hidden (always, including Edit Mode).
+-- Alpha enforcer: runs every frame while viewers are hidden to catch
+-- Blizzard's CDM system restoring viewer alpha (e.g. on cooldown activation).
+-- OnUpdate runs AFTER OnEvent in WoW's frame processing, so alpha restores
+-- are caught in the same frame before rendering — no visual flash.
+-- Runs in addon OnUpdate context (not within a secure chain), so it cannot
+-- propagate taint.  pcall guards GetAlpha against secret values in combat.
 local alphaEnforcerFrame = CreateFrame("Frame")
-local alphaEnforcerElapsed = 0
 alphaEnforcerFrame:SetScript("OnUpdate", function(self, dt)
     if not viewersHidden then return end
-    alphaEnforcerElapsed = alphaEnforcerElapsed + dt
-    if alphaEnforcerElapsed < 0.1 then return end
-    alphaEnforcerElapsed = 0
     for _, viewerName in pairs(VIEWER_NAMES) do
         local viewer = _G[viewerName]
-        if viewer and viewer:GetAlpha() > 0 then
-            viewer:SetAlpha(0)
+        if viewer then
+            local ok, alpha = pcall(viewer.GetAlpha, viewer)
+            if ok and alpha and alpha > 0 then
+                viewer:SetAlpha(0)
+            end
         end
     end
 end)
@@ -143,9 +133,7 @@ local function HideBlizzardViewers()
             if viewer.SetMouseClickEnabled then
                 viewer:SetMouseClickEnabled(false)
             end
-            -- Hook SetAlpha to prevent Blizzard from restoring visibility
-            -- during combat (CDM system calls SetAlpha(1) when cooldowns activate)
-            HookViewerAlpha(viewer, viewerName)
+            -- Alpha enforcement is handled by the OnUpdate enforcer frame above
         end
     end
     viewersHidden = true

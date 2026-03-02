@@ -433,10 +433,10 @@ end
 -- BLIZZARD STACK/CHARGE TEXT HOOK
 -- Mirrors charge counts and application stacks from Blizzard's hidden
 -- viewer children to our addon-owned icon.StackText via hooksecurefunc.
--- Polling IsShown()/GetText() is impossible — QUI's SetAlpha(0) hook on
--- the viewer taints the entire child hierarchy, making all reads return
--- secret values.  Hook parameters come from Blizzard's secure calling
--- code and are clean.  No initial seeding — hooks fire when Blizzard
+-- Polling IsShown()/GetText() is unreliable — child frames under hidden
+-- Blizzard viewers may return secret values during combat.  Hook parameters
+-- come from Blizzard's secure calling code and are clean.
+-- No initial seeding — hooks fire when Blizzard
 -- first updates the frames (next charge/aura change after BuildIcons).
 ---------------------------------------------------------------------------
 local function SyncStackText(state)
