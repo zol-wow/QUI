@@ -640,16 +640,21 @@ local function CreateIcon(parent, spellEntry)
     icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
     icon.Cooldown:SetSwipeColor(0, 0, 0, 0.8)
 
+    -- .TextOverlay (sits above the CooldownFrame so text is never behind the swipe)
+    icon.TextOverlay = CreateFrame("Frame", nil, icon)
+    icon.TextOverlay:SetAllPoints(icon)
+    icon.TextOverlay:SetFrameLevel(icon.Cooldown:GetFrameLevel() + 2)
+
     -- .Border texture (BACKGROUND, sublayer -8, pre-created)
     icon.Border = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
     icon.Border:Hide()
 
-    -- .DurationText (OVERLAY, sublayer 7)
-    icon.DurationText = icon.Cooldown:CreateFontString(nil, "OVERLAY", nil, 7)
+    -- .DurationText (OVERLAY, sublayer 7 — parented to TextOverlay, above swipe)
+    icon.DurationText = icon.TextOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
     icon.DurationText:SetPoint("CENTER")
 
-    -- .StackText (OVERLAY, sublayer 7)
-    icon.StackText = icon:CreateFontString(nil, "OVERLAY", nil, 7)
+    -- .StackText (OVERLAY, sublayer 7 — parented to TextOverlay, above swipe)
+    icon.StackText = icon.TextOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
     icon.StackText:SetPoint("BOTTOMRIGHT")
 
     -- Set a default font so SetText() never fires before ConfigureIcon styles them

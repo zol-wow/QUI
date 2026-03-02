@@ -137,6 +137,12 @@ local function EnsureCursorFollowHooks(tooltip)
 
     tooltip:HookScript("OnUpdate", function(self)
         if not cursorFollowActive[self] then return end
+        -- Stop cursor follow in combat — secret values from GetCursorPosition
+        -- would taint tooltip frame properties via SetPoint arithmetic
+        if InCombatLockdown() then
+            cursorFollowActive[self] = nil
+            return
+        end
         local settings = GetSettings()
         if not settings or not settings.enabled or not settings.anchorToCursor then
             cursorFollowActive[self] = nil
@@ -335,8 +341,10 @@ local function SetupTooltipHook()
             return
         end
 
-        -- Cursor anchor logic
-        if settings.anchorToCursor then
+        -- Cursor anchor logic (skip in combat — GetCursorPosition/GetEffectiveScale
+        -- return secret values whose arithmetic taints tooltip frame layout properties,
+        -- breaking Blizzard's LayoutFrame widget comparisons downstream)
+        if settings.anchorToCursor and not InCombatLockdown() then
             AnchorTooltipToCursor(tooltip, parent, settings)
         else
             cursorFollowActive[tooltip] = nil

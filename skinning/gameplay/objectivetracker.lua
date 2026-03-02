@@ -41,7 +41,11 @@ end
 -- reflow which cascades into Blizzard layout updates → AddObjective fires again →
 -- StyleLine again → infinite oscillation. We skip SetFont when the font is already
 -- correct, and only adjust height when the font actually changed (with a 1px tolerance).
-local function StyleLine(line, fontPath, textFontSize, textColor)
+-- skipHeight: when true, skip the SetHeight call. Hook callers (AddObjective, AddBlock)
+-- MUST pass true to avoid the feedback loop: SetHeight → Blizzard relayout → AddObjective
+-- → StyleLine → SetHeight → repeat. Direct callers (Skin, Refresh) can pass false/nil
+-- for a one-shot height adjustment that settles after one extra hook cycle.
+local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
     if not line then return false end
     local heightChanged = false
     local targetFlags = GetFontFlags()
@@ -55,13 +59,17 @@ local function StyleLine(line, fontPath, textFontSize, textColor)
             -- Recalculate line height after font change to handle multi-line wrapping.
             -- Only runs when font actually changed; 1px tolerance prevents sub-pixel
             -- oscillation between our height and Blizzard's layout-computed height.
-            local textHeight = line.Text:GetStringHeight()
-            if textHeight and textHeight > 0 then
-                local currentHeight = line:GetHeight()
-                local minHeight = textHeight + 4
-                if minHeight - currentHeight > 1 then
-                    line:SetHeight(minHeight)
-                    heightChanged = true
+            -- SKIP when called from hooks (skipHeight=true) to prevent the relayout
+            -- feedback loop: SetHeight → Blizzard relayout → AddObjective → hook → repeat.
+            if not skipHeight then
+                local textHeight = line.Text:GetStringHeight()
+                if textHeight and textHeight > 0 then
+                    local currentHeight = line:GetHeight()
+                    local minHeight = textHeight + 4
+                    if minHeight - currentHeight > 1 then
+                        line:SetHeight(minHeight)
+                        heightChanged = true
+                    end
                 end
             end
         end
@@ -78,7 +86,8 @@ local function StyleLine(line, fontPath, textFontSize, textColor)
 end
 
 -- Apply font and color to a block (quest name header + all objective lines)
-local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
+-- skipHeight: forwarded to StyleLine — see StyleLine comment for details.
+local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, skipHeight)
     if not block then return end
 
     if titleFontSize > 0 and block.HeaderText then
@@ -94,7 +103,7 @@ local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleCol
 
     if textFontSize > 0 and block.usedLines then
         for _, line in pairs(block.usedLines) do
-            StyleLine(line, fontPath, textFontSize, textColor)
+            StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
         end
     end
 end
@@ -156,8 +165,10 @@ local function ApplyBlockSkinning(tracker, block)
     local check = block.currentLine and block.currentLine.Check
     if check then StyleCompletionCheck(check) end
 
-    -- Style block header and all objective lines
-    StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
+    -- Style block header and all objective lines.
+    -- skipHeight=true: this function is called from the AddBlock hook, so we must
+    -- avoid SetHeight to prevent the relayout → AddObjective → hook → oscillation loop.
+    StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, true)
 end
 
 -- List of tracker modules
@@ -653,11 +664,12 @@ local function HookLineCreation()
                     local currentTextSize = currentSettings and currentSettings.objectiveTrackerTextFontSize or 0
                     local currentTextColor = currentSettings and currentSettings.objectiveTrackerTextColor
                     if currentTextSize > 0 then
-                        -- Style the line (font + color + height). Do NOT trigger
-                        -- manual repositioning — Blizzard anchors each line to
-                        -- the previous line's bottom, so height changes cascade
-                        -- automatically through the anchor chain.
-                        StyleLine(line, GetFontPath(), currentTextSize, currentTextColor)
+                        -- Style the line (font + color only, NO height adjustment).
+                        -- skipHeight=true prevents the oscillation feedback loop:
+                        -- SetHeight → Blizzard relayout → AddObjective → hook → repeat.
+                        -- Blizzard anchors each line to the previous line's bottom,
+                        -- so the layout remains correct without manual height changes.
+                        StyleLine(line, GetFontPath(), currentTextSize, currentTextColor, true)
                     end
                 end
             end)

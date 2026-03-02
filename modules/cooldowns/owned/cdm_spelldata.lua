@@ -510,10 +510,13 @@ end
 -- spell data scanning. Replaces the self-bootstrapping event frame.
 ---------------------------------------------------------------------------
 function CDMSpellData:Initialize()
+    -- Hide Blizzard viewers IMMEDIATELY to prevent flash of unstyled buff
+    -- icons during the ~0.5s window before the deferred init completes.
+    HideBlizzardViewers()
     ForceLoadCDM()
     C_Timer.After(0.5, function()
         UpdateCooldownViewerCVar()
-        HideBlizzardViewers()
+        HideBlizzardViewers()  -- re-apply in case ForceLoadCDM restored them
         ScanAll()
         RegisterEditModeCallbacks()
         HookBlizzardSettings()
@@ -540,6 +543,8 @@ function CDMSpellData:Initialize()
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
             C_Timer.After(0.5, function() ScanAll() end)
         elseif event == "PLAYER_ENTERING_WORLD" then
+            -- Hide viewers immediately to prevent flash of unstyled icons
+            HideBlizzardViewers()
             C_Timer.After(1.0, function()
                 if not initialized then
                     -- Blizzard_CooldownManager may have loaded before us

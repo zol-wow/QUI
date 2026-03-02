@@ -967,33 +967,8 @@ function QUICore:EnablePowerBarEditMode()
                 end
             end)
 
-            -- Enable keyboard for arrow key nudging
-            bar:EnableKeyboard(true)
-            bar:SetScript("OnKeyDown", function(self, key)
-                if not PowerBarEditMode.active then
-                    self:SetPropagateKeyboardInput(true)
-                    return
-                end
-
-                local deltaX, deltaY = 0, 0
-                if key == "LEFT" then deltaX = -1
-                elseif key == "RIGHT" then deltaX = 1
-                elseif key == "UP" then deltaY = 1
-                elseif key == "DOWN" then deltaY = -1
-                else
-                    -- Non-arrow keys: propagate to game (WASD, hotkeys, Escape, etc.)
-                    self:SetPropagateKeyboardInput(true)
-                    return
-                end
-
-                -- Consume arrow keys so they nudge instead of moving the camera
-                self:SetPropagateKeyboardInput(false)
-
-                -- Use global selection system - nudge the SELECTED element, not this bar
-                if QUICore and QUICore.EditModeSelection and QUICore.EditModeSelection.selectedType then
-                    QUICore:NudgeSelectedElement(deltaX, deltaY)
-                end
-            end)
+            -- Keyboard handling is centralized in EditModeKeyHandler (core/main.lua).
+            -- Per-bar EnableKeyboard is removed to prevent input blocking.
             end -- else (free)
         end
     end

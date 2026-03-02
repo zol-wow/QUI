@@ -144,6 +144,7 @@ local function CreateContainer(name)
     local frame = CreateFrame("Frame", name, UIParent)
     frame:SetSize(1, 1)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetAlpha(0)  -- start invisible; hud_visibility fades in after icons are built
     frame:Show()
     viewerState[frame] = {}
     return frame
@@ -783,8 +784,11 @@ local function RefreshAll()
     applying["utility"] = false
     applying["buff"] = false
 
-    -- Reset buff fingerprint so the rebuild goes through
-    if containers then containers._buffFingerprint = nil end
+    -- Buff fingerprint is NOT reset here. ForceScan() above already refreshed
+    -- the spell lists — if the buff set actually changed, the fingerprint
+    -- comparison in LayoutContainer("buff") will detect the difference and
+    -- rebuild. Unconditional reset causes a visible flash (ClearPool +
+    -- BuildIcons destroys and recreates all icons even when nothing changed).
 
     refreshTimers[1] = C_Timer.NewTimer(0.01, function()
         refreshTimers[1] = nil
@@ -1179,15 +1183,22 @@ function ownedEngine:Initialize()
         RefreshAll()
 
         -- Apply HUD visibility now that containers exist (covers /reload while mounted).
-        -- Set alpha instantly first so StartCDMFade sees "already at target" and skips
-        -- the animation — prevents a 1-frame flash of fully-visible icons.
-        if _G.QUI_ShouldCDMBeVisible and not _G.QUI_ShouldCDMBeVisible() then
+        -- Containers start at alpha=0 (CreateContainer). Set the correct target
+        -- alpha instantly so StartCDMFade sees "already at target" and skips
+        -- the animation — prevents a flash of fully-visible icons popping in.
+        local shouldShow = _G.QUI_ShouldCDMBeVisible and _G.QUI_ShouldCDMBeVisible()
+        local targetAlpha
+        if shouldShow then
+            targetAlpha = 1
+        else
             local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
-            local alpha = vis and vis.fadeOutAlpha or 0
-            if containers.essential then containers.essential:SetAlpha(alpha) end
-            if containers.utility then containers.utility:SetAlpha(alpha) end
-            if containers.buff then containers.buff:SetAlpha(alpha) end
-            if _G.BuffBarCooldownViewer then _G.BuffBarCooldownViewer:SetAlpha(alpha) end
+            targetAlpha = vis and vis.fadeOutAlpha or 0
+        end
+        if containers.essential then containers.essential:SetAlpha(targetAlpha) end
+        if containers.utility then containers.utility:SetAlpha(targetAlpha) end
+        if containers.buff then containers.buff:SetAlpha(targetAlpha) end
+        if not shouldShow then
+            if _G.BuffBarCooldownViewer then _G.BuffBarCooldownViewer:SetAlpha(targetAlpha) end
         end
         if _G.QUI_RefreshCDMVisibility then
             _G.QUI_RefreshCDMVisibility()

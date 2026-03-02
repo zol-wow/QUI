@@ -464,60 +464,8 @@ function QUI_UF:EnableEditMode()
                 end
             end)
 
-            -- Enable keyboard for arrow key nudging
-            frame:EnableKeyboard(true)
-            frame:SetScript("OnKeyDown", function(self, key)
-                if not QUI_UF.editModeActive then
-                    self:SetPropagateKeyboardInput(true)
-                    return
-                end
-
-                local deltaX, deltaY = 0, 0
-                if key == "LEFT" then deltaX = -1
-                elseif key == "RIGHT" then deltaX = 1
-                elseif key == "UP" then deltaY = 1
-                elseif key == "DOWN" then deltaY = -1
-                else
-                    -- Non-arrow keys: propagate to game (WASD, hotkeys, Escape, etc.)
-                    self:SetPropagateKeyboardInput(true)
-                    return
-                end
-
-                -- Consume arrow keys so they nudge instead of moving the camera
-                self:SetPropagateKeyboardInput(false)
-
-                -- Use global selection system - nudge the SELECTED element, not this frame
-                local core = GetCore()
-                if core and core.EditModeSelection and core.EditModeSelection.selectedType then
-                    -- Delegate to the global nudge function which handles all element types
-                    -- Pass raw delta (1 or -1) - NudgeSelectedElement handles shift multiplier
-                    core:NudgeSelectedElement(deltaX, deltaY)
-                    return
-                end
-
-                -- Fallback: no selection, nudge this frame (legacy behavior)
-                local settingsKey = self.unitKey
-                local settings = GetUnitSettings(settingsKey)
-
-                -- Block nudging for anchored frames
-                local isAnchored = settings and settings.anchorTo and settings.anchorTo ~= "disabled"
-                if isAnchored and (settingsKey == "player" or settingsKey == "target") then
-                    return
-                end
-
-                local shift = IsShiftKeyDown()
-                local step = shift and 10 or 1
-
-                if settings then
-                    settings.offsetX = (settings.offsetX or 0) + (deltaX * step)
-                    settings.offsetY = (settings.offsetY or 0) + (deltaY * step)
-                    self:ClearAllPoints()
-                    self:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX, settings.offsetY)
-
-                    -- Notify options panel of position change
-                    QUI_UF:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
-                end
-            end)
+            -- Keyboard handling is centralized in EditModeKeyHandler (core/main.lua).
+            -- Per-frame EnableKeyboard is removed to prevent input blocking.
         end  -- if not isBossFrame
 
         -- Show frame even if unit doesn't exist (for positioning)

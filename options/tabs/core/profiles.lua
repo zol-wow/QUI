@@ -124,6 +124,151 @@ local function CreateSpecProfilesPage(parent)
             })
         end
     end)
+    y = y - FORM_ROW
+
+    -- Reset All Movers button (form style row)
+    local moversContainer = CreateFrame("Frame", nil, content)
+    moversContainer:SetHeight(FORM_ROW)
+    moversContainer:SetPoint("TOPLEFT", PAD, y)
+    moversContainer:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+
+    local moversLabel = moversContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    moversLabel:SetPoint("LEFT", 0, 0)
+    moversLabel:SetText("Reset All Movers")
+    moversLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+    local moversBtn = CreateFrame("Button", nil, moversContainer, "BackdropTemplate")
+    moversBtn:SetSize(120, 24)
+    moversBtn:SetPoint("LEFT", moversContainer, "LEFT", 180, 0)
+    local pxMovers = GetCore() and GetCore():GetPixelSize(moversBtn) or 1
+    moversBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxMovers})
+    moversBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+    moversBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+    local moversBtnText = moversBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    moversBtnText:SetPoint("CENTER")
+    moversBtnText:SetText("Reset Positions")
+    moversBtnText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+    moversBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
+    moversBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end)
+    moversBtn:SetScript("OnClick", function()
+        GUI:ShowConfirmation({
+            title = "Reset All Movers?",
+            message = "Reset all frame and mover positions to defaults?",
+            warningText = "This resets CDM, unit frames, minimap, action bars, data panels, trackers, and all other movable elements. Requires /reload.",
+            acceptText = "Reset All",
+            cancelText = "Cancel",
+            isDestructive = true,
+            onAccept = function()
+                local core = GetCore()
+                local dbRef = core and core.db
+                if not dbRef then return end
+                local p = dbRef.profile
+
+                -- CDM container positions
+                if p.ncdm then
+                    for _, key in ipairs({"essential", "utility", "buff"}) do
+                        if p.ncdm[key] then
+                            p.ncdm[key].pos = nil
+                        end
+                    end
+                end
+
+                -- Unit frame positions
+                if p.quiUnitFrames then
+                    for _, unit in ipairs({"player", "target", "targettarget", "pet", "focus", "boss"}) do
+                        if p.quiUnitFrames[unit] then
+                            p.quiUnitFrames[unit].offsetX = nil
+                            p.quiUnitFrames[unit].offsetY = nil
+                        end
+                    end
+                    -- Unit frame castbar positions
+                    for _, unit in ipairs({"player", "target"}) do
+                        if p.quiUnitFrames[unit] and p.quiUnitFrames[unit].castbar then
+                            p.quiUnitFrames[unit].castbar.offsetX = nil
+                            p.quiUnitFrames[unit].castbar.offsetY = nil
+                        end
+                    end
+                end
+
+                -- Minimap position
+                if p.minimap then
+                    p.minimap.position = nil
+                end
+
+                -- Action bar positions
+                if p.actionBars and p.actionBars.bars then
+                    if p.actionBars.bars.extraActionButton then
+                        p.actionBars.bars.extraActionButton.position = nil
+                    end
+                    if p.actionBars.bars.zoneAbility then
+                        p.actionBars.bars.zoneAbility.position = nil
+                    end
+                end
+
+                -- Data panel positions
+                if p.quiDatatexts and p.quiDatatexts.panels then
+                    for _, panel in ipairs(p.quiDatatexts.panels) do
+                        if panel then
+                            panel.position = nil
+                        end
+                    end
+                end
+
+                -- M+ Timer position
+                if p.mplusTimer then
+                    p.mplusTimer.position = nil
+                end
+
+                -- Raid buffs position
+                if p.raidBuffs then
+                    p.raidBuffs.position = nil
+                end
+
+                -- Custom tracker positions
+                if p.customTrackers and p.customTrackers.bars then
+                    for _, bar in ipairs(p.customTrackers.bars) do
+                        if bar then
+                            bar.offsetX = nil
+                            bar.offsetY = nil
+                        end
+                    end
+                end
+
+                -- Totem bar position
+                if p.totemBar then
+                    p.totemBar.offsetX = nil
+                    p.totemBar.offsetY = nil
+                end
+
+                -- Loot window position
+                if p.loot then
+                    p.loot.position = nil
+                end
+
+                -- Loot roll position
+                if p.lootRoll then
+                    p.lootRoll.position = nil
+                end
+
+                -- Alert/toast positions
+                if p.alerts then
+                    p.alerts.alertPosition = nil
+                    p.alerts.toastPosition = nil
+                    p.alerts.bnetToastPosition = nil
+                end
+
+                -- Frame anchoring (wipe all entries except hudMinWidth)
+                if p.frameAnchoring then
+                    local savedHudMinWidth = p.frameAnchoring.hudMinWidth
+                    wipe(p.frameAnchoring)
+                    p.frameAnchoring.hudMinWidth = savedHudMinWidth
+                end
+
+                print("|cff34D399QUI:|r All mover positions reset to defaults.")
+                print("|cff34D399QUI:|r Please type |cFFFFD700/reload|r to apply changes.")
+            end,
+        })
+    end)
     y = y - FORM_ROW - 10
 
     -- =====================================================
