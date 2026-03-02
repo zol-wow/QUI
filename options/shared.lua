@@ -262,6 +262,18 @@ local function GetBorderList()
     return borders
 end
 
+local function GetSoundList()
+    local sounds = {{value = "None", text = "None"}}
+    if LSM then
+        for _, name in ipairs(LSM:List("sound") or {}) do
+            if name ~= "None" then
+                table.insert(sounds, {value = name, text = name})
+            end
+        end
+    end
+    return sounds
+end
+
 ---------------------------------------------------------------------------
 -- HELPER: Create scrollable content frame
 ---------------------------------------------------------------------------
@@ -478,6 +490,7 @@ ns.QUI_Options = {
     GetTextureList = GetTextureList,
     GetFontList = GetFontList,
     GetBorderList = GetBorderList,
+    GetSoundList = GetSoundList,
     PrintImportFeedback = ns.PrintImportFeedback,
 
     -- FPS functions

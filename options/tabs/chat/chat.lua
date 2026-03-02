@@ -245,9 +245,142 @@ local function BuildChatTab(tabContent)
         historyInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         historyInfo:SetJustifyH("LEFT")
         y = y - FORM_ROW
+
+        -- SECTION: New Message Sound
+        local soundHeader = GUI:CreateSectionHeader(tabContent, "New Message Sound")
+        soundHeader:SetPoint("TOPLEFT", PADDING, y)
+        y = y - soundHeader.gap
+
+        if not chat.newMessageSound then
+            chat.newMessageSound = { enabled = false, entries = {{ channel = "guild_officer", sound = "None" }} }
+        end
+        if not chat.newMessageSound.entries or #chat.newMessageSound.entries == 0 then
+            chat.newMessageSound.entries = {{ channel = "guild_officer", sound = "None" }}
+        end
+
+        local soundCheck = GUI:CreateFormCheckbox(tabContent, "Play Sound on New Message", "enabled", chat.newMessageSound, RefreshChat)
+        soundCheck:SetPoint("TOPLEFT", PADDING, y)
+        soundCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local soundEntriesContainer = CreateFrame("Frame", nil, tabContent)
+        soundEntriesContainer:SetPoint("TOPLEFT", PADDING, y)
+        soundEntriesContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        soundEntriesContainer:SetHeight(1)
+
+        local ALL_CHANNEL_OPTIONS = {
+            {value = "guild_officer", text = "Guild & Officer"},
+            {value = "guild", text = "Guild Only"},
+            {value = "officer", text = "Officer Only"},
+            {value = "party", text = "Party"},
+            {value = "raid", text = "Raid"},
+            {value = "whisper", text = "Whisper"},
+            {value = "all", text = "All Channels"},
+        }
+
+        local function GetChannelOptionsForEntry(entries, excludeIndex)
+            local used = {}
+            for i, e in ipairs(entries) do
+                if i ~= excludeIndex and e.channel then
+                    used[e.channel] = true
+                end
+            end
+            local currentChannel = entries[excludeIndex] and entries[excludeIndex].channel
+            local opts = {}
+            for _, o in ipairs(ALL_CHANNEL_OPTIONS) do
+                if not used[o.value] or o.value == currentChannel then
+                    table.insert(opts, o)
+                end
+            end
+            return opts
+        end
+
+        local soundSectionStartY = y
+        local function RebuildSoundEntries()
+            soundEntriesContainer:SetHeight(0)
+            for _, child in ipairs({ soundEntriesContainer:GetChildren() }) do
+                child:Hide()
+                child:SetParent(nil)
+            end
+
+            local entries = chat.newMessageSound.entries
+            if not entries then return end
+
+            local rowY = 0
+            for i, entry in ipairs(entries) do
+                local row = CreateFrame("Frame", nil, soundEntriesContainer)
+                row:SetPoint("TOPLEFT", 0, -rowY)
+                row:SetPoint("RIGHT", soundEntriesContainer, "RIGHT", 0, 0)
+                row:SetHeight(FORM_ROW)
+
+                local channelOpts = GetChannelOptionsForEntry(entries, i)
+                if #channelOpts == 0 then
+                    channelOpts = {{value = entry.channel or "guild_officer", text = entry.channel or "guild_officer"}}
+                end
+
+                local function OnChannelChange()
+                    RefreshChat()
+                    RebuildSoundEntries()
+                end
+                local channelDropdown = GUI:CreateFormDropdown(row, "Channel", channelOpts, "channel", entry, OnChannelChange)
+                channelDropdown:SetPoint("TOPLEFT", 0, 0)
+                channelDropdown:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+
+                local soundList = Shared.GetSoundList and Shared.GetSoundList() or {{value = "None", text = "None"}}
+                local soundDropdown = GUI:CreateFormDropdown(row, "Sound", soundList, "sound", entry, RefreshChat)
+                soundDropdown:SetPoint("TOPLEFT", 0, -FORM_ROW)
+                soundDropdown:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+
+                local removeBtn = GUI:CreateButton(row, "X", 24, 22, function()
+                    table.remove(entries, i)
+                    RebuildSoundEntries()
+                    RefreshChat()
+                end)
+                removeBtn:SetPoint("RIGHT", row, "RIGHT", 0, -FORM_ROW/2)
+
+                row:SetHeight(FORM_ROW * 2)
+                rowY = rowY + FORM_ROW * 2 + 4
+            end
+
+            soundEntriesContainer:SetHeight(rowY)
+
+            local function GetFirstAvailableChannel()
+                local used = {}
+                for _, e in ipairs(chat.newMessageSound.entries) do
+                    if e.channel then used[e.channel] = true end
+                end
+                for _, o in ipairs(ALL_CHANNEL_OPTIONS) do
+                    if not used[o.value] then return o.value end
+                end
+                return "guild_officer"
+            end
+
+            local addBtn = GUI:CreateButton(soundEntriesContainer, "+ Add Channel + Sound", 180, 24, function()
+                table.insert(chat.newMessageSound.entries, { channel = GetFirstAvailableChannel(), sound = "None" })
+                RebuildSoundEntries()
+                RefreshChat()
+            end)
+            addBtn:SetPoint("TOPLEFT", 0, -rowY - 4)
+
+            rowY = rowY + 28
+            soundEntriesContainer:SetHeight(rowY)
+
+            tabContent:SetHeight(math.abs(soundSectionStartY) + rowY + 106)
+        end
+
+        RebuildSoundEntries()
+        y = y - 60
+
+        local soundInfo = GUI:CreateLabel(tabContent, "Each channel can have its own sound. Uses LibSharedMedia. Saved to your profile.", 10, C.textMuted)
+        soundInfo:SetPoint("TOPLEFT", soundEntriesContainer, "BOTTOMLEFT", 0, -36)
+        soundInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        soundInfo:SetJustifyH("LEFT")
+        y = y - 20
     end
 
-    tabContent:SetHeight(math.abs(y) + 50)
+    if not (db and db.chat) then
+        tabContent:SetHeight(math.abs(y) + 50)
+    end
 end
 
 -- Export

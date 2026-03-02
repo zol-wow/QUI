@@ -50,6 +50,22 @@ local function MigrateMasterTextColors(general)
     if general.masterColorToTText == nil then general.masterColorToTText = false end
 end
 
+-- Migrate newMessageSound from single channel/sound to entries array
+local function MigrateNewMessageSoundEntries(chat)
+    if not chat or not chat.newMessageSound then return end
+    local cfg = chat.newMessageSound
+    if cfg.entries then return end  -- Already migrated
+
+    cfg.entries = {}
+    if cfg.channel and cfg.sound then
+        table.insert(cfg.entries, { channel = cfg.channel, sound = cfg.sound })
+    else
+        table.insert(cfg.entries, { channel = "guild_officer", sound = "None" })
+    end
+    cfg.channel = nil
+    cfg.sound = nil
+end
+
 -- Migrate chat.styleEditBox boolean to chat.editBox table
 local function MigrateChatEditBox(chat)
     if not chat then return end
@@ -117,6 +133,7 @@ function QUI:BackwardsCompat()
     -- Migrate chat styleEditBox boolean to editBox table
     if self.db and self.db.profile and self.db.profile.chat then
         MigrateChatEditBox(self.db.profile.chat)
+        MigrateNewMessageSoundEntries(self.db.profile.chat)
     end
 
     -- Migrate cooldownSwipe to v2 (3-toggle system)
