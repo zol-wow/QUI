@@ -715,6 +715,7 @@ local function CreateIcon(parent, spellEntry)
     -- Tooltip support
     icon:EnableMouse(true)
     icon:SetScript("OnEnter", function(self)
+        if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
         local entry = self._spellEntry
         if not entry then return end
         local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
@@ -736,10 +737,10 @@ local function CreateIcon(parent, spellEntry)
                 pcall(GameTooltip.SetSpellByID, GameTooltip, sid)
             end
         end
-        GameTooltip:Show()
+        pcall(GameTooltip.Show, GameTooltip)
     end)
     icon:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        pcall(GameTooltip.Hide, GameTooltip)
     end)
 
     icon:Show()
