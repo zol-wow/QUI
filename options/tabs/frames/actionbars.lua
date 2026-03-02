@@ -129,6 +129,12 @@ local function CreateActionBarsPage(parent)
         combatCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local spellBookCheck = GUI:CreateFormCheckbox(tabContent, "Show Bars While Spellbook Is Open",
+            "showWhenSpellBookOpen", fade, RefreshActionBars)
+        spellBookCheck:SetPoint("TOPLEFT", PAD, y)
+        spellBookCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         local leaveVehicleCheck = GUI:CreateFormCheckbox(tabContent, "Keep Leave Vehicle Button Visible",
             "keepLeaveVehicleVisible", fade, RefreshActionBars)
         leaveVehicleCheck:SetPoint("TOPLEFT", PAD, y)

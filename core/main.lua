@@ -1403,6 +1403,7 @@ local defaults = {
                 fadeOutAlpha = 0.0,         -- Alpha when faded out (0-1)
                 fadeOutDelay = 0.5,         -- Delay before fading out (seconds)
                 alwaysShowInCombat = false, -- Force full opacity during combat
+                showWhenSpellBookOpen = false, -- Force bars visible while Spellbook is open
                 keepLeaveVehicleVisible = false, -- Keep leave-vehicle button visible when mouseover hide is active
                 disableBelowMaxLevel = false, -- Keep bars visible until character reaches max level
                 linkBars1to8 = false,       -- Link all action bars 1-8 for mouseover
