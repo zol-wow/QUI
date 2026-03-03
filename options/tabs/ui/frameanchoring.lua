@@ -255,6 +255,7 @@ local function BuildCDMTab(tabContent)
         { key = "cdmUtility",   name = "CDM Utility Viewer" },
         { key = "buffIcon",     name = "CDM Buff Icons" },
         { key = "buffBar",      name = "CDM Buff Bars" },
+        { key = "rotationAssistIcon", name = "CDM Rotation Assist Icon" },
     }
     for _, frameDef in ipairs(frames) do
         y = BuildFrameEntry(tabContent, frameDef, y)

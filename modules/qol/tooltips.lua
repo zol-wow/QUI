@@ -119,6 +119,7 @@ end
 
 local function PositionTooltipAtCursor(tooltip, settings)
     if not tooltip then return end
+    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
 
     local cursorX, cursorY = GetCursorPosition()
     if not cursorX or not cursorY then return end
@@ -158,6 +159,7 @@ end
 
 local function AnchorTooltipToCursor(tooltip, parent, settings)
     if not tooltip then return false end
+    if tooltip.IsForbidden and tooltip:IsForbidden() then return false end
     EnsureCursorFollowHooks(tooltip)
     tooltip:SetOwner(parent or UIParent, "ANCHOR_NONE")
     cursorFollowActive[tooltip] = true
@@ -325,6 +327,8 @@ local function SetupTooltipHook()
     -- NOTE: Tooltip hooks run synchronously — deferring causes visible flashing/repositioning.
     -- These are NOT a taint source for Edit Mode (tooltips are not in the Edit Mode chain).
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+
         local settings = GetSettings()
         if not settings or not settings.enabled then
             return  -- Module disabled, use default behavior
@@ -361,6 +365,7 @@ local function SetupTooltipHook()
         if pendingSetUnit then return end
         pendingSetUnit = C_Timer.After(0.1, function()
             pendingSetUnit = nil
+            if tooltip.IsForbidden and tooltip:IsForbidden() then return end
             -- If owner is UIParent (world tooltip) and a UI frame is blocking the mouse
             if tooltip:GetOwner() == UIParent and IsFrameBlockingMouse() then
                 tooltip:Hide()
@@ -391,14 +396,14 @@ local function SetupTooltipHook()
 
         local classColor = class and RAID_CLASS_COLORS[class]
         if classColor then
-            local nameLine = GameTooltipTextLeft1
+            local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
             if nameLine then
                 -- pcall guards against TOCTOU race: combat can start between
                 -- InCombatLockdown() check and here, making GetText() return
                 -- a secret value and tainting the fontstring for other addons.
                 local okText, text = pcall(nameLine.GetText, nameLine)
                 if okText and text and not Helpers.IsSecretValue(text) then
-                    nameLine:SetTextColor(classColor.r, classColor.g, classColor.b)
+                    pcall(nameLine.SetTextColor, nameLine, classColor.r, classColor.g, classColor.b)
                 end
             end
         end
@@ -414,9 +419,9 @@ local function SetupTooltipHook()
 
         local hideBar = settings.hideHealthBar
 
-        if GameTooltipStatusBar then
-            GameTooltipStatusBar:SetShown(not hideBar)
-            GameTooltipStatusBar:SetAlpha(hideBar and 0 or 1)
+        if GameTooltipStatusBar and not (GameTooltipStatusBar.IsForbidden and GameTooltipStatusBar:IsForbidden()) then
+            pcall(GameTooltipStatusBar.SetShown, GameTooltipStatusBar, not hideBar)
+            pcall(GameTooltipStatusBar.SetAlpha, GameTooltipStatusBar, hideBar and 0 or 1)
         end
     end)
 
@@ -452,10 +457,11 @@ local function SetupTooltipHook()
     -- Helper to force tooltip size/backdrop refresh after adding lines
     local function RefreshTooltipLayout(tooltip)
         if not tooltip then return end
+        if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         if type(tooltip.UpdateTooltipSize) == "function" then
             pcall(tooltip.UpdateTooltipSize, tooltip)
         end
-        tooltip:Show()
+        pcall(tooltip.Show, tooltip)
     end
 
     -- Helper function to add spell/icon ID info to a tooltip
@@ -563,6 +569,7 @@ local function SetupTooltipHook()
     -- These icons use SetSpellByID which bypasses GameTooltip_SetDefaultAnchor
     -- NOTE: Synchronous — deferring causes tooltip flash before hide.
     hooksecurefunc(GameTooltip, "SetSpellByID", function(tooltip)
+        if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
 
@@ -586,6 +593,7 @@ local function SetupTooltipHook()
 
     -- Hook SetItemByID to suppress Custom Tracker item tooltips
     hooksecurefunc(GameTooltip, "SetItemByID", function(tooltip)
+        if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
 
@@ -611,6 +619,7 @@ local function SetupTooltipHook()
     -- Runs after original function - if tooltip still visible during combat, force hide
     hooksecurefunc("GameTooltip_Hide", function()
         C_Timer.After(0, function()
+            if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
             if InCombatLockdown() and GameTooltip:IsVisible() then
                 GameTooltip:Hide()
             end

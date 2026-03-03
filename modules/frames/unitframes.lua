@@ -110,10 +110,14 @@ local function GetHealthPct(unit, usePredicted)
     if UnitHealth and UnitHealthMax then
         local cur = UnitHealth(unit)
         local max = UnitHealthMax(unit)
-        if cur and max and max > 0 then
-            -- Use pcall to handle Midnight secret values from UnitHealth()
-            local ok, pct = pcall(function() return (cur / max) * 100 end)
-            if ok then return pct end
+        local calcOk, result = pcall(function()
+            if cur and max and max > 0 then
+                return (cur / max) * 100
+            end
+            return nil
+        end)
+        if calcOk and result then
+            return result
         end
     end
     return nil
@@ -2194,15 +2198,15 @@ local function CreateUnitFrame(unit, unitKey)
 
     -- Event handling
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    frame:RegisterEvent("UNIT_HEALTH")
-    frame:RegisterEvent("UNIT_MAXHEALTH")
-    frame:RegisterEvent("UNIT_HEAL_PREDICTION")
-    frame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
-    frame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
-    frame:RegisterEvent("UNIT_POWER_UPDATE")
-    frame:RegisterEvent("UNIT_POWER_FREQUENT")  -- Frequent updates for smoother power text sync
-    frame:RegisterEvent("UNIT_MAXPOWER")
-    frame:RegisterEvent("UNIT_NAME_UPDATE")
+    frame:RegisterUnitEvent("UNIT_HEALTH", unit)
+    frame:RegisterUnitEvent("UNIT_MAXHEALTH", unit)
+    frame:RegisterUnitEvent("UNIT_HEAL_PREDICTION", unit)
+    frame:RegisterUnitEvent("UNIT_ABSORB_AMOUNT_CHANGED", unit)
+    frame:RegisterUnitEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", unit)
+    frame:RegisterUnitEvent("UNIT_POWER_UPDATE", unit)
+    frame:RegisterUnitEvent("UNIT_POWER_FREQUENT", unit)  -- Frequent updates for smoother power text sync
+    frame:RegisterUnitEvent("UNIT_MAXPOWER", unit)
+    frame:RegisterUnitEvent("UNIT_NAME_UPDATE", unit)
     frame:RegisterEvent("PLAYER_TARGET_CHANGED")
     frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
     frame:RegisterEvent("UNIT_PET")

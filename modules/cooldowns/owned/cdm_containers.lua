@@ -994,7 +994,11 @@ local function HideBlizzardSelections()
                 _selectionAlphaHooked[blizzName] = true
                 hooksecurefunc(viewer.Selection, "SetAlpha", function(self, alpha)
                     if _editModeActive and alpha > 0 then
-                        self:SetAlpha(0)
+                        C_Timer.After(0, function()
+                            if _editModeActive then
+                                self:SetAlpha(0)
+                            end
+                        end)
                     end
                 end)
             end

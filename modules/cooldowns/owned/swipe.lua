@@ -76,6 +76,8 @@ local function ApplySwipeToIcon(icon, settings)
     local mode
     if isBuffIcon or (entry.isAura and icon._auraActive) then
         mode = "aura"
+    elseif icon._isOnGCD then
+        mode = "gcd"
     elseif icon._lastDuration and icon._lastDuration > 0 and icon._lastDuration <= 2.5 then
         mode = "gcd"
     else

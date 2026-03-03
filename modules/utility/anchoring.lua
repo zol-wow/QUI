@@ -1136,6 +1136,27 @@ local FRAME_RESOLVERS = {
     cdmUtility = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility") end,
     buffIcon = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon") end,
     buffBar = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar") end,
+    rotationAssistIcon = function()
+        local frame = _G.QUI_RotationAssistIcon
+        if frame then
+            return frame
+        end
+
+        if _G.QUI and _G.QUI.RotationAssistIcon and _G.QUI.RotationAssistIcon.GetFrame then
+            frame = _G.QUI.RotationAssistIcon.GetFrame()
+            if frame then
+                return frame
+            end
+        end
+
+        -- Lazy-create if the module hasn't built it yet.
+        if _G.QUI_RefreshRotationAssistIcon then
+            _G.QUI_RefreshRotationAssistIcon()
+            return _G.QUI_RotationAssistIcon
+        end
+
+        return nil
+    end,
     -- Resource Bars
     primaryPower = function() return QUICore and QUICore.powerBar end,
     secondaryPower = function() return QUICore and QUICore.secondaryPowerBar end,
@@ -1221,6 +1242,7 @@ local FRAME_ANCHOR_INFO = {
     cdmUtility      = { displayName = "CDM Utility Viewer",    category = "Cooldown Manager",  order = 2 },
     buffIcon        = { displayName = "CDM Buff Icons",        category = "Cooldown Manager",  order = 3 },
     buffBar         = { displayName = "CDM Buff Bars",         category = "Cooldown Manager",  order = 4 },
+    rotationAssistIcon = { displayName = "CDM Rotation Assist Icon", category = "Cooldown Manager", order = 5 },
     primaryPower    = { displayName = "Primary Power Bar",     category = "Resource Bars",     order = 1 },
     secondaryPower  = { displayName = "Secondary Power Bar",   category = "Resource Bars",     order = 2 },
     playerFrame     = { displayName = "Player Frame",          category = "Unit Frames",       order = 1 },

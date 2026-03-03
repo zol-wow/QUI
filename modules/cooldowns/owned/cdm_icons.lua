@@ -310,6 +310,39 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                     pcall(cd.SetCooldownFromDurationObject, cd, durationObj, isAura)
                 end
 
+                -- Extract duration for desaturation and fallback classification.
+                -- DurationObject is C-side — access via methods, not fields.
+                if durationObj then
+                    local durGetter = durationObj.GetTotalDuration
+                    if durGetter then
+                        local dOK, rawDur = pcall(durGetter, durationObj)
+                        if dOK and rawDur ~= nil then
+                            local safeDur = SafeToNumber(rawDur, nil)
+                            if safeDur then
+                                targetIcon._lastDuration = safeDur
+                                if safeDur == 0 then
+                                    targetIcon._lastStart = 0
+                                    targetIcon._lastDuration = 0
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- Track GCD state for swipe classification (matches CMC pattern).
+                -- isOnGCD is a Blizzard boolean — CMC accesses it directly without
+                -- secret guards, but we use pcall for safety.
+                local sid = targetIcon._spellEntry and
+                    (targetIcon._spellEntry.overrideSpellID or targetIcon._spellEntry.spellID or targetIcon._spellEntry.id)
+                if sid and C_Spell.GetSpellCooldown then
+                    local ok, cdInfo = pcall(C_Spell.GetSpellCooldown, sid)
+                    if ok and cdInfo then
+                        if not IsSecretValue(cdInfo.isOnGCD) then
+                            targetIcon._isOnGCD = cdInfo.isOnGCD or false
+                        end
+                    end
+                end
+
                 -- Track aura state for swipe color classification
                 -- (swipe.lua uses _auraActive to pick overlay vs swipe color).
                 -- isAura may be secret in combat; only update when safe
@@ -342,6 +375,20 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             if safeDur == 0 then
                 targetIcon._lastStart = 0
                 targetIcon._lastDuration = 0
+            end
+
+            -- Track GCD state for swipe classification (matches CMC pattern).
+            -- isOnGCD is a Blizzard boolean — CMC accesses it directly without
+            -- secret guards, but we use pcall for safety.
+            local sid = targetIcon._spellEntry and
+                (targetIcon._spellEntry.overrideSpellID or targetIcon._spellEntry.spellID or targetIcon._spellEntry.id)
+            if sid and C_Spell.GetSpellCooldown then
+                local ok, cdInfo = pcall(C_Spell.GetSpellCooldown, sid)
+                if ok and cdInfo then
+                    if not IsSecretValue(cdInfo.isOnGCD) then
+                        targetIcon._isOnGCD = cdInfo.isOnGCD or false
+                    end
+                end
             end
 
             ReapplySwipeStyle(cd, targetIcon)
@@ -433,10 +480,10 @@ end
 -- BLIZZARD STACK/CHARGE TEXT HOOK
 -- Mirrors charge counts and application stacks from Blizzard's hidden
 -- viewer children to our addon-owned icon.StackText via hooksecurefunc.
--- Polling IsShown()/GetText() is impossible — QUI's SetAlpha(0) hook on
--- the viewer taints the entire child hierarchy, making all reads return
--- secret values.  Hook parameters come from Blizzard's secure calling
--- code and are clean.  No initial seeding — hooks fire when Blizzard
+-- Polling IsShown()/GetText() is unreliable — child frames under hidden
+-- Blizzard viewers may return secret values during combat.  Hook parameters
+-- come from Blizzard's secure calling code and are clean.
+-- No initial seeding — hooks fire when Blizzard
 -- first updates the frames (next charge/aura change after BuildIcons).
 ---------------------------------------------------------------------------
 local function SyncStackText(state)
@@ -715,6 +762,7 @@ local function CreateIcon(parent, spellEntry)
     -- Tooltip support
     icon:EnableMouse(true)
     icon:SetScript("OnEnter", function(self)
+        if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
         local entry = self._spellEntry
         if not entry then return end
         local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
@@ -736,10 +784,10 @@ local function CreateIcon(parent, spellEntry)
                 pcall(GameTooltip.SetSpellByID, GameTooltip, sid)
             end
         end
-        GameTooltip:Show()
+        pcall(GameTooltip.Show, GameTooltip)
     end)
     icon:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        pcall(GameTooltip.Hide, GameTooltip)
     end)
 
     icon:Show()
@@ -1155,6 +1203,9 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon:SetSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE)
         icon._spellEntry = spellEntry
         icon._isQUICDMIcon = true
+        icon._lastStart = nil
+        icon._lastDuration = nil
+        icon._isOnGCD = nil
 
         -- Update texture
         local texID
@@ -1210,6 +1261,8 @@ function CDMIcons:ReleaseIcon(icon)
     icon._usabilityTinted = nil
     icon._cdDesaturated = nil
     icon._lastStart = nil
+    icon._lastDuration = nil
+    icon._isOnGCD = nil
     if icon.Icon then
         icon.Icon:SetVertexColor(1, 1, 1, 1)
         icon.Icon:SetDesaturated(false)

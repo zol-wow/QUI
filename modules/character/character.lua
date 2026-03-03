@@ -245,9 +245,9 @@ local function GetEnchantText(unit, slotId)
 
     -- Not all slots can be enchanted - only check enchantable slots
     local enchantableSlots = {
+        [INVSLOT_HEAD] = true,
+        [INVSLOT_SHOULDER] = true,
         [INVSLOT_CHEST] = true,
-        [INVSLOT_BACK] = true,
-        [INVSLOT_WRIST] = true,
         [INVSLOT_LEGS] = true,
         [INVSLOT_FEET] = true,
         [INVSLOT_FINGER1] = true,

@@ -56,6 +56,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.44.3 - 2026-03-03
+
+### Added
+- allow for ESC to close the settings panel
+- added Rotation Assist Icon to Anchoring & Layout (under CDM)
+
+### Fixed
+- fixed GCD swipes/glows for some classes
+- fixed issues with tooltip parent frames
+- fixed skyriding speed math
+- fixed missing enchant texts for character pane
+- fixed LeaveVehicleButton showing when not in a vehicle
 ## v2.44.2 - 2026-03-02
 
 ### Fixed

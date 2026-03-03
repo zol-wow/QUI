@@ -159,6 +159,12 @@ local function ShouldSuppressMouseoverHideForLevel()
 end
 
 local function IsLeaveVehicleButtonVisible()
+    -- Only apply when player is actually in a vehicle; prevents bar1 staying visible
+    -- when keepLeaveVehicleVisible is enabled but player is not in a vehicle
+    if not (UnitInVehicle and UnitInVehicle("player")) then
+        return false
+    end
+
     if CanExitVehicle and CanExitVehicle() then
         return true
     end
@@ -1607,9 +1613,9 @@ end
 
 -- Hook SetVertexColor on each action button icon so that when Blizzard's
 -- update cycle resets the vertex color (e.g. on hover / ActionBarActionEventsFrame),
--- we immediately reapply our range/usability tint in the same frame.
--- hooksecurefunc is taint-safe: it appends after the original without tainting it,
--- and SetVertexColor is not a protected function so no taint propagation can occur.
+-- we defer our range/usability tint reapplication via C_Timer.After(0) so the
+-- callback runs in addon context next frame, not within the secure chain.
+-- This prevents taint propagation from writing back to the icon during combat.
 local function HookButtonIconsForUsability()
     for i = 1, 8 do
         local barKey = "bar" .. i
@@ -1623,12 +1629,18 @@ local function HookButtonIconsForUsability()
                     hooksecurefunc(icon, "SetVertexColor", function()
                         if state.suppressReapply then return end
                         if not state.tinted then return end
-                        state.suppressReapply = true
-                        local gs = GetGlobalSettings()
-                        if gs then
-                            UpdateButtonUsability(button, gs)
-                        end
-                        state.suppressReapply = nil
+                        if state.deferPending then return end
+                        state.deferPending = true
+                        C_Timer.After(0, function()
+                            state.deferPending = nil
+                            if not state.tinted then return end
+                            state.suppressReapply = true
+                            local gs = GetGlobalSettings()
+                            if gs then
+                                UpdateButtonUsability(button, gs)
+                            end
+                            state.suppressReapply = nil
+                        end)
                     end)
                 end
             end

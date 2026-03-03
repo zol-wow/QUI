@@ -3937,6 +3937,11 @@ function GUI:CreateMainFrame()
 
     self.MainFrame = frame
 
+    -- ESC to close the settings panel
+    if not tContains(UISpecialFrames, "QUI_Options") then
+        tinsert(UISpecialFrames, "QUI_Options")
+    end
+
     -- Note: Registry is NOT cleared on show - deduplication keys prevent duplicates
     -- when tabs are re-clicked. Registry persists to allow searching across all visited tabs.
 

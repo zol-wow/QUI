@@ -17,6 +17,7 @@ local VIGOR_SPELL_ID = 372608
 local SECOND_WIND_SPELL_ID = 425782
 local WHIRLING_SURGE_SPELL_ID = 361584
 local THRILL_OF_THE_SKIES_BUFF_ID = 377234
+local BASE_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED
 
 -- Frame references
 local skyridingFrame
@@ -781,7 +782,7 @@ local function UpdateSpeed()
 
     local format = settings.speedFormat or "PERCENT"
     if format == "PERCENT" then
-        speedText:SetText(string.format("%d%%", math.floor(speed * 10)))
+        speedText:SetText(string.format("%d%%", math.floor(speed / BASE_MOVEMENT_SPEED * 100)))
     else
         speedText:SetText(string.format("%.1f", speed))
     end
