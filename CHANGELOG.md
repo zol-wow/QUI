@@ -58,6 +58,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.45.0 - 2026-03-03
+
+### Added
+- added minimap button drawer
+- added actionbar button spacing
+- added equipment slot tracking for custom trackers
+- added option to allow /reload in combat
+- added custom tracker bars to anchoring system
+- added help and documentation pages
 ## v2.44.4 - 2026-03-03
 
 ### Added
