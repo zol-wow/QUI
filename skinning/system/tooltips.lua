@@ -389,6 +389,84 @@ local function ReapplySkin(tooltip)
     end
 end
 
+---------------------------------------------------------------------------
+-- Embedded tooltip border stripping
+-- EmbeddedItemTooltip lives inside GameTooltip for World Quest item rewards.
+-- Blizzard applies GAME_TOOLTIP_BACKDROP_STYLE_EMBEDDED via
+-- SharedTooltip_SetBackdropStyle, creating a visible "box within a box."
+-- We hook that function and hide the NineSlice entirely (alpha 0) so the
+-- embedded tooltip blends seamlessly into the already-skinned parent.
+-- SetAlpha is C-side and taint-safe even during combat.
+---------------------------------------------------------------------------
+
+local function StripEmbeddedBorder(frame)
+    if not frame then return end
+    local nineSlice = frame.NineSlice
+    if nineSlice then
+        pcall(nineSlice.SetAlpha, nineSlice, 0)
+    end
+    -- Also strip ItemTooltip sub-frame border if present
+    if frame.ItemTooltip then
+        local itemNS = frame.ItemTooltip.NineSlice
+        if itemNS then
+            pcall(itemNS.SetAlpha, itemNS, 0)
+        end
+    end
+end
+
+local function RestoreEmbeddedBorder(frame)
+    if not frame then return end
+    local nineSlice = frame.NineSlice
+    if nineSlice then
+        pcall(nineSlice.SetAlpha, nineSlice, 1)
+    end
+    if frame.ItemTooltip then
+        local itemNS = frame.ItemTooltip.NineSlice
+        if itemNS then
+            pcall(itemNS.SetAlpha, itemNS, 1)
+        end
+    end
+end
+
+local function SetupEmbeddedTooltipHooks()
+    -- Hook SharedTooltip_SetBackdropStyle to catch Blizzard re-applying the
+    -- embedded backdrop style. Fires AFTER Blizzard's function, giving us
+    -- the last word on the NineSlice appearance.
+    if SharedTooltip_SetBackdropStyle then
+        hooksecurefunc("SharedTooltip_SetBackdropStyle", function(tooltip, style, isEmbedded)
+            if not IsEnabled() then return end
+            if not tooltip then return end
+            -- Only strip embedded tooltips (EmbeddedItemTooltip has .IsEmbedded = true)
+            if not (isEmbedded or tooltip.IsEmbedded) then return end
+            StripEmbeddedBorder(tooltip)
+        end)
+    end
+
+    -- Direct OnShow hook on EmbeddedItemTooltip as fallback — catches cases
+    -- where OnShow fires without SharedTooltip_SetBackdropStyle being called.
+    if EmbeddedItemTooltip then
+        EmbeddedItemTooltip:HookScript("OnShow", function(self)
+            if not IsEnabled() then return end
+            StripEmbeddedBorder(self)
+        end)
+        -- Initial strip if already visible
+        if IsEnabled() then
+            StripEmbeddedBorder(EmbeddedItemTooltip)
+        end
+    end
+
+    -- Also handle GameTooltip.ItemTooltip sub-frame if present
+    if GameTooltip and GameTooltip.ItemTooltip and GameTooltip.ItemTooltip.NineSlice then
+        GameTooltip.ItemTooltip:HookScript("OnShow", function(self)
+            if not IsEnabled() then return end
+            local nineSlice = self.NineSlice
+            if nineSlice then
+                pcall(nineSlice.SetAlpha, nineSlice, 0)
+            end
+        end)
+    end
+end
+
 -- During combat, avoid mutating tooltip internals directly inside the secure
 -- OnShow/PostCall chain. Defer all skinning until combat ends via PLAYER_REGEN_ENABLED.
 -- C_Timer.After(0) does NOT escape taint propagation — it fires on the same frame.
@@ -476,6 +554,15 @@ local function RefreshAllTooltipColors()
     -- Also refresh dynamically skinned tooltips (via TooltipDataProcessor)
     for tooltip in pairs(skinnedTooltips) do
         ReapplySkin(tooltip)
+    end
+
+    -- Handle embedded tooltip border visibility on settings change
+    if EmbeddedItemTooltip then
+        if IsEnabled() then
+            StripEmbeddedBorder(EmbeddedItemTooltip)
+        else
+            RestoreEmbeddedBorder(EmbeddedItemTooltip)
+        end
     end
 end
 
@@ -630,6 +717,9 @@ eventFrame:SetScript("OnEvent", function(self, event)
             if IsEnabled() then
                 SkinAllTooltips()
             end
+
+            -- Strip embedded item tooltip border (World Quest item rewards)
+            SetupEmbeddedTooltipHooks()
 
             -- Post processor handles both skinning and health bar
             SetupTooltipPostProcessor()
