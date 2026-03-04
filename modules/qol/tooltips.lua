@@ -591,7 +591,7 @@ local function SetupTooltipHook()
         end
     end)
 
-    -- Hook SetItemByID to suppress Custom Tracker item tooltips
+    -- Hook SetItemByID to suppress CDM and Custom Tracker item tooltips
     hooksecurefunc(GameTooltip, "SetItemByID", function(tooltip)
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         local settings = GetSettings()
@@ -607,9 +607,9 @@ local function SetupTooltipHook()
 
         local context = GetTooltipContext(owner)
 
-        -- Apply visibility rules to Custom Trackers context
-        if context == "customTrackers" then
-            if not ShouldShowTooltip("customTrackers") then
+        -- Apply visibility rules to CDM and Custom Trackers contexts
+        if context == "cdm" or context == "customTrackers" then
+            if not ShouldShowTooltip(context) then
                 tooltip:Hide()
             end
         end
