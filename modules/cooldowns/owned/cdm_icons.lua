@@ -144,7 +144,17 @@ local function GetEntryTexture(entry)
         end
         return fallbackTex
     end
-    if entry.type == "item" or entry.type == "trinket" then
+    if entry.type == "trinket" then
+        -- Trinket entries store the equipment slot number (13/14), not the item ID.
+        -- Resolve to the actual equipped item ID before looking up the icon.
+        local itemID = GetInventoryItemID("player", entry.id)
+        if itemID then
+            local _, _, _, _, icon = C_Item.GetItemInfoInstant(itemID)
+            return icon
+        end
+        return nil
+    end
+    if entry.type == "item" then
         local _, _, _, _, icon = C_Item.GetItemInfoInstant(entry.id)
         return icon
     end
@@ -778,7 +788,13 @@ local function CreateIcon(parent, spellEntry)
         end
         local sid = entry.overrideSpellID or entry.spellID or (entry.type and entry.id)
         if sid then
-            if entry.type == "item" or entry.type == "trinket" then
+            if entry.type == "trinket" then
+                -- Trinket entries store slot number; resolve to item ID for tooltip
+                local itemID = GetInventoryItemID("player", sid)
+                if itemID then
+                    pcall(GameTooltip.SetItemByID, GameTooltip, itemID)
+                end
+            elseif entry.type == "item" then
                 pcall(GameTooltip.SetItemByID, GameTooltip, sid)
             else
                 pcall(GameTooltip.SetSpellByID, GameTooltip, sid)
@@ -990,7 +1006,13 @@ local function UpdateIconCooldown(icon)
             if newTex and icon.Icon then
                 icon.Icon:SetTexture(newTex)
             end
-        elseif entry.type == "item" or entry.type == "trinket" then
+        elseif entry.type == "trinket" then
+            -- Trinket entries store equipment slot (13/14), resolve to item ID
+            local itemID = GetInventoryItemID("player", entry.id)
+            if itemID then
+                startTime, duration = GetItemCooldown(itemID)
+            end
+        elseif entry.type == "item" then
             startTime, duration = GetItemCooldown(entry.id)
         else
             startTime, duration = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
@@ -1002,7 +1024,10 @@ local function UpdateIconCooldown(icon)
                 local baseID = entry.spellID or entry.id
                 if baseID then
                     local overrideID = C_Spell.GetOverrideSpell(baseID)
-                    icon.Icon:SetTexture(GetSpellTexture(overrideID or baseID))
+                    local newTex = GetSpellTexture(overrideID or baseID)
+                    if newTex then
+                        icon.Icon:SetTexture(newTex)
+                    end
                 end
             end
         end
@@ -1229,11 +1254,14 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
                 texID = GetSpellTexture(spellEntry.overrideSpellID or spellEntry.spellID)
             end
         end
-        if texID and icon.Icon then
-            icon.Icon:SetTexture(texID)
-        end
-        -- Ensure clean visual state for recycled icon
         if icon.Icon then
+            if texID then
+                icon.Icon:SetTexture(texID)
+            else
+                -- Clear stale texture from previous owner to prevent
+                -- recycled icons showing the wrong spell/item icon.
+                icon.Icon:SetTexture(nil)
+            end
             icon.Icon:SetDesaturated(false)
         end
 
@@ -1347,7 +1375,14 @@ function CDMIcons:BuildIcons(viewerType, container)
                             spellEntry.spellID = resolvedID
                             spellEntry.overrideSpellID = resolvedID
                         end
-                    elseif entry.type == "item" or entry.type == "trinket" then
+                    elseif entry.type == "trinket" then
+                        -- Trinket entries store equipment slot (13/14), resolve to item ID
+                        local itemID = GetInventoryItemID("player", entry.id)
+                        if itemID then
+                            local itemName = C_Item.GetItemNameByID(itemID)
+                            spellEntry.name = itemName or ""
+                        end
+                    elseif entry.type == "item" then
                         local itemName = C_Item.GetItemNameByID(entry.id)
                         spellEntry.name = itemName or ""
                     else
@@ -1515,7 +1550,14 @@ function CustomCDM:GetEntryName(entry)
     if entry.type == "macro" then
         return entry.macroName or "Macro"
     end
-    if entry.type == "item" or entry.type == "trinket" then
+    if entry.type == "trinket" then
+        local itemID = GetInventoryItemID("player", entry.id)
+        if itemID then
+            return C_Item.GetItemNameByID(itemID) or "Trinket (Slot " .. tostring(entry.id) .. ")"
+        end
+        return "Trinket (Slot " .. tostring(entry.id) .. ")"
+    end
+    if entry.type == "item" then
         return C_Item.GetItemNameByID(entry.id) or "Item #" .. tostring(entry.id)
     end
     local info = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(entry.id)
