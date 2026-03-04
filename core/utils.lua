@@ -686,11 +686,37 @@ end
 --- Spell ID for Dracthyr Evoker Soar (racial flight form)
 local SOAR_SPELL_ID = 381322
 
+--- Check if player is a passenger on someone else's mount/vehicle.
+--- Returns false when state cannot be determined to avoid false positives.
+--- @return boolean True when in a passenger seat (not controlling)
+function Helpers.IsPlayerPassenger()
+    if not (UnitInVehicle and UnitInVehicle("player")) then
+        return false
+    end
+
+    if UnitControllingVehicle then
+        local ok, controlling = pcall(UnitControllingVehicle, "player")
+        if ok then
+            return not controlling
+        end
+    end
+
+    if UnitHasVehicleUI then
+        local ok, hasVehicleUI = pcall(UnitHasVehicleUI, "player")
+        if ok then
+            return not hasVehicleUI
+        end
+    end
+
+    return false
+end
+
 --- Check if player is mounted (includes Druid flight form, Dracthyr Soar)
 --- Druid: GetShapeshiftFormID() == 27 (Swift Flight Form)
 --- Evoker: Soar buff (369536) when using racial flight form
 --- @return boolean True if mounted or in Druid/Evoker flight form
 function Helpers.IsPlayerMounted()
+    if Helpers.IsPlayerPassenger() then return false end
     if IsMounted and IsMounted() then return true end
     if GetShapeshiftFormID and GetShapeshiftFormID() == 27 then return true end
     -- Dracthyr Evoker Soar (racial flight form; not detected by IsMounted)
@@ -704,6 +730,7 @@ end
 --- Check if player is flying (airborne)
 --- @return boolean True if flying
 function Helpers.IsPlayerFlying()
+    if Helpers.IsPlayerPassenger() then return false end
     if IsFlying then return IsFlying() end
     return false
 end
@@ -713,6 +740,7 @@ end
 --- grounded detection (PLAYER_IS_GLIDING_CHANGED fires on takeoff/landing).
 --- @return boolean True if flying in a dynamic flight zone
 function Helpers.IsPlayerSkyriding()
+    if Helpers.IsPlayerPassenger() then return false end
     if not (C_PlayerInfo and C_PlayerInfo.GetGlidingInfo) then return false end
     local ok, gliding = pcall(C_PlayerInfo.GetGlidingInfo)
     return ok and gliding
@@ -765,6 +793,7 @@ ns.GetItemQualityColor = Helpers.GetItemQualityColor
 ns.CreateEventFrame = Helpers.CreateEventFrame
 ns.InCombat = Helpers.InCombat
 ns.GetCore = Helpers.GetCore
+ns.IsPlayerPassenger = Helpers.IsPlayerPassenger
 ns.IsPlayerMounted = Helpers.IsPlayerMounted
 ns.IsPlayerFlying = Helpers.IsPlayerFlying
 ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding

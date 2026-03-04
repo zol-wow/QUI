@@ -112,7 +112,22 @@ local function GetSecondWindInfo()
 end
 
 local function GetGlidingInfo()
+    if Helpers.IsPlayerPassenger and Helpers.IsPlayerPassenger() then
+        return false, false, 0
+    end
+
     local gliding, canGlideNow, speed = C_PlayerInfo.GetGlidingInfo()
+
+    -- Extra safety: treat "can glide" as false when Vigor charges are protected.
+    -- This catches passenger/ride-along edge cases where glide state can be true
+    -- but the player cannot actually use skyriding abilities.
+    if canGlideNow and C_Spell and C_Spell.GetSpellCharges then
+        local charges = C_Spell.GetSpellCharges(VIGOR_SPELL_ID)
+        if not charges or IsSecretValue(charges.maxCharges) then
+            return false, false, 0
+        end
+    end
+
     return gliding or false, canGlideNow or false, speed or 0
 end
 
