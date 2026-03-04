@@ -632,10 +632,21 @@ local function BuildMinimapTab(tabContent)
                 anchor = "RIGHT",
                 offsetX = 0,
                 offsetY = 0,
+                toggleOffsetX = 0,
+                toggleOffsetY = 0,
                 autoHideDelay = 1.5,
                 buttonSize = 28,
                 buttonSpacing = 2,
+                padding = 6,
                 columns = 1,
+                growthDirection = "RIGHT",
+                centerGrowth = false,
+                bgColor = {0.03, 0.03, 0.03, 1},
+                bgOpacity = 98,
+                borderSize = 1,
+                borderColor = {0.2, 0.8, 0.6, 1},
+                autoHideToggle = false,
+                hiddenButtons = {},
             }
         end
         if mm.buttonDrawer.offsetX == nil then mm.buttonDrawer.offsetX = 0 end
@@ -644,6 +655,13 @@ local function BuildMinimapTab(tabContent)
         if mm.buttonDrawer.toggleOffsetY == nil then mm.buttonDrawer.toggleOffsetY = 0 end
         if mm.buttonDrawer.autoHideToggle == nil then mm.buttonDrawer.autoHideToggle = false end
         if mm.buttonDrawer.hiddenButtons == nil then mm.buttonDrawer.hiddenButtons = {} end
+        if mm.buttonDrawer.padding == nil then mm.buttonDrawer.padding = 6 end
+        if not mm.buttonDrawer.growthDirection then mm.buttonDrawer.growthDirection = "RIGHT" end
+        if mm.buttonDrawer.centerGrowth == nil then mm.buttonDrawer.centerGrowth = false end
+        if not mm.buttonDrawer.bgColor then mm.buttonDrawer.bgColor = {0.03, 0.03, 0.03, 1} end
+        if mm.buttonDrawer.bgOpacity == nil then mm.buttonDrawer.bgOpacity = 98 end
+        if mm.buttonDrawer.borderSize == nil then mm.buttonDrawer.borderSize = 1 end
+        if not mm.buttonDrawer.borderColor then mm.buttonDrawer.borderColor = {0.2, 0.8, 0.6, 1} end
         local drawer = mm.buttonDrawer
 
         -- Enable toggle
@@ -704,10 +722,55 @@ local function BuildMinimapTab(tabContent)
         drawerSize:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        -- Inner frame padding slider
+        local drawerPadding = GUI:CreateFormSlider(tabContent, "Inner Padding", 0, 20, 1, "padding", drawer, RefreshMinimap)
+        drawerPadding:SetPoint("TOPLEFT", PAD, y)
+        drawerPadding:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         -- Columns slider
         local drawerCols = GUI:CreateFormSlider(tabContent, "Columns", 1, 6, 1, "columns", drawer, RefreshMinimap)
         drawerCols:SetPoint("TOPLEFT", PAD, y)
         drawerCols:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        -- Growth direction dropdown
+        local growthOptions = {
+            {value = "RIGHT", text = "Right"},
+            {value = "LEFT", text = "Left"},
+            {value = "DOWN", text = "Down"},
+            {value = "UP", text = "Up"},
+        }
+        local drawerGrowth = GUI:CreateFormDropdown(tabContent, "Growth Direction", growthOptions, "growthDirection", drawer, RefreshMinimap)
+        drawerGrowth:SetPoint("TOPLEFT", PAD, y)
+        drawerGrowth:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        -- Center growth toggle
+        local centerGrowth = GUI:CreateFormCheckbox(tabContent, "Center Growth (expand both sides)", "centerGrowth", drawer, RefreshMinimap)
+        centerGrowth:SetPoint("TOPLEFT", PAD, y)
+        centerGrowth:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        -- Drawer style controls
+        local drawerBgColor = GUI:CreateFormColorPicker(tabContent, "Drawer Background Color", "bgColor", drawer, RefreshMinimap, { noAlpha = true })
+        drawerBgColor:SetPoint("TOPLEFT", PAD, y)
+        drawerBgColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local drawerBgOpacity = GUI:CreateFormSlider(tabContent, "Drawer Background Opacity", 0, 100, 1, "bgOpacity", drawer, RefreshMinimap)
+        drawerBgOpacity:SetPoint("TOPLEFT", PAD, y)
+        drawerBgOpacity:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local drawerBorderSize = GUI:CreateFormSlider(tabContent, "Drawer Border Size (0=hidden)", 0, 8, 1, "borderSize", drawer, RefreshMinimap)
+        drawerBorderSize:SetPoint("TOPLEFT", PAD, y)
+        drawerBorderSize:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local drawerBorderColor = GUI:CreateFormColorPicker(tabContent, "Drawer Border Color", "borderColor", drawer, RefreshMinimap, { noAlpha = true })
+        drawerBorderColor:SetPoint("TOPLEFT", PAD, y)
+        drawerBorderColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         -- Auto-hide toggle button

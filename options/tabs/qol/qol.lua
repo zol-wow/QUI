@@ -2222,6 +2222,9 @@ local function BuildGeneralTab(tabContent)
                     LibDBIcon:Show("QUI")
                 end
             end
+            if _G.QUI_RefreshMinimapButtonDrawer then
+                _G.QUI_RefreshMinimapButtonDrawer()
+            end
         end)
         showMinimapIconCheck:SetPoint("TOPLEFT", PADDING, y)
         showMinimapIconCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)

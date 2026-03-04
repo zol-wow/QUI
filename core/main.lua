@@ -2971,7 +2971,14 @@ local defaults = {
                 autoHideDelay = 1.5,    -- Seconds after mouse leave before hiding (0 = no auto-hide)
                 buttonSize = 28,        -- Size of collected buttons in pixels
                 buttonSpacing = 2,      -- Gap between buttons in pixels
+                padding = 6,            -- Inner frame padding around the icon grid
                 columns = 1,            -- Number of columns in grid layout (1 = vertical strip)
+                growthDirection = "RIGHT", -- Primary growth direction: RIGHT, LEFT, UP, DOWN
+                centerGrowth = false,      -- Expand around center axis instead of from one edge
+                bgColor = {0.03, 0.03, 0.03, 1}, -- Drawer background color (alpha controlled by bgOpacity)
+                bgOpacity = 98,            -- Drawer background opacity (0-100)
+                borderSize = 1,            -- Drawer border thickness multiplier (0 hides border)
+                borderColor = {0.2, 0.8, 0.6, 1}, -- Drawer border color
             },
             middleClickMenuEnabled = true,  -- Middle click minimap opens quick menu
             hideMicroMenu = false,  -- Hide Blizzard micro menu (Character/Spellbook/etc.)
