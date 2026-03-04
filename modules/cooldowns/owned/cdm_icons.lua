@@ -737,7 +737,7 @@ local function CreateIcon(parent, spellEntry)
         if not entry then return end
         local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
         if tooltipSettings and tooltipSettings.anchorToCursor then
-            local anchorTooltip = _G.QUI_AnchorTooltipToCursor
+            local anchorTooltip = ns.QUI_AnchorTooltipToCursor
             if anchorTooltip then
                 anchorTooltip(GameTooltip, self, tooltipSettings)
             else

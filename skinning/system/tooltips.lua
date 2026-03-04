@@ -297,28 +297,6 @@ local function ApplyNineSliceColors(nineSlice, sr, sg, sb, sa, bgr, bgg, bgb, bg
     end
 end
 
--- Prevent Blizzard from re-applying the default NineSlice layout on Show
--- NOTE: Only call outside combat — tooltip OnShow runs inside a securecall chain
--- and modifying frame properties during combat propagates taint to line FontStrings.
-local function ClearNineSliceLayoutInfo(tooltip)
-    if not tooltip then return end
-    -- TAINT SAFETY: Writing nil to Blizzard frame keys during combat propagates taint.
-    -- After fix #1 this should never be called in combat, but guard as defense-in-depth.
-    if InCombatLockdown() then return end
-
-    -- Clear layout info that Blizzard uses to re-apply defaults
-    local ns = tooltip.NineSlice
-    if ns then
-        ns.layoutType = nil
-        ns.layoutTextureKit = nil
-        ns.backdropInfo = nil
-    end
-
-    tooltip.layoutType = nil
-    tooltip.layoutTextureKit = nil
-    tooltip.backdropInfo = nil
-end
-
 -- Full skin application for a tooltip
 local function SkinTooltip(tooltip)
     if not tooltip then return end
@@ -331,7 +309,6 @@ local function SkinTooltip(tooltip)
     local ns = tooltip.NineSlice
     if ns then
         -- NineSlice path (modern WoW 9.1.5+)
-        ClearNineSliceLayoutInfo(tooltip)
         ApplyFlatNineSlice(ns, thickness)
         ApplyNineSliceColors(ns, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         pcall(ns.Show, ns)
@@ -366,7 +343,6 @@ local function ReapplySkin(tooltip)
 
     local ns = tooltip.NineSlice
     if ns then
-        ClearNineSliceLayoutInfo(tooltip)
         -- Re-apply flat textures/geometry every show because Blizzard can restore
         -- default rounded NineSlice piece settings between tooltip displays.
         ApplyFlatNineSlice(ns, thickness)
@@ -426,45 +402,6 @@ local function RestoreEmbeddedBorder(frame)
     end
 end
 
-local function SetupEmbeddedTooltipHooks()
-    -- Hook SharedTooltip_SetBackdropStyle to catch Blizzard re-applying the
-    -- embedded backdrop style. Fires AFTER Blizzard's function, giving us
-    -- the last word on the NineSlice appearance.
-    if SharedTooltip_SetBackdropStyle then
-        hooksecurefunc("SharedTooltip_SetBackdropStyle", function(tooltip, style, isEmbedded)
-            if not IsEnabled() then return end
-            if not tooltip then return end
-            -- Only strip embedded tooltips (EmbeddedItemTooltip has .IsEmbedded = true)
-            if not (isEmbedded or tooltip.IsEmbedded) then return end
-            StripEmbeddedBorder(tooltip)
-        end)
-    end
-
-    -- Direct OnShow hook on EmbeddedItemTooltip as fallback — catches cases
-    -- where OnShow fires without SharedTooltip_SetBackdropStyle being called.
-    if EmbeddedItemTooltip then
-        EmbeddedItemTooltip:HookScript("OnShow", function(self)
-            if not IsEnabled() then return end
-            StripEmbeddedBorder(self)
-        end)
-        -- Initial strip if already visible
-        if IsEnabled() then
-            StripEmbeddedBorder(EmbeddedItemTooltip)
-        end
-    end
-
-    -- Also handle GameTooltip.ItemTooltip sub-frame if present
-    if GameTooltip and GameTooltip.ItemTooltip and GameTooltip.ItemTooltip.NineSlice then
-        GameTooltip.ItemTooltip:HookScript("OnShow", function(self)
-            if not IsEnabled() then return end
-            local nineSlice = self.NineSlice
-            if nineSlice then
-                pcall(nineSlice.SetAlpha, nineSlice, 0)
-            end
-        end)
-    end
-end
-
 -- During combat, avoid mutating tooltip internals directly inside the secure
 -- OnShow/PostCall chain. Defer all skinning until combat ends via PLAYER_REGEN_ENABLED.
 -- C_Timer.After(0) does NOT escape taint propagation — it fires on the same frame.
@@ -495,6 +432,53 @@ local function QueueCombatTooltipSkin(tooltip)
         combatSkinEventFrame:SetScript("OnEvent", FlushCombatSkinQueue)
     end
     combatSkinEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
+local function SetupEmbeddedTooltipHooks()
+    -- Hook SharedTooltip_SetBackdropStyle to catch Blizzard re-applying the
+    -- embedded backdrop style. Fires AFTER Blizzard's function, giving us
+    -- the last word on the NineSlice appearance.
+    if SharedTooltip_SetBackdropStyle then
+        hooksecurefunc("SharedTooltip_SetBackdropStyle", function(tooltip, style, isEmbedded)
+            if not IsEnabled() then return end
+            if not tooltip then return end
+            if isEmbedded or tooltip.IsEmbedded then
+                -- Embedded tooltip (e.g. EmbeddedItemTooltip): hide its NineSlice
+                StripEmbeddedBorder(tooltip)
+            elseif skinnedTooltips[tooltip] then
+                -- Blizzard just re-applied a backdrop style to a skinned tooltip.
+                -- Re-apply QUI skin so our flat look wins without needing to nil
+                -- out layoutType/backdropInfo (which taints the frame).
+                -- ReapplySkin only touches NineSlice textures/colors (C-side ops),
+                -- so it's safe to call even in combat — no taint propagation.
+                pcall(ReapplySkin, tooltip)
+            end
+        end)
+    end
+
+    -- Direct OnShow hook on EmbeddedItemTooltip as fallback — catches cases
+    -- where OnShow fires without SharedTooltip_SetBackdropStyle being called.
+    if EmbeddedItemTooltip then
+        EmbeddedItemTooltip:HookScript("OnShow", function(self)
+            if not IsEnabled() then return end
+            StripEmbeddedBorder(self)
+        end)
+        -- Initial strip if already visible
+        if IsEnabled() then
+            StripEmbeddedBorder(EmbeddedItemTooltip)
+        end
+    end
+
+    -- Also handle GameTooltip.ItemTooltip sub-frame if present
+    if GameTooltip and GameTooltip.ItemTooltip and GameTooltip.ItemTooltip.NineSlice then
+        GameTooltip.ItemTooltip:HookScript("OnShow", function(self)
+            if not IsEnabled() then return end
+            local nineSlice = self.NineSlice
+            if nineSlice then
+                pcall(nineSlice.SetAlpha, nineSlice, 0)
+            end
+        end)
+    end
 end
 
 -- List of tooltips to skin
@@ -585,24 +569,25 @@ local function HookTooltipOnShow(tooltip)
     -- NOTE: Tooltip OnShow runs synchronously — deferring causes unskinned tooltip flash.
     -- Tooltip skinning is NOT in the Edit Mode taint chain.
     tooltip:HookScript("OnShow", function(self)
-        -- In combat, queue skinning out of the secure OnShow chain to avoid
-        -- taint propagation to tooltip line FontStrings.
         if InCombatLockdown() then
+            -- NineSlice skin (textures, colors, sizes) uses C-side ops only —
+            -- safe to apply immediately in combat without taint propagation.
             if IsEnabled() then
-                QueueCombatTooltipSkin(self)
+                if skinnedTooltips[self] then
+                    pcall(ReapplySkin, self)
+                end
             end
+            -- Font sizing mutates FontString objects and propagates taint through
+            -- the securecall chain to other addons' tooltip hooks. Defer to combat end.
+            QueueCombatTooltipSkin(self)
             return
         end
 
-        -- TAINT SAFETY: Wrap mutations in pcall — if combat starts mid-execution
-        -- and a frame mutation fails, it fails silently. The tooltip will be
-        -- reskinned on next show or on combat end via the queue.
         pcall(ApplyTooltipFontSizeToFrame, self)
         if not IsEnabled() then return end
         if not skinnedTooltips[self] then
             pcall(SkinTooltip, self)
         else
-            -- Re-apply full skin — Blizzard resets NineSlice layout on every Show
             pcall(ReapplySkin, self)
         end
     end)

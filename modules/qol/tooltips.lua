@@ -185,6 +185,7 @@ end
 ---------------------------------------------------------------------------
 local function GetTooltipContext(owner)
     if not owner then return "npcs" end
+    if owner.IsForbidden and owner:IsForbidden() then return "npcs" end
 
     -- CDM: Check for skinned CDM icons (Essential, Utility, Buff views)
     -- TAINT SAFETY: Use global accessor to check icon state from weak-keyed table
@@ -336,12 +337,13 @@ end
 -- Intercepts GameTooltip_SetDefaultAnchor to apply cursor anchoring
 ---------------------------------------------------------------------------
 local function SetupTooltipHook()
-    _G.QUI_AnchorTooltipToCursor = AnchorTooltipToCursor
+    ns.QUI_AnchorTooltipToCursor = AnchorTooltipToCursor
 
     -- NOTE: Tooltip hooks run synchronously — deferring causes visible flashing/repositioning.
     -- These are NOT a taint source for Edit Mode (tooltips are not in the Edit Mode chain).
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+        if parent and parent.IsForbidden and parent:IsForbidden() then return end
 
         local settings = GetSettings()
         if not settings or not settings.enabled then
@@ -390,31 +392,44 @@ local function SetupTooltipHook()
     -- Apply class color to player names in tooltips (WoW 10.0+)
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
         if tooltip ~= GameTooltip then return end
-        -- Skip during combat — SetTextColor inside the TooltipDataProcessor
-        -- securecall chain taints the line object, breaking other addons
-        if InCombatLockdown() then return end
 
         local settings = GetSettings()
         if not settings or not settings.enabled or not settings.classColorName then return end
 
-        local _, unit = tooltip:GetUnit()
+        local ok, _, unit = pcall(tooltip.GetUnit, tooltip)
+        if not ok then return end
         if not unit then return end
 
-        -- Wrap UnitIsPlayer in pcall to handle protected "secret" unit values
-        -- During instanced combat, unit can be a protected value that causes taint errors
+        -- Secret value fallback: tooltip:GetUnit() can return a secret token in 12.0.
+        -- Fall back to "mouseover" which is always a valid non-secret unit token.
+        if Helpers.IsSecretValue(unit) then
+            unit = UnitExists("mouseover") and "mouseover" or nil
+            if not unit then return end
+        end
+
         local okPlayer, isPlayer = pcall(UnitIsPlayer, unit)
         if not okPlayer or not isPlayer then return end
 
         local okClass, _, class = pcall(UnitClass, unit)
         if not okClass or not class then return end
 
-        local classColor = class and RAID_CLASS_COLORS[class]
+        -- In combat, use C_ClassColor API which handles secret values safely.
+        -- Out of combat, use RAID_CLASS_COLORS for consistency.
+        local classColor
+        if InCombatLockdown() then
+            if C_ClassColor and C_ClassColor.GetClassColor then
+                local okColor, color = pcall(C_ClassColor.GetClassColor, class)
+                if okColor and color then
+                    classColor = color
+                end
+            end
+        else
+            classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+        end
+
         if classColor then
             local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
             if nameLine then
-                -- pcall guards against TOCTOU race: combat can start between
-                -- InCombatLockdown() check and here, making GetText() return
-                -- a secret value and tainting the fontstring for other addons.
                 local okText, text = pcall(nameLine.GetText, nameLine)
                 if okText and text and not Helpers.IsSecretValue(text) then
                     pcall(nameLine.SetTextColor, nameLine, classColor.r, classColor.g, classColor.b)
@@ -440,7 +455,7 @@ local function SetupTooltipHook()
     end)
 
     -- Track which tooltip has already had IDs added (to prevent duplicates)
-    local tooltipSpellIDAdded = {}
+    local tooltipSpellIDAdded = setmetatable({}, {__mode = "k"})
 
     -- Clear tracking when tooltip hides or is cleared (synchronous — lightweight table nil)
     GameTooltip:HookScript("OnHide", function(tooltip)
@@ -777,7 +792,7 @@ end)
 ---------------------------------------------------------------------------
 -- Global Refresh Function (called from options panel)
 ---------------------------------------------------------------------------
-_G.QUI_RefreshTooltips = function()
+ns.QUI_RefreshTooltips = function()
     InvalidateCache()
     -- Settings will apply on next tooltip show
 end

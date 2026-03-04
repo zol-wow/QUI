@@ -908,7 +908,7 @@ local function CreateTrackerIcon(parent, clickable)
             local core = GetCore()
             local tooltipSettings = core and core.db and core.db.profile and core.db.profile.tooltip
             if tooltipSettings and tooltipSettings.anchorToCursor then
-                local anchorTooltip = _G.QUI_AnchorTooltipToCursor
+                local anchorTooltip = ns.QUI_AnchorTooltipToCursor
                 if anchorTooltip then
                     anchorTooltip(GameTooltip, iconFrame, tooltipSettings)
                 else
