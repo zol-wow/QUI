@@ -569,21 +569,34 @@ local function HookTooltipOnShow(tooltip)
     -- NOTE: Tooltip OnShow runs synchronously — deferring causes unskinned tooltip flash.
     -- Tooltip skinning is NOT in the Edit Mode taint chain.
     tooltip:HookScript("OnShow", function(self)
+        -- TAINT SAFETY: Font sizing (SetFont) changes FontString intrinsic metrics,
+        -- tainting the tooltip's auto-sized width. Blizzard's GameTooltip_InsertFrame
+        -- then fails comparing the tainted frameWidth. Defer font sizing to after the
+        -- show chain completes — the 1-frame delay is imperceptible since the previous
+        -- font size is usually already correct.
+        C_Timer.After(0, function()
+            if self:IsShown() then
+                pcall(ApplyTooltipFontSizeToFrame, self)
+            end
+        end)
+
         if InCombatLockdown() then
-            -- NineSlice skin (textures, colors, sizes) uses C-side ops only —
-            -- safe to apply immediately in combat without taint propagation.
-            if IsEnabled() then
+            -- NineSlice skin (textures, colors, sizes) uses C-side ops only and
+            -- doesn't affect tooltip width calculations — safe in combat.
+            -- EXCEPTION: Skip embedded tooltips (e.g. EmbeddedItemTooltip) — their
+            -- OnShow fires inside a securecallfunction chain (TooltipDataHandler →
+            -- SetSpellByID). Any addon frame mutations inside that chain taint the
+            -- execution path, causing subsequent SetAttribute calls to fail with
+            -- "Attempt to access forbidden object." Their NineSlice is already hidden
+            -- (alpha 0) via StripEmbeddedBorder, so skinning is unnecessary.
+            if IsEnabled() and not self.IsEmbedded then
                 if skinnedTooltips[self] then
                     pcall(ReapplySkin, self)
                 end
             end
-            -- Font sizing mutates FontString objects and propagates taint through
-            -- the securecall chain to other addons' tooltip hooks. Defer to combat end.
-            QueueCombatTooltipSkin(self)
             return
         end
 
-        pcall(ApplyTooltipFontSizeToFrame, self)
         if not IsEnabled() then return end
         if not skinnedTooltips[self] then
             pcall(SkinTooltip, self)
@@ -627,11 +640,21 @@ local function SetupTooltipPostProcessor()
     -- NOTE: These callbacks run inside Blizzard's securecallfunction chain.
     -- Modifying tooltip line properties (SetFont, SetTextColor, etc.) during combat
     -- taints the line objects and breaks other addons (e.g. Altoholic).
+    -- Helper: defer font sizing out of the securecall chain to avoid tainting
+    -- tooltip width calculations (see OnShow hook comment for details).
+    local function DeferFontSizing(tooltip)
+        C_Timer.After(0, function()
+            if tooltip and tooltip.IsShown and tooltip:IsShown() then
+                pcall(ApplyTooltipFontSizeToFrame, tooltip)
+            end
+        end)
+    end
+
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
         if not tooltip or tooltip == EmbeddedItemTooltip then return end
         HookTooltipOnShow(tooltip)
         if not InCombatLockdown() then
-            ApplyTooltipFontSizeToFrame(tooltip)
+            DeferFontSizing(tooltip)
             if IsEnabled() and not skinnedTooltips[tooltip] then
                 SkinTooltip(tooltip)
             end
@@ -644,7 +667,7 @@ local function SetupTooltipPostProcessor()
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
         if not InCombatLockdown() then
-            ApplyTooltipFontSizeToFrame(tooltip)
+            DeferFontSizing(tooltip)
             if IsEnabled() and not skinnedTooltips[tooltip] then
                 SkinTooltip(tooltip)
             end
@@ -657,7 +680,7 @@ local function SetupTooltipPostProcessor()
         if not tooltip then return end
         HookTooltipOnShow(tooltip)
         if not InCombatLockdown() then
-            ApplyTooltipFontSizeToFrame(tooltip)
+            DeferFontSizing(tooltip)
             if IsEnabled() and not skinnedTooltips[tooltip] then
                 SkinTooltip(tooltip)
             end
