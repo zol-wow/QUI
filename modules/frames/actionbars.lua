@@ -581,7 +581,7 @@ local function GetEffectiveSettings(barKey)
 
     -- Override with bar-specific values (only if not nil)
     local overrideKeys = {
-        "iconZoom", "showBackdrop", "backdropAlpha", "showGloss", "glossAlpha",
+        "iconZoom", "showBackdrop", "backdropAlpha", "showGloss", "glossAlpha", "showBorders",
         "showKeybinds", "hideEmptyKeybinds", "keybindFontSize", "keybindColor",
         "keybindAnchor", "keybindOffsetX", "keybindOffsetY",
         "showMacroNames", "macroNameFontSize", "macroNameColor",
@@ -1070,10 +1070,9 @@ end
 -- Remove Blizzard's default textures and masks
 local function StripBlizzardArtwork(button)
     local state = GetFrameState(button)
-    if state.stripped then return end
-    state.stripped = true
 
-    -- Hide NormalTexture (Blizzard's border)
+    -- Always re-hide NormalTexture — Blizzard may reset it after our init
+    -- (e.g. action bar updates that call SetNormalTexture post-PLAYER_LOGIN).
     local normalTex = button:GetNormalTexture()
     if normalTex then
         normalTex:SetAlpha(0)
@@ -1081,6 +1080,10 @@ local function StripBlizzardArtwork(button)
     if button.NormalTexture then
         button.NormalTexture:SetAlpha(0)
     end
+
+    -- One-time operations (mask removal, background hiding)
+    if state.stripped then return end
+    state.stripped = true
 
     -- Remove mask textures from icon
     local icon = button.icon or button.Icon
@@ -1119,13 +1122,14 @@ local function SkinButton(button, settings)
     local state = GetFrameState(button)
 
     -- Skip if already skinned with same settings
-    local settingsKey = string.format("%d_%.2f_%s_%.2f_%s_%.2f",
+    local settingsKey = string.format("%d_%.2f_%s_%.2f_%s_%.2f_%s",
         settings.iconSize or 36,
         settings.iconZoom or 0.07,
         tostring(settings.showBackdrop),
         settings.backdropAlpha or 0.8,
         tostring(settings.showGloss),
-        settings.glossAlpha or 0.6
+        settings.glossAlpha or 0.6,
+        tostring(settings.showBorders)
     )
     if state.skinKey == settingsKey then return end
     state.skinKey = settingsKey
@@ -1196,10 +1200,11 @@ local function SkinButton(button, settings)
 
     -- If the button is currently hidden (bar faded out or empty slot),
     -- keep newly-created textures hidden to match the fade state.
+    -- Record _fh* flags so FadeShowTextures knows to restore them on hover.
     if state.fadeHidden then
-        if state.backdrop then state.backdrop:Hide() end
-        if state.normal then state.normal:Hide() end
-        if state.gloss then state.gloss:Hide() end
+        if state.backdrop and state.backdrop:IsShown() then state.backdrop:Hide(); state._fhBg = true end
+        if state.normal and state.normal:IsShown() then state.normal:Hide(); state._fhNorm = true end
+        if state.gloss and state.gloss:IsShown() then state.gloss:Hide(); state._fhGloss = true end
     end
 
     ActionBars.skinnedButtons[button] = true
