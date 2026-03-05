@@ -64,6 +64,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.46.3 - 2026-03-05
+
+### Fixed
+- fix: tooltip taint hardening and anchoring debug silencing
+- fix: layoutIndex sorting, loot tooltip guard, respect layout direction flags, sort before subset
+- fix: invalidate options panel on profile change
 ## v2.46.2 - 2026-03-05
 
 ### Added
