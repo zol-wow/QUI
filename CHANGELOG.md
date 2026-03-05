@@ -65,6 +65,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.46.4 - 2026-03-05
+
+### Fixed
+- fix(custom-trackers): restore clickable tracker actions after info/usability updates
+- fix: remove border debug logging, fix fade-hide flag tracking
+- fix: action bar border toggle and NormalTexture re-hide on updates
 ## v2.46.3 - 2026-03-05
 
 ### Fixed
