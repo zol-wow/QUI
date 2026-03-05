@@ -152,9 +152,10 @@ end
 
 -- Tracker key → frameAnchoring key mapping
 local ANCHOR_KEY_MAP = {
-    essential = "cdmEssential",
-    utility   = "cdmUtility",
-    buff      = "buffIcon",
+    essential  = "cdmEssential",
+    utility    = "cdmUtility",
+    buff       = "buffIcon",
+    trackedBar = "buffBar",
 }
 
 -- Save a QUI container's current position to the DB.
@@ -265,17 +266,19 @@ end
 
 -- Blizzard viewer name lookup (used by Edit Mode and position save)
 local VIEWER_NAMES_MAP = {
-    essential = "EssentialCooldownViewer",
-    utility   = "UtilityCooldownViewer",
-    buff      = "BuffIconCooldownViewer",
+    essential  = "EssentialCooldownViewer",
+    utility    = "UtilityCooldownViewer",
+    buff       = "BuffIconCooldownViewer",
+    trackedBar = "BuffBarCooldownViewer",
 }
 
 local function InitContainers()
     if containers.essential then return end -- already created
 
-    containers.essential = CreateContainer("QUI_EssentialContainer")
-    containers.utility   = CreateContainer("QUI_UtilityContainer")
-    containers.buff      = CreateContainer("QUI_BuffContainer")
+    containers.essential  = CreateContainer("QUI_EssentialContainer")
+    containers.utility    = CreateContainer("QUI_UtilityContainer")
+    containers.buff       = CreateContainer("QUI_BuffContainer")
+    containers.trackedBar = CreateContainer("QUI_BuffBarContainer")
     _G["QUI_BuffIconContainer"] = containers.buff
 
     InitContainerPosition(containers.essential, "essential", "EssentialCooldownViewer")
@@ -285,6 +288,11 @@ local function InitContainers()
     local anchorTo = db and db.buff and db.buff.anchorTo or "disabled"
     if anchorTo == "disabled" then
         InitContainerPosition(containers.buff, "buff", "BuffIconCooldownViewer")
+    end
+    -- TrackedBar: skip position init when anchored — ApplyTrackedBarAnchor manages position.
+    local barAnchorTo = db and db.trackedBar and db.trackedBar.anchorTo or "disabled"
+    if barAnchorTo == "disabled" then
+        InitContainerPosition(containers.trackedBar, "trackedBar", "BuffBarCooldownViewer")
     end
 end
 
@@ -991,9 +999,18 @@ local function HideBlizzardSelections()
         local viewer = _G[blizzName]
         if viewer and viewer.Selection then
             viewer.Selection:SetAlpha(0)
-            -- Hook SetAlpha so Blizzard's Edit Mode can't restore it
+            -- Hook SetAlpha and Show so Blizzard's Edit Mode can't restore it
             if not _selectionAlphaHooked[blizzName] then
                 _selectionAlphaHooked[blizzName] = true
+                hooksecurefunc(viewer.Selection, "Show", function(self)
+                    if _editModeActive then
+                        C_Timer.After(0, function()
+                            if _editModeActive then
+                                self:SetAlpha(0)
+                            end
+                        end)
+                    end
+                end)
                 hooksecurefunc(viewer.Selection, "SetAlpha", function(self, alpha)
                     if _editModeActive and alpha > 0 then
                         C_Timer.After(0, function()
@@ -1019,7 +1036,7 @@ local function DisableMouseForEditMode(viewerType)
     container:EnableMouse(false)
     _disabledMouseFrames[container] = true
 
-    -- Disable mouse on all icons in this pool
+    -- Disable mouse on all icons/bars in this pool
     local pool = ns.CDMIcons and ns.CDMIcons:GetIconPool(viewerType) or {}
     for _, icon in ipairs(pool) do
         icon:EnableMouse(false)
@@ -1028,6 +1045,14 @@ local function DisableMouseForEditMode(viewerType)
         if icon.clickButton and not InCombatLockdown() then
             icon.clickButton:EnableMouse(false)
             icon.clickButton:Hide()
+        end
+    end
+    -- Also disable mouse on owned bar frames (trackedBar)
+    if viewerType == "trackedBar" and ns.CDMBars then
+        local bars = ns.CDMBars:GetActiveBars()
+        for _, bar in ipairs(bars) do
+            bar:EnableMouse(false)
+            _disabledMouseFrames[bar] = true
         end
     end
 end
@@ -1074,6 +1099,39 @@ _G.QUI_OnEditModeEnterCDM = function()
     end
     LayoutContainer("buff")
 
+    -- Force trackedBar container to have a reasonable size before Edit Mode
+    -- so the overlay/mover is visible and draggable (not 1x1).
+    -- CDMBars:Refresh() is called directly because LayoutBuffBars() bails
+    -- when Blizzard's Edit Mode is active (IsEditModeActive() is already true
+    -- at this point — Blizzard fires the callback before we get here).
+    if containers.trackedBar then
+        containers.trackedBar:Show()
+        containers.trackedBar:SetAlpha(1)
+
+        if ns.CDMBars then
+            local db = GetDB()
+            local tbSettings = db and db.trackedBar
+            if tbSettings then
+                ns.CDMBars:Refresh(containers.trackedBar, tbSettings, tbSettings.barWidth)
+                -- Force all tracked bars visible for Edit Mode so the mover
+                -- shows the full expected area (not just active buffs).
+                ns.CDMBars:ForceAllActive()
+                ns.CDMBars:LayoutBars(containers.trackedBar, tbSettings)
+            end
+        end
+
+        -- Final fallback: if Refresh didn't size it (no CDMBars or no settings)
+        local cw = Helpers.SafeValue(containers.trackedBar:GetWidth(), 0)
+        local ch = Helpers.SafeValue(containers.trackedBar:GetHeight(), 0)
+        if cw <= 1 or ch <= 1 then
+            local db2 = GetDB()
+            local tbs2 = db2 and db2.trackedBar
+            local barWidth = (tbs2 and tbs2.barWidth) or 215
+            local barHeight = (tbs2 and tbs2.barHeight) or 25
+            containers.trackedBar:SetSize(barWidth, barHeight)
+        end
+    end
+
     _editModeActive = true
 
     -- Hide Blizzard .Selection frames so only QUI overlays show.
@@ -1087,6 +1145,7 @@ _G.QUI_OnEditModeEnterCDM = function()
     DisableMouseForEditMode("essential")
     DisableMouseForEditMode("utility")
     DisableMouseForEditMode("buff")
+    DisableMouseForEditMode("trackedBar")
 
     -- Show overlays on QUI containers (containers stay visible).
     local QUICore = ns.Addon
@@ -1104,6 +1163,7 @@ _G.QUI_OnEditModeExitCDM = function()
     SaveContainerPosition("essential")
     SaveContainerPosition("utility")
     SaveContainerPosition("buff")
+    SaveContainerPosition("trackedBar")
 
     -- Restore mouse on icon frames.
     RestoreMouseAfterEditMode()
@@ -1153,7 +1213,7 @@ local VIEWER_KEY_MAP = {
     essential = "essential",
     utility   = "utility",
     buffIcon  = "buff",
-    buffBar   = nil,  -- owned engine doesn't manage BuffBar
+    buffBar   = "trackedBar",
 }
 
 -- Blizzard frame fallback for pre-container resolution and unmanaged viewers
@@ -1222,9 +1282,7 @@ function ownedEngine:Initialize()
         if containers.essential then containers.essential:SetAlpha(targetAlpha) end
         if containers.utility then containers.utility:SetAlpha(targetAlpha) end
         if containers.buff then containers.buff:SetAlpha(targetAlpha) end
-        if not shouldShow then
-            if _G.BuffBarCooldownViewer then _G.BuffBarCooldownViewer:SetAlpha(targetAlpha) end
-        end
+        if containers.trackedBar then containers.trackedBar:SetAlpha(targetAlpha) end
         if _G.QUI_RefreshCDMVisibility then
             _G.QUI_RefreshCDMVisibility()
         end
@@ -1313,10 +1371,7 @@ function ownedEngine:GetViewerFrames()
     if containers.essential then frames[#frames + 1] = containers.essential end
     if containers.utility then frames[#frames + 1] = containers.utility end
     if containers.buff then frames[#frames + 1] = containers.buff end
-    -- BuffBar remains Blizzard-managed; include it if it exists
-    if _G.BuffBarCooldownViewer then
-        frames[#frames + 1] = _G.BuffBarCooldownViewer
-    end
+    if containers.trackedBar then frames[#frames + 1] = containers.trackedBar end
     return frames
 end
 
@@ -1391,5 +1446,6 @@ ns.CDMContainers = {
     GetContainer = function(viewerType) return containers[viewerType] end,
     LayoutContainer = LayoutContainer,
     RefreshAll = RefreshAll,
+    GetTrackedBarContainer = function() return containers.trackedBar end,
 }
 

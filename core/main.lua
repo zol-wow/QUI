@@ -836,6 +836,7 @@ local defaults = {
                 fillDirection = "up",
                 iconPosition = "top",
                 showTextOnVertical = false,
+                pos = nil,  -- owned container position (seeded from Blizzard viewer on first init)
             },
             customBuffs = {
                 enabled = true,

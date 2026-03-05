@@ -28,9 +28,10 @@ local CDMSpellData = {}
 -- CONSTANTS
 ---------------------------------------------------------------------------
 local VIEWER_NAMES = {
-    essential = "EssentialCooldownViewer",
-    utility   = "UtilityCooldownViewer",
-    buff      = "BuffIconCooldownViewer",
+    essential   = "EssentialCooldownViewer",
+    utility     = "UtilityCooldownViewer",
+    buff        = "BuffIconCooldownViewer",
+    trackedBar  = "BuffBarCooldownViewer",
 }
 
 ---------------------------------------------------------------------------

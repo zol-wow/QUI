@@ -587,6 +587,16 @@ end
 ---------------------------------------------------------------------------
 
 local function GetBuffBarFrames()
+    -- Owned engine: return addon-owned bars from CDMBars pool
+    if IsOwnedEngine() then
+        local CDMBars = ns.CDMBars
+        if CDMBars then
+            return CDMBars:GetActiveBars()
+        end
+        return {}
+    end
+
+    -- Classic engine: iterate Blizzard viewer children
     local viewer = GetBuffBarViewer()
     if not viewer then
         return {}
@@ -1797,6 +1807,60 @@ local barState = {
 }
 
 LayoutBuffBars = function()
+    -- Owned engine: delegate to CDMBars layout engine
+    if IsOwnedEngine() then
+        local viewer = GetBuffBarViewer()
+        if not viewer then return end
+        if isBarLayoutRunning then return end
+        if Helpers.IsEditModeActive() then return end
+
+        isBarLayoutRunning = true
+
+        local settings = GetTrackedBarSettings()
+        if not settings.enabled then
+            isBarLayoutRunning = false
+            return
+        end
+
+        -- Apply anchoring to the owned container
+        ApplyTrackedBarAnchor(settings)
+
+        -- Resolve autoWidth
+        local resolvedBarWidth = settings.barWidth or 215
+        local anchorTo = settings.anchorTo or "disabled"
+        local placement = settings.anchorPlacement or "center"
+        local canAutoWidth = settings.autoWidth and (anchorTo ~= "screen")
+        if canAutoWidth then
+            local anchorFrame
+            local widthAnchorType = anchorTo
+            if placement == "onTopResourceBars" then
+                anchorFrame = GetTopVisibleResourceBarFrame()
+                widthAnchorType = nil
+            else
+                anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+            end
+            if not anchorFrame and placement == "onTopResourceBars" then
+                anchorFrame = ResolveTrackedBarAnchorFrame(anchorTo)
+                widthAnchorType = anchorTo
+            end
+            if anchorFrame and anchorFrame:IsShown() then
+                local anchorWidth = GetTrackedBarAnchorWidth(widthAnchorType, anchorFrame)
+                if anchorWidth then
+                    local adjust = settings.autoWidthOffset or 0
+                    resolvedBarWidth = math.max(20, QUICore:PixelRound(anchorWidth + adjust, viewer))
+                end
+            end
+        end
+
+        local CDMBars = ns.CDMBars
+        if CDMBars then
+            CDMBars:Refresh(viewer, settings, resolvedBarWidth)
+        end
+
+        isBarLayoutRunning = false
+        return
+    end
+
     local viewer = GetBuffBarViewer()
     if not viewer then return end
     if isBarLayoutRunning then return end  -- Re-entry guard
@@ -2458,12 +2522,16 @@ local function Initialize()
         iconViewer:HookScript("OnUpdate", BuffIconViewer_OnUpdate)
     end
 
-    barViewer = GetBuffBarViewer()
-    local barVbs = barViewer and (viewerBuffState[barViewer] or {})
-    if barViewer then viewerBuffState[barViewer] = barVbs end
-    if barViewer and not barVbs.onUpdateHooked then
-        barVbs.onUpdateHooked = true
-        barViewer:HookScript("OnUpdate", BuffBarViewer_OnUpdate)
+    -- Owned engine: no OnUpdate polling needed for bars — hooks handle data.
+    -- Classic engine: poll at 20 FPS for bar position correction.
+    if not IsOwnedEngine() then
+        barViewer = GetBuffBarViewer()
+        local barVbs = barViewer and (viewerBuffState[barViewer] or {})
+        if barViewer then viewerBuffState[barViewer] = barVbs end
+        if barViewer and not barVbs.onUpdateHooked then
+            barVbs.onUpdateHooked = true
+            barViewer:HookScript("OnUpdate", BuffBarViewer_OnUpdate)
+        end
     end
 
     -- TAINT SAFETY: ALL hooks on Blizzard CDM viewer frames must defer via C_Timer.After(0)
@@ -2562,6 +2630,36 @@ local function Initialize()
                             lastIconHash = ""
                             CheckIconChanges()
                         end
+                    end)
+                end
+            end
+        end)
+    end
+
+    -- Owned engine: hook Blizzard's BuffBarCooldownViewer Layout to detect
+    -- bar child additions/removals and rebuild owned bars accordingly.
+    if IsOwnedEngine() then
+        local blizzBarViewer = _G["BuffBarCooldownViewer"]
+        if blizzBarViewer and blizzBarViewer.Layout then
+            hooksecurefunc(blizzBarViewer, "Layout", function()
+                C_Timer.After(0.1, function()
+                    if isBarLayoutRunning then return end
+                    LayoutBuffBars()
+                end)
+            end)
+        end
+        -- Also rebuild bars on UNIT_AURA (tracked buffs can appear/disappear)
+        local barAuraFrame = CreateFrame("Frame")
+        barAuraFrame:RegisterEvent("UNIT_AURA")
+        local barRescanPending = false
+        barAuraFrame:SetScript("OnEvent", function(_, event, unit)
+            if unit == "player" then
+                if not barRescanPending then
+                    barRescanPending = true
+                    C_Timer.After(0.15, function()
+                        barRescanPending = false
+                        if isBarLayoutRunning then return end
+                        LayoutBuffBars()
                     end)
                 end
             end
