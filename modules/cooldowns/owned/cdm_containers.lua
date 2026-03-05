@@ -186,8 +186,6 @@ local function SaveContainerPosition(trackerKey)
                 if parent == "screen" or parent == "disabled" then
                     settings.offsetX = ox
                     settings.offsetY = oy
-                    settings.point = "CENTER"
-                    settings.relative = "CENTER"
                 end
             end
         end
