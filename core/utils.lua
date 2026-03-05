@@ -109,6 +109,28 @@ function Helpers.SafeToString(value, fallback)
     return fallback
 end
 
+--- Check if a frame has a tainted widget container child.
+--- WorldQuestsList can taint shownWidgetCount on GameTooltip's widget container
+--- children. If tainted, any layout operation triggers comparison errors in
+--- Blizzard's LayoutFrame.lua.
+--- @param frame table The frame to check (e.g. GameTooltip)
+--- @return boolean True if a tainted widget container child was found
+function Helpers.HasTaintedWidgetContainer(frame)
+    if not frame or not frame.GetChildren then return false end
+    local ok, result = pcall(function()
+        for i = 1, select("#", frame:GetChildren()) do
+            local child = select(i, frame:GetChildren())
+            if child and child.shownWidgetCount ~= nil then
+                if issecretvalue and issecretvalue(child.shownWidgetCount) then
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+    return ok and result == true
+end
+
 ---------------------------------------------------------------------------
 -- DATABASE ACCESS HELPERS
 -- Standardized pattern for accessing QUICore database profiles
@@ -1002,3 +1024,4 @@ ns.SafeShow = Helpers.SafeShow
 ns.SafeHide = Helpers.SafeHide
 ns.DeferredHideOnShow = Helpers.DeferredHideOnShow
 ns.DeferredSetAtlasBlock = Helpers.DeferredSetAtlasBlock
+ns.HasTaintedWidgetContainer = Helpers.HasTaintedWidgetContainer

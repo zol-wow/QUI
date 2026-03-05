@@ -215,11 +215,35 @@ end
 local skinnedTooltips = Helpers.CreateStateTable()   -- tooltip → true
 local hookedTooltips = Helpers.CreateStateTable()    -- tooltip → true (OnShow hooked)
 
+-- Forward declaration: QueueCombatTooltipSkin is used by SkinTooltip/ReapplySkin
+-- but defined after them (circular dependency with FlushCombatSkinQueue).
+local QueueCombatTooltipSkin
+
 -- NineSlice piece names used by Blizzard tooltips
 local NINE_SLICE_PIECES = {
     "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
     "TopEdge", "BottomEdge", "LeftEdge", "RightEdge", "Center",
 }
+
+-- TAINT SAFETY: Check if tooltip dimensions are tainted (secret values).
+-- Calling SetBackdrop/NineSlice geometry math when dimensions are tainted
+-- permanently infects the tooltip's layout state. pcall does NOT prevent this.
+local function HasTaintedDimensions(tooltip)
+    local ok, result = pcall(function()
+        local w = tooltip:GetWidth()
+        local h = tooltip:GetHeight()
+        if Helpers.IsSecretValue(w) or Helpers.IsSecretValue(h) then
+            return true
+        end
+        local _ = w + h  -- arithmetic test: errors if either is secret
+        return false
+    end)
+    return not ok or result == true
+end
+
+-- NineSlice color locking state (weak-keyed to avoid preventing GC)
+local colorLockedNineSlices = Helpers.CreateStateTable()
+local isApplyingLockedColors = false
 
 -- Apply flat QUI textures to all NineSlice pieces
 local function ApplyFlatNineSlice(nineSlice, edgeSize)
@@ -274,6 +298,8 @@ end
 local function ApplyNineSliceColors(nineSlice, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not nineSlice then return end
 
+    isApplyingLockedColors = true
+
     -- Background (center piece)
     if nineSlice.SetCenterColor then
         nineSlice:SetCenterColor(bgr, bgg, bgb, bga)
@@ -295,6 +321,35 @@ local function ApplyNineSliceColors(nineSlice, sr, sg, sb, sa, bgr, bgg, bgb, bg
             end
         end
     end
+
+    isApplyingLockedColors = false
+end
+
+-- Lock NineSlice colors so Blizzard overrides (e.g. quality-colored borders
+-- for rare/epic items) get immediately reverted to QUI's skin colors.
+local function LockNineSliceColors(nineSlice)
+    if not nineSlice or colorLockedNineSlices[nineSlice] then return end
+    colorLockedNineSlices[nineSlice] = true
+
+    if nineSlice.SetCenterColor then
+        hooksecurefunc(nineSlice, "SetCenterColor", function(self)
+            if isApplyingLockedColors or not IsEnabled() then return end
+            isApplyingLockedColors = true
+            local _, _, _, _, bgr, bgg, bgb, bga = GetEffectiveColors()
+            pcall(self.SetCenterColor, self, bgr, bgg, bgb, bga)
+            isApplyingLockedColors = false
+        end)
+    end
+
+    if nineSlice.SetBorderColor then
+        hooksecurefunc(nineSlice, "SetBorderColor", function(self)
+            if isApplyingLockedColors or not IsEnabled() then return end
+            isApplyingLockedColors = true
+            local sr, sg, sb, sa = GetEffectiveColors()
+            pcall(self.SetBorderColor, self, sr, sg, sb, sa)
+            isApplyingLockedColors = false
+        end)
+    end
 end
 
 -- Full skin application for a tooltip
@@ -303,14 +358,36 @@ local function SkinTooltip(tooltip)
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if skinnedTooltips[tooltip] then return end
 
+    -- TAINT SAFETY: Defer if tooltip dimensions are secret values.
+    -- Geometry math with tainted dimensions permanently infects layout state.
+    if HasTaintedDimensions(tooltip) then
+        QueueCombatTooltipSkin(tooltip)
+        return
+    end
+    -- TAINT SAFETY: Defer if GameTooltip has a tainted widget container child
+    -- (e.g. from WorldQuestsList tainting shownWidgetCount).
+    if tooltip == GameTooltip and Helpers.HasTaintedWidgetContainer(tooltip) then
+        QueueCombatTooltipSkin(tooltip)
+        return
+    end
+
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
 
     local ns = tooltip.NineSlice
     if ns then
+        -- Clear Blizzard's cached layout properties to prevent re-application
+        -- of default styles during tooltip resize/re-layout. Safe in addon context.
+        ns.layoutType = nil
+        ns.layoutTextureKit = nil
+        ns.backdropInfo = nil
+        if tooltip.layoutType ~= nil then tooltip.layoutType = nil end
+        if tooltip.layoutTextureKit ~= nil then tooltip.layoutTextureKit = nil end
+
         -- NineSlice path (modern WoW 9.1.5+)
         ApplyFlatNineSlice(ns, thickness)
         ApplyNineSliceColors(ns, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        LockNineSliceColors(ns)
         pcall(ns.Show, ns)
     elseif tooltip.SetBackdrop then
         -- Legacy BackdropTemplate path (fallback)
@@ -337,6 +414,16 @@ end
 local function ReapplySkin(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+
+    -- TAINT SAFETY: Defer if dimensions are tainted to avoid infecting layout state.
+    if HasTaintedDimensions(tooltip) then
+        QueueCombatTooltipSkin(tooltip)
+        return
+    end
+    if tooltip == GameTooltip and Helpers.HasTaintedWidgetContainer(tooltip) then
+        QueueCombatTooltipSkin(tooltip)
+        return
+    end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
@@ -424,7 +511,7 @@ local function FlushCombatSkinQueue()
     combatSkinEventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 end
 
-local function QueueCombatTooltipSkin(tooltip)
+QueueCombatTooltipSkin = function(tooltip)
     if not tooltip or combatSkinQueue[tooltip] then return end
     combatSkinQueue[tooltip] = true
     if not combatSkinEventFrame then

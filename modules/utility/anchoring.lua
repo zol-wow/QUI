@@ -1984,7 +1984,7 @@ end
 -- Apply a single frame anchor override
 function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     local inEditMode = nsHelpers.IsEditModeActive()
-    local editDbg = inEditMode and not _editModeTickerSilent
+    local editDbg = false  -- disabled: was (inEditMode and not _editModeTickerSilent)
     if type(settings) ~= "table" then return end
 
     if not HasFrameResolverForKey(key) then
@@ -2354,9 +2354,9 @@ function QUI_Anchoring:ApplyAllFrameAnchors()
 
     local sorted = ComputeAnchorApplyOrder(anchoringDB)
     local inEditMode = nsHelpers.IsEditModeActive()
-    if inEditMode and not _editModeTickerSilent then
-        AnchorDebug(format("ApplyAllFrameAnchors: %d keys in order: %s", #sorted, table.concat(sorted, ", ")))
-    end
+    -- if inEditMode and not _editModeTickerSilent then
+    --     AnchorDebug(format("ApplyAllFrameAnchors: %d keys in order: %s", #sorted, table.concat(sorted, ", ")))
+    -- end
     for _, key in ipairs(sorted) do
         self:ApplyFrameAnchor(key, anchoringDB[key])
     end
@@ -2478,9 +2478,9 @@ DebouncedReapplyOverrides = function()
         -- CDM viewer keys (Blizzard controls those) but repositions all
         -- other overridden frames so the anchor chain stays correct.
         local inEditMode = nsHelpers.IsEditModeActive()
-        if inEditMode and not _editModeTickerSilent then
-            AnchorDebug("DebouncedReapplyOverrides: firing ApplyAllFrameAnchors in EditMode")
-        end
+        -- if inEditMode and not _editModeTickerSilent then
+        --     AnchorDebug("DebouncedReapplyOverrides: firing ApplyAllFrameAnchors in EditMode")
+        -- end
         if QUI_Anchoring then
             QUI_Anchoring:ApplyAllFrameAnchors()
         end
@@ -2796,14 +2796,14 @@ end
 
 if QUICore and QUICore.RegisterEditModeEnter then
     QUICore:RegisterEditModeEnter(function()
-        AnchorDebug("EditMode ENTER — starting 50ms anchor ticker")
+        -- AnchorDebug("EditMode ENTER — starting 50ms anchor ticker")
         StartEditModeTicker()
     end)
 end
 
 if QUICore and QUICore.RegisterEditModeExit then
     QUICore:RegisterEditModeExit(function()
-        AnchorDebug("EditMode EXIT — stopping ticker, final reapply")
+        -- AnchorDebug("EditMode EXIT — stopping ticker, final reapply")
         StopEditModeTicker()
         _editModeTickerSilent = false
         -- Final reapply outside Edit Mode (no guards, all frames including CDM viewers)
