@@ -255,6 +255,7 @@ local function BuildCDMTab(tabContent)
         { key = "cdmUtility",   name = "CDM Utility Viewer" },
         { key = "buffIcon",     name = "CDM Buff Icons" },
         { key = "buffBar",      name = "CDM Buff Bars" },
+        { key = "rotationAssistIcon", name = "CDM Rotation Assist Icon" },
     }
     for _, frameDef in ipairs(frames) do
         y = BuildFrameEntry(tabContent, frameDef, y)
@@ -399,6 +400,95 @@ local function BuildQoLTab(tabContent)
     end
 end
 
+local function BuildCustomTrackersTab(tabContent)
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 8, subTabName = "Custom Trackers"})
+    local y = -10
+    local core = GetCore()
+    local db = core and core.db and core.db.profile
+    local trackerBars = db and db.customTrackers and db.customTrackers.bars
+
+    if ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAllFrameTargets then
+        ns.QUI_Anchoring:RegisterAllFrameTargets()
+    end
+
+    GUI:SetSearchSection("Custom Tracker Preview")
+    local previewState = {
+        enabled = _G.QUI_IsAnchoringPreviewAllCustomTrackers and _G.QUI_IsAnchoringPreviewAllCustomTrackers() or false
+    }
+    local previewToggle = GUI:CreateFormToggle(tabContent, "Preview All Custom Trackers", "enabled", previewState, function(val)
+        previewState.enabled = val and true or false
+        if _G.QUI_SetAnchoringPreviewAllCustomTrackers then
+            _G.QUI_SetAnchoringPreviewAllCustomTrackers(previewState.enabled)
+        end
+        if _G.QUI_ApplyAllFrameAnchors then
+            C_Timer.After(0.05, function()
+                if _G.QUI_ApplyAllFrameAnchors then
+                    _G.QUI_ApplyAllFrameAnchors()
+                end
+            end)
+        end
+    end)
+    previewToggle:SetPoint("TOPLEFT", PADDING, y)
+    previewToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    y = y - FORM_ROW
+
+    local previewHint = GUI:CreateLabel(
+        tabContent,
+        "Shows every custom tracker bar at 50% opacity, including bars that are currently disabled.",
+        11,
+        C.textMuted or C.text
+    )
+    previewHint:SetPoint("TOPLEFT", PADDING + 10, y)
+    previewHint:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    previewHint:SetJustifyH("LEFT")
+    y = y - 26
+
+    -- Auto-disable preview when leaving this sub-tab/page.
+    tabContent:HookScript("OnHide", function()
+        if _G.QUI_IsAnchoringPreviewAllCustomTrackers and _G.QUI_IsAnchoringPreviewAllCustomTrackers() then
+            if _G.QUI_SetAnchoringPreviewAllCustomTrackers then
+                _G.QUI_SetAnchoringPreviewAllCustomTrackers(false)
+            end
+            previewState.enabled = false
+            if previewToggle and previewToggle.SetValue then
+                previewToggle:SetValue(false, true)
+            end
+        end
+    end)
+
+    if type(trackerBars) ~= "table" or #trackerBars == 0 then
+        local empty = GUI:CreateLabel(tabContent, "No custom tracker bars are configured for this profile.", 12, C.textMuted or C.text)
+        empty:SetPoint("TOPLEFT", PADDING, y)
+        empty:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        empty:SetJustifyH("LEFT")
+        tabContent:SetHeight(180)
+        return
+    end
+
+    local renderedCount = 0
+    for i, barConfig in ipairs(trackerBars) do
+        local barID = barConfig and barConfig.id
+        if type(barID) == "string" and barID ~= "" then
+            local displayName = barConfig.name
+            if type(displayName) ~= "string" or displayName == "" then
+                displayName = ("Tracker %d"):format(i)
+            end
+            y = BuildFrameEntry(tabContent, {
+                key = "customTracker:" .. barID,
+                name = displayName,
+            }, y)
+            renderedCount = renderedCount + 1
+        end
+    end
+
+    if renderedCount == 0 then
+        local invalid = GUI:CreateLabel(tabContent, "No valid custom tracker IDs were found in this profile.", 12, C.textMuted or C.text)
+        invalid:SetPoint("TOPLEFT", PADDING, y)
+        invalid:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        invalid:SetJustifyH("LEFT")
+    end
+end
+
 --------------------------------------------------------------------------------
 -- FRAME ANCHORING PAGE (coordinator with sub-tabs)
 --------------------------------------------------------------------------------
@@ -413,6 +503,7 @@ local function CreateFrameAnchoringPage(parent)
         { name = "Action Bars",   builder = BuildActionBarsTab },
         { name = "Display",       builder = BuildDisplayTab },
         { name = "QoL",           builder = BuildQoLTab },
+        { name = "Custom Trackers", builder = BuildCustomTrackersTab },
         { name = "3rd Party Addons", builder = function(tabContent)
             if ns.QUI_ThirdPartyAnchoringOptions and ns.QUI_ThirdPartyAnchoringOptions.BuildThirdPartyTab then
                 ns.QUI_ThirdPartyAnchoringOptions.BuildThirdPartyTab(tabContent)

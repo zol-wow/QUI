@@ -205,13 +205,19 @@ CreateIconFrame = function()
     -- Drag handlers
     iconFrame:SetScript("OnDragStart", function(self)
         local db = GetDB()
-        if db and not db.isLocked then
+        local isAnchoredOverride = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self)
+        if db and not db.isLocked and not isAnchoredOverride then
             self:StartMoving()
         end
     end)
 
     iconFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
+
+        -- Frame anchoring owns position while an override is active.
+        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then
+            return
+        end
 
         -- Save position relative to screen center
         local db = GetDB()
@@ -439,11 +445,14 @@ RefreshIconFrame = function()
     local size = db.iconSize or 56
     pcall(iconFrame.SetSize, iconFrame, size, size)
 
-    -- Position (always anchored to CENTER of screen)
-    iconFrame:ClearAllPoints()
-    local posX = db.positionX or 0
-    local posY = db.positionY or -180
-    iconFrame:SetPoint("CENTER", UIParent, "CENTER", posX, posY)
+    -- Position (manual only when no frame-anchoring override is active)
+    local isAnchoredOverride = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(iconFrame)
+    if not isAnchoredOverride then
+        iconFrame:ClearAllPoints()
+        local posX = db.positionX or 0
+        local posY = db.positionY or -180
+        iconFrame:SetPoint("CENTER", UIParent, "CENTER", posX, posY)
+    end
 
     -- Frame strata
     iconFrame:SetFrameStrata(db.frameStrata or "MEDIUM")

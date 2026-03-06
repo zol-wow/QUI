@@ -524,8 +524,13 @@ local function CreateRollFrame(index)
     frame:SetScript("OnEnter", function(self)
         if self.rollID then
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-            GameTooltip:SetLootRollItem(self.rollID)
-            GameTooltip:Show()
+            -- pcall guards against third-party tooltip hooks (e.g. Altoholic) that may error
+            local ok = pcall(GameTooltip.SetLootRollItem, GameTooltip, self.rollID)
+            if ok then
+                GameTooltip:Show()
+            else
+                GameTooltip:Hide()
+            end
         end
     end)
     frame:SetScript("OnLeave", GameTooltip_Hide)

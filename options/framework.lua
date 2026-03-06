@@ -111,7 +111,7 @@ end
 
 -- Panel dimensions (used for widget sizing)
 GUI.PANEL_WIDTH = 1000
-GUI.SIDEBAR_WIDTH = 150
+GUI.SIDEBAR_WIDTH = 190
 GUI.CONTENT_WIDTH = 800  -- Panel width minus sidebar and padding
 
 -- Settings Registry for search functionality
@@ -143,6 +143,15 @@ GUI.WidgetInstances = {}
 -- Section header registry for scroll-to-section navigation
 -- Nested format: SectionRegistry[tabIndex * 10000 + subTabIndex][sectionName] -> {frame, scrollParent}
 GUI.SectionRegistry = {}
+GUI.SectionRegistryOrder = {}
+
+-- Sidebar tree animation/layout config
+GUI._sidebarAnimDuration = 0.16
+GUI._sidebarRowHeights = {
+    level1 = 26,
+    level2 = 22,
+    level3 = 20,
+}
 
 -- Generate unique key for widget instance tracking
 local function GetWidgetKey(dbTable, dbKey)
@@ -230,6 +239,171 @@ function GUI:ClearSearchContext()
         subTabName = nil,
         sectionName = nil,
     }
+end
+
+local function GetSectionRegistryKey(tabIndex, subTabIndex)
+    return (tabIndex or 0) * 10000 + (subTabIndex or 0)
+end
+
+function GUI:GetOrderedSections(tabIndex, subTabIndex)
+    local key = GetSectionRegistryKey(tabIndex, subTabIndex)
+    local order = self.SectionRegistryOrder[key] or {}
+    local registry = self.SectionRegistry[key] or {}
+    local out = {}
+    for _, sectionName in ipairs(order) do
+        if registry[sectionName] then
+            table.insert(out, sectionName)
+        end
+    end
+    return out
+end
+
+function GUI:ScrollToSection(tabIndex, subTabIndex, sectionName)
+    if not tabIndex or not sectionName or sectionName == "" then return false end
+    local key = GetSectionRegistryKey(tabIndex, subTabIndex or 0)
+    local subReg = self.SectionRegistry[key]
+    local sectionInfo = subReg and subReg[sectionName]
+    if not sectionInfo or not sectionInfo.scrollParent or not sectionInfo.frame then
+        return false
+    end
+
+    local scrollFrame = sectionInfo.scrollParent
+    local sectionFrame = sectionInfo.frame
+    local contentParent = sectionInfo.contentParent
+    if not contentParent or not sectionFrame:IsVisible() then
+        return false
+    end
+
+    local sectionTop = sectionFrame:GetTop()
+    local contentTop = contentParent:GetTop()
+    if not sectionTop or not contentTop then
+        return false
+    end
+
+    local sectionOffset = contentTop - sectionTop
+    local scrollPos = math.max(0, sectionOffset - 20)
+    local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
+        and ns.GetSafeVerticalScrollRange(scrollFrame)
+        or 0
+    scrollPos = math.min(scrollPos, maxScroll)
+    scrollFrame:SetVerticalScroll(scrollPos)
+    return true
+end
+
+function GUI:NavigateTo(tabIndex, subTabIndex, sectionName)
+    local frame = self.MainFrame
+    if not frame then return end
+    if not tabIndex then return end
+    local hasSectionTarget = (sectionName and sectionName ~= "" and subTabIndex)
+
+    frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
+    frame._sidebarExpandedSubTabs = frame._sidebarExpandedSubTabs or {}
+    frame._sidebarExpandedTabs[tabIndex] = true
+    if subTabIndex then
+        frame._sidebarExpandedSubTabs[tabIndex] = frame._sidebarExpandedSubTabs[tabIndex] or {}
+        frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] = true
+    end
+    if hasSectionTarget then
+        frame._sidebarActiveSectionKey = tabIndex .. ":" .. subTabIndex .. ":" .. sectionName
+    else
+        frame._sidebarActiveSectionKey = nil
+    end
+    frame._sidebarPendingSectionSelection = hasSectionTarget and true or nil
+
+    self:SelectTab(frame, tabIndex)
+
+    if subTabIndex then
+        C_Timer.After(0, function()
+            if not self.MainFrame then return end
+            local page = frame.pages and frame.pages[tabIndex]
+            if page and page._subTabGroup and page._subTabGroup.SelectTab then
+                page._subTabGroup.SelectTab(subTabIndex)
+            end
+            if sectionName and sectionName ~= "" then
+                C_Timer.After(0.05, function()
+                    self:ScrollToSection(tabIndex, subTabIndex, sectionName)
+                    frame._sidebarPendingSectionSelection = nil
+                end)
+            else
+                frame._sidebarPendingSectionSelection = nil
+            end
+        end)
+    elseif sectionName and sectionName ~= "" then
+        C_Timer.After(0.05, function()
+            self:ScrollToSection(tabIndex, 0, sectionName)
+            frame._sidebarPendingSectionSelection = nil
+        end)
+    else
+        frame._sidebarPendingSectionSelection = nil
+    end
+end
+
+function GUI:UpdateSidebarSectionHighlightFromScroll(scrollFrame)
+    local frame = self.MainFrame
+    if not frame or not scrollFrame then return end
+    if frame._sidebarPendingSectionSelection then return end
+    if frame._sidebarManualSectionSelection then return end
+
+    local tabIndex = frame.activeTab
+    if not tabIndex then return end
+    local page = frame.pages and frame.pages[tabIndex]
+    local subTabIndex = page and page._subTabGroup and page._subTabGroup.selectedTab
+    if not subTabIndex then return end
+
+    local key = GetSectionRegistryKey(tabIndex, subTabIndex)
+    local order = self.SectionRegistryOrder[key]
+    local registry = self.SectionRegistry[key]
+    if not order or #order == 0 or not registry then return end
+
+    local currentScroll = scrollFrame:GetVerticalScroll() or 0
+    local threshold = currentScroll + 28
+    local activeName
+    local bestOffset = -math.huge
+
+    for _, sectionName in ipairs(order) do
+        local info = registry[sectionName]
+        if info and info.scrollParent == scrollFrame and info.frame and info.contentParent and info.frame:IsVisible() then
+            local sectionTop = info.frame:GetTop()
+            local contentTop = info.contentParent:GetTop()
+            if sectionTop and contentTop then
+                local sectionOffset = contentTop - sectionTop
+                if sectionOffset <= threshold and sectionOffset > bestOffset then
+                    bestOffset = sectionOffset
+                    activeName = sectionName
+                end
+            end
+        end
+    end
+
+    if not activeName then
+        for _, sectionName in ipairs(order) do
+            local info = registry[sectionName]
+            if info and info.scrollParent == scrollFrame then
+                activeName = sectionName
+                break
+            end
+        end
+    end
+
+    if activeName then
+        local nextKey = tabIndex .. ":" .. subTabIndex .. ":" .. activeName
+        if frame._sidebarActiveSectionKey ~= nextKey then
+            frame._sidebarActiveSectionKey = nextKey
+            self:RefreshSidebarTree(frame)
+        end
+    end
+end
+
+function GUI:AttachSidebarSectionScrollSpy(scrollFrame)
+    if not scrollFrame or scrollFrame._quiSidebarSectionSpyHooked then return end
+    scrollFrame._quiSidebarSectionSpyHooked = true
+    scrollFrame:HookScript("OnVerticalScroll", function(self)
+        local now = (type(GetTime) == "function") and GetTime() or 0
+        local last = self._quiSidebarSectionSpyLast or 0
+        if now - last < 0.05 then return end
+        self._quiSidebarSectionSpyLast = now
+        GUI:UpdateSidebarSectionHighlightFromScroll(self)
+    end)
 end
 
 -- Register a navigation item (tab, subtab, or section) for search
@@ -328,12 +502,20 @@ function GUI:ForceLoadAllTabs()
                 page.frame:Hide()  -- Keep hidden during build
 
                 -- Run the builder to register widgets (only once)
+                local loadTab = frame.tabs[tabIndex]
+                if loadTab and loadTab.name then
+                    self:SetSearchContext({
+                        tabIndex = tabIndex,
+                        tabName = loadTab.name,
+                    })
+                end
                 page.createFunc(page.frame)
                 page.built = true  -- Prevent duplicate widget creation
 
                 -- Capture sub-tab group created during page build
                 if GUI._lastSubTabGroup then
                     page._subTabGroup = GUI._lastSubTabGroup
+                    page._subTabDefs = page._subTabGroup.subTabDefs
                     GUI._lastSubTabGroup = nil
                 end
             end
@@ -702,11 +884,20 @@ function GUI:CreateSectionHeader(parent, text)
                 if not GUI.SectionRegistry[numKey] then
                     GUI.SectionRegistry[numKey] = {}
                 end
+                if not GUI.SectionRegistryOrder[numKey] then
+                    GUI.SectionRegistryOrder[numKey] = {}
+                end
+                if not GUI.SectionRegistry[numKey][text] then
+                    table.insert(GUI.SectionRegistryOrder[numKey], text)
+                end
                 GUI.SectionRegistry[numKey][text] = {
                     frame = container,
                     scrollParent = scrollParent,
                     contentParent = parent,
                 }
+                if scrollParent then
+                    GUI:AttachSidebarSectionScrollSpy(scrollParent)
+                end
             end
         end
     end
@@ -1007,9 +1198,16 @@ function GUI:CreateSubTabs(parent, tabs)
 
     local tabButtons = {}
     local tabContents = {}
+    local subTabDefs = {}
     local spacing = 2
 
     for i, tabInfo in ipairs(tabs) do
+        subTabDefs[i] = {
+            index = i,
+            name = tabInfo.name,
+            isSeparator = tabInfo.isSeparator and true or false,
+        }
+
         -- Tab button (parented to buttonGroup in sticky bar)
         local btn = CreateFrame("Button", nil, buttonGroup, "BackdropTemplate")
         btn:SetSize(90, 24)
@@ -1178,6 +1376,9 @@ function GUI:CreateSubTabs(parent, tabs)
         end
         buttonGroup.selectedTab = index
         container.selectedTab = index
+        if buttonGroup._onSelect then
+            buttonGroup._onSelect(index, tabs[index])
+        end
     end
 
     -- Button click handlers
@@ -1198,10 +1399,12 @@ function GUI:CreateSubTabs(parent, tabs)
     -- Expose on both container and buttonGroup for compatibility
     buttonGroup.tabButtons = tabButtons
     buttonGroup.tabContents = tabContents
+    buttonGroup.subTabDefs = subTabDefs
     buttonGroup.SelectTab = SelectSubTab
     buttonGroup.RelayoutSubTabs = RelayoutSubTabs
     container.tabButtons = tabButtons
     container.tabContents = tabContents
+    container.subTabDefs = subTabDefs
     container.SelectTab = SelectSubTab
     container.RelayoutSubTabs = RelayoutSubTabs
 
@@ -2304,11 +2507,14 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
 
-    -- Label on left (off-white text)
+    -- Label on left (off-white text, constrained to not overlap toggle)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)
     text:SetText(label or "Option")
     text:SetPoint("LEFT", 0, 0)
+    text:SetWidth(170)
+    text:SetWordWrap(true)
+    text:SetJustifyH("LEFT")
 
     -- Toggle track (the pill-shaped background)
     local track = CreateFrame("Button", nil, container, "BackdropTemplate")
@@ -2435,11 +2641,14 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
 
-    -- Label on left (off-white text)
+    -- Label on left (off-white text, constrained to not overlap toggle)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)
     text:SetText(label or "Option")
     text:SetPoint("LEFT", 0, 0)
+    text:SetWidth(170)
+    text:SetWordWrap(true)
+    text:SetJustifyH("LEFT")
 
     -- Toggle track
     local track = CreateFrame("Button", nil, container, "BackdropTemplate")
@@ -2551,11 +2760,14 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
 
-    -- Label on left (off-white text)
+    -- Label on left (off-white text, constrained to not overlap checkbox)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)
     text:SetText(label or "Option")
     text:SetPoint("LEFT", 0, 0)
+    text:SetWidth(170)
+    text:SetWordWrap(true)
+    text:SetJustifyH("LEFT")
 
     -- Checkbox aligned with other widgets (starts at 180px from left)
     local box = CreateFrame("Button", nil, container, "BackdropTemplate")
@@ -2646,11 +2858,14 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     local precision = options.precision
     local formatStr = precision and string.format("%%.%df", precision) or (step < 1 and "%.2f" or "%d")
 
-    -- Label on left (off-white text)
+    -- Label on left (off-white text, constrained to not overlap slider track)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)
     text:SetText(label or "Setting")
     text:SetPoint("LEFT", 0, 0)
+    text:SetWidth(170)
+    text:SetWordWrap(true)
+    text:SetJustifyH("LEFT")
     container.label = text
 
     -- Track container (for the filled + unfilled portions)
@@ -3652,53 +3867,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             local targetSubTabIndex = entry.subTabIndex
             local targetSectionName = entry.sectionName
             navRow:SetScript("OnClick", function()
-                local frame = GUI.MainFrame
-                if not frame then return end
-                GUI:SelectTab(frame, targetTabIndex)
-
-                -- Helper to scroll to a section
-                local function ScrollToSection()
-                    local subTabIdx = targetSubTabIndex or 0
-                    local numKey = targetTabIndex * 10000 + subTabIdx
-                    local subReg = GUI.SectionRegistry[numKey]
-                    local sectionInfo = subReg and subReg[targetSectionName or ""]
-
-                    if sectionInfo and sectionInfo.scrollParent and sectionInfo.frame then
-                        local scrollFrame = sectionInfo.scrollParent
-                        local sectionFrame = sectionInfo.frame
-                        local contentParent = sectionInfo.contentParent
-
-                        if contentParent and sectionFrame:IsVisible() then
-                            local sectionTop = sectionFrame:GetTop()
-                            local contentTop = contentParent:GetTop()
-
-                            if sectionTop and contentTop then
-                                local sectionOffset = contentTop - sectionTop
-                                local scrollPos = math.max(0, sectionOffset - 20)
-                                local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
-                                    and ns.GetSafeVerticalScrollRange(scrollFrame)
-                                    or 0
-                                scrollPos = math.min(scrollPos, maxScroll)
-                                scrollFrame:SetVerticalScroll(scrollPos)
-                            end
-                        end
-                    end
-                end
-
-                -- Navigate to subtab if specified
-                if targetSubTabIndex then
-                    C_Timer.After(0, function()
-                        local page = frame.pages and frame.pages[targetTabIndex]
-                        if page and page._subTabGroup then
-                            page._subTabGroup.SelectTab(targetSubTabIndex)
-                        end
-                        if targetSectionName then
-                            C_Timer.After(0.05, ScrollToSection)
-                        end
-                    end)
-                elseif targetSectionName then
-                    C_Timer.After(0.05, ScrollToSection)
-                end
+                GUI:NavigateTo(targetTabIndex, targetSubTabIndex, targetSectionName)
             end)
 
             y = y - 30
@@ -3796,53 +3965,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             local targetSubTabIndex = groupData.subTabIndex
             local targetSectionName = groupData.sectionName
             goBtn:SetScript("OnClick", function()
-                local frame = GUI.MainFrame
-                if not frame then return end
-                GUI:SelectTab(frame, targetTabIndex)
-
-                -- Helper to scroll to a section
-                local function ScrollToSection()
-                    local subTabIdx = targetSubTabIndex or 0
-                    local numKey = targetTabIndex * 10000 + subTabIdx
-                    local subReg = GUI.SectionRegistry[numKey]
-                    local sectionInfo = subReg and subReg[targetSectionName or ""]
-
-                    if sectionInfo and sectionInfo.scrollParent and sectionInfo.frame then
-                        local scrollFrame = sectionInfo.scrollParent
-                        local sectionFrame = sectionInfo.frame
-                        local contentParent = sectionInfo.contentParent
-
-                        if contentParent and sectionFrame:IsVisible() then
-                            local sectionTop = sectionFrame:GetTop()
-                            local contentTop = contentParent:GetTop()
-
-                            if sectionTop and contentTop then
-                                local sectionOffset = contentTop - sectionTop
-                                local scrollPos = math.max(0, sectionOffset - 20)
-                                local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
-                                    and ns.GetSafeVerticalScrollRange(scrollFrame)
-                                    or 0
-                                scrollPos = math.min(scrollPos, maxScroll)
-                                scrollFrame:SetVerticalScroll(scrollPos)
-                            end
-                        end
-                    end
-                end
-
-                -- Navigate to subtab using direct page._subTabGroup lookup
-                if targetSubTabIndex then
-                    C_Timer.After(0, function()
-                        local page = frame.pages and frame.pages[targetTabIndex]
-                        if page and page._subTabGroup then
-                            page._subTabGroup.SelectTab(targetSubTabIndex)
-                        end
-                        if targetSectionName then
-                            C_Timer.After(0.05, ScrollToSection)
-                        end
-                    end)
-                elseif targetSectionName then
-                    C_Timer.After(0.05, ScrollToSection)
-                end
+                GUI:NavigateTo(targetTabIndex, targetSubTabIndex, targetSectionName)
             end)
         end
 
@@ -3893,6 +4016,508 @@ function GUI:ClearSearchInTab(content)
     self:RenderSearchResults(content, nil, nil, nil)
 end
 
+local function EnsureTable(t, key)
+    if not t[key] then
+        t[key] = {}
+    end
+    return t[key]
+end
+
+function GUI:GetSidebarSubTabs(frame, tabIndex)
+    if not frame or not frame.pages then return {} end
+    local page = frame.pages[tabIndex]
+    if not page then return {} end
+    if page._subTabDefs then return page._subTabDefs end
+
+    local group = page._subTabGroup
+    if group and group.subTabDefs then
+        page._subTabDefs = group.subTabDefs
+        return page._subTabDefs
+    end
+    return {}
+end
+
+function GUI:RelayoutSidebarBottomItems(frame)
+    if not frame or not frame.sidebar then return end
+    local itemStride = 28
+    for i, item in ipairs(frame._sidebarBottomItems or {}) do
+        local y = (i - 1) * itemStride
+        item:ClearAllPoints()
+        item:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 0, y)
+        item:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -1, y)
+    end
+
+    local bottomCount = #(frame._sidebarBottomItems or {})
+    local reserved = bottomCount > 0 and (bottomCount * itemStride + 8) or 6
+
+    if frame.sidebarBottomSeparator then
+        frame.sidebarBottomSeparator:ClearAllPoints()
+        frame.sidebarBottomSeparator:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 8, reserved)
+        frame.sidebarBottomSeparator:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -8, reserved)
+    end
+
+    if frame.sidebarTreeScroll then
+        frame.sidebarTreeScroll:ClearAllPoints()
+        frame.sidebarTreeScroll:SetPoint("TOPLEFT", frame.sidebar, "TOPLEFT", 0, -5)
+        frame.sidebarTreeScroll:SetPoint("TOPRIGHT", frame.sidebar, "TOPRIGHT", -1, -5)
+        frame.sidebarTreeScroll:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 0, reserved + 8)
+        frame.sidebarTreeScroll:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -1, reserved + 8)
+    end
+end
+
+local function PlayCaretToggleAnimation(caret)
+    if not caret then return end
+    if not caret._toggleAnim then
+        local ag = caret:CreateAnimationGroup()
+        local fadeDown = ag:CreateAnimation("Alpha")
+        fadeDown:SetOrder(1)
+        fadeDown:SetFromAlpha(1)
+        fadeDown:SetToAlpha(0.45)
+        fadeDown:SetDuration(0.06)
+        local fadeUp = ag:CreateAnimation("Alpha")
+        fadeUp:SetOrder(2)
+        fadeUp:SetFromAlpha(0.45)
+        fadeUp:SetToAlpha(1)
+        fadeUp:SetDuration(0.08)
+        caret._toggleAnim = ag
+    end
+    if caret._toggleAnim:IsPlaying() then
+        caret._toggleAnim:Stop()
+    end
+    caret._toggleAnim:Play()
+end
+
+local function CreateVectorCaret(parent, xOffset)
+    local caret = CreateFrame("Frame", nil, parent)
+    caret:SetSize(11, 11)
+    caret:SetPoint("RIGHT", parent, "RIGHT", xOffset or -8, 0)
+
+    caret.line1 = caret:CreateTexture(nil, "OVERLAY")
+    caret.line1:SetSize(7, 2)
+    caret.line1:SetColorTexture(1, 1, 1, 1)
+
+    caret.line2 = caret:CreateTexture(nil, "OVERLAY")
+    caret.line2:SetSize(7, 2)
+    caret.line2:SetColorTexture(1, 1, 1, 1)
+
+    return caret
+end
+
+local function SetCaretVisual(caret, isExpanded, useAccent)
+    if not caret then return end
+    if caret.line1 and caret.line2 then
+        if isExpanded then
+            -- Down chevron (v)
+            caret.line1:SetRotation(math.rad(-45))
+            caret.line1:ClearAllPoints()
+            caret.line1:SetPoint("CENTER", caret, "CENTER", -2, 0)
+            caret.line2:SetRotation(math.rad(45))
+            caret.line2:ClearAllPoints()
+            caret.line2:SetPoint("CENTER", caret, "CENTER", 2, 0)
+        else
+            -- Right chevron (>)
+            caret.line1:SetRotation(math.rad(45))
+            caret.line1:ClearAllPoints()
+            caret.line1:SetPoint("CENTER", caret, "CENTER", -1, 2)
+            caret.line2:SetRotation(math.rad(-45))
+            caret.line2:ClearAllPoints()
+            caret.line2:SetPoint("CENTER", caret, "CENTER", -1, -2)
+        end
+    end
+    if useAccent then
+        if caret.line1 then
+            caret.line1:SetVertexColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+        end
+        if caret.line2 then
+            caret.line2:SetVertexColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+        end
+    else
+        if caret.line1 then
+            caret.line1:SetVertexColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+        end
+        if caret.line2 then
+            caret.line2:SetVertexColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+        end
+    end
+end
+
+local function CreateSidebarTreeRow(frame, rowType, key)
+    local row = CreateFrame("Button", nil, frame.sidebarTreeContent)
+    row._treeKey = key
+    row._treeType = rowType
+    row._treeProgress = 0
+    row._treeTarget = 0
+    row:Hide()
+
+    row.hoverBg = row:CreateTexture(nil, "BACKGROUND")
+    row.hoverBg:SetAllPoints()
+    row.hoverBg:SetColorTexture(1, 1, 1, 0.04)
+    row.hoverBg:Hide()
+
+    row.activeBg = row:CreateTexture(nil, "ARTWORK")
+    row.activeBg:SetAllPoints()
+    row.activeBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.12)
+    row.activeBg:Hide()
+
+    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if rowType == "subtab" then
+        SetFont(row.text, 10, "", C.textMuted)
+        row.text:SetPoint("LEFT", row, "LEFT", 26, 0)
+    else
+        SetFont(row.text, 10, "", C.textMuted)
+        row.text:SetPoint("LEFT", row, "LEFT", 40, 0)
+    end
+    row.text:SetJustifyH("LEFT")
+
+    row.expandText = CreateVectorCaret(row, -8)
+    row.expandText:Hide()
+
+    row:SetScript("OnEnter", function(self)
+        if not self._isActive then
+            self.hoverBg:Show()
+        end
+    end)
+    row:SetScript("OnLeave", function(self)
+        if not self._isActive then
+            self.hoverBg:Hide()
+        end
+    end)
+
+    table.insert(frame._sidebarDynamicRows, row)
+    return row
+end
+
+function GUI:StartSidebarTreeAnimation(frame)
+    if not frame then return end
+    if not frame._sidebarAnimFrame then
+        frame._sidebarAnimFrame = CreateFrame("Frame", nil, frame)
+    end
+
+    local anim = frame._sidebarAnimFrame
+    anim:SetScript("OnUpdate", function(self, elapsed)
+        local host = self._hostFrame
+        if not host then
+            self:SetScript("OnUpdate", nil)
+            return
+        end
+
+        local duration = GUI._sidebarAnimDuration or 0.16
+        local step = (duration > 0) and (elapsed / duration) or 1
+        local anyActive = false
+
+        for _, row in ipairs(host._sidebarDynamicRows or {}) do
+            local target = row._treeTarget or 0
+            local progress = row._treeProgress or 0
+            if math.abs(progress - target) > 0.001 then
+                if target > progress then
+                    progress = math.min(target, progress + step)
+                else
+                    progress = math.max(target, progress - step)
+                end
+                row._treeProgress = progress
+                if progress > 0 then
+                    row:Show()
+                elseif target <= 0 then
+                    row:Hide()
+                end
+                anyActive = true
+            end
+        end
+
+        GUI:RelayoutSidebarTree(host)
+        if not anyActive then
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
+    anim._hostFrame = frame
+end
+
+function GUI:RelayoutSidebarTree(frame)
+    if not frame or not frame.sidebarTreeContent then return end
+    local y = -5
+    local spacing = 2
+    local h1 = GUI._sidebarRowHeights.level1
+    local h2 = GUI._sidebarRowHeights.level2
+    local h3 = GUI._sidebarRowHeights.level3
+
+    local function IsRowAnimating(row)
+        if not row then return false end
+        local p = row._treeProgress or 0
+        local t = row._treeTarget or 0
+        return p > 0.001 or t > 0.001
+    end
+
+    for _, tab in ipairs(frame._sidebarTopTabs or {}) do
+        tab:ClearAllPoints()
+        tab:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
+        tab:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
+        tab:SetHeight(h1)
+        y = y - h1 - spacing
+
+        local subDefs = self:GetSidebarSubTabs(frame, tab.index)
+        local subRowsByTab = frame._sidebarTreeSubRows and frame._sidebarTreeSubRows[tab.index]
+        local sectionRowsByTab = frame._sidebarTreeSectionRows and frame._sidebarTreeSectionRows[tab.index]
+        local isTabExpanded = frame._sidebarExpandedTabs and frame._sidebarExpandedTabs[tab.index]
+        local hasAnimatingSubRows = false
+
+        for _, subDef in ipairs(subDefs) do
+            local subRow = subRowsByTab and subRowsByTab[subDef.index]
+            if IsRowAnimating(subRow) then
+                hasAnimatingSubRows = true
+                break
+            end
+        end
+
+        if isTabExpanded or hasAnimatingSubRows then
+            for _, subDef in ipairs(subDefs) do
+                local subRow = subRowsByTab and subRowsByTab[subDef.index]
+                if IsRowAnimating(subRow) then
+                    local p = math.max(0, math.min(1, subRow._treeProgress or 0))
+                    local rowH = math.max(1, h2 * p)
+                    subRow:ClearAllPoints()
+                    subRow:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
+                    subRow:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
+                    subRow:SetHeight(rowH)
+                    subRow:SetAlpha(p)
+                    y = y - rowH - (spacing * p)
+
+                    local sectionRowsBySub = sectionRowsByTab and sectionRowsByTab[subDef.index]
+                    local isSubExpanded = frame._sidebarExpandedSubTabs
+                        and frame._sidebarExpandedSubTabs[tab.index]
+                        and frame._sidebarExpandedSubTabs[tab.index][subDef.index]
+                    local hasAnimatingSections = false
+                    if sectionRowsBySub then
+                        for _, secRow in pairs(sectionRowsBySub) do
+                            if IsRowAnimating(secRow) then
+                                hasAnimatingSections = true
+                                break
+                            end
+                        end
+                    end
+
+                    if isSubExpanded or hasAnimatingSections then
+                        local sectionNames = self:GetOrderedSections(tab.index, subDef.index)
+                        local seenNames = {}
+                        for _, sectionName in ipairs(sectionNames) do
+                            seenNames[sectionName] = true
+                            local secRow = sectionRowsBySub and sectionRowsBySub[sectionName]
+                            if IsRowAnimating(secRow) then
+                                local sp = math.max(0, math.min(1, secRow._treeProgress or 0))
+                                local secH = math.max(1, h3 * sp)
+                                secRow:ClearAllPoints()
+                                secRow:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
+                                secRow:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
+                                secRow:SetHeight(secH)
+                                secRow:SetAlpha(sp)
+                                y = y - secH - (spacing * sp)
+                            end
+                        end
+
+                        -- Fallback for any animated section row not present in current ordered list.
+                        if sectionRowsBySub then
+                            for sectionName, secRow in pairs(sectionRowsBySub) do
+                                if not seenNames[sectionName] and IsRowAnimating(secRow) then
+                                    local sp = math.max(0, math.min(1, secRow._treeProgress or 0))
+                                    local secH = math.max(1, h3 * sp)
+                                    secRow:ClearAllPoints()
+                                    secRow:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
+                                    secRow:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
+                                    secRow:SetHeight(secH)
+                                    secRow:SetAlpha(sp)
+                                    y = y - secH - (spacing * sp)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    frame.sidebarTreeContent:SetHeight(math.max(1, math.abs(y) + 12))
+end
+
+function GUI:RefreshSidebarTree(frame)
+    frame = frame or self.MainFrame
+    if not frame or not frame.sidebarTreeContent then return end
+
+    frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
+    frame._sidebarExpandedSubTabs = frame._sidebarExpandedSubTabs or {}
+    frame._sidebarTreeSubRows = frame._sidebarTreeSubRows or {}
+    frame._sidebarTreeSectionRows = frame._sidebarTreeSectionRows or {}
+    frame._sidebarDynamicRows = frame._sidebarDynamicRows or {}
+
+    local activeTab = frame.activeTab
+    local activeSubTab
+    if activeTab and frame.pages and frame.pages[activeTab] and frame.pages[activeTab]._subTabGroup then
+        activeSubTab = frame.pages[activeTab]._subTabGroup.selectedTab
+    end
+
+    local activeSectionKey = frame._sidebarActiveSectionKey
+    local touched = {}
+
+    for _, tab in ipairs(frame._sidebarTopTabs or {}) do
+        local page = frame.pages and frame.pages[tab.index]
+        local subDefs = self:GetSidebarSubTabs(frame, tab.index)
+        local hasSubTabs = (#subDefs > 0) or (tab._hasSubTabsHint and true or false)
+
+        if tab.expandText then
+            if hasSubTabs then
+                local isExpanded = frame._sidebarExpandedTabs and frame._sidebarExpandedTabs[tab.index]
+                if tab._lastCaretExpanded ~= isExpanded then
+                    tab._lastCaretExpanded = isExpanded
+                    PlayCaretToggleAnimation(tab.expandText)
+                end
+                SetCaretVisual(tab.expandText, isExpanded, isExpanded)
+                tab.expandText:Show()
+            else
+                tab.expandText:Hide()
+            end
+        end
+
+        if hasSubTabs and frame._sidebarExpandedTabs[tab.index] then
+            local tabSubRows = EnsureTable(frame._sidebarTreeSubRows, tab.index)
+            local tabSectionRows = EnsureTable(frame._sidebarTreeSectionRows, tab.index)
+            local expandedSubs = EnsureTable(frame._sidebarExpandedSubTabs, tab.index)
+
+            for _, subDef in ipairs(subDefs) do
+                local rowKey = tab.index .. ":" .. subDef.index
+                local subRow = tabSubRows[subDef.index]
+                if not subRow then
+                    subRow = CreateSidebarTreeRow(frame, "subtab", rowKey)
+                    tabSubRows[subDef.index] = subRow
+                    subRow:SetScript("OnClick", function(selfRow)
+                        local tabIndex = selfRow.tabIndex
+                        local subTabIndex = selfRow.subTabIndex
+                        if not tabIndex or not subTabIndex then return end
+                        frame._sidebarExpandedTabs[tabIndex] = true
+                        frame._sidebarExpandedSubTabs[tabIndex] = frame._sidebarExpandedSubTabs[tabIndex] or {}
+                        local isExpanded = frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] and true or false
+                        -- Read current active state at click time, not from stale closure
+                        local curActiveTab = frame.activeTab
+                        local curActiveSubTab
+                        if curActiveTab and frame.pages and frame.pages[curActiveTab] and frame.pages[curActiveTab]._subTabGroup then
+                            curActiveSubTab = frame.pages[curActiveTab]._subTabGroup.selectedTab
+                        end
+                        local isActive = (curActiveTab == tabIndex and curActiveSubTab == subTabIndex)
+                        if isExpanded and isActive then
+                            -- Only toggle collapse when clicking the already-active subtab
+                            frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] = false
+                            if frame._sidebarActiveSectionKey
+                                and string.match(frame._sidebarActiveSectionKey, "^" .. tabIndex .. ":" .. subTabIndex .. ":") then
+                                frame._sidebarActiveSectionKey = nil
+                            end
+                            GUI:RefreshSidebarTree(frame)
+                            return
+                        end
+                        frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] = true
+                        frame._sidebarActiveSectionKey = nil
+                        GUI:NavigateTo(tabIndex, subTabIndex, nil)
+                    end)
+                end
+
+                subRow.tabIndex = tab.index
+                subRow.subTabIndex = subDef.index
+                subRow.text:SetText(subDef.name or ("Sub Tab " .. subDef.index))
+                subRow._isActive = (activeTab == tab.index and activeSubTab == subDef.index)
+                if subRow._isActive then
+                    subRow.text:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
+                    subRow.activeBg:Show()
+                    subRow.hoverBg:Hide()
+                else
+                    subRow.text:SetTextColor(C_text_r, C_text_g, C_text_b, 0.9)
+                    subRow.activeBg:Hide()
+                end
+
+                local sectionNames = self:GetOrderedSections(tab.index, subDef.index)
+                local hasSections = #sectionNames > 0
+                if hasSections then
+                    local isExpanded = expandedSubs[subDef.index] and true or false
+                    if subRow._lastCaretExpanded ~= isExpanded then
+                        subRow._lastCaretExpanded = isExpanded
+                        PlayCaretToggleAnimation(subRow.expandText)
+                    end
+                    SetCaretVisual(subRow.expandText, isExpanded, isExpanded)
+                    subRow.expandText:Show()
+                else
+                    subRow.expandText:Hide()
+                end
+
+                subRow._treeTarget = 1
+                touched[subRow] = true
+                if subRow._treeProgress <= 0 then
+                    subRow._treeProgress = 0
+                    subRow:Show()
+                end
+
+                if hasSections and expandedSubs[subDef.index] then
+                    local sectionRowBySub = EnsureTable(tabSectionRows, subDef.index)
+                    for _, sectionName in ipairs(sectionNames) do
+                        local sectionKey = tab.index .. ":" .. subDef.index .. ":" .. sectionName
+                        local secRow = sectionRowBySub[sectionName]
+                        if not secRow then
+                            secRow = CreateSidebarTreeRow(frame, "section", sectionKey)
+                            sectionRowBySub[sectionName] = secRow
+                            secRow:SetScript("OnClick", function(selfRow)
+                                if not selfRow.tabIndex or not selfRow.subTabIndex or not selfRow.sectionName then return end
+                                frame._sidebarExpandedTabs[selfRow.tabIndex] = true
+                                frame._sidebarExpandedSubTabs[selfRow.tabIndex] = frame._sidebarExpandedSubTabs[selfRow.tabIndex] or {}
+                                frame._sidebarExpandedSubTabs[selfRow.tabIndex][selfRow.subTabIndex] = true
+                                frame._sidebarActiveSectionKey = selfRow._treeKey
+                                GUI:NavigateTo(selfRow.tabIndex, selfRow.subTabIndex, selfRow.sectionName)
+                                GUI:RefreshSidebarTree(frame)
+                            end)
+                        end
+
+                        secRow.tabIndex = tab.index
+                        secRow.subTabIndex = subDef.index
+                        secRow.sectionName = sectionName
+                        secRow.text:SetText(sectionName)
+                        secRow.expandText:Hide()
+                        secRow._isActive = (activeSectionKey == secRow._treeKey)
+                        if secRow._isActive then
+                            secRow.text:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
+                            secRow.activeBg:Show()
+                            secRow.hoverBg:Hide()
+                        else
+                            secRow.text:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                            secRow.activeBg:Hide()
+                        end
+
+                        secRow._treeTarget = 1
+                        touched[secRow] = true
+                        if secRow._treeProgress <= 0 then
+                            secRow._treeProgress = 0
+                            secRow:Show()
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    for _, row in ipairs(frame._sidebarDynamicRows or {}) do
+        if not touched[row] then
+            row._treeTarget = 0
+        end
+    end
+
+    self:StartSidebarTreeAnimation(frame)
+    self:RelayoutSidebarTree(frame)
+end
+
+function GUI:ToggleSidebarTabExpanded(frame, tabIndex, forceExpanded)
+    if not frame then return end
+    frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
+    local current = frame._sidebarExpandedTabs[tabIndex]
+    local nextValue = (forceExpanded ~= nil) and forceExpanded or (not current)
+    frame._sidebarExpandedTabs[tabIndex] = nextValue
+    if not nextValue and frame._sidebarExpandedSubTabs then
+        frame._sidebarExpandedSubTabs[tabIndex] = nil
+    end
+    self:RefreshSidebarTree(frame)
+end
+
 ---------------------------------------------------------------------------
 -- MAIN OPTIONS FRAME
 ---------------------------------------------------------------------------
@@ -3936,6 +4561,11 @@ function GUI:CreateMainFrame()
     frame:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], savedAlpha)
 
     self.MainFrame = frame
+
+    -- ESC to close the settings panel
+    if not tContains(UISpecialFrames, "QUI_Options") then
+        tinsert(UISpecialFrames, "QUI_Options")
+    end
 
     -- Note: Registry is NOT cleared on show - deduplication keys prevent duplicates
     -- when tabs are re-clicked. Registry persists to allow searching across all visited tabs.
@@ -4318,8 +4948,56 @@ function GUI:CreateMainFrame()
 
     frame.sidebar = sidebar
     frame._sidebarItems = {}       -- All sidebar items (tabs + bottom items)
-    frame._sidebarNormalCount = 0  -- Count of regular tab items (top section)
+    frame._sidebarTopTabs = {}     -- Top-level tab rows rendered in the tree
     frame._sidebarBottomItems = {} -- Bottom section items (search, action buttons)
+    frame._sidebarDynamicRows = {} -- Level 2/3 rows (subtabs + sections)
+    frame._sidebarExpandedTabs = {}
+    frame._sidebarExpandedSubTabs = {}
+
+    local sidebarTreeScroll = CreateFrame("ScrollFrame", nil, sidebar, "UIPanelScrollFrameTemplate")
+    sidebarTreeScroll:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, -5)
+    sidebarTreeScroll:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -1, -5)
+    sidebarTreeScroll:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", 0, 40)
+    sidebarTreeScroll:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -1, 40)
+    ns.ApplyScrollWheel(sidebarTreeScroll)
+
+    local sidebarTreeContent = CreateFrame("Frame", nil, sidebarTreeScroll)
+    sidebarTreeContent:SetWidth(SIDEBAR_W - 1)
+    sidebarTreeContent:SetHeight(1)
+    sidebarTreeScroll:SetScrollChild(sidebarTreeContent)
+    sidebarTreeScroll:SetScript("OnSizeChanged", function(self, width)
+        sidebarTreeContent:SetWidth(width)
+        GUI:RelayoutSidebarTree(frame)
+    end)
+
+    local treeScrollBar = sidebarTreeScroll.ScrollBar
+    if treeScrollBar then
+        treeScrollBar:SetPoint("TOPLEFT", sidebarTreeScroll, "TOPRIGHT", 2, -16)
+        treeScrollBar:SetPoint("BOTTOMLEFT", sidebarTreeScroll, "BOTTOMRIGHT", 2, 16)
+        treeScrollBar:SetWidth(7)
+        if treeScrollBar.Track then
+            treeScrollBar.Track:SetAlpha(0)
+        end
+        local thumb = treeScrollBar:GetThumbTexture()
+        if thumb then
+            thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.7)
+            thumb:SetWidth(3)
+            thumb:SetHeight(26)
+        end
+        local scrollUp = treeScrollBar.ScrollUpButton or treeScrollBar.Back
+        local scrollDown = treeScrollBar.ScrollDownButton or treeScrollBar.Forward
+        if scrollUp then scrollUp:Hide(); scrollUp:SetAlpha(0) end
+        if scrollDown then scrollDown:Hide(); scrollDown:SetAlpha(0) end
+    end
+
+    local sidebarBottomSeparator = sidebar:CreateTexture(nil, "ARTWORK")
+    sidebarBottomSeparator:SetHeight(1)
+    sidebarBottomSeparator:SetColorTexture(C.border[1], C.border[2], C.border[3], 0.6)
+
+    frame.sidebarTreeScroll = sidebarTreeScroll
+    frame.sidebarTreeContent = sidebarTreeContent
+    frame.sidebarBottomSeparator = sidebarBottomSeparator
+    self:RelayoutSidebarBottomItems(frame)
 
     ---------------------------------------------------------------------------
     -- SUB-TAB BAR (sticky bar above scroll content, hidden by default)
@@ -4461,6 +5139,15 @@ function GUI:CreateMainFrame()
 
     frame.resizeHandle = resizeHandle
 
+    -- Teardown preview/edit states when the options panel is closed
+    frame:SetScript("OnHide", function()
+        local gfem = ns and ns.QUI_GroupFrameEditMode
+        if gfem then
+            if gfem:IsEditMode() then gfem:DisableEditMode() end
+            if gfem:IsTestMode() then gfem:DisableTestMode() end
+        end
+    end)
+
     return frame
 end
 
@@ -4471,7 +5158,8 @@ function GUI:AddTab(frame, name, pageCreateFunc, isBottomItem)
     local index = #frame.tabs + 1
 
     -- Create sidebar item button
-    local tab = CreateFrame("Button", nil, frame.sidebar)
+    local tabParent = isBottomItem and frame.sidebar or frame.sidebarTreeContent
+    local tab = CreateFrame("Button", nil, tabParent)
     tab:SetHeight(26)
     tab.index = index
     tab.name = name
@@ -4498,19 +5186,17 @@ function GUI:AddTab(frame, name, pageCreateFunc, isBottomItem)
     tab.text:SetPoint("LEFT", tab, "LEFT", 15, 0)
     tab.text:SetJustifyH("LEFT")
 
+    if not isBottomItem then
+        tab.expandText = CreateVectorCaret(tab, -8)
+        tab.expandText:Hide()
+    end
+
     -- Position in sidebar
     if isBottomItem then
-        -- Bottom items are anchored from BOTTOMLEFT, upward
-        local bottomCount = #frame._sidebarBottomItems
-        tab:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 0, bottomCount * 28)
-        tab:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -1, bottomCount * 28)
         table.insert(frame._sidebarBottomItems, tab)
+        self:RelayoutSidebarBottomItems(frame)
     else
-        -- Normal items anchored from TOPLEFT, downward
-        local normalIndex = frame._sidebarNormalCount
-        tab:SetPoint("TOPLEFT", frame.sidebar, "TOPLEFT", 0, -(normalIndex * 28) - 5)
-        tab:SetPoint("TOPRIGHT", frame.sidebar, "TOPRIGHT", -1, -(normalIndex * 28) - 5)
-        frame._sidebarNormalCount = normalIndex + 1
+        table.insert(frame._sidebarTopTabs, tab)
     end
 
     frame.tabs[index] = tab
@@ -4522,7 +5208,29 @@ function GUI:AddTab(frame, name, pageCreateFunc, isBottomItem)
 
     -- Click handler
     tab:SetScript("OnClick", function()
-        GUI:SelectTab(frame, index)
+        if not isBottomItem then
+            frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
+            local isExpanded = frame._sidebarExpandedTabs[index] and true or false
+            if isExpanded then
+                GUI:ToggleSidebarTabExpanded(frame, index, false)
+                return
+            end
+
+            -- Select first so lazy-built pages can expose sub-tab metadata immediately.
+            GUI:SelectTab(frame, index)
+            local subTabs = GUI:GetSidebarSubTabs(frame, index)
+            if #subTabs > 0 then
+                -- Opening a level-1 branch should not auto-cascade to level-3.
+                if frame._sidebarExpandedSubTabs then
+                    frame._sidebarExpandedSubTabs[index] = nil
+                end
+                GUI:ToggleSidebarTabExpanded(frame, index, true)
+            else
+                GUI:RefreshSidebarTree(frame)
+            end
+        else
+            GUI:SelectTab(frame, index)
+        end
     end)
 
     tab:SetScript("OnEnter", function(self)
@@ -4542,6 +5250,10 @@ function GUI:AddTab(frame, name, pageCreateFunc, isBottomItem)
     -- Select first tab by default
     if index == 1 then
         GUI:SelectTab(frame, 1)
+        frame._sidebarExpandedTabs[index] = true
+        GUI:RefreshSidebarTree(frame)
+    elseif not isBottomItem then
+        GUI:RefreshSidebarTree(frame)
     end
 
     return tab
@@ -4578,10 +5290,8 @@ function GUI:AddActionButton(frame, name, onClick, accentColor)
     btn.text:SetJustifyH("LEFT")
 
     -- Position at bottom of sidebar, anchored upward
-    local bottomCount = #frame._sidebarBottomItems
-    btn:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 0, bottomCount * 28)
-    btn:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -1, bottomCount * 28)
     table.insert(frame._sidebarBottomItems, btn)
+    self:RelayoutSidebarBottomItems(frame)
 
     -- Store in tabs array but mark as action button
     frame.tabs[index] = btn
@@ -4673,6 +5383,13 @@ function GUI:SelectTab(frame, index)
             page.frame:SetAllPoints()
             page.frame:EnableMouse(false)
             if page.createFunc then
+                local activeTopTab = frame.tabs[index]
+                if activeTopTab and activeTopTab.name then
+                    GUI:SetSearchContext({
+                        tabIndex = index,
+                        tabName = activeTopTab.name,
+                    })
+                end
                 page.createFunc(page.frame)
                 page.built = true
             end
@@ -4681,30 +5398,45 @@ function GUI:SelectTab(frame, index)
         -- Capture sub-tab group created during page build
         if GUI._lastSubTabGroup then
             page._subTabGroup = GUI._lastSubTabGroup
+            page._subTabDefs = page._subTabGroup.subTabDefs
             GUI._lastSubTabGroup = nil
+        end
+
+        if page._subTabGroup then
+            page._subTabDefs = page._subTabGroup.subTabDefs or page._subTabDefs
+            page._subTabGroup._onSelect = function(subIndex)
+                if not frame then return end
+                if not frame._sidebarPendingSectionSelection then
+                    frame._sidebarActiveSectionKey = nil
+                end
+                GUI:RefreshSidebarTree(frame)
+                if not frame._sidebarPendingSectionSelection then
+                    C_Timer.After(0, function()
+                        local key = GetSectionRegistryKey(index, subIndex)
+                        local order = GUI.SectionRegistryOrder[key]
+                        local reg = GUI.SectionRegistry[key]
+                        if order and order[1] and reg and reg[order[1]] and reg[order[1]].scrollParent then
+                            GUI:UpdateSidebarSectionHighlightFromScroll(reg[order[1]].scrollParent)
+                        end
+                    end)
+                end
+            end
         end
 
         page.frame:Show()
 
-        -- Manage sub-tab bar visibility
+        -- Legacy top sub-tab bar is deprecated; sidebar tree is now the sole navigator.
         if frame._activeSubTabGroup then
             frame._activeSubTabGroup:Hide()
         end
-
         if page._subTabGroup then
-            frame._activeSubTabGroup = page._subTabGroup
-            page._subTabGroup:Show()
-            frame.subTabBar:Show()
-            frame.contentArea:ClearAllPoints()
-            frame.contentArea:SetPoint("TOPLEFT", frame.subTabBar, "BOTTOMLEFT", 0, -2)
-            frame.contentArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
-        else
-            frame._activeSubTabGroup = nil
-            frame.subTabBar:Hide()
-            frame.contentArea:ClearAllPoints()
-            frame.contentArea:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 5, 0)
-            frame.contentArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
+            page._subTabGroup:Hide()
         end
+        frame._activeSubTabGroup = nil
+        frame.subTabBar:Hide()
+        frame.contentArea:ClearAllPoints()
+        frame.contentArea:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 5, 0)
+        frame.contentArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
 
         -- Force OnShow scripts to fire on all children (for refresh purposes)
         -- Uses select() to avoid temporary table allocations on each recursion level
@@ -4726,9 +5458,12 @@ function GUI:SelectTab(frame, index)
         C_Timer.After(0, function()
             if page.frame and page.frame:IsShown() then
                 GUI:ApplyTabFont(page.frame)
+                GUI:RefreshSidebarTree(frame)
             end
         end)
     end
+
+    GUI:RefreshSidebarTree(frame)
 end
 
 ---------------------------------------------------------------------------

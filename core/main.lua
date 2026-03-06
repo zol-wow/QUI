@@ -29,7 +29,7 @@ QUICore.__reloadEventFrame = nil
 
 -- Safe reload function - queues if in combat, reloads immediately if not
 function QUICore:SafeReload()
-    if InCombatLockdown() then
+    if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
         if not self.__pendingReload then
             self.__pendingReload = true
             print("|cFF30D1FFQUI:|r Reload queued - will execute when combat ends.")
@@ -75,7 +75,7 @@ function QUI:SafeReload()
         self.QUICore:SafeReload()
     else
         -- Fallback if QUICore not loaded
-        if InCombatLockdown() then
+        if InCombatLockdown() and not (self.db and self.db.profile and self.db.profile.general and self.db.profile.general.allowReloadInCombat) then
             print("|cFF30D1FFQUI:|r Cannot reload during combat.")
         else
             ReloadUI()
@@ -389,6 +389,7 @@ local defaults = {
             autoInsertKey = true,  -- Auto-insert keystone in M+ UI
             skinKeystoneFrame = true,  -- Skin keystone insertion window
             skinGameMenu = false,  -- Skin ESC menu (opt-in)
+            allowReloadInCombat = false,  -- Allow /reload during combat (bypass SafeReload)
             addQUIButton = false,  -- Add QUI button to ESC menu (opt-in)
             gameMenuFontSize = 12,  -- Game menu button font size
             gameMenuDim = true,  -- Dim background when game menu is open
@@ -633,6 +634,7 @@ local defaults = {
                 rangeIndicator = true,
                 rangeColor = {0.8, 0.1, 0.1, 1},
                 usabilityIndicator = true,
+                clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
                 row1 = {
                     iconCount = 8,      -- How many icons in row 1 (0 = disabled)
@@ -706,6 +708,7 @@ local defaults = {
                 rangeIndicator = true,
                 rangeColor = {0.8, 0.1, 0.1, 1},
                 usabilityIndicator = true,
+                clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
                 row1 = {
                     iconCount = 6,
@@ -833,6 +836,7 @@ local defaults = {
                 fillDirection = "up",
                 iconPosition = "top",
                 showTextOnVertical = false,
+                pos = nil,  -- owned container position (seeded from Blizzard viewer on first init)
             },
             customBuffs = {
                 enabled = true,
@@ -1314,8 +1318,8 @@ local defaults = {
                 enabled = true,
                 maxHistory = 50,  -- Maximum number of messages to store
             },
-            -- Sound on new message (SharedMedia compatible)
-            newMessageSound = {
+             -- Sound on new message (SharedMedia compatible)
+             newMessageSound = {
                 enabled = false,
                 entries = {                -- Array of {channel, sound} - each channel can have its own sound
                     { channel = "guild_officer", sound = "None" },
@@ -1389,6 +1393,7 @@ local defaults = {
                 countOffsetY = 0,           -- Stack count text Y offset
                 -- Bar Layout settings
                 barScale = 1.0,             -- Global scale multiplier (0.5 - 2.0)
+                buttonSpacing = nil,        -- Button spacing override (nil = use Blizzard Edit Mode padding)
                 hideEmptySlots = false,     -- Hide buttons with no ability assigned
                 lockButtons = false,        -- Prevent dragging abilities off buttons
                 -- Range indicator settings
@@ -2964,6 +2969,27 @@ local defaults = {
             -- Features
             autoZoom = false,  -- Auto zoom out after 10 seconds
             hideAddonButtons = true,  -- Show addon buttons on hover only
+            buttonDrawer = {
+                enabled = false,        -- Off by default (opt-in feature)
+                anchor = "RIGHT",       -- Which side of minimap: LEFT, RIGHT, TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT, TOP, BOTTOM
+                offsetX = 0,            -- Horizontal offset from anchor position
+                offsetY = 0,            -- Vertical offset from anchor position
+                toggleOffsetX = 0,      -- Horizontal offset for the toggle button
+                toggleOffsetY = 0,      -- Vertical offset for the toggle button
+                autoHideToggle = false, -- Auto-hide the toggle button (show on minimap hover)
+                hiddenButtons = {},     -- Table of button names hidden from the drawer (e.g., { ["LibDBIcon10_Details"] = true })
+                autoHideDelay = 1.5,    -- Seconds after mouse leave before hiding (0 = no auto-hide)
+                buttonSize = 28,        -- Size of collected buttons in pixels
+                buttonSpacing = 2,      -- Gap between buttons in pixels
+                padding = 6,            -- Inner frame padding around the icon grid
+                columns = 1,            -- Number of columns in grid layout (1 = vertical strip)
+                growthDirection = "RIGHT", -- Primary growth direction: RIGHT, LEFT, UP, DOWN
+                centerGrowth = false,      -- Expand around center axis instead of from one edge
+                bgColor = {0.03, 0.03, 0.03, 1}, -- Drawer background color (alpha controlled by bgOpacity)
+                bgOpacity = 98,            -- Drawer background opacity (0-100)
+                borderSize = 1,            -- Drawer border thickness multiplier (0 hides border)
+                borderColor = {0.2, 0.8, 0.6, 1}, -- Drawer border color
+            },
             middleClickMenuEnabled = true,  -- Middle click minimap opens quick menu
             hideMicroMenu = false,  -- Hide Blizzard micro menu (Character/Spellbook/etc.)
             hideBagBar = false,  -- Hide Blizzard bag bar
@@ -3582,7 +3608,18 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     if self._preservedPanelAlpha then
         self.db.profile.configPanelAlpha = self._preservedPanelAlpha
     end
-    
+
+    -- Invalidate options panel — cached widgets hold stale profile table references
+    if QUI.GUI and QUI.GUI.MainFrame then
+        QUI.GUI.MainFrame:Hide()
+        QUI.GUI.MainFrame:SetParent(nil)
+        QUI.GUI.MainFrame = nil
+        QUI.GUI._searchIndexBuilt = false
+        QUI.GUI._allTabsAdded = false
+        QUI.GUI.SettingsRegistry = {}
+        QUI.GUI.SettingsRegistryKeys = {}
+    end
+
     if self.RefreshAll then
         self:RefreshAll()
     end

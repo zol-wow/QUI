@@ -1167,7 +1167,10 @@ function QUICore:ShowViewerOverlays()
                 --
                 -- Strategy: detach overlay to UIParent.  After viewer moves,
                 -- an OnUpdate syncs the overlay to follow.
-                if viewerName == "BuffBarCooldownViewer" and viewer then
+                -- Owned engine: overlay parents directly to the QUI container,
+                -- no detach/sync workaround needed.
+                local isOwnedEngine = ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() == "owned"
+                if viewerName == "BuffBarCooldownViewer" and viewer and not isOwnedEngine then
                     local cx = Helpers.SafeValue(viewer:GetCenter(), nil)
                     local _, cy = viewer:GetCenter()
                     cy = Helpers.SafeValue(cy, nil)

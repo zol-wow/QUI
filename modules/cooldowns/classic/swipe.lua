@@ -38,6 +38,24 @@ local hookedViewers    = Helpers.CreateStateTable()
 local swipePulseHooked = Helpers.CreateStateTable()
 local _layoutPending = Helpers.CreateStateTable()  -- coalesce per-viewer layout hook timers
 
+local function IsClassicEngineSelected()
+    if ns.CDMProvider and ns.CDMProvider.GetActiveEngineName then
+        local active = ns.CDMProvider:GetActiveEngineName()
+        if active ~= nil then
+            return active == "classic"
+        end
+    end
+
+    local core = ns.Addon
+    local db = core and core.db and core.db.profile
+    local configured = db and db.ncdm and db.ncdm.engine
+    if configured ~= nil then
+        return configured == "classic"
+    end
+
+    return false
+end
+
 local function IsSecret(value)
     return Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
@@ -310,11 +328,13 @@ local function ApplySettingsToIcon(icon, settings)
             end
         end
         -- Debug: log GCD detection results (gated to avoid string alloc when off)
+        -- Only log meaningful events (dur > 0 or secret), skip zero-duration noise
         if _G.QUI and _G.QUI.DEBUG_MODE then
-            local iName = icon.GetName and icon:GetName() or "?"
-            if duration then
+            if duration and duration > 0 then
+                local iName = icon.GetName and icon:GetName() or "?"
                 DebugLog(iName, "dur=", format("%.2f", duration), isGCD and "→ GCD" or "→ cooldown")
-            elseif durationRaw ~= nil then
+            elseif durationRaw ~= nil and not duration then
+                local iName = icon.GetName and icon:GetName() or "?"
                 DebugLog(iName, "dur=SECRET (raw unreadable), fallthrough to cooldown")
             end
         end
@@ -528,7 +548,7 @@ StartPulseTicker = function()
 end
 -- Start ticker immediately if viewers are already visible (classic engine only).
 -- Gate on provider: if owned engine is selected, skip Blizzard viewer hooks.
-if not (ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "classic") then
+if IsClassicEngineSelected() then
     EnsureViewerVisibilityHooks()
     if IsAnyViewerVisible() then
         StartPulseTicker()
@@ -542,7 +562,7 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg)
     -- Only run when classic CDM engine is active
-    if ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "classic" then return end
+    if not IsClassicEngineSelected() then return end
 
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
         EnsureViewerVisibilityHooks()

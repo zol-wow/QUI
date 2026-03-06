@@ -119,6 +119,9 @@ PetWarningFrame.dismissedThisFight = false
 ---------------------------------------------------------------------------
 
 local function PositionPetWarningFrame()
+    -- Skip if anchoring system has overridden this frame
+    if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(PetWarningFrame) then return end
+
     local settings = GetSettings()
     local xOffset = (settings and settings.petWarningOffsetX) or 0
     local yOffset = (settings and settings.petWarningOffsetY) or -200

@@ -37,6 +37,7 @@ local coordsTicker = nil
 
 -- Combat-deferred refresh flag
 local pendingMinimapRefresh = false
+local pendingDrawerSetup = false
 local middleClickMenuHooked = false
 local microMenuShowHooked = false
 local bagsBarShowHooked = false
@@ -1162,6 +1163,37 @@ if Minimap.ZoomOut and not zoomOutShowHooked then
     end)
 end
 
+-- Hook ExpansionLandingPageMinimapButton: when Blizzard's event system
+-- initializes the button (sets title via UpdateIconForGarrison), reposition
+-- it on the minimap and re-apply QUI's positioning. Also hook SetParent to
+-- prevent other addons from reparenting it away from Minimap.
+local expansionButtonHooked = false
+local expansionButtonReparenting = false  -- guard against SetParent hook recursion
+if ExpansionLandingPageMinimapButton and not expansionButtonHooked then
+    expansionButtonHooked = true
+    hooksecurefunc(ExpansionLandingPageMinimapButton, "SetParent", function()
+        if expansionButtonReparenting then return end
+        C_Timer.After(0, function()
+            local s = GetSettings()
+            if not s or not s.enabled then return end
+            if s.showMissions and ExpansionLandingPageMinimapButton.title then
+                expansionButtonReparenting = true
+                ExpansionLandingPageMinimapButton:SetParent(Minimap)
+                expansionButtonReparenting = false
+            end
+        end)
+    end)
+    hooksecurefunc(ExpansionLandingPageMinimapButton, "UpdateIconForGarrison", function()
+        C_Timer.After(0, function()
+            local s = GetSettings()
+            if not s or not s.enabled or not s.showMissions then return end
+            if InCombatLockdown() then return end
+            ExpansionLandingPageMinimapButton:ClearAllPoints()
+            ExpansionLandingPageMinimapButton:SetPoint("LEFT", Minimap, "LEFT", -5, 0)
+        end)
+    end)
+end
+
 local function UpdateButtonVisibility()
     if InCombatLockdown() then return end
     local settings = GetSettings()
@@ -1255,9 +1287,14 @@ local function UpdateButtonVisibility()
         end
     end
     
-    -- Expansion landing page button (missions) - position at left side
+    -- Expansion landing page button (garrison/missions) - position at left side
+    -- In WoW 12.0+, Blizzard only shows this button for characters with old
+    -- expansion garrison content (WoD-Shadowlands). For Midnight, the landing
+    -- page uses a different system. Respect Blizzard's visibility — only
+    -- reposition the button if Blizzard has initialized it (self.title ~= nil),
+    -- and allow the user setting to hide it.
     if ExpansionLandingPageMinimapButton then
-        if settings.showMissions then
+        if settings.showMissions and ExpansionLandingPageMinimapButton.title then
             ExpansionLandingPageMinimapButton:SetParent(Minimap)
             ExpansionLandingPageMinimapButton:ClearAllPoints()
             ExpansionLandingPageMinimapButton:SetPoint("LEFT", Minimap, "LEFT", -5, 0)
@@ -1796,7 +1833,9 @@ end
 local function SetupAddonButtonHiding()
     local settings = GetSettings()
     if not settings or not settings.enabled or not LibDBIcon then return end
-    
+    -- When the button drawer is enabled, it manages buttons instead
+    if settings.buttonDrawer and settings.buttonDrawer.enabled then return end
+
     if settings.hideAddonButtons then
         local buttons = LibDBIcon:GetButtonList()
         for i = 1, #buttons do
@@ -1813,6 +1852,893 @@ local function SetupAddonButtonHiding()
             LibDBIcon:ShowOnEnter(buttons[i], false)
         end
         LibDBIcon.UnregisterCallback(Minimap_Module, "LibDBIcon_IconCreated")
+    end
+end
+
+---=================================================================================
+--- BUTTON DRAWER
+---=================================================================================
+
+local DRAWER_BLACKLIST = {
+    ["MiniMapMailFrame"] = true,
+    ["MinimapZoomIn"] = true,
+    ["MinimapZoomOut"] = true,
+    ["MiniMapTracking"] = true,
+    ["MinimapBackdrop"] = true,
+    ["GameTimeFrame"] = true,
+    ["TimeManagerClockButton"] = true,
+    ["QueueStatusMinimapButton"] = true,
+    ["GarrisonLandingPageMinimapButton"] = true,
+    ["ExpansionLandingPageMinimapButton"] = true,
+    ["AddonCompartmentFrame"] = true,
+    ["QUI_MinimapBackdrop"] = true,
+    ["QUI_MinimapButtonDrawer"] = true,
+    ["QUI_DrawerToggle"] = true,
+}
+
+local drawerFrame
+local drawerToggleButton
+local collectedButtons = {}
+local drawerVisible = false
+local autoHideTimer = nil
+local drawerCallbackRegistered = false
+local toggleAutoHideHooked = false
+local drawerAnimationFrame = nil
+local drawerAnimationState = nil
+local drawerExpandedWidth = 40
+local drawerExpandedHeight = 40
+
+local function IsMinimapButton(frame)
+    if not frame or not frame.IsObjectType then return false end
+    if not (frame:IsObjectType("Frame") or frame:IsObjectType("Button")) then return false end
+    local name = frame:GetName()
+    if not name or DRAWER_BLACKLIST[name] then return false end
+    -- Skip Blizzard-owned secure frames
+    if issecurevariable(_G, name) then return false end
+    -- LibDBIcon buttons
+    if name:match("^LibDBIcon10_") then return true end
+    -- Common minimap button naming patterns
+    if name:match("MinimapButton") or name:match("MinimapFrame") or name:match("MinimapIcon") then return true end
+    if name:match("Minimap$") then return true end
+    -- Reject names ending in digits (pin/node/tracking frames)
+    if name:match("%d$") then return false end
+    -- Accept if it has click handlers and is a child of Minimap
+    local parent = frame:GetParent()
+    if parent and (parent == Minimap or parent == MinimapBackdrop) then
+        local ok, hasClick = pcall(function() return frame:HasScript("OnClick") and frame:GetScript("OnClick") end)
+        local ok2, hasMouseUp = pcall(function() return frame:HasScript("OnMouseUp") and frame:GetScript("OnMouseUp") end)
+        local ok3, hasMouseDown = pcall(function() return frame:HasScript("OnMouseDown") and frame:GetScript("OnMouseDown") end)
+        if (ok and hasClick) or (ok2 and hasMouseUp) or (ok3 and hasMouseDown) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ShouldSkipDrawerButton(name)
+    if not name then return true end
+    if DRAWER_BLACKLIST[name] then return true end
+    if name == "LibDBIcon10_QUI" then
+        local profile = QUICore and QUICore.db and QUICore.db.profile
+        local minimapButtonDB = profile and profile.minimapButton
+        if minimapButtonDB and minimapButtonDB.hide then
+            return true
+        end
+    end
+    return false
+end
+
+local function SaveOriginalState(frame, name)
+    local points = {}
+    for i = 1, frame:GetNumPoints() do
+        points[i] = { frame:GetPoint(i) }
+    end
+    -- Find the icon texture for square conversion
+    local iconTex = frame.icon  -- LibDBIcon buttons always have .icon
+    if not iconTex then
+        pcall(function()
+            for _, region in ipairs({ frame:GetRegions() }) do
+                if region:IsObjectType("Texture") and region:GetTexture() and region:GetDrawLayer() == "ARTWORK" then
+                    iconTex = region
+                    break
+                end
+            end
+        end)
+    end
+    local origOnDragStart, origOnDragStop
+    pcall(function()
+        if frame:HasScript("OnDragStart") then origOnDragStart = frame:GetScript("OnDragStart") end
+        if frame:HasScript("OnDragStop") then origOnDragStop = frame:GetScript("OnDragStop") end
+    end)
+    collectedButtons[name] = {
+        frame = frame,
+        origParent = frame:GetParent(),
+        origPoints = points,
+        origOnDragStart = origOnDragStart,
+        origOnDragStop = origOnDragStop,
+        wasShown = frame:IsShown(),
+        iconTex = iconTex,
+    }
+end
+
+local function CancelAutoHide()
+    if autoHideTimer then
+        autoHideTimer:Cancel()
+        autoHideTimer = nil
+    end
+end
+
+local function EnsureDrawerAnimator()
+    if drawerAnimationFrame then return end
+    drawerAnimationFrame = CreateFrame("Frame")
+    drawerAnimationFrame:Hide()
+    drawerAnimationFrame:SetScript("OnUpdate", function(self, elapsed)
+        if not drawerAnimationState or not drawerFrame then
+            self:Hide()
+            return
+        end
+
+        local state = drawerAnimationState
+        state.elapsed = state.elapsed + elapsed
+        local t = state.elapsed / state.duration
+        if t > 1 then t = 1 end
+
+        -- Smoothstep easing for a soft open/close.
+        local eased = t * t * (3 - 2 * t)
+        local alpha = state.fromAlpha + (state.toAlpha - state.fromAlpha) * eased
+        local width = state.fromWidth + (state.toWidth - state.fromWidth) * eased
+        local height = state.fromHeight + (state.toHeight - state.fromHeight) * eased
+        drawerFrame:SetAlpha(alpha)
+        drawerFrame:SetSize(width, height)
+
+        if t >= 1 then
+            if state.show then
+                drawerFrame:SetAlpha(1)
+                drawerFrame:SetSize(state.fullWidth, state.fullHeight)
+            else
+                drawerFrame:SetAlpha(0)
+                drawerFrame:Hide()
+                drawerFrame:SetSize(state.fullWidth, state.fullHeight)
+            end
+            drawerAnimationState = nil
+            self:Hide()
+        end
+    end)
+end
+
+local function StopDrawerAnimation(resetVisualState)
+    drawerAnimationState = nil
+    if drawerAnimationFrame then
+        drawerAnimationFrame:Hide()
+    end
+    if resetVisualState and drawerFrame then
+        drawerFrame:SetAlpha(1)
+        drawerFrame:SetSize(drawerExpandedWidth, drawerExpandedHeight)
+    end
+end
+
+local function StartDrawerAnimation(show)
+    if not drawerFrame then return end
+    local settings = GetSettings()
+    local drawerSettings = settings and settings.buttonDrawer or nil
+    local direction = drawerSettings and drawerSettings.growthDirection or "RIGHT"
+    local centerGrowth = drawerSettings and drawerSettings.centerGrowth and true or false
+
+    EnsureDrawerAnimator()
+
+    local fullWidth = drawerExpandedWidth > 0 and drawerExpandedWidth or drawerFrame:GetWidth()
+    local fullHeight = drawerExpandedHeight > 0 and drawerExpandedHeight or drawerFrame:GetHeight()
+    local collapsedSize = 2
+    local collapsedWidth, collapsedHeight
+    if centerGrowth then
+        collapsedWidth = collapsedSize
+        collapsedHeight = collapsedSize
+    elseif direction == "LEFT" or direction == "RIGHT" then
+        collapsedWidth = collapsedSize
+        collapsedHeight = fullHeight
+    else
+        collapsedWidth = fullWidth
+        collapsedHeight = collapsedSize
+    end
+
+    if show and not drawerFrame:IsShown() then
+        drawerFrame:SetSize(collapsedWidth, collapsedHeight)
+        drawerFrame:SetAlpha(0)
+        drawerFrame:Show()
+    elseif not show and not drawerFrame:IsShown() then
+        return
+    end
+
+    local fromAlpha = drawerFrame:GetAlpha() or (show and 0 or 1)
+    local toAlpha = show and 1 or 0
+    local fromWidth = drawerFrame:GetWidth()
+    local fromHeight = drawerFrame:GetHeight()
+    local toWidth = show and fullWidth or collapsedWidth
+    local toHeight = show and fullHeight or collapsedHeight
+
+    drawerAnimationState = {
+        show = show,
+        elapsed = 0,
+        duration = show and 0.22 or 0.16,
+        fromAlpha = fromAlpha,
+        toAlpha = toAlpha,
+        fromWidth = fromWidth,
+        toWidth = toWidth,
+        fromHeight = fromHeight,
+        toHeight = toHeight,
+        fullWidth = fullWidth,
+        fullHeight = fullHeight,
+    }
+    drawerAnimationFrame:Show()
+end
+
+local function HideDrawer()
+    if drawerFrame and (drawerVisible or drawerFrame:IsShown()) then
+        drawerVisible = false
+        StartDrawerAnimation(false)
+    end
+    -- Auto-hide the toggle button if setting is enabled, but not while mouse is over it
+    local settings = GetSettings()
+    if settings and settings.buttonDrawer and settings.buttonDrawer.autoHideToggle and drawerToggleButton then
+        if not drawerToggleButton:IsMouseOver() then
+            drawerToggleButton:SetAlpha(0)
+        end
+    end
+end
+
+local function ShowDrawer()
+    if drawerFrame and (not drawerVisible or not drawerFrame:IsShown()) then
+        drawerVisible = true
+        StartDrawerAnimation(true)
+    end
+    -- Ensure toggle button is visible when drawer opens
+    if drawerToggleButton then
+        drawerToggleButton:SetAlpha(1)
+    end
+end
+
+local function ShowToggleButton()
+    if drawerToggleButton then
+        drawerToggleButton:SetAlpha(1)
+    end
+end
+
+local function HideToggleButton()
+    if drawerVisible then return end  -- Don't hide while drawer is open
+    local settings = GetSettings()
+    if settings and settings.buttonDrawer and settings.buttonDrawer.autoHideToggle and drawerToggleButton then
+        drawerToggleButton:SetAlpha(0)
+    end
+end
+
+local function ToggleDrawer()
+    if drawerVisible then
+        CancelAutoHide()
+        HideDrawer()
+    else
+        ShowDrawer()
+    end
+end
+
+local function StartAutoHide()
+    local settings = GetSettings()
+    if not settings or not settings.buttonDrawer then return end
+    local delay = settings.buttonDrawer.autoHideDelay or 1.5
+    if delay <= 0 then return end
+    CancelAutoHide()
+    autoHideTimer = C_Timer.NewTimer(delay, function()
+        autoHideTimer = nil
+        HideDrawer()
+    end)
+end
+
+local function IsMouseOverDrawer()
+    if drawerFrame and drawerFrame:IsMouseOver() then return true end
+    if drawerToggleButton and drawerToggleButton:IsMouseOver() then return true end
+    for _, data in pairs(collectedButtons) do
+        if data.frame and data.frame:IsMouseOver() then return true end
+    end
+    return false
+end
+
+local function OnDrawerLeave()
+    C_Timer.After(0.05, function()
+        if not IsMouseOverDrawer() then
+            StartAutoHide()
+        end
+    end)
+end
+
+local function MakeButtonSquare(data, bSize)
+    if not data or not data.frame then return end
+    if data.squareDone then return end
+    local frame = data.frame
+    data.hiddenRegions = {}
+
+    local iconTex = frame.icon or frame.Icon or data.iconTex
+
+    local ok = pcall(function()
+        local regions = { frame:GetRegions() }
+        for _, region in ipairs(regions) do
+            if region:IsObjectType("Texture") then
+                local layer = region:GetDrawLayer()
+                local isIcon = (region == iconTex)
+
+                if isIcon then
+                    region:ClearAllPoints()
+                    region:SetAllPoints(frame)
+                    region:SetTexCoord(0, 1, 0, 1)
+                    region:Show()
+                    if region.SetMask then pcall(region.SetMask, region, "") end
+                elseif layer == "HIGHLIGHT" then
+                    -- skip highlight texture
+                else
+                    region:Hide()
+                    data.hiddenRegions[#data.hiddenRegions + 1] = region
+                end
+            end
+        end
+    end)
+    data.squareDone = true
+end
+
+local function LayoutDrawerButtons()
+    if not drawerFrame then return end
+    local settings = GetSettings()
+    if not settings or not settings.buttonDrawer then return end
+
+    local bSize = settings.buttonDrawer.buttonSize or 28
+    local bSpacing = settings.buttonDrawer.buttonSpacing or 2
+    local cols = math.max(1, settings.buttonDrawer.columns or 1)
+    local direction = settings.buttonDrawer.growthDirection or "RIGHT"
+    local centerGrowth = settings.buttonDrawer.centerGrowth and true or false
+    if direction ~= "RIGHT" and direction ~= "LEFT" and direction ~= "UP" and direction ~= "DOWN" then
+        direction = "RIGHT"
+    end
+    local padding = math.max(0, settings.buttonDrawer.padding or 6)
+
+    local hiddenButtons = settings.buttonDrawer.hiddenButtons or {}
+
+    -- Collect and sort visible buttons (skip filtered ones)
+    local sorted = {}
+    for name, data in pairs(collectedButtons) do
+        if hiddenButtons[name] or ShouldSkipDrawerButton(name) then
+            -- Hide filtered buttons
+            local mt = getmetatable(data.frame)
+            if mt and mt.__index then
+                mt.__index.Hide(data.frame)
+            end
+        else
+            sorted[#sorted + 1] = { name = name, frame = data.frame }
+        end
+    end
+    table.sort(sorted, function(a, b) return a.name < b.name end)
+
+    local count = #sorted
+    if count == 0 then
+        drawerExpandedWidth = bSize + padding * 2
+        drawerExpandedHeight = bSize + padding * 2
+        drawerFrame:SetSize(drawerExpandedWidth, drawerExpandedHeight)
+        return
+    end
+
+    local step = bSize + bSpacing
+    local primaryHorizontal = (direction == "RIGHT" or direction == "LEFT")
+
+    -- For horizontal growth, treat "Columns" as number of rows (lanes).
+    -- This preserves vertical wrapping control while allowing the common
+    -- case (Columns = 1) to grow horizontally as expected.
+    local laneCount = cols
+    local laneSizes = {}
+    for lane = 1, laneCount do
+        laneSizes[lane] = 0
+    end
+    for i = 1, count do
+        local lane = ((i - 1) % laneCount) + 1
+        laneSizes[lane] = laneSizes[lane] + 1
+    end
+
+    local minX, maxX, minY, maxY
+
+    for i, entry in ipairs(sorted) do
+        local laneIndex = ((i - 1) % laneCount) + 1
+        local primaryIndex = math.floor((i - 1) / laneCount)
+        local laneSize = laneSizes[laneIndex] or 1
+
+        local primaryOffset
+        if centerGrowth then
+            local centerIndex = (laneSize - 1) / 2
+            primaryOffset = (primaryIndex - centerIndex) * step
+            if direction == "LEFT" or direction == "DOWN" then
+                primaryOffset = -primaryOffset
+            end
+        elseif direction == "RIGHT" then
+            primaryOffset = primaryIndex * step
+        elseif direction == "LEFT" then
+            primaryOffset = -primaryIndex * step
+        elseif direction == "DOWN" then
+            primaryOffset = -primaryIndex * step
+        else -- UP
+            primaryOffset = primaryIndex * step
+        end
+
+        local secondaryOffset = (laneIndex - 1) * step
+        local centerX, centerY
+        if primaryHorizontal then
+            centerX = primaryOffset
+            centerY = -secondaryOffset
+        else
+            centerX = secondaryOffset
+            centerY = primaryOffset
+        end
+
+        entry.centerX = centerX
+        entry.centerY = centerY
+
+        local half = bSize * 0.5
+        local left = centerX - half
+        local right = centerX + half
+        local bottom = centerY - half
+        local top = centerY + half
+        minX = minX and math.min(minX, left) or left
+        maxX = maxX and math.max(maxX, right) or right
+        minY = minY and math.min(minY, bottom) or bottom
+        maxY = maxY and math.max(maxY, top) or top
+    end
+
+    local width = padding * 2 + (maxX - minX)
+    local height = padding * 2 + (maxY - minY)
+    drawerExpandedWidth = width
+    drawerExpandedHeight = height
+    drawerFrame:SetSize(width, height)
+
+    -- Layout in grid, force visibility and square icons
+    for _, entry in ipairs(sorted) do
+        local f = entry.frame
+        local centerX = padding + (entry.centerX - minX)
+        local centerY = padding + (entry.centerY - minY)
+        f:ClearAllPoints()
+        f:SetPoint("CENTER", drawerFrame, "BOTTOMLEFT", centerX, centerY)
+        f:SetSize(bSize, bSize)
+
+        -- Force visible via metatable (bypasses our overrides)
+        local mt = getmetatable(f)
+        if mt and mt.__index then
+            mt.__index.SetAlpha(f, 1)
+            mt.__index.Show(f)
+        end
+
+        -- Make icons square
+        local data = collectedButtons[entry.name]
+        if data then
+            MakeButtonSquare(data, bSize)
+        end
+    end
+end
+
+local function StyleDrawerFrame()
+    if not drawerFrame then return end
+    local settings = GetSettings()
+    local drawerSettings = settings and settings.buttonDrawer or nil
+
+    local borderR, borderG, borderB, borderA = 0.2, 0.8, 0.6, 1
+    local bgR, bgG, bgB, bgA = 0.03, 0.03, 0.03, 0.98
+
+    if Helpers and Helpers.GetSkinBorderColor then
+        borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor()
+    elseif _G.QUI and _G.QUI.GetAddonAccentColor then
+        borderR, borderG, borderB, borderA = _G.QUI:GetAddonAccentColor()
+    end
+    borderA = borderA or 1
+
+    if Helpers and Helpers.GetSkinBgColor then
+        bgR, bgG, bgB, bgA = Helpers.GetSkinBgColor()
+    end
+
+    if drawerSettings and type(drawerSettings.borderColor) == "table" then
+        local c = drawerSettings.borderColor
+        borderR = c[1] or borderR
+        borderG = c[2] or borderG
+        borderB = c[3] or borderB
+        borderA = c[4] or borderA
+    end
+    if drawerSettings and type(drawerSettings.bgColor) == "table" then
+        local c = drawerSettings.bgColor
+        bgR = c[1] or bgR
+        bgG = c[2] or bgG
+        bgB = c[3] or bgB
+        bgA = c[4] or bgA
+    end
+    if drawerSettings and drawerSettings.bgOpacity ~= nil then
+        local pct = math.max(0, math.min(100, drawerSettings.bgOpacity))
+        bgA = pct / 100
+    end
+
+    local px = (_G.QUI and _G.QUI.GetPixelSize and _G.QUI:GetPixelSize(drawerFrame)) or 1
+    local borderSize = 1
+    if drawerSettings and drawerSettings.borderSize ~= nil then
+        borderSize = drawerSettings.borderSize
+    end
+    borderSize = math.max(0, borderSize)
+    local edgeSize = px * borderSize
+    local hasBorder = borderSize > 0
+
+    drawerFrame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = hasBorder and "Interface\\Buttons\\WHITE8x8" or nil,
+        edgeSize = hasBorder and edgeSize or 0,
+        insets = hasBorder and { left = edgeSize, right = edgeSize, top = edgeSize, bottom = edgeSize } or { left = 0, right = 0, top = 0, bottom = 0 },
+    })
+    drawerFrame:SetBackdropColor(bgR, bgG, bgB, bgA)
+    drawerFrame:SetBackdropBorderColor(borderR, borderG, borderB, hasBorder and borderA or 0)
+end
+
+local function CreateDrawerFrame()
+    if drawerFrame then return end
+    drawerFrame = CreateFrame("Frame", "QUI_MinimapButtonDrawer", UIParent, "BackdropTemplate")
+    drawerFrame:SetFrameStrata("MEDIUM")
+    drawerFrame:SetClampedToScreen(true)
+    drawerFrame:SetSize(40, 40)
+    if drawerFrame.SetClipsChildren then
+        drawerFrame:SetClipsChildren(true)
+    end
+    drawerFrame:SetAlpha(0)
+    drawerFrame:Hide()
+    drawerFrame:EnableMouse(true)
+    StyleDrawerFrame()
+    drawerFrame:SetScript("OnEnter", function() CancelAutoHide() end)
+    drawerFrame:SetScript("OnLeave", OnDrawerLeave)
+end
+
+local function CreateDrawerToggleButton()
+    if drawerToggleButton then return end
+    drawerToggleButton = CreateFrame("Button", "QUI_DrawerToggle", Minimap)
+    drawerToggleButton:SetSize(20, 20)
+    drawerToggleButton:SetFrameStrata("HIGH")
+    drawerToggleButton:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+
+    -- Background
+    local bg = drawerToggleButton:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.9)
+
+    -- Grid icon: 4 small squares (2x2 grid)
+    local gridSize = 5
+    local gridGap = 2
+    local gridOfs = 4
+    for row = 0, 1 do
+        for col = 0, 1 do
+            local dot = drawerToggleButton:CreateTexture(nil, "ARTWORK")
+            dot:SetSize(gridSize, gridSize)
+            dot:SetPoint("TOPLEFT", drawerToggleButton, "TOPLEFT", gridOfs + col * (gridSize + gridGap), -(gridOfs + row * (gridSize + gridGap)))
+            local r, g, b = 0.2, 0.8, 0.6
+            if Helpers and Helpers.GetSkinBorderColor then
+                r, g, b = Helpers.GetSkinBorderColor()
+            end
+            dot:SetColorTexture(r, g, b, 1)
+        end
+    end
+
+    -- Border
+    local border = drawerToggleButton:CreateTexture(nil, "OVERLAY")
+    border:SetAllPoints()
+    border:SetColorTexture(1, 1, 1, 0.15)
+    local inner = drawerToggleButton:CreateTexture(nil, "OVERLAY", nil, 1)
+    inner:SetPoint("TOPLEFT", 1, -1)
+    inner:SetPoint("BOTTOMRIGHT", -1, 1)
+    inner:SetColorTexture(0, 0, 0, 0)  -- Transparent inner to create border effect
+    border:SetDrawLayer("OVERLAY", 0)
+    inner:SetDrawLayer("OVERLAY", 1)
+
+    drawerToggleButton:SetScript("OnClick", ToggleDrawer)
+    drawerToggleButton:SetScript("OnEnter", function(self)
+        CancelAutoHide()
+        ShowToggleButton()
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("Addon Button Drawer")
+        local total, hidden = 0, 0
+        local s = GetSettings()
+        local hiddenButtons = (s and s.buttonDrawer and s.buttonDrawer.hiddenButtons) or {}
+        for name in pairs(collectedButtons) do
+            total = total + 1
+            if hiddenButtons[name] then hidden = hidden + 1 end
+        end
+        local visible = total - hidden
+        local line = visible .. " button" .. (visible ~= 1 and "s" or "")
+        if hidden > 0 then
+            line = line .. " (" .. hidden .. " hidden)"
+        end
+        GameTooltip:AddLine(line, 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    drawerToggleButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        OnDrawerLeave()
+        -- If drawer is closed and auto-hide is on, fade the toggle button
+        if not drawerVisible then
+            HideToggleButton()
+        end
+    end)
+end
+
+local function UpdateDrawerAnchor()
+    if not drawerFrame or not drawerToggleButton then return end
+    local settings = GetSettings()
+    if not settings or not settings.buttonDrawer then return end
+    local anchor = settings.buttonDrawer.anchor or "RIGHT"
+    local direction = settings.buttonDrawer.growthDirection or "RIGHT"
+    local centerGrowth = settings.buttonDrawer.centerGrowth and true or false
+    local ofsX = settings.buttonDrawer.offsetX or 0
+    local ofsY = settings.buttonDrawer.offsetY or 0
+    local tOfsX = settings.buttonDrawer.toggleOffsetX or 0
+    local tOfsY = settings.buttonDrawer.toggleOffsetY or 0
+    local gap = 4
+
+    drawerToggleButton:ClearAllPoints()
+
+    -- Anchor toggle to minimap side/corner.
+    if anchor == "RIGHT" then
+        drawerToggleButton:SetPoint("RIGHT", Minimap, "RIGHT", -2 + tOfsX, tOfsY)
+    elseif anchor == "LEFT" then
+        drawerToggleButton:SetPoint("LEFT", Minimap, "LEFT", 2 + tOfsX, tOfsY)
+    elseif anchor == "BOTTOM" then
+        drawerToggleButton:SetPoint("BOTTOM", Minimap, "BOTTOM", tOfsX, 2 + tOfsY)
+    elseif anchor == "TOP" then
+        drawerToggleButton:SetPoint("TOP", Minimap, "TOP", tOfsX, -2 + tOfsY)
+    elseif anchor == "TOPLEFT" then
+        drawerToggleButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 2 + tOfsX, -2 + tOfsY)
+    elseif anchor == "TOPRIGHT" then
+        drawerToggleButton:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", -2 + tOfsX, -2 + tOfsY)
+    elseif anchor == "BOTTOMLEFT" then
+        drawerToggleButton:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 2 + tOfsX, 2 + tOfsY)
+    elseif anchor == "BOTTOMRIGHT" then
+        drawerToggleButton:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", -2 + tOfsX, 2 + tOfsY)
+    end
+
+    -- Anchor drawer relative to the toggle so growth direction is honored
+    -- from the toggle/button origin instead of being locked to minimap edge.
+    drawerFrame:ClearAllPoints()
+    if centerGrowth then
+        drawerFrame:SetPoint("CENTER", drawerToggleButton, "CENTER", ofsX, ofsY)
+    elseif direction == "LEFT" then
+        drawerFrame:SetPoint("RIGHT", drawerToggleButton, "LEFT", -gap + ofsX, ofsY)
+    elseif direction == "RIGHT" then
+        drawerFrame:SetPoint("LEFT", drawerToggleButton, "RIGHT", gap + ofsX, ofsY)
+    elseif direction == "UP" then
+        drawerFrame:SetPoint("BOTTOM", drawerToggleButton, "TOP", ofsX, gap + ofsY)
+    else -- DOWN
+        drawerFrame:SetPoint("TOP", drawerToggleButton, "BOTTOM", ofsX, -gap + ofsY)
+    end
+end
+
+local function CollectButton(frame, name)
+    if collectedButtons[name] then return end
+    if InCombatLockdown() then
+        pendingDrawerSetup = true
+        return
+    end
+    SaveOriginalState(frame, name)
+    local data = collectedButtons[name]
+
+    -- Undo LibDBIcon ShowOnEnter (uses SetAlpha(0), not Hide)
+    if LibDBIcon and name:match("^LibDBIcon10_") then
+        local buttonName = name:gsub("^LibDBIcon10_", "")
+        LibDBIcon:ShowOnEnter(buttonName, false)
+        -- Stop any fadeOut animation group
+        pcall(function()
+            if frame.fadeOut then frame.fadeOut:Stop() end
+            for _, child in ipairs({ frame:GetChildren() }) do
+                if child.Stop and child:IsObjectType("AnimationGroup") then
+                    child:Stop()
+                end
+            end
+        end)
+    end
+
+    frame:SetParent(drawerFrame)
+    frame:SetScale(1)
+    if frame.SetIgnoreParentScale then
+        frame:SetIgnoreParentScale(false)
+    end
+
+    -- Override Hide, SetShown, AND SetAlpha so nothing can re-hide
+    -- LibDBIcon uses SetAlpha(0) + fadeOut animation, not Hide()
+    local mt = getmetatable(frame)
+    local mtSetAlpha = mt and mt.__index and mt.__index.SetAlpha
+    frame.Hide = function() end
+    frame.SetShown = function(self, shown)
+        if shown and mt and mt.__index then
+            mt.__index.Show(self)
+        end
+    end
+    frame.SetAlpha = function(self, alpha)
+        -- Only allow full opacity while in drawer
+        if mtSetAlpha then
+            mtSetAlpha(self, 1)
+        end
+    end
+    -- Force visible using metatable methods (bypass our overrides for initial set)
+    if mtSetAlpha then mtSetAlpha(frame, 1) end
+    if mt and mt.__index then mt.__index.Show(frame) end
+
+    -- Disable dragging
+    if frame:HasScript("OnDragStart") then
+        frame:SetScript("OnDragStart", nil)
+    end
+    if frame:HasScript("OnDragStop") then
+        frame:SetScript("OnDragStop", nil)
+    end
+    -- Hook enter/leave for auto-hide
+    if frame:HasScript("OnEnter") then
+        frame:HookScript("OnEnter", function() CancelAutoHide() end)
+    end
+    if frame:HasScript("OnLeave") then
+        frame:HookScript("OnLeave", OnDrawerLeave)
+    end
+end
+
+local function ScanAndCollectButtons()
+    if InCombatLockdown() then
+        pendingDrawerSetup = true
+        return
+    end
+    if not drawerFrame then return end
+
+    -- Scan Minimap children
+    for _, child in ipairs({ Minimap:GetChildren() }) do
+        if IsMinimapButton(child) then
+            local name = child:GetName()
+            if name and not ShouldSkipDrawerButton(name) then
+                CollectButton(child, name)
+            end
+        end
+    end
+    -- Scan MinimapBackdrop children (if exists)
+    if MinimapBackdrop then
+        for _, child in ipairs({ MinimapBackdrop:GetChildren() }) do
+            if IsMinimapButton(child) then
+                local name = child:GetName()
+                if name and not ShouldSkipDrawerButton(name) then
+                    CollectButton(child, name)
+                end
+            end
+        end
+    end
+
+    LayoutDrawerButtons()
+end
+
+local function ReleaseAllButtons()
+    if InCombatLockdown() then
+        pendingDrawerSetup = true
+        return
+    end
+    for name, data in pairs(collectedButtons) do
+        local frame = data.frame
+        if frame then
+            -- Remove our overrides (fall back to metatable methods)
+            frame.Hide = nil
+            frame.SetShown = nil
+            frame.SetAlpha = nil
+            -- Restore hidden overlay/border textures for LibDBIcon buttons
+            if data.hiddenRegions then
+                for _, region in ipairs(data.hiddenRegions) do
+                    region:Show()
+                end
+            end
+            frame:SetParent(data.origParent)
+            frame:ClearAllPoints()
+            for _, pt in ipairs(data.origPoints) do
+                frame:SetPoint(unpack(pt))
+            end
+            pcall(function()
+                if data.origOnDragStart and frame:HasScript("OnDragStart") then
+                    frame:SetScript("OnDragStart", data.origOnDragStart)
+                end
+                if data.origOnDragStop and frame:HasScript("OnDragStop") then
+                    frame:SetScript("OnDragStop", data.origOnDragStop)
+                end
+            end)
+        end
+    end
+    collectedButtons = {}
+    if drawerCallbackRegistered and LibDBIcon then
+        LibDBIcon.UnregisterCallback("QUI_ButtonDrawer", "LibDBIcon_IconCreated")
+        drawerCallbackRegistered = false
+    end
+end
+
+local function SetupButtonDrawer()
+    local settings = GetSettings()
+    if not settings or not settings.buttonDrawer or not settings.buttonDrawer.enabled then
+        ReleaseAllButtons()
+        StopDrawerAnimation(true)
+        if drawerFrame then drawerFrame:Hide() end
+        if drawerToggleButton then drawerToggleButton:Hide() end
+        drawerVisible = false
+        return
+    end
+
+    if InCombatLockdown() then
+        pendingDrawerSetup = true
+        return
+    end
+
+    CreateDrawerFrame()
+    CreateDrawerToggleButton()
+    StyleDrawerFrame()
+    ScanAndCollectButtons()
+    LayoutDrawerButtons()
+    UpdateDrawerAnchor()
+    drawerToggleButton:Show()
+
+    -- Auto-hide toggle button: show on minimap hover, hide on leave
+    if settings.buttonDrawer.autoHideToggle then
+        drawerToggleButton:SetAlpha(0)  -- Start hidden
+        if not toggleAutoHideHooked then
+            Minimap:HookScript("OnEnter", ShowToggleButton)
+            Minimap:HookScript("OnLeave", function()
+                C_Timer.After(0.1, function()
+                    if not IsMouseOverDrawer() and not (Minimap:IsMouseOver()) then
+                        HideToggleButton()
+                    end
+                end)
+            end)
+            toggleAutoHideHooked = true
+        end
+    else
+        drawerToggleButton:SetAlpha(1)
+    end
+
+    -- Hook LibDBIcon for late-loading buttons (use distinct owner to avoid conflict with SetupAddonButtonHiding)
+    if LibDBIcon and not drawerCallbackRegistered then
+        LibDBIcon.RegisterCallback("QUI_ButtonDrawer", "LibDBIcon_IconCreated", function(_, button, buttonName)
+            local frameName = "LibDBIcon10_" .. buttonName
+            if not ShouldSkipDrawerButton(frameName) then
+                C_Timer.After(0.1, function()
+                    local settings2 = GetSettings()
+                    if not settings2 or not settings2.buttonDrawer or not settings2.buttonDrawer.enabled then return end
+                    local frame = _G[frameName]
+                    if frame and IsMinimapButton(frame) then
+                        local name = frame:GetName()
+                        if name and not ShouldSkipDrawerButton(name) then
+                            CollectButton(frame, name)
+                        end
+                        LayoutDrawerButtons()
+                    end
+                end)
+            end
+        end)
+        drawerCallbackRegistered = true
+    end
+
+    -- Delayed rescan to catch async button creation
+    C_Timer.After(0, function()
+        local s = GetSettings()
+        if s and s.buttonDrawer and s.buttonDrawer.enabled then
+            ScanAndCollectButtons()
+        end
+    end)
+    C_Timer.After(1, function()
+        local s = GetSettings()
+        if s and s.buttonDrawer and s.buttonDrawer.enabled then
+            ScanAndCollectButtons()
+        end
+    end)
+end
+
+local function RefreshButtonDrawer()
+    local settings = GetSettings()
+    if not settings or not settings.buttonDrawer or not settings.buttonDrawer.enabled then
+        SetupButtonDrawer()  -- Will clean up
+        return
+    end
+    if drawerFrame then
+        StyleDrawerFrame()
+        LayoutDrawerButtons()
+        UpdateDrawerAnchor()
+    else
+        SetupButtonDrawer()
     end
 end
 
@@ -2094,6 +3020,7 @@ function Minimap_Module:Initialize()
     SetupMicroBagVisibilityHooks()
     UpdateMicroAndBagVisibility()
     SetupAddonButtonHiding()
+    SetupButtonDrawer()
     SetupDungeonEyeHook()
     UpdateDungeonEyePosition()
     SetupMouseWheelZoom()
@@ -2212,6 +3139,7 @@ function Minimap_Module:Refresh()
     SetupMicroBagVisibilityHooks()
     UpdateMicroAndBagVisibility()
     SetupAddonButtonHiding()
+    RefreshButtonDrawer()
     UpdateDungeonEyePosition()
 
     -- Update lock/movable state and ensure drag is registered
@@ -2270,6 +3198,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             Minimap_Module:Initialize()
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended: run deferred drawer setup if one was requested during combat
+        if pendingDrawerSetup then
+            pendingDrawerSetup = false
+            SetupButtonDrawer()
+        end
         -- Combat ended: run deferred refresh if one was requested during combat
         if pendingMinimapRefresh then
             pendingMinimapRefresh = false
@@ -2311,5 +3244,19 @@ end)
 -- Expose refresh globals for options panel (matches pattern used by all other modules)
 _G.QUI_RefreshMinimap = function()
     Minimap_Module:Refresh()
+end
+
+_G.QUI_RefreshMinimapButtonDrawer = function()
+    RefreshButtonDrawer()
+end
+
+-- Expose collected button names for the options panel
+_G.QUI_GetDrawerButtonNames = function()
+    local names = {}
+    for name in pairs(collectedButtons) do
+        names[#names + 1] = name
+    end
+    table.sort(names)
+    return names
 end
 

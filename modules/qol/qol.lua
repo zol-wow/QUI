@@ -474,9 +474,6 @@ local function OnGossipShow()
         if optionID and not gossipClicked[optionID] then
             gossipClicked[optionID] = true
             C_GossipInfo.SelectOption(optionID)
-
-            local optionName = option.name or "gossip"
-            print(string.format("|cFF30D1FFQUI:|r %s", optionName))
         end
     end
     -- If there are multiple options, do NOTHING - let the player choose

@@ -2222,9 +2222,36 @@ local function BuildGeneralTab(tabContent)
                     LibDBIcon:Show("QUI")
                 end
             end
+            if _G.QUI_RefreshMinimapButtonDrawer then
+                _G.QUI_RefreshMinimapButtonDrawer()
+            end
         end)
         showMinimapIconCheck:SetPoint("TOPLEFT", PADDING, y)
         showMinimapIconCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+    end
+
+    -- Reload Behavior Section
+    y = y - 10
+    GUI:SetSearchSection("Reload Behavior")
+    local reloadHeader = GUI:CreateSectionHeader(tabContent, "Reload Behavior")
+    reloadHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - reloadHeader.gap
+
+    local reloadDesc = GUI:CreateLabel(tabContent,
+        "By default, QUI queues /reload until combat ends to prevent taint issues. Enable this to bypass the combat check and reload immediately.",
+        11, C.textMuted)
+    reloadDesc:SetPoint("TOPLEFT", PADDING, y)
+    reloadDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    reloadDesc:SetJustifyH("LEFT")
+    reloadDesc:SetWordWrap(true)
+    reloadDesc:SetHeight(28)
+    y = y - 32
+
+    if db and db.general then
+        local reloadCheck = GUI:CreateFormCheckbox(tabContent, "Allow Reload During Combat", "allowReloadInCombat", db.general)
+        reloadCheck:SetPoint("TOPLEFT", PADDING, y)
+        reloadCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         y = y - FORM_ROW
     end
 

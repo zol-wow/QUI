@@ -24,8 +24,8 @@ local function BuildTooltipTab(tabContent)
 
     -- Refresh callback
     local function RefreshTooltips()
-        if _G.QUI_RefreshTooltips then
-            _G.QUI_RefreshTooltips()
+        if ns.QUI_RefreshTooltips then
+            ns.QUI_RefreshTooltips()
         end
     end
 

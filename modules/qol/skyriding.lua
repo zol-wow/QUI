@@ -17,6 +17,7 @@ local VIGOR_SPELL_ID = 372608
 local SECOND_WIND_SPELL_ID = 425782
 local WHIRLING_SURGE_SPELL_ID = 361584
 local THRILL_OF_THE_SKIES_BUFF_ID = 377234
+local BASE_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED
 
 -- Frame references
 local skyridingFrame
@@ -111,7 +112,22 @@ local function GetSecondWindInfo()
 end
 
 local function GetGlidingInfo()
+    if Helpers.IsPlayerPassenger and Helpers.IsPlayerPassenger() then
+        return false, false, 0
+    end
+
     local gliding, canGlideNow, speed = C_PlayerInfo.GetGlidingInfo()
+
+    -- Extra safety: treat "can glide" as false when Vigor charges are protected.
+    -- This catches passenger/ride-along edge cases where glide state can be true
+    -- but the player cannot actually use skyriding abilities.
+    if canGlideNow and C_Spell and C_Spell.GetSpellCharges then
+        local charges = C_Spell.GetSpellCharges(VIGOR_SPELL_ID)
+        if not charges or IsSecretValue(charges.maxCharges) then
+            return false, false, 0
+        end
+    end
+
     return gliding or false, canGlideNow or false, speed or 0
 end
 
@@ -403,6 +419,7 @@ local function CreateSkyridingFrame()
     skyridingFrame:EnableMouse(false)  -- Disabled by default (locked)
     skyridingFrame:RegisterForDrag("LeftButton")
     skyridingFrame:SetScript("OnDragStart", function(self)
+        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
         local settings = GetSettings()
         if settings and not settings.locked then
             self:StartMoving()
@@ -781,7 +798,7 @@ local function UpdateSpeed()
 
     local format = settings.speedFormat or "PERCENT"
     if format == "PERCENT" then
-        speedText:SetText(string.format("%d%%", math.floor(speed * 10)))
+        speedText:SetText(string.format("%d%%", math.floor(speed / BASE_MOVEMENT_SPEED * 100)))
     else
         speedText:SetText(string.format("%.1f", speed))
     end
@@ -939,10 +956,12 @@ local function ApplySettings()
     local offsetY = settings.offsetY or -150
     local locked = settings.locked ~= false
 
-    -- Size and position
+    -- Size and position (skip if anchoring system has overridden this frame)
     skyridingFrame:SetSize(width, height)
-    skyridingFrame:ClearAllPoints()
-    skyridingFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(skyridingFrame)) then
+        skyridingFrame:ClearAllPoints()
+        skyridingFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    end
 
     -- Apply HUD layer priority
     local db = QUICore and QUICore.db and QUICore.db.profile

@@ -54,6 +54,7 @@ local function CreateUnitFramesPage(parent)
         -- Set search context for auto-registration
         GUI:SetSearchContext({tabIndex = 5, tabName = "Unit Frames", subTabIndex = 1, subTabName = "General"})
 
+
         if not ufdb then
             local info = GUI:CreateLabel(tabContent, "Unit frame settings not available - database not loaded", 12, C.textMuted)
             info:SetPoint("TOPLEFT", PAD, y)

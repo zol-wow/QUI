@@ -461,7 +461,10 @@ end
 ---------------------------------------------------------------------------
 local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, barHeight)
     local anchor = castSettings.anchor or "none"
-    
+
+    -- Skip if anchoring system has overridden this frame
+    if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(anchorFrame) then return end
+
     anchorFrame:ClearAllPoints()
     
     if anchor == "essential" then
@@ -1529,6 +1532,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
         castbar:SetClampedToScreen(true)
         
         castbar:SetScript("OnDragStart", function(self)
+            if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
             self:StartMoving()
         end)
         

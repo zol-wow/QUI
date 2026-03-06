@@ -175,6 +175,12 @@ local function CreateCustomTrackersPage(parent)
         return container
     end
 
+    -- Slot name fallbacks for common equipment slots
+    local SLOT_NAMES = {
+        [13] = "Trinket 1",
+        [14] = "Trinket 2",
+    }
+
     -- Helper: Get entry display name (prefers customName if set)
     local function GetEntryDisplayName(entry)
         -- Use custom name if set
@@ -185,6 +191,13 @@ local function CreateCustomTrackersPage(parent)
         if entry.type == "spell" then
             local info = C_Spell.GetSpellInfo(entry.id)
             return info and info.name or ("Spell " .. entry.id)
+        elseif entry.type == "slot" then
+            local itemID = GetInventoryItemID("player", entry.id)
+            if itemID then
+                local name = C_Item.GetItemInfo(itemID)
+                if name then return name end
+            end
+            return SLOT_NAMES[entry.id] or ("Slot " .. entry.id)
         else
             local name = C_Item.GetItemInfo(entry.id)
             return name or ("Item " .. entry.id)
@@ -197,6 +210,7 @@ local function CreateCustomTrackersPage(parent)
     local function BuildTrackerBarTab(tabContent, barConfig, barIndex, subTabsRef)
         GUI:SetSearchContext({tabIndex = 9, tabName = "Custom Trackers", subTabIndex = barIndex, subTabName = barConfig.name or ("Bar " .. barIndex)})
         local y = -10
+
         local entryListFrame  -- Forward declaration for refresh callback
 
         -- Refresh callback for this bar
@@ -396,7 +410,7 @@ local function CreateCustomTrackersPage(parent)
             -- Note: Entry list refresh is handled by entryListFrame recreation
         end
 
-        local hintText = GUI:CreateLabel(tabContent, "Drag items from your bags or character pane, spells from your spellbook into the box below.", 11, C.textMuted)
+        local hintText = GUI:CreateLabel(tabContent, "Drag items from your bags or character pane, spells from your spellbook into the box below, or use the buttons below to track equipment slots.", 11, C.textMuted)
         hintText:SetPoint("TOPLEFT", addHeader, "BOTTOMLEFT", 0, -8)
         hintText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         hintText:SetJustifyH("LEFT")
@@ -434,6 +448,14 @@ local function CreateCustomTrackersPage(parent)
                 if entry.type == "spell" then
                     local info = C_Spell.GetSpellInfo(entry.id)
                     iconTex:SetTexture(info and info.iconID or "Interface\\Icons\\INV_Misc_QuestionMark")
+                elseif entry.type == "slot" then
+                    local itemID = GetInventoryItemID("player", entry.id)
+                    if itemID then
+                        local _, _, _, _, _, _, _, _, _, slotIcon = C_Item.GetItemInfo(itemID)
+                        iconTex:SetTexture(slotIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                    else
+                        iconTex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                    end
                 else
                     local _, _, _, _, _, _, _, _, _, icon = C_Item.GetItemInfo(entry.id)
                     iconTex:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -486,6 +508,12 @@ local function CreateCustomTrackersPage(parent)
                     local currentName = GetEntryDisplayName(self.entry)
                     if newName == currentName then
                         -- No change, don't process
+                        return
+                    end
+
+                    -- Slot entries: name edits are custom display name only (don't resolve as spell/item)
+                    if self.entry.type == "slot" then
+                        self.entry.customName = newName
                         return
                     end
 
@@ -683,11 +711,40 @@ local function CreateCustomTrackersPage(parent)
         addSection:SetPoint("TOPLEFT", hintText, "BOTTOMLEFT", 0, -10)
         addSection:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)  -- Full width
 
+        -- Equipment slot buttons (Trinket 1 / Trinket 2)
+        local slotBtnContainer = CreateFrame("Frame", nil, tabContent)
+        slotBtnContainer:SetHeight(30)
+        slotBtnContainer:SetPoint("TOPLEFT", addSection, "BOTTOMLEFT", 0, -6)
+        slotBtnContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+
+        local slotLabel = slotBtnContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        slotLabel:SetPoint("LEFT", 0, 0)
+        slotLabel:SetText("Track Equipment Slot:")
+        slotLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+
+        local trinket1Btn = GUI:CreateButton(slotBtnContainer, "Trinket 1", 90, 24, function()
+            local trackerMod = QUICore and QUICore.CustomTrackers
+            if trackerMod then
+                trackerMod:AddEntry(barConfig.id, "slot", 13)
+                RefreshEntryList()
+            end
+        end)
+        trinket1Btn:SetPoint("LEFT", slotLabel, "RIGHT", 10, 0)
+
+        local trinket2Btn = GUI:CreateButton(slotBtnContainer, "Trinket 2", 90, 24, function()
+            local trackerMod = QUICore and QUICore.CustomTrackers
+            if trackerMod then
+                trackerMod:AddEntry(barConfig.id, "slot", 14)
+                RefreshEntryList()
+            end
+        end)
+        trinket2Btn:SetPoint("LEFT", trinket1Btn, "RIGHT", 6, 0)
+
         -----------------------------------------------------------------------
         -- TRACKED ITEMS SECTION
         -----------------------------------------------------------------------
         local trackedHeader = GUI:CreateSectionHeader(tabContent, "Tracked Items And Spells")
-        trackedHeader:SetPoint("TOPLEFT", addSection, "BOTTOMLEFT", 0, -15)
+        trackedHeader:SetPoint("TOPLEFT", slotBtnContainer, "BOTTOMLEFT", 0, -15)
 
         -- Entry list container
         entryListFrame = CreateFrame("Frame", nil, tabContent)

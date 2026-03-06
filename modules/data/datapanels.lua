@@ -347,15 +347,18 @@ end
 
 --- Refresh all panels from saved variables
 function Datapanels:RefreshAll()
+    -- Guard: db may not be ready yet on initial login
+    if not QUICore.db or not QUICore.db.profile then return end
+
     -- Clear existing panels
     for panelID, panel in pairs(self.activePanels) do
         self:DeletePanel(panelID)
     end
-    
+
     -- Create panels from saved variables
     local db = QUICore.db.profile.quiDatatexts
     if not db or not db.panels then return end
-    
+
     for _, panelConfig in ipairs(db.panels) do
         if panelConfig.id then
             self:CreatePanel(panelConfig.id, panelConfig)
@@ -379,17 +382,28 @@ end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-initFrame:SetScript("OnEvent", function(self, event)
+initFrame:SetScript("OnEvent", function(self, event, isInitialLogin, isReloadingUi)
     if event == "PLAYER_ENTERING_WORLD" then
-        C_Timer.After(0.5, function()
+        -- Initial login needs a longer delay — game data APIs (gold, spec,
+        -- durability, bags, etc.) may not return valid results yet.
+        -- On /reload all data is already cached so 0.5s is plenty.
+        local delay = (isInitialLogin and not isReloadingUi) and 1.5 or 0.5
+        C_Timer.After(delay, function()
             Datapanels:RefreshAll()
-            
-            -- Debug: Show how many panels were created
-            local count = 0
-            for _ in pairs(Datapanels.activePanels) do
-                count = count + 1
+
+            -- Safety retry: if db wasn't ready or panels failed to create,
+            -- try once more after an additional delay (initial login only)
+            if isInitialLogin and not isReloadingUi then
+                local count = 0
+                for _ in pairs(Datapanels.activePanels) do count = count + 1 end
+                local db = QUICore.db and QUICore.db.profile and QUICore.db.profile.quiDatatexts
+                local expectedPanels = db and db.panels and #db.panels or 0
+                if count < expectedPanels then
+                    C_Timer.After(2.0, function()
+                        Datapanels:RefreshAll()
+                    end)
+                end
             end
-            -- Panels created silently
         end)
         self:UnregisterAllEvents()
     end

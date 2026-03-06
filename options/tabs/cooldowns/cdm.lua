@@ -1387,6 +1387,13 @@ local function CreateCDMSetupPage(parent)
             y = y - 24
             tabContent._currentY = y
 
+            -- Clickable Icons (Click to Cast)
+            local clickCheck = GUI:CreateFormCheckbox(tabContent, "Clickable Icons (Click to Cast)", "clickableIcons", ess, RefreshNCDM)
+            clickCheck:SetPoint("TOPLEFT", PAD, y)
+            clickCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
             -- Row 1
             if ess.row1 then
                 BuildRowSettings(tabContent, 1, ess.row1, "Essential", ess, rebuildEssential)
@@ -1477,6 +1484,13 @@ local function CreateCDMSetupPage(parent)
             hintText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             hintText:SetJustifyH("LEFT")
             y = y - 24
+            tabContent._currentY = y
+
+            -- Clickable Icons (Click to Cast)
+            local clickCheck = GUI:CreateFormCheckbox(tabContent, "Clickable Icons (Click to Cast)", "clickableIcons", util, RefreshNCDM)
+            clickCheck:SetPoint("TOPLEFT", PAD, y)
+            clickCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
             tabContent._currentY = y
 
             -- Row 1

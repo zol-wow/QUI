@@ -18,6 +18,7 @@ local function BuildAutohideTab(tabContent)
     local db = Shared.GetDB()
 
     GUI:SetSearchContext({tabIndex = 8, tabName = "Skinning & Autohide", subTabIndex = 1, subTabName = "Autohide"})
+
     GUI:SetSearchSection("Autohide Settings")
 
     -- Refresh callback

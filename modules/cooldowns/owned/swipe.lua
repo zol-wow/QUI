@@ -56,12 +56,14 @@ local function ResolveColor(mode, colorTable)
     return nil  -- "default": don't override
 end
 
--- CDM default swipe color (dark overlay)
+-- CDM default swipe color (dark overlay for cooldowns)
 local CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A = 0, 0, 0, 0.8
+-- Blizzard default buff/aura overlay color (yellow)
+local BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A = 0.93, 0.77, 0.0, 0.45
 
 ---------------------------------------------------------------------------
 -- APPLY SWIPE TO A SINGLE ICON
--- Classification uses icon._spellEntry.isAura and icon._lastDuration
+-- Classification uses icon._auraActive (from hook) and icon._isOnGCD (from API)
 -- (set by cdm_icons.lua during cooldown updates).
 ---------------------------------------------------------------------------
 local function ApplySwipeToIcon(icon, settings)
@@ -76,7 +78,7 @@ local function ApplySwipeToIcon(icon, settings)
     local mode
     if isBuffIcon or (entry.isAura and icon._auraActive) then
         mode = "aura"
-    elseif icon._lastDuration and icon._lastDuration > 0 and icon._lastDuration <= 2.5 then
+    elseif icon._isOnGCD then
         mode = "gcd"
     else
         mode = "cooldown"
@@ -105,26 +107,16 @@ local function ApplySwipeToIcon(icon, settings)
         icon.Cooldown:SetDrawEdge(settings.showRechargeEdge)
     end
 
-    -- Swipe color resolution
-    local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
-    local sR, sG, sB, sA = ResolveColor(settings.swipeColorMode or "default", settings.swipeColor)
-
-    -- Fill fallback colors when only one mode is set
-    if not oR and not sR then
-        oR, oG, oB, oA = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A
-        sR, sG, sB, sA = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A
-    elseif not oR then
-        oR, oG, oB, oA = sR, sG, sB, sA
-    elseif not sR then
-        sR, sG, sB, sA = oR, oG, oB, oA
-    end
-
     -- Apply color and texture based on mode
     if mode == "aura" then
+        local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
+        if not oR then oR, oG, oB, oA = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
         icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
-        if oR then icon.Cooldown:SetSwipeColor(oR, oG, oB, oA) end
+        icon.Cooldown:SetSwipeColor(oR, oG, oB, oA)
     else
-        if sR then icon.Cooldown:SetSwipeColor(sR, sG, sB, sA) end
+        local sR, sG, sB, sA = ResolveColor(settings.swipeColorMode or "default", settings.swipeColor)
+        if not sR then sR, sG, sB, sA = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A end
+        icon.Cooldown:SetSwipeColor(sR, sG, sB, sA)
     end
 end
 
@@ -143,20 +135,12 @@ local function ApplySwipeToBuffChild(icon, settings)
     icon.Cooldown:SetDrawSwipe(showSwipe)
     icon.Cooldown:SetDrawEdge(showSwipe)
 
-    -- Use overlay color (aura mode)
+    -- Use overlay color (aura mode) — default to Blizzard yellow
     local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
-    local sR, sG, sB, sA = ResolveColor(settings.swipeColorMode or "default", settings.swipeColor)
-
-    if not oR and not sR then
-        oR, oG, oB, oA = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A
-    elseif not oR then
-        oR, oG, oB, oA = sR, sG, sB, sA
-    elseif not sR then
-        sR, sG, sB, sA = oR, oG, oB, oA
-    end
+    if not oR then oR, oG, oB, oA = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
 
     icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
-    if oR then icon.Cooldown:SetSwipeColor(oR, oG, oB, oA) end
+    icon.Cooldown:SetSwipeColor(oR, oG, oB, oA)
 end
 
 ---------------------------------------------------------------------------

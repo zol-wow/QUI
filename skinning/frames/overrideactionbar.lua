@@ -13,6 +13,7 @@ local LEAVE_BUTTON_SIZE = 28  -- Visible leave button
 local RESOURCE_BAR_WIDTH = 12  -- Slim vertical bar
 local RESOURCE_BAR_HEIGHT = 40  -- Match button height
 local pendingOverrideSkin = false
+local pendingOverrideHide = false
 
 -- Style action button with QUI theme
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -87,9 +88,8 @@ local function HideBlizzardElements(bar)
         end
     end
 
-    -- Hide entire pitch frame
+    -- Hide entire pitch frame (SetAlpha only — Hide() taints the protected bar hierarchy)
     if bar.pitchFrame then
-        bar.pitchFrame:Hide()
         bar.pitchFrame:SetAlpha(0)
     end
 
@@ -106,9 +106,8 @@ local function HideBlizzardElements(bar)
     -- Keep health bar and power bar but hide their Blizzard decorations
     -- (we'll restyle them as compact vertical bars)
 
-    -- Hide XP bar
+    -- Hide XP bar (SetAlpha only — Hide() taints the protected bar hierarchy)
     if bar.xpBar then
-        bar.xpBar:Hide()
         bar.xpBar:SetAlpha(0)
     end
 end
@@ -339,9 +338,33 @@ local function SetupOverrideBarHooks()
     if not bar or SkinBase.GetFrameData(bar, "hooked") then return end
 
     -- Hook OnShow with delay to let Blizzard finish setup
-    bar:HookScript("OnShow", function()
+    bar:HookScript("OnShow", function(self)
+        self:SetAlpha(1) -- Reset visual hide from taint workaround
+        pendingOverrideHide = false
         C_Timer.After(0.15, SkinOverrideActionBar)
     end)
+
+    -- TAINT FIX: Hook animation OnFinished to handle blocked Hide().
+    -- QUI's skinning taints the protected OverrideActionBar frame. When Blizzard's
+    -- slide-out animation finishes during combat, its OnFinished calls Hide() which
+    -- gets blocked (ADDON_ACTION_BLOCKED). The bar stays visible and the animation
+    -- loops. This hook detects the blocked hide and applies a visual workaround.
+    for _, group in pairs({ bar:GetAnimationGroups() }) do
+        group:HookScript("OnFinished", function()
+            C_Timer.After(0, function()
+                if not bar:IsShown() then return end
+                -- Bar is still shown after animation finished = Hide() was likely blocked
+                if not HasVehicleActionBar() and not HasOverrideActionBar() then
+                    if InCombatLockdown() then
+                        bar:SetAlpha(0) -- Visual hide until combat ends
+                        pendingOverrideHide = true
+                    else
+                        bar:Hide()
+                    end
+                end
+            end)
+        end)
+    end
 
     -- If already visible, skin now
     if bar:IsShown() then
@@ -385,6 +408,16 @@ frame:SetScript("OnEvent", function(self, event, addon)
         if pendingOverrideSkin then
             pendingOverrideSkin = false
             C_Timer.After(0, SkinOverrideActionBar)
+        end
+        if pendingOverrideHide then
+            pendingOverrideHide = false
+            C_Timer.After(0, function()
+                local b = _G.OverrideActionBar
+                if b and b:IsShown() and not HasVehicleActionBar() and not HasOverrideActionBar() then
+                    b:SetAlpha(1)
+                    b:Hide()
+                end
+            end)
         end
     end
 end)

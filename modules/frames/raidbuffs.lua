@@ -596,6 +596,7 @@ local function CreateMainFrame()
     mainFrame:SetMovable(true)
     mainFrame:RegisterForDrag("LeftButton")
     mainFrame:SetScript("OnDragStart", function(self)
+        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
         if not InCombatLockdown() then
             self:StartMoving()
         end
@@ -949,9 +950,9 @@ UpdateDisplay = function()
         end
     end
 
-    -- Restore saved position
+    -- Restore saved position (skip if anchoring system has overridden this frame)
     -- Position is saved using grow-direction-appropriate anchor, so icons stay in place
-    if settings.position then
+    if settings.position and not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(mainFrame)) then
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint(settings.position.point, UIParent, settings.position.relPoint, settings.position.x, settings.position.y)
     end

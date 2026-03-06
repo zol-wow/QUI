@@ -889,6 +889,8 @@ Datatexts:Register("gold", {
         frame:RegisterEvent("TOKEN_MARKET_PRICE_UPDATED")
         frame:SetScript("OnEvent", Update)
 
+        Update()
+
         -- Request WoW Token price from server and set up refresh ticker
         if C_WowTokenPublic and C_WowTokenPublic.UpdateMarketPrice then
             C_WowTokenPublic.UpdateMarketPrice()

@@ -29,9 +29,12 @@
     <Script file="utility/dandersframes.lua"/>
     <Script file="utility/thirdpartyaddons.lua"/>
     <Script file="qol/party_keystones.lua"/>
+    <!-- Help content data (load before coordinators) -->
+    <Script file="core/help_content.lua"/>
     <!-- Page coordinators (load after subtab files) -->
     <Script file="core/welcome.lua"/>
     <Script file="core/general.lua"/>
     <Script file="ui/autohides.lua"/>
     <Script file="ui/minimap_page.lua"/>
+    <Script file="core/help.lua"/>
 </Ui>

@@ -144,7 +144,17 @@ local function GetEntryTexture(entry)
         end
         return fallbackTex
     end
-    if entry.type == "item" or entry.type == "trinket" then
+    if entry.type == "trinket" then
+        -- Trinket entries store the equipment slot number (13/14), not the item ID.
+        -- Resolve to the actual equipped item ID before looking up the icon.
+        local itemID = GetInventoryItemID("player", entry.id)
+        if itemID then
+            local _, _, _, _, icon = C_Item.GetItemInfoInstant(itemID)
+            return icon
+        end
+        return nil
+    end
+    if entry.type == "item" then
         local _, _, _, _, icon = C_Item.GetItemInfoInstant(entry.id)
         return icon
     end
@@ -332,16 +342,23 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 pcall(cd.SetCooldown, cd, start, duration)
             end
 
-            -- Capture cooldown values from Blizzard's native update so
-            -- the desaturation ticker uses hook-driven data instead of
-            -- API calls that return secret values during combat.
-            local safeStart = SafeToNumber(start, nil)
-            local safeDur = SafeToNumber(duration, nil)
-            if safeStart then targetIcon._lastStart = safeStart end
-            if safeDur then targetIcon._lastDuration = safeDur end
-            if safeDur == 0 then
-                targetIcon._lastStart = 0
-                targetIcon._lastDuration = 0
+            -- SetCooldown fires when Blizzard transitions from aura to
+            -- cooldown on the same icon — clear the aura flag so the
+            -- swipe classifier picks up the change immediately.
+            targetIcon._auraActive = false
+
+            -- Track GCD state for swipe classification (matches CMC pattern).
+            -- isOnGCD is a Blizzard boolean — CMC accesses it directly without
+            -- secret guards, but we use pcall for safety.
+            local sid = targetIcon._spellEntry and
+                (targetIcon._spellEntry.overrideSpellID or targetIcon._spellEntry.spellID or targetIcon._spellEntry.id)
+            if sid and C_Spell.GetSpellCooldown then
+                local ok, cdInfo = pcall(C_Spell.GetSpellCooldown, sid)
+                if ok and cdInfo then
+                    if not IsSecretValue(cdInfo.isOnGCD) then
+                        targetIcon._isOnGCD = cdInfo.isOnGCD or false
+                    end
+                end
             end
 
             ReapplySwipeStyle(cd, targetIcon)
@@ -433,10 +450,10 @@ end
 -- BLIZZARD STACK/CHARGE TEXT HOOK
 -- Mirrors charge counts and application stacks from Blizzard's hidden
 -- viewer children to our addon-owned icon.StackText via hooksecurefunc.
--- Polling IsShown()/GetText() is impossible — QUI's SetAlpha(0) hook on
--- the viewer taints the entire child hierarchy, making all reads return
--- secret values.  Hook parameters come from Blizzard's secure calling
--- code and are clean.  No initial seeding — hooks fire when Blizzard
+-- Polling IsShown()/GetText() is unreliable — child frames under hidden
+-- Blizzard viewers may return secret values during combat.  Hook parameters
+-- come from Blizzard's secure calling code and are clean.
+-- No initial seeding — hooks fire when Blizzard
 -- first updates the frames (next charge/aura change after BuildIcons).
 ---------------------------------------------------------------------------
 local function SyncStackText(state)
@@ -715,11 +732,12 @@ local function CreateIcon(parent, spellEntry)
     -- Tooltip support
     icon:EnableMouse(true)
     icon:SetScript("OnEnter", function(self)
+        if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
         local entry = self._spellEntry
         if not entry then return end
         local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
         if tooltipSettings and tooltipSettings.anchorToCursor then
-            local anchorTooltip = _G.QUI_AnchorTooltipToCursor
+            local anchorTooltip = ns.QUI_AnchorTooltipToCursor
             if anchorTooltip then
                 anchorTooltip(GameTooltip, self, tooltipSettings)
             else
@@ -730,20 +748,273 @@ local function CreateIcon(parent, spellEntry)
         end
         local sid = entry.overrideSpellID or entry.spellID or (entry.type and entry.id)
         if sid then
-            if entry.type == "item" or entry.type == "trinket" then
+            if entry.type == "trinket" then
+                -- Trinket entries store slot number; resolve to item ID for tooltip
+                local itemID = GetInventoryItemID("player", sid)
+                if itemID then
+                    pcall(GameTooltip.SetItemByID, GameTooltip, itemID)
+                end
+            elseif entry.type == "item" then
                 pcall(GameTooltip.SetItemByID, GameTooltip, sid)
             else
                 pcall(GameTooltip.SetSpellByID, GameTooltip, sid)
             end
         end
-        GameTooltip:Show()
+        pcall(GameTooltip.Show, GameTooltip)
     end)
     icon:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        pcall(GameTooltip.Hide, GameTooltip)
     end)
 
     icon:Show()
     return icon
+end
+
+---------------------------------------------------------------------------
+-- CLICK-TO-CAST: Secure overlay button for CDM icons
+-- Creates a SecureActionButtonTemplate child that receives clicks and
+-- forwards them to the WoW secure action system.  The parent icon
+-- stays as a plain Frame so layout/pooling remain taint-free.
+---------------------------------------------------------------------------
+local function EnsureClickButton(icon)
+    if icon.clickButton then return icon.clickButton end
+
+    local btn = CreateFrame("Button", nil, icon, "SecureActionButtonTemplate")
+    btn:SetAllPoints()
+    btn:RegisterForClicks("AnyUp", "AnyDown")
+    btn:EnableMouse(true)
+    btn:Hide()
+
+    -- Sit above TextOverlay so the button receives clicks
+    if icon.TextOverlay then
+        btn:SetFrameLevel(icon.TextOverlay:GetFrameLevel() + 2)
+    end
+
+    -- Forward tooltip events to the parent icon's handler
+    btn:SetScript("OnEnter", function(self)
+        local parent = self:GetParent()
+        if parent then
+            local onEnter = parent:GetScript("OnEnter")
+            if onEnter then onEnter(parent) end
+        end
+    end)
+    btn:SetScript("OnLeave", function()
+        pcall(GameTooltip.Hide, GameTooltip)
+    end)
+
+    icon.clickButton = btn
+    return btn
+end
+
+local function ClearClickButtonAttributes(btn)
+    btn:SetAttribute("type", nil)
+    btn:SetAttribute("spell", nil)
+    btn:SetAttribute("item", nil)
+    btn:SetAttribute("macro", nil)
+end
+
+---------------------------------------------------------------------------
+-- MACRO RESOLUTION
+-- Scan all player macros for one that casts the given spell.
+-- If found, clicking the CDM icon will execute through the macro,
+-- preserving all conditionals (@mouseover, /cancelaura, modifiers, etc.).
+--
+-- Scans macro indices directly (1-120 account, 121-138 character) instead
+-- of action bar slots, because GetActionInfo returns bogus "macro" entries
+-- with spell IDs instead of real macro indices in WoW 12.0+.
+--
+-- Match priority (highest → lowest):
+--   1. GetMacroSpell — WoW resolved the macro's tooltip to our spell
+--   2. #showtooltip / #show line names our spell — the macro's declared identity
+--   3. /cast or /use line names our spell — broadest fallback
+-- Multi-spell macros (e.g. Lichborne + Death Coil) only match via their
+-- tooltip identity, not via a /cast line for a secondary spell.
+---------------------------------------------------------------------------
+local MAX_ACCOUNT_MACROS = 120
+local MAX_CHARACTER_MACROS = 18
+
+-- Extract the spell name from #showtooltip or #show lines.
+-- Returns lowercase name or nil.  Handles:
+--   #showtooltip              → nil (bare, no explicit spell)
+--   #showtooltip Spell Name   → "spell name"
+--   #show Spell Name          → "spell name"
+local function GetMacroTooltipSpell(body)
+    if not body then return nil end
+    local name = body:match("^#showtooltip%s+(.+)") or body:match("\n#showtooltip%s+(.+)")
+    if not name then
+        name = body:match("^#show%s+(.+)") or body:match("\n#show%s+(.+)")
+    end
+    if name then
+        name = name:match("^(.-)%s*$")
+        if name and name ~= "" then return name:lower() end
+    end
+    return nil
+end
+
+local function FindMacroForSpell(spellID, overrideSpellID)
+    if not spellID and not overrideSpellID then return nil end
+
+    -- Build lowercase spell name set for matching
+    local names = {}
+    if spellID and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellID)
+        if info and info.name then names[info.name:lower()] = true end
+    end
+    if overrideSpellID and overrideSpellID ~= spellID and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(overrideSpellID)
+        if info and info.name then names[info.name:lower()] = true end
+    end
+    if not next(names) then return nil end
+
+    -- Pass 1: GetMacroSpell (WoW-resolved tooltip spell ID)
+    for i = 1, MAX_ACCOUNT_MACROS + MAX_CHARACTER_MACROS do
+        local macroName = GetMacroInfo(i)
+        if macroName then
+            local macroSpell = GetMacroSpell(i)
+            if macroSpell and (macroSpell == spellID or macroSpell == overrideSpellID) then
+                return macroName
+            end
+        end
+    end
+
+    -- Pass 2: #showtooltip / #show declares the macro's identity spell
+    for i = 1, MAX_ACCOUNT_MACROS + MAX_CHARACTER_MACROS do
+        local macroName = GetMacroInfo(i)
+        if macroName then
+            local tooltipSpell = GetMacroTooltipSpell(GetMacroBody(i))
+            if tooltipSpell and names[tooltipSpell] then
+                return macroName
+            end
+        end
+    end
+
+    -- Pass 3: /cast or /use line mentions our spell (broadest, skips
+    -- multi-spell macros whose tooltip identity is a different spell)
+    for i = 1, MAX_ACCOUNT_MACROS + MAX_CHARACTER_MACROS do
+        local macroName = GetMacroInfo(i)
+        if macroName then
+            local body = GetMacroBody(i)
+            if body then
+                local tooltipSpell = GetMacroTooltipSpell(body)
+                if tooltipSpell and not names[tooltipSpell] then
+                    -- Tooltip declares a different spell — skip
+                else
+                    local lowerBody = body:lower()
+                    for name in pairs(names) do
+                        if lowerBody:find(name, 1, true) then
+                            return macroName
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+---------------------------------------------------------------------------
+-- SECURE ATTRIBUTE MANAGEMENT
+-- Sets or clears the click-to-cast secure button attributes on a CDM icon.
+---------------------------------------------------------------------------
+local function UpdateIconSecureAttributes(icon, entry, viewerType)
+    if not icon then return end
+
+    -- Can't modify secure attributes during combat
+    if InCombatLockdown() then
+        icon._pendingSecureUpdate = true
+        return
+    end
+
+    -- Never clickable for buff icons
+    if viewerType == "buff" then
+        if icon.clickButton then
+            ClearClickButtonAttributes(icon.clickButton)
+            icon.clickButton:Hide()
+        end
+        return
+    end
+
+    local db = GetDB()
+    local viewerDB = db and db[viewerType]
+
+    -- Feature disabled or no config
+    if not viewerDB or not viewerDB.clickableIcons then
+        if icon.clickButton then
+            ClearClickButtonAttributes(icon.clickButton)
+            icon.clickButton:Hide()
+        end
+        return
+    end
+
+    -- No entry assigned
+    if not entry then
+        if icon.clickButton then
+            ClearClickButtonAttributes(icon.clickButton)
+            icon.clickButton:Hide()
+        end
+        return
+    end
+
+    local btn = EnsureClickButton(icon)
+
+    -- Determine secure attributes based on entry type
+    if entry.type == "macro" and entry.macroName then
+        btn:SetAttribute("type", "macro")
+        btn:SetAttribute("macro", entry.macroName)
+        btn:Show()
+    elseif entry.type == "trinket" then
+        local itemID = GetInventoryItemID("player", entry.id)
+        if itemID then
+            local itemName = C_Item.GetItemNameByID(itemID)
+            if itemName then
+                btn:SetAttribute("type", "item")
+                btn:SetAttribute("item", itemName)
+                btn:Show()
+            else
+                ClearClickButtonAttributes(btn)
+                btn:Hide()
+            end
+        else
+            ClearClickButtonAttributes(btn)
+            btn:Hide()
+        end
+    elseif entry.type == "item" then
+        local itemName = C_Item.GetItemNameByID(entry.id)
+        if itemName then
+            btn:SetAttribute("type", "item")
+            btn:SetAttribute("item", itemName)
+            btn:Show()
+        else
+            ClearClickButtonAttributes(btn)
+            btn:Hide()
+        end
+    else
+        -- Spell (harvested or custom spell type)
+        -- Prefer player macro if one casts this spell, so clicking
+        -- the CDM icon executes through the macro's conditionals.
+        local spellID = entry.overrideSpellID or entry.spellID
+        local macroName = FindMacroForSpell(entry.spellID, entry.overrideSpellID)
+        if macroName then
+            btn:SetAttribute("type", "macro")
+            btn:SetAttribute("macro", macroName)
+            btn:Show()
+        elseif spellID then
+            local spellInfo = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+            if spellInfo and spellInfo.name then
+                btn:SetAttribute("type", "spell")
+                btn:SetAttribute("spell", spellInfo.name)
+                btn:Show()
+            else
+                ClearClickButtonAttributes(btn)
+                btn:Hide()
+            end
+        else
+            ClearClickButtonAttributes(btn)
+            btn:Hide()
+        end
+    end
+
+    icon._pendingSecureUpdate = nil
 end
 
 ---------------------------------------------------------------------------
@@ -816,9 +1087,15 @@ local function ConfigureIcon(icon, rowConfig)
         icon.Border:Show()
 
         icon:SetHitRectInsets(-bs, -bs, -bs, -bs)
+        if icon.clickButton then
+            icon.clickButton:SetHitRectInsets(-bs, -bs, -bs, -bs)
+        end
     else
         icon.Border:Hide()
         icon:SetHitRectInsets(0, 0, 0, 0)
+        if icon.clickButton then
+            icon.clickButton:SetHitRectInsets(0, 0, 0, 0)
+        end
     end
 
     -- TexCoord (zoom + aspect ratio crop)
@@ -898,24 +1175,8 @@ local function UpdateIconCooldown(icon)
     if entry._blizzChild then
         -- Mirrored Blizzard CooldownFrame: Blizzard drives the hidden
         -- viewer; our hooks forward updates to the addon-owned CD.
-        -- We only track state for swipe color classification.
-
-        -- Track duration + start for swipe classification and desaturation.
-        -- Primary source during combat is the SetCooldown hook in
-        -- MirrorBlizzCooldown; this API query is a fallback that works
-        -- outside combat (secrets → no update).
-        local sid = entry.overrideSpellID or entry.spellID or entry.id
-        if sid and not (entry.type == "item" or entry.type == "trinket") then
-            local cdStart, dur = GetBestSpellCooldown(sid)
-            local safeDurVal = SafeToNumber(dur, nil)
-            local safeStartVal = SafeToNumber(cdStart, nil)
-            if safeDurVal then icon._lastDuration = safeDurVal end
-            if safeStartVal then icon._lastStart = safeStartVal end
-            if safeDurVal == 0 then
-                icon._lastStart = 0
-                icon._lastDuration = 0
-            end
-        end
+        -- Hooks (SetCooldown / SetCooldownFromDurationObject) drive all
+        -- mirrored cooldown updates; no API polling needed here.
 
         -- Re-apply swipe styling (colors) in case state changed
         if icon.Cooldown then
@@ -942,7 +1203,13 @@ local function UpdateIconCooldown(icon)
             if newTex and icon.Icon then
                 icon.Icon:SetTexture(newTex)
             end
-        elseif entry.type == "item" or entry.type == "trinket" then
+        elseif entry.type == "trinket" then
+            -- Trinket entries store equipment slot (13/14), resolve to item ID
+            local itemID = GetInventoryItemID("player", entry.id)
+            if itemID then
+                startTime, duration = GetItemCooldown(itemID)
+            end
+        elseif entry.type == "item" then
             startTime, duration = GetItemCooldown(entry.id)
         else
             startTime, duration = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
@@ -954,7 +1221,10 @@ local function UpdateIconCooldown(icon)
                 local baseID = entry.spellID or entry.id
                 if baseID then
                     local overrideID = C_Spell.GetOverrideSpell(baseID)
-                    icon.Icon:SetTexture(GetSpellTexture(overrideID or baseID))
+                    local newTex = GetSpellTexture(overrideID or baseID)
+                    if newTex then
+                        icon.Icon:SetTexture(newTex)
+                    end
                 end
             end
         end
@@ -973,12 +1243,7 @@ local function UpdateIconCooldown(icon)
 
         if icon.Cooldown then
             if startTime and duration then
-                local safeStart = SafeToNumber(startTime, nil)
-                if safeStart and safeDur and safeDur > 0 then
-                    icon.Cooldown:SetCooldown(safeStart, safeDur)
-                else
-                    pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
-                end
+                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
             else
                 icon.Cooldown:Clear()
             end
@@ -1155,6 +1420,9 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon:SetSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE)
         icon._spellEntry = spellEntry
         icon._isQUICDMIcon = true
+        icon._lastStart = nil
+        icon._lastDuration = nil
+        icon._isOnGCD = nil
 
         -- Update texture
         local texID
@@ -1178,11 +1446,14 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
                 texID = GetSpellTexture(spellEntry.overrideSpellID or spellEntry.spellID)
             end
         end
-        if texID and icon.Icon then
-            icon.Icon:SetTexture(texID)
-        end
-        -- Ensure clean visual state for recycled icon
         if icon.Icon then
+            if texID then
+                icon.Icon:SetTexture(texID)
+            else
+                -- Clear stale texture from previous owner to prevent
+                -- recycled icons showing the wrong spell/item icon.
+                icon.Icon:SetTexture(nil)
+            end
             icon.Icon:SetDesaturated(false)
         end
 
@@ -1191,10 +1462,19 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         end
         icon.StackText:SetText("")
         icon.StackText:Hide()
+        -- Update click-to-cast secure attributes for recycled icons
+        if spellEntry.viewerType ~= "buff" then
+            UpdateIconSecureAttributes(icon, spellEntry, spellEntry.viewerType)
+        end
         icon:Show()
         return icon
     end
-    return CreateIcon(parent, spellEntry)
+    local newIcon = CreateIcon(parent, spellEntry)
+    -- Update click-to-cast secure attributes for new icons
+    if spellEntry.viewerType ~= "buff" then
+        UpdateIconSecureAttributes(newIcon, spellEntry, spellEntry.viewerType)
+    end
+    return newIcon
 end
 
 function CDMIcons:ReleaseIcon(icon)
@@ -1210,6 +1490,8 @@ function CDMIcons:ReleaseIcon(icon)
     icon._usabilityTinted = nil
     icon._cdDesaturated = nil
     icon._lastStart = nil
+    icon._lastDuration = nil
+    icon._isOnGCD = nil
     if icon.Icon then
         icon.Icon:SetVertexColor(1, 1, 1, 1)
         icon.Icon:SetDesaturated(false)
@@ -1219,6 +1501,15 @@ function CDMIcons:ReleaseIcon(icon)
     end
     icon.StackText:SetText("")
     icon.Border:Hide()
+
+    -- Clear click-to-cast secure button
+    if icon.clickButton then
+        if not InCombatLockdown() then
+            ClearClickButtonAttributes(icon.clickButton)
+            icon.clickButton:Hide()
+        end
+    end
+    icon._pendingSecureUpdate = nil
 
     if #recyclePool < MAX_RECYCLE_POOL_SIZE then
         icon:SetParent(UIParent)
@@ -1294,7 +1585,14 @@ function CDMIcons:BuildIcons(viewerType, container)
                             spellEntry.spellID = resolvedID
                             spellEntry.overrideSpellID = resolvedID
                         end
-                    elseif entry.type == "item" or entry.type == "trinket" then
+                    elseif entry.type == "trinket" then
+                        -- Trinket entries store equipment slot (13/14), resolve to item ID
+                        local itemID = GetInventoryItemID("player", entry.id)
+                        if itemID then
+                            local itemName = C_Item.GetItemNameByID(itemID)
+                            spellEntry.name = itemName or ""
+                        end
+                    elseif entry.type == "item" then
                         local itemName = C_Item.GetItemNameByID(entry.id)
                         spellEntry.name = itemName or ""
                     else
@@ -1361,6 +1659,17 @@ function CDMIcons:BuildIcons(viewerType, container)
             if entry.viewerType == "buff" then
                 icon._auraActive = true
                 InitBuffVisibility(icon, entry._blizzChild)
+            end
+        end
+    end
+
+    -- Update click-to-cast secure attributes for essential/utility icons.
+    -- AcquireIcon sets attrs per-icon, but this catches any pending updates
+    -- (e.g., from combat-deferred rebuilds via PLAYER_REGEN_ENABLED).
+    if viewerType == "essential" or viewerType == "utility" then
+        for _, icon in ipairs(pool) do
+            if icon._pendingSecureUpdate then
+                UpdateIconSecureAttributes(icon, icon._spellEntry, viewerType)
             end
         end
     end
@@ -1452,6 +1761,7 @@ end
 CDMIcons.ConfigureIcon = ConfigureIcon
 CDMIcons.UpdateIconCooldown = UpdateIconCooldown
 CDMIcons.ApplyTexCoord = ApplyTexCoord
+CDMIcons.UpdateIconSecureAttributes = UpdateIconSecureAttributes
 
 ---------------------------------------------------------------------------
 -- CUSTOM ENTRY MANAGEMENT (backward-compatible API surface)
@@ -1462,7 +1772,14 @@ function CustomCDM:GetEntryName(entry)
     if entry.type == "macro" then
         return entry.macroName or "Macro"
     end
-    if entry.type == "item" or entry.type == "trinket" then
+    if entry.type == "trinket" then
+        local itemID = GetInventoryItemID("player", entry.id)
+        if itemID then
+            return C_Item.GetItemNameByID(itemID) or "Trinket (Slot " .. tostring(entry.id) .. ")"
+        end
+        return "Trinket (Slot " .. tostring(entry.id) .. ")"
+    end
+    if entry.type == "item" then
         return C_Item.GetItemNameByID(entry.id) or "Item #" .. tostring(entry.id)
     end
     local info = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(entry.id)
