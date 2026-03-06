@@ -86,12 +86,20 @@ local function BuildTooltipTab(tabContent)
     enableHeader:SetPoint("TOPLEFT", PADDING, y)
     y = y - enableHeader.gap
 
-    local enableCheck = GUI:CreateFormCheckbox(tabContent, "QUI Tooltip Module", "enabled", tooltip, RefreshTooltips)
+    local enableCheck = GUI:CreateFormCheckbox(tabContent, "QUI Tooltip Module", "enabled", tooltip, function()
+        GUI:ShowConfirmation({
+            title = "Reload UI?",
+            message = "Tooltip module changes require a reload to take effect.",
+            acceptText = "Reload",
+            cancelText = "Later",
+            onAccept = function() QUI:SafeReload() end,
+        })
+    end)
     enableCheck:SetPoint("TOPLEFT", PADDING, y)
     enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     y = y - FORM_ROW
 
-    local enableInfo = GUI:CreateLabel(tabContent, "Controls tooltip positioning and per-context visibility.", 10, C.textMuted)
+    local enableInfo = GUI:CreateLabel(tabContent, "Master toggle for all QUI tooltip features (positioning, visibility, skinning).", 10, C.textMuted)
     enableInfo:SetPoint("TOPLEFT", PADDING, y)
     enableInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     enableInfo:SetJustifyH("LEFT")

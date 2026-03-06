@@ -43,16 +43,16 @@ local function GetSettings()
     return core and core.db and core.db.profile and core.db.profile.tooltip
 end
 
--- Check if tooltip skinning is enabled
+-- Check if tooltip skinning is enabled (requires master tooltip toggle AND skinTooltips)
 local function IsEnabled()
     local settings = GetSettings()
-    return settings and settings.skinTooltips
+    return settings and settings.enabled and settings.skinTooltips
 end
 
--- Check if health bar hiding is enabled
+-- Check if health bar hiding is enabled (requires master tooltip toggle)
 local function ShouldHideHealthBar()
     local settings = GetSettings()
-    return settings and settings.hideHealthBar
+    return settings and settings.enabled and settings.hideHealthBar
 end
 
 local DEFAULT_TOOLTIP_FONT_SIZE = 12
@@ -661,11 +661,13 @@ local function HookTooltipOnShow(tooltip)
         -- then fails comparing the tainted frameWidth. Defer font sizing to after the
         -- show chain completes — the 1-frame delay is imperceptible since the previous
         -- font size is usually already correct.
-        C_Timer.After(0, function()
-            if self:IsShown() then
-                pcall(ApplyTooltipFontSizeToFrame, self)
-            end
-        end)
+        if IsEnabled() then
+            C_Timer.After(0, function()
+                if self:IsShown() then
+                    pcall(ApplyTooltipFontSizeToFrame, self)
+                end
+            end)
+        end
 
         if InCombatLockdown() then
             -- NineSlice skin (textures, colors, sizes) uses C-side ops only and
@@ -730,6 +732,7 @@ local function SetupTooltipPostProcessor()
     -- Helper: defer font sizing out of the securecall chain to avoid tainting
     -- tooltip width calculations (see OnShow hook comment for details).
     local function DeferFontSizing(tooltip)
+        if not IsEnabled() then return end
         C_Timer.After(0, function()
             if tooltip and tooltip.IsShown and tooltip:IsShown() then
                 pcall(ApplyTooltipFontSizeToFrame, tooltip)
@@ -825,14 +828,19 @@ eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         -- Defer slightly to ensure all tooltips are created
         C_Timer.After(0.5, function()
-            -- Font size is independent from skinning and applies globally to tooltips
+            -- All tooltip modifications gated by master toggle + skinTooltips
+            if not IsEnabled() then
+                -- Still hook OnShow so enabling live takes effect on next show
+                HookAllTooltips()
+                SetupEmbeddedTooltipHooks()
+                SetupTooltipPostProcessor()
+                SetupHealthBarHook()
+                return
+            end
+
             RefreshAllTooltipFonts()
             HookAllTooltips()
-
-            -- Skinning (only if enabled)
-            if IsEnabled() then
-                SkinAllTooltips()
-            end
+            SkinAllTooltips()
 
             -- Strip embedded item tooltip border (World Quest item rewards)
             SetupEmbeddedTooltipHooks()
