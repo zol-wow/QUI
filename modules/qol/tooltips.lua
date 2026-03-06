@@ -372,10 +372,22 @@ local function SetupTooltipHook()
     end)
 
     -- Hook SetUnit to suppress tooltips when a UI frame blocks the mouse
-    -- PERFORMANCE: Debounced to prevent spam with @mouseover macros (max 20 calls/sec)
+    -- Also hides tooltips in combat when hideInCombat is enabled (prevents flash
+    -- caused by Blizzard calling SetUnit AFTER GameTooltip_SetDefaultAnchor already hid it)
+    -- PERFORMANCE: Mouse-blocking check debounced to prevent spam with @mouseover macros
     hooksecurefunc(GameTooltip, "SetUnit", function(tooltip)
+        if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
+
+        -- Synchronous combat check — must run immediately (before debounce) to
+        -- prevent a 1-frame tooltip flash when hideInCombat is enabled
+        if settings.hideInCombat and InCombatLockdown() then
+            if not settings.combatKey or settings.combatKey == "NONE" or not IsModifierActive(settings.combatKey) then
+                tooltip:Hide()
+                return
+            end
+        end
 
         -- Debounce: Only process once per 100ms to prevent CPU spikes with @mouseover macros
         if pendingSetUnit then return end
@@ -598,8 +610,8 @@ local function SetupTooltipHook()
         HookAuraTooltip("SetUnitAuraByAuraInstanceID", C_UnitAuras.GetAuraDataByAuraInstanceID, true)
     end
 
-    -- Hook SetSpellByID to suppress CDM and Custom Tracker tooltips
-    -- These icons use SetSpellByID which bypasses GameTooltip_SetDefaultAnchor
+    -- Hook SetSpellByID to suppress tooltips that bypass GameTooltip_SetDefaultAnchor
+    -- (CDM icons, Custom Trackers, action bars, etc.)
     -- NOTE: Synchronous — deferring causes tooltip flash before hide.
     hooksecurefunc(GameTooltip, "SetSpellByID", function(tooltip)
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
@@ -616,15 +628,12 @@ local function SetupTooltipHook()
 
         local context = GetTooltipContext(owner)
 
-        -- Apply visibility rules to CDM and Custom Trackers contexts
-        if context == "cdm" or context == "customTrackers" then
-            if not ShouldShowTooltip(context) then
-                tooltip:Hide()
-            end
+        if not ShouldShowTooltip(context) then
+            tooltip:Hide()
         end
     end)
 
-    -- Hook SetItemByID to suppress CDM and Custom Tracker item tooltips
+    -- Hook SetItemByID to suppress tooltips that bypass GameTooltip_SetDefaultAnchor
     hooksecurefunc(GameTooltip, "SetItemByID", function(tooltip)
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         local settings = GetSettings()
@@ -640,11 +649,8 @@ local function SetupTooltipHook()
 
         local context = GetTooltipContext(owner)
 
-        -- Apply visibility rules to CDM and Custom Trackers contexts
-        if context == "cdm" or context == "customTrackers" then
-            if not ShouldShowTooltip(context) then
-                tooltip:Hide()
-            end
+        if not ShouldShowTooltip(context) then
+            tooltip:Hide()
         end
     end)
 
