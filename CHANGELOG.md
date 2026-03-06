@@ -68,6 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.46.7 - 2026-03-06
+
+### Fixed
+- revert: restore UISpecialFrames for ESC-to-close on chat and options frames
 ## v2.46.6 - 2026-03-06
 
 ### Fixed
