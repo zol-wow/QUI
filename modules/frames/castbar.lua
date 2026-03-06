@@ -114,6 +114,19 @@ local CHANNEL_TICK_DEFAULT_COLOR = {1, 1, 1, 0.9}
 local CHANNEL_TICK_SOURCE_POLICY_AUTO = "auto"
 local CHANNEL_TICK_SOURCE_POLICY_STATIC = "static"
 local CHANNEL_TICK_SOURCE_POLICY_RUNTIME_ONLY = "runtimeOnly"
+local GCD_SPELL_ID = 61304
+local GCD_MELEE_POWER_TYPES = {
+    [1] = true,   -- Rage
+    [2] = true,   -- Focus
+    [3] = true,   -- Energy
+    [4] = true,   -- ComboPoints
+    [5] = true,   -- Runes
+    [6] = true,   -- RunicPower
+    [9] = true,   -- HolyPower
+    [12] = true,  -- Chi
+    [17] = true,  -- Fury
+    [18] = true,  -- Pain
+}
 local CHANNEL_TICK_SPELL_ALIASES = {
     [468720] = 473728, -- Void Ray wrapper -> periodic channel spell
 }
@@ -203,6 +216,20 @@ local function InitializeDefaultSettings(castSettings, unitKey)
     if castSettings.iconAnchor == nil then castSettings.iconAnchor = "LEFT" end
     if castSettings.iconSpacing == nil then castSettings.iconSpacing = 0 end
     if castSettings.showIcon == nil then castSettings.showIcon = true end
+    if unitKey == "player" and castSettings.showGCD == nil then castSettings.showGCD = false end
+    if unitKey == "player" and castSettings.showGCDReverse == nil then castSettings.showGCDReverse = false end
+    if unitKey == "player" and castSettings.showGCDMelee == nil then
+        castSettings.showGCDMelee = castSettings.showGCDMeleeOnly == true
+    end
+    if unitKey == "player" and castSettings.gcdColor == nil then
+        local baseColor = castSettings.color or DEFAULT_BAR_COLOR
+        castSettings.gcdColor = {
+            baseColor[1] or DEFAULT_BAR_COLOR[1],
+            baseColor[2] or DEFAULT_BAR_COLOR[2],
+            baseColor[3] or DEFAULT_BAR_COLOR[3],
+            baseColor[4] or DEFAULT_BAR_COLOR[4],
+        }
+    end
     
     if not castSettings.borderColor then
         castSettings.borderColor = {0, 0, 0, 1}
@@ -2104,7 +2131,11 @@ local function UpdateCastbarVisuals(castbar, castSettings, unitKey, texture, tex
     end
 
     -- Set color using helper (always apply, regardless of timer mode)
-    ApplyCastColor(castbar.statusBar, notInterruptible, castbar.customColor, castbar.customNotInterruptibleColor)
+    local activeBarColor = castbar.customColor
+    if castbar.isGCD and currentCastSettings and currentCastSettings.gcdColor then
+        activeBarColor = currentCastSettings.gcdColor
+    end
+    ApplyCastColor(castbar.statusBar, notInterruptible, activeBarColor, castbar.customNotInterruptibleColor)
 end
 
 -- Update empowered cast state
@@ -2151,6 +2182,85 @@ local function HandleNoCast(castbar, castSettings, isPlayer, onUpdateHandler)
     end)
 end
 
+local function GetGCDCooldownInfo()
+    if not (C_Spell and C_Spell.GetSpellCooldown) then
+        return nil, nil
+    end
+
+    local info = C_Spell.GetSpellCooldown(GCD_SPELL_ID)
+    if not info then
+        return nil, nil
+    end
+
+    local startTime = SafeToNumber(info.startTime)
+    local duration = SafeToNumber(info.duration)
+    local isEnabled = info.isEnabled
+
+    if not ((isEnabled == nil or isEnabled == true or isEnabled == 1) and startTime and duration and duration > 0) then
+        return nil, nil
+    end
+
+    if (startTime + duration) <= (GetTime() + 0.05) then
+        return nil, nil
+    end
+
+    return startTime, duration
+end
+
+local function GetSpellDisplayInfo(spellID)
+    local resolvedSpellID = SafeToNumber(spellID) or GCD_SPELL_ID
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(resolvedSpellID)
+        if info then
+            return info.name, info.iconID
+        end
+    end
+
+    return nil, nil
+end
+
+local function IsMeleeGCDSpell(spellID)
+    local resolvedSpellID = SafeToNumber(spellID)
+    if not resolvedSpellID or not (C_Spell and C_Spell.GetSpellPowerCost) then
+        return false
+    end
+
+    local costs = C_Spell.GetSpellPowerCost(resolvedSpellID)
+    if not costs then
+        return false
+    end
+
+    for _, costInfo in ipairs(costs) do
+        local powerType = SafeToNumber(costInfo.type) or SafeToNumber(costInfo.powerType)
+        if powerType and GCD_MELEE_POWER_TYPES[powerType] then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function IsPlayerOwnedSpell(spellID)
+    local resolvedSpellID = SafeToNumber(spellID)
+    if not resolvedSpellID then
+        return true
+    end
+
+    if type(IsSpellKnownOrOverridesKnown) == "function" then
+        return IsSpellKnownOrOverridesKnown(resolvedSpellID) == true
+    end
+
+    if type(IsPlayerSpell) == "function" then
+        return IsPlayerSpell(resolvedSpellID) == true
+    end
+
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        return C_SpellBook.IsSpellKnown(resolvedSpellID) == true
+    end
+
+    return false
+end
+
 ---------------------------------------------------------------------------
 -- UNIFIED CASTBAR SETUP (handles player, target, focus, targettarget)
 ---------------------------------------------------------------------------
@@ -2173,10 +2283,74 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             ClearEmpoweredState(self)
         end
         ClearChannelTickState(self)
+        self.isGCD = false
         self.timerDriven = false
         self.durationObj = nil
         self:SetScript("OnUpdate", nil)
         SetCastbarFrameVisible(self, false)
+        return true
+    end
+
+    local function ShowGCDCast(self, spellID)
+        if not isPlayer then return false end
+        if UnitCastingInfo(self.unit) or UnitChannelInfo(self.unit) then return false end
+        if not InCombatLockdown() then return false end
+
+        local settings = GetUnitSettings(self.unitKey)
+        local currentCastSettings = settings and settings.castbar or castSettings
+        if not (currentCastSettings and currentCastSettings.enabled ~= false and currentCastSettings.showGCD) then return false end
+        if not IsPlayerOwnedSpell(spellID) then return false end
+        if currentCastSettings.showGCDMelee ~= true and IsMeleeGCDSpell(spellID) then return false end
+
+        local startTime, duration = GetGCDCooldownInfo()
+        if not startTime or not duration then return false end
+
+        local now = GetTime()
+        local endTime = startTime + duration
+        if endTime <= (now + 0.02) then return false end
+
+        local spellName, iconTexture = GetSpellDisplayInfo(spellID)
+        self.isGCD = true
+        self.isChanneled = false
+        self.isEmpowered = false
+        self.notInterruptible = false
+        self.timerDriven = false
+        self.durationObj = nil
+        self.startTime = startTime
+        self.endTime = endTime
+        self.castStartTime = nil
+        self.castEndTime = nil
+        self.channelSpellID = nil
+        self._assumeCountdown = nil
+
+        ClearEmpoweredState(self)
+        ClearChannelTickState(self)
+        self.statusBar:SetReverseFill(currentCastSettings.showGCDReverse == true)
+        self:SetScript("OnUpdate", self.castbarOnUpdate)
+        SetCastbarFrameVisible(self, true)
+
+        if SetIconTexture(self, iconTexture) then
+            if ShouldShowIcon(self, currentCastSettings) then
+                self.icon:Show()
+            else
+                self.icon:Hide()
+            end
+        end
+
+        UpdateCastbarVisuals(
+            self,
+            currentCastSettings,
+            self.unitKey,
+            iconTexture,
+            spellName,
+            spellName,
+            self.unit,
+            false,
+            false,
+            startTime,
+            endTime
+        )
+
         return true
     end
     
@@ -2187,8 +2361,9 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
 
         -- Continue showing castbar during empowered hold phase even when API returns nil
         local isInEmpoweredHold = isPlayer and self.isEmpowered and self.startTime and self.endTime
+        local isShowingGCD = isPlayer and self.isGCD and self.startTime and self.endTime
 
-        if spellName or channelName or isInEmpoweredHold then
+        if spellName or channelName or isInEmpoweredHold or isShowingGCD then
             -- Real cast - use real cast data
 
             -- Handle timer-driven mode (non-player units with secret timing)
@@ -2294,6 +2469,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                     ClearEmpoweredState(self)
                 end
                 ClearChannelTickState(self)
+                self.isGCD = false
                 self:SetScript("OnUpdate", nil)
                 SetCastbarFrameVisible(self, false)
                 TryApplyDeferredCastbarRefresh(self)
@@ -2303,8 +2479,10 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             local duration = endTime - startTime
             if duration <= 0 then duration = 0.001 end
 
-            -- Never use reverse fill - drain effect achieved via progress calculation
-            self.statusBar:SetReverseFill(false)
+            local currentSettings = GetUnitSettings(self.unitKey)
+            local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
+            local shouldReverseGCD = isShowingGCD and currentCastSettings and currentCastSettings.showGCDReverse
+            self.statusBar:SetReverseFill(shouldReverseGCD == true)
 
             local remaining = endTime - now
             local channelFillForward = castSettings and castSettings.channelFillForward
@@ -2473,6 +2651,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             self.durationObj = durationObj
             self.channelSpellID = resolvedSpellID
             self._assumeCountdown = nil  -- Reset countdown detection for new cast
+            self.isGCD = false
 
             if useTimerDriven then
                 -- Engine-driven animation for non-player units with secret timing
@@ -2556,6 +2735,9 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         
         -- Cast end events - hide immediately without re-querying APIs
         UNIT_SPELLCAST_STOP = function(self, spellID)
+            if self.isGCD and not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
+                return
+            end
             if isPlayer then ClearEmpoweredState(self) end
             ClearChannelTickState(self)
             self.timerDriven = false
@@ -2565,6 +2747,9 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             TryApplyDeferredCastbarRefresh(self)
         end,
         UNIT_SPELLCAST_CHANNEL_STOP = function(self, spellID)
+            if self.isGCD and not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
+                return
+            end
             if isPlayer then ClearEmpoweredState(self) end
             ClearChannelTickState(self)
             self.timerDriven = false
@@ -2578,6 +2763,9 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             if UnitChannelInfo(self.unit) or UnitCastingInfo(self.unit) then
                 return
             end
+            if self.isGCD then
+                return
+            end
             if isPlayer then ClearEmpoweredState(self) end
             ClearChannelTickState(self)
             self.timerDriven = false
@@ -2587,6 +2775,9 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             TryApplyDeferredCastbarRefresh(self)
         end,
         UNIT_SPELLCAST_INTERRUPTED = function(self, spellID)
+            if self.isGCD and not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
+                return
+            end
             if isPlayer then ClearEmpoweredState(self) end
             ClearChannelTickState(self)
             self.timerDriven = false
@@ -2617,10 +2808,44 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 HideCastbarIfIdle(self)
             end)
         end
-        eventHandlers.UNIT_SPELLCAST_SUCCEEDED = function(self)
-            C_Timer.After(0, function()
-                HideCastbarIfIdle(self)
-            end)
+        eventHandlers.SPELL_UPDATE_COOLDOWN = function(self)
+            if self.isGCD then
+                return
+            end
+
+            local lastSpellID = self._lastGCDSpellID
+            local lastEventAt = self._lastGCDTriggerAt
+            if not lastSpellID or not lastEventAt or (GetTime() - lastEventAt) > 0.25 then
+                return
+            end
+
+            ShowGCDCast(self, lastSpellID)
+        end
+        eventHandlers.UNIT_SPELLCAST_SUCCEEDED = function(self, spellID)
+            if self.isGCD then
+                return
+            end
+            local resolvedSpellID = SafeToNumber(spellID)
+            if resolvedSpellID then
+                self._lastGCDSpellID = resolvedSpellID
+                self._lastGCDTriggerAt = GetTime()
+            end
+
+            if not ShowGCDCast(self, resolvedSpellID or self._lastGCDSpellID) then
+                if self.isGCD then
+                    return
+                end
+                C_Timer.After(0, function()
+                    local retrySpellID = self._lastGCDSpellID
+                    if retrySpellID and ShowGCDCast(self, retrySpellID) then
+                        return
+                    end
+                    if self.isGCD then
+                        return
+                    end
+                    HideCastbarIfIdle(self)
+                end)
+            end
         end
         eventHandlers.UNIT_SPELLCAST_EMPOWER_START = function(self, spellID)
             self:Cast(spellID, true)
@@ -2661,6 +2886,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         castbar:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_UPDATE", unit)
         castbar:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_STOP", unit)
         castbar:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unit)
+        castbar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
         castbar:RegisterEvent("PLAYER_REGEN_ENABLED")
         castbar:RegisterEvent("PLAYER_ENTERING_WORLD")
     end
