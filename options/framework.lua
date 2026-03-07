@@ -4553,6 +4553,13 @@ function GUI:CreateMainFrame()
         return self.MainFrame
     end
 
+    -- Rebuild section navigation state from scratch for each fresh panel build.
+    -- This prevents stale third-level sidebar entries from older tab layouts
+    -- from leaking into the current options tree.
+    self.SectionRegistry = {}
+    self.SectionRegistryOrder = {}
+    self:ClearSearchContext()
+
     -- Initialize accent colors from saved DB before creating any widgets
     local db = QUI.QUICore and QUI.QUICore.db
     local profile = db and db.profile
