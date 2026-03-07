@@ -11,8 +11,10 @@ local QUICore = ns.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 local UIKit = ns.UIKit
 
--- Enable CDM immediately when file loads (before any events fire)
-pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
+-- Enable CDM CVar when file loads only if CDM is enabled
+if ns.CDMProvider and ns.CDMProvider.IsCDMEnabled and ns.CDMProvider:IsCDMEnabled() then
+    pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
+end
 
 ---------------------------------------------------------------------------
 -- HELPER: Get font from general settings (uses shared helpers)
@@ -749,12 +751,15 @@ local function ProcessPendingIcons()
     end
 end
 
--- Register for combat start/end to manage layout
+-- Register for combat start/end to manage layout (only when CDM is enabled)
 local combatFrame = CreateFrame("Frame")
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 combatFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_REGEN_DISABLED" then
+        if not (ns.CDMProvider and ns.CDMProvider.IsCDMEnabled and ns.CDMProvider:IsCDMEnabled()) then
+            return
+        end
         -- Combat enter: Blizzard resets CDM layout via internal Layout() calls.
         -- Re-apply QUI's layout after a short delay to let Blizzard finish.
         if QUI and QUI.DebugPrint then
@@ -770,6 +775,9 @@ combatFrame:SetScript("OnEvent", function(_, event)
     end
 
     -- PLAYER_REGEN_ENABLED: combat end
+    if not (ns.CDMProvider and ns.CDMProvider.IsCDMEnabled and ns.CDMProvider:IsCDMEnabled()) then
+        return
+    end
     ProcessPendingIcons()
     -- Re-apply Utility anchor after combat if it was deferred.
     C_Timer.After(0.05, function()

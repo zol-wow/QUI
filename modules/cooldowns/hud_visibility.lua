@@ -99,6 +99,16 @@ end
 
 -- Get CDM frames (viewers + power bars) — cached to avoid per-frame allocations
 local function GetCDMFrames()
+    -- When CDM is disabled, return empty so we don't control Blizzard's frames
+    local QUICore = ns.Addon
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm then
+        if QUICore.db.profile.ncdm.enabled == false then
+            wipe(_cdmFramesCache)
+            _cdmFramesDirty = false
+            return _cdmFramesCache
+        end
+    end
+    
     if not _cdmFramesDirty then
         return _cdmFramesCache
     end
