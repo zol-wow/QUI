@@ -433,7 +433,10 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         -- Helper to copy castbar settings from one unit to another
         local function CopyCastbarSettings(sourceDB, targetDB, sourceUnitKey, targetUnitKey)
             if not sourceDB or not targetDB then return end
-            local keys = {"width", "height", "offsetX", "offsetY", "fontSize", "borderSize", "maxLength", "texture", "showIcon", "enabled", "anchor", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "channelFillForward", "empoweredStageColors", "empoweredFillColors"}
+            -- Note: maxLength is intentionally excluded — different units have different
+            -- space constraints (e.g., target defaults to 12, player defaults to 0).
+            -- Copying maxLength between units causes unexpected spell name truncation.
+            local keys = {"width", "height", "offsetX", "offsetY", "fontSize", "borderSize", "texture", "showIcon", "enabled", "anchor", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "channelFillForward", "empoweredStageColors", "empoweredFillColors"}
             local includesUnsupportedTickUnit = (sourceUnitKey == "boss") or (targetUnitKey == "boss")
                 or (sourceUnitKey == "pet") or (targetUnitKey == "pet")
             if not includesUnsupportedTickUnit then
