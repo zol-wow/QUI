@@ -1321,6 +1321,13 @@ local defaults = {
                 enabled = true,
                 maxHistory = 50,  -- Maximum number of messages to store
             },
+            -- Sound on new message (SharedMedia compatible)
+            newMessageSound = {
+                enabled = false,
+                entries = {                -- Array of {channel, sound} - each channel can have its own sound
+                    { channel = "guild_officer", sound = "None" },
+                },
+            },
         },
 
         -- Tooltip Management
