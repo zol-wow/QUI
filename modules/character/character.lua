@@ -245,9 +245,9 @@ local function GetEnchantText(unit, slotId)
 
     -- Not all slots can be enchanted - only check enchantable slots
     local enchantableSlots = {
+        [INVSLOT_HEAD] = true,
+        [INVSLOT_SHOULDER] = true,
         [INVSLOT_CHEST] = true,
-        [INVSLOT_BACK] = true,
-        [INVSLOT_WRIST] = true,
         [INVSLOT_LEGS] = true,
         [INVSLOT_FEET] = true,
         [INVSLOT_FINGER1] = true,
@@ -1831,10 +1831,11 @@ local function UpdateStatsPanel(panel, unit)
     end
     y = y - ROW_HEIGHT
 
-    local powerType = UnitPowerType(unit)
+    local powerType, powerToken = UnitPowerType(unit)
     local powerMax = SafeGetStat(UnitPowerMax, unit, powerType)
-    local powerName = powerType == 0 and "Mana" or (powerType == 1 and "Rage" or (powerType == 2 and "Focus" or (powerType == 3 and "Energy" or "Power")))
-    local powerToken = powerType == 0 and "MANA" or (powerType == 1 and "RAGE" or (powerType == 2 and "FOCUS" or (powerType == 3 and "ENERGY" or "POWER")))
+    -- UnitPowerType returns the token as 2nd value (e.g. "MANA", "RAGE", "RUNIC_POWER")
+    -- Fall back to a readable name from the token or generic "Power"
+    local powerName = _G[powerToken] or (powerToken and powerToken:gsub("_", " "):lower():gsub("(%a)([%w]*)", function(a, b) return a:upper()..b end)) or "Power"
 
     row = CreateStatRow(scrollChild, y)
     row.label:SetText(powerName)
@@ -1842,14 +1843,9 @@ local function UpdateStatsPanel(panel, unit)
     row.value:SetTextColor(C.mana[1], C.mana[2], C.mana[3], 1)
     -- Set tooltip (Blizzard format)
     local powerText = BreakUpLargeNumbers(powerMax)
-    if powerType == 0 then
-        row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, MANA).." "..powerText..FONT_COLOR_CODE_CLOSE
-        row.tooltip2 = _G["STAT_MANA_TOOLTIP"]
-    else
-        local powerLabel = _G[powerToken] or powerName
-        row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, powerLabel).." "..powerText..FONT_COLOR_CODE_CLOSE
-        row.tooltip2 = _G["STAT_"..powerToken.."_TOOLTIP"]
-    end
+    local powerLabel = _G[powerToken] or powerName
+    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, powerLabel).." "..powerText..FONT_COLOR_CODE_CLOSE
+    row.tooltip2 = _G["STAT_"..powerToken.."_TOOLTIP"]
     y = y - ROW_HEIGHT
 
     y = y - 5
@@ -1975,10 +1971,10 @@ local function UpdateStatsPanel(panel, unit)
     y = y - headerHeight
 
     local secondaryStats = {
-        { label = "Crit", statKey = "CRIT", percentFunc = GetCritChance, ratingFunc = function() return GetCombatRating(CR_CRIT_MELEE) end, color = C.crit },
-        { label = "Haste", statKey = "HASTE", percentFunc = GetHaste, ratingFunc = function() return GetCombatRating(CR_HASTE_MELEE) end, color = C.haste },
+        { label = "Crit", statKey = "CRIT", percentFunc = function() return GetSpellCritChance("player") end, ratingFunc = function() return GetCombatRating(CR_CRIT_SPELL) end, color = C.crit },
+        { label = "Haste", statKey = "HASTE", percentFunc = function() return UnitSpellHaste("player") end, ratingFunc = function() return GetCombatRating(CR_HASTE_SPELL) end, color = C.haste },
         { label = "Mastery", statKey = "MASTERY", percentFunc = GetMasteryEffect, ratingFunc = function() return GetCombatRating(CR_MASTERY) end, color = C.mastery },
-        { label = "Versatility", statKey = "VERSATILITY", percentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) end, ratingFunc = function() return GetCombatRating(CR_VERSATILITY_DAMAGE_DONE) end, color = C.versatility },
+        { label = "Versatility", statKey = "VERSATILITY", percentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) end, ratingFunc = function() return GetCombatRating(CR_VERSATILITY_DAMAGE_DONE) end, color = C.versatility },
     }
 
     local statFormat = settings.secondaryStatFormat or "percent"
@@ -1999,50 +1995,66 @@ local function UpdateStatsPanel(panel, unit)
         end
 
         row.bar:SetValue(math.min(percentValue or 0, 100))
-        
-        -- Set tooltips (Blizzard format)
+
+        -- Set tooltips (Blizzard PaperDollFrame format)
         if stat.statKey == "CRIT" then
-            local statName = STAT_CRITICAL_STRIKE
-            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, statName)..FONT_COLOR_CODE_CLOSE
-            if GetSecondaryBonus and GetCombatRating then
-                local extraCritChance = GetSecondaryBonus(CR_CRIT_MELEE, percentValue)
-                local extraCritRating = GetCombatRating(CR_CRIT_MELEE)
-                if GetCritChanceProvidesParryEffect and GetCritChanceProvidesParryEffect() and GetCombatRatingBonusForCombatRatingValue then
-                    row.tooltip2 = format(CR_CRIT_PARRY_RATING_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance, GetCombatRatingBonusForCombatRatingValue(CR_PARRY, extraCritRating))
-                else
-                    row.tooltip2 = format(CR_CRIT_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance)
-                end
+            local extraCritChance = GetCombatRatingBonus(CR_CRIT_SPELL)
+            local extraCritRating = GetCombatRating(CR_CRIT_SPELL)
+            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_CRITICAL_STRIKE)..FONT_COLOR_CODE_CLOSE
+            if GetCritChanceProvidesParryEffect and GetCritChanceProvidesParryEffect() and GetCombatRatingBonusForCombatRatingValue then
+                row.tooltip2 = format(CR_CRIT_PARRY_RATING_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance, GetCombatRatingBonusForCombatRatingValue(CR_PARRY, extraCritRating))
+                    .. "\n\n" .. format(CR_CRIT_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance)
+            else
+                row.tooltip2 = format(CR_CRIT_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance)
             end
         elseif stat.statKey == "HASTE" then
-            local statName = STAT_HASTE
-            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, statName)..FONT_COLOR_CODE_CLOSE
             local _, class = UnitClass(unit)
-            row.tooltip2 = _G["STAT_HASTE_"..class.."_TOOLTIP"]
-            if not row.tooltip2 then
-                row.tooltip2 = STAT_HASTE_TOOLTIP
-            end
-            if GetCombatRating and GetSecondaryBonus then
-                local hasteRating = GetCombatRating(CR_HASTE_MELEE)
-                local hasteBonus = GetSecondaryBonus(CR_HASTE_MELEE, percentValue)
-                row.tooltip2 = row.tooltip2 .. format(STAT_HASTE_BASE_TOOLTIP, BreakUpLargeNumbers(hasteRating), hasteBonus)
-            end
+            local hasteRating = GetCombatRating(CR_HASTE_SPELL)
+            local hasteBonus = GetCombatRatingBonus(CR_HASTE_SPELL)
+            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_HASTE)..FONT_COLOR_CODE_CLOSE
+            row.tooltip2 = _G["STAT_HASTE_"..class.."_TOOLTIP"] or STAT_HASTE_TOOLTIP
+            row.tooltip2 = row.tooltip2 .. format(STAT_HASTE_BASE_TOOLTIP, BreakUpLargeNumbers(hasteRating), hasteBonus)
         elseif stat.statKey == "MASTERY" then
-            -- Mastery uses a custom OnEnter function, but we'll set basic tooltip
-            local statName = STAT_MASTERY
-            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, statName)..FONT_COLOR_CODE_CLOSE
-            if GetMasteryEffect and GetSecondaryBonus then
-                local mastery, bonusCoeff = GetMasteryEffect()
-                local masteryBonus = GetSecondaryBonus(CR_MASTERY, mastery, bonusCoeff)
-                row.tooltip2 = format(STAT_MASTERY_TOOLTIP, BreakUpLargeNumbers(ratingValue), masteryBonus)
+            local mastery, bonusCoeff = GetMasteryEffect()
+            local masteryRating = GetCombatRating(CR_MASTERY)
+            local masteryBonus = GetCombatRatingBonus(CR_MASTERY) * (bonusCoeff or 1)
+            local primaryTalentTree = GetSpecialization and GetSpecialization()
+            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_MASTERY)..FONT_COLOR_CODE_CLOSE
+            -- Mastery spell description(s) come first, then rating info
+            local spellDesc = ""
+            if primaryTalentTree and GetSpecializationMasterySpells then
+                local masterySpell, masterySpell2 = GetSpecializationMasterySpells(primaryTalentTree)
+                if masterySpell and C_Spell and C_Spell.GetSpellDescription then
+                    spellDesc = C_Spell.GetSpellDescription(masterySpell) or ""
+                end
+                if masterySpell2 and C_Spell and C_Spell.GetSpellDescription then
+                    local desc2 = C_Spell.GetSpellDescription(masterySpell2)
+                    if desc2 and desc2 ~= "" then
+                        spellDesc = spellDesc .. "\n" .. desc2
+                    end
+                end
+            end
+            -- Rating info line
+            local ratingText
+            if STAT_MASTERY_TOOLTIP then
+                local ok, result = pcall(format, STAT_MASTERY_TOOLTIP, BreakUpLargeNumbers(masteryRating), masteryBonus)
+                if ok then ratingText = result end
+            end
+            if not ratingText then
+                ratingText = format("Your %s Mastery rating adds an additional %.2F%% mastery.", BreakUpLargeNumbers(masteryRating), masteryBonus)
+            end
+            -- Combine: spell description first, then rating info
+            if spellDesc ~= "" then
+                row.tooltip2 = spellDesc .. "\n\n" .. ratingText
+            else
+                row.tooltip2 = ratingText
             end
         elseif stat.statKey == "VERSATILITY" then
-            local statName = STAT_VERSATILITY
-            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, statName)..FONT_COLOR_CODE_CLOSE
-            if GetCombatRatingBonus and GetVersatilityBonus then
-                local versatilityDamageBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + (GetVersatilityBonus and GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) or 0)
-                local versatilityDamageTakenReduction = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_TAKEN) + (GetVersatilityBonus and GetVersatilityBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0)
-                row.tooltip2 = format(CR_VERSATILITY_TOOLTIP, versatilityDamageBonus, versatilityDamageTakenReduction, BreakUpLargeNumbers(ratingValue), versatilityDamageBonus, versatilityDamageTakenReduction)
-            end
+            local versatility = GetCombatRating(CR_VERSATILITY_DAMAGE_DONE)
+            local versatilityDamageBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE)
+            local versatilityDamageTakenReduction = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_TAKEN) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_TAKEN)
+            row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_VERSATILITY)..FONT_COLOR_CODE_CLOSE
+            row.tooltip2 = format(CR_VERSATILITY_TOOLTIP, versatilityDamageBonus, versatilityDamageTakenReduction, BreakUpLargeNumbers(versatility), versatilityDamageBonus, versatilityDamageTakenReduction)
         end
         
         y = y - BAR_HEIGHT

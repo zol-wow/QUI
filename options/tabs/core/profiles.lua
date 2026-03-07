@@ -269,6 +269,55 @@ local function CreateSpecProfilesPage(parent)
             end,
         })
     end)
+    y = y - FORM_ROW
+
+    -- Reset All Data (Factory Reset) button (form style row)
+    local factoryContainer = CreateFrame("Frame", nil, content)
+    factoryContainer:SetHeight(FORM_ROW)
+    factoryContainer:SetPoint("TOPLEFT", PAD, y)
+    factoryContainer:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+
+    local factoryLabel = factoryContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    factoryLabel:SetPoint("LEFT", 0, 0)
+    factoryLabel:SetText("Reset All Data")
+    factoryLabel:SetTextColor(0.9, 0.3, 0.3, 1)
+
+    local factoryBtn = CreateFrame("Button", nil, factoryContainer, "BackdropTemplate")
+    factoryBtn:SetSize(120, 24)
+    factoryBtn:SetPoint("LEFT", factoryContainer, "LEFT", 180, 0)
+    local pxFactory = GetCore() and GetCore():GetPixelSize(factoryBtn) or 1
+    factoryBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxFactory})
+    factoryBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+    factoryBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+    local factoryBtnText = factoryBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    factoryBtnText:SetPoint("CENTER")
+    factoryBtnText:SetText("Factory Reset")
+    factoryBtnText:SetTextColor(0.9, 0.3, 0.3, 1)
+    factoryBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(0.9, 0.3, 0.3, 1) end)
+    factoryBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end)
+    factoryBtn:SetScript("OnClick", function()
+        local core = GetCore()
+        local dbRef = core and core.db
+        if dbRef then
+            GUI:ShowConfirmation({
+                title = "Reset All Data?",
+                message = "Erase ALL QUI data and restore fresh-install defaults?",
+                warningText = "This will delete every profile, all global data (gold tracking, spell scanner, imports), and all character data (keybind overrides). This cannot be undone.",
+                acceptText = "Erase Everything",
+                cancelText = "Cancel",
+                isDestructive = true,
+                onAccept = function()
+                    local core = GetCore()
+                    local dbRef = core and core.db
+                    if dbRef then
+                        dbRef:ResetDB(true)
+                        print("|cff34D399QUI:|r All data erased. Restoring defaults...")
+                        QUI:SafeReload()
+                    end
+                end,
+            })
+        end
+    end)
     y = y - FORM_ROW - 10
 
     -- =====================================================

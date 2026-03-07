@@ -142,6 +142,13 @@ local function TrackSecureFramePosition(frame, parentFrame, point, relPoint, off
     secureTaintCleaner:SetAttribute("relPoint" .. idx, relPoint)
     secureTaintCleaner:SetAttribute("offsetX" .. idx, offsetX)
     secureTaintCleaner:SetAttribute("offsetY" .. idx, offsetY)
+
+    -- Immediately re-stamp through secure code to clear taint left by the
+    -- addon-side ClearAllPoints/SetPoint that just ran.  Without this,
+    -- Blizzard's UpdateLayoutInfo -> InitSystemAnchors -> secureexecuterange
+    -- can hit the tainted SetPointBase before combat enter or ExitEditMode
+    -- has a chance to clean it (e.g. on login, entering Edit Mode).
+    secureTaintCleaner:SetAttribute("clean-now", GetTime())
 end
 
 ---------------------------------------------------------------------------
@@ -1136,6 +1143,27 @@ local FRAME_RESOLVERS = {
     cdmUtility = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility") end,
     buffIcon = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon") end,
     buffBar = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar") end,
+    rotationAssistIcon = function()
+        local frame = _G.QUI_RotationAssistIcon
+        if frame then
+            return frame
+        end
+
+        if _G.QUI and _G.QUI.RotationAssistIcon and _G.QUI.RotationAssistIcon.GetFrame then
+            frame = _G.QUI.RotationAssistIcon.GetFrame()
+            if frame then
+                return frame
+            end
+        end
+
+        -- Lazy-create if the module hasn't built it yet.
+        if _G.QUI_RefreshRotationAssistIcon then
+            _G.QUI_RefreshRotationAssistIcon()
+            return _G.QUI_RotationAssistIcon
+        end
+
+        return nil
+    end,
     -- Resource Bars
     primaryPower = function() return QUICore and QUICore.powerBar end,
     secondaryPower = function() return QUICore and QUICore.secondaryPowerBar end,
@@ -1186,6 +1214,25 @@ local FRAME_RESOLVERS = {
     focusCastAlert = function() return _G["QUI_FocusCastAlertFrame"] end,
     missingRaidBuffs = function() return _G["QUI_MissingRaidBuffs"] end,
     mplusTimer = function() return _G["QUI_MPlusTimerFrame"] end,
+    -- Group Frames
+    -- During edit/test mode the headers are hidden and re-parented to the mover;
+    -- return the mover/test container so anchoring works with preview frames.
+    partyFrames = function()
+        local GFEM = ns.QUI_GroupFrameEditMode
+        if GFEM then
+            local active = GFEM:GetActiveFrame()
+            if active then return active end
+        end
+        return ns.QUI_GroupFrames and ns.QUI_GroupFrames.headers and ns.QUI_GroupFrames.headers.party
+    end,
+    raidFrames = function()
+        local GFEM = ns.QUI_GroupFrameEditMode
+        if GFEM then
+            local active = GFEM:GetActiveFrame()
+            if active then return active end
+        end
+        return ns.QUI_GroupFrames and ns.QUI_GroupFrames.headers and ns.QUI_GroupFrames.headers.raid
+    end,
     -- Display
     minimap = function() return _G["Minimap"] end,
     objectiveTracker = function() return _G["ObjectiveTrackerFrame"] end,
@@ -1207,6 +1254,57 @@ local FRAME_RESOLVERS = {
     end,
 }
 
+local CUSTOM_TRACKER_ANCHOR_PREFIX = "customTracker:"
+local CUSTOM_TRACKER_ANCHOR_CATEGORY = "Custom Trackers"
+local CUSTOM_TRACKER_ANCHOR_CATEGORY_ORDER = 90
+
+local function GetCustomTrackerBarIDFromAnchorKey(key)
+    if type(key) ~= "string" then return nil end
+    if key:sub(1, #CUSTOM_TRACKER_ANCHOR_PREFIX) ~= CUSTOM_TRACKER_ANCHOR_PREFIX then
+        return nil
+    end
+    local barID = key:sub(#CUSTOM_TRACKER_ANCHOR_PREFIX + 1)
+    if barID == "" then
+        return nil
+    end
+    return barID
+end
+
+local function ResolveCustomTrackerFrameForKey(key)
+    local barID = GetCustomTrackerBarIDFromAnchorKey(key)
+    if not barID then
+        return nil
+    end
+    local trackerModule = QUICore and QUICore.CustomTrackers
+    local activeBars = trackerModule and trackerModule.activeBars
+    if not activeBars then
+        return nil
+    end
+    return activeBars[barID]
+end
+
+local function HasFrameResolverForKey(key)
+    if FRAME_RESOLVERS[key] then
+        return true
+    end
+    return GetCustomTrackerBarIDFromAnchorKey(key) ~= nil
+end
+
+-- Resolve a frame for direct anchoring apply.
+-- Important: keep static keys on their original resolver path (no proxy substitution),
+-- and only use dynamic resolution for custom tracker keys.
+local function ResolveApplyFrameForKey(key)
+    local resolver = FRAME_RESOLVERS[key]
+    if resolver then
+        local frame = resolver()
+        if type(frame) == "table" and not frame.GetObjectType then
+            frame = frame[1]
+        end
+        return frame
+    end
+    return ResolveCustomTrackerFrameForKey(key)
+end
+
 -- Blizzard-managed right-side frames are controlled by UIParentPanelManager.
 -- Previously objectiveTracker, buffFrame, and debuffFrame were blocked here,
 -- but the existing combat deferral and SecureHandlerStateTemplate taint cleaner
@@ -1221,6 +1319,7 @@ local FRAME_ANCHOR_INFO = {
     cdmUtility      = { displayName = "CDM Utility Viewer",    category = "Cooldown Manager",  order = 2 },
     buffIcon        = { displayName = "CDM Buff Icons",        category = "Cooldown Manager",  order = 3 },
     buffBar         = { displayName = "CDM Buff Bars",         category = "Cooldown Manager",  order = 4 },
+    rotationAssistIcon = { displayName = "CDM Rotation Assist Icon", category = "Cooldown Manager", order = 5 },
     primaryPower    = { displayName = "Primary Power Bar",     category = "Resource Bars",     order = 1 },
     secondaryPower  = { displayName = "Secondary Power Bar",   category = "Resource Bars",     order = 2 },
     playerFrame     = { displayName = "Player Frame",          category = "Unit Frames",       order = 1 },
@@ -1256,6 +1355,8 @@ local FRAME_ANCHOR_INFO = {
     focusCastAlert  = { displayName = "Focus Cast Alert",      category = "QoL",               order = 8 },
     missingRaidBuffs = { displayName = "Missing Raid Buffs",   category = "QoL",               order = 9 },
     mplusTimer      = { displayName = "M+ Timer",              category = "QoL",               order = 10 },
+    partyFrames     = { displayName = "Party Frames",           category = "Group Frames",      order = 1 },
+    raidFrames      = { displayName = "Raid Frames",            category = "Group Frames",      order = 2 },
     minimap         = { displayName = "Minimap",               category = "Display",           order = 1 },
     objectiveTracker = { displayName = "Objective Tracker",    category = "Display",           order = 2 },
     buffFrame       = { displayName = "Buff Frame",            category = "Display",           order = 3 },
@@ -1274,8 +1375,8 @@ local ANCHOR_PROXY_SOURCES = {
     cdmUtility     = { resolver = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility") end,   cdm = true },
     buffIcon       = { resolver = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffIcon") end,  cdm = true },
     buffBar        = { resolver = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("buffBar") end,   cdm = true },
-    primaryPower   = { resolver = function() return QUICore and QUICore.powerBar end },
-    secondaryPower = { resolver = function() return QUICore and QUICore.secondaryPowerBar end },
+    primaryPower   = { resolver = function() return QUICore and QUICore.powerBar end, hudMinWidth = true },
+    secondaryPower = { resolver = function() return QUICore and QUICore.secondaryPowerBar end, hudMinWidth = true },
 }
 local cdmAnchorProxies = {}
 local cdmAnchorProxyPendingAfterCombat = {}
@@ -1324,6 +1425,24 @@ local function CDMSizeResolver(source)
     if scale <= 0 then scale = 1 end
     local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
     if minWidthEnabled and IsHUDAnchoredToCDM() then
+        local visualW = width * scale
+        if visualW < minWidth then
+            width = minWidth / scale
+        end
+    end
+    return width, height
+end
+
+-- Resource bar proxy size resolver: mirrors real frame size but enforces
+-- the HUD min-width floor so frames anchored to resource bars still see
+-- the minimum width (even though the resource bar itself is raw content width).
+local function HUDMinWidthSizeResolver(source)
+    local width = source:GetWidth() or 0
+    local height = source:GetHeight() or 0
+    local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
+    if minWidthEnabled and IsHUDAnchoredToCDM() then
+        local scale = source:GetScale() or 1
+        if scale <= 0 then scale = 1 end
         local visualW = width * scale
         if visualW < minWidth then
             width = minWidth / scale
@@ -1390,7 +1509,9 @@ local function GetCDMAnchorProxy(parentKey)
             -- CDM + HUD proxy frames are addon-owned and safe to resize/anchor in combat.
             -- Keeping them live avoids stale bounds when CDM reflows during combat.
             combatFreeze = false,
-            sizeResolver = sourceInfo.cdm and CDMSizeResolver or nil,
+            sizeResolver = sourceInfo.cdm and CDMSizeResolver
+                or sourceInfo.hudMinWidth and HUDMinWidthSizeResolver
+                or nil,
             anchorResolver = sourceInfo.cdm and CDMAnchorResolver or nil,
         })
         if not proxy then
@@ -1486,6 +1607,7 @@ local function UpdateCDMAnchorProxies()
             GetCDMAnchorProxy(key)
         end
     end
+
 end
 
 -- Fallback anchor targets for when a resolved frame is unavailable (nil or hidden).
@@ -1501,6 +1623,12 @@ local function ResolveFrameForKey(key)
     do
         local cdmProxy = GetCDMAnchorProxy(key)
         if cdmProxy then return cdmProxy end
+    end
+
+    -- Dynamic custom tracker bars (customTracker:<barID>)
+    do
+        local customTrackerFrame = ResolveCustomTrackerFrameForKey(key)
+        if customTrackerFrame then return customTrackerFrame end
     end
 
     -- Frame resolver
@@ -1634,6 +1762,44 @@ cdmProxyCombatFrame:SetScript("OnEvent", function(_, event)
     end)
 end)
 
+local function ClearCustomTrackerAnchorTargets()
+    for name in pairs(QUI_Anchoring.anchorTargets) do
+        if GetCustomTrackerBarIDFromAnchorKey(name) then
+            QUI_Anchoring.anchorTargets[name] = nil
+        end
+    end
+end
+
+local function RegisterCustomTrackerAnchorTargets(self)
+    ClearCustomTrackerAnchorTargets()
+
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local bars = profile and profile.customTrackers and profile.customTrackers.bars
+    if type(bars) ~= "table" then
+        return
+    end
+
+    for index, barConfig in ipairs(bars) do
+        local barID = barConfig and barConfig.id
+        if type(barID) == "string" and barID ~= "" then
+            local anchorKey = CUSTOM_TRACKER_ANCHOR_PREFIX .. barID
+            local frame = ResolveCustomTrackerFrameForKey(anchorKey)
+            if frame then
+                local displayName = barConfig.name
+                if type(displayName) ~= "string" or displayName == "" then
+                    displayName = ("Tracker %d"):format(index)
+                end
+                self:RegisterAnchorTarget(anchorKey, frame, {
+                    displayName = displayName,
+                    category = CUSTOM_TRACKER_ANCHOR_CATEGORY,
+                    categoryOrder = CUSTOM_TRACKER_ANCHOR_CATEGORY_ORDER,
+                    order = index,
+                })
+            end
+        end
+    end
+end
+
 -- Register all controllable frames as anchor targets (for dropdown lists)
 function QUI_Anchoring:RegisterAllFrameTargets()
     for key, resolver in pairs(FRAME_RESOLVERS) do
@@ -1652,6 +1818,7 @@ function QUI_Anchoring:RegisterAllFrameTargets()
             })
         end
     end
+    RegisterCustomTrackerAnchorTargets(self)
 end
 
 -- Helper: mark a frame as overridden (blocks module positioning via PositionFrame/RegisterAnchoredFrame)
@@ -1820,6 +1987,41 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
     if settings.autoWidth and parentFrame and parentFrame ~= UIParent then
         local ok, parentWidth = pcall(function() return parentFrame:GetWidth() end)
         if ok and parentWidth and parentWidth > 0 then
+            -- Resource bars should use raw CDM content width, bypassing the
+            -- min-width floor that CDMSizeResolver applies to the proxy.
+            -- The min-width setting is meant for player/target only.
+            local isResourceBar = (key == "primaryPower" or key == "secondaryPower")
+            if isResourceBar then
+                local parentKey = settings.parent
+                if parentKey == "essential" then parentKey = "cdmEssential"
+                elseif parentKey == "utility" then parentKey = "cdmUtility" end
+                if parentKey and CDM_LOGICAL_SIZE_KEYS[parentKey] then
+                    -- Parent is a CDM viewer — read raw content width from viewer state
+                    local source = ANCHOR_PROXY_SOURCES[parentKey]
+                    if source then
+                        local sourceFrame = source.resolver()
+                        if sourceFrame then
+                            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(sourceFrame)
+                            local rawWidth = vs and vs.rawContentWidth
+                            if rawWidth and rawWidth > 0 then
+                                parentWidth = rawWidth
+                            end
+                        end
+                    end
+                elseif parentKey and ANCHOR_PROXY_SOURCES[parentKey]
+                    and ANCHOR_PROXY_SOURCES[parentKey].hudMinWidth then
+                    -- Parent is another resource bar whose proxy has min-width
+                    -- inflation. Read the actual frame width instead.
+                    local source = ANCHOR_PROXY_SOURCES[parentKey]
+                    local sourceFrame = source.resolver()
+                    if sourceFrame then
+                        local frameOk, frameWidth = pcall(function() return sourceFrame:GetWidth() end)
+                        if frameOk and frameWidth and frameWidth > 0 then
+                            parentWidth = frameWidth
+                        end
+                    end
+                end
+            end
             local adjustedWidth = parentWidth + (settings.widthAdjust or 0)
             if adjustedWidth > 0 then
                 pcall(function() frame:SetWidth(adjustedWidth) end)
@@ -1866,16 +2068,15 @@ end
 -- Apply a single frame anchor override
 function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     local inEditMode = nsHelpers.IsEditModeActive()
-    local editDbg = inEditMode and not _editModeTickerSilent
+    local editDbg = false  -- disabled: was (inEditMode and not _editModeTickerSilent)
     if type(settings) ~= "table" then return end
 
-    local resolver = FRAME_RESOLVERS[key]
-    if not resolver then
+    if not HasFrameResolverForKey(key) then
         if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): NO RESOLVER", key)) end
         return
     end
 
-    local resolved = resolver()
+    local resolved = ResolveApplyFrameForKey(key)
 
     -- If override is disabled, unblock module positioning and let modules reclaim the frame
     if not settings.enabled then
@@ -1973,16 +2174,63 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
             key, parentName, tostring(parentExists), tostring(parentIsSystem), tostring(parentShown), tostring(isBlizzEditModeSystem)))
     end
 
-    -- Skip repositioning when the parent is a hidden Blizzard Edit Mode system
-    -- frame (e.g. StanceBar anchored to PetActionBar when there is no pet).
-    -- Anchoring a secure frame to a hidden secure frame via SetPoint from addon
-    -- code taints the anchor chain; when Edit Mode reads it in the secure context
-    -- the taint propagates and causes "secret number tainted by QUI" errors.
-    -- Leave the frame at Blizzard's default position instead.
+    -- Hidden Blizzard Edit Mode system parent (e.g. StanceBar anchored to
+    -- PetActionBar when there is no pet).  We can't anchor directly to the
+    -- hidden frame because (a) its QUI position was also skipped (line 2039)
+    -- so it sits at Blizzard's default, and (b) addon SetPoint to a hidden
+    -- secure frame taints the anchor chain.
+    -- Instead, walk the anchor chain: find the hidden parent's own anchor
+    -- target and position relative to that, combining CENTER offsets so the
+    -- child frame ends up where it would be if the hidden parent were visible.
     if parentFrame and parentFrame ~= UIParent then
         local parentIsBlizzSystem = parentFrame.system ~= nil or parentFrame.systemIndex ~= nil
         if parentIsBlizzSystem and parentFrame.IsShown and not parentFrame:IsShown() then
-            if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP hidden system parent=%s", key, settings.parent or "nil")) end
+            local anchoringDB = QUICore and QUICore.db and QUICore.db.profile
+                and QUICore.db.profile.frameAnchoring
+            local parentKey = settings.parent
+            local parentSettings = anchoringDB and anchoringDB[parentKey]
+            if parentSettings and parentSettings.enabled and parentSettings.parent then
+                local gpFrame = ResolveParentFrame(parentSettings.parent)
+                if gpFrame then
+                    -- Compute combined CENTER offsets:
+                    -- child → hiddenParent + hiddenParent → grandparent
+                    local childPt  = settings.point or "CENTER"
+                    local childRel = settings.relative or "CENTER"
+                    local childOX  = settings.offsetX or 0
+                    local childOY  = settings.offsetY or 0
+                    local childCX, childCY = ComputeCenterOffsetsForAnchor(
+                        resolved, key, parentFrame, childPt, childRel, childOX, childOY, parentKey
+                    )
+                    local pPt  = parentSettings.point or "CENTER"
+                    local pRel = parentSettings.relative or "CENTER"
+                    local pOX  = parentSettings.offsetX or 0
+                    local pOY  = parentSettings.offsetY or 0
+                    local parentCX, parentCY = ComputeCenterOffsetsForAnchor(
+                        parentFrame, parentKey, gpFrame, pPt, pRel, pOX, pOY, parentSettings.parent
+                    )
+                    local totalCX = childCX + parentCX
+                    local totalCY = childCY + parentCY
+
+                    if not FrameAlreadyAtPosition(resolved, "CENTER", gpFrame, "CENTER", totalCX, totalCY) then
+                        _editModeReapplyGuard = true
+                        pcall(function()
+                            resolved:ClearAllPoints()
+                            resolved:SetPoint("CENTER", gpFrame, "CENTER", totalCX, totalCY)
+                        end)
+                        _editModeReapplyGuard = false
+                    end
+                    if isBlizzEditModeSystem then
+                        TrackSecureFramePosition(resolved, gpFrame, "CENTER", "CENTER", totalCX, totalCY)
+                    end
+                    if editDbg then
+                        AnchorDebug(format("ApplyFrameAnchor(%s): hidden parent=%s → chain to %s cx=%.1f cy=%.1f",
+                            key, parentKey, parentSettings.parent, totalCX, totalCY))
+                    end
+                    return
+                end
+            end
+            -- Chain walk not possible — skip as before
+            if editDbg then AnchorDebug(format("ApplyFrameAnchor(%s): SKIP hidden system parent=%s (no chain)", key, settings.parent or "nil")) end
             return
         end
     end
@@ -2117,7 +2365,7 @@ ComputeAnchorApplyOrder = function(anchoringDB)
     local enabledSet = {}
     local enabledList = {}
     for key, settings in pairs(anchoringDB) do
-        if type(settings) == "table" and FRAME_RESOLVERS[key] and settings.enabled then
+        if type(settings) == "table" and HasFrameResolverForKey(key) and settings.enabled then
             enabledSet[key] = true
             enabledList[#enabledList + 1] = key
         end
@@ -2190,9 +2438,9 @@ function QUI_Anchoring:ApplyAllFrameAnchors()
 
     local sorted = ComputeAnchorApplyOrder(anchoringDB)
     local inEditMode = nsHelpers.IsEditModeActive()
-    if inEditMode and not _editModeTickerSilent then
-        AnchorDebug(format("ApplyAllFrameAnchors: %d keys in order: %s", #sorted, table.concat(sorted, ", ")))
-    end
+    -- if inEditMode and not _editModeTickerSilent then
+    --     AnchorDebug(format("ApplyAllFrameAnchors: %d keys in order: %s", #sorted, table.concat(sorted, ", ")))
+    -- end
     for _, key in ipairs(sorted) do
         self:ApplyFrameAnchor(key, anchoringDB[key])
     end
@@ -2221,7 +2469,7 @@ _G.QUI_ApplyFrameAnchor = function(key)
     if not QUI_Anchoring or not QUICore or not QUICore.db or not QUICore.db.profile then return end
     local anchoringDB = QUICore.db.profile.frameAnchoring
     local settings = anchoringDB and anchoringDB[key]
-    if type(settings) == "table" and FRAME_RESOLVERS[key] then
+    if type(settings) == "table" and HasFrameResolverForKey(key) then
         QUI_Anchoring:ApplyFrameAnchor(key, settings)
     end
 end
@@ -2237,9 +2485,8 @@ _G.QUI_ReanchorFramePositionOnly = function(key)
     local settings = anchoringDB[key]
     if type(settings) ~= "table" or not settings.enabled then return end
 
-    local resolver = FRAME_RESOLVERS[key]
-    if not resolver then return end
-    local resolved = resolver()
+    if not HasFrameResolverForKey(key) then return end
+    local resolved = ResolveApplyFrameForKey(key)
     if not resolved then return end
 
     local parentFrame = ResolveParentFrame(settings.parent)
@@ -2315,9 +2562,9 @@ DebouncedReapplyOverrides = function()
         -- CDM viewer keys (Blizzard controls those) but repositions all
         -- other overridden frames so the anchor chain stays correct.
         local inEditMode = nsHelpers.IsEditModeActive()
-        if inEditMode and not _editModeTickerSilent then
-            AnchorDebug("DebouncedReapplyOverrides: firing ApplyAllFrameAnchors in EditMode")
-        end
+        -- if inEditMode and not _editModeTickerSilent then
+        --     AnchorDebug("DebouncedReapplyOverrides: firing ApplyAllFrameAnchors in EditMode")
+        -- end
         if QUI_Anchoring then
             QUI_Anchoring:ApplyAllFrameAnchors()
         end
@@ -2339,6 +2586,21 @@ HookRefreshGlobal("QUI_RefreshCastbars")
 HookRefreshGlobal("QUI_RefreshUnitFrames")
 HookRefreshGlobal("QUI_RefreshNCDM")
 HookRefreshGlobal("QUI_RefreshBuffBar")
+HookRefreshGlobal("QUI_RefreshRaidBuffs")
+
+-- Modules that load after utility (trackers, qol, dungeon) need deferred hooking
+-- since their globals don't exist yet at file-load time.
+C_Timer.After(0, function()
+    HookRefreshGlobal("QUI_RefreshCustomTrackers")
+    HookRefreshGlobal("QUI_RefreshBrezCounter")
+    HookRefreshGlobal("QUI_RefreshCombatTimer")
+    HookRefreshGlobal("QUI_RefreshRangeCheck")
+    HookRefreshGlobal("QUI_RefreshXPTracker")
+    HookRefreshGlobal("QUI_RefreshActionTracker")
+    HookRefreshGlobal("QUI_RefreshSkyriding")
+    HookRefreshGlobal("QUI_RefreshPetWarning")
+    HookRefreshGlobal("QUI_RefreshFocusCastAlert")
+end)
 
 -- Global callback for updating anchored frames (called by NCDM, resource bars, etc.)
 -- Preserve any existing unit-frame updater to avoid breaking legacy anchoring.
@@ -2633,14 +2895,14 @@ end
 
 if QUICore and QUICore.RegisterEditModeEnter then
     QUICore:RegisterEditModeEnter(function()
-        AnchorDebug("EditMode ENTER — starting 50ms anchor ticker")
+        -- AnchorDebug("EditMode ENTER — starting 50ms anchor ticker")
         StartEditModeTicker()
     end)
 end
 
 if QUICore and QUICore.RegisterEditModeExit then
     QUICore:RegisterEditModeExit(function()
-        AnchorDebug("EditMode EXIT — stopping ticker, final reapply")
+        -- AnchorDebug("EditMode EXIT — stopping ticker, final reapply")
         StopEditModeTicker()
         _editModeTickerSilent = false
         -- Final reapply outside Edit Mode (no guards, all frames including CDM viewers)

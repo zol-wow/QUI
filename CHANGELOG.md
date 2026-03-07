@@ -56,6 +56,174 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## v2.47.1 - 2026-03-07
+
+### Fixed
+- improve tooltip handling and enhance viewer alpha enforcement
+## v2.47.0 - 2026-03-07
+
+### Added
+- added party and raid frames
+
+### Fixed
+- fixed stancebar icons not rendering correctly
+- fixed HUD visibility with "show below 100% health" option
+- fixed some special secondary resource bars (whirlwind, tip of the spear, essence)
+- fixed some resource bar sizing issues
+## v2.46.9 - 2026-03-07
+
+### Added
+- feat: add Whirlwind, Tip of the Spear, and Essence regen resource bars
+- added second icon option for the minimap button drawer
+
+### Fixed
+- fixed nested menu entries for action bars and onwards
+- fixed missing icons for the target classification
+- fix: combat taint safety for keystone tracker hide and tooltip widget setup
+- fix: eliminate tooltip taint by skipping all addon work in combat
+- fix: detect spell list reordering via fingerprint instead of count
+## v2.46.8 - 2026-03-07
+
+### Added
+- feat: configurable minimap drawer toggle button size
+- feat: add classification icon for target, focus, and boss unit frames
+- feat: show unit frames when player health is below 100%
+
+### Fixed
+- fix skyriding bar staying visible when flying into dungeons
+- fix: exclude maxLength from castbar copy to prevent truncation
+- fix: improve CDM aura detection, initial cooldown sync, and tooltip taint safety
+- fix: stop clearing layoutType/layoutTextureKit on tooltip frame to prevent taint
+- fix: show real item/slot cooldown instead of buff duration in trackers
+- fix: gate all tooltip features behind master enabled toggle
+- fix: pre-create power bar globals for Edit Mode anchoring at load time
+- fix: ensure power bar globals exist for Edit Mode anchoring
+## v2.46.7 - 2026-03-06
+
+### Fixed
+- revert: restore UISpecialFrames for ESC-to-close on chat and options frames
+## v2.46.6 - 2026-03-06
+
+### Fixed
+- fix: tooltip combat hide flash and broaden SetSpellByID/SetItemByID suppression
+- fix: replace UISpecialFrames with OnKeyDown ESC handler to avoid taint
+- fix: sidebar subtab active state reads current tab at click time
+- fix: separate aura/cooldown swipe color defaults, clarify options labels
+- fix: datapanel init timing and gold datatext initial update
+- feat: anchoring system integration, custom tracker improvements, taint safety
+- fix: consumable frame SetScale combat taint, tooltip hook taint safety
+- fix: remove RefreshTotemData method replacement that tainted CDM viewer
+- fix: font system taint safety, CDM bar and buffbar improvements
+## v2.46.5 - 2026-03-06
+
+### Added
+- added tracked buff bar factory to QUI CDM engine
+
+### Fixed
+- fix: buff bar active state, parent mismatch, and Edit Mode taint
+- fix: stop overwriting point/relative on container position save
+## v2.46.4 - 2026-03-05
+
+### Fixed
+- fix(custom-trackers): restore clickable tracker actions after info/usability updates
+- fix: remove border debug logging, fix fade-hide flag tracking
+- fix: action bar border toggle and NormalTexture re-hide on updates
+## v2.46.3 - 2026-03-05
+
+### Fixed
+- fix: tooltip taint hardening and anchoring debug silencing
+- fix: layoutIndex sorting, loot tooltip guard, respect layout direction flags, sort before subset
+- fix: invalidate options panel on profile change
+## v2.46.2 - 2026-03-05
+
+### Added
+- feat: click-to-cast for CDM icons with macro resolution and secure overlays
+
+### Fixed
+- fixed more tooltip taint paths
+- fix: trust Edit Mode NumIcons API and restore bars on edit mode enter
+- fix: correct secondary stat calculations and tooltips in character panel
+## v2.46.1 - 2026-03-04
+
+### Fixed
+- rework tooltip skinning a bit to avoid taints
+- fix: explicitly hide/show QUI textures on faded and empty action buttons
+- don't show a skyriding bar when being a passenger
+- fixed action bar 1 not fading when 'keep leave vehicle button visible' was active
+- fixed circular anchor dependency introduced by alert skinning
+## v2.46.0 - 2026-03-04
+
+### Added
+- added new collapsible side menu structure to help people find things (also use the search!)
+- added some minimap button drawer enhancements
+
+### Fixed
+- fixed search interface scrollbar styling
+- fix: simplify CDM cooldown mirroring and swipe classification
+- fix: remove LibDBIcon10_QUI from minimap drawer blacklist
+- fix: pcall SetLootRollItem to guard against third-party tooltip hook errors
+- fix: combat taint safety for scaling, tooltips, and tooltip skinning
+- fix: taint-safe font system, overlay-based button tints, and max-level detection
+- fix: apply tooltip visibility rules to CDM item tooltips via SetItemByID
+- feat: visible-only button spacing and anchor chain walk for hidden parents
+## v2.45.2 - 2026-03-04
+
+### Fixed
+- resolve trinket slot to item ID for icons, tooltips, and cooldowns
+- read bar grid layout from Edit Mode API, support vertical orientation
+## v2.45.1 - 2026-03-04
+
+### Fixed
+- fixed cdm engine race condition that led to lua errors
+- fixed issues with action bars and fixed their growth direction for multirow setups
+## v2.45.0 - 2026-03-03
+
+### Added
+- added minimap button drawer
+- added actionbar button spacing
+- added equipment slot tracking for custom trackers
+- added option to allow /reload in combat
+- added custom tracker bars to anchoring system
+- added help and documentation pages
+## v2.44.4 - 2026-03-03
+
+### Added
+- added factory reset button to profiles page
+
+### Fixed
+- fix: respect Blizzard expansion button initialization state
+- fix: stabilize expansion landing page button and add buttonSpacing default
+- fix: safeguard CDM viewer totem refresh and strip embedded tooltip border
+- fix: prevent override action bar taint loop during combat
+## v2.44.3 - 2026-03-03
+
+### Added
+- allow for ESC to close the settings panel
+- added Rotation Assist Icon to Anchoring & Layout (under CDM)
+
+### Fixed
+- fixed GCD swipes/glows for some classes
+- fixed issues with tooltip parent frames
+- fixed skyriding speed math
+- fixed missing enchant texts for character pane
+- fixed LeaveVehicleButton showing when not in a vehicle
 ## v2.44.2 - 2026-03-02
 
 ### Fixed

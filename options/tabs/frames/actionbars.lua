@@ -53,7 +53,7 @@ local function CreateActionBarsPage(parent)
         local FORM_ROW = 32
 
         -- Set search context for widget auto-registration
-        GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 2, subTabName = "Mouseover Hide"})
+        GUI:SetSearchContext({tabIndex = 7, tabName = "Action Bars", subTabIndex = 2, subTabName = "Mouseover Hide"})
 
         ---------------------------------------------------------
         -- Warning: Enable Blizzard Action Bars
@@ -218,7 +218,7 @@ local function CreateActionBarsPage(parent)
         local FORM_ROW = 32
 
         -- Set search context for auto-registration
-        GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 1, subTabName = "Master Settings"})
+        GUI:SetSearchContext({tabIndex = 7, tabName = "Action Bars", subTabIndex = 1, subTabName = "Master Settings"})
 
         -- 9-point anchor options for text positioning
         local anchorOptions = {
@@ -283,7 +283,7 @@ local function CreateActionBarsPage(parent)
         y = y - FORM_ROW
 
         local tipText = GUI:CreateLabel(tabContent,
-            "QUI hooks into Blizzard action bars to skin them. Position and resize bars via Edit Mode (Blizzard minimum padding: 2px). If you need actionbar paging (stance/form swapping), want to use action bars as your CDM, or prefer more control - disable QUI Action Bars and use a dedicated addon (e.g., Bartender4, Dominos).",
+            "QUI hooks into Blizzard action bars to skin them. Position and resize bars via Edit Mode. Use the Button Spacing slider below to override Edit Mode padding. If you need actionbar paging (stance/form swapping), want to use action bars as your CDM, or prefer more control - disable QUI Action Bars and use a dedicated addon (e.g., Bartender4, Dominos).",
             11, C.warning)
         tipText:SetPoint("TOPLEFT", PAD, y)
         tipText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
@@ -355,6 +355,12 @@ local function CreateActionBarsPage(parent)
         scaleWarning:SetWordWrap(true)
         scaleWarning:SetHeight(30)
         y = y - 32
+
+        local spacingSlider = GUI:CreateFormSlider(tabContent, "Button Spacing",
+            0, 10, 1, "buttonSpacing", global, RefreshActionBars)
+        spacingSlider:SetPoint("TOPLEFT", PAD, y)
+        spacingSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
 
         local hideEmptySlotsCheck = GUI:CreateFormCheckbox(tabContent, "Hide Empty Slots",
             "hideEmptySlots", global, RefreshActionBars)
@@ -581,7 +587,7 @@ local function CreateActionBarsPage(parent)
     ---------------------------------------------------------
     local function BuildPerBarOverridesTab(tabContent)
         -- Set search context for widget auto-registration
-        GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 3, subTabName = "Per-Bar Overrides"})
+        GUI:SetSearchContext({tabIndex = 7, tabName = "Action Bars", subTabIndex = 3, subTabName = "Per-Bar Overrides"})
 
         -- Use tabContent directly - parent Action Bars page already has scroll
         local content = tabContent
@@ -1003,7 +1009,7 @@ local function CreateActionBarsPage(parent)
         local FORM_ROW = 32
 
         -- Set search context
-        GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 4, subTabName = "Extra Buttons"})
+        GUI:SetSearchContext({tabIndex = 7, tabName = "Action Bars", subTabIndex = 4, subTabName = "Extra Buttons"})
 
         -- Refresh callback
         local function RefreshExtraButtons()
@@ -1185,7 +1191,7 @@ BuildTotemBarTab = function(tabContent)
     local db = core and core.db and core.db.profile and core.db.profile.totemBar
 
     -- Set search context for widget auto-registration
-    GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 5, subTabName = "Totem Bar"})
+    GUI:SetSearchContext({tabIndex = 7, tabName = "Action Bars", subTabIndex = 5, subTabName = "Totem Bar"})
 
     -- Class guard: show notice for non-shamans
     local _, playerClass = UnitClass("player")

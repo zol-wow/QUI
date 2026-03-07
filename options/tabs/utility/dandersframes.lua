@@ -104,8 +104,19 @@ local function BuildPartyRaidframesTab(tabContent)
     local y = -10
     local PAD = PADDING
 
-    -- Set search context for Unit Frames > Party/Raidframes sub-tab
-    GUI:SetSearchContext({tabIndex = 5, tabName = "Unit Frames", subTabIndex = 8, subTabName = "Party/Raidframes"})
+    -- Set search context to the active 3rd-party anchoring location
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 9, subTabName = "3rd Party Addons"})
+
+    -- Check if QUI native group frames are active
+    local core = GetCore()
+    local quiGFEnabled = core and core.db and core.db.profile and core.db.profile.quiGroupFrames and core.db.profile.quiGroupFrames.enabled
+    if quiGFEnabled then
+        local notice = GUI:CreateLabel(tabContent, "QUI native Group Frames are enabled. DandersFrames party/raid anchoring is inactive while QUI frames are active. Disable QUI Group Frames in the Group Frames tab to use DandersFrames anchoring.", 12, {1, 0.8, 0.2, 1})
+        notice:SetPoint("TOPLEFT", PAD, y)
+        notice:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        notice:SetJustifyH("LEFT")
+        y = y - 50
+    end
 
     -- Description
     local info = GUI:CreateLabel(tabContent, "Anchor DandersFrames containers to QUI elements. When enabled, QUI controls the container position instead of DandersFrames.", 11, C.textMuted)
@@ -114,7 +125,6 @@ local function BuildPartyRaidframesTab(tabContent)
     info:SetJustifyH("LEFT")
     y = y - 28
 
-    local core = GetCore()
     local db = core and core.db and core.db.profile and core.db.profile.dandersFrames
     if not db then
         local errorLabel = GUI:CreateLabel(tabContent, "Database not loaded. Please reload UI.", 12, {1, 0.3, 0.3, 1})

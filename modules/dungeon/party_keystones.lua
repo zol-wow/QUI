@@ -617,7 +617,9 @@ local function SetupPVEFrameHooks()
         end)
     end)
     PVEFrame:HookScript("OnHide", function()
-        KeyTrackerFrame:Hide()
+        if not InCombatLockdown() then
+            KeyTrackerFrame:Hide()
+        end
     end)
 end
 

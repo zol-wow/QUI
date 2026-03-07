@@ -92,15 +92,6 @@ local function BuildEffectsTab(tabContent)
         buffIconDesc:SetJustifyH("LEFT")
         y = y - 14
 
-        local showRechargeEdge = GUI:CreateFormCheckbox(tabContent, "Recharge Edge", "showRechargeEdge", db.cooldownSwipe, RefreshSwipe)
-        showRechargeEdge:SetPoint("TOPLEFT", PAD, y)
-        showRechargeEdge:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-        local rechargeEdgeDesc = GUI:CreateLabel(tabContent, "Yellow radial line that shows cooldown recharge time. Note: This comes with a faint GCD swipe too.", 10, C.textMuted)
-        rechargeEdgeDesc:SetPoint("TOPLEFT", PAD, y + 4)
-        rechargeEdgeDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        rechargeEdgeDesc:SetJustifyH("LEFT")
-        y = y - 14
     end
 
     -- =====================================================
@@ -110,7 +101,7 @@ local function BuildEffectsTab(tabContent)
     overlayHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - overlayHeader.gap
 
-    local overlayDesc = GUI:CreateLabel(tabContent, "Override the Blizzard yellow swipe overlay color on Essential, Utility and Buff Icon cooldown icons.", 11, C.textMuted)
+    local overlayDesc = GUI:CreateLabel(tabContent, "Overlay Color controls the buff/aura swipe color (default: Blizzard yellow). Swipe Color controls the cooldown/GCD darkening color.", 11, C.textMuted)
     overlayDesc:SetPoint("TOPLEFT", PAD, y)
     overlayDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     overlayDesc:SetJustifyH("LEFT")
@@ -124,9 +115,9 @@ local function BuildEffectsTab(tabContent)
             {value = "custom",  text = "Custom Color"},
         }
 
-        -- Overlay color: active/aura state
+        -- Overlay color: buff/aura swipe (default yellow)
         local overlayColorPicker
-        local overlayMode = GUI:CreateFormDropdown(tabContent, "Overlay Color", colorModeOptions, "overlayColorMode", db.cooldownSwipe, function()
+        local overlayMode = GUI:CreateFormDropdown(tabContent, "Buff Overlay Color", colorModeOptions, "overlayColorMode", db.cooldownSwipe, function()
             RefreshSwipe()
             if overlayColorPicker then
                 overlayColorPicker:SetEnabled((db.cooldownSwipe.overlayColorMode or "default") == "custom")
@@ -142,9 +133,9 @@ local function BuildEffectsTab(tabContent)
         overlayColorPicker:SetEnabled((db.cooldownSwipe.overlayColorMode or "default") == "custom")
         y = y - FORM_ROW
 
-        -- Swipe color: cooldown/radial-darkening state
+        -- Swipe color: cooldown/GCD radial darkening
         local swipeColorPicker
-        local swipeMode = GUI:CreateFormDropdown(tabContent, "Swipe Color", colorModeOptions, "swipeColorMode", db.cooldownSwipe, function()
+        local swipeMode = GUI:CreateFormDropdown(tabContent, "Cooldown Swipe Color", colorModeOptions, "swipeColorMode", db.cooldownSwipe, function()
             RefreshSwipe()
             if swipeColorPicker then
                 swipeColorPicker:SetEnabled((db.cooldownSwipe.swipeColorMode or "default") == "custom")

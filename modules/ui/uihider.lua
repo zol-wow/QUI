@@ -332,8 +332,8 @@ local function ApplyHideSettings()
     if CompactRaidFrameManager then
         if InCombatLockdown() then
             -- Skip protected operations during combat
-        elseif settings.hideRaidFrameManager then
-            -- Defer to break taint chain
+        elseif settings.hideRaidFrameManager or (Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled) then
+            -- Defer to break taint chain (also auto-hide when QUI group frames active)
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
                 CompactRaidFrameManager:SetAlpha(0)
@@ -355,7 +355,8 @@ local function ApplyHideSettings()
                         if IsInEditMode() then _crfWatcherShown = false return end
                         if InCombatLockdown() then _crfWatcherShown = false return end
                         local s = GetSettings()
-                        if s and s.hideRaidFrameManager then
+                        local quiGFActive = Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled
+                        if (s and s.hideRaidFrameManager) or quiGFActive then
                             CompactRaidFrameManager:SetAlpha(0)
                             CompactRaidFrameManager:EnableMouse(false)
                         end

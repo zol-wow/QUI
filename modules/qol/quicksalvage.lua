@@ -679,7 +679,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         elseif GameTooltip:IsShown() and IsModifierActive() then
             -- Re-trigger tooltip hook when modifier pressed
             local owner = GameTooltip:GetOwner()
-            if owner and owner:IsMouseOver() then
+            if owner and Helpers.SafeValue(owner:IsMouseOver(), false) then
                 if owner.GetSlotAndBagID then
                     local slotID, bagID = owner:GetSlotAndBagID()
                     if bagID and slotID then

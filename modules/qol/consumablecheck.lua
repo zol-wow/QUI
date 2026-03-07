@@ -857,9 +857,11 @@ UpdateConsumables = function()
 
     local buttons = ConsumablesFrame.buttons
     local frameScale = GetConsumableScale()
-    ConsumablesFrame:SetScale(frameScale)
-    if pickerFrame and pickerFrame:IsShown() then
-        pickerFrame:SetScale(frameScale)
+    if not InCombatLockdown() then
+        ConsumablesFrame:SetScale(frameScale)
+        if pickerFrame and pickerFrame:IsShown() then
+            pickerFrame:SetScale(frameScale)
+        end
     end
     local now = GetTime()
     local visibleCount = 0

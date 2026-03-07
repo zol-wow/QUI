@@ -95,6 +95,16 @@ function QUI:SlashCommandOpen(input)
             print("|cFF56D1FFQUI:|r Unit Frames module not loaded.")
         end
         return
+    elseif input and input:find("^grouptest") then
+        -- Toggle Group Frames test/preview mode
+        local GFEditMode = ns.QUI_GroupFrameEditMode
+        if GFEditMode then
+            local args = input:match("^grouptest%s*(.*)$") or ""
+            GFEditMode:HandleSlashCommand(args)
+        else
+            print("|cFF56D1FFQUI:|r Group Frames module not loaded.")
+        end
+        return
     end
     
     -- Default: Open custom GUI

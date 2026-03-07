@@ -30,22 +30,28 @@ end
 -- Fallback to bundled Quazii font (always available, loaded early in media.lua)
 local QUAZII_FONT_PATH = [[Interface\AddOns\QUI\assets\Quazii.ttf]]
 
--- Font objects to override (preserves original size/flags, only changes font file)
+-- TAINT SAFETY: Shared Font object modification is FUNDAMENTALLY UNSAFE.
+-- Calling SetFont() on ANY shared Font object from addon code permanently
+-- taints that object and ALL derived FontStrings for the entire session.
+-- During combat, Blizzard's secure code calls GetStringHeight(),
+-- GetStringWidth(), etc. on those FontStrings and gets secret/tainted
+-- values, causing arithmetic errors in:
+--   - UIWidgetTemplateTextWithState (inherits GameFontNormal) — tooltip
+--     widget Setup() fails with "secret number value tainted by 'QUI'"
+--   - ActionButton Count/Name text (inherits NumberFontNormal)
+--   - Any other secure frame that reads FontString metrics during combat
+--
+-- All font overrides are applied PER-INSTANCE instead:
+--   - Tooltips: skinning/system/tooltips.lua (ApplyTooltipFontSizeToFrame)
+--   - Chat frames: per-frame SetFont below
+--   - ObjectiveTracker: per-frame ApplyFontToFrameRecursive below
 local BLIZZARD_FONT_OBJECTS = {
-    -- Game fonts (menus, dialogs, general UI)
-    "GameFontNormal", "GameFontHighlight", "GameFontNormalSmall",
-    "GameFontHighlightSmall", "GameFontNormalLarge", "GameFontHighlightLarge",
-    "GameFontDisable", "GameFontDisableSmall", "GameFontDisableLarge",
-    -- Number fonts
-    "NumberFontNormal", "NumberFontNormalSmall", "NumberFontNormalLarge",
-    "NumberFontNormalHuge", "NumberFontNormalSmallGray",
-    -- Quest fonts
-    "QuestFont", "QuestFontHighlight", "QuestFontNormalSmall",
-    "QuestFontHighlightSmall",
-    -- Tooltip fonts
-    "GameTooltipHeaderText", "GameTooltipText", "GameTooltipTextSmall",
-    -- Chat fonts
-    "ChatFontNormal", "ChatFontSmall", "ChatFontLarge",
+    -- ALL shared Font objects are excluded — see taint safety note above.
+    -- Game fonts: taint UIWidgetTemplateTextWithState (GetStringHeight)
+    -- Number fonts: taint ActionButton text metrics
+    -- Quest fonts: may be inherited by secure UI elements
+    -- Tooltip fonts: handled per-instance by skinning/system/tooltips.lua
+    -- Chat fonts: handled per-frame below (SetFont on ScrollingMessageFrame)
 }
 
 -- Track if hooks are already set up (one-time)
@@ -104,8 +110,6 @@ local function ScheduleGlobalFontApply()
 end
 
 function QUICore:ApplyGlobalFont()
-    -- NOTE: No InCombatLockdown() guard needed. Font:SetFont() on Blizzard
-    -- font objects is not a protected operation — safe in combat.
     -- Check if feature is enabled
     if not self.db or not self.db.profile or not self.db.profile.general then return end
     if not self.db.profile.general.applyGlobalFontToBlizzard then return end
@@ -150,17 +154,11 @@ function QUICore:ApplyGlobalFont()
             end
         end
 
-        -- Hook Tooltip display
-        if GameTooltip then
-            -- TAINT SAFETY: Defer to break taint chain from secure context.
-            hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip)
-                C_Timer.After(0, function()
-                    if not QUICore.db.profile.general.applyGlobalFontToBlizzard then return end
-                    local fp = GetGlobalFontPath()
-                    ApplyFontToFrameRecursive(tooltip, fp)
-                end)
-            end)
-        end
+        -- Tooltip font display is handled per-instance by
+        -- skinning/system/tooltips.lua (ApplyTooltipFontSizeToFrame).
+        -- Do NOT use ApplyFontToFrameRecursive on tooltips — it walks into
+        -- UIWidget child containers whose FontStrings inherit from shared
+        -- font objects; tainting them breaks GetStringHeight() in combat.
 
         -- Hook chat frame font size changes
         if FCF_SetChatWindowFontSize then
@@ -211,8 +209,6 @@ function QUICore:ApplyGlobalFont()
         end
     end
 
-    -- Apply to existing tooltips
-    if GameTooltip then
-        ApplyFontToFrameRecursive(GameTooltip, fontPath)
-    end
+    -- Tooltip fonts are applied per-instance by skinning/system/tooltips.lua.
+    -- Recursive application here would taint UIWidget child FontStrings.
 end

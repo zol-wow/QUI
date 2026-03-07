@@ -54,6 +54,7 @@ local function CreateUnitFramesPage(parent)
         -- Set search context for auto-registration
         GUI:SetSearchContext({tabIndex = 5, tabName = "Unit Frames", subTabIndex = 1, subTabName = "General"})
 
+
         if not ufdb then
             local info = GUI:CreateLabel(tabContent, "Unit frame settings not available - database not loaded", 12, C.textMuted)
             info:SetPoint("TOPLEFT", PAD, y)
@@ -1738,6 +1739,49 @@ local function CreateUnitFramesPage(parent)
             local leaderYSlider = GUI:CreateFormSlider(tabContent, "Y Offset", -100, 100, 1, "yOffset", unitDB.leaderIcon, RefreshUnit)
             leaderYSlider:SetPoint("TOPLEFT", PAD, y)
             leaderYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+        end
+
+        -- CLASSIFICATION ICON section (target, focus, boss only)
+        if unitKey == "target" or unitKey == "focus" or unitKey == "boss" then
+            local classHeader = GUI:CreateSectionHeader(tabContent, "Classification Icon")
+            classHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - classHeader.gap
+
+            -- Ensure classificationIcon table exists
+            if not unitDB.classificationIcon then
+                unitDB.classificationIcon = { enabled = false, size = 16, anchor = "LEFT", xOffset = -8, yOffset = 0 }
+            end
+
+            local classDesc = GUI:CreateLabel(tabContent, "Shows an icon indicating if the unit is Elite (gold), Rare (silver), Rare Elite, or a Boss.", 11, C.textMuted)
+            classDesc:SetPoint("TOPLEFT", PAD, y)
+            classDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            classDesc:SetJustifyH("LEFT")
+            y = y - 20
+
+            local classCheck = GUI:CreateFormCheckbox(tabContent, "Show Classification Icon", "enabled", unitDB.classificationIcon, RefreshUnit)
+            classCheck:SetPoint("TOPLEFT", PAD, y)
+            classCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local classSizeSlider = GUI:CreateFormSlider(tabContent, "Icon Size", 8, 48, 1, "size", unitDB.classificationIcon, RefreshUnit)
+            classSizeSlider:SetPoint("TOPLEFT", PAD, y)
+            classSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local classAnchorDrop = GUI:CreateFormDropdown(tabContent, "Anchor To", anchorOptions, "anchor", unitDB.classificationIcon, RefreshUnit)
+            classAnchorDrop:SetPoint("TOPLEFT", PAD, y)
+            classAnchorDrop:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local classXSlider = GUI:CreateFormSlider(tabContent, "X Offset", -100, 100, 1, "xOffset", unitDB.classificationIcon, RefreshUnit)
+            classXSlider:SetPoint("TOPLEFT", PAD, y)
+            classXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local classYSlider = GUI:CreateFormSlider(tabContent, "Y Offset", -100, 100, 1, "yOffset", unitDB.classificationIcon, RefreshUnit)
+            classYSlider:SetPoint("TOPLEFT", PAD, y)
+            classYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
         end
 

@@ -275,9 +275,9 @@ local function BuildHUDVisibilityTab(tabContent)
         end
     end
 
-    local ufAlwaysCheck = GUI:CreateFormCheckbox(tabContent, "Show Always", "showAlways", ufVis, function()
-        RefreshUnitframesVisibility()
+    local ufAlwaysCheck = GUI:CreateFormCheckbox(tabContent, "Show Always", "showAlways", ufVis, function(val)
         UpdateUFConditionState()
+        RefreshUnitframesVisibility()
     end)
     ufAlwaysCheck:SetPoint("TOPLEFT", PADDING, y)
     ufAlwaysCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
@@ -316,6 +316,20 @@ local function BuildHUDVisibilityTab(tabContent)
     ufMouseoverCheck:SetPoint("TOPLEFT", PADDING, y)
     ufMouseoverCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     table.insert(ufConditionChecks, ufMouseoverCheck)
+    y = y - FORM_ROW
+
+    if ufVis.showWhenHealthBelow100 == nil then ufVis.showWhenHealthBelow100 = false end
+    local ufHealthCheck = GUI:CreateFormCheckbox(
+        tabContent,
+        "Show When Health < 100%",
+        "showWhenHealthBelow100",
+        ufVis,
+        RefreshUnitframesVisibility,
+        BuildSearchInfo("unitframes", "unit frames", "health", "damaged", "hurt", "injured")
+    )
+    ufHealthCheck:SetPoint("TOPLEFT", PADDING, y)
+    ufHealthCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    table.insert(ufConditionChecks, ufHealthCheck)
     y = y - FORM_ROW
 
     UpdateUFConditionState()

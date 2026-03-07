@@ -29,7 +29,7 @@ QUICore.__reloadEventFrame = nil
 
 -- Safe reload function - queues if in combat, reloads immediately if not
 function QUICore:SafeReload()
-    if InCombatLockdown() then
+    if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
         if not self.__pendingReload then
             self.__pendingReload = true
             print("|cFF30D1FFQUI:|r Reload queued - will execute when combat ends.")
@@ -75,7 +75,7 @@ function QUI:SafeReload()
         self.QUICore:SafeReload()
     else
         -- Fallback if QUICore not loaded
-        if InCombatLockdown() then
+        if InCombatLockdown() and not (self.db and self.db.profile and self.db.profile.general and self.db.profile.general.allowReloadInCombat) then
             print("|cFF30D1FFQUI:|r Cannot reload during combat.")
         else
             ReloadUI()
@@ -389,6 +389,7 @@ local defaults = {
             autoInsertKey = true,  -- Auto-insert keystone in M+ UI
             skinKeystoneFrame = true,  -- Skin keystone insertion window
             skinGameMenu = false,  -- Skin ESC menu (opt-in)
+            allowReloadInCombat = false,  -- Allow /reload during combat (bypass SafeReload)
             addQUIButton = false,  -- Add QUI button to ESC menu (opt-in)
             gameMenuFontSize = 12,  -- Game menu button font size
             gameMenuDim = true,  -- Dim background when game menu is open
@@ -634,6 +635,7 @@ local defaults = {
                 rangeIndicator = true,
                 rangeColor = {0.8, 0.1, 0.1, 1},
                 usabilityIndicator = true,
+                clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
                 row1 = {
                     iconCount = 8,      -- How many icons in row 1 (0 = disabled)
@@ -707,6 +709,7 @@ local defaults = {
                 rangeIndicator = true,
                 rangeColor = {0.8, 0.1, 0.1, 1},
                 usabilityIndicator = true,
+                clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
                 row1 = {
                     iconCount = 6,
@@ -834,6 +837,7 @@ local defaults = {
                 fillDirection = "up",
                 iconPosition = "top",
                 showTextOnVertical = false,
+                pos = nil,  -- owned container position (seeded from Blizzard viewer on first init)
             },
             customBuffs = {
                 enabled = true,
@@ -866,6 +870,7 @@ local defaults = {
             showInGroup = false,
             showInInstance = false,
             showOnMouseover = false,
+            showWhenHealthBelow100 = false,
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
             alwaysShowCastbars = false,  -- When true, castbars ignore UF visibility
@@ -1151,6 +1156,8 @@ local defaults = {
             staggerHeavy = { 1.00, 0.42, 0.42, 1 },     -- Red (60%+ of max health)
             useStaggerLevelColors = true,               -- Enable dynamic stagger colors
             soulFragments = { 0.64, 0.19, 0.79, 1 },
+            whirlwind = { 0.90, 0.20, 0.20, 1 },           -- Red (Warrior theme)
+            tipOfTheSpear = { 0.00, 0.80, 0.30, 1 },       -- Green (Hunter/Survival theme)
             runes = { 0.77, 0.12, 0.23, 1 },
             bloodRunes = { 0.77, 0.12, 0.23, 1 },
             frostRunes = { 0.00, 0.82, 1.00, 1 },
@@ -1383,6 +1390,7 @@ local defaults = {
                 countOffsetY = 0,           -- Stack count text Y offset
                 -- Bar Layout settings
                 barScale = 1.0,             -- Global scale multiplier (0.5 - 2.0)
+                buttonSpacing = nil,        -- Button spacing override (nil = use Blizzard Edit Mode padding)
                 hideEmptySlots = false,     -- Hide buttons with no ability assigned
                 lockButtons = false,        -- Prevent dragging abilities off buttons
                 -- Range indicator settings
@@ -1942,6 +1950,14 @@ local defaults = {
                     xOffset = -8,
                     yOffset = 8,
                 },
+                -- Classification icon (elite/rare/boss indicator)
+                classificationIcon = {
+                    enabled = false,
+                    size = 16,
+                    anchor = "LEFT",
+                    xOffset = -8,
+                    yOffset = 0,
+                },
             },
             -- Target of Target
             targettarget = {
@@ -2248,6 +2264,14 @@ local defaults = {
                     xOffset = -8,
                     yOffset = 8,
                 },
+                -- Classification icon (elite/rare/boss indicator)
+                classificationIcon = {
+                    enabled = false,
+                    size = 16,
+                    anchor = "LEFT",
+                    xOffset = -8,
+                    yOffset = 0,
+                },
             },
             -- Boss frames
             boss = {
@@ -2344,8 +2368,200 @@ local defaults = {
                     xOffset = 0,
                     yOffset = 8,
                 },
+                -- Classification icon (elite/rare/boss indicator)
+                classificationIcon = {
+                    enabled = false,
+                    size = 16,
+                    anchor = "LEFT",
+                    xOffset = -8,
+                    yOffset = 0,
+                },
             },
         },
+
+        -- QUI Group Frames (party/raid)
+        quiGroupFrames = {
+            enabled = false,          -- Disabled by default (opt-in feature)
+
+            -- General appearance
+            general = {
+                useClassColor = true,
+                texture = "Quazii v5",
+                borderSize = 1,
+                font = "Quazii",
+                fontSize = 12,
+                fontOutline = "OUTLINE",
+                showTooltips = true,
+                darkMode = false,
+                darkModeHealthColor = { 0.15, 0.15, 0.15, 1 },
+                darkModeBgColor = { 0.25, 0.25, 0.25, 1 },
+                darkModeHealthOpacity = 1.0,
+                darkModeBgOpacity = 1.0,
+                defaultBgColor = { 0, 0, 0, 1 },
+                defaultHealthOpacity = 1.0,
+                defaultBgOpacity = 1.0,
+            },
+
+            -- Layout
+            layout = {
+                growDirection = "DOWN",          -- DOWN, UP
+                groupGrowDirection = "RIGHT",    -- RIGHT, LEFT (raid columns)
+                spacing = 2,                     -- Gap between frames
+                groupSpacing = 10,               -- Gap between raid groups
+                showPlayer = true,               -- Include player in group
+                sortMethod = "INDEX",            -- INDEX, NAME
+                sortByRole = true,               -- Tank > Healer > Melee > Ranged
+                groupBy = "GROUP",               -- GROUP, ROLE, CLASS
+            },
+
+            -- Unified dimensions (auto-scale by group size)
+            dimensions = {
+                partyWidth = 200, partyHeight = 40,
+                smallRaidWidth = 180, smallRaidHeight = 36,
+                mediumRaidWidth = 160, mediumRaidHeight = 30,
+                largeRaidWidth = 140, largeRaidHeight = 24,
+            },
+
+            -- Position
+            position = { offsetX = -400, offsetY = 0 },
+
+            -- Health bar
+            health = {
+                showHealthText = true,
+                healthDisplayStyle = "percent",   -- percent, absolute, both, deficit
+                healthFontSize = 12,
+                healthAnchor = "RIGHT",
+                healthOffsetX = -4,
+                healthOffsetY = 0,
+                healthTextColor = { 1, 1, 1, 1 },
+            },
+
+            -- Power bar
+            power = {
+                showPowerBar = true,
+                powerBarHeight = 4,
+                powerBarUsePowerColor = true,
+                powerBarColor = { 0.2, 0.4, 0.8, 1 },
+            },
+
+            -- Name text
+            name = {
+                showName = true,
+                nameFontSize = 12,
+                nameAnchor = "LEFT",
+                nameOffsetX = 4,
+                nameOffsetY = 0,
+                maxNameLength = 10,
+                nameTextUseClassColor = false,
+                nameTextColor = { 1, 1, 1, 1 },
+            },
+
+            -- Absorbs + heal prediction
+            absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.3 },
+            healPrediction = { enabled = true, color = { 0.2, 1, 0.2 }, opacity = 0.5 },
+
+            -- Indicators
+            indicators = {
+                showRoleIcon = true, roleIconSize = 12, roleIconAnchor = "TOPLEFT",
+                showReadyCheck = true,
+                showResurrection = true,
+                showSummonPending = true,
+                showLeaderIcon = true,
+                showTargetMarker = true,
+                showThreatBorder = true, threatColor = { 1, 0, 0, 0.8 }, threatFillOpacity = 0.15,
+                showPhaseIcon = true,
+            },
+
+            -- Healer features
+            healer = {
+                dispelOverlay = { enabled = true, opacity = 0.8, fillOpacity = 0.18, color = { 0.26, 0.54, 1, 0.8 } },
+                targetHighlight = { enabled = true, color = { 1, 1, 1, 0.6 }, fillOpacity = 0.12 },
+                myBuffIndicator = { enabled = false, color = { 0.2, 0.8, 0.2, 0.5 } },
+                defensiveIndicator = { enabled = false, iconSize = 16, position = "CENTER", offsetX = 0, offsetY = 0 },
+            },
+
+            -- Class power pips
+            classPower = { enabled = false, height = 4, spacing = 1 },
+
+            -- Range check
+            range = { enabled = true, outOfRangeAlpha = 0.4 },
+
+            -- Auras (compact)
+            auras = {
+                showDebuffs = true, maxDebuffs = 3, debuffIconSize = 16,
+                debuffAnchor = "BOTTOMRIGHT", debuffGrowDirection = "LEFT",
+                debuffSpacing = 2, debuffOffsetX = -2, debuffOffsetY = -18,
+                showBuffs = false, maxBuffs = 0, buffIconSize = 14,
+                buffAnchor = "TOPLEFT", buffGrowDirection = "RIGHT",
+                buffSpacing = 2, buffOffsetX = 2, buffOffsetY = 16,
+                showDurationColor = true,
+                showExpiringPulse = true,
+            },
+
+            -- Private auras (boss debuffs displayed by Blizzard)
+            privateAuras = {
+                enabled = true,
+                maxPerFrame = 2,
+                iconSize = 20,
+                growDirection = "RIGHT",
+                spacing = 2,
+                anchor = "RIGHT",
+                anchorOffsetX = -2,
+                anchorOffsetY = 0,
+                showCountdown = true,
+                showCountdownNumbers = true,
+            },
+
+            -- Custom aura indicators (per-spec)
+            auraIndicators = {
+                enabled = false,
+                usePresets = true,    -- auto-load built-in presets for current spec
+                specs = {},           -- populated per-spec by user or presets
+            },
+
+            -- Spotlight (pin specific members to a separate group)
+            spotlight = {
+                enabled = false,
+                byRole = {},          -- e.g., { "TANK" } to auto-spotlight all tanks
+                byName = {},          -- e.g., { "Healername" } for specific players
+                position = { offsetX = -400, offsetY = 200 },
+                growDirection = "DOWN",
+                spacing = 2,
+                useMainFrameStyle = true,
+            },
+
+            -- Castbar (optional, off by default for performance)
+            castbar = { enabled = false, height = 8, showIcon = false, showText = false },
+
+            -- Portrait (optional, off by default)
+            portrait = { showPortrait = false, portraitSide = "LEFT", portraitSize = 30 },
+
+            -- Pet frames
+            pets = {
+                enabled = false,
+                width = 100, height = 20,
+                showPowerBar = false,
+                showAuras = false,
+                anchorTo = "BOTTOM",
+                anchorGap = 2,
+            },
+
+            -- Click-casting
+            clickCast = {
+                enabled = false,
+                bindings = {},
+                perSpec = true,
+                smartRes = true,
+                showTooltip = true,
+            },
+
+            -- Test/preview mode
+            testMode = {
+                partyCount = 5,
+                raidCount = 25,
+            },
+        },
+
         unitFrames = {
             enabled = true,
             General = {
@@ -2852,7 +3068,7 @@ local defaults = {
             showBuffIconSwipe = false,  -- BuffIcon viewer swipe (opt-in)
             showGCDSwipe = false,       -- GCD swipe (~1.5s)
             showCooldownSwipe = false,  -- Actual spell cooldown swipe
-            showRechargeEdge = false,   -- Yellow edge on multi-charge abilities
+
             showActionSwipe = true,     -- Action bar cooldown swipe
             showNcdmSwipe = true,       -- NCDM cooldown swipe
             showCustomTrackerSwipe = true, -- Custom tracker cooldown swipe
@@ -2958,6 +3174,27 @@ local defaults = {
             -- Features
             autoZoom = false,  -- Auto zoom out after 10 seconds
             hideAddonButtons = true,  -- Show addon buttons on hover only
+            buttonDrawer = {
+                enabled = false,        -- Off by default (opt-in feature)
+                anchor = "RIGHT",       -- Which side of minimap: LEFT, RIGHT, TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT, TOP, BOTTOM
+                offsetX = 0,            -- Horizontal offset from anchor position
+                offsetY = 0,            -- Vertical offset from anchor position
+                toggleOffsetX = 0,      -- Horizontal offset for the toggle button
+                toggleOffsetY = 0,      -- Vertical offset for the toggle button
+                autoHideToggle = false, -- Auto-hide the toggle button (show on minimap hover)
+                hiddenButtons = {},     -- Table of button names hidden from the drawer (e.g., { ["LibDBIcon10_Details"] = true })
+                autoHideDelay = 1.5,    -- Seconds after mouse leave before hiding (0 = no auto-hide)
+                buttonSize = 28,        -- Size of collected buttons in pixels
+                buttonSpacing = 2,      -- Gap between buttons in pixels
+                padding = 6,            -- Inner frame padding around the icon grid
+                columns = 1,            -- Number of columns in grid layout (1 = vertical strip)
+                growthDirection = "RIGHT", -- Primary growth direction: RIGHT, LEFT, UP, DOWN
+                centerGrowth = false,      -- Expand around center axis instead of from one edge
+                bgColor = {0.03, 0.03, 0.03, 1}, -- Drawer background color (alpha controlled by bgOpacity)
+                bgOpacity = 98,            -- Drawer background opacity (0-100)
+                borderSize = 1,            -- Drawer border thickness multiplier (0 hides border)
+                borderColor = {0.2, 0.8, 0.6, 1}, -- Drawer border color
+            },
             middleClickMenuEnabled = true,  -- Middle click minimap opens quick menu
             hideMicroMenu = false,  -- Hide Blizzard micro menu (Character/Spellbook/etc.)
             hideBagBar = false,  -- Hide Blizzard bag bar
@@ -3296,7 +3533,11 @@ local defaults = {
             customBars = 5,
             -- Totem bar
             totemBar = 5,
+            -- Group frames (party/raid)
+            groupFrames = 4,
+            groupPetFrames = 3,
         },
+        frameAnchoring = {},
     },
     -- Account-wide storage (shared across all characters)
     global = {
@@ -3576,7 +3817,19 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     if self._preservedPanelAlpha then
         self.db.profile.configPanelAlpha = self._preservedPanelAlpha
     end
-    
+
+
+    -- Invalidate options panel — cached widgets hold stale profile table references
+    if QUI.GUI and QUI.GUI.MainFrame then
+        QUI.GUI.MainFrame:Hide()
+        QUI.GUI.MainFrame:SetParent(nil)
+        QUI.GUI.MainFrame = nil
+        QUI.GUI._searchIndexBuilt = false
+        QUI.GUI._allTabsAdded = false
+        QUI.GUI.SettingsRegistry = {}
+        QUI.GUI.SettingsRegistryKeys = {}
+    end
+
     if self.RefreshAll then
         self:RefreshAll()
     end
@@ -3776,6 +4029,8 @@ function QUICore:HideCurrentSelectionArrows()
                 self:HideNudgeButtons(castbar.editOverlay)
             end
         end
+    elseif sel.selectedType == "groupframes" then
+        -- Group frame mover manages its own nudge button visibility
     end
 end
 
@@ -3843,6 +4098,8 @@ function QUICore:ShowSelectionArrows(elementType, elementKey)
                 end
             end
         end
+    elseif elementType == "groupframes" then
+        -- Group frame mover manages its own nudge button visibility
     end
 end
 
@@ -3982,6 +4239,12 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
                 return true
             end
         end
+    elseif sel.selectedType == "groupframes" then
+        local gfem = ns.QUI_GroupFrameEditMode
+        if gfem then
+            gfem:NudgeHeader("party", dx, dy)
+            return true
+        end
     end
     return false
 end
@@ -4032,7 +4295,11 @@ local function IsAnyEditModeActive()
         and ns.QUI_UnitFrames
         and ns.QUI_UnitFrames.editModeActive
 
-    return blizzardActive or unitFrameEditActive
+    local groupFrameEditActive = ns
+        and ns.QUI_GroupFrameEditMode
+        and ns.QUI_GroupFrameEditMode:IsEditMode()
+
+    return blizzardActive or unitFrameEditActive or groupFrameEditActive
 end
 
 -- Enable/disable keyboard handling based on edit mode state

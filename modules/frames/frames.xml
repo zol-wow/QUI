@@ -7,6 +7,13 @@
     <Script file="unitframe_auras.lua"/>
     <Script file="unitframe_editmode.lua"/>
     <Script file="unitframe_blizzard.lua"/>
+    <Script file="groupframes.lua"/>
+    <Script file="groupframes_auras.lua"/>
+    <Script file="groupframes_indicators.lua"/>
+    <Script file="groupframes_private_auras.lua"/>
+    <Script file="groupframes_clickcast.lua"/>
+    <Script file="groupframes_blizzard.lua"/>
+    <Script file="groupframes_editmode.lua"/>
     <Script file="buffbar.lua"/>
     <Script file="raidbuffs.lua"/>
     <Script file="totems.lua"/>

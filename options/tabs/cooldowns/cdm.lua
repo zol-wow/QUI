@@ -1391,6 +1391,13 @@ local function CreateCDMSetupPage(parent)
             y = y - 24
             tabContent._currentY = y
 
+            -- Clickable Icons (Click to Cast)
+            local clickCheck = GUI:CreateFormCheckbox(tabContent, "Clickable Icons (Click to Cast)", "clickableIcons", ess, RefreshNCDM)
+            clickCheck:SetPoint("TOPLEFT", PAD, y)
+            clickCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
             -- Row 1
             if ess.row1 then
                 BuildRowSettings(tabContent, 1, ess.row1, "Essential", ess, rebuildEssential)
@@ -1481,6 +1488,13 @@ local function CreateCDMSetupPage(parent)
             hintText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             hintText:SetJustifyH("LEFT")
             y = y - 24
+            tabContent._currentY = y
+
+            -- Clickable Icons (Click to Cast)
+            local clickCheck = GUI:CreateFormCheckbox(tabContent, "Clickable Icons (Click to Cast)", "clickableIcons", util, RefreshNCDM)
+            clickCheck:SetPoint("TOPLEFT", PAD, y)
+            clickCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
             tabContent._currentY = y
 
             -- Row 1
@@ -3836,6 +3850,20 @@ local function CreateCDMSetupPage(parent)
         soulFragmentsColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         soulFragmentsColor.dbKey = "soulFragments"
         table.insert(powerColorWidgets, soulFragmentsColor)
+        y = y - FORM_ROW
+
+        local whirlwindColor = GUI:CreateFormColorPicker(tabContent, "Whirlwind (Fury Warrior)", "whirlwind", pc, RefreshPowerBars)
+        whirlwindColor:SetPoint("TOPLEFT", PAD, y)
+        whirlwindColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        whirlwindColor.dbKey = "whirlwind"
+        table.insert(powerColorWidgets, whirlwindColor)
+        y = y - FORM_ROW
+
+        local tipOfTheSpearColor = GUI:CreateFormColorPicker(tabContent, "Tip of the Spear (Survival Hunter)", "tipOfTheSpear", pc, RefreshPowerBars)
+        tipOfTheSpearColor:SetPoint("TOPLEFT", PAD, y)
+        tipOfTheSpearColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        tipOfTheSpearColor.dbKey = "tipOfTheSpear"
+        table.insert(powerColorWidgets, tipOfTheSpearColor)
         y = y - FORM_ROW
 
         local runesColor = GUI:CreateFormColorPicker(tabContent, "Runes (Generic)", "runes", pc, RefreshPowerBars)

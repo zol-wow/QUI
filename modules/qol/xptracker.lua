@@ -76,6 +76,31 @@ local function RoundNearest(value)
 end
 
 ---------------------------------------------------------------------------
+-- Max-level detection (multiple fallbacks for API changes across patches)
+---------------------------------------------------------------------------
+local function IsAtMaxLevel()
+    -- Method 1: Direct Blizzard API
+    if IsPlayerAtEffectiveLevelCap and IsPlayerAtEffectiveLevelCap() then
+        return true
+    end
+    -- Method 2: Compare player level to expansion cap
+    local level = UnitLevel("player") or 0
+    if level > 0 then
+        local maxLevel = (GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion())
+                      or (GetEffectivePlayerMaxLevel and GetEffectivePlayerMaxLevel())
+        if maxLevel and maxLevel > 0 and level >= maxLevel then
+            return true
+        end
+    end
+    -- Method 3: No XP to earn (type-check guards against secret values)
+    local rawMax = UnitXPMax("player")
+    if type(rawMax) == "number" and rawMax <= 0 then
+        return true
+    end
+    return false
+end
+
+---------------------------------------------------------------------------
 -- XP Rate calculation (ring buffer)
 ---------------------------------------------------------------------------
 local function RecordSample()
@@ -412,7 +437,7 @@ local function UpdateDisplay()
         maxXP = UnitXPMax("player") or 1
         exhaustion = GetXPExhaustion() or 0
         level = UnitLevel("player") or 1
-        isAtCap = IsPlayerAtEffectiveLevelCap and IsPlayerAtEffectiveLevelCap() or false
+        isAtCap = IsAtMaxLevel()
         isXPDisabled = IsXPUserDisabled and IsXPUserDisabled() or false
 
         -- Auto-hide at max level
@@ -766,9 +791,7 @@ local function TogglePreview(enable)
         local settings = GetSettings()
         if settings and settings.enabled then
             -- Check if at max level
-            local isAtCap = IsPlayerAtEffectiveLevelCap and IsPlayerAtEffectiveLevelCap() or false
-            local isXPDisabled = IsXPUserDisabled and IsXPUserDisabled() or false
-            if isAtCap or isXPDisabled then
+            if IsAtMaxLevel() or (IsXPUserDisabled and IsXPUserDisabled()) then
                 XPTrackerState.frame:Hide()
             else
                 StartTicker()
@@ -792,7 +815,7 @@ local function InitializeXPTrackerStartup()
 
     local settings = GetSettings()
     if settings and settings.enabled then
-        local isAtCap = IsPlayerAtEffectiveLevelCap and IsPlayerAtEffectiveLevelCap() or false
+        local isAtCap = IsAtMaxLevel()
         local isXPDisabled = IsXPUserDisabled and IsXPUserDisabled() or false
         if not isAtCap and not isXPDisabled then
             UpdateAppearance()

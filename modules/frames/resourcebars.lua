@@ -6,6 +6,17 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
 
+-- Pre-create named frames so Edit Mode layout anchoring can resolve
+-- "QUIPowerBar" / "QUISecondaryPowerBar" before full initialization.
+-- GetPowerBar()/GetSecondaryPowerBar() will create the real frames later,
+-- overwriting these globals.
+if not _G[ADDON_NAME .. "PowerBar"] then
+    CreateFrame("Frame", ADDON_NAME .. "PowerBar", UIParent):Hide()
+end
+if not _G[ADDON_NAME .. "SecondaryPowerBar"] then
+    CreateFrame("Frame", ADDON_NAME .. "SecondaryPowerBar", UIParent):Hide()
+end
+
 -- Pixel-perfect scaling helper
 local function Scale(x, frame)
     if QUICore and QUICore.Scale then
@@ -156,9 +167,275 @@ end
 
 --TABLES
 
--- Custom power type ID for Enhancement Shaman Maelstrom Weapon and Vengeance Demon Hunter Soul Fragments (aura-based, not a Blizzard PowerType)
+-- Custom power type IDs for aura-based resources (not Blizzard PowerTypes)
 Enum.PowerType.MaelstromWeapon = 100
 Enum.PowerType.VengSoulFragments = 101
+Enum.PowerType.Whirlwind = 102       -- Fury Warrior Improved Whirlwind stacks
+Enum.PowerType.TipOfTheSpear = 103   -- Survival Hunter Tip of the Spear stacks
+
+---------------------------------------------------------------------------
+-- WHIRLWIND STACK TRACKER (event-driven)
+--
+-- C_UnitAuras.GetPlayerAuraBySpellID(85739) is unreliable during combat.
+-- Track stacks manually via UNIT_SPELLCAST_SUCCEEDED: generators set to max,
+-- spenders decrement.
+---------------------------------------------------------------------------
+local WhirlwindTracker = {}
+do
+    local IW_MAX_STACKS = 4
+    local IW_DURATION   = 20
+    local IMPROVED_WW_TALENT = 12950
+
+    -- Generators: set stacks to max
+    local GENERATORS = {
+        [190411] = true,  -- Whirlwind
+        [6343]   = true,  -- Thunder Clap
+        [435222] = true,  -- Thunder Blast
+    }
+    -- Thunder Clap/Blast require Crashing Thunder talent
+    local CRASHING_THUNDER_TALENT = 436707
+
+    -- Spenders: consume one stack
+    local SPENDERS = {
+        [23881]  = true,  -- Bloodthirst
+        [85288]  = true,  -- Raging Blow
+        [280735] = true,  -- Execute
+        [202168] = true,  -- Impending Victory
+        [184367] = true,  -- Rampage
+        [335096] = true,  -- Bloodbath
+        [335097] = true,  -- Crushing Blow
+        [5308]   = true,  -- Execute (base)
+    }
+    -- Unhinged: BT/Bloodbath don't consume during Bladestorm
+    local UNHINGED_TALENT = 386628
+
+    local stacks    = 0
+    local expiresAt = nil
+    local seenGUID  = {}
+    local pendingToken = 0
+
+    function WhirlwindTracker:GetStacks()
+        -- Expire stale stacks
+        if expiresAt and GetTime() >= expiresAt then
+            stacks = 0
+            expiresAt = nil
+        end
+        -- Check talent
+        if not C_SpellBook or not C_SpellBook.IsSpellKnown(IMPROVED_WW_TALENT) then
+            return nil, 0  -- talent not learned
+        end
+        return IW_MAX_STACKS, stacks
+    end
+
+    function WhirlwindTracker:Reset()
+        stacks = 0
+        expiresAt = nil
+        seenGUID = {}
+        pendingToken = pendingToken + 1
+    end
+
+    function WhirlwindTracker:OnSpellCast(spellID, castGUID)
+        if castGUID and seenGUID[castGUID] then return end
+        if castGUID then seenGUID[castGUID] = true end
+
+        -- Generator
+        if GENERATORS[spellID] then
+            -- Thunder Clap/Blast need Crashing Thunder talent
+            if (spellID == 6343 or spellID == 435222) then
+                if not C_SpellBook.IsSpellKnown(CRASHING_THUNDER_TALENT) then
+                    return
+                end
+            end
+            -- Delayed grant (matches game behavior)
+            pendingToken = pendingToken + 1
+            local myToken = pendingToken
+            C_Timer.After(0.15, function()
+                if myToken ~= pendingToken then return end
+                stacks = IW_MAX_STACKS
+                expiresAt = GetTime() + IW_DURATION
+                -- Force immediate resource bar update
+                if QUICore and QUICore.UpdateSecondaryPowerBar then
+                    QUICore:UpdateSecondaryPowerBar()
+                end
+            end)
+            return
+        end
+
+        -- Spender
+        if SPENDERS[spellID] then
+            -- Unhinged: BT/Bloodbath don't consume during Bladestorm
+            if (spellID == 23881 or spellID == 335096) then
+                if C_SpellBook.IsSpellKnown(UNHINGED_TALENT) then
+                    local ok, usable = pcall(C_Spell.IsSpellUsable, 446035)
+                    if ok and not usable then return end
+                end
+            end
+            if stacks > 0 then
+                stacks = stacks - 1
+                if stacks == 0 then expiresAt = nil end
+                -- Force immediate resource bar update
+                if QUICore and QUICore.UpdateSecondaryPowerBar then
+                    QUICore:UpdateSecondaryPowerBar()
+                end
+            end
+            return
+        end
+    end
+
+    -- Event frame: only active for Fury Warriors
+    local wwFrame = CreateFrame("Frame")
+    wwFrame:RegisterEvent("PLAYER_LOGIN")
+    wwFrame:SetScript("OnEvent", function(self, event, ...)
+        if event == "PLAYER_LOGIN" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED"
+            or event == "PLAYER_SPECIALIZATION_CHANGED" then
+            local _, class = UnitClass("player")
+            local spec = GetSpecialization()
+            -- Fury = spec 2
+            if class == "WARRIOR" and spec == 2 then
+                self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+                self:RegisterEvent("PLAYER_DEAD")
+                self:RegisterEvent("PLAYER_REGEN_ENABLED")
+            else
+                self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+                self:UnregisterEvent("PLAYER_DEAD")
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                WhirlwindTracker:Reset()
+            end
+        elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            local unit, castGUID, spellID = ...
+            if unit == "player" then
+                WhirlwindTracker:OnSpellCast(spellID, castGUID)
+            end
+        elseif event == "PLAYER_DEAD" then
+            WhirlwindTracker:Reset()
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            -- Combat ended: clear pending token to prevent stale delayed grants,
+            -- and clear GUID cache to prevent memory growth.
+            pendingToken = pendingToken + 1
+            seenGUID = {}
+        end
+    end)
+    wwFrame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+    wwFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+end
+
+---------------------------------------------------------------------------
+-- TIP OF THE SPEAR STACK TRACKER (event-driven)
+--
+-- Same pattern as Whirlwind: aura API unreliable during combat.
+-- Kill Command grants 1 stack (2 with Primal Surge), spenders consume 1.
+---------------------------------------------------------------------------
+local TipOfTheSpearTracker = {}
+do
+    local TIP_MAX_STACKS = 3
+    local TIP_DURATION   = 10
+    local TIP_TALENT     = 260285
+
+    -- Generators
+    local KILL_COMMAND    = 259489
+    local TAKEDOWN        = 1250646
+    local PRIMAL_SURGE    = 1272154  -- talent: Kill Command grants 2 stacks
+    local TWIN_FANG       = 1272139  -- talent: Takedown grants 2 stacks
+
+    -- Spenders: consume one stack
+    local SPENDERS = {
+        [186270]  = true,  -- Raptor Strike
+        [1262293] = true,  -- Raptor Swipe
+        [1261193] = true,  -- Boomstick
+        [1253859] = true,  -- Takedown
+        [259495]  = true,  -- Wildfire Bomb
+        [193265]  = true,  -- Hatchet Toss
+        [1264949] = true,  -- Chakram
+        [1262343] = true,  -- Ranged Raptor Swipe
+        [265189]  = true,  -- Ranged Raptor Strike
+        [1251592] = true,  -- Flamefang Pitch
+    }
+
+    local stacks    = 0
+    local expiresAt = nil
+
+    function TipOfTheSpearTracker:GetStacks()
+        if expiresAt and GetTime() >= expiresAt then
+            stacks = 0
+            expiresAt = nil
+        end
+        if not C_SpellBook or not C_SpellBook.IsSpellKnown(TIP_TALENT) then
+            return nil, 0
+        end
+        return TIP_MAX_STACKS, stacks
+    end
+
+    function TipOfTheSpearTracker:Reset()
+        stacks = 0
+        expiresAt = nil
+    end
+
+    function TipOfTheSpearTracker:OnSpellCast(spellID)
+        if not C_SpellBook.IsSpellKnown(TIP_TALENT) then return end
+
+        -- Kill Command: +1 (or +2 with Primal Surge)
+        if spellID == KILL_COMMAND then
+            local gain = C_SpellBook.IsSpellKnown(PRIMAL_SURGE) and 2 or 1
+            stacks = math.min(TIP_MAX_STACKS, stacks + gain)
+            expiresAt = GetTime() + TIP_DURATION
+            if QUICore and QUICore.UpdateSecondaryPowerBar then
+                QUICore:UpdateSecondaryPowerBar()
+            end
+            return
+        end
+
+        -- Takedown: +2 with Twin Fang talent
+        if spellID == TAKEDOWN and C_SpellBook.IsSpellKnown(TWIN_FANG) then
+            stacks = math.min(TIP_MAX_STACKS, stacks + 2)
+            expiresAt = GetTime() + TIP_DURATION
+            if QUICore and QUICore.UpdateSecondaryPowerBar then
+                QUICore:UpdateSecondaryPowerBar()
+            end
+            return
+        end
+
+        -- Spender: consume one stack
+        if SPENDERS[spellID] then
+            if stacks > 0 then
+                stacks = stacks - 1
+                if stacks == 0 then expiresAt = nil end
+                if QUICore and QUICore.UpdateSecondaryPowerBar then
+                    QUICore:UpdateSecondaryPowerBar()
+                end
+            end
+            return
+        end
+    end
+
+    local tipFrame = CreateFrame("Frame")
+    tipFrame:RegisterEvent("PLAYER_LOGIN")
+    tipFrame:SetScript("OnEvent", function(self, event, ...)
+        if event == "PLAYER_LOGIN" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED"
+            or event == "PLAYER_SPECIALIZATION_CHANGED" then
+            local _, class = UnitClass("player")
+            local spec = GetSpecialization()
+            -- Survival = spec 3
+            if class == "HUNTER" and spec == 3 then
+                self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+                self:RegisterEvent("PLAYER_DEAD")
+            else
+                self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+                self:UnregisterEvent("PLAYER_DEAD")
+                TipOfTheSpearTracker:Reset()
+            end
+        elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            local unit, _, spellID = ...
+            if unit == "player" then
+                TipOfTheSpearTracker:OnSpellCast(spellID)
+            end
+        elseif event == "PLAYER_DEAD" then
+            TipOfTheSpearTracker:Reset()
+        end
+    end)
+    tipFrame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+    tipFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+end
+
 local VDH_SOUL_FRAGMENTS_POWER = (Enum.PowerType and type(Enum.PowerType.SoulFragments) == "number") and Enum.PowerType.SoulFragments or nil
 
 local tocVersion = select(4, GetBuildInfo())
@@ -200,6 +477,8 @@ local tickedPowerTypes = {
     [Enum.PowerType.SoulShards] = true,
     [Enum.PowerType.MaelstromWeapon] = true,
     [Enum.PowerType.VengSoulFragments] = true,
+    [Enum.PowerType.Whirlwind] = true,
+    [Enum.PowerType.TipOfTheSpear] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     tickedPowerTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -207,11 +486,19 @@ end
 
 local fragmentedPowerTypes = {
     [Enum.PowerType.Runes] = true,
+    [Enum.PowerType.Essence] = true,
 }
 
 -- Smooth rune timer update state
 local runeUpdateElapsed = 0
 local runeUpdateRunning = false
+
+-- Essence regen timer state (timer-based extrapolation)
+local essenceUpdateElapsed = 0
+local essenceUpdateRunning = false
+local essenceNextTick = nil      -- GetTime() when next essence will be ready
+local essenceLastCount = nil     -- last integer essence count (detect gains)
+local essenceTickDuration = nil  -- seconds per essence regen tick
 
 -- Rune text format cache: only call string.format when the truncated value changes
 local _lastRuneRounded = {}    -- [runeIndex] = last math.floor(remaining * 10) value
@@ -234,6 +521,8 @@ local instantFeedbackTypes = {
     [Enum.PowerType.SoulShards] = true,
     [Enum.PowerType.MaelstromWeapon] = true,
     [Enum.PowerType.VengSoulFragments] = true,
+    [Enum.PowerType.Whirlwind] = true,
+    [Enum.PowerType.TipOfTheSpear] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     instantFeedbackTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -381,7 +670,9 @@ local function GetSecondaryResource()
             [31]   = Enum.PowerType.Mana, -- Moonkin
         },
         ["EVOKER"]      = Enum.PowerType.Essence,
-        ["HUNTER"]      = nil,
+        ["HUNTER"]      = {
+            [255] = Enum.PowerType.TipOfTheSpear, -- Survival
+        },
         ["MAGE"]        = {
             [62]   = Enum.PowerType.ArcaneCharges, -- Arcane
         },
@@ -399,7 +690,9 @@ local function GetSecondaryResource()
             [263]  = Enum.PowerType.MaelstromWeapon,  -- Enhancement (aura stacks via C_UnitAuras)
         },
         ["WARLOCK"]     = Enum.PowerType.SoulShards,
-        ["WARRIOR"]     = nil,
+        ["WARRIOR"]     = {
+            [72] = Enum.PowerType.Whirlwind, -- Fury
+        },
     }
 
     local spec = GetSpecialization()
@@ -494,6 +787,10 @@ local function GetResourceColor(resource)
             customColor = pc.maelstrom
         elseif resource == Enum.PowerType.MaelstromWeapon then
             customColor = pc.maelstromWeapon or pc.maelstrom
+        elseif resource == Enum.PowerType.Whirlwind then
+            customColor = pc.whirlwind
+        elseif resource == Enum.PowerType.TipOfTheSpear then
+            customColor = pc.tipOfTheSpear
         elseif resource == Enum.PowerType.LunarPower then
             customColor = pc.lunarPower
         elseif resource == Enum.PowerType.HolyPower then
@@ -629,6 +926,24 @@ local function GetSecondaryResourceValue(resource)
         local aura = C_UnitAuras.GetPlayerAuraBySpellID(344179)
         local current = aura and aura.applications or 0
         return 10, current, current, "number"
+    end
+
+    if resource == Enum.PowerType.Whirlwind then
+        -- Fury Warrior Improved Whirlwind stacks.
+        -- Manual tracker (UNIT_SPELLCAST_SUCCEEDED) is reliable during combat;
+        -- C_UnitAuras.GetPlayerAuraBySpellID(85739) returns stale/secret data.
+        local max, current = WhirlwindTracker:GetStacks()
+        if not max then return nil, nil, nil, nil end
+        return max, current, current, "number"
+    end
+
+    if resource == Enum.PowerType.TipOfTheSpear then
+        -- Survival Hunter Tip of the Spear stacks.
+        -- Manual tracker (UNIT_SPELLCAST_SUCCEEDED) is reliable during combat;
+        -- C_UnitAuras.GetPlayerAuraBySpellID(260286) returns stale/secret data.
+        local max, current = TipOfTheSpearTracker:GetStacks()
+        if not max then return nil, nil, nil, nil end
+        return max, current, current, "number"
     end
 
     if resource == Enum.PowerType.Runes then
@@ -1094,8 +1409,13 @@ end
 
 function QUICore:UpdatePowerBar()
     local cfg = self.db.profile.powerBar
+
+    -- Always ensure the frame exists so the global name "QUIPowerBar" is
+    -- available for Edit Mode layout anchoring even when the bar is disabled.
+    local bar = self:GetPowerBar()
+
     if not cfg.enabled then
-        if self.powerBar then SafeHide(self.powerBar) end
+        SafeHide(bar)
         return
     end
 
@@ -1115,7 +1435,6 @@ function QUICore:UpdatePowerBar()
         return
     end
 
-    local bar = self:GetPowerBar()
     local resource = GetPrimaryResource()
 
     if not resource then
@@ -2196,6 +2515,135 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                 tick:Hide()
             end
         end
+
+    elseif resource == Enum.PowerType.Essence then
+        -- Evoker Essence with timer-based regen extrapolation on the recharging segment
+        local current = UnitPower("player", Enum.PowerType.Essence) or 0
+        local now = GetTime()
+
+        -- Calculate tick duration from regen rate (cache outside combat, may be secret in combat)
+        if not InCombatLockdown() then
+            local regenRate = GetPowerRegenForPowerType(Enum.PowerType.Essence)
+            if regenRate and not Helpers.IsSecretValue(regenRate) and regenRate > 0 then
+                essenceTickDuration = 1 / regenRate
+            end
+        end
+        if not essenceTickDuration or essenceTickDuration <= 0 then
+            essenceTickDuration = 5  -- fallback (default 0.2 regen = 5s per essence)
+        end
+
+        -- Detect essence gain — reset timer for next tick
+        if essenceLastCount and current > essenceLastCount then
+            if current < maxPower then
+                essenceNextTick = now + essenceTickDuration
+            else
+                essenceNextTick = nil
+            end
+        end
+
+        -- If missing essence and no timer, start one
+        if current < maxPower and not essenceNextTick then
+            essenceNextTick = now + essenceTickDuration
+        end
+
+        -- If full essence, clear timer
+        if current >= maxPower then
+            essenceNextTick = nil
+        end
+
+        essenceLastCount = current
+
+        -- Calculate partial fill from timer extrapolation
+        local partialFill = 0
+        if essenceNextTick and essenceTickDuration > 0 then
+            local remaining = math.max(0, essenceNextTick - now)
+            partialFill = math.max(0, math.min(1, 1 - (remaining / essenceTickDuration)))
+        end
+
+        for pos = 1, maxPower do
+            local essenceFrame = bar.FragmentedPowerBars[pos]
+            local essenceText = bar.FragmentedPowerBarTexts[pos]
+
+            if essenceFrame then
+                essenceFrame:ClearAllPoints()
+                essenceFrame:SetSize(fragmentedBarWidth, fragmentedBarHeight)
+                if isVertical then
+                    essenceFrame:SetPoint("BOTTOM", bar, "BOTTOM", 0, (pos - 1) * fragmentedBarHeight)
+                else
+                    essenceFrame:SetPoint("LEFT", bar, "LEFT", (pos - 1) * fragmentedBarWidth, 0)
+                end
+
+                essenceFrame:SetMinMaxValues(0, 1)
+
+                if pos <= current then
+                    -- Full segment
+                    essenceFrame:SetValue(1)
+                    essenceFrame:SetStatusBarColor(color.r, color.g, color.b)
+                elseif pos == current + 1 then
+                    -- Recharging segment — partial fill via timer extrapolation
+                    essenceFrame:SetValue(partialFill)
+                    essenceFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5)
+                else
+                    -- Empty segment
+                    essenceFrame:SetValue(0)
+                    essenceFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5)
+                end
+
+                -- No timer text for essence segments
+                if essenceText then
+                    essenceText:SetText("")
+                end
+
+                essenceFrame:Show()
+            end
+        end
+
+        -- Hide any extra frames beyond current maxPower
+        for i = maxPower + 1, #bar.FragmentedPowerBars do
+            if bar.FragmentedPowerBars[i] then
+                bar.FragmentedPowerBars[i]:Hide()
+                if bar.FragmentedPowerBarTexts[i] then
+                    bar.FragmentedPowerBarTexts[i]:SetText("")
+                end
+            end
+        end
+
+        -- Ticks between essence segments
+        if cfg.showTicks then
+            local tickThickness = QUICore:Pixels(cfg.tickThickness or 1, bar)
+            local tc = cfg.tickColor or { 0, 0, 0, 1 }
+            for i = 1, maxPower - 1 do
+                local tick = bar.ticks[i]
+                if not tick then
+                    tick = bar:CreateTexture(nil, "OVERLAY")
+                    bar.ticks[i] = tick
+                end
+                tick:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 1)
+
+                tick:ClearAllPoints()
+                if isVertical then
+                    local y = i * fragmentedBarHeight
+                    tick:SetPoint("BOTTOM", bar, "BOTTOM", 0, QUICore:PixelRound(y - (tickThickness / 2), bar))
+                    tick:SetSize(barWidth, tickThickness)
+                else
+                    local x = i * fragmentedBarWidth
+                    tick:SetPoint("LEFT", bar, "LEFT", QUICore:PixelRound(x - (tickThickness / 2), bar), 0)
+                    tick:SetSize(tickThickness, barHeight)
+                end
+                tick:Show()
+            end
+
+            -- Hide extra ticks
+            for i = maxPower, #bar.ticks do
+                if bar.ticks[i] then
+                    bar.ticks[i]:Hide()
+                end
+            end
+        else
+            for _, tick in ipairs(bar.ticks) do
+                tick:Hide()
+            end
+        end
     end
 end
 
@@ -2244,6 +2692,62 @@ local function RuneTimerOnUpdate(bar, delta)
         -- Clear format cache so next cooldown cycle starts fresh
         wipe(_lastRuneRounded)
         wipe(_lastRuneFormatted)
+    end
+end
+
+-- Smooth essence regen timer update (runs at 20 FPS while essence is recharging)
+local function EssenceTimerOnUpdate(bar, delta)
+    essenceUpdateElapsed = essenceUpdateElapsed + delta
+    if essenceUpdateElapsed < 0.05 then return end  -- 20 FPS throttle
+    essenceUpdateElapsed = 0
+
+    local maxPower = UnitPowerMax("player", Enum.PowerType.Essence)
+    if maxPower <= 0 then return end
+
+    local current = UnitPower("player", Enum.PowerType.Essence) or 0
+
+    -- At max essence, disable the timer
+    if current >= maxPower then
+        bar:SetScript("OnUpdate", nil)
+        essenceUpdateRunning = false
+        essenceNextTick = nil
+        -- Set all visible segments to full
+        for i = 1, maxPower do
+            local essenceFrame = bar.FragmentedPowerBars and bar.FragmentedPowerBars[i]
+            if essenceFrame and essenceFrame:IsShown() then
+                essenceFrame:SetValue(1)
+            end
+        end
+        return
+    end
+
+    -- Detect essence gain — reset timer for next tick
+    if essenceLastCount and current > essenceLastCount then
+        if current < maxPower then
+            essenceNextTick = GetTime() + (essenceTickDuration or 5)
+        else
+            essenceNextTick = nil
+        end
+    end
+    essenceLastCount = current
+
+    -- If missing essence and no timer, start one
+    if current < maxPower and not essenceNextTick then
+        essenceNextTick = GetTime() + (essenceTickDuration or 5)
+    end
+
+    -- Update the recharging segment (current + 1) via timer extrapolation
+    local rechargingIdx = current + 1
+    if rechargingIdx <= maxPower and essenceNextTick and essenceTickDuration and essenceTickDuration > 0 then
+        local now = GetTime()
+        local remaining = math.max(0, essenceNextTick - now)
+        local partialFill = 1 - (remaining / essenceTickDuration)
+        partialFill = math.max(0, math.min(1, partialFill))
+
+        local essenceFrame = bar.FragmentedPowerBars and bar.FragmentedPowerBars[rechargingIdx]
+        if essenceFrame and essenceFrame:IsShown() then
+            essenceFrame:SetValue(partialFill)
+        end
     end
 end
 
@@ -2335,25 +2839,26 @@ end
 
 function QUICore:UpdateSecondaryPowerBar()
     local cfg = self.db.profile.secondaryPowerBar
+
+    -- Always ensure the frame exists so the global name "QUISecondaryPowerBar"
+    -- is available for Edit Mode layout anchoring even when the bar is disabled.
+    local bar = self:GetSecondaryPowerBar()
+
     if not cfg.enabled then
-        if self.secondaryPowerBar then
-            local wasShown = self.secondaryPowerBar:IsShown()
-            SafeHide(self.secondaryPowerBar)
-            -- Visibility changed — reapply frame anchoring so fallback targets update
-            if wasShown and not self.secondaryPowerBar:IsShown() and _G.QUI_UpdateAnchoredFrames then
-                _G.QUI_UpdateAnchoredFrames()
-            end
+        local wasShown = bar:IsShown()
+        SafeHide(bar)
+        -- Visibility changed — reapply frame anchoring so fallback targets update
+        if wasShown and not bar:IsShown() and _G.QUI_UpdateAnchoredFrames then
+            _G.QUI_UpdateAnchoredFrames()
         end
         return
     end
 
     -- When locked to CDM, suppress until CDM has computed the correct width.
     if (cfg.lockedToEssential or cfg.lockedToUtility) and not _secondaryLockedReady then
-        if self.secondaryPowerBar then SafeHide(self.secondaryPowerBar) end
+        SafeHide(bar)
         return
     end
-
-    local bar = self:GetSecondaryPowerBar()
     local resource = GetSecondaryResource()
 
     if not resource then
@@ -2802,10 +3307,24 @@ function QUICore:UpdateSecondaryPowerBar()
         return
     end
 
-    -- Handle fragmented power types (Runes)
+    -- Handle fragmented power types (Runes, Essence)
     if fragmentedPowerTypes[resource] then
         self:CreateFragmentedPowerBars(bar, resource, isVertical)
         self:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
+
+        -- Essence regen animation timer
+        if resource == Enum.PowerType.Essence then
+            local essenceMax = UnitPowerMax("player", Enum.PowerType.Essence) or 0
+            local essenceCur = UnitPower("player", Enum.PowerType.Essence) or 0
+            if essenceCur < essenceMax and not essenceUpdateRunning then
+                essenceUpdateRunning = true
+                essenceUpdateElapsed = 0
+                bar:SetScript("OnUpdate", EssenceTimerOnUpdate)
+            elseif essenceCur >= essenceMax and essenceUpdateRunning then
+                bar:SetScript("OnUpdate", nil)
+                essenceUpdateRunning = false
+            end
+        end
 
         bar.StatusBar:SetMinMaxValues(0, max)
         bar.StatusBar:SetValue(current)
@@ -2972,7 +3491,9 @@ function QUICore:OnUnitAura(_, unit)
     if resource == Enum.PowerType.MaelstromWeapon
         or resource == Enum.PowerType.VengSoulFragments
         or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER)
-        or resource == "SOUL" then
+        or resource == "SOUL"
+        or resource == Enum.PowerType.Whirlwind
+        or resource == Enum.PowerType.TipOfTheSpear then
         self:UpdateSecondaryPowerBar()
     end
 end

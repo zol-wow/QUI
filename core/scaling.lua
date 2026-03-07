@@ -36,6 +36,7 @@ local max = math.max
 local Round = Round or function(x) return floor(x + 0.5) end
 local UIParent = UIParent
 local InCombatLockdown = InCombatLockdown
+local issecretvalue = issecretvalue
 local GetPhysicalScreenSize = GetPhysicalScreenSize
 local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
 
@@ -61,10 +62,14 @@ function QUICore:GetPixelSize(frame)
     local es
     if frame then
         local ok, val = pcall(frame.GetEffectiveScale, frame)
-        es = ok and val or UIParent:GetEffectiveScale()
-    else
-        es = UIParent:GetEffectiveScale()
+        es = ok and val or nil
     end
+    if not es then
+        local ok2, val2 = pcall(UIParent.GetEffectiveScale, UIParent)
+        es = ok2 and val2 or nil
+    end
+    -- Secret values from GetEffectiveScale can't be used in Lua arithmetic
+    if not es or (issecretvalue and issecretvalue(es)) then return 1 end
     if es == 0 then return 1 end
     if cachedPhysicalHeight == 0 then return 1 end
     return 768 / (cachedPhysicalHeight * es)

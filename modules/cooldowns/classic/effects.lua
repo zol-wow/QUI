@@ -17,6 +17,8 @@ local hookedViewers  = Helpers.CreateStateTable()  -- viewer → { layout, show 
 -- All icon OnShow hooks share this single flag so rapid icon appearances
 -- (e.g. 20 icons showing during a CDM Layout) produce only ONE deferred call.
 local _iconShowHidePending = false
+local viewers -- forward declaration used by HideCooldownEffects()
+local HideBlizzardGlows -- forward declaration used by HideCooldownEffects()
 
 -- Default settings
 local DEFAULTS = { hideEssential = true, hideUtility = true }
@@ -82,7 +84,7 @@ end
 -- Feature 2: Hide Blizzard Overlay Glows on Cooldown Viewers
 -- (Always hide Blizzard's glow - our LibCustomGlow is separate)
 -- ======================================================
-local function HideBlizzardGlows(button)
+HideBlizzardGlows = function(button)
     if not button then return end
     
     -- ALWAYS hide Blizzard's glows - our custom glow uses LibCustomGlow which is separate
@@ -118,7 +120,7 @@ local HideAllGlows = HideBlizzardGlows
 -- ======================================================
 -- Apply to Cooldown Viewers - ONLY Essential and Utility
 -- ======================================================
-local viewers = {
+viewers = {
     "EssentialCooldownViewer",
     "UtilityCooldownViewer"
     -- BuffIconCooldownViewer is NOT included - we want glows/effects on buff icons
@@ -268,9 +270,29 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+
+local function IsClassicEngineSelected()
+    if ns.CDMProvider and ns.CDMProvider.GetActiveEngineName then
+        local active = ns.CDMProvider:GetActiveEngineName()
+        if active ~= nil then
+            return active == "classic"
+        end
+    end
+
+    local core = ns.Addon
+    local db = core and core.db and core.db.profile
+    local configured = db and db.ncdm and db.ncdm.engine
+    if configured ~= nil then
+        return configured == "classic"
+    end
+
+    -- Default defensively to owned when unknown, so classic hooks don't run accidentally.
+    return false
+end
+
 eventFrame:SetScript("OnEvent", function(self, event, arg)
     -- Only run when classic CDM engine is active
-    if ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "classic" then return end
+    if not IsClassicEngineSelected() then return end
 
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
         EnsureGlowHooks()

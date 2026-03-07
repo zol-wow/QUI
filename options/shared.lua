@@ -460,6 +460,132 @@ local function RefreshRangeCheck()
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: Pixel size (safe fallback)
+---------------------------------------------------------------------------
+local function SafeGetPixelSize(frame)
+    local core = ns.Addon
+    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
+end
+
+---------------------------------------------------------------------------
+-- HELPER: Create a wrapped paragraph label (auto word-wrap)
+---------------------------------------------------------------------------
+local function CreateWrappedLabel(parent, text, size, color, maxWidth)
+    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local fontPath = GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF"
+    label:SetFont(fontPath, size or 12, "")
+    label:SetTextColor(unpack(color or GUI.Colors.text))
+    label:SetText(text or "")
+    label:SetJustifyH("LEFT")
+    label:SetJustifyV("TOP")
+    label:SetWordWrap(true)
+    label:SetNonSpaceWrap(true)
+    if maxWidth then
+        label:SetWidth(maxWidth)
+    end
+    return label
+end
+
+---------------------------------------------------------------------------
+-- HELPER: Create a compact link item (icon + label + copy button)
+---------------------------------------------------------------------------
+local COPY_ICON = "|TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:11|t "
+local function CreateLinkItem(parent, label, url, iconR, iconG, iconB, iconTexture, popupTitle)
+    local C = GUI.Colors
+    local item = CreateFrame("Frame", nil, parent)
+    item:SetHeight(22)
+
+    local icon = item:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(14, 14)
+    icon:SetPoint("LEFT", 0, 0)
+    if iconTexture then
+        icon:SetTexture(iconTexture)
+        icon:SetVertexColor(iconR or 1, iconG or 1, iconB or 1)
+    else
+        icon:SetColorTexture(iconR or 1, iconG or 1, iconB or 1, 1)
+    end
+
+    local fontPath = GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF"
+    local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetFont(fontPath, 11, "")
+    text:SetTextColor(C.text[1], C.text[2], C.text[3])
+    text:SetText(label .. "  |cff999999" .. url .. "|r")
+    text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+
+    local btn = CreateFrame("Button", nil, item, "BackdropTemplate")
+    btn:SetSize(56, 18)
+    btn:SetPoint("LEFT", text, "RIGHT", 8, 0)
+
+    local px = SafeGetPixelSize(btn)
+    btn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = px,
+    })
+    btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+    btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+
+    local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btnText:SetFont(fontPath, 9, "")
+    btnText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3])
+    btnText:SetText(COPY_ICON .. "COPY")
+    btnText:SetPoint("CENTER")
+
+    btn:SetScript("OnClick", function()
+        if GUI and GUI.ShowExportPopup then
+            GUI:ShowExportPopup(popupTitle or "Copy Link", url)
+        end
+        btnText:SetText("OPENED")
+        C_Timer.After(2, function()
+            if btnText then btnText:SetText(COPY_ICON .. "COPY") end
+        end)
+    end)
+    btn:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+    end)
+
+    item.totalWidth = 14 + 6 + (text:GetStringWidth() or 200) + 8 + 56
+    return item
+end
+
+---------------------------------------------------------------------------
+-- HELPER: Contextual help block for existing tabs
+-- Returns the frame and the updated y position
+---------------------------------------------------------------------------
+local function CreateContextualHelp(parent, text, y, padding)
+    local C = GUI.Colors
+    local helpFrame = CreateFrame("Frame", nil, parent)
+    helpFrame:SetHeight(1) -- will resize
+
+    local fontPath = GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF"
+    local helpIcon = helpFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    helpIcon:SetFont(fontPath, 12, "")
+    helpIcon:SetTextColor(C.accent[1], C.accent[2], C.accent[3])
+    helpIcon:SetText("?")
+    helpIcon:SetPoint("TOPLEFT", 0, 0)
+
+    local helpText = helpFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    helpText:SetFont(fontPath, 11, "")
+    helpText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3])
+    helpText:SetText(text)
+    helpText:SetJustifyH("LEFT")
+    helpText:SetWordWrap(true)
+    helpText:SetNonSpaceWrap(true)
+    helpText:SetPoint("TOPLEFT", helpIcon, "TOPRIGHT", 6, 0)
+    helpText:SetPoint("RIGHT", parent, "RIGHT", -(padding or PADDING), 0)
+
+    local textHeight = helpText:GetStringHeight() or 14
+    helpFrame:SetHeight(textHeight + 4)
+    helpFrame:SetPoint("TOPLEFT", padding or PADDING, y)
+    helpFrame:SetPoint("RIGHT", parent, "RIGHT", -(padding or PADDING), 0)
+
+    return helpFrame, y - textHeight - 12
+end
+
+---------------------------------------------------------------------------
 -- EXPORT TO NAMESPACE
 ---------------------------------------------------------------------------
 ns.QUI_Options = {
@@ -479,6 +605,10 @@ ns.QUI_Options = {
     GetFontList = GetFontList,
     GetBorderList = GetBorderList,
     PrintImportFeedback = ns.PrintImportFeedback,
+    SafeGetPixelSize = SafeGetPixelSize,
+    CreateWrappedLabel = CreateWrappedLabel,
+    CreateLinkItem = CreateLinkItem,
+    CreateContextualHelp = CreateContextualHelp,
 
     -- FPS functions
     BackupCurrentFPSSettings = BackupCurrentFPSSettings,

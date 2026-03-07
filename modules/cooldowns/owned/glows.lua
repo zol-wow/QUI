@@ -27,6 +27,24 @@ local function GetSettings()
     return Helpers.GetModuleDB("customGlow")
 end
 
+local function IsOwnedEngineSelected()
+    if ns.CDMProvider and ns.CDMProvider.GetActiveEngineName then
+        local active = ns.CDMProvider:GetActiveEngineName()
+        if active ~= nil then
+            return active == "owned"
+        end
+    end
+
+    local core = ns.Addon
+    local db = core and core.db and core.db.profile
+    local configured = db and db.ncdm and db.ncdm.engine
+    if configured ~= nil then
+        return configured == "owned"
+    end
+
+    return false
+end
+
 ---------------------------------------------------------------------------
 -- DETERMINE VIEWER TYPE FROM ICON
 -- Uses icon._spellEntry.viewerType instead of checking parent frame.
@@ -86,6 +104,20 @@ end
 -- GLOW APPLICATION (supports 3 glow types via LibCustomGlow)
 -- Applied directly to owned icons — no overlay frame needed.
 ---------------------------------------------------------------------------
+
+-- Ensure glow frame renders above the Cooldown swipe.
+-- LibCustomGlow sets glow at icon:GetFrameLevel() + 8, but HUD layering
+-- can push CooldownFrameTemplate above that. Reference the Cooldown frame
+-- directly (same pattern as TextOverlay in cdm_icons.lua:659).
+-- Layer order: Cooldown swipe (cdLevel) → Glow (+1) → Text (+2)
+local function EnsureGlowAboveCooldown(icon, glowFrame)
+    if not glowFrame or not icon or not icon.Cooldown then return end
+    local cdLevel = icon.Cooldown:GetFrameLevel()
+    if glowFrame:GetFrameLevel() <= cdLevel then
+        glowFrame:SetFrameLevel(cdLevel + 1)
+    end
+end
+
 local StopGlow
 
 local function ApplyLibCustomGlow(icon, viewerSettings)
@@ -109,6 +141,7 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, xOffset)
             glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -xOffset)
+            EnsureGlowAboveCooldown(icon, glowFrame)
         end
 
     elseif glowType == "Autocast Shine" then
@@ -118,10 +151,12 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, xOffset)
             glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -xOffset)
+            EnsureGlowAboveCooldown(icon, glowFrame)
         end
 
     elseif glowType == "Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
+        EnsureGlowAboveCooldown(icon, icon["_ButtonGlow"])
     end
 
     activeGlowIcons[icon] = true
@@ -237,7 +272,7 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(_, event, spellID)
     -- Only run when owned CDM engine is active
-    if ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() and ns.CDMProvider:GetActiveEngineName() ~= "owned" then return end
+    if not IsOwnedEngineSelected() then return end
 
     if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" and spellID then
         overlayedSpells[spellID] = true
@@ -265,7 +300,7 @@ end)
 -- Low-frequency fallback scan to catch edge cases (e.g. icon replaced
 -- with an already-active proc, no SHOW event fires for it)
 C_Timer.NewTicker(3, function()
-    if ns.CDMProvider and ns.CDMProvider:GetActiveEngineName() == "owned" then
+    if IsOwnedEngineSelected() then
         ScanAllGlows()
     end
 end)

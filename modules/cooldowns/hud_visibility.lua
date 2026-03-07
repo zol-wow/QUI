@@ -15,6 +15,50 @@ local UpdateCDMVisibility
 local UpdateUnitframesVisibility
 
 ---------------------------------------------------------------------------
+-- HEALTH STATE TRACKER
+-- UnitHealth() always returns secret values from addon code in WoW 12.0+
+-- and COMBAT_LOG_EVENT_UNFILTERED is restricted. Use RegisterStateDriver
+-- with a health macro conditional — evaluated in Blizzard's secure code,
+-- completely bypassing addon taint.
+---------------------------------------------------------------------------
+-- HEALTH STATE DETECTION
+-- ALL health APIs return secret values from addon code in WoW 12.0+.
+-- Secret values can't be compared, even inside pcall.
+--
+-- Solution: UNIT_HEALTH fires when health changes. When health is at 100%
+-- and stable, UNIT_HEALTH stops firing. So:
+-- 1. Every UNIT_HEALTH event → set _healthBelowMax = true (health changing)
+-- 2. Start/reset a short timer on each event
+-- 3. When timer expires (no more events) → health stabilized → assume 100%
+--    (natural regen brings health back to max, then UNIT_HEALTH stops)
+---------------------------------------------------------------------------
+local _healthBelowMax = false
+local _healthStableTimer = nil
+local HEALTH_STABLE_DURATION = 3.0  -- seconds after last health event to assume full
+
+local function UpdateHealthState()
+    -- UNIT_HEALTH fired — health is changing, assume below max
+    local wasBelowMax = _healthBelowMax
+    _healthBelowMax = true
+
+    if not wasBelowMax and UpdateUnitframesVisibility then
+        UpdateUnitframesVisibility()
+    end
+
+    -- Reset the stable timer — when health stops changing, assume full
+    if _healthStableTimer then
+        _healthStableTimer:Cancel()
+    end
+    _healthStableTimer = C_Timer.NewTimer(HEALTH_STABLE_DURATION, function()
+        _healthStableTimer = nil
+        _healthBelowMax = false
+        if UpdateUnitframesVisibility then
+            UpdateUnitframesVisibility()
+        end
+    end)
+end
+
+---------------------------------------------------------------------------
 -- SHARED HELPERS
 ---------------------------------------------------------------------------
 
@@ -417,6 +461,11 @@ local function ShouldUnitframesBeVisible()
     local vis = GetUnitframesVisibilitySettings()
     if not vis then return true end
 
+    -- Health < 100% overrides hide rules (uses UNIT_HEALTH event timing)
+    if vis.showWhenHealthBelow100 and _healthBelowMax then
+        return true
+    end
+
     local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
     if not ignoreHideRules then
         if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
@@ -605,6 +654,8 @@ visibilityEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
+visibilityEventFrame:RegisterUnitEvent("UNIT_HEALTH", "player")
+visibilityEventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
 
 local _pendingSetupTimer = nil
 
@@ -618,7 +669,13 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         if unit ~= "player" then return end
     end
 
+    -- Health events — update health state before visibility check
+    if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+        UpdateHealthState()
+    end
+
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+        UpdateHealthState()
         -- Schedule delayed setup so CDM/UF frames have time to initialize.
         -- PLAYER_LOGIN only fires on first login, NOT on /reload — so we
         -- must also schedule on PLAYER_ENTERING_WORLD to cover reloads.
@@ -627,6 +684,7 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         _pendingSetupTimer = C_Timer.NewTimer(2.0, function()
             _pendingSetupTimer = nil
+            UpdateHealthState()  -- Player healthBar should exist by now
             SetupCDMMouseoverDetector()
             SetupUnitframesMouseoverDetector()
             UpdateCDMVisibility()

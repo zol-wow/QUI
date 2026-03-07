@@ -137,6 +137,9 @@ local function PositionAlertFrame()
         return
     end
 
+    -- Skip if anchoring system has overridden this frame
+    if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(state.frame) then return end
+
     local settings = GetSettings()
     local offsetX = (settings and settings.offsetX) or DEFAULT_SETTINGS.offsetX
     local offsetY = (settings and settings.offsetY) or DEFAULT_SETTINGS.offsetY

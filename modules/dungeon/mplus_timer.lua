@@ -522,6 +522,7 @@ function MPlusTimer:CreateFrames()
     root:RegisterForDrag("LeftButton")
 
     root:SetScript("OnDragStart", function(self)
+        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
         self:StartMoving()
     end)
 
@@ -1928,8 +1929,8 @@ function MPlusTimer:ApplyScale()
 
     self.frames.root:SetScale(scale)
 
-    -- Re-anchor to maintain visual position
-    if point then
+    -- Re-anchor to maintain visual position (skip if anchoring system controls this frame)
+    if point and not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self.frames.root)) then
         self.frames.root:ClearAllPoints()
         self.frames.root:SetPoint(point, UIParent, relPoint, x, y)
     end
