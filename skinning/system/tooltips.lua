@@ -676,19 +676,15 @@ local function HookTooltipOnShow(tooltip)
         end
 
         if InCombatLockdown() then
-            -- NineSlice skin (textures, colors, sizes) uses C-side ops only and
-            -- doesn't affect tooltip width calculations — safe in combat.
-            -- EXCEPTION: Skip embedded tooltips (e.g. EmbeddedItemTooltip) — their
-            -- OnShow fires inside a securecallfunction chain (TooltipDataHandler →
-            -- SetSpellByID). Any addon frame mutations inside that chain taint the
-            -- execution path, causing subsequent SetAttribute calls to fail with
-            -- "Attempt to access forbidden object." Their NineSlice is already hidden
-            -- (alpha 0) via StripEmbeddedBorder, so skinning is unnecessary.
-            if IsEnabled() and not self.IsEmbedded then
-                if skinnedTooltips[self] then
-                    pcall(ReapplySkin, self)
-                end
-            end
+            -- TAINT SAFETY: Skip ALL addon work during combat to avoid tainting
+            -- the execution context.  Even though NineSlice ops are C-side, the
+            -- addon Lua that drives them (ReapplySkin) executes in the same call
+            -- stack as Blizzard's tooltip show chain.  Subsequent Blizzard code
+            -- (GameTooltip_AddWidgetSet → RegisterForWidgetSet → ProcessWidget →
+            -- UIWidgetTemplateTextWithState:Setup) then inherits the taint,
+            -- causing GetStringHeight() to return secret values.  Tooltip may
+            -- briefly show Blizzard's default NineSlice during combat — acceptable
+            -- tradeoff vs. Lua errors.  Skin reapplies on next out-of-combat show.
             return
         end
 
@@ -875,18 +871,30 @@ eventFrame:SetScript("OnEvent", function(self, event)
 
             -- TAINT SAFETY: Blizzard files (e.g. AreaPoiUtil) may capture a local
             -- reference to GameTooltip_AddWidgetSet before our wrapper is installed,
-            -- bypassing the pcall above. Wrap UIWidgetTemplateTextWithStateMixin.Setup
-            -- directly so ALL widget setup calls are protected regardless of call path.
-            -- The mixin table is consulted via __index for pooled widget frames, so
-            -- this covers both existing and future TextWithState widget instances.
-            if UIWidgetTemplateTextWithStateMixin and UIWidgetTemplateTextWithStateMixin.Setup then
-                local origTextSetup = UIWidgetTemplateTextWithStateMixin.Setup
-                UIWidgetTemplateTextWithStateMixin.Setup = function(self, ...)
-                    if InCombatLockdown() then
-                        pcall(origTextSetup, self, ...)
-                        return
+            -- bypassing the pcall above.  Hook RegisterForWidgetSet on GameTooltip's
+            -- actual widget container child frame — this is the real entry point for
+            -- widget setup and can't be bypassed by local reference capture.
+            -- NOTE: The previous approach of replacing UIWidgetTemplateTextWithStateMixin.Setup
+            -- on the mixin table was ineffective — frame instances created via Mixin()
+            -- already have their own copy of Setup that doesn't go through the table.
+            if GameTooltip then
+                local widgetContainer
+                for i = 1, select("#", GameTooltip:GetChildren()) do
+                    local child = select(i, GameTooltip:GetChildren())
+                    if child and child.RegisterForWidgetSet then
+                        widgetContainer = child
+                        break
                     end
-                    return origTextSetup(self, ...)
+                end
+                if widgetContainer then
+                    local origRegister = widgetContainer.RegisterForWidgetSet
+                    widgetContainer.RegisterForWidgetSet = function(self, ...)
+                        if InCombatLockdown() then
+                            pcall(origRegister, self, ...)
+                            return
+                        end
+                        return origRegister(self, ...)
+                    end
                 end
             end
 

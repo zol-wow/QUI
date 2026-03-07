@@ -342,6 +342,16 @@ local function SetupTooltipHook()
     -- NOTE: Tooltip hooks run synchronously — deferring causes visible flashing/repositioning.
     -- These are NOT a taint source for Edit Mode (tooltips are not in the Edit Mode chain).
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        -- TAINT SAFETY: Return immediately during combat to avoid tainting the
+        -- execution context.  Blizzard code that follows this hook (e.g.
+        -- GameTooltip_AddWidgetSet → RegisterForWidgetSet → ProcessWidget →
+        -- UIWidgetTemplateTextWithState:Setup) runs in the same call stack.
+        -- ANY addon code that calls methods on Blizzard frames (Hide, SetOwner,
+        -- ClearLines) taints the context, causing GetStringHeight() to return
+        -- secret values and arithmetic to fail in widget setup.
+        -- Combat tooltip hiding is handled independently by the SetUnit hook.
+        if InCombatLockdown() then return end
+
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         if parent and parent.IsForbidden and parent:IsForbidden() then return end
 
@@ -361,10 +371,8 @@ local function SetupTooltipHook()
             return
         end
 
-        -- Cursor anchor logic (skip in combat — GetCursorPosition/GetEffectiveScale
-        -- return secret values whose arithmetic taints tooltip frame layout properties,
-        -- breaking Blizzard's LayoutFrame widget comparisons downstream)
-        if settings.anchorToCursor and not InCombatLockdown() then
+        -- Cursor anchor logic
+        if settings.anchorToCursor then
             AnchorTooltipToCursor(tooltip, parent, settings)
         else
             cursorFollowActive[tooltip] = nil
