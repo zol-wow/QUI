@@ -3751,7 +3751,8 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     -- Suppress auto-registration while creating search result widgets
     GUI._suppressSearchRegistration = true
 
-    -- Render grouped results with actual widgets
+    -- Render grouped results with actual widgets (pcall ensures flag always resets on error)
+    pcall(function()
     for _, groupKey in ipairs(tabOrder) do
         local group = groupedResults[groupKey]
         local groupData = group.data
@@ -3879,8 +3880,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
 
         y = y - 10  -- Gap between groups
     end
+    end)  -- end pcall
 
-    -- Re-enable auto-registration
+    -- Re-enable auto-registration (guaranteed even if widget builder errored)
     GUI._suppressSearchRegistration = false
 
     content:SetHeight(math.abs(y) + 20)

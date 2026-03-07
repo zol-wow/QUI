@@ -55,6 +55,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.44.2 - 2026-03-02
+
+### Fixed
+- fixed game menu highlighting and "growing"
+- fixed GCD glow showing on hidden CDM frames
+- fixed some minor performance issues with duplicate recompute paths
+- hardened search renderer
+- cleaned up duplicate code
 ## v2.44.1 - 2026-03-02
 
 ### Added

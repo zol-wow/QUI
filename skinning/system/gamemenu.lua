@@ -126,38 +126,38 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         text:SetTextColor(unpack(COLORS.text))
     end
 
-    -- Hover effects via OnEnter/OnLeave on the overlay frame.
-    -- OnEnter/OnLeave is more efficient than OnUpdate polling (~600 calls/sec → 0 when idle).
-    -- EnableMouse must be true on overlay so it receives enter/leave; clicks are passed
-    -- through to the button via overlay:SetMouseClickEnabled(false) where available,
-    -- or by registering clicks on the button directly (already done by Blizzard).
+    -- Hover effects: hook the BUTTON's OnEnter/OnLeave to change the overlay's
+    -- visuals. The overlay stays EnableMouse(false) (purely visual) so it never
+    -- intercepts clicks or motion events — the button handles all mouse interaction
+    -- natively. This avoids SetMouseClickEnabled fragility and works for both pool
+    -- buttons and the standalone QUI button.
     if not info.hoverSetup then
         info.hoverSetup = true
         info.hovered = false
-        overlay:EnableMouse(true)
-        if overlay.SetMouseClickEnabled then
-            overlay:SetMouseClickEnabled(false)  -- 10.x+: pass clicks through
-        end
 
-        overlay:SetScript("OnEnter", function(self)
+        button:HookScript("OnEnter", function()
             local binfo = buttonOverlays[button]
             if not binfo or binfo.hovered then return end
             binfo.hovered = true
+            local ov = binfo.overlay
+            if not ov then return end
             local r, g, b, a = unpack(binfo.bgColor)
-            self:SetBackdropColor(math.min(r + 0.30, 1), math.min(g + 0.30, 1), math.min(b + 0.30, 1), a)
+            ov:SetBackdropColor(math.min(r + 0.30, 1), math.min(g + 0.30, 1), math.min(b + 0.30, 1), a)
             local sr2, sg2, sb2, sa2 = unpack(binfo.skinColor)
-            self:SetBackdropBorderColor(math.min(sr2 * 1.6, 1), math.min(sg2 * 1.6, 1), math.min(sb2 * 1.6, 1), sa2)
+            ov:SetBackdropBorderColor(math.min(sr2 * 1.6, 1), math.min(sg2 * 1.6, 1), math.min(sb2 * 1.6, 1), sa2)
             local txt = button:GetFontString()
             if txt then txt:SetTextColor(1, 1, 1, 1) end
             if binfo.overlayText then binfo.overlayText:SetTextColor(1, 1, 1, 1) end
         end)
 
-        overlay:SetScript("OnLeave", function(self)
+        button:HookScript("OnLeave", function()
             local binfo = buttonOverlays[button]
             if not binfo or not binfo.hovered then return end
             binfo.hovered = false
-            self:SetBackdropColor(unpack(binfo.bgColor))
-            self:SetBackdropBorderColor(unpack(binfo.skinColor))
+            local ov = binfo.overlay
+            if not ov then return end
+            ov:SetBackdropColor(unpack(binfo.bgColor))
+            ov:SetBackdropBorderColor(unpack(binfo.skinColor))
             local txt = button:GetFontString()
             if txt then txt:SetTextColor(unpack(COLORS.text)) end
             if binfo.overlayText then binfo.overlayText:SetTextColor(unpack(COLORS.text)) end
@@ -446,11 +446,9 @@ local function PositionStandaloneButton()
             local origText = btn:GetFontString()
             if origText then origText:SetAlpha(0) end
 
-            -- Keep overlay EnableMouse(false) (the default) so mouse events
-            -- pass through to the QUI button underneath — exactly like pool
-            -- buttons.  The button's HookScript (set by StyleButton) handles
-            -- hover highlights, and its OnClick handles the click.
-            info.overlay:EnableMouse(false)
+            -- Overlay stays EnableMouse(false) (its default from creation).
+            -- Hover is driven by the button's HookScript OnEnter/OnLeave
+            -- (set by StyleButton), so clicks pass through natively.
         end
     end
 
@@ -532,6 +530,14 @@ if GameMenuFrame then
             -- Skin pool buttons first so skinState.skinned is true when
             -- PositionStandaloneButton styles the QUI button.
             SkinGameMenu()
+
+            -- Blizzard's InitButtons re-shows Border/Header every open.
+            -- SkinGameMenu() only runs once (skinState.skinned gate), so
+            -- hide decorations on every show to prevent frame height growth.
+            if skinState.skinned then
+                HideBlizzardDecorations()
+            end
+
             PositionStandaloneButton()
 
             if skinState.skinned and GameMenuFrame.buttonPool then
@@ -541,9 +547,10 @@ if GameMenuFrame then
                 local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg, "gameMenu")
                 for button in GameMenuFrame.buttonPool:EnumerateActive() do
                     count = count + 1
-                    if not buttonOverlays[button] then
-                        StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-                    end
+                    -- Re-style ALL buttons each show (not just new ones).
+                    -- Pool re-acquisition wipes HookScript handlers, so
+                    -- hover hooks must be re-applied via StyleButton.
+                    StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
                 end
                 lastButtonCount = count
             end
@@ -558,15 +565,16 @@ if GameMenuFrame then
             if count ~= lastButtonCount then
                 lastButtonCount = count
                 SkinGameMenu()
+                if skinState.skinned then
+                    HideBlizzardDecorations()
+                end
                 PositionStandaloneButton()
                 if skinState.skinned and GameMenuFrame.buttonPool then
                     local core3 = GetCore()
                     local stg3 = core3 and core3.db and core3.db.profile and core3.db.profile.general
                     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg3, "gameMenu")
                     for button in GameMenuFrame.buttonPool:EnumerateActive() do
-                        if not buttonOverlays[button] then
-                            StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-                        end
+                        StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
                     end
                 end
             end
@@ -592,6 +600,10 @@ if GameMenuFrame then
                     end
                     info.overlay:SetScript("OnUpdate", nil)
                     info.hovered = false
+                    -- Reset so hooks are re-applied on next show.
+                    -- Blizzard's pool calls SetScript on re-acquired buttons,
+                    -- which wipes all HookScript handlers.
+                    info.hoverSetup = false
                 end
             end
 

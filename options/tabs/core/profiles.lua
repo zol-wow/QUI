@@ -182,7 +182,7 @@ local function CreateSpecProfilesPage(parent)
                         end
                     end
                     -- Unit frame castbar positions
-                    for _, unit in ipairs({"player", "target"}) do
+                    for _, unit in ipairs({"player", "target", "focus"}) do
                         if p.quiUnitFrames[unit] and p.quiUnitFrames[unit].castbar then
                             p.quiUnitFrames[unit].castbar.offsetX = nil
                             p.quiUnitFrames[unit].castbar.offsetY = nil
@@ -206,7 +206,7 @@ local function CreateSpecProfilesPage(parent)
                 end
 
                 -- Data panel positions
-                if p.quiDatatexts and p.quiDatatexts.panels then
+                if p.quiDatatexts and type(p.quiDatatexts.panels) == "table" then
                     for _, panel in ipairs(p.quiDatatexts.panels) do
                         if panel then
                             panel.position = nil
@@ -225,7 +225,7 @@ local function CreateSpecProfilesPage(parent)
                 end
 
                 -- Custom tracker positions
-                if p.customTrackers and p.customTrackers.bars then
+                if p.customTrackers and type(p.customTrackers.bars) == "table" then
                     for _, bar in ipairs(p.customTrackers.bars) do
                         if bar then
                             bar.offsetX = nil
@@ -258,7 +258,7 @@ local function CreateSpecProfilesPage(parent)
                 end
 
                 -- Frame anchoring (wipe all entries except hudMinWidth)
-                if p.frameAnchoring then
+                if type(p.frameAnchoring) == "table" then
                     local savedHudMinWidth = p.frameAnchoring.hudMinWidth
                     wipe(p.frameAnchoring)
                     p.frameAnchoring.hudMinWidth = savedHudMinWidth

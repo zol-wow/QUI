@@ -2372,15 +2372,11 @@ viewerAnchorFixFrame:SetScript("OnEvent", function(self, event, isInitialLogin, 
     end)
 end)
 
--- Add nudgeamount
-local oldOnInitialize = QUICore.OnInitialize
-function QUICore:OnInitialize()
-    if oldOnInitialize then
-        oldOnInitialize(self)
-    end
-    
-    -- Add nudgeAmount default
-    if not self.db.profile.nudgeAmount then
-        self.db.profile.nudgeAmount = 1
-    end
+-- Add nudge amount default after core database initialization.
+if QUICore and QUICore.RegisterPostInitialize then
+    QUICore:RegisterPostInitialize(function(core)
+        if core and core.db and core.db.profile and not core.db.profile.nudgeAmount then
+            core.db.profile.nudgeAmount = 1
+        end
+    end)
 end

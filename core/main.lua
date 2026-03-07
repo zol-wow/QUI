@@ -3436,6 +3436,13 @@ function QUICore:OnInitialize()
     C_Timer.After(0.1, function()
         self:CreateMinimapButton()
     end)
+
+    for _, callback in ipairs(self._postInitializeCallbacks or {}) do
+        local ok, err = pcall(callback, self)
+        if not ok and geterrorhandler then
+            geterrorhandler()(err)
+        end
+    end
 end
 
 function QUICore:OnProfileChanged(event, db, profileKey)
@@ -4079,6 +4086,8 @@ end
 
 QUICore._editModeEnterCallbacks = {}
 QUICore._editModeExitCallbacks = {}
+QUICore._postInitializeCallbacks = QUICore._postInitializeCallbacks or {}
+QUICore._postEnableCallbacks = QUICore._postEnableCallbacks or {}
 
 function QUICore:RegisterEditModeEnter(callback)
     table.insert(self._editModeEnterCallbacks, callback)
@@ -4086,6 +4095,18 @@ end
 
 function QUICore:RegisterEditModeExit(callback)
     table.insert(self._editModeExitCallbacks, callback)
+end
+
+function QUICore:RegisterPostInitialize(callback)
+    if type(callback) == "function" then
+        table.insert(self._postInitializeCallbacks, callback)
+    end
+end
+
+function QUICore:RegisterPostEnable(callback)
+    if type(callback) == "function" then
+        table.insert(self._postEnableCallbacks, callback)
+    end
 end
 
 -- ============================================================================
@@ -4531,7 +4552,16 @@ function QUICore:SetupEncounterWarningsSecretValuePatch()
         return true
     end
 
-    if TryPatch() then
+    local patched = TryPatch()
+
+    for _, callback in ipairs(self._postEnableCallbacks or {}) do
+        local ok, err = pcall(callback, self)
+        if not ok and geterrorhandler then
+            geterrorhandler()(err)
+        end
+    end
+
+    if patched then
         return
     end
 

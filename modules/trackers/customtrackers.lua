@@ -1471,6 +1471,7 @@ function CustomTrackers:UpdateBarIcons(bar)
 
         -- Set up secure button for clickable icons (if enabled)
         UpdateIconSecureAttributes(icon, entry, config)
+        ApplyKeybindToTrackerIcon(icon)
 
         table.insert(bar.icons, icon)
     end
@@ -2057,8 +2058,6 @@ function CustomTrackers:StartCooldownPolling(bar)
                     icon.stackText:Hide()
                 end
 
-                -- Apply keybind display
-                ApplyKeybindToTrackerIcon(icon)
             end
         end
 
@@ -2812,7 +2811,7 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
             end
         end)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
-        -- Item info loaded, refresh bars to update any "?" icons
+        -- Item info loaded, refresh bars to update any "?" icons and enable click buttons
         local itemID = ...
         if itemID then
             -- Clear cache for this item so it gets re-fetched
@@ -2825,6 +2824,8 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
                         if info and info.icon then
                             icon.tex:SetTexture(info.icon)
                         end
+                        -- Enable click button now that item info is available (fixes "sometimes works" for items)
+                        UpdateIconSecureAttributes(icon, icon.entry, bar.config)
                     end
                 end
             end

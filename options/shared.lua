@@ -24,46 +24,18 @@ ns.SCROLL_STEP = SCROLL_STEP
 
 -- Midnight-safe scroll value helpers
 local function GetSafeVerticalScrollRange(scrollFrame)
-    local okRange, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
-    if not okRange then return 0 end
-
-    if type(issecretvalue) == "function" then
-        local okSecret, isSecret = pcall(issecretvalue, maxScroll)
-        if okSecret and isSecret then
-            return 0
-        end
-    end
-
-    local okClamp, safeMax = pcall(function()
-        return math.max(0, maxScroll or 0)
-    end)
-    if okClamp then
-        return safeMax
-    end
-
-    return 0
+    local ok, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
+    if not ok then return 0 end
+    local ok2, safeMax = pcall(function() return math.max(0, maxScroll or 0) end)
+    return ok2 and safeMax or 0
 end
 ns.GetSafeVerticalScrollRange = GetSafeVerticalScrollRange
 
 local function GetSafeVerticalScroll(scrollFrame)
-    local okScroll, currentScroll = pcall(scrollFrame.GetVerticalScroll, scrollFrame)
-    if not okScroll then return 0 end
-
-    if type(issecretvalue) == "function" then
-        local okSecret, isSecret = pcall(issecretvalue, currentScroll)
-        if okSecret and isSecret then
-            return 0
-        end
-    end
-
-    local okNormalize, safeCurrent = pcall(function()
-        return currentScroll + 0
-    end)
-    if okNormalize then
-        return safeCurrent
-    end
-
-    return 0
+    local ok, currentScroll = pcall(scrollFrame.GetVerticalScroll, scrollFrame)
+    if not ok then return 0 end
+    local ok2, safeCurrent = pcall(function() return currentScroll + 0 end)
+    return ok2 and safeCurrent or 0
 end
 
 function ns.ApplyScrollWheel(scrollFrame)
@@ -357,6 +329,7 @@ end
 ---------------------------------------------------------------------------
 local function BackupCurrentFPSSettings()
     local db = GetDB()
+    if not db then return false end
     local backup = {}
     for cvar, _ in pairs(QUAZII_FPS_CVARS) do
         local success, current = pcall(C_CVar.GetCVar, cvar)
@@ -370,6 +343,7 @@ end
 
 local function RestorePreviousFPSSettings()
     local db = GetDB()
+    if not db then return false end
     if not db.fpsBackup then
         print("|cffFF6B6BQUI:|r No backup found. Apply FPS settings first to create a backup.")
         return false

@@ -2301,23 +2301,13 @@ local function CreateUnitFrame(unit, unitKey)
                 UpdateHealth(self)
                 UpdateAbsorbs(self)
                 UpdateHealPrediction(self)
-                -- Force update ToT when target health changes
-                if self.unitKey == "target" then
-                    ForceUpdateToT()
-                end
             elseif event == "UNIT_HEAL_PREDICTION" then
                 UpdateHealPrediction(self)
             elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" or event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
                 UpdateAbsorbs(self)
-                if self.unitKey == "target" then
-                    ForceUpdateToT()
-                end
             elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER" then
                 UpdatePower(self)
                 UpdatePowerText(self)
-                if self.unitKey == "target" then
-                    ForceUpdateToT()
-                end
             elseif event == "UNIT_NAME_UPDATE" then
                 UpdateName(self)
             end
