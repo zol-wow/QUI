@@ -353,7 +353,16 @@ local function CreateGroupFramesPage(parent)
 
         -- Unified position toggle
         local unifiedCheck = GUI:CreateFormCheckbox(tabContent, "Unified Party & Raid Position", "unifiedPosition", gfdb, function()
-            print("|cFF34D399[QUI]|r Reload required for this change to take effect.")
+            GUI:ShowConfirmation({
+                title = "Reload Required",
+                message = "Changing group frame positioning mode requires a UI reload to take effect.",
+                acceptText = "Reload Now",
+                cancelText = "Later",
+                isDestructive = false,
+                onAccept = function()
+                    QUI:SafeReload()
+                end,
+            })
         end)
         unifiedCheck:SetPoint("TOPLEFT", PAD, y)
         unifiedCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
