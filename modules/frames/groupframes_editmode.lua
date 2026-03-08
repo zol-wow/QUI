@@ -19,7 +19,8 @@ local isEditMode = false
 local isTestMode = false
 local testFrames = {}
 local testContainer = nil  -- direct reference to the active test container
-local groupMover = nil     -- single mover for party + raid (created on first edit mode enter)
+local groupMover = nil     -- party mover (or unified mover when unifiedPosition = true)
+local raidMover = nil      -- separate raid mover (only used when unifiedPosition = false)
 local spotlightHeader = nil
 local partySelectionWatcher = nil   -- OnUpdate guard for CompactPartyFrame.Selection
 local raidSelectionWatcher = nil    -- OnUpdate guard for CompactRaidFrameContainer.Selection
@@ -55,7 +56,7 @@ local FAKE_DEBUFF_ICONS = {
 local PREVIEW_INDICATORS = {
     [1] = { leader = true, targetHighlight = true, threatBorder = true, buffs = 1 },
     [2] = { readyCheck = true, raidMarker = 1, debuffs = 2, buffs = 1 },
-    [3] = { phaseIcon = true, resurrection = true, debuffs = 1 },
+    [3] = { phaseIcon = true, resurrection = true, debuffs = 1, defensiveIndicator = true },
     [4] = { dispelOverlay = true, summonPending = true, debuffs = 3 },
     [5] = { raidMarker = 8, buffs = 2 },
 }
@@ -426,6 +427,33 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
     end
 
+    -- Defensive indicator preview
+    if prev and prev.defensiveIndicator then
+        local healerSettings = db.healer
+        local defSettings = healerSettings and healerSettings.defensiveIndicator
+        if defSettings and defSettings.enabled ~= false then
+            local iconSize = defSettings.iconSize or 16
+            local position = defSettings.position or "CENTER"
+            local offsetX = defSettings.offsetX or 0
+            local offsetY = defSettings.offsetY or 0
+
+            local defIcon = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            defIcon:SetSize(iconSize, iconSize)
+            defIcon:SetPoint(position, frame, position, offsetX, offsetY)
+            defIcon:SetFrameLevel(baseLevel + 10)
+            defIcon:SetBackdrop({
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = px,
+            })
+            defIcon:SetBackdropBorderColor(0, 0.8, 0, 1)
+
+            local icon = defIcon:CreateTexture(nil, "ARTWORK")
+            icon:SetAllPoints()
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            icon:SetTexture(135936) -- Spell_Holy_SealOfProtection (Ironbark-like)
+        end
+    end
+
     -- Aura icons (buffs & debuffs; matches runtime: frame + 8)
     local auraSettings = db.auras
     if prev and auraSettings then
@@ -534,10 +562,22 @@ function QUI_GFEM:EnableTestMode(previewType)
 
     -- Create container — anchor to mover if edit mode is active, otherwise UIParent
     local container = CreateFrame("Frame", nil, UIParent)
-    if isEditMode and groupMover then
-        container:SetPoint("CENTER", groupMover, "CENTER", 0, 0)
+    if isEditMode then
+        -- In non-unified mode, anchor to the mover matching preview type
+        local targetMover = groupMover
+        if not db.unifiedPosition and previewType == "raid" and raidMover then
+            targetMover = raidMover
+        end
+        if targetMover then
+            container:SetPoint("CENTER", targetMover, "CENTER", 0, 0)
+        else
+            local position = db.position
+            container:SetPoint("CENTER", UIParent, "CENTER", position and position.offsetX or -400, position and position.offsetY or 0)
+        end
     else
-        local position = db.position
+        -- Not in edit mode: use the appropriate position table
+        local posKey = (not db.unifiedPosition and previewType == "raid") and "raidPosition" or "position"
+        local position = db[posKey]
         container:SetPoint("CENTER", UIParent, "CENTER", position and position.offsetX or -400, position and position.offsetY or 0)
     end
     container:Show()
@@ -831,7 +871,9 @@ local function CreateNudgeButton(parent, direction, deltaX, deltaY)
     btn:SetScript("OnClick", function()
         local shift = IsShiftKeyDown()
         local step = shift and 10 or 1
-        QUI_GFEM:NudgeHeader("party", deltaX * step, deltaY * step)
+        -- Use the mover's stored nudge key so party/raid mover nudge the right position
+        local key = parent._nudgeKey or "party"
+        QUI_GFEM:NudgeHeader(key, deltaX * step, deltaY * step)
     end)
 
     return btn
@@ -839,8 +881,17 @@ end
 
 local function UpdateMoverPositionText(mover, oX, oY)
     if mover and mover.posText then
-        mover.posText:SetText(format("Group Frames  X: %d  Y: %d", oX, oY))
+        local label = mover._label or "Group Frames"
+        mover.posText:SetText(format("%s  X: %d  Y: %d", label, oX, oY))
     end
+end
+
+-- Returns the position table for a given mover (or "position" by default).
+local function GetMoverPositionTable(mover)
+    local db = GetDB()
+    if not db then return nil end
+    local key = mover and mover._positionKey or "position"
+    return db[key]
 end
 
 local function SaveMoverPosition(mover)
@@ -853,18 +904,79 @@ local function SaveMoverPosition(mover)
     local oX = QUICore.PixelRound and QUICore:PixelRound(rawX) or Round(rawX)
     local oY = QUICore.PixelRound and QUICore:PixelRound(rawY) or Round(rawY)
 
-    local db = GetDB()
-    if db and db.position then
-        db.position.offsetX = oX
-        db.position.offsetY = oY
+    local pos = GetMoverPositionTable(mover)
+    if pos then
+        pos.offsetX = oX
+        pos.offsetY = oY
     end
 
     UpdateMoverPositionText(mover, oX, oY)
-    QUI:DebugPrint(("[GF] SaveMoverPosition: offset=(%d,%d)"):format(oX, oY))
+    QUI:DebugPrint(("[GF] SaveMoverPosition(%s): offset=(%d,%d)"):format(
+        mover._positionKey or "position", oX, oY))
     return oX, oY
 end
 
--- Resize the mover to match content and re-anchor all frames to it.
+-- Helper: determine which mover owns a given header key.
+local function GetMoverForHeaderKey(db, hKey)
+    if db and not db.unifiedPosition and hKey == "raid" then
+        return raidMover
+    end
+    return groupMover
+end
+
+-- Helper: size a single mover to a single header.
+local function SizeMoverToHeader(mover, hdr, db)
+    if not mover or not hdr then return 0, 0 end
+    local GF = ns.QUI_GroupFrames
+    local w, h = 0, 0
+
+    if GF and GF.CalculateHeaderSize then
+        local isRaid = (hdr == (GF.headers and GF.headers.raid))
+        local count
+        if isRaid then
+            count = IsInRaid() and GetNumGroupMembers() or 25
+            count = math.max(count, 5)
+        else
+            count = IsInGroup() and not IsInRaid() and GetNumGroupMembers() or 5
+            count = math.min(count, 5)
+        end
+        w, h = GF.CalculateHeaderSize(db, count)
+    end
+
+    if w == 0 or h == 0 then
+        if hdr:IsShown() then
+            w = Helpers.SafeValue(hdr:GetWidth(), 0)
+            h = Helpers.SafeValue(hdr:GetHeight(), 0)
+        end
+    end
+    if w == 0 or h == 0 then
+        w, h = GetHeaderBounds(hdr, db)
+    end
+    return w, h
+end
+
+-- Helper: re-parent a single header to a mover using BOTTOMLEFT offsets.
+local function ReparentHeaderToMover(hdr, mover)
+    if not hdr or not mover then return end
+    local hLeft = Helpers.SafeValue(hdr:GetLeft(), nil)
+    local hBottom = Helpers.SafeValue(hdr:GetBottom(), nil)
+    hdr:SetParent(mover)
+    hdr:ClearAllPoints()
+    if hLeft and hBottom then
+        local mLeft = mover:GetLeft()
+        local mBottom = mover:GetBottom()
+        if mLeft and mBottom then
+            hdr:SetPoint("BOTTOMLEFT", mover, "BOTTOMLEFT",
+                hLeft - mLeft, hBottom - mBottom)
+        else
+            hdr:SetPoint("CENTER", mover, "CENTER", 0, 0)
+        end
+    else
+        hdr:SetPoint("CENTER", mover, "CENTER", 0, 0)
+    end
+end
+
+-- Resize the mover(s) to match content and re-anchor all frames.
 -- Called after any state change (test mode toggle, settings refresh, edit mode enter).
 function QUI_GFEM:SyncMoverToContent()
     if not isEditMode or not groupMover then return end
@@ -872,122 +984,157 @@ function QUI_GFEM:SyncMoverToContent()
 
     local db = GetDB()
     local GF = ns.QUI_GroupFrames
+    local unified = not db or db.unifiedPosition ~= false
 
-    local boundsW, boundsH = 0, 0
-    local sizeSource = "none"
+    if unified then
+        -- UNIFIED MODE: single mover for both headers (original behavior)
+        local boundsW, boundsH = 0, 0
+        local sizeSource = "none"
 
-    -- In test mode the test container IS the content — use its dimensions
-    -- directly.  Header children may be stale from a previous group session
-    -- and would give the wrong size for the current preview type.
-    if isTestMode and testContainer then
-        boundsW = Helpers.SafeValue(testContainer:GetWidth(), 200)
-        boundsH = Helpers.SafeValue(testContainer:GetHeight(), 200)
-        sizeSource = "testContainer"
-    elseif GF then
-        -- Try CalculateHeaderSize first — gives correct bounds for actual
-        -- member count regardless of header's explicit SetSize (which may
-        -- be sized for max capacity).
-        if GF.CalculateHeaderSize then
-            local memberCount = IsInRaid() and GetNumGroupMembers() or
-                (IsInGroup() and GetNumGroupMembers() or 5)
-            if not IsInRaid() then memberCount = math.min(memberCount, 5) end
-            boundsW, boundsH = GF.CalculateHeaderSize(db, memberCount)
-            sizeSource = ("calc(n=%d)"):format(memberCount)
-        end
-
-        -- Fall back to header rendered size if calc returned nothing useful
-        if boundsW == 0 or boundsH == 0 then
-            for _, hKey in ipairs({"party", "raid"}) do
-                local hdr = GF.headers[hKey]
-                if hdr and hdr:IsShown() then
-                    local w = Helpers.SafeValue(hdr:GetWidth(), 0)
-                    local h = Helpers.SafeValue(hdr:GetHeight(), 0)
-                    if w > boundsW then boundsW = w end
-                    if h > boundsH then boundsH = h end
-                end
+        if isTestMode and testContainer then
+            boundsW = Helpers.SafeValue(testContainer:GetWidth(), 200)
+            boundsH = Helpers.SafeValue(testContainer:GetHeight(), 200)
+            sizeSource = "testContainer"
+        elseif GF then
+            if GF.CalculateHeaderSize then
+                local memberCount = IsInRaid() and GetNumGroupMembers() or
+                    (IsInGroup() and GetNumGroupMembers() or 5)
+                if not IsInRaid() then memberCount = math.min(memberCount, 5) end
+                boundsW, boundsH = GF.CalculateHeaderSize(db, memberCount)
+                sizeSource = ("calc(n=%d)"):format(memberCount)
             end
-            if boundsW > 0 and boundsH > 0 then sizeSource = "hdr:GetSize" end
-        end
-
-        -- Fall back to child-counting bounds
-        if boundsW == 0 or boundsH == 0 then
-            for _, hKey in ipairs({"party", "raid"}) do
-                local hdr = GF.headers[hKey]
-                if hdr then
-                    local w, h = GetHeaderBounds(hdr, db)
-                    if w > boundsW then boundsW = w end
-                    if h > boundsH then boundsH = h end
-                end
-            end
-            if boundsW > 0 and boundsH > 0 then sizeSource = "GetHeaderBounds" end
-        end
-    end
-
-    boundsW = math.max(boundsW, 100)
-    boundsH = math.max(boundsH, 40)
-    groupMover:SetSize(boundsW, boundsH)
-    QUI:DebugPrint(("[GF] SyncMoverToContent: size=(%d,%d) source=%s testMode=%s"):format(
-        boundsW, boundsH, sizeSource, tostring(isTestMode)))
-
-    -- Re-parent and re-anchor content to the mover.
-    -- Only child frames follow their parent during StartMoving() — merely
-    -- anchored frames stay behind.  Re-parenting the non-secure test
-    -- container is safe; secure headers are also re-parented (out-of-combat
-    -- guard above ensures this is taint-safe).
-    --
-    -- Use BOTTOMLEFT with exact pixel offsets instead of CENTER-to-CENTER to
-    -- avoid sub-pixel drift from WoW's anchor chain rounding.
-    if GF then
-        for _, hKey in ipairs({"party", "raid"}) do
-            local hdr = GF.headers[hKey]
-            if hdr then
-                local hLeft = Helpers.SafeValue(hdr:GetLeft(), nil)
-                local hBottom = Helpers.SafeValue(hdr:GetBottom(), nil)
-                hdr:SetParent(groupMover)
-                hdr:ClearAllPoints()
-                if hLeft and hBottom then
-                    local mLeft = groupMover:GetLeft()
-                    local mBottom = groupMover:GetBottom()
-                    if mLeft and mBottom then
-                        hdr:SetPoint("BOTTOMLEFT", groupMover, "BOTTOMLEFT",
-                            hLeft - mLeft, hBottom - mBottom)
-                    else
-                        hdr:SetPoint("CENTER", groupMover, "CENTER", 0, 0)
+            if boundsW == 0 or boundsH == 0 then
+                for _, hKey in ipairs({"party", "raid"}) do
+                    local hdr = GF.headers[hKey]
+                    if hdr and hdr:IsShown() then
+                        local w = Helpers.SafeValue(hdr:GetWidth(), 0)
+                        local h = Helpers.SafeValue(hdr:GetHeight(), 0)
+                        if w > boundsW then boundsW = w end
+                        if h > boundsH then boundsH = h end
                     end
-                else
-                    hdr:SetPoint("CENTER", groupMover, "CENTER", 0, 0)
                 end
+                if boundsW > 0 and boundsH > 0 then sizeSource = "hdr:GetSize" end
+            end
+            if boundsW == 0 or boundsH == 0 then
+                for _, hKey in ipairs({"party", "raid"}) do
+                    local hdr = GF.headers[hKey]
+                    if hdr then
+                        local w, h = GetHeaderBounds(hdr, db)
+                        if w > boundsW then boundsW = w end
+                        if h > boundsH then boundsH = h end
+                    end
+                end
+                if boundsW > 0 and boundsH > 0 then sizeSource = "GetHeaderBounds" end
             end
         end
-    end
 
-    if testContainer then
-        local tLeft = Helpers.SafeValue(testContainer:GetLeft(), nil)
-        local tBottom = Helpers.SafeValue(testContainer:GetBottom(), nil)
-        testContainer:SetParent(groupMover)
-        testContainer:ClearAllPoints()
-        if tLeft and tBottom then
-            local mLeft = groupMover:GetLeft()
-            local mBottom = groupMover:GetBottom()
-            if mLeft and mBottom then
-                testContainer:SetPoint("BOTTOMLEFT", groupMover, "BOTTOMLEFT",
-                    tLeft - mLeft, tBottom - mBottom)
+        boundsW = math.max(boundsW, 100)
+        boundsH = math.max(boundsH, 40)
+        groupMover:SetSize(boundsW, boundsH)
+        QUI:DebugPrint(("[GF] SyncMoverToContent: size=(%d,%d) source=%s testMode=%s"):format(
+            boundsW, boundsH, sizeSource, tostring(isTestMode)))
+
+        -- Re-parent all headers to the unified mover
+        if GF then
+            for _, hKey in ipairs({"party", "raid"}) do
+                ReparentHeaderToMover(GF.headers[hKey], groupMover)
+            end
+        end
+
+        if testContainer then
+            local tLeft = Helpers.SafeValue(testContainer:GetLeft(), nil)
+            local tBottom = Helpers.SafeValue(testContainer:GetBottom(), nil)
+            testContainer:SetParent(groupMover)
+            testContainer:ClearAllPoints()
+            if tLeft and tBottom then
+                local mLeft = groupMover:GetLeft()
+                local mBottom = groupMover:GetBottom()
+                if mLeft and mBottom then
+                    testContainer:SetPoint("BOTTOMLEFT", groupMover, "BOTTOMLEFT",
+                        tLeft - mLeft, tBottom - mBottom)
+                else
+                    testContainer:SetPoint("CENTER", groupMover, "CENTER", 0, 0)
+                end
             else
                 testContainer:SetPoint("CENTER", groupMover, "CENTER", 0, 0)
             end
-        else
-            testContainer:SetPoint("CENTER", groupMover, "CENTER", 0, 0)
+        end
+    else
+        -- NON-UNIFIED MODE: party mover + raid mover
+        if GF then
+            local partyHdr = GF.headers and GF.headers.party
+            if partyHdr then
+                local pw, ph = SizeMoverToHeader(groupMover, partyHdr, db)
+                groupMover:SetSize(math.max(pw, 100), math.max(ph, 40))
+                ReparentHeaderToMover(partyHdr, groupMover)
+            else
+                groupMover:SetSize(200, 40)
+            end
+
+            if raidMover then
+                local raidHdr = GF.headers and GF.headers.raid
+                if raidHdr then
+                    local rw, rh = SizeMoverToHeader(raidMover, raidHdr, db)
+                    raidMover:SetSize(math.max(rw, 100), math.max(rh, 40))
+                    ReparentHeaderToMover(raidHdr, raidMover)
+                else
+                    raidMover:SetSize(200, 40)
+                end
+            end
+        end
+
+        -- Test container: anchor to the mover matching the preview type
+        if testContainer then
+            local targetMover = groupMover
+            if self._lastTestPreviewType == "raid" and raidMover then
+                targetMover = raidMover
+            end
+            local tw = Helpers.SafeValue(testContainer:GetWidth(), 200)
+            local th = Helpers.SafeValue(testContainer:GetHeight(), 200)
+            targetMover:SetSize(math.max(tw, 100), math.max(th, 40))
+
+            local tLeft = Helpers.SafeValue(testContainer:GetLeft(), nil)
+            local tBottom = Helpers.SafeValue(testContainer:GetBottom(), nil)
+            testContainer:SetParent(targetMover)
+            testContainer:ClearAllPoints()
+            if tLeft and tBottom then
+                local mLeft = targetMover:GetLeft()
+                local mBottom = targetMover:GetBottom()
+                if mLeft and mBottom then
+                    testContainer:SetPoint("BOTTOMLEFT", targetMover, "BOTTOMLEFT",
+                        tLeft - mLeft, tBottom - mBottom)
+                else
+                    testContainer:SetPoint("CENTER", targetMover, "CENTER", 0, 0)
+                end
+            else
+                testContainer:SetPoint("CENTER", targetMover, "CENTER", 0, 0)
+            end
         end
     end
 end
 
-local function CreateGroupMover()
-    local mover = CreateFrame("Frame", "QUI_GroupFramesMover", UIParent)
+-- moverType: "unified" (default), "party", or "raid"
+local function CreateGroupMover(moverType)
+    moverType = moverType or "unified"
+    local frameName = moverType == "raid" and "QUI_RaidFramesMover" or "QUI_GroupFramesMover"
+    local label = moverType == "raid" and "Raid Frames"
+        or moverType == "party" and "Party Frames"
+        or "Group Frames"
+    local posKey = moverType == "raid" and "raidPosition" or "position"
+    local nudgeKey = moverType == "raid" and "raid" or "party"
+
+    local mover = CreateFrame("Frame", frameName, UIParent)
     mover:SetFrameStrata("HIGH")
     mover:SetClampedToScreen(true)
     mover:SetMovable(true)
     mover:EnableMouse(true)
     mover:RegisterForDrag("LeftButton")
+
+    -- Store metadata for SaveMoverPosition, UpdateMoverPositionText, NudgeHeader
+    mover._label = label
+    mover._positionKey = posKey
+    mover._nudgeKey = nudgeKey
+    mover._moverType = moverType
 
     local px = QUICore.GetPixelSize and QUICore:GetPixelSize(mover) or 1
 
@@ -1043,7 +1190,7 @@ local function CreateGroupMover()
     -- Click to select (re-select after clicking another edit mode element)
     mover:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
-            QUICore:SelectEditModeElement("groupframes", "mover")
+            QUICore:SelectEditModeElement("groupframes", self._nudgeKey or "mover")
         end
     end)
 
@@ -1089,13 +1236,21 @@ local function RestoreHeaderAnchors()
     if not GF then return end
 
     local db = GetDB()
-    local pos = db and db.position
-    local oX = pos and pos.offsetX or -400
-    local oY = pos and pos.offsetY or 0
+    local unified = not db or db.unifiedPosition ~= false
 
     for _, hKey in ipairs({"party", "raid"}) do
         local hdr = GF.headers[hKey]
         if hdr then
+            -- Determine position table for this header
+            local pos
+            if unified or hKey == "party" then
+                pos = db and db.position
+            else
+                pos = db and db.raidPosition
+            end
+            local oX = pos and pos.offsetX or -400
+            local oY = pos and pos.offsetY or 0
+
             hdr:SetParent(UIParent)
             hdr:ClearAllPoints()
 
@@ -1118,63 +1273,71 @@ local function RestoreHeaderAnchors()
     end
 end
 
--- Apply locked (grey) or unlocked (blue) styling to the group mover based on
--- whether the anchoring system has an active override for party/raid frames.
-function QUI_GFEM:UpdateMoverLockedState()
-    if not groupMover or not groupMover.border then return end
+-- Apply locked/unlocked styling to a single mover.
+local function ApplyMoverLockedStyle(mover, isLocked)
+    if not mover or not mover.border then return end
 
-    local isLocked = false
-    local GF = ns.QUI_GroupFrames
-    if _G.QUI_IsFrameLocked then
-        -- Check the mover itself (resolver returns mover during edit/test mode)
-        if _G.QUI_IsFrameLocked(groupMover) then
-            isLocked = true
-        end
-        -- Also check the headers (resolver returns headers outside edit mode,
-        -- but the override may have been applied to them before edit mode started)
-        if not isLocked and GF and GF.headers then
-            if _G.QUI_IsFrameLocked(GF.headers.party) or _G.QUI_IsFrameLocked(GF.headers.raid) then
-                isLocked = true
-            end
-        end
-    end
-
-    local border = groupMover.border
+    local border = mover.border
     if isLocked then
-        -- Grey locked style — matches unit frame / CDM locked overlay pattern
         border:SetBackdropColor(0.5, 0.5, 0.5, 0.3)
         border:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
-        if groupMover.posText then
-            groupMover.posText:SetTextColor(0.5, 0.5, 0.5, 1)
-            groupMover.posText:SetText("Group Frames  (Locked)")
+        if mover.posText then
+            mover.posText:SetTextColor(0.5, 0.5, 0.5, 1)
+            mover.posText:SetText((mover._label or "Group Frames") .. "  (Locked)")
         end
-        if groupMover.hint then groupMover.hint:Hide() end
-        -- Hide nudge buttons
-        if groupMover.nudgeUp then groupMover.nudgeUp:Hide() end
-        if groupMover.nudgeDown then groupMover.nudgeDown:Hide() end
-        if groupMover.nudgeLeft then groupMover.nudgeLeft:Hide() end
-        if groupMover.nudgeRight then groupMover.nudgeRight:Hide() end
-        -- Block dragging
-        groupMover:EnableMouse(false)
+        if mover.hint then mover.hint:Hide() end
+        if mover.nudgeUp then mover.nudgeUp:Hide() end
+        if mover.nudgeDown then mover.nudgeDown:Hide() end
+        if mover.nudgeLeft then mover.nudgeLeft:Hide() end
+        if mover.nudgeRight then mover.nudgeRight:Hide() end
+        mover:EnableMouse(false)
     else
-        -- Normal blue style
         border:SetBackdropColor(0.2, 0.8, 1, 0.08)
         border:SetBackdropBorderColor(0.2, 0.8, 1, 1)
-        if groupMover.posText then
-            groupMover.posText:SetTextColor(0.2, 0.8, 1, 1)
-            -- Restore position text
-            local db = GetDB()
-            local pos = db and db.position
-            UpdateMoverPositionText(groupMover, pos and pos.offsetX or 0, pos and pos.offsetY or 0)
+        if mover.posText then
+            mover.posText:SetTextColor(0.2, 0.8, 1, 1)
+            local pos = GetMoverPositionTable(mover)
+            UpdateMoverPositionText(mover, pos and pos.offsetX or 0, pos and pos.offsetY or 0)
         end
-        if groupMover.hint then groupMover.hint:Show() end
-        -- Show nudge buttons
-        if groupMover.nudgeUp then groupMover.nudgeUp:Show() end
-        if groupMover.nudgeDown then groupMover.nudgeDown:Show() end
-        if groupMover.nudgeLeft then groupMover.nudgeLeft:Show() end
-        if groupMover.nudgeRight then groupMover.nudgeRight:Show() end
-        -- Allow dragging
-        groupMover:EnableMouse(true)
+        if mover.hint then mover.hint:Show() end
+        if mover.nudgeUp then mover.nudgeUp:Show() end
+        if mover.nudgeDown then mover.nudgeDown:Show() end
+        if mover.nudgeLeft then mover.nudgeLeft:Show() end
+        if mover.nudgeRight then mover.nudgeRight:Show() end
+        mover:EnableMouse(true)
+    end
+end
+
+-- Check if a mover is locked by the anchoring system.
+local function IsMoverLocked(mover, headerKey)
+    if not _G.QUI_IsFrameLocked then return false end
+    if _G.QUI_IsFrameLocked(mover) then return true end
+    local GF = ns.QUI_GroupFrames
+    if GF and GF.headers and headerKey then
+        local hdr = GF.headers[headerKey]
+        if hdr and _G.QUI_IsFrameLocked(hdr) then return true end
+    end
+    return false
+end
+
+-- Apply locked (grey) or unlocked (blue) styling to the group mover(s) based on
+-- whether the anchoring system has an active override for party/raid frames.
+function QUI_GFEM:UpdateMoverLockedState()
+    if not groupMover then return end
+
+    local db = GetDB()
+    local unified = not db or db.unifiedPosition ~= false
+
+    if unified then
+        -- Unified: check both headers
+        local locked = IsMoverLocked(groupMover, "party") or IsMoverLocked(groupMover, "raid")
+        ApplyMoverLockedStyle(groupMover, locked)
+    else
+        -- Non-unified: check each independently
+        ApplyMoverLockedStyle(groupMover, IsMoverLocked(groupMover, "party"))
+        if raidMover then
+            ApplyMoverLockedStyle(raidMover, IsMoverLocked(raidMover, "raid"))
+        end
     end
 end
 
@@ -1206,47 +1369,64 @@ function QUI_GFEM:EnableEditMode(previewType)
         end
     end
 
-    -- Create the mover if needed
-    if not groupMover then
-        groupMover = CreateGroupMover()
-    end
-
-    -- Position mover at the actual header position (which may differ from
-    -- the saved DB offset when the anchoring system is active).
     local db = GetDB()
-    local pos = db and db.position
-    local oX = pos and pos.offsetX or -400
-    local oY = pos and pos.offsetY or 0
+    local unified = not db or db.unifiedPosition ~= false
 
-    -- If a header is visible, derive mover position from its actual screen
-    -- center so the mover border surrounds the content even when the
-    -- anchoring system has repositioned it.
-    if GF then
-        local parentCX, parentCY = UIParent:GetCenter()
-        if parentCX and parentCY then
-            for _, hKey in ipairs({"party", "raid"}) do
-                local hdr = GF.headers[hKey]
-                if hdr and hdr:IsShown() then
+    -- Helper: position a mover at its saved position (or derive from header)
+    local function PositionMover(mover, headerKey)
+        local pos = GetMoverPositionTable(mover)
+        local oX = pos and pos.offsetX or -400
+        local oY = pos and pos.offsetY or 0
+
+        -- If the header is visible, derive from its actual screen center
+        if GF and GF.headers then
+            local hdr = GF.headers[headerKey]
+            if hdr and hdr:IsShown() then
+                local parentCX, parentCY = UIParent:GetCenter()
+                if parentCX and parentCY then
                     local rawCX, rawCY = hdr:GetCenter()
                     local hCX = Helpers.SafeValue(rawCX, nil)
                     local hCY = Helpers.SafeValue(rawCY, nil)
                     if hCX and hCY then
                         oX = QUICore.PixelRound and QUICore:PixelRound(hCX - parentCX) or Round(hCX - parentCX)
                         oY = QUICore.PixelRound and QUICore:PixelRound(hCY - parentCY) or Round(hCY - parentCY)
-                        break
                     end
                 end
             end
         end
+
+        mover:ClearAllPoints()
+        mover:SetPoint("CENTER", UIParent, "CENTER", oX, oY)
+        UpdateMoverPositionText(mover, oX, oY)
+        mover:Show()
+        return oX, oY
     end
 
-    groupMover:ClearAllPoints()
-    groupMover:SetPoint("CENTER", UIParent, "CENTER", oX, oY)
-    UpdateMoverPositionText(groupMover, oX, oY)
-    groupMover:Show()
-    QUI:DebugPrint(("[GF] EnableEditMode: mover pos=(%d,%d)"):format(oX, oY))
+    if unified then
+        -- UNIFIED: single mover (original behavior)
+        if not groupMover then
+            groupMover = CreateGroupMover("unified")
+        end
+        local oX, oY = PositionMover(groupMover, "party")
+        -- In unified mode, also check raid header for position derivation
+        if GF and GF.headers and GF.headers.raid and GF.headers.raid:IsShown() then
+            oX, oY = PositionMover(groupMover, "raid")
+        end
+        QUI:DebugPrint(("[GF] EnableEditMode(unified): mover pos=(%d,%d)"):format(oX, oY))
+    else
+        -- NON-UNIFIED: separate party + raid movers
+        if not groupMover then
+            groupMover = CreateGroupMover("party")
+        end
+        if not raidMover then
+            raidMover = CreateGroupMover("raid")
+        end
+        local pX, pY = PositionMover(groupMover, "party")
+        local rX, rY = PositionMover(raidMover, "raid")
+        QUI:DebugPrint(("[GF] EnableEditMode(split): party=(%d,%d) raid=(%d,%d)"):format(pX, pY, rX, rY))
+    end
 
-    -- Size the mover and anchor all content to it
+    -- Size the mover(s) and anchor all content
     self:SyncMoverToContent()
 
     -- Check if group frames are locked by the anchoring system
@@ -1301,8 +1481,8 @@ function QUI_GFEM:EnableEditMode(previewType)
         end
     end
 
-    -- Select the mover for arrow key nudging
-    QUICore:SelectEditModeElement("groupframes", "mover")
+    -- Select the primary mover for arrow key nudging
+    QUICore:SelectEditModeElement("groupframes", groupMover and groupMover._nudgeKey or "party")
 end
 
 function QUI_GFEM:DisableEditMode()
@@ -1325,17 +1505,19 @@ function QUI_GFEM:DisableEditMode()
         QUICore:ClearEditModeSelection()
     end
 
-    -- Save final position and hide mover
-    if groupMover then
-        if groupMover._isMoving then
-            groupMover:StopMovingOrSizing()
-            groupMover._isMoving = false
-            groupMover:SetScript("OnUpdate", nil)
-            -- Only recalculate position if mover was actively being dragged
-            SaveMoverPosition(groupMover)
+    -- Save final position and hide mover(s)
+    local function StopAndHideMover(mover)
+        if not mover then return end
+        if mover._isMoving then
+            mover:StopMovingOrSizing()
+            mover._isMoving = false
+            mover:SetScript("OnUpdate", nil)
+            SaveMoverPosition(mover)
         end
-        groupMover:Hide()
+        mover:Hide()
     end
+    StopAndHideMover(groupMover)
+    StopAndHideMover(raidMover)
 
     -- Re-anchor headers to UIParent at saved offset
     RestoreHeaderAnchors()
@@ -1365,9 +1547,18 @@ end
 -- Returns the currently visible frame for anchoring purposes.
 -- During edit/test mode this is the mover or test container;
 -- outside edit mode returns nil (callers should fall back to headers).
-function QUI_GFEM:GetActiveFrame()
-    if isEditMode and groupMover then
-        return groupMover
+-- Optional frameType ("party" or "raid") returns the correct mover
+-- when non-unified mode is active.
+function QUI_GFEM:GetActiveFrame(frameType)
+    if isEditMode then
+        local db = GetDB()
+        local unified = not db or db.unifiedPosition ~= false
+        if not unified and frameType == "raid" and raidMover then
+            return raidMover
+        end
+        if groupMover then
+            return groupMover
+        end
     end
     if isTestMode and testContainer then
         return testContainer
@@ -1382,16 +1573,29 @@ function QUI_GFEM:NudgeHeader(headerKey, dx, dy)
     if InCombatLockdown() then return end
 
     local db = GetDB()
-    if not db or not db.position then return end
+    if not db then return end
 
-    db.position.offsetX = (db.position.offsetX or 0) + dx
-    db.position.offsetY = (db.position.offsetY or 0) + dy
+    local unified = db.unifiedPosition ~= false
+
+    -- Determine which position table and mover to nudge
+    local posKey = "position"
+    local mover = groupMover
+    if not unified and headerKey == "raid" then
+        posKey = "raidPosition"
+        mover = raidMover or groupMover
+    end
+
+    local pos = db[posKey]
+    if not pos then return end
+
+    pos.offsetX = (pos.offsetX or 0) + dx
+    pos.offsetY = (pos.offsetY or 0) + dy
 
     -- Move the mover (headers are anchored to it, so they follow)
-    if groupMover then
-        groupMover:ClearAllPoints()
-        groupMover:SetPoint("CENTER", UIParent, "CENTER", db.position.offsetX, db.position.offsetY)
-        UpdateMoverPositionText(groupMover, db.position.offsetX, db.position.offsetY)
+    if mover then
+        mover:ClearAllPoints()
+        mover:SetPoint("CENTER", UIParent, "CENTER", pos.offsetX, pos.offsetY)
+        UpdateMoverPositionText(mover, pos.offsetX, pos.offsetY)
     end
 end
 

@@ -1890,7 +1890,15 @@ local function CreateHeaders()
     local raidCount = math.max(IsInRaid() and GetNumGroupMembers() or 25, 5)
     local raidW, raidH = CalculateHeaderSize(db, raidCount)
     raidHeader:SetSize(raidW, raidH)
-    raidHeader:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+
+    -- When not unified, raid gets its own position
+    local raidOffX, raidOffY = offsetX, offsetY
+    if not db.unifiedPosition then
+        local raidPos = db.raidPosition
+        raidOffX = raidPos and raidPos.offsetX or -400
+        raidOffY = raidPos and raidPos.offsetY or 0
+    end
+    raidHeader:SetPoint("CENTER", UIParent, "CENTER", raidOffX, raidOffY)
     raidHeader:SetMovable(true)
     raidHeader:SetClampedToScreen(true)
 

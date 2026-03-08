@@ -1220,7 +1220,7 @@ local FRAME_RESOLVERS = {
     partyFrames = function()
         local GFEM = ns.QUI_GroupFrameEditMode
         if GFEM then
-            local active = GFEM:GetActiveFrame()
+            local active = GFEM:GetActiveFrame("party")
             if active then return active end
         end
         return ns.QUI_GroupFrames and ns.QUI_GroupFrames.headers and ns.QUI_GroupFrames.headers.party
@@ -1228,7 +1228,7 @@ local FRAME_RESOLVERS = {
     raidFrames = function()
         local GFEM = ns.QUI_GroupFrameEditMode
         if GFEM then
-            local active = GFEM:GetActiveFrame()
+            local active = GFEM:GetActiveFrame("raid")
             if active then return active end
         end
         return ns.QUI_GroupFrames and ns.QUI_GroupFrames.headers and ns.QUI_GroupFrames.headers.raid
