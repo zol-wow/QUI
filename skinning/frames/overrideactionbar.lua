@@ -419,5 +419,15 @@ frame:SetScript("OnEvent", function(self, event, addon)
                 end
             end)
         end
+        -- TAINT FIX: Recover from blocked Show(). QUI's skinning taints the protected
+        -- OverrideActionBar frame, so Blizzard's BeginActionBarTransition → Show() gets
+        -- ADDON_ACTION_BLOCKED during combat. After combat, show the bar if it should be visible.
+        C_Timer.After(0, function()
+            local b = _G.OverrideActionBar
+            if b and not b:IsShown() and (HasVehicleActionBar() or HasOverrideActionBar()) then
+                b:Show()
+                C_Timer.After(0.15, SkinOverrideActionBar)
+            end
+        end)
     end
 end)

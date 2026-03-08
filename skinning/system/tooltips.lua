@@ -358,12 +358,10 @@ local function SkinTooltip(tooltip)
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if skinnedTooltips[tooltip] then return end
 
-    -- TAINT SAFETY: Defer if tooltip dimensions are secret values.
-    -- Geometry math with tainted dimensions permanently infects layout state.
-    if HasTaintedDimensions(tooltip) then
-        QueueCombatTooltipSkin(tooltip)
-        return
-    end
+    -- TAINT SAFETY: Do NOT call HasTaintedDimensions here — GetWidth()/GetHeight()
+    -- from addon context triggers pending OnSizeChanged → EmbeddedItemTooltip_UpdateSize
+    -- in addon execution context, causing secret value arithmetic errors.
+    -- NineSlice operations are already pcall-wrapped by callers.
     -- TAINT SAFETY: Defer if GameTooltip has a tainted widget container child
     -- (e.g. from WorldQuestsList tainting shownWidgetCount).
     if tooltip == GameTooltip and Helpers.HasTaintedWidgetContainer(tooltip) then
@@ -421,11 +419,7 @@ local function ReapplySkin(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
 
-    -- TAINT SAFETY: Defer if dimensions are tainted to avoid infecting layout state.
-    if HasTaintedDimensions(tooltip) then
-        QueueCombatTooltipSkin(tooltip)
-        return
-    end
+    -- TAINT SAFETY: Do NOT call HasTaintedDimensions here — see SkinTooltip comment.
     if tooltip == GameTooltip and Helpers.HasTaintedWidgetContainer(tooltip) then
         QueueCombatTooltipSkin(tooltip)
         return
@@ -553,10 +547,11 @@ local function SetupEmbeddedTooltipHooks()
         end)
     end
 
-    -- Direct OnShow hook on EmbeddedItemTooltip as fallback — catches cases
-    -- where OnShow fires without SharedTooltip_SetBackdropStyle being called.
+    -- TAINT SAFETY: Use hooksecurefunc on Show instead of HookScript("OnShow")
+    -- to prevent tainting the frame's script handler (same rationale as
+    -- HookTooltipOnShow above).
     if EmbeddedItemTooltip then
-        EmbeddedItemTooltip:HookScript("OnShow", function(self)
+        hooksecurefunc(EmbeddedItemTooltip, "Show", function(self)
             if InCombatLockdown() then return end
             if not IsEnabled() then return end
             StripEmbeddedBorder(self)
@@ -569,7 +564,7 @@ local function SetupEmbeddedTooltipHooks()
 
     -- Also handle GameTooltip.ItemTooltip sub-frame if present
     if GameTooltip and GameTooltip.ItemTooltip and GameTooltip.ItemTooltip.NineSlice then
-        GameTooltip.ItemTooltip:HookScript("OnShow", function(self)
+        hooksecurefunc(GameTooltip.ItemTooltip, "Show", function(self)
             if InCombatLockdown() then return end
             if not IsEnabled() then return end
             local nineSlice = self.NineSlice
@@ -661,45 +656,57 @@ local function RefreshAllTooltipFonts()
     end
 end
 
--- Hook OnShow to ensure skin stays applied (Blizzard resets NineSlice on show)
+-- Hook Show to ensure skin stays applied (Blizzard resets NineSlice on show)
 local function HookTooltipOnShow(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
 
-    -- NOTE: Tooltip OnShow runs synchronously — deferring causes unskinned tooltip flash.
-    -- Tooltip skinning is NOT in the Edit Mode taint chain.
-    tooltip:HookScript("OnShow", function(self)
-        -- TAINT SAFETY: Combat check MUST be the very first line.  ANY addon code
-        -- (even IsEnabled()) taints the execution context.  Blizzard code that runs
-        -- after this hook in the same call stack (e.g. AreaPoiUtil calling
-        -- GameTooltip_AddWidgetSet → RegisterForWidgetSet → ProcessWidget →
-        -- UIWidgetTemplateTextWithState:Setup) inherits the taint, causing
-        -- GetStringHeight() to return secret values and arithmetic to fail.
-        -- Tooltip may briefly show default NineSlice during combat — acceptable
-        -- tradeoff vs. Lua errors.  Skin reapplies on next out-of-combat show.
+    -- TAINT SAFETY: Do NOT install ANY hooks (HookScript, hooksecurefunc) on
+    -- GameTooltip itself. In Midnight's taint model, both HookScript("OnShow")
+    -- and hooksecurefunc(frame, "Show") modify the frame's dispatch tables,
+    -- permanently tainting the GameTooltip frame. When the world map's secure
+    -- context (secureexecuterange → AreaPoiUtil → GameTooltip_AddWidgetSet →
+    -- RegisterForWidgetSet → ProcessWidget) uses GameTooltip, it encounters
+    -- the tainted frame, causing UIWidget arithmetic errors, InsertFrame
+    -- failures, and ADDON_ACTION_BLOCKED on SetPassThroughButtons.
+    --
+    -- GameTooltip is skinned via:
+    --   1. SharedTooltip_SetBackdropStyle hooksecurefunc (global fn, taint-safe)
+    --   2. TooltipDataProcessor callbacks (securecallfunction, taint-safe)
+    --   3. GameTooltipVisibilityWatcher OnUpdate (separate frame, no taint on GT)
+    -- Font sizing for GameTooltip uses the same OnUpdate watcher.
+    if tooltip == GameTooltip then
+        hookedTooltips[tooltip] = true
+        return
+    end
+
+    hooksecurefunc(tooltip, "Show", function(self)
         if InCombatLockdown() then
             QueueCombatTooltipSkin(self)
             return
         end
-
-        -- TAINT SAFETY: Font sizing (SetFont) changes FontString intrinsic metrics,
-        -- tainting the tooltip's auto-sized width. Blizzard's GameTooltip_InsertFrame
-        -- then fails comparing the tainted frameWidth. Defer font sizing to after the
-        -- show chain completes — the 1-frame delay is imperceptible since the previous
-        -- font size is usually already correct.
-        if IsEnabled() then
-            C_Timer.After(0, function()
-                if self:IsShown() then
-                    pcall(ApplyTooltipFontSizeToFrame, self)
-                end
-            end)
-        end
-
         if not IsEnabled() then return end
-        if not skinnedTooltips[self] then
-            pcall(SkinTooltip, self)
-        else
-            pcall(ReapplySkin, self)
-        end
+
+        -- TAINT SAFETY: Defer ALL skin work out of the hooksecurefunc
+        -- execution context.  Running synchronously here means GetWidth()/
+        -- GetHeight() calls (e.g. HasTaintedDimensions, NineSlice geometry)
+        -- execute in addon context.  This triggers OnSizeChanged on child
+        -- frames (EmbeddedItemTooltip), and any arithmetic Blizzard does on
+        -- the frame width inside that cascade uses a value "tainted by QUI",
+        -- producing "attempt to perform arithmetic on a secret number value"
+        -- errors even outside strict combat lockdown.
+        C_Timer.After(0, function()
+            if not self:IsShown() then return end
+            if InCombatLockdown() then
+                QueueCombatTooltipSkin(self)
+                return
+            end
+            pcall(ApplyTooltipFontSizeToFrame, self)
+            if not skinnedTooltips[self] then
+                pcall(SkinTooltip, self)
+            else
+                pcall(ReapplySkin, self)
+            end
+        end)
     end)
 
     hookedTooltips[tooltip] = true
@@ -837,85 +844,66 @@ eventFrame:SetScript("OnEvent", function(self, event)
         -- Defer slightly to ensure all tooltips are created
         C_Timer.After(0.5, function()
             -----------------------------------------------------------------
-            -- TAINT SAFETY: Wrap Blizzard tooltip functions that do arithmetic
-            -- on frame dimensions (GetWidth, GetStringHeight).  During combat,
-            -- ANY addon-tainted tooltip frame returns secret values from these
-            -- getters, causing arithmetic errors in Blizzard's own code.
-            -- This is inherent to the WoW 12.0 taint model — every tooltip-
-            -- modifying addon triggers it.  Wrapping with pcall during combat
-            -- suppresses the harmless sizing errors (tooltip may have slightly
-            -- wrong dimensions during combat, but won't spam error logs).
-            -----------------------------------------------------------------
-            -- EmbeddedItemTooltip_UpdateSize: Called from OnSizeChanged and
-            -- SetItemByID/SetItemByQuestReward. Does arithmetic on GetWidth()
-            -- which returns a secret value when the parent tooltip is tainted.
-            if EmbeddedItemTooltip_UpdateSize then
-                local origUpdateSize = EmbeddedItemTooltip_UpdateSize
-                EmbeddedItemTooltip_UpdateSize = function(self, ...)
-                    if InCombatLockdown() then
-                        pcall(origUpdateSize, self, ...)
-                        return
-                    end
-                    return origUpdateSize(self, ...)
-                end
-            end
-
-            -- GameTooltip_AddWidgetSet → RegisterForWidgetSet → ProcessWidget →
-            -- UIWidgetTemplateTextWithState:Setup does SetWidth(secretValue) and
-            -- arithmetic on GetStringHeight() (secret). Wrapping the entry point
-            -- catches both error variants.
-            if GameTooltip_AddWidgetSet then
-                local origAddWidgetSet = GameTooltip_AddWidgetSet
-                GameTooltip_AddWidgetSet = function(tooltip, ...)
-                    -- TAINT SAFETY: Always pcall.  The taint system can activate
-                    -- before InCombatLockdown() returns true (race at combat entry),
-                    -- and addon hooks (OnShow, SharedTooltip_SetBackdropStyle) may
-                    -- have already tainted the execution context.  pcall overhead
-                    -- is negligible for a per-tooltip-show function.
-                    local ok, err = pcall(origAddWidgetSet, tooltip, ...)
-                    if not ok then
-                        -- Only suppress taint/secret-value errors; re-raise real bugs
-                        if type(err) == "string" and (err:find("secret") or err:find("tainted")) then
-                            return
-                        end
-                        error(err, 0)
-                    end
-                end
-            end
-
-            -- TAINT SAFETY: Blizzard files (e.g. AreaPoiUtil) may capture a local
-            -- reference to GameTooltip_AddWidgetSet before our wrapper is installed,
-            -- bypassing the pcall above.  Hook RegisterForWidgetSet on the tooltip's
-            -- actual widget container instance — this is the real entry point for
-            -- widget setup and can't be bypassed by local reference capture.
+            -- TAINT SAFETY: Do NOT replace global Blizzard functions with
+            -- addon wrappers (pcall or otherwise). Direct replacement
+            -- permanently taints the function in Midnight's taint model,
+            -- causing ADDON_ACTION_BLOCKED errors (SetPassThroughButtons,
+            -- Edit Mode, etc.) and secret-value arithmetic failures
+            -- (MoneyFrame_Update) throughout unrelated secure code paths.
             --
-            -- The widget container is created LAZILY inside GameTooltip_AddWidgetSet
-            -- on first use, so it doesn't exist at init time.  Use a hooksecurefunc
-            -- posthook to install the pcall wrapper after the container is created.
-            if GameTooltip_AddWidgetSet then
-                local widgetContainerWrapped = {}  -- track wrapped containers
-                hooksecurefunc("GameTooltip_AddWidgetSet", function(tooltip)
-                    if not tooltip then return end
-                    local wc = tooltip.widgetContainer
-                    if wc and wc.RegisterForWidgetSet and not widgetContainerWrapped[wc] then
-                        widgetContainerWrapped[wc] = true
-                        local origRegister = wc.RegisterForWidgetSet
-                        wc.RegisterForWidgetSet = function(self, ...)
-                            local ok, err = pcall(origRegister, self, ...)
-                            if not ok then
-                                if type(err) == "string" and (err:find("secret") or err:find("tainted")) then
-                                    return
-                                end
-                                error(err, 0)
-                            end
+            -- EmbeddedItemTooltip_UpdateSize, GameTooltip_AddWidgetSet,
+            -- and widget container RegisterForWidgetSet wrappers were
+            -- previously here but removed — same lesson as the
+            -- MoneyFrame_Update/SetTooltipMoney wrappers removed from
+            -- modules/qol/tooltips.lua. If Blizzard's own functions error
+            -- on secret values, that is a Blizzard bug.
+            --
+            -- The UIWidget taint that prompted these wrappers is now
+            -- addressed at the source: core/font_system.lua skips
+            -- UIWidget frames (widgetType / RegisterForWidgetSet) during
+            -- recursive font application, and tooltip OnShow defers all
+            -- work during combat (InCombatLockdown guard).
+            -----------------------------------------------------------------
+
+            -----------------------------------------------------------------
+            -- GameTooltip visibility watcher (OnUpdate on a SEPARATE frame).
+            -- We cannot install any hooks on GameTooltip itself (see
+            -- HookTooltipOnShow comment). Instead, a helper frame watches
+            -- GameTooltip's visibility and re-applies skin + font sizing
+            -- when it transitions to shown. The helper frame's OnUpdate
+            -- does not taint GameTooltip's dispatch tables.
+            -- Created unconditionally so it works when skinning is enabled
+            -- later without a reload.
+            -----------------------------------------------------------------
+            local gtWatcher = CreateFrame("Frame")
+            local gtWasShown = GameTooltip:IsShown()
+            gtWatcher:SetScript("OnUpdate", function()
+                local shown = GameTooltip:IsShown()
+                if shown and not gtWasShown then
+                    -- GameTooltip just became visible
+                    if InCombatLockdown() then
+                        QueueCombatTooltipSkin(GameTooltip)
+                    elseif IsEnabled() then
+                        if not skinnedTooltips[GameTooltip] then
+                            pcall(SkinTooltip, GameTooltip)
+                        else
+                            pcall(ReapplySkin, GameTooltip)
                         end
+                        -- Defer font sizing to avoid tainting FontString metrics
+                        -- while Blizzard's tooltip chain is still running.
+                        C_Timer.After(0, function()
+                            if GameTooltip:IsShown() then
+                                pcall(ApplyTooltipFontSizeToFrame, GameTooltip)
+                            end
+                        end)
                     end
-                end)
-            end
+                end
+                gtWasShown = shown
+            end)
 
             -- All tooltip modifications gated by master toggle + skinTooltips
             if not IsEnabled() then
-                -- Still hook OnShow so enabling live takes effect on next show
+                -- Still hook Show so enabling live takes effect on next show
                 HookAllTooltips()
                 SetupEmbeddedTooltipHooks()
                 SetupTooltipPostProcessor()

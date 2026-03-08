@@ -2422,7 +2422,9 @@ local defaults = {
             },
 
             -- Position
+            unifiedPosition = true,   -- true = party & raid share one position; false = separate movers
             position = { offsetX = -400, offsetY = 0 },
+            raidPosition = { offsetX = -400, offsetY = 0 },  -- only used when unifiedPosition = false
 
             -- Health bar
             health = {
@@ -2495,6 +2497,21 @@ local defaults = {
                 buffSpacing = 2, buffOffsetX = 2, buffOffsetY = 16,
                 showDurationColor = true,
                 showExpiringPulse = true,
+                -- Classification-based aura filtering
+                filterMode = "off",           -- "off" | "classification"
+                buffFilterOnlyMine = false,   -- only show player-cast buffs
+                buffClassifications = {
+                    raid = false,
+                    cancelable = false,
+                    bigDefensive = true,
+                    externalDefensive = true,
+                    important = false,
+                },
+                debuffClassifications = {
+                    raid = true,
+                    crowdControl = true,
+                    important = true,
+                },
             },
 
             -- Private auras (boss debuffs displayed by Blizzard)
@@ -4241,7 +4258,9 @@ function QUICore:NudgeSelectedElement(deltaX, deltaY)
     elseif sel.selectedType == "groupframes" then
         local gfem = ns.QUI_GroupFrameEditMode
         if gfem then
-            gfem:NudgeHeader("party", dx, dy)
+            -- Route to the correct mover based on which was selected
+            local nudgeKey = sel.selectedKey or "party"
+            gfem:NudgeHeader(nudgeKey, dx, dy)
             return true
         end
     end

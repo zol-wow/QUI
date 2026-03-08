@@ -436,7 +436,10 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
             -- Note: maxLength is intentionally excluded — different units have different
             -- space constraints (e.g., target defaults to 12, player defaults to 0).
             -- Copying maxLength between units causes unexpected spell name truncation.
-            local keys = {"width", "height", "offsetX", "offsetY", "fontSize", "borderSize", "texture", "showIcon", "enabled", "anchor", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "channelFillForward", "empoweredStageColors", "empoweredFillColors"}
+            -- Note: "anchor" is intentionally excluded — it is unit-context-specific
+            -- (e.g., player defaults to "none", target defaults to "unitframe").
+            -- Copying it between units causes the castbar to attach to the wrong parent.
+            local keys = {"width", "height", "offsetX", "offsetY", "fontSize", "borderSize", "texture", "showIcon", "enabled", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "channelFillForward", "empoweredStageColors", "empoweredFillColors"}
             local includesUnsupportedTickUnit = (sourceUnitKey == "boss") or (targetUnitKey == "boss")
                 or (sourceUnitKey == "pet") or (targetUnitKey == "pet")
             if not includesUnsupportedTickUnit then

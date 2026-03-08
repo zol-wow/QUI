@@ -79,8 +79,16 @@ local function ApplyFontToFontString(fontString, fontPath)
 end
 
 -- Recursively apply font to all FontStrings in a frame
+-- TAINT SAFETY: Skips UIWidget containers and widget template frames.
+-- Calling SetFont() on widget FontStrings taints them; Blizzard's
+-- ProcessWidget → Setup() then gets secret values from GetStringHeight().
 local function ApplyFontToFrameRecursive(frame, fontPath)
     if not frame then return end
+
+    -- Skip UIWidget template frames (have widgetType) and widget containers
+    -- (have RegisterForWidgetSet). Their FontStrings are read by secure
+    -- Blizzard code that fails on tainted GetStringHeight() results.
+    if frame.widgetType or frame.RegisterForWidgetSet then return end
 
     -- Apply to direct regions
     local regions = { frame:GetRegions() }

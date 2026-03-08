@@ -117,25 +117,30 @@ end
 
 ---------------------------------------------------------------------------
 -- HOOK: Suppress Blizzard selection highlight updates
+-- TAINT SAFETY: These hooks fire for ALL CompactUnitFrames, including
+-- nameplate frames. During combat, any addon code in the posthook can
+-- taint the nameplate widget chain (CompactUnitFrame_UpdateWidgetSet →
+-- RegisterForWidgetSet → ProcessWidget → UIWidgetTemplateStatusBar:Setup),
+-- causing secret value arithmetic errors. InCombatLockdown() guard prevents
+-- addon data access during combat. Unit check before GetDB() minimizes
+-- addon code execution for non-party/raid frames (nameplates, boss frames).
 ---------------------------------------------------------------------------
 if CompactUnitFrame_UpdateSelectionHighlight then
     hooksecurefunc("CompactUnitFrame_UpdateSelectionHighlight", function(frame)
-        local db = GetDB()
-        if not db or not db.enabled then return end
+        if InCombatLockdown() then return end
 
         local unit = frame.unit or frame.displayedUnit
         if not unit then return end
+        if not (unit == "player" or unit:match("^party") or unit:match("^raid")) then return end
 
-        local isParty = unit:match("^party") or unit == "player"
-        local isRaid = unit:match("^raid")
+        local db = GetDB()
+        if not db or not db.enabled then return end
 
-        if isParty or isRaid then
-            if frame.selectionHighlight and frame.selectionHighlight.SetShown then
-                frame.selectionHighlight:SetShown(false)
-            end
-            if frame.selectionIndicator and frame.selectionIndicator.SetShown then
-                frame.selectionIndicator:SetShown(false)
-            end
+        if frame.selectionHighlight and frame.selectionHighlight.SetShown then
+            frame.selectionHighlight:SetShown(false)
+        end
+        if frame.selectionIndicator and frame.selectionIndicator.SetShown then
+            frame.selectionIndicator:SetShown(false)
         end
     end)
 end
@@ -145,22 +150,20 @@ end
 ---------------------------------------------------------------------------
 local function SuppressBlizzardReadyCheck(frame)
     if not frame then return end
-    local db = GetDB()
-    if not db or not db.enabled then return end
+    if InCombatLockdown() then return end
 
     local unit = frame.unit or frame.displayedUnit
     if not unit then return end
+    if not (unit == "player" or unit:match("^party") or unit:match("^raid")) then return end
 
-    local isParty = unit:match("^party") or unit == "player"
-    local isRaid = unit:match("^raid")
+    local db = GetDB()
+    if not db or not db.enabled then return end
 
-    if isParty or isRaid then
-        if frame.readyCheckIcon then
-            frame.readyCheckIcon:SetAlpha(0)
-        end
-        if frame.readyCheckDecline then
-            frame.readyCheckDecline:SetAlpha(0)
-        end
+    if frame.readyCheckIcon then
+        frame.readyCheckIcon:SetAlpha(0)
+    end
+    if frame.readyCheckDecline then
+        frame.readyCheckDecline:SetAlpha(0)
     end
 end
 
@@ -176,6 +179,7 @@ end
 if CompactUnitFrame_UpdateUnitEvents then
     hooksecurefunc("CompactUnitFrame_UpdateUnitEvents", function(frame)
         if not frame then return end
+        if InCombatLockdown() then return end
         if not strippedFrames[frame] then return end
 
         -- Blizzard just restored events on a frame we stripped — re-strip it

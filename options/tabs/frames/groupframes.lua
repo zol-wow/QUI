@@ -351,6 +351,30 @@ local function CreateGroupFramesPage(parent)
         local position = gfdb.position
         if not position then gfdb.position = {} position = gfdb.position end
 
+        -- Unified position toggle
+        local unifiedCheck = GUI:CreateFormCheckbox(tabContent, "Unified Party & Raid Position", "unifiedPosition", gfdb, function()
+            GUI:ShowConfirmation({
+                title = "Reload Required",
+                message = "Changing group frame positioning mode requires a UI reload to take effect.",
+                acceptText = "Reload Now",
+                cancelText = "Later",
+                isDestructive = false,
+                onAccept = function()
+                    QUI:SafeReload()
+                end,
+            })
+        end)
+        unifiedCheck:SetPoint("TOPLEFT", PAD, y)
+        unifiedCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local unifiedHint = GUI:CreateLabel(tabContent,
+            "When disabled, party and raid frames have separate movers and can be positioned independently.", 10, C.textMuted)
+        unifiedHint:SetPoint("TOPLEFT", PAD + 4, y + 4)
+        unifiedHint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        unifiedHint:SetJustifyH("LEFT")
+        y = y - 20
+
         -- Grow direction
         local growDrop = GUI:CreateDropdown(tabContent, "Grow Direction", GROW_OPTIONS, "growDirection", layout, RefreshGF)
         growDrop:SetPoint("TOPLEFT", PAD, y)
@@ -858,6 +882,13 @@ local function CreateGroupFramesPage(parent)
         tabContent:SetHeight(math.abs(y) + 30)
     end
 
+    local AURA_GROW_OPTIONS = {
+        { value = "RIGHT", text = "Right" },
+        { value = "LEFT", text = "Left" },
+        { value = "UP", text = "Up" },
+        { value = "DOWN", text = "Down" },
+    }
+
     local function BuildAurasTab(tabContent)
         local y = -10
         local gfdb = GetGFDB()
@@ -985,6 +1016,94 @@ local function CreateGroupFramesPage(parent)
         pulseCheck:SetPoint("TOPLEFT", PAD, y)
         pulseCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
+
+        -- Classification filter
+        local filterHeader = GUI:CreateSectionHeader(tabContent, "Aura Filtering")
+        filterHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - filterHeader.gap
+
+        local FILTER_MODE_OPTIONS = {
+            { value = "off", text = "Off (Show All)" },
+            { value = "classification", text = "Classification Filters" },
+        }
+
+        local filterRefresh = function()
+            -- Bump layout version so filter cache rebuilds
+            local GFA = ns.QUI_GroupFrameAuras
+            if GFA then GFA:InvalidateLayout() end
+            RefreshGF()
+        end
+
+        local filterModeDrop = GUI:CreateDropdown(tabContent, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", auras, filterRefresh)
+        filterModeDrop:SetPoint("TOPLEFT", PAD, y)
+        filterModeDrop:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - DROP_ROW
+
+        -- Classification toggles (only visible when classification mode active)
+        local isClassification = (auras.filterMode == "classification")
+
+        if isClassification then
+            -- Buff classifications
+            local buffClassHeader = GUI:CreateSectionHeader(tabContent, "Buff Classifications")
+            buffClassHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - buffClassHeader.gap
+
+            if not auras.buffClassifications then auras.buffClassifications = {} end
+            local bc = auras.buffClassifications
+
+            local onlyMineCheck = GUI:CreateFormCheckbox(tabContent, "Only My Buffs", "buffFilterOnlyMine", auras, filterRefresh)
+            onlyMineCheck:SetPoint("TOPLEFT", PAD, y)
+            onlyMineCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcRaid = GUI:CreateFormCheckbox(tabContent, "Raid Buffs", "raid", bc, filterRefresh)
+            bcRaid:SetPoint("TOPLEFT", PAD, y)
+            bcRaid:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcCancel = GUI:CreateFormCheckbox(tabContent, "Cancelable Buffs", "cancelable", bc, filterRefresh)
+            bcCancel:SetPoint("TOPLEFT", PAD, y)
+            bcCancel:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcBigDef = GUI:CreateFormCheckbox(tabContent, "Big Defensives", "bigDefensive", bc, filterRefresh)
+            bcBigDef:SetPoint("TOPLEFT", PAD, y)
+            bcBigDef:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcExtDef = GUI:CreateFormCheckbox(tabContent, "External Defensives", "externalDefensive", bc, filterRefresh)
+            bcExtDef:SetPoint("TOPLEFT", PAD, y)
+            bcExtDef:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcImp = GUI:CreateFormCheckbox(tabContent, "Important", "important", bc, filterRefresh)
+            bcImp:SetPoint("TOPLEFT", PAD, y)
+            bcImp:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Debuff classifications
+            local debuffClassHeader = GUI:CreateSectionHeader(tabContent, "Debuff Classifications")
+            debuffClassHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - debuffClassHeader.gap
+
+            if not auras.debuffClassifications then auras.debuffClassifications = {} end
+            local dc = auras.debuffClassifications
+
+            local dcRaid = GUI:CreateFormCheckbox(tabContent, "Raid Debuffs", "raid", dc, filterRefresh)
+            dcRaid:SetPoint("TOPLEFT", PAD, y)
+            dcRaid:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local dcCC = GUI:CreateFormCheckbox(tabContent, "Crowd Control", "crowdControl", dc, filterRefresh)
+            dcCC:SetPoint("TOPLEFT", PAD, y)
+            dcCC:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local dcImp = GUI:CreateFormCheckbox(tabContent, "Important", "important", dc, filterRefresh)
+            dcImp:SetPoint("TOPLEFT", PAD, y)
+            dcImp:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+        end
 
         tabContent:SetHeight(math.abs(y) + 30)
     end
@@ -1160,6 +1279,11 @@ local function CreateGroupFramesPage(parent)
             { value = "assist", text = "Assist" },
         }
 
+        local BINDING_TYPE_OPTIONS = {
+            { value = "mouse", text = "Mouse Button" },
+            { value = "key",   text = "Keyboard Key" },
+        }
+
         local BUTTON_OPTIONS = {
             { value = "LeftButton",   text = "Left Click" },
             { value = "RightButton",  text = "Right Click" },
@@ -1261,7 +1385,9 @@ local function CreateGroupFramesPage(parent)
 
         -- Add-form state table (not DB-bound)
         local addState = {
+            bindingType = "mouse",  -- "mouse" or "key"
             button    = "LeftButton",
+            key       = nil,        -- keyboard key identifier (e.g. "F", "1", "F5")
             modifiers = "",
             actionType = "spell",
             spellName = "",
@@ -1270,6 +1396,8 @@ local function CreateGroupFramesPage(parent)
 
         -- Spell name input reference (forward declared for drop zone)
         local spellInput
+        -- Forward declare containers for show/hide based on binding type
+        local mouseButtonContainer, keyCaptureContainer
 
         dropZone:SetScript("OnReceiveDrag", function()
             local cursorType, id1, id2, _, id4 = GetCursorInfo()
@@ -1321,10 +1449,123 @@ local function CreateGroupFramesPage(parent)
         end)
         ay = ay - 78
 
-        -- Mouse Button dropdown
-        local buttonDrop = GUI:CreateFormDropdown(addContainer, "Mouse Button", BUTTON_OPTIONS, "button", addState)
-        buttonDrop:SetPoint("TOPLEFT", 0, ay)
-        buttonDrop:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
+        -- Binding Type dropdown (Mouse Button vs Keyboard Key)
+        local bindingTypeDrop = GUI:CreateFormDropdown(addContainer, "Binding Type", BINDING_TYPE_OPTIONS, "bindingType", addState, function(val)
+            addState.bindingType = val
+            if mouseButtonContainer then
+                if val == "mouse" then mouseButtonContainer:Show() else mouseButtonContainer:Hide() end
+            end
+            if keyCaptureContainer then
+                if val == "key" then keyCaptureContainer:Show() else keyCaptureContainer:Hide() end
+            end
+        end)
+        bindingTypeDrop:SetPoint("TOPLEFT", 0, ay)
+        bindingTypeDrop:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
+        ay = ay - FORM_ROW
+
+        -- Mouse Button dropdown (shown for "mouse" binding type)
+        mouseButtonContainer = CreateFrame("Frame", nil, addContainer)
+        mouseButtonContainer:SetHeight(FORM_ROW)
+        mouseButtonContainer:SetPoint("TOPLEFT", 0, ay)
+        mouseButtonContainer:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
+
+        local buttonDrop = GUI:CreateFormDropdown(mouseButtonContainer, "Mouse Button", BUTTON_OPTIONS, "button", addState)
+        buttonDrop:SetPoint("TOPLEFT", 0, 0)
+        buttonDrop:SetPoint("RIGHT", mouseButtonContainer, "RIGHT", 0, 0)
+
+        -- Keyboard Key capture button (shown for "key" binding type, same row)
+        keyCaptureContainer = CreateFrame("Frame", nil, addContainer)
+        keyCaptureContainer:SetHeight(FORM_ROW)
+        keyCaptureContainer:SetPoint("TOPLEFT", 0, ay)
+        keyCaptureContainer:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
+        keyCaptureContainer:Hide() -- hidden by default (mouse is default)
+
+        local keyLabel = keyCaptureContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        keyLabel:SetPoint("LEFT", 0, 0)
+        keyLabel:SetText("Key")
+        keyLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+        local keyCaptureBtn = CreateFrame("Button", nil, keyCaptureContainer, "BackdropTemplate")
+        keyCaptureBtn:SetPoint("LEFT", keyCaptureContainer, "LEFT", 180, 0)
+        keyCaptureBtn:SetPoint("RIGHT", keyCaptureContainer, "RIGHT", 0, 0)
+        keyCaptureBtn:SetHeight(26)
+        local pxKey = QUICore:GetPixelSize(keyCaptureBtn)
+        keyCaptureBtn:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = pxKey,
+        })
+        keyCaptureBtn:SetBackdropColor(0.08, 0.08, 0.08, 1)
+        keyCaptureBtn:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+
+        local keyCaptureText = keyCaptureBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        keyCaptureText:SetPoint("CENTER", 0, 0)
+        keyCaptureText:SetText("Click to bind a key")
+        keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+
+        local IGNORE_KEYS = {
+            LSHIFT = true, RSHIFT = true,
+            LCTRL = true, RCTRL = true,
+            LALT = true, RALT = true,
+            LMETA = true, RMETA = true,
+        }
+
+        keyCaptureBtn:SetScript("OnClick", function(self)
+            self.isCapturing = true
+            keyCaptureText:SetText("Press a key...")
+            keyCaptureText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+            self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+            self:EnableKeyboard(true)
+        end)
+
+        keyCaptureBtn:SetScript("OnKeyDown", function(self, key)
+            if not self.isCapturing then
+                self:SetPropagateKeyboardInput(true)
+                return
+            end
+            self:SetPropagateKeyboardInput(false)
+
+            -- Ignore modifier-only keys
+            if IGNORE_KEYS[key] then
+                self:SetPropagateKeyboardInput(true)
+                return
+            end
+
+            if key == "ESCAPE" then
+                -- Cancel capture
+                self.isCapturing = false
+                self:EnableKeyboard(false)
+                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+                if addState.key then
+                    keyCaptureText:SetText(addState.key)
+                    keyCaptureText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                else
+                    keyCaptureText:SetText("Click to bind a key")
+                    keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                end
+                return
+            end
+
+            -- Capture the key
+            addState.key = key
+            self.isCapturing = false
+            self:EnableKeyboard(false)
+            self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+            keyCaptureText:SetText(key)
+            keyCaptureText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+        end)
+
+        keyCaptureBtn:SetScript("OnEnter", function(self)
+            if not self.isCapturing then
+                self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.7)
+            end
+        end)
+        keyCaptureBtn:SetScript("OnLeave", function(self)
+            if not self.isCapturing then
+                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+            end
+        end)
+
         ay = ay - FORM_ROW
 
         -- Modifier dropdown
@@ -1385,10 +1626,20 @@ local function CreateGroupFramesPage(parent)
         local addBtn = GUI:CreateButton(addContainer, "Add Binding", 130, 26, function()
             local actionType = addState.actionType
             local newBinding = {
-                button    = addState.button,
                 modifiers = addState.modifiers,
                 actionType = actionType,
             }
+
+            -- Set trigger: mouse button or keyboard key
+            if addState.bindingType == "key" then
+                if not addState.key or addState.key == "" then
+                    print("|cFFFF5555[QUI]|r Press a key to bind first.")
+                    return
+                end
+                newBinding.key = addState.key
+            else
+                newBinding.button = addState.button
+            end
 
             if actionType == "spell" then
                 local name = addState.spellName
@@ -1425,8 +1676,11 @@ local function CreateGroupFramesPage(parent)
             -- Reset form
             addState.spellName = ""
             addState.macroText = ""
+            addState.key = nil
             spellInput:SetText("")
             macroInput:SetText("")
+            keyCaptureText:SetText("Click to bind a key")
+            keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
 
             RefreshBindingList()
         end)
@@ -1486,14 +1740,19 @@ local function CreateGroupFramesPage(parent)
                         iconTex:SetTexture(ACTION_FALLBACK_ICONS[actionType] or "Interface\\Icons\\INV_Misc_QuestionMark")
                     end
 
-                    -- Modifier + button label
+                    -- Modifier + trigger label (mouse button or keyboard key)
                     local modLabel = modLabels[binding.modifiers or ""] or ""
-                    local btnLabel = buttonNames[binding.button] or binding.button
+                    local triggerLabel
+                    if binding.key then
+                        triggerLabel = binding.key
+                    else
+                        triggerLabel = buttonNames[binding.button] or binding.button
+                    end
                     local comboText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                     comboText:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
                     comboText:SetWidth(140)
                     comboText:SetJustifyH("LEFT")
-                    comboText:SetText(modLabel .. btnLabel)
+                    comboText:SetText(modLabel .. triggerLabel)
                     comboText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
                     -- Spell/action name
@@ -1566,13 +1825,6 @@ local function CreateGroupFramesPage(parent)
     ---------------------------------------------------------------------------
     -- SUB-TAB: Private Auras (Boss Debuffs)
     ---------------------------------------------------------------------------
-    local AURA_GROW_OPTIONS = {
-        { value = "RIGHT", text = "Right" },
-        { value = "LEFT", text = "Left" },
-        { value = "UP", text = "Up" },
-        { value = "DOWN", text = "Down" },
-    }
-
     local PRIVATE_AURA_GROW_OPTIONS = {
         { value = "RIGHT", text = "Right" },
         { value = "LEFT", text = "Left" },

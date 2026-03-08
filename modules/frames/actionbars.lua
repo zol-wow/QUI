@@ -1199,6 +1199,12 @@ local function SkinButton(button, settings)
         icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
         icon:ClearAllPoints()
         icon:SetAllPoints(button)
+        -- After /reload, empty slots may retain stale icon textures from the
+        -- previous session. Clear them so ghost icons don't appear.
+        local action = Helpers.SafeToNumber(button.action)
+        if action and not SafeHasAction(action) then
+            icon:SetTexture(nil)
+        end
         icon:SetAlpha(1)
         if icon.Show then icon:Show() end
     end

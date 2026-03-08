@@ -319,17 +319,23 @@ local function SetCastbarFrameVisible(frame, shouldShow)
     if not frame then return end
     frame._quiDesiredVisible = shouldShow == true
 
+    -- TAINT SAFETY: Show()/Hide() are protected and get ADDON_ACTION_BLOCKED
+    -- when called from addon code during a secure execution context (e.g.,
+    -- TargetNearestEnemy → PLAYER_TARGET_CHANGED → Cast → here).
+    -- In combat, use alpha-only visibility to avoid taint.
+    local inCombat = InCombatLockdown()
+
     if shouldShow then
         frame:SetAlpha(1)
-        if not frame:IsShown() then
+        if not frame:IsShown() and not inCombat then
             frame:Show()
         end
         return
     end
 
-    if ShouldUseProtectedVisibilityFallback(frame) then
-        -- Keep protected frames shown and hide via alpha to avoid blocked Hide() in combat.
-        if not frame:IsShown() and not InCombatLockdown() then
+    if inCombat or ShouldUseProtectedVisibilityFallback(frame) then
+        -- Keep frame shown and hide via alpha to avoid blocked Hide() in combat.
+        if not frame:IsShown() and not inCombat then
             frame:Show()
         end
         frame:SetAlpha(0)
@@ -3434,6 +3440,15 @@ function QUI_Castbar:RefreshCastbar(castbar, unitKey, castSettings, unitFrame)
         local QUI_UF = self.unitFramesModule
         if QUI_UF and QUI_UF.castbars then
             QUI_UF.castbars[unitKey] = newCastbar
+        end
+        -- Immediately reapply frame anchoring override to the new frame.
+        -- PositionCastbarByAnchor already ran on the new frame but couldn't
+        -- detect the override (old frame was in overriddenFrames, not this one).
+        -- The debounced reapply from HookRefreshGlobal handles eventual
+        -- consistency, but this eliminates the brief position jump.
+        local anchorKey = unitKey .. "Castbar"
+        if _G.QUI_ApplyFrameAnchor then
+            _G.QUI_ApplyFrameAnchor(anchorKey)
         end
     end
 end

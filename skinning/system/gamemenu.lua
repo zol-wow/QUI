@@ -490,10 +490,11 @@ end
 -- Instead, use a visibility watcher frame that polls GameMenuFrame:IsShown()
 -- without any hooks on the secure frame itself.
 --
--- LIFECYCLE: The watcher OnUpdate is only active while the game menu is visible.
--- We hook the global ShowUIPanel/HideUIPanel functions (NOT methods on GameMenuFrame)
--- to start/stop the polling loop. This avoids burning CPU every frame when the
--- game menu is hidden (99.99% of play time).
+-- LIFECYCLE: The watcher OnUpdate runs permanently with a 0.05s throttle.
+-- We intentionally do NOT hook ShowUIPanel/HideUIPanel — those hooks insert
+-- addon code into the secure call chain for every panel open (world map, etc.),
+-- causing ADDON_ACTION_BLOCKED taint errors during combat.  The cost of one
+-- IsShown() C-call per tick when the menu is hidden is negligible.
 if GameMenuFrame then
     local gameMenuWatcher = CreateFrame("Frame", nil, UIParent)
     local wasShown = false
@@ -617,37 +618,18 @@ if GameMenuFrame then
                 menuBackdrop:SetAllPoints(GameMenuFrame)
             end
 
-            -- Stop OnUpdate until the menu is shown again
-            self:SetScript("OnUpdate", nil)
         end
     end
 
-    -- Start the watcher when the game menu opens. We hook the global
-    -- ShowUIPanel/HideUIPanel functions — these are NOT methods on
-    -- GameMenuFrame, so this does not create taint on the secure frame.
-    local function StartWatcherIfGameMenu(frame)
-        if frame == GameMenuFrame then
-            -- Prime the throttle so the very next frame processes immediately.
-            watcherElapsed = WATCHER_INTERVAL
-            gameMenuWatcher:SetScript("OnUpdate", WatcherOnUpdate)
-        end
-    end
-
-    hooksecurefunc("ShowUIPanel", StartWatcherIfGameMenu)
-
-    -- Also catch cases where GameMenuFrame is hidden directly (e.g. HideUIPanel,
-    -- clicking a menu button) — the OnUpdate will detect the transition and stop
-    -- itself. But we also hook HideUIPanel so the watcher starts a final poll
-    -- cycle to run the cleanup path, in case it was already stopped.
-    hooksecurefunc("HideUIPanel", function(frame)
-        if frame == GameMenuFrame and wasShown then
-            watcherElapsed = WATCHER_INTERVAL
-            gameMenuWatcher:SetScript("OnUpdate", WatcherOnUpdate)
-        end
-    end)
-
-    -- Fallback: if GameMenuFrame is already visible at load time, start polling
-    if GameMenuFrame:IsShown() then
-        gameMenuWatcher:SetScript("OnUpdate", WatcherOnUpdate)
-    end
+    -- TAINT SAFETY: We intentionally keep the watcher running permanently
+    -- instead of using hooksecurefunc("ShowUIPanel"/\"HideUIPanel") to
+    -- start/stop it.  Hooking ShowUIPanel inserts addon code into the
+    -- secure call chain for EVERY panel (world map, character sheet, etc.),
+    -- which taints the secureexecuterange batch and causes
+    -- ADDON_ACTION_BLOCKED errors on protected functions like
+    -- SetPropagateMouseClicks when opening the world map during combat.
+    --
+    -- Cost: one GameMenuFrame:IsShown() C-call per throttle tick (0.05s)
+    -- when the menu is hidden — negligible compared to event dispatch.
+    gameMenuWatcher:SetScript("OnUpdate", WatcherOnUpdate)
 end

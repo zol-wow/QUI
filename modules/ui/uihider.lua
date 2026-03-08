@@ -688,37 +688,34 @@ end
             WorldMapFrame.BlackoutFrame:SetAlpha(0)
             WorldMapFrame.BlackoutFrame:EnableMouse(false)
 
-            -- Hook the BlackoutFrame to keep it hidden if Blizzard tries to show it
-            -- IMPORTANT: Skip during combat to avoid taint propagation to SetPassThroughButtons
+            -- TAINT SAFETY: Do NOT hook BlackoutFrame methods (Show, SetAlpha).
+            -- hooksecurefunc on WorldMapFrame children taints their dispatch tables;
+            -- the taint propagates through WorldMapFrame's secureexecuterange when
+            -- refreshing map data providers, causing ADDON_ACTION_BLOCKED on
+            -- SetPropagateMouseClicks for map pins.
+            --
+            -- Instead, use a separate watcher frame (same pattern as
+            -- groupframes_blizzard.lua) that periodically re-hides the blackout
+            -- if Blizzard restores it. No frame-level hooks = no taint.
             local boState = hookedSecureFrames[WorldMapFrame.BlackoutFrame]
             if not boState then boState = {}; hookedSecureFrames[WorldMapFrame.BlackoutFrame] = boState end
-            if not boState.blackoutHooked then
-                boState.blackoutHooked = true
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
-                hooksecurefunc(WorldMapFrame.BlackoutFrame, "Show", function(self)
-                    C_Timer.After(0, function()
-                        if IsInEditMode() then return end
-                        if InCombatLockdown() then return end  -- Avoid taint during combat
-                        local s = GetSettings()
-                        if s and s.hideWorldMapBlackout then
-                            self:SetAlpha(0)
-                            self:EnableMouse(false)
-                        end
-                    end)
-                end)
-
-                -- Also hook SetAlpha to prevent alpha changes
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
-                hooksecurefunc(WorldMapFrame.BlackoutFrame, "SetAlpha", function(self)
-                    C_Timer.After(0, function()
-                        if IsInEditMode() then return end
-                        if InCombatLockdown() then return end  -- Avoid taint during combat
-                        local s = GetSettings()
-                        if s and s.hideWorldMapBlackout and self.GetAlpha and self:GetAlpha() > 0 then
-                            self:SetAlpha(0)
-                            self:EnableMouse(false)
-                        end
-                    end)
+            if not boState.blackoutWatcher then
+                boState.blackoutWatcher = true
+                local watcher = CreateFrame("Frame")
+                local elapsed = 0
+                watcher:SetScript("OnUpdate", function(self, dt)
+                    elapsed = elapsed + dt
+                    if elapsed < 0.5 then return end
+                    elapsed = 0
+                    if InCombatLockdown() then return end
+                    if IsInEditMode() then return end
+                    local s = GetSettings()
+                    if not s or not s.hideWorldMapBlackout then return end
+                    local bf = WorldMapFrame and WorldMapFrame.BlackoutFrame
+                    if bf and bf:GetAlpha() > 0 then
+                        bf:SetAlpha(0)
+                        bf:EnableMouse(false)
+                    end
                 end)
             end
         else
