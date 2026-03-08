@@ -436,6 +436,102 @@ local function UpdateAuraIcon(icon, auraData, unit)
 end
 
 ---------------------------------------------------------------------------
+-- CLASSIFICATION FILTER: Build filter strings and check auras
+---------------------------------------------------------------------------
+-- Maps DB toggle keys to Blizzard classification filter strings
+local BUFF_CLASSIFICATION_MAP = {
+    raid             = "HELPFUL|RAID",
+    cancelable       = "HELPFUL|CANCELABLE",
+    bigDefensive     = "HELPFUL|BIG_DEFENSIVE",
+    externalDefensive = "HELPFUL|EXTERNAL_DEFENSIVE",
+    important        = "HELPFUL|IMPORTANT",
+}
+
+local DEBUFF_CLASSIFICATION_MAP = {
+    raid        = "HARMFUL|RAID",
+    crowdControl = "HARMFUL|CROWD_CONTROL",
+    important   = "HARMFUL|IMPORTANT",
+}
+
+-- Cached filter strings (rebuilt when layoutVersion changes)
+local cachedBuffFilters = {}
+local cachedDebuffFilters = {}
+local cachedFilterVersion = -1
+local cachedFilterMode = "off"
+local cachedOnlyMine = false
+
+local function RebuildFilterCache()
+    local db = GetDB()
+    if not db or not db.auras then return end
+    local auraSettings = db.auras
+
+    cachedFilterMode = auraSettings.filterMode or "off"
+    cachedOnlyMine = auraSettings.buffFilterOnlyMine or false
+
+    wipe(cachedBuffFilters)
+    wipe(cachedDebuffFilters)
+
+    if cachedFilterMode ~= "classification" then
+        cachedFilterVersion = layoutVersion
+        return
+    end
+
+    local buffClass = auraSettings.buffClassifications
+    if buffClass then
+        for key, filterStr in pairs(BUFF_CLASSIFICATION_MAP) do
+            if buffClass[key] then
+                table.insert(cachedBuffFilters, filterStr)
+            end
+        end
+    end
+
+    local debuffClass = auraSettings.debuffClassifications
+    if debuffClass then
+        for key, filterStr in pairs(DEBUFF_CLASSIFICATION_MAP) do
+            if debuffClass[key] then
+                table.insert(cachedDebuffFilters, filterStr)
+            end
+        end
+    end
+
+    cachedFilterVersion = layoutVersion
+end
+
+-- Check if an aura passes classification filter (OR logic).
+-- Returns true if aura should be shown.
+-- Fail-open: if API fails or returns secret, show the aura.
+local function AuraPassesFilter(unit, auraInstanceID, filterStrings)
+    if not filterStrings or #filterStrings == 0 then
+        -- No classifications enabled = show nothing (all filtered out)
+        return false
+    end
+
+    if not auraInstanceID or IsSecretValue(auraInstanceID) then
+        return true -- fail-open
+    end
+
+    if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then
+        return true -- API unavailable, fail-open
+    end
+
+    -- OR logic: aura passes if it is NOT filtered out by ANY enabled classification
+    for _, filterStr in ipairs(filterStrings) do
+        local ok, filteredOut = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, auraInstanceID, filterStr)
+        if not ok then
+            return true -- fail-open on error
+        end
+        if IsSecretValue(filteredOut) then
+            return true -- fail-open on secret
+        end
+        if not filteredOut then
+            return true -- aura matches this classification
+        end
+    end
+
+    return false -- filtered out by all classifications
+end
+
+---------------------------------------------------------------------------
 -- AURA PRIORITY: Sort auras by importance
 ---------------------------------------------------------------------------
 local PRIORITY_DISPELLABLE = 3
@@ -491,6 +587,15 @@ local function UpdateFrameAuras(frame)
         return
     end
 
+    -- Rebuild classification filter cache if settings changed
+    if cachedFilterVersion ~= layoutVersion then
+        RebuildFilterCache()
+    end
+
+    local useFilter = cachedFilterMode == "classification"
+    local onlyMine = useFilter and cachedOnlyMine
+    local playerUnit = "player"
+
     -- Process debuffs
     if auraSettings.showDebuffs then
         local maxDebuffs = auraSettings.maxDebuffs or 3
@@ -503,13 +608,20 @@ local function UpdateFrameAuras(frame)
 
         -- Collect harmful auras from shared cache (already scanned)
         wipe(sortedAuras)
+        local debuffFilters = useFilter and #cachedDebuffFilters > 0 and cachedDebuffFilters or nil
         local cache = unitAuraCache[unit]
         if cache and cache.harmful then
             for _, auraData in ipairs(cache.harmful) do
-                local entry = AcquireAuraTable()
-                entry.auraData = auraData
-                entry.priority = GetAuraPriority(auraData)
-                table.insert(sortedAuras, entry)
+                -- Classification filter: skip auras that don't match any enabled classification
+                -- When no debuff classifications are enabled, fail-open (show all)
+                if debuffFilters and not AuraPassesFilter(unit, auraData.auraInstanceID, debuffFilters) then
+                    -- filtered out
+                else
+                    local entry = AcquireAuraTable()
+                    entry.auraData = auraData
+                    entry.priority = GetAuraPriority(auraData)
+                    table.insert(sortedAuras, entry)
+                end
             end
         end
 
@@ -573,10 +685,29 @@ local function UpdateFrameAuras(frame)
         local cache = unitAuraCache[unit]
         if cache and cache.helpful then
             for _, auraData in ipairs(cache.helpful) do
-                local entry = AcquireAuraTable()
-                entry.auraData = auraData
-                entry.priority = 1
-                table.insert(sortedAuras, entry)
+                local dominated = false
+
+                -- "Only My Buffs" filter
+                if onlyMine and not dominated then
+                    local src = SafeValue(auraData.sourceUnit, nil)
+                    if src and src ~= playerUnit and not UnitIsUnit(src, playerUnit) then
+                        dominated = true
+                    end
+                end
+
+                -- Classification filter
+                if useFilter and not dominated and #cachedBuffFilters > 0 then
+                    if not AuraPassesFilter(unit, auraData.auraInstanceID, cachedBuffFilters) then
+                        dominated = true
+                    end
+                end
+
+                if not dominated then
+                    local entry = AcquireAuraTable()
+                    entry.auraData = auraData
+                    entry.priority = 1
+                    table.insert(sortedAuras, entry)
+                end
             end
         end
 

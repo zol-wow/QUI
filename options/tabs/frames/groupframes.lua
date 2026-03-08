@@ -882,6 +882,13 @@ local function CreateGroupFramesPage(parent)
         tabContent:SetHeight(math.abs(y) + 30)
     end
 
+    local AURA_GROW_OPTIONS = {
+        { value = "RIGHT", text = "Right" },
+        { value = "LEFT", text = "Left" },
+        { value = "UP", text = "Up" },
+        { value = "DOWN", text = "Down" },
+    }
+
     local function BuildAurasTab(tabContent)
         local y = -10
         local gfdb = GetGFDB()
@@ -1009,6 +1016,94 @@ local function CreateGroupFramesPage(parent)
         pulseCheck:SetPoint("TOPLEFT", PAD, y)
         pulseCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
+
+        -- Classification filter
+        local filterHeader = GUI:CreateSectionHeader(tabContent, "Aura Filtering")
+        filterHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - filterHeader.gap
+
+        local FILTER_MODE_OPTIONS = {
+            { value = "off", text = "Off (Show All)" },
+            { value = "classification", text = "Classification Filters" },
+        }
+
+        local filterRefresh = function()
+            -- Bump layout version so filter cache rebuilds
+            local GFA = ns.QUI_GroupFrameAuras
+            if GFA then GFA:InvalidateLayout() end
+            RefreshGF()
+        end
+
+        local filterModeDrop = GUI:CreateDropdown(tabContent, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", auras, filterRefresh)
+        filterModeDrop:SetPoint("TOPLEFT", PAD, y)
+        filterModeDrop:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - DROP_ROW
+
+        -- Classification toggles (only visible when classification mode active)
+        local isClassification = (auras.filterMode == "classification")
+
+        if isClassification then
+            -- Buff classifications
+            local buffClassHeader = GUI:CreateSectionHeader(tabContent, "Buff Classifications")
+            buffClassHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - buffClassHeader.gap
+
+            if not auras.buffClassifications then auras.buffClassifications = {} end
+            local bc = auras.buffClassifications
+
+            local onlyMineCheck = GUI:CreateFormCheckbox(tabContent, "Only My Buffs", "buffFilterOnlyMine", auras, filterRefresh)
+            onlyMineCheck:SetPoint("TOPLEFT", PAD, y)
+            onlyMineCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcRaid = GUI:CreateFormCheckbox(tabContent, "Raid Buffs", "raid", bc, filterRefresh)
+            bcRaid:SetPoint("TOPLEFT", PAD, y)
+            bcRaid:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcCancel = GUI:CreateFormCheckbox(tabContent, "Cancelable Buffs", "cancelable", bc, filterRefresh)
+            bcCancel:SetPoint("TOPLEFT", PAD, y)
+            bcCancel:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcBigDef = GUI:CreateFormCheckbox(tabContent, "Big Defensives", "bigDefensive", bc, filterRefresh)
+            bcBigDef:SetPoint("TOPLEFT", PAD, y)
+            bcBigDef:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcExtDef = GUI:CreateFormCheckbox(tabContent, "External Defensives", "externalDefensive", bc, filterRefresh)
+            bcExtDef:SetPoint("TOPLEFT", PAD, y)
+            bcExtDef:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local bcImp = GUI:CreateFormCheckbox(tabContent, "Important", "important", bc, filterRefresh)
+            bcImp:SetPoint("TOPLEFT", PAD, y)
+            bcImp:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Debuff classifications
+            local debuffClassHeader = GUI:CreateSectionHeader(tabContent, "Debuff Classifications")
+            debuffClassHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - debuffClassHeader.gap
+
+            if not auras.debuffClassifications then auras.debuffClassifications = {} end
+            local dc = auras.debuffClassifications
+
+            local dcRaid = GUI:CreateFormCheckbox(tabContent, "Raid Debuffs", "raid", dc, filterRefresh)
+            dcRaid:SetPoint("TOPLEFT", PAD, y)
+            dcRaid:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local dcCC = GUI:CreateFormCheckbox(tabContent, "Crowd Control", "crowdControl", dc, filterRefresh)
+            dcCC:SetPoint("TOPLEFT", PAD, y)
+            dcCC:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local dcImp = GUI:CreateFormCheckbox(tabContent, "Important", "important", dc, filterRefresh)
+            dcImp:SetPoint("TOPLEFT", PAD, y)
+            dcImp:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+        end
 
         tabContent:SetHeight(math.abs(y) + 30)
     end
@@ -1730,13 +1825,6 @@ local function CreateGroupFramesPage(parent)
     ---------------------------------------------------------------------------
     -- SUB-TAB: Private Auras (Boss Debuffs)
     ---------------------------------------------------------------------------
-    local AURA_GROW_OPTIONS = {
-        { value = "RIGHT", text = "Right" },
-        { value = "LEFT", text = "Left" },
-        { value = "UP", text = "Up" },
-        { value = "DOWN", text = "Down" },
-    }
-
     local PRIVATE_AURA_GROW_OPTIONS = {
         { value = "RIGHT", text = "Right" },
         { value = "LEFT", text = "Left" },

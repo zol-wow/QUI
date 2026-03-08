@@ -2497,6 +2497,21 @@ local defaults = {
                 buffSpacing = 2, buffOffsetX = 2, buffOffsetY = 16,
                 showDurationColor = true,
                 showExpiringPulse = true,
+                -- Classification-based aura filtering
+                filterMode = "off",           -- "off" | "classification"
+                buffFilterOnlyMine = false,   -- only show player-cast buffs
+                buffClassifications = {
+                    raid = false,
+                    cancelable = false,
+                    bigDefensive = true,
+                    externalDefensive = true,
+                    important = false,
+                },
+                debuffClassifications = {
+                    raid = true,
+                    crowdControl = true,
+                    important = true,
+                },
             },
 
             -- Private auras (boss debuffs displayed by Blizzard)

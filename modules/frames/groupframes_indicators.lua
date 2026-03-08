@@ -158,6 +158,7 @@ local SPEC_PRESETS = {
         { spellId = 774,    name = "Rejuvenation",  type = "square", position = "BOTTOMLEFT", size = 8,  priority = 9,  color = { 0.6, 0.2, 1.0, 1 } },
         { spellId = 8936,   name = "Regrowth",      type = "square", position = "BOTTOMRIGHT",size = 8,  priority = 8,  color = { 0.2, 1.0, 0.2, 1 } },
         { spellId = 48438,  name = "Wild Growth",   type = "square", position = "BOTTOM",     size = 8,  priority = 7,  color = { 0.2, 0.8, 0.2, 1 } },
+        { spellId = 155777, name = "Germination",   type = "square", position = "RIGHT",       size = 8,  priority = 6,  color = { 0.8, 0.4, 1.0, 1 } },
         { spellId = 102342, name = "Ironbark",      type = "border", position = "CENTER",     priority = 15, color = { 0.6, 0.3, 0.0, 0.8 } },
     },
     -- Restoration Shaman (264)
@@ -170,6 +171,7 @@ local SPEC_PRESETS = {
     [256] = {
         { spellId = 194384, name = "Atonement",     type = "icon",   position = "TOPLEFT",    size = 16, priority = 10, showCooldown = true },
         { spellId = 17,     name = "PW: Shield",    type = "square", position = "BOTTOMLEFT", size = 8,  priority = 9,  color = { 1.0, 1.0, 0.2, 1 } },
+        { spellId = 41635,  name = "Prayer of Mending", type = "square", position = "BOTTOMRIGHT", size = 8, priority = 7, color = { 0.8, 0.8, 1.0, 1 } },
         { spellId = 33206,  name = "Pain Supp.",    type = "border", position = "CENTER",     priority = 15, color = { 0.2, 0.2, 1.0, 0.8 } },
         { spellId = 10060,  name = "Power Infusion", type = "icon",  position = "TOPRIGHT",   size = 14, priority = 12, showCooldown = true },
     },
@@ -184,14 +186,18 @@ local SPEC_PRESETS = {
         { spellId = 53563,  name = "Beacon of Light",type = "icon",  position = "TOPLEFT",    size = 16, priority = 10, showCooldown = false },
         { spellId = 156910, name = "Beacon of Faith", type = "icon", position = "TOPRIGHT",   size = 14, priority = 9,  showCooldown = false },
         { spellId = 287280, name = "Glimmer",        type = "square", position = "BOTTOMLEFT",size = 8,  priority = 8,  color = { 1.0, 0.9, 0.3, 1 } },
+        { spellId = 156322, name = "Eternal Flame",  type = "square", position = "BOTTOMRIGHT",size = 8, priority = 7,  color = { 1.0, 0.6, 0.1, 1 } },
+        { spellId = 200025, name = "Beacon of Virtue",type = "square",position = "BOTTOM",    size = 8,  priority = 6,  color = { 1.0, 1.0, 0.6, 1 } },
         { spellId = 6940,   name = "Sacrifice",      type = "border", position = "CENTER",    priority = 15, color = { 1.0, 0.2, 0.2, 0.8 } },
     },
     -- Preservation Evoker (1468)
     [1468] = {
         { spellId = 364343, name = "Echo",           type = "icon",   position = "TOPLEFT",    size = 16, priority = 10, showCooldown = true },
         { spellId = 366155, name = "Reversion",      type = "square", position = "BOTTOMLEFT", size = 8,  priority = 9,  color = { 0.2, 0.8, 0.4, 1 } },
+        { spellId = 367364, name = "Echo Reversion", type = "square", position = "BOTTOM",     size = 8,  priority = 7,  color = { 0.4, 0.9, 0.5, 1 } },
+        { spellId = 355941, name = "Dream Breath",   type = "square", position = "BOTTOMRIGHT",size = 8,  priority = 6,  color = { 0.3, 1.0, 0.8, 1 } },
         { spellId = 357170, name = "Time Dilation",  type = "border", position = "CENTER",     priority = 15, color = { 0.4, 0.8, 1.0, 0.8 } },
-        { spellId = 373267, name = "Lifebind",       type = "square", position = "BOTTOMRIGHT",size = 8,  priority = 8,  color = { 0.2, 1.0, 0.6, 1 } },
+        { spellId = 373267, name = "Lifebind",       type = "square", position = "RIGHT",      size = 8,  priority = 8,  color = { 0.2, 1.0, 0.6, 1 } },
     },
     -- Mistweaver Monk (270)
     [270] = {
@@ -199,6 +205,13 @@ local SPEC_PRESETS = {
         { spellId = 124682, name = "Enveloping Mist",type = "icon",   position = "TOPRIGHT",   size = 14, priority = 9,  showCooldown = true },
         { spellId = 191840, name = "Essence Font",   type = "square", position = "BOTTOMLEFT", size = 8,  priority = 7,  color = { 0.5, 1.0, 0.8, 1 } },
         { spellId = 116849, name = "Life Cocoon",    type = "border", position = "CENTER",     priority = 15, color = { 0.0, 1.0, 0.3, 0.8 } },
+    },
+    -- Augmentation Evoker (1473)
+    [1473] = {
+        { spellId = 410089, name = "Prescience",        type = "icon",   position = "TOPLEFT",     size = 16, priority = 10, showCooldown = true },
+        { spellId = 395152, name = "Ebon Might",        type = "icon",   position = "TOPRIGHT",    size = 14, priority = 9,  showCooldown = true },
+        { spellId = 360827, name = "Blistering Scales", type = "square", position = "BOTTOMLEFT",  size = 8,  priority = 8,  color = { 1.0, 0.4, 0.1, 1 } },
+        { spellId = 413984, name = "Shifting Sands",    type = "square", position = "BOTTOMRIGHT", size = 8,  priority = 7,  color = { 0.9, 0.8, 0.3, 1 } },
     },
 }
 
