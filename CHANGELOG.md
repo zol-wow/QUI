@@ -73,6 +73,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.47.3 - 2026-03-08
+
+### Changed
+- improve pixel perfect implementation to ensure proper borders
+
+### Fixed
+- fix: eliminate taint from tooltip hooks, game menu watcher, and group frame posthooks
+- fix: remove Blizzard function replacements that permanently taint secure code
+- fix: replace OnUpdate watcher with event hooks for CompactRaidFrameManager hide
+- fix: skip UIWidget frames in font recursion, clear stale action bar icons on reload
 ## v2.47.1 - 2026-03-07
 
 ### Fixed
