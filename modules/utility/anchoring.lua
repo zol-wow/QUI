@@ -1433,12 +1433,43 @@ local function CDMSizeResolver(source)
     return width, height
 end
 
--- Resource bar proxy size resolver: mirrors real frame size but enforces
--- the HUD min-width floor so frames anchored to resource bars still see
--- the minimum width (even though the resource bar itself is raw content width).
+-- Resource bar proxy size resolver: matches the width of the CDM proxy
+-- the resource bar is anchored to (so downstream frames see the same
+-- width regardless of whether they anchor to CDM or to a resource bar).
+-- Falls back to the resource bar's own width with min-width floor.
 local function HUDMinWidthSizeResolver(source)
     local width = source:GetWidth() or 0
     local height = source:GetHeight() or 0
+
+    -- Find the CDM proxy this resource bar is anchored to and mirror its width.
+    local anchoringDB = QUICore and QUICore.db and QUICore.db.profile
+        and QUICore.db.profile.frameAnchoring
+    if anchoringDB then
+        -- Determine which anchor key this source frame corresponds to
+        local anchorKey
+        if source == (QUICore and QUICore.powerBar) then
+            anchorKey = "primaryPower"
+        elseif source == (QUICore and QUICore.secondaryPowerBar) then
+            anchorKey = "secondaryPower"
+        end
+        if anchorKey then
+            local settings = anchoringDB[anchorKey]
+            if settings and settings.enabled and settings.autoWidth then
+                local parentKey = settings.parent
+                if parentKey == "essential" then parentKey = "cdmEssential"
+                elseif parentKey == "utility" then parentKey = "cdmUtility" end
+                local parentProxy = parentKey and cdmAnchorProxies[parentKey]
+                if parentProxy then
+                    local proxyOk, proxyW = pcall(function() return parentProxy:GetWidth() end)
+                    if proxyOk and proxyW and proxyW > 0 then
+                        return proxyW, height
+                    end
+                end
+            end
+        end
+    end
+
+    -- Fallback: apply min-width floor independently
     local minWidthEnabled, minWidth = GetHUDMinWidthSettings()
     if minWidthEnabled and IsHUDAnchoredToCDM() then
         local scale = source:GetScale() or 1
@@ -1987,32 +2018,18 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
     if settings.autoWidth and parentFrame and parentFrame ~= UIParent then
         local ok, parentWidth = pcall(function() return parentFrame:GetWidth() end)
         if ok and parentWidth and parentWidth > 0 then
-            -- Resource bars should use raw CDM content width, bypassing the
-            -- min-width floor that CDMSizeResolver applies to the proxy.
-            -- The min-width setting is meant for player/target only.
+            -- Resource bars size to the actual source frame, not the proxy.
+            -- The proxy min-width floor is meant for player/target only.
             local isResourceBar = (key == "primaryPower" or key == "secondaryPower")
             if isResourceBar then
                 local parentKey = settings.parent
                 if parentKey == "essential" then parentKey = "cdmEssential"
                 elseif parentKey == "utility" then parentKey = "cdmUtility" end
-                if parentKey and CDM_LOGICAL_SIZE_KEYS[parentKey] then
-                    -- Parent is a CDM viewer — read raw content width from viewer state
-                    local source = ANCHOR_PROXY_SOURCES[parentKey]
-                    if source then
-                        local sourceFrame = source.resolver()
-                        if sourceFrame then
-                            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(sourceFrame)
-                            local rawWidth = vs and vs.rawContentWidth
-                            if rawWidth and rawWidth > 0 then
-                                parentWidth = rawWidth
-                            end
-                        end
-                    end
-                elseif parentKey and ANCHOR_PROXY_SOURCES[parentKey]
-                    and ANCHOR_PROXY_SOURCES[parentKey].hudMinWidth then
-                    -- Parent is another resource bar whose proxy has min-width
-                    -- inflation. Read the actual frame width instead.
-                    local source = ANCHOR_PROXY_SOURCES[parentKey]
+                -- Resource bars should size to the actual CDM container (or
+                -- the actual source frame), not the proxy.  The proxy applies
+                -- a min-width floor meant for player/target frames only.
+                local source = parentKey and ANCHOR_PROXY_SOURCES[parentKey]
+                if source then
                     local sourceFrame = source.resolver()
                     if sourceFrame then
                         local frameOk, frameWidth = pcall(function() return sourceFrame:GetWidth() end)
@@ -2582,6 +2599,7 @@ local function HookRefreshGlobal(name)
     end
 end
 
+HookRefreshGlobal("QUI_RefreshCastbar")
 HookRefreshGlobal("QUI_RefreshCastbars")
 HookRefreshGlobal("QUI_RefreshUnitFrames")
 HookRefreshGlobal("QUI_RefreshNCDM")

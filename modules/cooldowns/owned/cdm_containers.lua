@@ -1288,6 +1288,19 @@ function ownedEngine:Initialize()
 
         RefreshAll()
 
+        -- After staggered layout timers complete (~0.10s), reapply frame
+        -- anchoring overrides so resource bars and other anchored frames
+        -- pick up the newly computed CDM container dimensions.
+        C_Timer.After(0.25, function()
+            if _G.QUI_UpdateCDMAnchorProxyFrames then
+                _G.QUI_UpdateCDMAnchorProxyFrames()
+            end
+            if _G.QUI_ApplyAllFrameAnchors then
+                _G.QUI_ApplyAllFrameAnchors()
+            end
+            UpdateAllLockedBars()
+        end)
+
         -- Apply HUD visibility now that containers exist (covers /reload while mounted).
         -- Containers start at alpha=0 (CreateContainer). Set the correct target
         -- alpha instantly so StartCDMFade sees "already at target" and skips
