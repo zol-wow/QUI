@@ -73,6 +73,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.47.2 - 2026-03-08
+
+### Added
+- added separate party/raid movers, keyboard click-cast bindings
+
+### Changed
+- improve pixel perfect implementation to ensure proper borders
+
+### Fixed
+- fix: castbar taint safety, CDM anchor reapply timing, resource bar proxy width, castbar copy keys
+- fix: use confirmation dialog for unified position reload instead of chat print
+- fix: eliminate taint from tooltip hooks, game menu watcher, and group frame posthooks
+- fix: remove Blizzard function replacements that permanently taint secure code
+- fix: skip UIWidget frames in font recursion, clear stale action bar icons on reload
+- fix: world map taint fix
+- fix: replace OnUpdate watcher with event hooks for CompactRaidFrameManager hide
 ## v2.47.1 - 2026-03-07
 
 ### Fixed
