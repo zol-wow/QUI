@@ -38,9 +38,8 @@ local DEFAULTS = {
 local pendingObjectiveTrackerHide = false
 local pendingApplyHideSettings = false
 
--- CompactRaidFrameManager visibility watcher (replaces hooksecurefunc to avoid taint)
-local _crfWatcher = nil
-local _crfWatcherShown = false
+-- CompactRaidFrameManager: tracks whether hooks have been installed
+local _crfHooked = false
 
 -- TAINT SAFETY: Track hook state in a local weak-keyed table, NOT on Blizzard
 -- frames. Writing _QUI_* properties to secure frames taints them in Midnight's
@@ -329,54 +328,73 @@ local function ApplyHideSettings()
     -- secret number tainted by QUI") that can prevent ExitEditMode from completing.
     -- Use SetAlpha(0) + EnableMouse(false) instead to make it invisible without
     -- triggering the compact unit frame update chain.
+    --
+    -- FLICKER FIX: Three hooks replace the old OnUpdate watcher.
+    -- (1) CompactRaidFrameManager_UpdateShown — the global Blizzard calls on
+    --     PLAYER_ENTERING_WORLD, GROUP_ROSTER_UPDATE, etc.
+    -- (2) CompactRaidFrameManager:Show() — catches direct Show() calls that
+    --     bypass UpdateShown (empirically needed for group join).
+    -- (3) CompactRaidFrameManager:SetAlpha() — catches anything that restores
+    --     alpha after hooks 1/2 run (animations, deferred callbacks, etc.).
+    --     The _alphaGuard prevents our own SetAlpha(0) from re-triggering it.
+    -- All hooks run synchronously before rendering, eliminating the flash.
+    -- SetAlpha(0) is used instead of Hide() for taint safety (see above).
     if CompactRaidFrameManager then
         if InCombatLockdown() then
             -- Skip protected operations during combat
         elseif settings.hideRaidFrameManager or (Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled) then
-            -- Defer to break taint chain (also auto-hide when QUI group frames active)
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
                 CompactRaidFrameManager:SetAlpha(0)
                 CompactRaidFrameManager:EnableMouse(false)
             end)
-            -- Start OnUpdate watcher to re-hide if Blizzard shows it again
-            -- (replaces hooksecurefunc on Show/SetShown to avoid taint)
-            if not _crfWatcher then
-                _crfWatcher = CreateFrame("Frame", nil, UIParent)
-                _crfWatcherShown = false
-            end
-            _crfWatcher:SetScript("OnUpdate", function()
-                if IsInEditMode() then return end
-                local alpha = CompactRaidFrameManager:GetAlpha()
-                if alpha > 0 and not _crfWatcherShown then
-                    _crfWatcherShown = true
-                    -- Blizzard restored alpha — re-hide if setting is still on
-                    C_Timer.After(0, function()
-                        if IsInEditMode() then _crfWatcherShown = false return end
-                        if InCombatLockdown() then _crfWatcherShown = false return end
+            if not _crfHooked then
+                _crfHooked = true
+
+                local _alphaGuard = false
+
+                local function ApplyCRFHide()
+                    if IsInEditMode() then return end
+                    if InCombatLockdown() then return end
+                    local s = GetSettings()
+                    local quiGFActive = Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled
+                    if CompactRaidFrameManager and ((s and s.hideRaidFrameManager) or quiGFActive) then
+                        _alphaGuard = true
+                        CompactRaidFrameManager:StopAnimating()
+                        CompactRaidFrameManager:SetAlpha(0)
+                        CompactRaidFrameManager:EnableMouse(false)
+                        _alphaGuard = false
+                    end
+                end
+
+                hooksecurefunc("CompactRaidFrameManager_UpdateShown", function()
+                    ApplyCRFHide()
+                end)
+
+                hooksecurefunc(CompactRaidFrameManager, "Show", function()
+                    ApplyCRFHide()
+                end)
+
+                hooksecurefunc(CompactRaidFrameManager, "SetAlpha", function(self, alpha)
+                    if _alphaGuard then return end
+                    if alpha > 0 and not IsInEditMode() then
                         local s = GetSettings()
                         local quiGFActive = Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled
                         if (s and s.hideRaidFrameManager) or quiGFActive then
-                            CompactRaidFrameManager:SetAlpha(0)
-                            CompactRaidFrameManager:EnableMouse(false)
+                            _alphaGuard = true
+                            self:StopAnimating()
+                            self:SetAlpha(0)
+                            _alphaGuard = false
                         end
-                        _crfWatcherShown = false
-                    end)
-                elseif alpha == 0 then
-                    _crfWatcherShown = false
-                end
-            end)
+                    end
+                end)
+            end
         else
-            -- Defer to break taint chain from secure context
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
                 CompactRaidFrameManager:SetAlpha(1)
                 CompactRaidFrameManager:EnableMouse(true)
             end)
-            -- Stop the watcher if it was running
-            if _crfWatcher then
-                _crfWatcher:SetScript("OnUpdate", nil)
-            end
         end
     end
     
@@ -764,22 +782,16 @@ eventFrame:SetScript("OnEvent", function(self, event, addon)
         return
     end
 
-    -- Handle raid permission/role changes - re-hide CompactRaidFrameManager & player frame
+    -- Handle raid permission/role changes - re-evaluate player frame visibility.
+    -- CompactRaidFrameManager re-hide is handled by the hooksecurefunc on
+    -- CompactRaidFrameManager_UpdateShown, which Blizzard calls for this event.
     -- BUG-008: Wrap in C_Timer.After(0) to break taint chain from secure event context
     if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
-        if settings then
+        if settings and settings.hidePlayerFrameInParty then
             C_Timer.After(0, function()
                 if IsInEditMode() then return end
                 if InCombatLockdown() then return end
-                -- Re-hide CompactRaidFrameManager if needed
-                if settings.hideRaidFrameManager and CompactRaidFrameManager then
-                    CompactRaidFrameManager:SetAlpha(0)
-                    CompactRaidFrameManager:EnableMouse(false)
-                end
-                -- Re-evaluate player frame visibility on group changes
-                if settings.hidePlayerFrameInParty then
-                    ApplyHideSettings()
-                end
+                ApplyHideSettings()
             end)
         end
         return
