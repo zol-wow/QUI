@@ -64,6 +64,18 @@ GUI.Colors = {
 
 local C = GUI.Colors
 
+-- CreateForm* return values may be called, indexed, or chained during the
+-- index pass. __index returns the proxy itself (not a function) so field
+-- access like widget.label.text doesn't error. __call handles method calls.
+-- __newindex silently drops writes so the proxy stays clean across tabs.
+local _INDEX_PROXY
+local _proxy_meta = {
+    __index    = function() return _INDEX_PROXY end,
+    __call     = function() return _INDEX_PROXY end,
+    __newindex = function() end,
+}
+_INDEX_PROXY = setmetatable({}, _proxy_meta)
+
 ---------------------------------------------------------------------------
 -- CACHED COLOR COMPONENTS — avoid unpack() in hot-path handlers
 -- Refreshed by GUI:RefreshCachedColors() after accent color changes
@@ -117,6 +129,7 @@ GUI.CONTENT_WIDTH = 800  -- Panel width minus sidebar and padding
 
 -- Settings Registry for search functionality
 GUI.SettingsRegistry = {}
+GUI._indexMode = false
 
 -- Navigation Registry for searchable categories, subtabs, and sections
 -- Allows users to search for tab names, subtab names, and section names directly
@@ -487,51 +500,50 @@ end
 -- Flag to track if search index has been built
 GUI._searchIndexBuilt = false
 
--- Force-load all tabs to populate search registry
-function GUI:ForceLoadAllTabs()
+-- Populates SettingsRegistry at addon load so Search is instant on first click.
+-- Each tab's createFunc runs in index mode (GUI._indexMode = true): CreateForm*
+-- functions register metadata and return early without building any UI frames.
+-- A fresh dummy frame per tab is used as parent; any lightweight layout frames
+-- created by the builder are parented there and become unreferenced after the
+-- loop (they remain in memory but invisible and inert).
+-- pcall isolates errors from individual tab builders so one bad tab can't block
+-- the rest of the index.
+function GUI:BuildSearchIndex()
+    if self._searchIndexBuilt then return end
     local frame = self.MainFrame
     if not frame or not frame.pages then return end
 
-    -- Initialize registry if needed (don't clear - keep registrations from already-visited tabs)
-    if not self.SettingsRegistry then
-        self.SettingsRegistry = {}
-    end
-    if not self.SettingsRegistryKeys then
-        self.SettingsRegistryKeys = {}
-    end
+    GUI._indexMode = true
 
-    -- Build each tab that hasn't been built yet
     for tabIndex, page in pairs(frame.pages) do
-        if tabIndex ~= self._searchTabIndex then  -- Skip Search tab itself
-            if page and page.createFunc and not page.built then
-                -- Create hidden frame if needed
-                if not page.frame then
-                    page.frame = CreateFrame("Frame", nil, frame.contentArea)
-                    page.frame:SetAllPoints()
-                    page.frame:EnableMouse(false)  -- Container frame - let children handle clicks
-                end
-                page.frame:Hide()  -- Keep hidden during build
+        if tabIndex ~= self._searchTabIndex and page and page.createFunc and not page.built then
+            -- Parent to UIParent with a realistic size so tab builders
+            -- that access geometry don't fail before registering widgets
+            local dummy = CreateFrame("Frame", nil, UIParent)
+            dummy:SetSize(800, 600)
+            dummy:Hide()
 
-                -- Run the builder to register widgets (only once)
-                local loadTab = frame.tabs[tabIndex]
-                if loadTab and loadTab.name then
-                    self:SetSearchContext({
-                        tabIndex = tabIndex,
-                        tabName = loadTab.name,
-                    })
-                end
-                page.createFunc(page.frame)
-                page.built = true  -- Prevent duplicate widget creation
-
-                -- Capture sub-tab group created during page build
-                if GUI._lastSubTabGroup then
-                    page._subTabGroup = GUI._lastSubTabGroup
-                    page._subTabDefs = page._subTabGroup.subTabDefs
-                    GUI._lastSubTabGroup = nil
-                end
+            local loadTab = frame.tabs[tabIndex]
+            if loadTab and loadTab.name then
+                self:SetSearchContext({
+                    tabIndex = tabIndex,
+                    tabName = loadTab.name,
+                })
             end
+            local ok, err = pcall(page.createFunc, dummy)
+            if not ok then
+                print("|cffff4444QUI:|r Search index incomplete for tab " .. tabIndex .. ": " .. tostring(err))
+            end
+
+            -- Prevent any sub-tab group created on the dummy from being
+            -- captured by the next real tab build in SelectTab
+            GUI._lastSubTabGroup = nil
         end
     end
+
+    GUI._indexMode = false
+    self:SetSearchContext({})
+    self._searchIndexBuilt = true
 end
 
 ---------------------------------------------------------------------------
@@ -2451,6 +2463,35 @@ end
 
 local FORM_ROW_HEIGHT = 28
 
+-- Registers a widget into SettingsRegistry so it appears in search results.
+-- Must be called at the top of each CreateForm* function, before any frame
+-- creation, so index-mode passes populate the registry without building UI.
+local function RegisterSearchEntry(label, widgetType, registryInfo, builderFn)
+    if not GUI._searchContext.tabIndex or not label or GUI._suppressSearchRegistration then return end
+    local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
+    if GUI.SettingsRegistryKeys[regKey] then return end
+    GUI.SettingsRegistryKeys[regKey] = true
+    local entry = {
+        label = label,
+        lowerLabel = label:lower(),
+        widgetType = widgetType,
+        tabIndex = GUI._searchContext.tabIndex,
+        tabName = GUI._searchContext.tabName,
+        subTabIndex = GUI._searchContext.subTabIndex,
+        subTabName = GUI._searchContext.subTabName,
+        sectionName = GUI._searchContext.sectionName,
+        widgetBuilder = builderFn,
+    }
+    if registryInfo and registryInfo.keywords then
+        entry.keywords = registryInfo.keywords
+        entry.lowerKeywords = {}
+        for i, kw in ipairs(registryInfo.keywords) do
+            entry.lowerKeywords[i] = kw:lower()
+        end
+    end
+    table.insert(GUI.SettingsRegistry, entry)
+end
+
 ---------------------------------------------------------------------------
 -- WIDGET: iOS-STYLE TOGGLE SWITCH (Premium)
 -- Track: 40x20px, fully rounded
@@ -2459,6 +2500,8 @@ local FORM_ROW_HEIGHT = 28
 ---------------------------------------------------------------------------
 function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
+    RegisterSearchEntry(label, "toggle", registryInfo, function(p) return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange) end)
+    if GUI._indexMode then return _INDEX_PROXY end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
 
@@ -2541,31 +2584,6 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
         track:EnableMouse(enabled)
         -- Visual feedback: dim when disabled
         container:SetAlpha(enabled and 1 or 0.4)
-    end
-
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            local entry = {
-                label = label,
-                widgetType = "toggle",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange)
-                end,
-            }
-            -- Add keywords from registryInfo if provided
-            if registryInfo and registryInfo.keywords then
-                entry.keywords = registryInfo.keywords
-            end
-            table.insert(GUI.SettingsRegistry, entry)
-        end
     end
 
     return container
@@ -2762,6 +2780,8 @@ end
 
 function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onChange, options, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
+    RegisterSearchEntry(label, "slider", registryInfo, function(p) return GUI:CreateFormSlider(p, label, min, max, step, dbKey, dbTable, onChange, options) end)
+    if GUI._indexMode then return _INDEX_PROXY end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
     container:EnableMouse(true)  -- Block clicks from passing through to frames behind
@@ -2976,31 +2996,13 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Initialize enabled state
     container.isEnabled = true
 
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            table.insert(GUI.SettingsRegistry, {
-                label = label,
-                widgetType = "slider",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormSlider(p, label, min, max, step, dbKey, dbTable, onChange, options)
-                end,
-            })
-        end
-    end
-
     return container
 end
 
 function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
+    RegisterSearchEntry(label, "dropdown", registryInfo, function(p) return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange) end)
+    if GUI._indexMode then return _INDEX_PROXY end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
 
@@ -3180,32 +3182,14 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
     container.isEnabled = true
 
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            table.insert(GUI.SettingsRegistry, {
-                label = label,
-                widgetType = "dropdown",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange)
-                end,
-            })
-        end
-    end
-
     return container
 end
 
 function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options, registryInfo)
     options = options or {}
     if parent._hasContent ~= nil then parent._hasContent = true end
+    RegisterSearchEntry(label, "input", registryInfo, function(p) return GUI:CreateFormEditBox(p, label, dbKey, dbTable, onChange, options) end)
+    if GUI._indexMode then return _INDEX_PROXY end
 
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(options.rowHeight or FORM_ROW_HEIGHT)
@@ -3352,25 +3336,6 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
 
     RegisterWidgetInstance(container, dbTable, dbKey)
 
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            table.insert(GUI.SettingsRegistry, {
-                label = label,
-                widgetType = "input",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormEditBox(p, label, dbKey, dbTable, onChange, options, registryInfo)
-                end,
-            })
-        end
-    end
-
     return container
 end
 
@@ -3495,11 +3460,13 @@ function GUI:CreateScrollableTextBox(parent, height, text, options)
     return container
 end
 
-function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, options)
+function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, options, registryInfo)
     options = options or {}
     local noAlpha = options.noAlpha or false
 
     if parent._hasContent ~= nil then parent._hasContent = true end
+    RegisterSearchEntry(label, "colorpicker", registryInfo, function(p) return GUI:CreateFormColorPicker(p, label, dbKey, dbTable, onChange, options) end)
+    if GUI._indexMode then return _INDEX_PROXY end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
 
@@ -3555,26 +3522,6 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     container.SetEnabled = function(self, enabled)
         swatch:EnableMouse(enabled)
         container:SetAlpha(enabled and 1 or 0.4)
-    end
-
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            table.insert(GUI.SettingsRegistry, {
-                label = label,
-                widgetType = "colorpicker",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormColorPicker(p, label, dbKey, dbTable, onChange, options)
-                end,
-            })
-        end
     end
 
     return container
@@ -3759,7 +3706,7 @@ function GUI:ExecuteSearch(searchTerm)
         local score = 0
 
         -- Label match (highest priority)
-        local lowerLabel = (entry.label or ""):lower()
+        local lowerLabel = entry.lowerLabel or (entry.label or ""):lower()
         if lowerLabel:find(lowerSearch, 1, true) then
             score = 100
             -- Bonus for starts-with match
@@ -3769,9 +3716,9 @@ function GUI:ExecuteSearch(searchTerm)
         end
 
         -- Keyword match (secondary)
-        if score == 0 and entry.keywords then
-            for _, keyword in ipairs(entry.keywords) do
-                if keyword:lower():find(lowerSearch, 1, true) then
+        if score == 0 and entry.lowerKeywords then
+            for _, lk in ipairs(entry.lowerKeywords) do
+                if lk:find(lowerSearch, 1, true) then
                     score = 50
                     break
                 end
@@ -5394,12 +5341,6 @@ function GUI:SelectTab(frame, index)
         return
     end
 
-    -- Force-load all tabs when Search tab is selected
-    if index == self._searchTabIndex and self._allTabsAdded and not self._searchIndexBuilt then
-        self:ForceLoadAllTabs()
-        self._searchIndexBuilt = true
-    end
-
     -- Auto-focus search input when navigating to Search tab
     if index == self._searchTabIndex then
         C_Timer.After(0, function()
@@ -5570,7 +5511,6 @@ function GUI:RefreshAccentColor()
 
     -- Reset search index state (will be rebuilt from dedup keys)
     self._searchIndexBuilt = false
-    self._allTabsAdded = false
     self.SettingsRegistry = {}
     self.SettingsRegistryKeys = {}
 
