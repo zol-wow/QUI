@@ -772,10 +772,17 @@ local function UpdateFrameAuras(frame)
                     end
                 end
 
-                -- "Only My Buffs" filter
+                -- "Only My Buffs" filter (use C-side API to avoid secret value on isFromPlayerOrPlayerPet)
                 if onlyMine and not dominated then
-                    if not auraData.isFromPlayerOrPlayerPet then
-                        dominated = true
+                    if C_UnitAuras.IsAuraFilteredOutByInstanceID and auraData.auraInstanceID and not IsSecretValue(auraData.auraInstanceID) then
+                        local ok, filteredOut = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, auraData.auraInstanceID, "HELPFUL|PLAYER")
+                        if ok and not IsSecretValue(filteredOut) and filteredOut then
+                            dominated = true
+                        end
+                    elseif not IsSecretValue(auraData.isFromPlayerOrPlayerPet) then
+                        if not auraData.isFromPlayerOrPlayerPet then
+                            dominated = true
+                        end
                     end
                 end
 
