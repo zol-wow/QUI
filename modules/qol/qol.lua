@@ -661,6 +661,36 @@ hooksecurefunc("StaticPopup_Show", function(which)
 end)
 
 ---------------------------------------------------------------------------
+-- AUCTION HOUSE EXPANSION FILTER
+---------------------------------------------------------------------------
+
+local ahFilterHooked = false
+
+local function SetupAuctionHouseFilter()
+    if ahFilterHooked then return end
+
+    local ahFrame = AuctionHouseFrame
+    if not ahFrame or not ahFrame.SearchBar then return end
+
+    ahFilterHooked = true
+    local searchBar = ahFrame.SearchBar
+
+    local function applyExpansionFilter()
+        local settings = GetSettings()
+        if not settings or not settings.auctionHouseExpansionFilter then return end
+        if not searchBar.FilterButton or not searchBar.FilterButton.filters then return end
+        searchBar.FilterButton.filters[Enum.AuctionHouseFilter.CurrentExpansionOnly] = true
+        if searchBar.UpdateClearFiltersButton then
+            searchBar:UpdateClearFiltersButton()
+        end
+    end
+
+    searchBar:HookScript("OnShow", function()
+        C_Timer.After(0, applyExpansionFilter)
+    end)
+end
+
+---------------------------------------------------------------------------
 -- EVENT REGISTRATION
 ---------------------------------------------------------------------------
 
@@ -678,6 +708,7 @@ qolFrame:RegisterEvent("CHALLENGE_MODE_RESET")
 qolFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 qolFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 qolFrame:RegisterEvent("ADDON_LOADED")
+qolFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
 
 qolFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "MERCHANT_SHOW" then
@@ -706,6 +737,8 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.After(2, RefreshPopupBlocker)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         UpdateRaidAutoLogging()
+    elseif event == "AUCTION_HOUSE_SHOW" then
+        SetupAuctionHouseFilter()
     elseif event == "ADDON_LOADED" then
         local loadedAddon = ...
         if loadedAddon == addonName then
@@ -715,6 +748,7 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
         if type(loadedAddon) == "string" and string.find(loadedAddon, "Blizzard_", 1, true) == 1 then
             -- Retry hooks when Blizzard UI modules load lazily.
             C_Timer.After(0, RefreshPopupBlocker)
+            SetupAuctionHouseFilter()
         end
     end
 end)

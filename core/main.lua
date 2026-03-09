@@ -428,6 +428,7 @@ local defaults = {
             autoCombatLog = false,  -- Auto start/stop combat logging in M+ (opt-in)
             autoCombatLogRaid = false,  -- Auto start/stop combat logging in raids (opt-in)
             autoDeleteConfirm = true,  -- Auto-fill DELETE confirmation text
+            auctionHouseExpansionFilter = true,  -- Auto-enable current expansion filter in AH
             -- Popup & Toast Blocker (granular, all OFF by default)
             popupBlocker = {
                 enabled = false,

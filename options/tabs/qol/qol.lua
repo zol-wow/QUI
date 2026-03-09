@@ -1085,6 +1085,12 @@ local function BuildGeneralTab(tabContent)
         autoDeleteCheck:SetPoint("TOPLEFT", PADDING, y)
         autoDeleteCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         y = y - FORM_ROW
+
+        -- Auction House Expansion Filter
+        local ahFilterCheck = GUI:CreateFormCheckbox(tabContent, "Auto-Enable Current Expansion Filter in Auction House", "auctionHouseExpansionFilter", generalDB)
+        ahFilterCheck:SetPoint("TOPLEFT", PADDING, y)
+        ahFilterCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
     end
 
     y = y - 10
