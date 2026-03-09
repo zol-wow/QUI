@@ -140,8 +140,8 @@ function GUI:InitializeOptions()
         end
     end)
 
-    -- Mark that all tabs have been added (for search indexing)
-    GUI._allTabsAdded = true
+    -- Defer so the UI finishes initializing before we run the index pass
+    C_Timer.After(0, function() GUI:BuildSearchIndex() end)
 
     return frame
 end
