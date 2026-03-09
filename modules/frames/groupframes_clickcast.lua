@@ -189,6 +189,8 @@ local function SetFrameKeyAttributes(frame)
             frame:SetAttribute("type-" .. vBtn, "focus")
         elseif actionType == "assist" then
             frame:SetAttribute("type-" .. vBtn, "assist")
+        elseif actionType == "menu" then
+            frame:SetAttribute("type-" .. vBtn, "togglemenu")
         end
     end
 end
@@ -300,6 +302,8 @@ local function SetupFrameClickCast(frame)
             frame:SetAttribute(prefix .. "type" .. btnNum, "focus")
         elseif actionType == "assist" then
             frame:SetAttribute(prefix .. "type" .. btnNum, "assist")
+        elseif actionType == "menu" then
+            frame:SetAttribute(prefix .. "type" .. btnNum, "togglemenu")
         end
     end
 

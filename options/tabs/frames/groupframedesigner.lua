@@ -2390,6 +2390,7 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         { value = "target", text = "Target Unit" },
         { value = "focus",  text = "Set Focus" },
         { value = "assist", text = "Assist" },
+        { value = "menu",   text = "Unit Menu" },
     }
     local BINDING_TYPE_OPTIONS = {
         { value = "mouse", text = "Mouse Button" },
@@ -2417,6 +2418,7 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         focus  = "Interface\\Icons\\Ability_TrickShot",
         assist = "Interface\\Icons\\Ability_Hunter_MasterMarksman",
         macro  = "Interface\\Icons\\INV_Misc_Note_01",
+        menu   = "Interface\\Icons\\INV_Misc_GroupNeedMore",
     }
 
     -- Spec context label
@@ -2825,7 +2827,8 @@ local function BuildClickCastSettings(content, gfdb, onChange)
                 spellText:SetWidth(140)
                 spellText:SetJustifyH("LEFT")
                 local displayName = binding.spell or actionType
-                if actionType == "macro" then displayName = "Macro" end
+                if actionType == "macro" then displayName = "Macro"
+                elseif actionType == "menu" then displayName = "Unit Menu" end
                 spellText:SetText(displayName)
                 spellText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
                 local removeBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
