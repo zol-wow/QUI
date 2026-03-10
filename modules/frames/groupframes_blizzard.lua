@@ -23,7 +23,10 @@ local watcherFrame = nil
 local function IsFrameVisible(frame)
     if not frame then return false end
     if frame.IsShown and not frame:IsShown() then return false end
-    if frame.GetAlpha and frame:GetAlpha() <= 0 then return false end
+    if frame.GetAlpha then
+        local alpha = Helpers.SafeToNumber(frame:GetAlpha(), 1)
+        if alpha <= 0 then return false end
+    end
     return true
 end
 
