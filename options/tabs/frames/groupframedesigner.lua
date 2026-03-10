@@ -3616,12 +3616,18 @@ local function BuildDesignerView(tabContent, previewType)
 
     state.refreshScrollBar = RefreshScrollBar
 
-    -- Dynamically size the inner scroll to fill remaining viewport space
+    -- Dynamically size the inner scroll to fill remaining space in the parent
     local fixedHeaderH = math.abs(y)
     local function ResizeSettingsScroll()
-        local viewH = outerScroll and outerScroll.GetHeight and outerScroll:GetHeight() or nil
-        if viewH and viewH > 0 then
-            settingsScroll:SetHeight(math.max(viewH - fixedHeaderH - 10, 200))
+        -- Use the immediate parent's height (section frame inside sectionHost),
+        -- not the outer scroll viewport, since the Composer may be nested inside
+        -- a sectionHost that is shorter than the full viewport.
+        local parentH = tabContent:GetHeight()
+        if (not parentH or parentH <= 0) and outerScroll then
+            parentH = outerScroll:GetHeight()
+        end
+        if parentH and parentH > 0 then
+            settingsScroll:SetHeight(math.max(parentH - fixedHeaderH - 10, 200))
         end
         local sw = settingsScroll:GetWidth()
         if sw and sw > 0 then
@@ -3632,6 +3638,8 @@ local function BuildDesignerView(tabContent, previewType)
     if outerScroll and outerScroll.HookScript then
         outerScroll:HookScript("OnSizeChanged", ResizeSettingsScroll)
     end
+    -- Re-size when the Composer section frame itself resizes (e.g. sectionHost changed)
+    tabContent:HookScript("OnSizeChanged", ResizeSettingsScroll)
     settingsScroll:HookScript("OnShow", ResizeSettingsScroll)
     C_Timer.After(0, ResizeSettingsScroll)
 
