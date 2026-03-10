@@ -332,6 +332,21 @@ local function GetAbsorbTexturePath(textureName)
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: Get player's class color
+-- Unit frame "use class color" intentionally means the player's class.
+---------------------------------------------------------------------------
+local function GetPlayerClassColor()
+    local _, class = UnitClass("player")
+    if type(class) == "string" then
+        local color = RAID_CLASS_COLORS[class]
+        if color then
+            return color.r, color.g, color.b, 1
+        end
+    end
+    return nil
+end
+
+---------------------------------------------------------------------------
 -- HELPER: Get class color for a unit
 ---------------------------------------------------------------------------
 local function GetUnitClassColor(unit)
@@ -339,16 +354,13 @@ local function GetUnitClassColor(unit)
         return 0.5, 0.5, 0.5, 1
     end
 
-    -- Use class color for players AND NPC party members (follower dungeon companions)
-    local _, class = UnitClass(unit)
-    if class then
-        local color = RAID_CLASS_COLORS[class]
-        if color then
-            return color.r, color.g, color.b, 1
-        end
+    -- Unit frame class color should always track the player's class.
+    local pR, pG, pB, pA = GetPlayerClassColor()
+    if pR then
+        return pR, pG, pB, pA
     end
 
-    -- NPCs use reaction color
+    -- Fallback for safety if class data is unavailable
     local reaction = UnitReaction(unit, "player")
     if reaction then
         if reaction >= 5 then
@@ -603,28 +615,10 @@ local function GetHealthBarColor(unit, settings)
     end
 
     if useClassColor then
-        -- Try class color for the unit (works for players AND NPC party members
-        -- like follower dungeon companions who have assigned classes)
-        local _, class = UnitClass(unit)
-        if type(class) == "string" then
-            local color = RAID_CLASS_COLORS[class]
-            if color then
-                return color.r, color.g, color.b, 1
-            end
-        end
-
-        -- Fallback: pet uses owner's (player's) class color
-        local petCheck = UnitIsUnit(unit, "pet")
-        local playerPetCheck = UnitIsUnit(unit, "playerpet")
-        local isPet = (not IsSecretValue(petCheck) and petCheck == true) or (not IsSecretValue(playerPetCheck) and playerPetCheck == true)
-        if isPet then
-            local _, pClass = UnitClass("player")
-            if type(pClass) == "string" then
-                local color = RAID_CLASS_COLORS[pClass]
-                if color then
-                    return color.r, color.g, color.b, 1
-                end
-            end
+        -- Class color here always refers to the player's class (theme accent color).
+        local pR, pG, pB, pA = GetPlayerClassColor()
+        if pR then
+            return pR, pG, pB, pA
         end
     end
 
@@ -2096,12 +2090,9 @@ local function CreateUnitFrame(unit, unitKey)
         -- Determine border color
         local borderR, borderG, borderB = 0, 0, 0
         if settings.portraitBorderUseClassColor then
-            local _, class = UnitClass(unit)
-            if class then
-                local classColor = RAID_CLASS_COLORS[class]
-                if classColor then
-                    borderR, borderG, borderB = classColor.r, classColor.g, classColor.b
-                end
+            local pR, pG, pB = GetPlayerClassColor()
+            if pR then
+                borderR, borderG, borderB = pR, pG, pB
             end
         elseif settings.portraitBorderColor then
             borderR = settings.portraitBorderColor[1] or 0
@@ -3238,12 +3229,9 @@ function QUI_UF:RefreshFrame(unitKey)
         -- Determine border color first (needed for both styles)
         local borderR, borderG, borderB = 0, 0, 0
         if settings.portraitBorderUseClassColor then
-            local _, class = UnitClass(frame.unit)
-            if class then
-                local classColor = RAID_CLASS_COLORS[class]
-                if classColor then
-                    borderR, borderG, borderB = classColor.r, classColor.g, classColor.b
-                end
+            local pR, pG, pB = GetPlayerClassColor()
+            if pR then
+                borderR, borderG, borderB = pR, pG, pB
             end
         elseif settings.portraitBorderColor then
             borderR = settings.portraitBorderColor[1] or 0
