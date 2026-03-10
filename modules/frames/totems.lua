@@ -305,7 +305,7 @@ local function PostUpdate()
 
     if hasActive then
         if not TotemBar.ticker then
-            TotemBar.ticker = C_Timer.NewTicker(0.1, UpdateDurationTexts)
+            TotemBar.ticker = C_Timer.NewTicker(0.5, UpdateDurationTexts)
         end
     else
         if TotemBar.ticker then
