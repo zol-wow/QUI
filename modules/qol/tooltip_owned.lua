@@ -42,6 +42,7 @@ local pendingPopulate = {}   -- [blizzFrame] = token (deferred populate in progr
 local activelyHandling = {}  -- [blizzFrame] = true when PreCall/PostCall is managing this tooltip
 local embeddedSubTooltip = {} -- [blizzFrame] = true when frame is currently used as embedded sub-tooltip
 local ownerChanged = {}       -- [blizzFrame] = true when SetOwner was called (new tooltip target)
+local blizzAnchorCache = {}   -- [blizzFrame] = { point, relativeTo, relPoint, x, y } — last non-offscreen anchor
 local fadeState = {}          -- [ownedFrame] = { elapsed, duration } when fading out
 
 -- Cancel any active fade-out and restore full alpha (called before showing).
@@ -1248,21 +1249,34 @@ local function AnchorOwnedTooltip(ownedTip, blizzTip, settings)
         return
     end
 
-    -- Mirror Blizzard tooltip position
-    local okPoint, point, relativeTo, relPoint, x, y = pcall(blizzTip.GetPoint, blizzTip, 1)
-    if okPoint and point then
-        -- Sanitize secret values in point offsets
-        x = Helpers.SafeToNumber(x, 0)
-        y = Helpers.SafeToNumber(y, 0)
+    -- Mirror Blizzard tooltip position using the cached anchor (captured
+    -- from the SetPoint hook before we moved the tooltip off-screen).
+    local cached = blizzAnchorCache[blizzTip]
+    if cached and cached.point then
+        local x = Helpers.SafeToNumber(cached.x, 0)
+        local y = Helpers.SafeToNumber(cached.y, 0)
         ownedTip:ClearAllPoints()
-        if relativeTo then
-            ownedTip:SetPoint(point, relativeTo, relPoint or point, x, y)
+        if cached.relativeTo then
+            ownedTip:SetPoint(cached.point, cached.relativeTo, cached.relPoint or cached.point, x, y)
         else
-            ownedTip:SetPoint(point, UIParent, relPoint or "BOTTOMLEFT", x, y)
+            ownedTip:SetPoint(cached.point, UIParent, cached.relPoint or "BOTTOMLEFT", x, y)
         end
     else
-        -- Fallback: cursor position
-        Provider:PositionTooltipAtCursor(ownedTip, settings)
+        -- Fallback: try GetPoint directly (may be off-screen, last resort)
+        local okPoint, point, relativeTo, relPoint, x, y = pcall(blizzTip.GetPoint, blizzTip, 1)
+        if okPoint and point then
+            x = Helpers.SafeToNumber(x, 0)
+            y = Helpers.SafeToNumber(y, 0)
+            ownedTip:ClearAllPoints()
+            if relativeTo then
+                ownedTip:SetPoint(point, relativeTo, relPoint or point, x, y)
+            else
+                ownedTip:SetPoint(point, UIParent, relPoint or "BOTTOMLEFT", x, y)
+            end
+        else
+            -- Last fallback: cursor position
+            Provider:PositionTooltipAtCursor(ownedTip, settings)
+        end
     end
 end
 
@@ -1795,11 +1809,21 @@ function OwnedEngine:Initialize()
             -- Hook SetPoint: Blizzard re-anchors the tooltip after Show()
             -- (e.g., to the map pin frame), overriding our offscreen positioning
             -- from OnShow. This closes the 1-frame gap between Show and OnUpdate.
+            -- Also cache the original anchor so we can mirror it when not using
+            -- cursor-follow mode.
             if not isShopping then
                 local pointGuard = false
-                hooksecurefunc(blizzFrame, "SetPoint", function(self, _, _, _, _, yOfs)
+                hooksecurefunc(blizzFrame, "SetPoint", function(self, point, relativeTo, relPoint, xOfs, yOfs)
                     if pointGuard then return end
                     if yOfs == -10000 then return end -- our own offscreen call
+                    -- Cache the original Blizzard anchor before we override it
+                    blizzAnchorCache[self] = {
+                        point = point,
+                        relativeTo = relativeTo,
+                        relPoint = relPoint,
+                        x = xOfs,
+                        y = yOfs,
+                    }
                     if ShouldSuppressBlizz(self) then
                         local s = Provider and Provider:GetSettings()
                         if s and s.enabled then
@@ -1908,6 +1932,7 @@ function OwnedEngine:Initialize()
                         end
                         activelyHandling[self] = nil
                         pendingPopulate[self] = nil
+                        blizzAnchorCache[self] = nil
 
                         -- When main GameTooltip hides, clean up embedded state
                         -- and shopping tooltips. Clear the embedded flag so
