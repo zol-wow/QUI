@@ -481,11 +481,18 @@ function TotemBar:Refresh()
         return
     end
 
+    -- Never call Blizzard TotemFrame:Update() from addon code in combat.
+    -- That can taint secret return values used inside Blizzard_UnitFrame code.
+    if InCombatLockdown() then
+        pendingTotemRefresh = true
+    end
+
     if not self.hooked then
         HookTotemFrame()
     end
 
     if not TotemFrame then return end
+    if InCombatLockdown() then return end
 
     PositionTotemFrame()
 
@@ -722,6 +729,7 @@ end
 ---------------------------------------------------------------------------
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+initFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 initFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
         if QUICore then
@@ -731,5 +739,12 @@ initFrame:SetScript("OnEvent", function(self, event)
         C_Timer.After(0.6, function()
             TotemBar:Refresh()
         end)
+    elseif event == "PLAYER_TOTEM_UPDATE" then
+        -- TotemFrame can be unavailable during initial startup on some clients.
+        -- Retry refresh whenever totem state changes so hook/parenting recovers.
+        local db = GetDB()
+        if db and db.enabled then
+            TotemBar:Refresh()
+        end
     end
 end)
