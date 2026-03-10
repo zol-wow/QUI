@@ -27,6 +27,33 @@ QUICore.Datatexts = Datatexts
 Datatexts.registry = {}
 Datatexts.activeInstances = {}  -- Track active datatext instances for cleanup
 
+---------------------------------------------------------------------------
+-- SHARED TICKER: One timer drives all 1s datatext updates
+---------------------------------------------------------------------------
+local sharedTickerFns = {}   -- frame -> Update function
+local sharedTicker = nil
+
+local function SharedTickerUpdate()
+    for frame, updateFn in pairs(sharedTickerFns) do
+        updateFn()
+    end
+end
+
+function Datatexts:RegisterSharedTicker(frame, updateFn)
+    sharedTickerFns[frame] = updateFn
+    if not sharedTicker then
+        sharedTicker = C_Timer.NewTicker(1, SharedTickerUpdate)
+    end
+end
+
+function Datatexts:UnregisterSharedTicker(frame)
+    sharedTickerFns[frame] = nil
+    if not next(sharedTickerFns) and sharedTicker then
+        sharedTicker:Cancel()
+        sharedTicker = nil
+    end
+end
+
 -- Get user's configured value color for datatexts (returns 0-255 integers for hex formatting)
 local function GetValueColor()
     -- Access db through ns.Addon which is always available
@@ -358,7 +385,7 @@ Datatexts:Register("time", {
         frame.Update = Update
 
         -- Update every second
-        frame.ticker = C_Timer.NewTicker(1, Update)
+        Datatexts:RegisterSharedTicker(frame, Update)
         
         -- Tooltip with lockouts and reset timers
         slotFrame:EnableMouse(true)
@@ -439,9 +466,7 @@ Datatexts:Register("time", {
     end,
     
     OnDisable = function(frame)
-        if frame.ticker then
-            frame.ticker:Cancel()
-        end
+        Datatexts:UnregisterSharedTicker(frame)
     end,
 })
 
@@ -475,16 +500,14 @@ Datatexts:Register("fps", {
         end
         
         frame.Update = Update
-        frame.ticker = C_Timer.NewTicker(1, Update)
+        Datatexts:RegisterSharedTicker(frame, Update)
         
         Update()
         return frame
     end,
     
     OnDisable = function(frame)
-        if frame.ticker then
-            frame.ticker:Cancel()
-        end
+        Datatexts:UnregisterSharedTicker(frame)
     end,
 })
 
@@ -519,16 +542,14 @@ Datatexts:Register("latency", {
         end
 
         frame.Update = Update
-        frame.ticker = C_Timer.NewTicker(1, Update)
+        Datatexts:RegisterSharedTicker(frame, Update)
 
         Update()
         return frame
     end,
     
     OnDisable = function(frame)
-        if frame.ticker then
-            frame.ticker:Cancel()
-        end
+        Datatexts:UnregisterSharedTicker(frame)
     end,
 })
 
@@ -591,7 +612,7 @@ Datatexts:Register("system", {
         end
 
         frame.Update = Update
-        frame.ticker = C_Timer.NewTicker(1, Update)
+        Datatexts:RegisterSharedTicker(frame, Update)
 
         -- Tooltip with latency details
         slotFrame:EnableMouse(true)
@@ -621,9 +642,7 @@ Datatexts:Register("system", {
     end,
 
     OnDisable = function(frame)
-        if frame.ticker then
-            frame.ticker:Cancel()
-        end
+        Datatexts:UnregisterSharedTicker(frame)
     end,
 })
 
