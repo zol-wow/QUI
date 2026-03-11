@@ -1512,6 +1512,23 @@ local function BuildContentFingerprint(lines)
     return firstStr
 end
 
+--- Build a full content hash from all line texts. Used to detect content
+--- changes even when line count stays the same (e.g., external addons
+--- replacing blank lines with data, or async stat comparisons arriving).
+local function BuildContentHash(lines)
+    local parts = {}
+    for i, l in ipairs(lines) do
+        local lt = l.leftText
+        if lt and type(issecretvalue) == "function" and issecretvalue(lt) then
+            parts[i] = "~"
+        else
+            local okS, s = pcall(tostring, lt or "")
+            parts[i] = okS and s or "~"
+        end
+    end
+    return table.concat(parts, "|")
+end
+
 ---------------------------------------------------------------------------
 -- VISIBILITY WATCHER
 -- Monitors Blizzard tooltip visibility without hooking their frames
@@ -1617,23 +1634,24 @@ local function SetupVisibilityWatcher()
                             AnchorOwnedTooltip(ownedTip, blizzTip, settings)
                             ownedTip:Show()
                         end
-                        -- Late content re-checks — widget content and embedded items
-                        -- load asynchronously. Widget containers (renown, world events)
-                        -- may add children after the initial show. Check at increasing
-                        -- delays to capture late-arriving content.
-                        local lastLineCount = #lines
+                        -- Late content re-checks — widget content, embedded
+                        -- items, and async addon additions. Use content hash
+                        -- instead of line count to catch modifications to
+                        -- existing lines (not just additions).
+                        local baseHash = BuildContentHash(lines)
+                        ownedTip._contentHash = baseHash
                         local delays = { 0.2, 0.5 }
                         for _, delay in ipairs(delays) do
                             C_Timer.After(delay, function()
-                                -- Re-check embedded status — the tooltip may
-                                -- have been identified as embedded after the
-                                -- initial watcher pass created this timer.
+                                if pendingPopulate[blizzTip] then return end
                                 if IsEmbeddedSubTooltip(blizzTip) then return end
                                 local okS, s = pcall(blizzTip.IsShown, blizzTip)
                                 if not okS or not s then return end
                                 local lateLines, lateHasExtra = ReadAllContent(blizzTip)
-                                if #lateLines > lastLineCount then
-                                    lastLineCount = #lateLines
+                                if #lateLines == 0 then return end
+                                local lateHash = BuildContentHash(lateLines)
+                                if lateHash ~= ownedTip._contentHash then
+                                    ownedTip._contentHash = lateHash
                                     ownedTip._hasEmbeddedContent = lateHasExtra
                                     ApplyClassColorName(lateLines, settings, blizzTip)
                                     PopulateTooltip(ownedTip, lateLines, nil, nil, blizzTip)
@@ -1665,19 +1683,7 @@ local function SetupVisibilityWatcher()
                 if okBlizzShown and blizzShown and canRefresh then
                     local curLines = ReadAllContent(blizzTip)
                     if #curLines > 0 then
-                        -- Build a content hash from all line texts to detect
-                        -- changes even when line count stays the same.
-                        local hashParts = {}
-                        for hi, hl in ipairs(curLines) do
-                            local ht = hl.leftText
-                            if ht and type(issecretvalue) == "function" and issecretvalue(ht) then
-                                hashParts[hi] = "~"
-                            else
-                                local okS, s = pcall(tostring, ht or "")
-                                hashParts[hi] = okS and s or "~"
-                            end
-                        end
-                        local contentHash = table.concat(hashParts, "|")
+                        local contentHash = BuildContentHash(curLines)
 
                         local curFP = BuildContentFingerprint(curLines)
                         local itemChanged = curFP ~= (ownedTip._contentFingerprint or "")
@@ -1798,19 +1804,14 @@ local function HandleTooltipData(blizzTip, tooltipData, tooltipType)
         end
     end
 
-    -- IMMEDIATE POPULATE: Read lines now and show the owned tooltip right away.
-    -- Always repopulate even if already shown — during rapid tooltip transitions
-    -- (hover item A → item B), the deferred OnHide hasn't fired yet so the owned
-    -- tip still shows stale content from the previous tooltip. Updating immediately
-    -- prevents a 1-frame flash of old content.
-    local lines, hasExtra = ReadAllContent(blizzTip)
-    if #lines > 0 then
-        if ownedTip._isShoppingTooltip then
-            -- Defer shopping tooltips to the watcher — Blizzard adds stat
-            -- comparison lines asynchronously, so showing partial content here
-            -- causes a visible flash. Only reset state when the item changes
-            -- (fingerprint differs). HandleTooltipData fires every frame —
-            -- resetting _shoppingLastRefresh each time would starve the watcher.
+    -- Shopping tooltips defer entirely to the watcher — Blizzard adds stat
+    -- comparison lines asynchronously, so showing partial content causes a
+    -- visible flash. Only reset state when the item changes (fingerprint
+    -- differs). HandleTooltipData fires every frame for shopping tooltips —
+    -- resetting _shoppingLastRefresh each time would starve the watcher.
+    if ownedTip._isShoppingTooltip then
+        local lines = ReadAllContent(blizzTip)
+        if #lines > 0 then
             local fp = BuildContentFingerprint(lines)
             if fp ~= ownedTip._contentFingerprint then
                 ownedTip._contentFingerprint = fp
@@ -1820,19 +1821,28 @@ local function HandleTooltipData(blizzTip, tooltipData, tooltipType)
                     ownedTip:Hide()
                 end
             end
-            return
         end
-
-        ownedTip._hasEmbeddedContent = hasExtra
-        local extraLines = AppendSpellIDLines(lines, settings, tooltipData, tooltipType)
-        ownedTip._extraLines = extraLines
-        ApplyClassColorName(lines, settings, blizzTip, tooltipType)
-        PopulateTooltip(ownedTip, lines, tooltipType, tooltipData, blizzTip)
-        AnchorOwnedTooltip(ownedTip, blizzTip, settings)
-        ownedTip:Show()
+        return
     end
 
-    -- Token-based deferred re-populate: captures other addons' AddLine() calls.
+    -- DEFERRED POPULATE: Don't show the owned tooltip immediately. External
+    -- addons hook OnTooltipSetItem (which fires after PostCall) and call
+    -- AddLine + Show on the Blizzard tooltip. If we populate now, the owned
+    -- tooltip flashes with incomplete content for 1 frame before the deferred
+    -- re-read catches the added lines. Instead, defer to next frame so all
+    -- synchronous hooks have already run by the time we read content.
+    -- During rapid transitions (hover item A → B), hide stale content from
+    -- the previous tooltip immediately to avoid a flash of old content.
+    if ownedTip:IsShown() then
+        local lines = ReadAllContent(blizzTip)
+        local fp = BuildContentFingerprint(lines)
+        if fp ~= (ownedTip._contentFingerprint or "") then
+            ownedTip:Hide()
+        end
+    end
+
+    -- Token-based deferred populate: captures other addons' AddLine() calls
+    -- that fire synchronously after PostCall (e.g., OnTooltipSetItem hooks).
     -- Each new tooltip data supersedes the previous deferred call (rapid mouse-
     -- over changes: the old callback sees a stale token and bails out).
     pendingPopulate[blizzTip] = (pendingPopulate[blizzTip] or 0) + 1
@@ -1850,7 +1860,8 @@ local function HandleTooltipData(blizzTip, tooltipData, tooltipType)
             return
         end
 
-        -- Re-read all content (text lines + embedded items + widgets)
+        -- Read all content (text lines + embedded items + widgets).
+        -- By now, all synchronous hooks (OnTooltipSetItem etc.) have run.
         local updatedLines, hasExtra = ReadAllContent(blizzTip)
         if #updatedLines == 0 then
             ownedTip:Hide()
@@ -1865,19 +1876,28 @@ local function HandleTooltipData(blizzTip, tooltipData, tooltipType)
         AnchorOwnedTooltip(ownedTip, blizzTip, settings)
         ownedTip:Show()
 
-        -- Late content re-checks — widget content and embedded items load
-        -- asynchronously. Check at increasing delays to capture additions.
-        local lastDeferredCount = #updatedLines
+        -- Store content hash for late re-checks. Use hash instead of line
+        -- count so we also catch external addons that modify existing lines
+        -- or use C_Timer to add content asynchronously.
+        local baseHash = BuildContentHash(updatedLines)
+        ownedTip._contentFingerprint = BuildContentFingerprint(updatedLines)
+        ownedTip._contentHash = baseHash
+
+        -- Late content re-checks — widget content, embedded items, and
+        -- async addon additions. Check at increasing delays; only update
+        -- when the content hash actually changed.
         local deferDelays = { 0.2, 0.5 }
         for _, delay in ipairs(deferDelays) do
             C_Timer.After(delay, function()
+                if pendingPopulate[blizzTip] then return end
                 local okStill2, still2 = pcall(blizzTip.IsShown, blizzTip)
                 if not okStill2 or not still2 then return end
                 local lateLines, lateHasExtra = ReadAllContent(blizzTip)
-                -- Account for our appended lines when comparing counts
+                if #lateLines == 0 then return end
                 local lateExtra = AppendSpellIDLines(lateLines, settings, tooltipData, tooltipType)
-                if #lateLines > lastDeferredCount then
-                    lastDeferredCount = #lateLines
+                local lateHash = BuildContentHash(lateLines)
+                if lateHash ~= ownedTip._contentHash then
+                    ownedTip._contentHash = lateHash
                     ownedTip._hasEmbeddedContent = lateHasExtra
                     ownedTip._extraLines = lateExtra
                     ApplyClassColorName(lateLines, settings, blizzTip, tooltipType)

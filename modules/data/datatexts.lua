@@ -1943,9 +1943,9 @@ local function BuildGuildCache()
             end
         end
 
-        if guildClubID and CommunitiesUtil and CommunitiesUtil.GetAndSortMemberInfo then
-            local members = CommunitiesUtil.GetAndSortMemberInfo(guildClubID)
-            if members then
+        if guildClubID and not InCombatLockdown() and CommunitiesUtil and CommunitiesUtil.GetAndSortMemberInfo then
+            local ok, members = pcall(CommunitiesUtil.GetAndSortMemberInfo, guildClubID)
+            if ok and members then
                 for _, data in ipairs(members) do
                     if data.guid then
                         guildCache.clubMembers[data.guid] = {
@@ -2065,7 +2065,7 @@ Datatexts:Register("guild", {
 
             GameTooltip:AddLine((guildName or "Guild") .. (showNotes and " (Notes)" or ""), 1, 1, 1)
 
-            local motd = GetGuildRosterMOTD()
+            local motd = not InCombatLockdown() and GetGuildRosterMOTD()
             if motd and motd ~= "" then
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("MOTD:", 1, 0.8, 0)
