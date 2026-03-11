@@ -1912,17 +1912,12 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     anchorFrame.channelTickMarkers = {}
     anchorFrame.channelTickPositions = nil
 
-    -- Player castbar can become protected by secure anchoring chains in combat.
-    -- Keep it shown and toggle visibility through alpha to avoid blocked Show/Hide.
-    if unit == "player" then
-        anchorFrame._quiUseAlphaVisibility = true
-        anchorFrame:SetAlpha(0)
-        anchorFrame:Show()
-    else
-        anchorFrame._quiUseAlphaVisibility = false
-        anchorFrame:SetAlpha(1)
-        anchorFrame:Hide()
-    end
+    -- Castbars can be reached from secure contexts in combat (for example target
+    -- swap + immediate cast events). Keep them shown and toggle visibility using
+    -- alpha so we don't depend on Show()/Hide() during combat.
+    anchorFrame._quiUseAlphaVisibility = true
+    anchorFrame:SetAlpha(0)
+    anchorFrame:Show()
     
     self:SetupCastbar(anchorFrame, unit, unitKey, castSettings)
     
