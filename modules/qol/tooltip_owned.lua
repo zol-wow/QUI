@@ -23,6 +23,7 @@ local pcall = pcall
 local tinsert = tinsert
 local wipe = wipe
 local math_max = math.max
+local math_min = math.min
 local math_abs = math.abs
 
 local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
@@ -328,6 +329,53 @@ local function CreateOwnedTooltip(name)
     ApplySkin(frame)
 
     return frame
+end
+
+local TOOLTIP_MIN_WIDTH = 180
+local TOOLTIP_MAX_WIDTH = 420
+local TOOLTIP_SINGLE_LINE_SOFT_CAP = 320
+local TOOLTIP_DOUBLE_LINE_GAP = 12
+local TOOLTIP_WIDTH_OVERSIZE_TOLERANCE = 40
+
+local function ClampTooltipWidth(width)
+    width = Helpers.SafeToNumber(width, nil)
+    if not width then return nil end
+    return math_min(math_max(width, TOOLTIP_MIN_WIDTH), TOOLTIP_MAX_WIDTH)
+end
+
+local function MeasureFontStringWidth(fontString, text, softCap)
+    if not fontString or text == nil then return nil end
+    if type(issecretvalue) == "function" and issecretvalue(text) then return nil end
+
+    local width = nil
+    if fontString.GetUnboundedStringWidth then
+        local ok, value = pcall(fontString.GetUnboundedStringWidth, fontString)
+        width = ok and Helpers.SafeToNumber(value, nil) or nil
+    end
+    if not width then
+        local ok, value = pcall(fontString.GetStringWidth, fontString)
+        width = ok and Helpers.SafeToNumber(value, nil) or nil
+    end
+    if width and softCap then
+        width = math_min(width, softCap)
+    end
+    return width
+end
+
+local function ResolveTooltipWidth(blizzWidth, measuredWidth)
+    local finalWidth = ClampTooltipWidth(blizzWidth) or 250
+    measuredWidth = ClampTooltipWidth(measuredWidth)
+    if not measuredWidth then
+        return finalWidth
+    end
+
+    if finalWidth < measuredWidth then
+        return measuredWidth
+    end
+    if finalWidth > (measuredWidth + TOOLTIP_WIDTH_OVERSIZE_TOLERANCE) then
+        return measuredWidth
+    end
+    return finalWidth
 end
 
 ---------------------------------------------------------------------------
@@ -748,6 +796,14 @@ local function FindWidgetIcon(frame)
     return nil  -- no suitable icon found
 end
 
+local function IsWidgetContainerFrame(frame)
+    if not frame then return false end
+    if frame.shownWidgetCount ~= nil then return true end
+    if frame.widgetFrames ~= nil then return true end
+    if frame.widgetPool ~= nil then return true end
+    return false
+end
+
 -- Returns an array of widget entry groups, each { yPos, lines[] }.
 -- ONE entry per tooltip child container (not per sub-child). Each blank
 -- spacer block in the text lines corresponds to one container child.
@@ -769,7 +825,7 @@ local function ReadWidgetContent(blizzTip)
             -- skip — handled by ReadEmbeddedContent
         else
             local okShown, shown = pcall(child.IsShown, child)
-            if okShown and shown then
+            if okShown and shown and IsWidgetContainerFrame(child) then
                 -- Collect all sub-children content, sorted by vertical position.
                 -- Each sub-child's content is gathered, then sorted and merged
                 -- into a single entry for this container.
@@ -891,6 +947,7 @@ local function ReadAllContent(blizzTip)
         local merged = {}
         local widgetIdx = 1
         local i = 1
+        local replacedWidgetBlock = false
         while i <= #lines do
             local text = lines[i].leftText
             local okMatch, hasContent = pcall(string.match, text, "%S")
@@ -910,6 +967,7 @@ local function ReadAllContent(blizzTip)
                     for _, wLine in ipairs(widgetEntries[widgetIdx].lines) do
                         merged[#merged + 1] = wLine
                     end
+                    replacedWidgetBlock = true
                     widgetIdx = widgetIdx + 1
                 end
             else
@@ -920,7 +978,7 @@ local function ReadAllContent(blizzTip)
         end
 
         -- Any remaining widget entries that didn't match a blank block
-        while widgetIdx <= #widgetEntries do
+        while widgetIdx <= #widgetEntries and (replacedWidgetBlock or #lines == 0) do
             merged[#merged + 1] = { leftText = " ", lr = 1, lg = 1, lb = 1 }
             for _, wLine in ipairs(widgetEntries[widgetIdx].lines) do
                 merged[#merged + 1] = wLine
@@ -998,14 +1056,12 @@ local function PopulateTooltip(ownedTip, lines, tooltipType, tooltipData, blizzT
     local lineGap = ownedTip._lineGap
     local fontPath = Helpers.GetGeneralFont and Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
     local fontFlags = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline() or ""
+    local blizzWidth = blizzTip and ClampTooltipWidth(blizzTip:GetWidth()) or nil
 
-    -- Pass Blizzard tooltip width straight through via C-side SetWidth —
-    -- handles secret values natively. No arithmetic on Blizzard values.
-    if blizzTip then
-        pcall(ownedTip.SetWidth, ownedTip, blizzTip:GetWidth())
-    else
-        ownedTip:SetWidth(250)
-    end
+    -- Start from Blizzard's width, then refine it after we've measured the lines
+    -- we actually render. This trims oversized backdrops from overlay/widget
+    -- widths while still preserving Blizzard's wrap width as a fallback.
+    ownedTip:SetWidth(blizzWidth or 250)
 
     -- Single pass: set text and position using RELATIVE ANCHORING.
     -- Each line anchors to the BOTTOM of the previous line. Word-wrapped text
@@ -1013,6 +1069,7 @@ local function PopulateTooltip(ownedTip, lines, tooltipType, tooltipData, blizzT
     -- Secret text values pass straight through to C-side SetText/SetTextColor.
     local textIdx = 0
     local barIdx = 0
+    local measuredMaxWidth = 0
     local prevAnchor = nil  -- the region to anchor below (nil = first line, anchor to frame top)
 
     for i, lineData in ipairs(lines) do
@@ -1039,6 +1096,7 @@ local function PopulateTooltip(ownedTip, lines, tooltipType, tooltipData, blizzT
                 bar._label:Hide()
             end
             bar:Show()
+            measuredMaxWidth = math_max(measuredMaxWidth, 220)
             prevAnchor = bar
         else
             textIdx = textIdx + 1
@@ -1050,6 +1108,16 @@ local function PopulateTooltip(ownedTip, lines, tooltipType, tooltipData, blizzT
             left:SetFont(fontPath, size, fontFlags)
             right:SetFont(fontPath, size, fontFlags)
 
+            local rightWidth = nil
+            if lineData.rightText then
+                right:SetText(lineData.rightText)
+                right:SetTextColor(lineData.rr, lineData.rg, lineData.rb)
+                rightWidth = MeasureFontStringWidth(right, lineData.rightText)
+            else
+                right:SetText("")
+                right:Hide()
+            end
+
             -- Blindly pass text and colors through — C-side handles secret values.
             left:SetText(lineData.leftText)
             left:SetTextColor(lineData.lr, lineData.lg, lineData.lb)
@@ -1059,22 +1127,34 @@ local function PopulateTooltip(ownedTip, lines, tooltipType, tooltipData, blizzT
             else
                 left:SetPoint("TOPLEFT", ownedTip, "TOPLEFT", padding, -padding)
             end
-            left:SetPoint("RIGHT", ownedTip, "RIGHT", -padding, 0)
+            if lineData.rightText then
+                local reserve = (rightWidth and (rightWidth + TOOLTIP_DOUBLE_LINE_GAP)) or 90
+                left:SetPoint("RIGHT", ownedTip, "RIGHT", -(padding + reserve), 0)
+            else
+                left:SetPoint("RIGHT", ownedTip, "RIGHT", -padding, 0)
+            end
             left:Show()
 
             if lineData.rightText then
-                right:SetText(lineData.rightText)
-                right:SetTextColor(lineData.rr, lineData.rg, lineData.rb)
                 right:ClearAllPoints()
-                if prevAnchor then
-                    right:SetPoint("TOPRIGHT", prevAnchor, "BOTTOMRIGHT", 0, -lineGap)
-                else
-                    right:SetPoint("TOPRIGHT", ownedTip, "TOPRIGHT", -padding, -padding)
-                end
+                right:SetPoint("TOP", left, "TOP", 0, 0)
+                right:SetPoint("RIGHT", ownedTip, "RIGHT", -padding, 0)
                 right:Show()
+            end
+
+            local leftWidth = MeasureFontStringWidth(left, lineData.leftText, lineData.rightText and nil or TOOLTIP_SINGLE_LINE_SOFT_CAP)
+            local lineWidth = nil
+            if lineData.rightText then
+                if leftWidth and rightWidth then
+                    lineWidth = leftWidth + TOOLTIP_DOUBLE_LINE_GAP + rightWidth
+                else
+                    lineWidth = leftWidth or rightWidth
+                end
             else
-                right:SetText("")
-                right:Hide()
+                lineWidth = leftWidth
+            end
+            if lineWidth then
+                measuredMaxWidth = math_max(measuredMaxWidth, lineWidth)
             end
 
             prevAnchor = left
@@ -1082,6 +1162,12 @@ local function PopulateTooltip(ownedTip, lines, tooltipType, tooltipData, blizzT
     end
 
     ownedTip._activeLines = #lines
+
+    local measuredWidth = nil
+    if measuredMaxWidth > 0 then
+        measuredWidth = measuredMaxWidth + padding * 2
+    end
+    ownedTip:SetWidth(ResolveTooltipWidth(blizzWidth, measuredWidth))
 
     -- Health bar for unit tooltips
     local healthBar = ownedTip._healthBar
