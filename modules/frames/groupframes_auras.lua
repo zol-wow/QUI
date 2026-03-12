@@ -196,12 +196,16 @@ end
 ---------------------------------------------------------------------------
 -- SLOT OFFSET: Calculate icon position for configurable grow direction
 ---------------------------------------------------------------------------
-local function CalculateSlotOffset(index, iconSize, spacing, direction)
+local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCount)
     local step = (index - 1) * (iconSize + spacing)
     if direction == "RIGHT" then
         return step, 0
     elseif direction == "LEFT" then
         return -step, 0
+    elseif direction == "CENTER" then
+        local n = totalCount or 1
+        local totalSpan = n * iconSize + math.max(n - 1, 0) * spacing
+        return step - totalSpan / 2, 0
     elseif direction == "UP" then
         return 0, step
     elseif direction == "DOWN" then
@@ -735,6 +739,8 @@ local function UpdateFrameAuras(frame)
         local dOffX = auraSettings.debuffOffsetX or -2
         local dOffY = auraSettings.debuffOffsetY or -18
         if dAnchor:find("BOTTOM") then dOffY = dOffY + (frame._bottomPad or 0) end
+        -- CENTER requires repositioning every update (visible count may change)
+        local dVisibleCount = dGrow == "CENTER" and math.min(#sortedAuras, maxDebuffs) or nil
         for i = 1, maxDebuffs do
             local entry = sortedAuras[i]
             if not frame.debuffIcons[i] then
@@ -742,8 +748,8 @@ local function UpdateFrameAuras(frame)
                 needsLayout = true -- New icon always needs positioning
             end
             -- Only reposition when layout settings changed (version mismatch)
-            if needsLayout then
-                local offX, offY = CalculateSlotOffset(i, iconSize, dSpacing, dGrow)
+            if needsLayout or dVisibleCount then
+                local offX, offY = CalculateSlotOffset(i, iconSize, dSpacing, dGrow, dVisibleCount)
                 frame.debuffIcons[i]:ClearAllPoints()
                 frame.debuffIcons[i]:SetPoint(dAnchor, frame, dAnchor, dOffX + offX, dOffY + offY)
                 frame.debuffIcons[i]:SetSize(iconSize, iconSize)
@@ -876,6 +882,7 @@ local function UpdateFrameAuras(frame)
         local bOffX = auraSettings.buffOffsetX or 2
         local bOffY = auraSettings.buffOffsetY or 16
         if bAnchor:find("BOTTOM") then bOffY = bOffY + (frame._bottomPad or 0) end
+        local bVisibleCount = bGrow == "CENTER" and math.min(#sortedAuras, maxBuffs) or nil
         for i = 1, maxBuffs do
             local entry = sortedAuras[i]
             if not frame.buffIcons[i] then
@@ -883,8 +890,8 @@ local function UpdateFrameAuras(frame)
                 needsLayout = true
             end
             -- Only reposition when layout settings changed
-            if needsLayout then
-                local offX, offY = CalculateSlotOffset(i, iconSize, bSpacing, bGrow)
+            if needsLayout or bVisibleCount then
+                local offX, offY = CalculateSlotOffset(i, iconSize, bSpacing, bGrow, bVisibleCount)
                 frame.buffIcons[i]:ClearAllPoints()
                 frame.buffIcons[i]:SetPoint(bAnchor, frame, bAnchor, bOffX + offX, bOffY + offY)
                 frame.buffIcons[i]:SetSize(iconSize, iconSize)

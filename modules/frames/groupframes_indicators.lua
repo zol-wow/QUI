@@ -336,6 +336,21 @@ local function UpdateFrameIndicators(frame)
             end
         end
     end
+
+    -- CENTER: reposition all icons centered around the container's anchor
+    if growDir == "CENTER" and count > 0 then
+        local totalSpan = count * iconSize + math.max(count - 1, 0) * spacing
+        local startX = -totalSpan / 2
+        local vertPart = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
+        local iconPoint = vertPart == "" and "LEFT" or (vertPart .. "LEFT")
+        for idx = 1, count do
+            local ic = state.icons[idx]
+            if ic then
+                ic:ClearAllPoints()
+                ic:SetPoint(iconPoint, container, anchor, startX + (idx - 1) * (iconSize + spacing), 0)
+            end
+        end
+    end
 end
 
 ---------------------------------------------------------------------------

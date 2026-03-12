@@ -414,6 +414,7 @@ local ANCHOR_MAP = {
 local AURA_GROW_OPTIONS = {
     { value = "LEFT", text = "Left" },
     { value = "RIGHT", text = "Right" },
+    { value = "CENTER", text = "Center" },
     { value = "UP", text = "Up" },
     { value = "DOWN", text = "Down" },
 }
@@ -1242,8 +1243,16 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     local defStepX, defStepY = 0, 0
     if defGrowDir == "RIGHT" then defStepX = defSize + defSpacing
     elseif defGrowDir == "LEFT" then defStepX = -(defSize + defSpacing)
+    elseif defGrowDir == "CENTER" then defStepX = defSize + defSpacing
     elseif defGrowDir == "UP" then defStepY = defSize + defSpacing
     elseif defGrowDir == "DOWN" then defStepY = -(defSize + defSpacing)
+    end
+
+    -- Centering offset for CENTER grow direction
+    local defCenterOff = 0
+    if defGrowDir == "CENTER" then
+        local totalSpan = defMaxIcons * defSize + math.max(defMaxIcons - 1, 0) * defSpacing
+        defCenterOff = -totalSpan / 2
     end
 
     local defTextures = { 135936, 135987, 136120, 135874, 236220 }
@@ -1255,7 +1264,7 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     for i = 1, defMaxIcons do
         local defIconFrame = CreateFrame("Frame", nil, defContainer)
         defIconFrame:SetSize(defSize, defSize)
-        defIconFrame:SetPoint(defPos, defContainer, defPos, defStepX * (i - 1), defStepY * (i - 1))
+        defIconFrame:SetPoint(defPos, defContainer, defPos, defCenterOff + defStepX * (i - 1), defStepY * (i - 1))
         local defIcon = defIconFrame:CreateTexture(nil, "OVERLAY")
         defIcon:SetAllPoints()
         defIcon:SetTexture(defTextures[((i - 1) % #defTextures) + 1])
@@ -1373,21 +1382,29 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         icon:SetTexture(spellTex or 134400)
 
         -- Determine first-icon anchor from container anchor + grow direction
-        -- Vertical: match anchor (TOP/BOTTOM/center)
-        -- Horizontal: match grow direction (LEFT grows leftward from RIGHT, RIGHT grows rightward from LEFT)
         local vertPart = aiAnchor:find("TOP") and "TOP" or (aiAnchor:find("BOTTOM") and "BOTTOM" or "")
-        local firstHoriz = aiGrow == "LEFT" and "RIGHT" or "LEFT"
-        local firstAnchor = vertPart .. firstHoriz
 
-        if i == 1 then
-            icon:SetPoint(firstAnchor, aiContainer, firstAnchor, 0, 0)
+        if aiGrow == "CENTER" then
+            -- Center icons around the container's anchor point
+            local aiCount = math.min(aiMax, #sampleSpells)
+            local totalSpan = aiCount * aiIconSize + math.max(aiCount - 1, 0) * aiSpacing
+            local startX = -totalSpan / 2
+            local iconPoint = vertPart == "" and "LEFT" or (vertPart .. "LEFT")
+            icon:SetPoint(iconPoint, aiContainer, aiAnchor, startX + (i - 1) * (aiIconSize + aiSpacing), 0)
         else
-            local prevIcon = aiContainer["icon" .. (i - 1)]
-            if prevIcon then
-                if aiGrow == "LEFT" then
-                    icon:SetPoint("RIGHT", prevIcon, "LEFT", -aiSpacing, 0)
-                else
-                    icon:SetPoint("LEFT", prevIcon, "RIGHT", aiSpacing, 0)
+            local firstHoriz = aiGrow == "LEFT" and "RIGHT" or "LEFT"
+            local firstAnchor = vertPart .. firstHoriz
+
+            if i == 1 then
+                icon:SetPoint(firstAnchor, aiContainer, firstAnchor, 0, 0)
+            else
+                local prevIcon = aiContainer["icon" .. (i - 1)]
+                if prevIcon then
+                    if aiGrow == "LEFT" then
+                        icon:SetPoint("RIGHT", prevIcon, "LEFT", -aiSpacing, 0)
+                    else
+                        icon:SetPoint("LEFT", prevIcon, "RIGHT", aiSpacing, 0)
+                    end
                 end
             end
         end

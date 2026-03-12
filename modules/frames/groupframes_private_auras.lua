@@ -75,12 +75,16 @@ end
 --- @param spacing number pixel spacing between icons
 --- @param direction string "LEFT", "RIGHT", "UP", or "DOWN"
 --- @return number offsetX, number offsetY
-local function CalculateSlotOffset(index, iconSize, spacing, direction)
+local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCount)
     local step = (index - 1) * (iconSize + spacing)
     if direction == "RIGHT" then
         return step, 0
     elseif direction == "LEFT" then
         return -step, 0
+    elseif direction == "CENTER" then
+        local n = totalCount or 1
+        local totalSpan = n * iconSize + math.max(n - 1, 0) * spacing
+        return step - totalSpan / 2, 0
     elseif direction == "UP" then
         return 0, step
     elseif direction == "DOWN" then
@@ -143,7 +147,7 @@ local function SetupPrivateAuras(frame)
         container:SetFrameLevel(frame:GetFrameLevel() + (settings.frameLevel or 50))
 
         -- Position relative to the anchor point on the parent frame
-        local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction)
+        local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction, maxSlots)
         container:SetPoint(anchor, frame, anchor, offsetX + slotOffX, offsetY + slotOffY)
 
         -- Register private aura anchor
@@ -367,7 +371,7 @@ function QUI_GFPA:SetupTestFrame(frame)
 
     for i = 1, maxSlots do
         local icon = CreatePlaceholderIcon(frame, iconSize)
-        local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction)
+        local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction, maxSlots)
         icon:SetPoint(anchor, frame, anchor, offsetX + slotOffX, offsetY + slotOffY)
         icon:Show()
         testPlaceholders[frame][i] = icon

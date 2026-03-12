@@ -1200,10 +1200,11 @@ end
 ---------------------------------------------------------------------------
 -- Growth direction offsets for multi-icon layout
 local DEFENSIVE_GROWTH_OFFSETS = {
-    RIGHT = function(size, spacing) return size + spacing, 0 end,
-    LEFT  = function(size, spacing) return -(size + spacing), 0 end,
-    UP    = function(size, spacing) return 0, size + spacing end,
-    DOWN  = function(size, spacing) return 0, -(size + spacing) end,
+    RIGHT  = function(size, spacing) return size + spacing, 0 end,
+    LEFT   = function(size, spacing) return -(size + spacing), 0 end,
+    CENTER = function(size, spacing) return size + spacing, 0 end,
+    UP     = function(size, spacing) return 0, size + spacing end,
+    DOWN   = function(size, spacing) return 0, -(size + spacing) end,
 }
 
 local function UpdateDefensiveIndicator(frame)
@@ -1289,6 +1290,14 @@ local function UpdateDefensiveIndicator(frame)
     local growFn = DEFENSIVE_GROWTH_OFFSETS[growDir] or DEFENSIVE_GROWTH_OFFSETS.RIGHT
     local stepX, stepY = growFn(iconSize, spacing)
 
+    -- CENTER: calculate centering offset based on visible count
+    local centerOffX = 0
+    if growDir == "CENTER" then
+        local visibleCount = math.min(#foundAuras, #frame.defensiveIcons)
+        local totalSpan = visibleCount * iconSize + math.max(visibleCount - 1, 0) * spacing
+        centerOffX = -totalSpan / 2
+    end
+
     -- Expose active defensive auraInstanceIDs for buff deduplication
     if not frame._defensiveAuraIDs then frame._defensiveAuraIDs = {} end
     wipe(frame._defensiveAuraIDs)
@@ -1329,7 +1338,7 @@ local function UpdateDefensiveIndicator(frame)
             -- Position: first icon at anchor, subsequent offset by growth direction
             defIcon:SetSize(iconSize, iconSize)
             defIcon:ClearAllPoints()
-            defIcon:SetPoint(position, frame, position, offsetX + stepX * (i - 1), offsetY + stepY * (i - 1))
+            defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), offsetY + stepY * (i - 1))
             defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
             defIcon:Show()
         else
