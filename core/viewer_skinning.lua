@@ -31,23 +31,6 @@ _G.QUI_GetSkinViewerState = function(viewer) return skinViewerState[viewer] end
 -- LOCAL HELPERS
 ---------------------------------------------------------------------------
 
-local function CreateBorder(frame)
-    if frame.border then return frame.border end
-
-    local bord = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(bord)) or 1
-    bord:SetPoint("TOPLEFT", frame, -px, px)
-    bord:SetPoint("BOTTOMRIGHT", frame, px, -px)
-    bord:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    bord:SetBackdropBorderColor(0, 0, 0, 1)
-
-    frame.border = bord
-    return bord
-end
-
 local function IsCooldownIconFrame(frame)
     return frame and (frame.icon or frame.Icon) and frame.Cooldown
 end

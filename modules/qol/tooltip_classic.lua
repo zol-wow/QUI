@@ -329,57 +329,6 @@ local function SetupTooltipHook()
         end
     end)
 
-    -- Safety net for combat tooltip issues
-    hooksecurefunc("GameTooltip_Hide", function()
-        C_Timer.After(0, function()
-            if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
-            if InCombatLockdown() and GameTooltip:IsVisible() then
-                GameTooltip:Hide()
-            end
-        end)
-    end)
-
-    -- Tooltip sticking monitor (combat only)
-    local tooltipMonitor = CreateFrame("Frame")
-    local monitorElapsed = 0
-
-    local function TooltipMonitorOnUpdate(self, delta)
-        monitorElapsed = monitorElapsed + delta
-        if monitorElapsed < 0.25 then return end
-        monitorElapsed = 0
-        local settings = Provider:GetSettings()
-        if not settings or not settings.enabled then return end
-        if settings.hideInCombat then return end
-        if not GameTooltip:IsVisible() then return end
-        local owner = GameTooltip:GetOwner()
-        if not owner then return end
-        local mouseFrame = Provider:GetTopMouseFrame()
-        if not mouseFrame then return end
-        local isOverOwner = false
-        local checkFrame = mouseFrame
-        while checkFrame do
-            if checkFrame == owner then
-                isOverOwner = true
-                break
-            end
-            local ok, parent = pcall(checkFrame.GetParent, checkFrame)
-            checkFrame = ok and parent or nil
-        end
-        if not isOverOwner then
-            GameTooltip:Hide()
-        end
-    end
-
-    tooltipMonitor:RegisterEvent("PLAYER_REGEN_DISABLED")
-    tooltipMonitor:RegisterEvent("PLAYER_REGEN_ENABLED")
-    tooltipMonitor:SetScript("OnEvent", function(self, event)
-        if event == "PLAYER_REGEN_DISABLED" then
-            monitorElapsed = 0
-            self:SetScript("OnUpdate", TooltipMonitorOnUpdate)
-        else
-            self:SetScript("OnUpdate", nil)
-        end
-    end)
 end
 
 ---------------------------------------------------------------------------
