@@ -2706,6 +2706,8 @@ local defaults = {
                 showTooltip = true,
                 unitFrames = {
                     player = false,
+                    target = false,
+                    targettarget = false,
                     focus = false,
                     pet = false,
                 },

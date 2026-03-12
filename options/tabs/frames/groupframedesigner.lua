@@ -2824,9 +2824,11 @@ local function BuildClickCastSettings(content, gfdb, onChange)
     y = y - 22
 
     local ufFrames = {
-        { key = "player",  label = "Player" },
-        { key = "focus",   label = "Focus" },
-        { key = "pet",     label = "Pet" },
+        { key = "player",       label = "Player" },
+        { key = "target",       label = "Target" },
+        { key = "targettarget", label = "Target of Target" },
+        { key = "focus",        label = "Focus" },
+        { key = "pet",          label = "Pet" },
     }
 
     local refreshClickCast = function()
