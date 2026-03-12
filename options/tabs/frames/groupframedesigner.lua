@@ -2845,12 +2845,14 @@ local function BuildClickCastSettings(content, gfdb, onChange)
     local cc = gfdb.clickCast
     if not cc then gfdb.clickCast = {} cc = gfdb.clickCast end
 
-    local enableCheck = GUI:CreateFormCheckbox(content, "Enable Click-Casting", "enabled", cc, function()
-        RefreshGF()
-        if cc.enabled then
-            print("|cFF34D399[QUI]|r Click-casting enabled. Reload recommended.")
+    local refreshClickCast = function()
+        local GFCC_ref = ns.QUI_GroupFrameClickCast
+        if GFCC_ref and not InCombatLockdown() then
+            GFCC_ref:RefreshBindings()
         end
-    end)
+    end
+
+    local enableCheck = GUI:CreateFormCheckbox(content, "Enable Click-Casting", "enabled", cc, refreshClickCast)
     enableCheck:SetPoint("TOPLEFT", PAD, y)
     enableCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
@@ -2861,7 +2863,7 @@ local function BuildClickCastSettings(content, gfdb, onChange)
     cliqueNote:SetJustifyH("LEFT")
     y = y - 30
 
-    local perSpecCheck = GUI:CreateFormCheckbox(content, "Per-Spec Bindings", "perSpec", cc, RefreshGF)
+    local perSpecCheck = GUI:CreateFormCheckbox(content, "Per-Spec Bindings", "perSpec", cc, refreshClickCast)
     perSpecCheck:SetPoint("TOPLEFT", PAD, y)
     perSpecCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
@@ -2891,13 +2893,6 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         { key = "focus",        label = "Focus" },
         { key = "pet",          label = "Pet" },
     }
-
-    local refreshClickCast = function()
-        local GFCC_ref = ns.QUI_GroupFrameClickCast
-        if GFCC_ref and GFCC_ref:IsEnabled() and not InCombatLockdown() then
-            GFCC_ref:RefreshBindings()
-        end
-    end
 
     for _, info in ipairs(ufFrames) do
         local ufCheck = GUI:CreateFormCheckbox(content, info.label, info.key, cc.unitFrames, refreshClickCast)
