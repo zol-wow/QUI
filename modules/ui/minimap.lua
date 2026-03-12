@@ -2938,16 +2938,32 @@ local function CheckExternalHud()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
-    local currentScale = Minimap:GetScale()
-    local currentAlpha = Minimap:GetEffectiveAlpha()
     local expectedScale = settings.scale or 1.0
     local expectedSize = settings.size or 140
+
+    -- Primary checks: API-reported values (may be overridden by external addons)
+    local currentScale = Minimap:GetScale()
+    local currentAlpha = Minimap:GetEffectiveAlpha()
     local currentWidth = Minimap:GetWidth()
 
     local hudDetected = (currentScale > expectedScale * 2.0)
         or (currentAlpha < 0.5)
         or (currentWidth > expectedSize * 2.0)
         or (Minimap:GetParent() ~= MinimapCluster)
+
+    -- Fallback: check actual rendered pixel size via GetRect() which bypasses
+    -- metatable overrides that some HUD addons use to hide their changes
+    if not hudDetected then
+        local left, bottom, width, height = Minimap:GetRect()
+        if left and width then
+            local uiScale = UIParent:GetEffectiveScale()
+            local renderedSize = width * Minimap:GetEffectiveScale()
+            local expectedPixels = expectedSize * expectedScale * uiScale
+            if renderedSize > expectedPixels * 2.0 then
+                hudDetected = true
+            end
+        end
+    end
 
     if hudDetected and not externalHudActive then
         externalHudActive = true
@@ -3155,6 +3171,19 @@ function Minimap_Module:Initialize()
     hooksecurefunc(Minimap, "SetParent", function()
         C_Timer.After(0, CheckExternalHud)
     end)
+    hooksecurefunc(Minimap, "SetWidth", function()
+        C_Timer.After(0, CheckExternalHud)
+    end)
+    hooksecurefunc(Minimap, "SetHeight", function()
+        C_Timer.After(0, CheckExternalHud)
+    end)
+    hooksecurefunc(Minimap, "SetPoint", function()
+        C_Timer.After(0, CheckExternalHud)
+    end)
+
+    -- Periodic fallback: some HUD addons use metatable manipulation that bypasses
+    -- hooksecurefunc. Check every 2 seconds as a safety net.
+    C_Timer.NewTicker(2, CheckExternalHud)
 
     -- Start performance-optimized ticker updates
     StartUpdateTickers()
