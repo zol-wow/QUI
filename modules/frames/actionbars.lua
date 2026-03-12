@@ -233,6 +233,60 @@ local function ShouldForceShowForSpellBook()
     return fadeSettings and fadeSettings.showWhenSpellBookOpen and IsSpellBookVisible()
 end
 
+local function GetSpellFlyoutSourceButton(flyout)
+    if not flyout then return nil end
+
+    local sourceButton = rawget(flyout, "flyoutButton")
+    if not sourceButton and flyout.GetParent then
+        sourceButton = flyout:GetParent()
+    end
+
+    return sourceButton
+end
+
+local function GetSpellFlyoutSourceBarKey(flyout)
+    local sourceButton = GetSpellFlyoutSourceButton(flyout)
+    if not sourceButton then return nil end
+
+    local name = sourceButton.GetName and sourceButton:GetName()
+    if not name then return nil end
+
+    if name:match("^ActionButton%d+$") then return "bar1" end
+    if name:match("^MultiBarBottomLeftButton%d+$") then return "bar2" end
+    if name:match("^MultiBarBottomRightButton%d+$") then return "bar3" end
+    if name:match("^MultiBarRightButton%d+$") then return "bar4" end
+    if name:match("^MultiBarLeftButton%d+$") then return "bar5" end
+    if name:match("^MultiBar5Button%d+$") then return "bar6" end
+    if name:match("^MultiBar6Button%d+$") then return "bar7" end
+    if name:match("^MultiBar7Button%d+$") then return "bar8" end
+    if name:match("^PetActionButton%d+$") then return "pet" end
+    if name:match("^StanceButton%d+$") then return "stance" end
+
+    return nil
+end
+
+local function IsSpellFlyoutActiveForBar(barKey)
+    if not barKey then return false end
+
+    local flyout = _G.SpellFlyout
+    if not (flyout and flyout.IsShown and flyout:IsShown()) then
+        return false
+    end
+
+    local sourceBarKey = GetSpellFlyoutSourceBarKey(flyout)
+    if not sourceBarKey then
+        return false
+    end
+
+    return sourceBarKey == barKey
+end
+
+local function ShouldSuspendMouseoverFade(barKey)
+    return ShouldForceShowForSpellBook() or IsSpellFlyoutActiveForBar(barKey)
+end
+
+local SPELL_UI_FADE_RECHECK_DELAY = 0.1
+
 local function CancelBarFadeTimers(state)
     if not state then return end
     if state.delayTimer then
@@ -1171,6 +1225,7 @@ end
 
 local FadeHideEffects
 local FadeShowEffects
+local SkinSpellFlyoutButtons
 
 -- Apply QUI skin to a single button
 local function SkinButton(button, settings)
@@ -1202,14 +1257,21 @@ local function SkinButton(button, settings)
         icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
         icon:ClearAllPoints()
         icon:SetAllPoints(button)
+        local buttonName = button.GetName and button:GetName()
+        local isSpellFlyoutButton = buttonName and (
+            buttonName:match("^SpellFlyoutPopupButton%d+$")
+            or buttonName:match("^SpellFlyoutButton%d+$")
+        )
         -- After /reload, empty slots may retain stale icon textures from the
         -- previous session. Clear them so ghost icons don't appear.
         -- Do not apply this to stance/pet buttons: they use non-standard action
         -- slot semantics and can return false from HasAction() while still
         -- having a valid icon.
+        -- Also skip spell flyout buttons: Blizzard sets their icon directly.
         local barKey = GetBarKeyFromButton(button)
         local action = Helpers.SafeToNumber(button.action)
-        if action and barKey ~= "stance" and barKey ~= "pet" and not SafeHasAction(action) then
+        if action and barKey ~= "stance" and barKey ~= "pet" and not isSpellFlyoutButton
+            and not SafeHasAction(action) then
             icon:SetTexture(nil)
         end
         icon:SetAlpha(1)
@@ -2335,7 +2397,7 @@ end
 
 -- Apply alpha to all buttons in a bar
 local function SetBarAlpha(barKey, alpha)
-    if alpha < 1 and ShouldForceShowForSpellBook() then
+    if alpha < 1 and ShouldSuspendMouseoverFade(barKey) then
         alpha = 1
     end
 
@@ -2380,7 +2442,7 @@ end
 local function StartBarFade(barKey, targetAlpha)
     -- Don't fade bars out during Edit Mode — keep everything visible
     if targetAlpha < 1 and IsInEditMode() then return end
-    if targetAlpha < 1 and ShouldForceShowForSpellBook() then return end
+    if targetAlpha < 1 and ShouldSuspendMouseoverFade(barKey) then return end
 
     local state = GetBarFadeState(barKey)
     local fadeSettings = GetFadeSettings()
@@ -2514,15 +2576,15 @@ end
 -- Start fade-out for a linked bar
 local function FadeLinkedBarDirect(barKey)
     if IsInEditMode() then return end
-    if ShouldForceShowForSpellBook() then
-        SetBarAlpha(barKey, 1)
-        return
-    end
 
     local barSettings = GetBarSettings(barKey)
     local fadeSettings = GetFadeSettings()
 
     if not barSettings then return end
+    if ShouldForceShowForSpellBook() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
     if ShouldSuppressMouseoverHideForLevel() then
         SetBarAlpha(barKey, 1)
         return
@@ -2549,13 +2611,28 @@ local function FadeLinkedBarDirect(barKey)
         state.delayTimer:Cancel()
     end
 
-    state.delayTimer = C_Timer.NewTimer(delay, function()
+    local function TryLinkedFade()
+        if ShouldForceShowForSpellBook() then
+            SetBarAlpha(barKey, 1)
+            state.delayTimer = nil
+            return
+        end
+
+        if IsSpellFlyoutActiveForBar(barKey) then
+            SetBarAlpha(barKey, 1)
+            state.delayTimer = C_Timer.NewTimer(SPELL_UI_FADE_RECHECK_DELAY, TryLinkedFade)
+            return
+        end
+
         state.delayTimer = nil
-        -- Re-check at fade time in case mouse moved back
+
+        -- Re-check at fade time in case mouse moved back.
         if not IsMouseOverAnyLinkedBar() then
             StartBarFade(barKey, fadeOutAlpha)
         end
-    end)
+    end
+
+    state.delayTimer = C_Timer.NewTimer(delay, TryLinkedFade)
 end
 
 -- Handle mouse entering the bar area (event-based, no polling)
@@ -2616,7 +2693,6 @@ local function OnBarMouseLeave(barKey)
         SetBarAlpha(barKey, 1)
         return
     end
-
     -- If bar should always be visible, skip fade logic entirely
     if barSettings and barSettings.alwaysShow then return end
 
@@ -2644,7 +2720,6 @@ local function OnBarMouseLeave(barKey)
 
         -- If mouse is still over the bar somewhere, don't fade
         if IsMouseOverBar(barKey) then return end
-
         -- LINKED BARS: If enabled and this is a linked bar, check if over ANY linked bar
         if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
             if IsMouseOverAnyLinkedBar() then
@@ -2671,19 +2746,36 @@ local function OnBarMouseLeave(barKey)
             state.delayTimer:Cancel()
         end
 
-        state.delayTimer = C_Timer.NewTimer(delay, function()
-            if not state.isMouseOver then
-                -- Read fresh value at fade time in case settings changed
-                local freshBarSettings = GetBarSettings(barKey)
-                local freshFadeSettings = GetFadeSettings()
-                local freshFadeOutAlpha = freshBarSettings and freshBarSettings.fadeOutAlpha
-                if freshFadeOutAlpha == nil then
-                    freshFadeOutAlpha = freshFadeSettings and freshFadeSettings.fadeOutAlpha or 0
-                end
-                StartBarFade(barKey, freshFadeOutAlpha)
+        local function TryFadeOut()
+            if state.isMouseOver then
+                state.delayTimer = nil
+                return
             end
+
+            if ShouldForceShowForSpellBook() then
+                SetBarAlpha(barKey, 1)
+                state.delayTimer = nil
+                return
+            end
+
+            if IsSpellFlyoutActiveForBar(barKey) then
+                SetBarAlpha(barKey, 1)
+                state.delayTimer = C_Timer.NewTimer(SPELL_UI_FADE_RECHECK_DELAY, TryFadeOut)
+                return
+            end
+
+            -- Read fresh value at fade time in case settings changed.
+            local freshBarSettings = GetBarSettings(barKey)
+            local freshFadeSettings = GetFadeSettings()
+            local freshFadeOutAlpha = freshBarSettings and freshBarSettings.fadeOutAlpha
+            if freshFadeOutAlpha == nil then
+                freshFadeOutAlpha = freshFadeSettings and freshFadeSettings.fadeOutAlpha or 0
+            end
+            StartBarFade(barKey, freshFadeOutAlpha)
             state.delayTimer = nil
-        end)
+        end
+
+        state.delayTimer = C_Timer.NewTimer(delay, TryFadeOut)
     end)
 end
 
@@ -2938,6 +3030,19 @@ local function SkinBar(barKey)
             end)
         end
 
+        -- Spell flyout popup buttons are created on click; defer one frame so
+        -- they exist before we apply QUI skinning.
+        if not state.flyoutSkinHooked then
+            state.flyoutSkinHooked = true
+            button:HookScript("OnClick", function()
+                C_Timer.After(0, function()
+                    if SkinSpellFlyoutButtons then
+                        SkinSpellFlyoutButtons()
+                    end
+                end)
+            end)
+        end
+
         -- Keep cooldown swipes/proc glows from rendering on hidden buttons.
         -- This also covers pet/stance visibility toggles where Blizzard hides
         -- the button frame entirely (no alpha transition through SetBarAlpha).
@@ -2965,6 +3070,163 @@ local function SkinBar(barKey)
     end
 end
 
+local spellFlyoutSkinHooked = false
+
+local function IsSpellFlyoutButtonFrame(button, flyout)
+    if not button then return false end
+    if flyout and button.GetParent and button:GetParent() == flyout then
+        return true
+    end
+
+    local name = button.GetName and button:GetName()
+    if not name then return false end
+
+    return name:match("^SpellFlyoutButton%d+$") ~= nil
+        or name:match("^SpellFlyoutPopupButton%d+$") ~= nil
+end
+
+local function CollectSpellFlyoutButtons(flyout)
+    local buttons, seen = {}, {}
+
+    local function AddButton(button)
+        if not button or seen[button] then return end
+        if not (button.IsObjectType and button:IsObjectType("Button")) then return end
+        if not IsSpellFlyoutButtonFrame(button, flyout) then return end
+
+        seen[button] = true
+        table.insert(buttons, button)
+    end
+
+    if flyout and flyout.GetChildren then
+        for _, child in ipairs({flyout:GetChildren()}) do
+            AddButton(child)
+            if child and child.GetChildren then
+                for _, grandChild in ipairs({child:GetChildren()}) do
+                    AddButton(grandChild)
+                end
+            end
+        end
+    end
+
+    for i = 1, 40 do
+        AddButton(_G["SpellFlyoutButton" .. i])
+        AddButton(_G["SpellFlyoutPopupButton" .. i])
+    end
+
+    return buttons
+end
+
+local function GetSpellFlyoutSkinSettings(flyout)
+    local sourceBarKey = GetSpellFlyoutSourceBarKey(flyout)
+    if sourceBarKey then
+        local sourceSettings = GetEffectiveSettings(sourceBarKey)
+        if sourceSettings then
+            return sourceSettings
+        end
+    end
+
+    return GetGlobalSettings()
+end
+
+local function GetSpellFlyoutSourceButtonSize(flyout)
+    local sourceButton = GetSpellFlyoutSourceButton(flyout)
+    if not (sourceButton and sourceButton.GetSize) then
+        return nil, nil
+    end
+
+    local width, height = sourceButton:GetSize()
+    if not width or not height or width <= 0 or height <= 0 then
+        return nil, nil
+    end
+
+    return width, height
+end
+
+local function SkinSpellFlyoutContainer(flyout)
+    if not flyout then return end
+
+    local bg = flyout.Background
+    if not bg then return end
+
+    if bg.Start then bg.Start:SetAlpha(0) end
+    if bg.End then bg.End:SetAlpha(0) end
+    if bg.HorizontalMiddle then bg.HorizontalMiddle:SetAlpha(0) end
+    if bg.VerticalMiddle then bg.VerticalMiddle:SetAlpha(0) end
+end
+
+local function ApplySpellFlyoutButtonStateTextures(button)
+    if not button then return end
+
+    if button.SetHitRectInsets then
+        button:SetHitRectInsets(0, 0, 0, 0)
+    end
+
+    local normal = button.GetNormalTexture and button:GetNormalTexture()
+    if normal then
+        normal:SetAlpha(0)
+        normal:ClearAllPoints()
+        normal:SetAllPoints(button)
+    end
+
+    local pushed = button.GetPushedTexture and button:GetPushedTexture()
+    if pushed then
+        pushed:SetTexture(TEXTURES.pushed)
+        pushed:ClearAllPoints()
+        pushed:SetAllPoints(button)
+    end
+
+    local checked = button.GetCheckedTexture and button:GetCheckedTexture()
+    if checked then
+        checked:SetTexture(TEXTURES.checked)
+        checked:ClearAllPoints()
+        checked:SetAllPoints(button)
+    end
+
+    local highlight = button.GetHighlightTexture and button:GetHighlightTexture()
+    if highlight then
+        highlight:SetTexture(TEXTURES.highlight)
+        highlight:ClearAllPoints()
+        highlight:SetAllPoints(button)
+    end
+end
+
+SkinSpellFlyoutButtons = function()
+    local flyout = _G.SpellFlyout
+    if not (flyout and flyout.IsShown and flyout:IsShown()) then return end
+
+    SkinSpellFlyoutContainer(flyout)
+
+    local settings = GetSpellFlyoutSkinSettings(flyout)
+    if not (settings and settings.skinEnabled) then return end
+
+    local sourceWidth, sourceHeight = GetSpellFlyoutSourceButtonSize(flyout)
+
+    for _, button in ipairs(CollectSpellFlyoutButtons(flyout)) do
+        if sourceWidth and sourceHeight and button.SetSize then
+            button:SetSize(sourceWidth, sourceHeight)
+        end
+        ApplySpellFlyoutButtonStateTextures(button)
+        SkinButton(button, settings)
+    end
+
+    -- Rebuild flyout background extents after resizing popup buttons.
+    if flyout.Layout then
+        flyout:Layout()
+    end
+end
+
+local function HookSpellFlyoutSkinning()
+    if spellFlyoutSkinHooked then return end
+
+    local flyout = _G.SpellFlyout
+    if not flyout then return end
+
+    spellFlyoutSkinHooked = true
+    flyout:HookScript("OnShow", function()
+        C_Timer.After(0, SkinSpellFlyoutButtons)
+    end)
+end
+
 -- Skin all enabled bars
 local function SkinAllBars()
     local db = GetDB()
@@ -2979,6 +3241,8 @@ local function SkinAllBars()
         -- Setup mouseover fade for ALL bars
         SetupBarMouseover(barKey)
     end
+
+    SkinSpellFlyoutButtons()
 end
 
 ---------------------------------------------------------------------------
@@ -3024,6 +3288,7 @@ function ActionBars:Refresh()
     end
 
     SkinAllBars()
+    HookSpellFlyoutSkinning()
     ApplyBarLayoutSettings()
     RefreshBarsForSpellBookVisibility()
 
@@ -3072,6 +3337,7 @@ function ActionBars:Initialize()
 
     -- Initial skin pass
     SkinAllBars()
+    HookSpellFlyoutSkinning()
 
     -- Apply bar layout settings (scale, lock, range indicator, empty slots)
     ApplyBarLayoutSettings()
@@ -3241,6 +3507,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "ADDON_LOADED" then
         local addonName = ...
         HandleSpellBookAddonLoaded(addonName)
+        if addonName == "Blizzard_ActionBar" then
+            HookSpellFlyoutSkinning()
+            C_Timer.After(0, SkinSpellFlyoutButtons)
+        end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Process pending initialization (from /reload during combat)
