@@ -40,7 +40,7 @@ Toggle visibility for each built-in minimap element independently:
 
 - Zoom buttons
 - Mail indicator
-- Crafting order notification
+- Work order (crafting order) notification
 - Addon compartment button
 - Difficulty indicator
 - Mission reports

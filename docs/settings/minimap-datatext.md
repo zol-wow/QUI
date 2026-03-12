@@ -88,7 +88,7 @@ Toggle visibility of individual Blizzard minimap elements. Most are hidden by de
 |---------|------|---------|-------------|
 | `minimap.showZoomButtons` | boolean | `false` | Show zoom in/out buttons |
 | `minimap.showMail` | boolean | `false` | Show mail indicator icon |
-| `minimap.showCraftingOrder` | boolean | `false` | Show crafting order indicator |
+| `minimap.showCraftingOrder` | boolean | `true` | Show work order (crafting order) indicator |
 | `minimap.showAddonCompartment` | boolean | `false` | Show addon compartment button |
 | `minimap.showDifficulty` | boolean | `false` | Show dungeon/raid difficulty badge |
 | `minimap.showMissions` | boolean | `false` | Show mission table indicator |
