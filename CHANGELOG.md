@@ -79,6 +79,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.49.2 - 2026-03-12
+
+### Added
+- made growth direction configurable again on QUI CDM engine, and make it actually honor it
+
+### Fixed
+- fixed action bars with flyout buttons fade out when hovering their flown out buttons
+- fixed target castbar not showing
+- fixed tooltip sizing issues with new tooltip engine
+- fix: remove unused SafeHideFrameOffscreen, use SafeHideFrame for party frames
+- fix: remove SetAlpha hook to avoid infinite recursion
+- fix: guard tooltip fingerprint and hash comparisons against secret values
+- feat: discover and handle child tooltips from external addons
+- fix: taint-safe guild datatext APIs, tooltip content-hash for late updates
 ## v2.49.1 - 2026-03-11
 
 ### Added
