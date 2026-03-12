@@ -80,6 +80,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.49.3 - 2026-03-12
+
+### Added
+- added indicator sizing options for group frames
+- added click-casting for target and target-of-target
+- added crafting order indicicator to minimap
+
+### Changed
+- removed QUI tooltip engine, now back to Blizzard hooks for tooltips
+
+### Fixed
+- fix not being able to close consumable check window in combat
+- fix action bar paging not working in combat
+- fix: propagate secret booleans from UnitInRange, click-through tooltips
+- fix: combat-safe tooltip skinning and cursor anchor taint prevention
+- fix: refactor click-cast drop zone for reliable spell/macro drag handling
+- fix: harden click-casting binding list against invalid data types
+- fix: combat-safe cursor tooltips, macro drag-and-drop for click-casting
 ## v2.49.2 - 2026-03-12
 
 ### Added
