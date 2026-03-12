@@ -2941,8 +2941,13 @@ local function CheckExternalHud()
     local currentScale = Minimap:GetScale()
     local currentAlpha = Minimap:GetEffectiveAlpha()
     local expectedScale = settings.scale or 1.0
+    local expectedSize = settings.size or 140
+    local currentWidth = Minimap:GetWidth()
 
-    local hudDetected = (currentScale > expectedScale * 2.0) or (currentAlpha < 0.5)
+    local hudDetected = (currentScale > expectedScale * 2.0)
+        or (currentAlpha < 0.5)
+        or (currentWidth > expectedSize * 2.0)
+        or (Minimap:GetParent() ~= MinimapCluster)
 
     if hudDetected and not externalHudActive then
         externalHudActive = true
@@ -3137,11 +3142,17 @@ function Minimap_Module:Initialize()
     SetupMiddleClickMenu()
     SetupAutoZoom()
 
-    -- Detect external HUD overlays that scale up / fade out the Minimap
+    -- Detect external HUD overlays that scale up / fade out / resize the Minimap
     hooksecurefunc(Minimap, "SetScale", function()
         C_Timer.After(0, CheckExternalHud)
     end)
     hooksecurefunc(Minimap, "SetAlpha", function()
+        C_Timer.After(0, CheckExternalHud)
+    end)
+    hooksecurefunc(Minimap, "SetSize", function()
+        C_Timer.After(0, CheckExternalHud)
+    end)
+    hooksecurefunc(Minimap, "SetParent", function()
         C_Timer.After(0, CheckExternalHud)
     end)
 
