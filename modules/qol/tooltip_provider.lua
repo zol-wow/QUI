@@ -103,7 +103,10 @@ function TooltipProvider:IsFrameBlockingMouse()
     local focus = self:GetTopMouseFrame()
     if not focus then return false end
     if focus == WorldFrame then return false end
-    return focus:IsVisible()
+    -- Some frames (e.g. PingListenerFrame) are forbidden objects
+    -- where IsVisible() cannot be called from addon code.
+    local ok, visible = pcall(focus.IsVisible, focus)
+    return ok and visible
 end
 
 ---------------------------------------------------------------------------

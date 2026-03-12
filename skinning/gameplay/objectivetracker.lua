@@ -452,6 +452,43 @@ local function HidePOIButtonGlows()
     end
 end
 
+-- Lightweight width enforcement — re-applies QUI width to tracker and modules
+-- without the full ApplyMaxWidth overhead (minimize button styling, hooks, etc.)
+-- Called from the debounced update to catch any Blizzard width resets.
+local function EnforceWidth()
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return end
+
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+
+    local maxWidth
+    if IsScenarioActive() then
+        maxWidth = 260
+    else
+        maxWidth = settings.objectiveTrackerWidth or 260
+    end
+
+    -- Only set if different to avoid OnSizeChanged loops
+    if math.abs(TrackerFrame:GetWidth() - maxWidth) > 0.5 then
+        TrackerFrame:SetWidth(maxWidth)
+    end
+    if TrackerFrame.Header and math.abs(TrackerFrame.Header:GetWidth() - maxWidth) > 0.5 then
+        TrackerFrame.Header:SetWidth(maxWidth)
+    end
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker then
+            if math.abs(tracker:GetWidth() - maxWidth) > 0.5 then
+                tracker:SetWidth(maxWidth)
+            end
+            if tracker.Header and math.abs(tracker.Header:GetWidth() - maxWidth) > 0.5 then
+                tracker.Header:SetWidth(maxWidth)
+            end
+        end
+    end
+end
+
 -- Debounced backdrop update to prevent multiple concurrent timers
 -- 0.15s delay allows Blizzard's layout pass to complete before we measure
 local function ScheduleBackdropUpdate()
@@ -459,6 +496,7 @@ local function ScheduleBackdropUpdate()
     pendingBackdropUpdate = true
     C_Timer.After(0.15, function()
         pendingBackdropUpdate = false
+        EnforceWidth()
         UpdateBackdropAnchors()
         HidePOIButtonGlows()
     end)
@@ -799,9 +837,13 @@ local function SkinObjectiveTracker()
 
     -- Also update on size changes (with guard to prevent multiple hooks)
     -- TAINT SAFETY: Defer to break taint chain from secure context.
+    -- EnforceWidth catches Blizzard resetting width back to 260 (template default)
     if not SkinBase.GetFrameData(TrackerFrame, "sizeChangedHooked") then
         TrackerFrame:HookScript("OnSizeChanged", function()
-            C_Timer.After(0, UpdateBackdropAnchors)
+            C_Timer.After(0, function()
+                EnforceWidth()
+                UpdateBackdropAnchors()
+            end)
         end)
         SkinBase.SetFrameData(TrackerFrame, "sizeChangedHooked", true)
     end
