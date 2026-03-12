@@ -1,5 +1,11 @@
--- Keybinding display name (must be global before Bindings.xml loads)
+-- Keybinding display names (must be global before Bindings.xml loads)
 BINDING_NAME_QUI_TOGGLE_OPTIONS = "Open QUI Options"
+BINDING_HEADER_QUI_PING_HEADER  = "Ping"
+BINDING_NAME_QUI_PING           = "Ping (Contextual)"
+BINDING_NAME_QUI_PING_ASSIST    = "Ping: Assist"
+BINDING_NAME_QUI_PING_ATTACK    = "Ping: Attack"
+BINDING_NAME_QUI_PING_WARNING   = "Ping: Warning"
+BINDING_NAME_QUI_PING_ONMYWAY   = "Ping: On My Way"
 
 ---@type table|AceAddon
 QUI = LibStub("AceAddon-3.0"):NewAddon("QUI", "AceConsole-3.0", "AceEvent-3.0")

@@ -5,7 +5,7 @@
 
     Load order: cdm_provider.lua → hud_visibility.lua → engine files
     Engine files call RegisterEngine() at load time.
-    Provider calls Initialize() on the selected engine after PLAYER_LOGIN.
+    Provider calls Initialize() on the selected engine at ADDON_LOADED.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -172,18 +172,18 @@ _G.QUI_GetCDMViewerFrame = function(key)
 end
 
 ---------------------------------------------------------------------------
--- PLAYER_LOGIN TRIGGER
+-- ADDON_LOADED TRIGGER
 ---------------------------------------------------------------------------
--- Initialize the selected engine shortly after login (matches classic timing).
+-- Initialize during ADDON_LOADED for our own addon.  This leverages the
+-- safe window where InCombatLockdown() returns false even during a combat
+-- /reload, allowing container creation and layout to complete before combat
+-- lockdown kicks in.
 local providerEventFrame = CreateFrame("Frame")
-providerEventFrame:RegisterEvent("PLAYER_LOGIN")
-providerEventFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        self:UnregisterEvent("PLAYER_LOGIN")
-        -- Delay slightly to match the original cdm_viewer.lua timing
-        C_Timer.After(0.1, function()
-            CDMProvider:InitializeEngine()
-        end)
+providerEventFrame:RegisterEvent("ADDON_LOADED")
+providerEventFrame:SetScript("OnEvent", function(self, event, addonName)
+    if event == "ADDON_LOADED" and addonName == ADDON_NAME then
+        self:UnregisterEvent("ADDON_LOADED")
+        CDMProvider:InitializeEngine()
     end
 end)
 

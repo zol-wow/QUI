@@ -7,7 +7,8 @@
     are adopted onto addon-owned icons for taint-safe rendering.
 
     Visibility is handled by hud_visibility.lua (loads before engines).
-    Initialization is driven by cdm_provider.lua calling Initialize().
+    Initialization is driven by cdm_provider.lua calling Initialize()
+    at ADDON_LOADED (safe window for combat /reload support).
 ]]
 
 local ADDON_NAME, ns = ...
@@ -791,7 +792,7 @@ end
 ---------------------------------------------------------------------------
 -- REFRESH ALL
 ---------------------------------------------------------------------------
-local function RefreshAll()
+local function RefreshAll(forceSync)
     if not initialized then return end
 
     -- Defer to combat end — rebuilding destroys the current layout.
@@ -826,25 +827,16 @@ local function RefreshAll()
     -- rebuild. Unconditional reset causes a visible flash (ClearPool +
     -- BuildIcons destroys and recreates all icons even when nothing changed).
 
-    refreshTimers[1] = C_Timer.NewTimer(0.01, function()
-        refreshTimers[1] = nil
+    if forceSync then
+        -- Synchronous layout: runs inline to leverage the ADDON_LOADED safe
+        -- window on combat /reload where InCombatLockdown() returns false.
+        -- No timer stagger needed — nothing to interleave on initial boot.
         LayoutContainer("essential")
-    end)
-    refreshTimers[2] = C_Timer.NewTimer(0.02, function()
-        refreshTimers[2] = nil
         LayoutContainer("utility")
         if _G.QUI_ApplyUtilityAnchor then
             _G.QUI_ApplyUtilityAnchor()
         end
-    end)
-    refreshTimers[3] = C_Timer.NewTimer(0.03, function()
-        refreshTimers[3] = nil
         LayoutContainer("buff")
-    end)
-
-    -- Update locked bars and refresh swipe/glow after all layouts complete
-    refreshTimers[4] = C_Timer.NewTimer(0.10, function()
-        refreshTimers[4] = nil
         UpdateAllLockedBars()
         if _G.QUI_UpdateCDMAnchoredUnitFrames then
             _G.QUI_UpdateCDMAnchoredUnitFrames()
@@ -852,18 +844,55 @@ local function RefreshAll()
         if _G.QUI_RefreshCDMMouseover then
             _G.QUI_RefreshCDMMouseover()
         end
-        -- Apply swipe settings and glow state to newly created/rebuilt icons
         if _G.QUI_RefreshCooldownSwipe then
             _G.QUI_RefreshCooldownSwipe()
         end
         if _G.QUI_RefreshCustomGlows then
             _G.QUI_RefreshCustomGlows()
         end
-        -- Sync range poll OnUpdate based on current settings
         if ns.CDMIcons and ns.CDMIcons.SyncRangePoll then
             ns.CDMIcons:SyncRangePoll()
         end
-    end)
+    else
+        refreshTimers[1] = C_Timer.NewTimer(0.01, function()
+            refreshTimers[1] = nil
+            LayoutContainer("essential")
+        end)
+        refreshTimers[2] = C_Timer.NewTimer(0.02, function()
+            refreshTimers[2] = nil
+            LayoutContainer("utility")
+            if _G.QUI_ApplyUtilityAnchor then
+                _G.QUI_ApplyUtilityAnchor()
+            end
+        end)
+        refreshTimers[3] = C_Timer.NewTimer(0.03, function()
+            refreshTimers[3] = nil
+            LayoutContainer("buff")
+        end)
+
+        -- Update locked bars and refresh swipe/glow after all layouts complete
+        refreshTimers[4] = C_Timer.NewTimer(0.10, function()
+            refreshTimers[4] = nil
+            UpdateAllLockedBars()
+            if _G.QUI_UpdateCDMAnchoredUnitFrames then
+                _G.QUI_UpdateCDMAnchoredUnitFrames()
+            end
+            if _G.QUI_RefreshCDMMouseover then
+                _G.QUI_RefreshCDMMouseover()
+            end
+            -- Apply swipe settings and glow state to newly created/rebuilt icons
+            if _G.QUI_RefreshCooldownSwipe then
+                _G.QUI_RefreshCooldownSwipe()
+            end
+            if _G.QUI_RefreshCustomGlows then
+                _G.QUI_RefreshCustomGlows()
+            end
+            -- Sync range poll OnUpdate based on current settings
+            if ns.CDMIcons and ns.CDMIcons.SyncRangePoll then
+                ns.CDMIcons:SyncRangePoll()
+            end
+        end)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1280,57 +1309,68 @@ function ownedEngine:Initialize()
         ns.CDMSpellData:Initialize()
     end
 
-    -- Create addon-owned containers (1.0s delay ensures Blizzard viewers are fully loaded)
+    -- Create containers immediately (addon-owned frames, no external dependency).
+    -- During a combat /reload this runs in the ADDON_LOADED safe window where
+    -- InCombatLockdown() returns false, matching the group frames pattern.
+    InitContainers()
+    InitBuffContainer()
+
+    -- Start the CDMIcons update ticker
+    if ns.CDMIcons then
+        ns.CDMIcons:StartUpdateTicker()
+    end
+
+    initialized = true
+    NCDM.initialized = true
+
+    -- Invalidate visibility frame cache so hud_visibility picks up new containers
+    if ns.InvalidateCDMFrameCache then
+        ns.InvalidateCDMFrameCache()
+    end
+
+    -- Synchronous initial layout: leverages the ADDON_LOADED safe window on
+    -- combat /reload (InCombatLockdown() returns false).  If Blizzard viewers
+    -- aren't populated yet (first login), layout produces empty containers —
+    -- the deferred re-layout below fills them once spell data arrives.
+    RefreshAll(true)
+
+    -- Post-layout: reapply frame anchoring overrides so resource bars and
+    -- other anchored frames pick up the newly computed CDM container dimensions.
+    C_Timer.After(0.25, function()
+        if _G.QUI_UpdateCDMAnchorProxyFrames then
+            _G.QUI_UpdateCDMAnchorProxyFrames()
+        end
+        if _G.QUI_ApplyAllFrameAnchors then
+            _G.QUI_ApplyAllFrameAnchors()
+        end
+        UpdateAllLockedBars()
+    end)
+
+    -- Apply HUD visibility now that containers exist (covers /reload while mounted).
+    -- Containers start at alpha=0 (CreateContainer). Set the correct target
+    -- alpha instantly so StartCDMFade sees "already at target" and skips
+    -- the animation — prevents a flash of fully-visible icons popping in.
+    local shouldShow = _G.QUI_ShouldCDMBeVisible and _G.QUI_ShouldCDMBeVisible()
+    local targetAlpha
+    if shouldShow then
+        targetAlpha = 1
+    else
+        local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
+        targetAlpha = vis and vis.fadeOutAlpha or 0
+    end
+    if containers.essential then containers.essential:SetAlpha(targetAlpha) end
+    if containers.utility then containers.utility:SetAlpha(targetAlpha) end
+    if containers.buff then containers.buff:SetAlpha(targetAlpha) end
+    if containers.trackedBar then containers.trackedBar:SetAlpha(targetAlpha) end
+    if _G.QUI_RefreshCDMVisibility then
+        _G.QUI_RefreshCDMVisibility()
+    end
+
+    -- Deferred re-layout: catches first-login cases where Blizzard viewers
+    -- populate after us, or where the immediate scan found empty data.
     C_Timer.After(1.0, function()
-        InitContainers()
-        InitBuffContainer()
-
-        -- Start the CDMIcons update ticker
-        if ns.CDMIcons then
-            ns.CDMIcons:StartUpdateTicker()
-        end
-
-        initialized = true
-        NCDM.initialized = true
-
-        -- Invalidate visibility frame cache so hud_visibility picks up new containers
-        if ns.InvalidateCDMFrameCache then
-            ns.InvalidateCDMFrameCache()
-        end
-
-        RefreshAll()
-
-        -- After staggered layout timers complete (~0.10s), reapply frame
-        -- anchoring overrides so resource bars and other anchored frames
-        -- pick up the newly computed CDM container dimensions.
-        C_Timer.After(0.25, function()
-            if _G.QUI_UpdateCDMAnchorProxyFrames then
-                _G.QUI_UpdateCDMAnchorProxyFrames()
-            end
-            if _G.QUI_ApplyAllFrameAnchors then
-                _G.QUI_ApplyAllFrameAnchors()
-            end
-            UpdateAllLockedBars()
-        end)
-
-        -- Apply HUD visibility now that containers exist (covers /reload while mounted).
-        -- Containers start at alpha=0 (CreateContainer). Set the correct target
-        -- alpha instantly so StartCDMFade sees "already at target" and skips
-        -- the animation — prevents a flash of fully-visible icons popping in.
-        local shouldShow = _G.QUI_ShouldCDMBeVisible and _G.QUI_ShouldCDMBeVisible()
-        local targetAlpha
-        if shouldShow then
-            targetAlpha = 1
-        else
-            local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
-            targetAlpha = vis and vis.fadeOutAlpha or 0
-        end
-        if containers.essential then containers.essential:SetAlpha(targetAlpha) end
-        if containers.utility then containers.utility:SetAlpha(targetAlpha) end
-        if containers.buff then containers.buff:SetAlpha(targetAlpha) end
-        if containers.trackedBar then containers.trackedBar:SetAlpha(targetAlpha) end
-        if _G.QUI_RefreshCDMVisibility then
-            _G.QUI_RefreshCDMVisibility()
+        if not InCombatLockdown() then
+            RefreshAll()
         end
     end)
 

@@ -4,4 +4,28 @@
       QUI.GUI:Toggle()
     end
   </Binding>
+
+  <!-- Global ping keybinds: click pre-configured SecureActionButtons.
+       Works on mouseover (nameplates, world frames) with target fallback.
+       Buttons created in groupframes_clickcast.lua with fixed macrotext. -->
+  <Binding name="QUI_PING" category="QUI" header="QUI_PING_HEADER">
+    local btn = QUI_PingButton_Contextual
+    if btn then btn:Click() end
+  </Binding>
+  <Binding name="QUI_PING_ASSIST" category="QUI">
+    local btn = QUI_PingButton_Assist
+    if btn then btn:Click() end
+  </Binding>
+  <Binding name="QUI_PING_ATTACK" category="QUI">
+    local btn = QUI_PingButton_Attack
+    if btn then btn:Click() end
+  </Binding>
+  <Binding name="QUI_PING_WARNING" category="QUI">
+    local btn = QUI_PingButton_Warning
+    if btn then btn:Click() end
+  </Binding>
+  <Binding name="QUI_PING_ONMYWAY" category="QUI">
+    local btn = QUI_PingButton_OnMyWay
+    if btn then btn:Click() end
+  </Binding>
 </Bindings>

@@ -2397,6 +2397,9 @@ local defaults = {
             position = { offsetX = -400, offsetY = 0 },
             raidPosition = { offsetX = -400, offsetY = 0 },  -- only used when unifiedPosition = false
 
+            -- Self-first (shared) — shows player in a separate header above party/raid
+            selfFirst = false,
+
             -------------------------------------------------------------------
             -- Party visual settings
             -------------------------------------------------------------------
@@ -2422,6 +2425,7 @@ local defaults = {
                     growDirection = "DOWN",
                     spacing = 2,
                     showPlayer = true,
+                    showSolo = false,
                     sortMethod = "INDEX",
                     sortByRole = true,
                     groupBy = "GROUP",
@@ -2435,6 +2439,7 @@ local defaults = {
                     healthOffsetX = -4,
                     healthOffsetY = 0,
                     healthTextColor = { 1, 1, 1, 1 },
+                    healthFillDirection = "HORIZONTAL",
                 },
                 power = {
                     showPowerBar = true,
@@ -2570,6 +2575,7 @@ local defaults = {
                     sortMethod = "INDEX",
                     sortByRole = true,
                     groupBy = "GROUP",
+                    unitsPerFlat = 5,
                 },
                 health = {
                     showHealthText = true,
@@ -2580,6 +2586,7 @@ local defaults = {
                     healthOffsetX = -4,
                     healthOffsetY = 0,
                     healthTextColor = { 1, 1, 1, 1 },
+                    healthFillDirection = "HORIZONTAL",
                 },
                 power = {
                     showPowerBar = true,

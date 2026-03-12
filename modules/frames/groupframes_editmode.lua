@@ -1222,7 +1222,7 @@ function QUI_GFEM:SyncMoverToContent()
 
         -- Re-parent all headers to the unified mover
         if GF then
-            for _, hKey in ipairs({"party", "raid"}) do
+            for _, hKey in ipairs({"party", "raid", "self"}) do
                 ReparentHeaderToMover(GF.headers[hKey], groupMover)
             end
         end
@@ -1455,6 +1455,17 @@ local function RestoreHeaderAnchors()
             end
 
             hdr:SetPoint("CENTER", UIParent, "CENTER", oX, oY)
+        end
+    end
+
+    -- Restore self header — re-parent to UIParent and anchor above active header
+    local selfHdr = GF.headers.self
+    if selfHdr then
+        selfHdr:SetParent(UIParent)
+        selfHdr:ClearAllPoints()
+        local anchor = IsInRaid() and GF.headers.raid or GF.headers.party
+        if anchor then
+            selfHdr:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 4)
         end
     end
 end

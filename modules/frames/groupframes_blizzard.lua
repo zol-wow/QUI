@@ -3,6 +3,11 @@
     Hides default Blizzard party/raid frames when QUI group frames are enabled.
     Uses hooksecurefunc to catch Blizzard re-showing frames (reactive, not polling).
     Alpha=0, selection highlight suppression, event stripping.
+
+    COMBAT RELOAD SAFETY: Initial hide runs at ADDON_LOADED where
+    InCombatLockdown() returns false even during a combat /reload.
+    Show hooks use SetAlpha(0) only (safe during combat) and defer
+    Hide() to after combat ends.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -33,13 +38,9 @@ end
 ---------------------------------------------------------------------------
 local function SafeHideFrame(frame)
     if not frame then return end
-    pcall(function()
-        frame:SetAlpha(0)
-        frame:EnableMouse(false)
-    end)
+    pcall(frame.SetAlpha, frame, 0)
     hiddenFrames[frame] = true
 end
-
 
 local function SafeScaleContainer(frame, hide)
     if not frame then return end
@@ -54,6 +55,26 @@ local function SafeScaleContainer(frame, hide)
         else
             frame:SetAlpha(1)
             frame:SetScale(1)
+        end
+    end)
+    if hide then hiddenFrames[frame] = true end
+end
+
+---------------------------------------------------------------------------
+-- HELPERS: Combat-aware hide/show (Hide() is protected, SetAlpha is not)
+---------------------------------------------------------------------------
+local function ForceHideShow(frame, hide)
+    if not frame then return end
+    pcall(function()
+        if InCombatLockdown() then
+            frame:SetAlpha(hide and 0 or 1)
+        else
+            if hide then
+                frame:Hide()
+            else
+                frame:SetAlpha(1)
+                frame:Show()
+            end
         end
     end)
     if hide then hiddenFrames[frame] = true end
@@ -106,10 +127,7 @@ end
 local function RestoreFrame(frame)
     if not frame then return end
     if InCombatLockdown() then return false end
-    pcall(function()
-        frame:SetAlpha(1)
-        frame:EnableMouse(true)
-    end)
+    pcall(frame.SetAlpha, frame, 1)
     hiddenFrames[frame] = nil
     return true
 end
@@ -121,10 +139,7 @@ local function InstallShowHook(frame)
     if not frame or hookedFrames[frame] then return end
     hooksecurefunc(frame, "Show", function(self)
         if not ShouldHide() then return end
-        pcall(function()
-            self:SetAlpha(0)
-            self:EnableMouse(false)
-        end)
+        ForceHideShow(self, true)
     end)
     hookedFrames[frame] = true
 end
@@ -199,8 +214,6 @@ end
 -- HIDE: Blizzard party frames
 ---------------------------------------------------------------------------
 local function HideBlizzardPartyFrames()
-    if InCombatLockdown() then return end
-
     -- Modern PartyFrame container
     if PartyFrame then
         SafeHideFrame(PartyFrame)
@@ -226,8 +239,8 @@ local function HideBlizzardPartyFrames()
                 HideSelectionHighlights(mf)
                 StripUnitFrameEvents(mf)
                 InstallShowHook(mf)
-                if mf.readyCheckIcon then pcall(function() mf.readyCheckIcon:SetAlpha(0) end) end
-                if mf.readyCheckDecline then pcall(function() mf.readyCheckDecline:SetAlpha(0) end) end
+                if mf.readyCheckIcon then pcall(mf.readyCheckIcon.SetAlpha, mf.readyCheckIcon, 0) end
+                if mf.readyCheckDecline then pcall(mf.readyCheckDecline.SetAlpha, mf.readyCheckDecline, 0) end
             end
         end
     end
@@ -247,8 +260,6 @@ end
 -- HIDE: Blizzard raid frames
 ---------------------------------------------------------------------------
 local function HideBlizzardRaidFrames()
-    if InCombatLockdown() then return end
-
     -- CompactRaidFrameContainer — scale trick makes it effectively invisible
     SafeScaleContainer(CompactRaidFrameContainer, true)
     if CompactRaidFrameContainer then
@@ -357,7 +368,12 @@ combatFrame:SetScript("OnEvent", function()
 end)
 
 ---------------------------------------------------------------------------
--- EVENTS: Re-apply hide rules when Blizzard group frames are rebuilt
+-- EVENTS: Initial hide at ADDON_LOADED + re-apply on group changes
+--
+-- ADDON_LOADED runs the initial hide. This is critical for combat reload
+-- support: InCombatLockdown() returns false at ADDON_LOADED even during
+-- a combat /reload, giving us a safe window for protected operations.
+-- Subsequent events (roster changes, zone transitions) re-apply as needed.
 ---------------------------------------------------------------------------
 local blizzardEventFrame = CreateFrame("Frame")
 blizzardEventFrame:RegisterEvent("ADDON_LOADED")
@@ -367,7 +383,21 @@ blizzardEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 blizzardEventFrame:RegisterEvent("PARTY_MEMBER_ENABLE")
 blizzardEventFrame:RegisterEvent("PARTY_MEMBER_DISABLE")
 blizzardEventFrame:SetScript("OnEvent", function(_, event, addonName)
-    if event == "ADDON_LOADED" and addonName ~= "Blizzard_CompactRaidFrames" then
+    -- Initial hide at ADDON_LOADED — runs during the safe window where
+    -- InCombatLockdown() is false even on a combat /reload
+    if event == "ADDON_LOADED" then
+        if addonName == ADDON_NAME then
+            -- Our own addon loaded — hide immediately if DB is ready
+            if ShouldHide() then
+                HideBlizzardPartyFrames()
+                HideBlizzardRaidFrames()
+            end
+        elseif addonName == "Blizzard_CompactRaidFrames" then
+            -- Blizzard raid frames loaded late — re-hide
+            if ShouldHide() and not InCombatLockdown() then
+                HideBlizzardRaidFrames()
+            end
+        end
         return
     end
 

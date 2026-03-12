@@ -425,6 +425,11 @@ local HEALTH_DISPLAY_OPTIONS = {
     { value = "deficit", text = "Deficit" },
 }
 
+local HEALTH_FILL_OPTIONS = {
+    { value = "HORIZONTAL", text = "Horizontal (Left to Right)" },
+    { value = "VERTICAL", text = "Vertical (Bottom to Top)" },
+}
+
 local NINE_POINT_OPTIONS = {
     { value = "TOPLEFT", text = "Top Left" },
     { value = "TOP", text = "Top" },
@@ -716,6 +721,10 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     healthBar:SetStatusBarTexture(texturePath)
     healthBar:SetMinMaxValues(0, 100)
     healthBar:SetValue(healthPct)
+    local previewHealth = db.health or {}
+    if previewHealth.healthFillDirection == "VERTICAL" then
+        healthBar:SetOrientation("VERTICAL")
+    end
 
     -- Health bar color
     if general.darkMode then
@@ -1032,9 +1041,15 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     -- Absorb + Heal prediction overlays (adjacent at the health fill edge)
     local absorbDB = db.absorbs or {}
     local healDB = db.healPrediction or {}
+    local healthDB = db.health or {}
+    local isVerticalPreview = (healthDB.healthFillDirection == "VERTICAL")
+
     local fillRight = w * (healthPct / 100)
+    local fillTop = h * (healthPct / 100)  -- vertical: fill from bottom up
     local absorbW = w * 0.12
+    local absorbH = h * 0.12
     local healW = w * 0.08
+    local healH = h * 0.08
 
     -- Resolve class color for absorb/heal prediction
     local previewCC = RAID_CLASS_COLORS[classToken]
@@ -1051,9 +1066,15 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         local absorbOverlay = healthBar:CreateTexture(nil, "OVERLAY", nil, 1)
         absorbOverlay:SetTexture("Interface\\RaidFrame\\Shield-Fill")
         absorbOverlay:SetVertexColor(ac[1], ac[2], ac[3], aa)
-        absorbOverlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", fillRight, 0)
-        absorbOverlay:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", fillRight, 0)
-        absorbOverlay:SetWidth(absorbW)
+        if isVerticalPreview then
+            absorbOverlay:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", 0, fillTop)
+            absorbOverlay:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", 0, fillTop)
+            absorbOverlay:SetHeight(absorbH)
+        else
+            absorbOverlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", fillRight, 0)
+            absorbOverlay:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", fillRight, 0)
+            absorbOverlay:SetWidth(absorbW)
+        end
         childRefs.absorbOverlay = absorbOverlay
     else
         childRefs.absorbOverlay = nil
@@ -1070,10 +1091,17 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         local healOverlay = healthBar:CreateTexture(nil, "OVERLAY", nil, 1)
         healOverlay:SetTexture(texturePath)
         healOverlay:SetVertexColor(hc[1], hc[2], hc[3], ha)
-        local healStart = fillRight + (absorbDB.enabled ~= false and absorbW or 0)
-        healOverlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", healStart, 0)
-        healOverlay:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", healStart, 0)
-        healOverlay:SetWidth(healW)
+        if isVerticalPreview then
+            local healStart = fillTop + (absorbDB.enabled ~= false and absorbH or 0)
+            healOverlay:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", 0, healStart)
+            healOverlay:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", 0, healStart)
+            healOverlay:SetHeight(healH)
+        else
+            local healStart = fillRight + (absorbDB.enabled ~= false and absorbW or 0)
+            healOverlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", healStart, 0)
+            healOverlay:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", healStart, 0)
+            healOverlay:SetWidth(healW)
+        end
         childRefs.healOverlay = healOverlay
     else
         childRefs.healOverlay = nil
@@ -1446,6 +1474,7 @@ local function BuildHealthSettings(content, gfdb, onChange)
 
     L:Row(GUI:CreateFormDropdown(content, "Health Texture", GetTextureList(), "texture", general, onChange), DROP_ROW)
     L:Row(GUI:CreateFormSlider(content, "Health Opacity", 0, 1, 0.05, "defaultHealthOpacity", general, onChange), SLIDER_HEIGHT)
+    L:Row(GUI:CreateFormDropdown(content, "Fill Direction", HEALTH_FILL_OPTIONS, "healthFillDirection", health, onChange), DROP_ROW)
 
     local htHeader = GUI:CreateSectionHeader(content, "Health Text")
     L:Row(htHeader, htHeader.gap)
@@ -2232,6 +2261,7 @@ local GROUP_BY_OPTIONS = {
     { value = "GROUP", text = "Group Number" },
     { value = "ROLE", text = "Role" },
     { value = "CLASS", text = "Class" },
+    { value = "NONE", text = "None (Flat List)" },
 }
 
 local ANCHOR_SIDE_OPTIONS = {
@@ -2518,7 +2548,10 @@ local function BuildContextSettings(content, gfdb, onChange)
     growDrop:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
     y = y - DROP_ROW
 
-    if isRaid then
+    local raidGroupBy = isRaid and (layout.groupBy or "GROUP") or nil
+    local isFlat = (raidGroupBy == "NONE")
+
+    if isRaid and not isFlat then
         local groupGrowDrop = GUI:CreateFormDropdown(content, "Group Grow Direction", GROUP_GROW_OPTIONS, "groupGrowDirection", layout, onChange)
         groupGrowDrop:SetPoint("TOPLEFT", PAD, y)
         groupGrowDrop:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
@@ -2530,7 +2563,7 @@ local function BuildContextSettings(content, gfdb, onChange)
     spacingSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
     y = y - SLIDER_HEIGHT
 
-    if isRaid then
+    if isRaid and not isFlat then
         local groupSpacingSlider = GUI:CreateFormSlider(content, "Group Spacing", 0, 30, 1, "groupSpacing", layout, onChange)
         groupSpacingSlider:SetPoint("TOPLEFT", PAD, y)
         groupSpacingSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
@@ -2541,6 +2574,26 @@ local function BuildContextSettings(content, gfdb, onChange)
         local showPlayerCheck = GUI:CreateFormCheckbox(content, "Show Player in Group", "showPlayer", layout, onChange)
         showPlayerCheck:SetPoint("TOPLEFT", PAD, y)
         showPlayerCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local showSoloCheck = GUI:CreateFormCheckbox(content, "Show Player Frame When Solo", "showSolo", layout, onChange)
+        showSoloCheck:SetPoint("TOPLEFT", PAD, y)
+        showSoloCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        -- Self-first (shared setting — proxy routes non-visual keys to top-level DB)
+        local selfFirstCheck = GUI:CreateFormCheckbox(content, "Always Show Self First", "selfFirst", gfdb, onChange)
+        selfFirstCheck:SetPoint("TOPLEFT", PAD, y)
+        selfFirstCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local sortHeader = GUI:CreateSectionHeader(content, "Sorting")
+        sortHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - sortHeader.gap
+
+        local roleSortCheck = GUI:CreateFormCheckbox(content, "Sort by Role (Tank > Healer > DPS)", "sortByRole", layout, onChange)
+        roleSortCheck:SetPoint("TOPLEFT", PAD, y)
+        roleSortCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
     end
 
@@ -2554,6 +2607,14 @@ local function BuildContextSettings(content, gfdb, onChange)
         groupByDrop:SetPoint("TOPLEFT", PAD, y)
         groupByDrop:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
         y = y - DROP_ROW
+
+        local groupBy = layout.groupBy or "GROUP"
+        if groupBy == "NONE" then
+            local flatSlider = GUI:CreateFormSlider(content, "Units Per Column", 1, 40, 1, "unitsPerFlat", layout, onChange)
+            flatSlider:SetPoint("TOPLEFT", PAD, y)
+            flatSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+            y = y - SLIDER_HEIGHT
+        end
 
         local sortDrop = GUI:CreateFormDropdown(content, "Sort Method", SORT_OPTIONS, "sortMethod", layout, onChange)
         sortDrop:SetPoint("TOPLEFT", PAD, y)
@@ -2845,15 +2906,153 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         y = y - FORM_ROW
     end
 
+    ---------------------------------------------------------------------------
+    -- Global Ping Keybinds section
+    ---------------------------------------------------------------------------
+    local pingHeader = GUI:CreateSectionHeader(content, "Global Ping Keybinds")
+    pingHeader:SetPoint("TOPLEFT", PAD, y)
+    pingHeader:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    y = y - pingHeader.gap
+
+    local pingNote = GUI:CreateLabel(content, "These keybinds work everywhere: nameplates, world mouseover, or current target. Pings the unit you're looking at.", 11, C.textMuted)
+    pingNote:SetPoint("TOPLEFT", PAD, y)
+    pingNote:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    pingNote:SetJustifyH("LEFT")
+    y = y - 30
+
+    local PING_KEYBIND_ENTRIES = {
+        { binding = "QUI_PING",         label = "Ping (Contextual)" },
+        { binding = "QUI_PING_ASSIST",  label = "Ping: Assist" },
+        { binding = "QUI_PING_ATTACK",  label = "Ping: Attack" },
+        { binding = "QUI_PING_WARNING", label = "Ping: Warning" },
+        { binding = "QUI_PING_ONMYWAY", label = "Ping: On My Way" },
+    }
+
+    local function CreatePingKeybindRow(parent, entry, yPos)
+        local row = CreateFrame("Frame", nil, parent)
+        row:SetHeight(28)
+        row:SetPoint("TOPLEFT", PAD, yPos)
+        row:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
+
+        local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("LEFT", 0, 0)
+        label:SetWidth(180)
+        label:SetJustifyH("LEFT")
+        label:SetText(entry.label)
+        label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+        local captureBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
+        captureBtn:SetPoint("LEFT", label, "RIGHT", 8, 0)
+        captureBtn:SetSize(160, 24)
+        ApplyPixelBackdrop(captureBtn, 1, true)
+        captureBtn:SetBackdropColor(0.08, 0.08, 0.08, 1)
+        captureBtn:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+
+        local keyText = captureBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        keyText:SetPoint("CENTER", 0, 0)
+
+        local function UpdateKeyText()
+            local key1 = GetBindingKey(entry.binding)
+            if key1 then
+                keyText:SetText(key1)
+                keyText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+            else
+                keyText:SetText("Not bound")
+                keyText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+            end
+        end
+        UpdateKeyText()
+
+        local clearBtn = GUI:CreateButton(row, "Clear", 50, 24, function()
+            local key1, key2 = GetBindingKey(entry.binding)
+            if key1 then SetBinding(key1) end
+            if key2 then SetBinding(key2) end
+            SaveBindings(GetCurrentBindingSet())
+            UpdateKeyText()
+        end)
+        clearBtn:SetPoint("LEFT", captureBtn, "RIGHT", 6, 0)
+
+        captureBtn.isCapturing = false
+        captureBtn:EnableKeyboard(false)
+        captureBtn:SetScript("OnClick", function(self)
+            if self.isCapturing then
+                self.isCapturing = false
+                self:EnableKeyboard(false)
+                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+                UpdateKeyText()
+                return
+            end
+            self.isCapturing = true
+            self:EnableKeyboard(true)
+            self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+            keyText:SetText("Press a key...")
+            keyText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        end)
+        captureBtn:SetScript("OnKeyDown", function(self, key)
+            if not self.isCapturing then return end
+            if key == "ESCAPE" then
+                self.isCapturing = false
+                self:EnableKeyboard(false)
+                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+                UpdateKeyText()
+                return
+            end
+            -- Ignore bare modifier keys
+            if key == "LSHIFT" or key == "RSHIFT" or key == "LCTRL" or key == "RCTRL"
+               or key == "LALT" or key == "RALT" then
+                return
+            end
+            -- Build full key string with modifiers
+            local mods = ""
+            if IsShiftKeyDown() then mods = mods .. "SHIFT-" end
+            if IsControlKeyDown() then mods = mods .. "CTRL-" end
+            if IsAltKeyDown() then mods = mods .. "ALT-" end
+            local fullKey = mods .. key
+
+            -- Clear any previous binding for this action
+            local oldKey1, oldKey2 = GetBindingKey(entry.binding)
+            if oldKey1 then SetBinding(oldKey1) end
+            if oldKey2 then SetBinding(oldKey2) end
+
+            SetBinding(fullKey, entry.binding)
+            SaveBindings(GetCurrentBindingSet())
+
+            self.isCapturing = false
+            self:EnableKeyboard(false)
+            self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+            UpdateKeyText()
+        end)
+        captureBtn:SetScript("OnEnter", function(self)
+            if not self.isCapturing then self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.7) end
+        end)
+        captureBtn:SetScript("OnLeave", function(self)
+            if not self.isCapturing then self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1) end
+        end)
+
+        return row
+    end
+
+    for _, entry in ipairs(PING_KEYBIND_ENTRIES) do
+        CreatePingKeybindRow(content, entry, y)
+        y = y - 30
+    end
+
+    y = y - 5
+
     local GFCC = ns.QUI_GroupFrameClickCast
 
     local ACTION_TYPE_OPTIONS = {
-        { value = "spell",  text = "Spell" },
-        { value = "macro",  text = "Macro" },
-        { value = "target", text = "Target Unit" },
-        { value = "focus",  text = "Set Focus" },
-        { value = "assist", text = "Assist" },
-        { value = "menu",   text = "Unit Menu" },
+        { value = "spell",        text = "Spell" },
+        { value = "macro",        text = "Macro" },
+        { value = "target",       text = "Target Unit" },
+        { value = "focus",        text = "Set Focus" },
+        { value = "assist",       text = "Assist" },
+        { value = "menu",         text = "Unit Menu" },
+        { value = "ping",         text = "Ping (Contextual)" },
+        { value = "ping_assist",  text = "Ping: Assist" },
+        { value = "ping_attack",  text = "Ping: Attack" },
+        { value = "ping_warning", text = "Ping: Warning" },
+        { value = "ping_onmyway", text = "Ping: On My Way" },
     }
     local BINDING_TYPE_OPTIONS = {
         { value = "mouse", text = "Mouse Button" },
@@ -2877,11 +3076,23 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         { value = "shift-ctrl-alt", text = "Shift+Ctrl+Alt" },
     }
     local ACTION_FALLBACK_ICONS = {
-        target = "Interface\\Icons\\Ability_Hunter_SniperShot",
-        focus  = "Interface\\Icons\\Ability_TrickShot",
-        assist = "Interface\\Icons\\Ability_Hunter_MasterMarksman",
-        macro  = "Interface\\Icons\\INV_Misc_Note_01",
-        menu   = "Interface\\Icons\\INV_Misc_GroupNeedMore",
+        target       = "Interface\\Icons\\Ability_Hunter_SniperShot",
+        focus        = "Interface\\Icons\\Ability_TrickShot",
+        assist       = "Interface\\Icons\\Ability_Hunter_MasterMarksman",
+        macro        = "Interface\\Icons\\INV_Misc_Note_01",
+        menu         = "Interface\\Icons\\INV_Misc_GroupNeedMore",
+        ping         = "Interface\\Icons\\Ping_Chat_Default",
+        ping_assist  = "Interface\\Icons\\Ping_Chat_Assist",
+        ping_attack  = "Interface\\Icons\\Ping_Chat_Attack",
+        ping_warning = "Interface\\Icons\\Ping_Chat_Warning",
+        ping_onmyway = "Interface\\Icons\\Ping_Chat_OnMyWay",
+    }
+    local PING_DISPLAY_NAMES = {
+        ping         = "Ping",
+        ping_assist  = "Ping: Assist",
+        ping_attack  = "Ping: Attack",
+        ping_warning = "Ping: Warning",
+        ping_onmyway = "Ping: On My Way",
     }
 
     -- Spec context label
@@ -3318,7 +3529,8 @@ local function BuildClickCastSettings(content, gfdb, onChange)
                 spellText:SetJustifyH("LEFT")
                 local displayName = spellName or actionType
                 if actionType == "macro" then displayName = "Macro"
-                elseif actionType == "menu" then displayName = "Unit Menu" end
+                elseif actionType == "menu" then displayName = "Unit Menu"
+                elseif PING_DISPLAY_NAMES[actionType] then displayName = PING_DISPLAY_NAMES[actionType] end
                 spellText:SetText(displayName)
                 spellText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
                 local removeBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
