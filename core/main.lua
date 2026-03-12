@@ -3359,7 +3359,7 @@ local defaults = {
             -- Button Visibility
             showZoomButtons = false,
             showMail = false,
-            showCraftingOrder = false,
+            showCraftingOrder = true,
             showAddonCompartment = false,
             showDifficulty = false,
             showMissions = false,
@@ -3758,6 +3758,18 @@ function QUICore:OnInitialize()
             profile.general.addonAccentColor = { unpack(profile.general.skinCustomColor) }
         else
             profile.general.addonAccentColor = profile.general.skinCustomColor
+        end
+    end
+
+    -- One-time migration: enable work order (crafting order) minimap indicator
+    -- for existing profiles. After this runs once, user preference is preserved.
+    if profile then
+        if not profile.minimap then
+            profile.minimap = {}
+        end
+        if profile.minimap._showCraftingOrderMigrated ~= true then
+            profile.minimap.showCraftingOrder = true
+            profile.minimap._showCraftingOrderMigrated = true
         end
     end
 

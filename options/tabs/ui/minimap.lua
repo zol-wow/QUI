@@ -467,6 +467,11 @@ local function BuildMinimapTab(tabContent)
         hideMail:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local hideWorkOrder = GUI:CreateFormCheckboxInverted(tabContent, "Hide Work Order Notification", "showCraftingOrder", mm, RefreshMinimap)
+        hideWorkOrder:SetPoint("TOPLEFT", PAD, y)
+        hideWorkOrder:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         local hideTracking = GUI:CreateFormCheckboxInverted(tabContent, "Hide Tracking", "showTracking", mm, RefreshMinimap)
         hideTracking:SetPoint("TOPLEFT", PAD, y)
         hideTracking:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
