@@ -11,6 +11,86 @@ local QUICore = ns.Addon
 local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
+-- COMBAT DEFERRAL — CharacterFrame is a managed panel; SetScale,
+-- ClearAllPoints, SetPoint on it or its children are protected during
+-- combat.  Track desired state and apply on PLAYER_REGEN_ENABLED.
+---------------------------------------------------------------------------
+local pendingCharScale = nil     -- deferred SetScale value
+local pendingTabMode   = nil     -- "character" or "other"
+local pendingDecorMode = nil     -- "character" or "other"
+
+local charCombatFrame = CreateFrame("Frame")
+charCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+charCombatFrame:SetScript("OnEvent", function()
+    -- If CharacterFrame closed during combat, nothing to apply
+    if not CharacterFrame or not CharacterFrame:IsShown() then
+        pendingCharScale = nil
+        pendingTabMode   = nil
+        pendingDecorMode = nil
+        return
+    end
+
+    if pendingCharScale then
+        CharacterFrame:SetScale(pendingCharScale)
+        pendingCharScale = nil
+    end
+
+    if pendingTabMode then
+        -- These functions are defined inside HookCharacterFrame; use the
+        -- deferred wrappers below instead of direct calls.
+        if pendingTabMode == "other" then
+            if CharacterFrameTab1 then
+                CharacterFrameTab1:ClearAllPoints()
+                CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, 2)
+            end
+            if CharacterFrame.CloseButton then
+                CharacterFrame.CloseButton:ClearAllPoints()
+                CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -3, -5)
+            end
+        elseif pendingTabMode == "character" then
+            if CharacterFrameTab1 then
+                CharacterFrameTab1:ClearAllPoints()
+                CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, -48)
+            end
+            if CharacterFrame.CloseButton then
+                CharacterFrame.CloseButton:ClearAllPoints()
+                CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 52, -5)
+            end
+        end
+        pendingTabMode = nil
+    end
+
+    if pendingDecorMode then
+        local skinHandles = _G.QUI_CharacterFrameSkinning
+        if pendingDecorMode == "other" then
+            if not (skinHandles and skinHandles.SetExtended) then
+                if CharacterFramePortrait then CharacterFramePortrait:Show() end
+                if CharacterFrame.Background then CharacterFrame.Background:Show() end
+                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
+                if CharacterFrameBg then CharacterFrameBg:Show() end
+            end
+        elseif pendingDecorMode == "character" then
+            if not (skinHandles and skinHandles.SetExtended) then
+                if CharacterFramePortrait then CharacterFramePortrait:Hide() end
+                if CharacterFrame.Background then CharacterFrame.Background:Hide() end
+                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
+                if CharacterFrameBg then CharacterFrameBg:Hide() end
+            end
+        end
+        pendingDecorMode = nil
+    end
+end)
+
+--- Safe wrapper: set CharacterFrame scale, deferring during combat.
+local function SafeSetCharScale(scale)
+    if InCombatLockdown() then
+        pendingCharScale = scale
+    else
+        CharacterFrame:SetScale(scale)
+    end
+end
+
+---------------------------------------------------------------------------
 -- Module Constants
 ---------------------------------------------------------------------------
 
@@ -1111,7 +1191,7 @@ local function CreateCustomBackground()
     -- Apply panel scale from settings (base scale 1.30, slider is multiplier)
     local BASE_SCALE = 1.30
     local scaleMultiplier = settings.panelScale or 1.0
-    CharacterFrame:SetScale(BASE_SCALE * scaleMultiplier)
+    SafeSetCharScale(BASE_SCALE * scaleMultiplier)
 end
 
 ---------------------------------------------------------------------------
@@ -2472,7 +2552,7 @@ local function HookCharacterFrame()
                 if equipMgrPopup then equipMgrPopup:Hide() end
                 if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
                 if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
-                CharacterFrame:SetScale(1.0)
+                SafeSetCharScale(1.0)
             end
         end)
     end)
@@ -2706,13 +2786,12 @@ local function HookCharacterFrame()
 
     -- Helper to hide all custom elements (when leaving Character tab)
     local function HideCustomElements()
+        -- QUI-owned frames — always safe to hide
         if statsPanel then statsPanel:Hide() end
         for _, overlay in pairs(slotOverlays) do
             if overlay then overlay:Hide() end
         end
-        -- Hide Equipment Manager popup when leaving Character tab
         if equipMgrPopup then equipMgrPopup:Hide() end
-        -- Hide ilvl display, center ilvl, and settings button on non-Character tabs
         if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
         if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
         if (frameState[CharacterFrame] or EMPTY).gearBtn then (frameState[CharacterFrame] or EMPTY).gearBtn:Hide() end
@@ -2720,25 +2799,30 @@ local function HookCharacterFrame()
 
         -- Handle background and decorations based on skinning state
         if IsSkinningHandlingBackground() then
-            -- Skinning module handles background - tell it to use non-extended size
             local skinningAPI = _G.QUI_CharacterFrameSkinning
             if skinningAPI and skinningAPI.SetExtended then
                 skinningAPI.SetExtended(false)
             end
-            -- Skinning hides Blizzard decorations - don't show them
         else
-            -- No skinning - hide our background and show Blizzard decorations
             if customBg then customBg:Hide() end
-            if CharacterFramePortrait then CharacterFramePortrait:Show() end
-            if CharacterFrame.Background then CharacterFrame.Background:Show() end
-            if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
-            if CharacterFrameBg then CharacterFrameBg:Show() end
+            -- Blizzard decoration Show calls — defer if in combat
+            if InCombatLockdown() then
+                pendingDecorMode = "other"
+            else
+                if CharacterFramePortrait then CharacterFramePortrait:Show() end
+                if CharacterFrame.Background then CharacterFrame.Background:Show() end
+                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
+                if CharacterFrameBg then CharacterFrameBg:Show() end
+            end
         end
 
-        -- Reset scale to prevent ghosting on non-Character tabs
-        CharacterFrame:SetScale(1.0)
-        -- Adjust tab and close button positions for Rep/Currency tabs
-        AdjustForNonCharacterTab()
+        -- Protected: SetScale + tab/button repositioning
+        SafeSetCharScale(1.0)
+        if InCombatLockdown() then
+            pendingTabMode = "other"
+        else
+            AdjustForNonCharacterTab()
+        end
     end
 
     -- Hide when Reputation tab opens
@@ -2756,15 +2840,17 @@ local function HookCharacterFrame()
         PaperDollFrame:HookScript("OnShow", function()
             local settings = GetSettings()
             if settings.enabled then
-                -- Restore tab and close button positions for Character tab
-                RestoreCharacterTabPositions()
-                -- Restore panel scale (base 1.30 × user multiplier)
+                -- Protected: restore tab positions and scale
+                if InCombatLockdown() then
+                    pendingTabMode = "character"
+                else
+                    RestoreCharacterTabPositions()
+                end
                 local BASE_SCALE = 1.30
                 local scaleMultiplier = settings.panelScale or 1.0
-                CharacterFrame:SetScale(BASE_SCALE * scaleMultiplier)
+                SafeSetCharScale(BASE_SCALE * scaleMultiplier)
 
                 -- Ensure layout is applied (creates statsPanel if needed)
-                -- This handles the case where Currency/Rep tab was opened first
                 if not layoutApplied then
                     ApplyCharacterPaneLayout()
                     InitializeCharacterOverlays()
@@ -2772,19 +2858,21 @@ local function HookCharacterFrame()
 
                 -- Handle background based on skinning state
                 if IsSkinningHandlingBackground() then
-                    -- Skinning module handles background - extend for stats panel
                     local skinningAPI = _G.QUI_CharacterFrameSkinning
                     if skinningAPI and skinningAPI.SetExtended then
                         skinningAPI.SetExtended(true)
                     end
-                    -- Skinning already hides decorations
                 else
-                    -- No skinning - show our background and hide decorations ourselves
                     if customBg then customBg:Show() end
-                    if CharacterFramePortrait then CharacterFramePortrait:Hide() end
-                    if CharacterFrame.Background then CharacterFrame.Background:Hide() end
-                    if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
-                    if CharacterFrameBg then CharacterFrameBg:Hide() end
+                    -- Blizzard decoration Hide calls — defer if in combat
+                    if InCombatLockdown() then
+                        pendingDecorMode = "character"
+                    else
+                        if CharacterFramePortrait then CharacterFramePortrait:Hide() end
+                        if CharacterFrame.Background then CharacterFrame.Background:Hide() end
+                        if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
+                        if CharacterFrameBg then CharacterFrameBg:Hide() end
+                    end
                 end
 
                 -- Always hide Blizzard stats pane (we have our own)
@@ -2950,7 +3038,7 @@ local function HookCharacterFrame()
         local BASE_SCALE = 1.30
         local scaleSlider = GUI:CreateFormSlider(scrollChild, "Panel Scale", 0.75, 1.5, 0.05, "panelScale", charDB, function()
             local multiplier = charDB.panelScale or 1.0
-            CharacterFrame:SetScale(BASE_SCALE * multiplier)
+            SafeSetCharScale(BASE_SCALE * multiplier)
         end, { deferOnDrag = true })
         scaleSlider:SetPoint("TOPLEFT", PAD, y)
         scaleSlider:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
@@ -3173,7 +3261,7 @@ local function HookCharacterFrame()
             charDB.upgradeTrackColor = {0.98, 0.60, 0.35, 1}
 
             -- Apply scale (base 1.30 * multiplier 1.0)
-            CharacterFrame:SetScale(1.30)
+            SafeSetCharScale(1.30)
 
             -- Refresh and reload the settings panel to reflect reset values
             RefreshAll()

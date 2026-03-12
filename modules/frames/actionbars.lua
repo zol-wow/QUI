@@ -788,6 +788,7 @@ local extraButtonMoversVisible = false
 local hookingSetPoint = false
 local extraActionSetPointHooked = false
 local zoneAbilitySetPointHooked = false
+local hookingSetParent = false
 local pageArrowShowHooked = false
 
 -- Get settings for a specific extra button type
@@ -963,6 +964,9 @@ local function CreateExtraButtonHolder(buttonType, displayName)
     return holder, mover
 end
 
+-- Original parents for managed frames (saved before reparenting)
+local extraButtonOriginalParents = {}
+
 -- Apply settings (scale, position, artwork) to an extra button frame
 local function ApplyExtraButtonSettings(buttonType)
     if InCombatLockdown() then
@@ -994,8 +998,21 @@ local function ApplyExtraButtonSettings(buttonType)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
 
-    -- Keep Blizzard parent/manager chain intact to avoid managed-frame taint.
-    -- Only override the anchor when we're outside combat.
+    -- TAINT SAFETY: Reparent the Blizzard frame to our holder, removing it
+    -- from the UIParent managed frame container's layout chain.  Calling
+    -- ClearAllPoints/SetPoint on managed frames from addon code permanently
+    -- taints their position data; when Blizzard's secure UseAction chain
+    -- later calls UIParent_ManageFramePositions, the taint propagates to
+    -- all managed containers (including UIParentRightManagedFrameContainer),
+    -- causing ADDON_ACTION_BLOCKED.  Reparenting removes the frame from the
+    -- managed container entirely so its position is never read by the secure
+    -- layout system.
+    if not extraButtonOriginalParents[buttonType] then
+        extraButtonOriginalParents[buttonType] = blizzFrame:GetParent()
+    end
+    hookingSetParent = true
+    blizzFrame:SetParent(holder)
+    hookingSetParent = false
     hookingSetPoint = true
     blizzFrame:ClearAllPoints()
     blizzFrame:SetPoint("CENTER", holder, "CENTER", offsetX, offsetY)
@@ -1056,10 +1073,11 @@ local function QueueExtraButtonReanchor(buttonType)
     end)
 end
 
--- Hook Blizzard frames to prevent them from repositioning
+-- Hook Blizzard frames to prevent them from repositioning.
+-- After reparenting, the managed container won't reposition these frames,
+-- but other Blizzard code (e.g. ability grant, zone transition) may call
+-- SetPoint directly.  The hooks re-anchor to our holder after each attempt.
 local function HookExtraButtonPositioning()
-    -- TAINT SAFETY: Defer to break taint chain from secure Blizzard context.
-    -- Hook ExtraActionBarFrame
     if ExtraActionBarFrame and not extraActionSetPointHooked then
         extraActionSetPointHooked = true
         hooksecurefunc(ExtraActionBarFrame, "SetPoint", function(self)
@@ -1074,7 +1092,6 @@ local function HookExtraButtonPositioning()
         end)
     end
 
-    -- Hook ZoneAbilityFrame
     if ZoneAbilityFrame and not zoneAbilitySetPointHooked then
         zoneAbilitySetPointHooked = true
         hooksecurefunc(ZoneAbilityFrame, "SetPoint", function(self)
@@ -1089,11 +1106,27 @@ local function HookExtraButtonPositioning()
         end)
     end
 
-    -- NOTE: Previously attempted to remove ExtraAbilityContainer from UIParentBottomManagedFrameContainer.showingFrames
-    -- to prevent Edit Mode interference. However, modifying Blizzard's internal showingFrames table spreads taint
-    -- to the entire UIParent frame management system, causing ADDON_ACTION_BLOCKED errors during combat
-    -- when PetActionBar or other secure frames update. The Edit Mode interference is a minor cosmetic issue;
-    -- the combat taint errors are game-breaking. Removed the problematic code.
+    -- Hook SetParent to reclaim frames if Blizzard reparents them back to
+    -- a managed container (e.g. during Edit Mode layout recalculation).
+    local function HookSetParentForType(blizzFrame, buttonType, holder)
+        if not blizzFrame then return end
+        hooksecurefunc(blizzFrame, "SetParent", function(self, newParent)
+            if hookingSetParent then return end
+            if newParent == holder then return end  -- already ours
+            C_Timer.After(0, function()
+                if hookingSetParent or InCombatLockdown() then return end
+                local settings = GetExtraButtonDB(buttonType)
+                if holder and settings and settings.enabled then
+                    hookingSetParent = true
+                    blizzFrame:SetParent(holder)
+                    hookingSetParent = false
+                    QueueExtraButtonReanchor(buttonType)
+                end
+            end)
+        end)
+    end
+    HookSetParentForType(ExtraActionBarFrame, "extraActionButton", extraActionHolder)
+    HookSetParentForType(ZoneAbilityFrame, "zoneAbility", zoneAbilityHolder)
 end
 
 -- Show/hide mover overlays

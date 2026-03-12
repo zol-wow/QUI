@@ -2932,13 +2932,25 @@ local function BuildClickCastSettings(content, gfdb, onChange)
     pingNote:SetJustifyH("LEFT")
     y = y - 30
 
+    -- Bind directly to Blizzard's native ping binding actions — these
+    -- call C_Ping.TogglePingListener / C_Ping.SendMacroPing in secure
+    -- context. No SecureActionButtons or /ping macros needed.
     local PING_KEYBIND_ENTRIES = {
-        { binding = "QUI_PING",         label = "Ping (Contextual)" },
-        { binding = "QUI_PING_ASSIST",  label = "Ping: Assist" },
-        { binding = "QUI_PING_ATTACK",  label = "Ping: Attack" },
-        { binding = "QUI_PING_WARNING", label = "Ping: Warning" },
-        { binding = "QUI_PING_ONMYWAY", label = "Ping: On My Way" },
+        { binding = "TOGGLEPINGLISTENER", label = "Ping (Contextual)" },
+        { binding = "PINGASSIST",         label = "Ping: Assist" },
+        { binding = "PINGATTACK",         label = "Ping: Attack" },
+        { binding = "PINGWARNING",        label = "Ping: Warning" },
+        { binding = "PINGONMYWAY",        label = "Ping: On My Way" },
     }
+
+    local refreshAllPingRows  -- forward declaration; populated after rows are created
+    local pingRowUpdaters = {}
+    local pingCaptureButtons = {} -- track capture buttons for OnHide cleanup
+    -- Shared state for suspending/restoring ping bindings during capture.
+    -- Only one capture can be active at a time, so one set of saved
+    -- bindings is sufficient.
+    local suspendedPingBindings = {}
+    local isPingSuspended = false
 
     local function CreatePingKeybindRow(parent, entry, yPos)
         local row = CreateFrame("Frame", nil, parent)
@@ -2973,6 +2985,7 @@ local function BuildClickCastSettings(content, gfdb, onChange)
                 keyText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
             end
         end
+        table.insert(pingRowUpdaters, UpdateKeyText)
         UpdateKeyText()
 
         local clearBtn = GUI:CreateButton(row, "Clear", 50, 24, function()
@@ -2980,52 +2993,53 @@ local function BuildClickCastSettings(content, gfdb, onChange)
             if key1 then SetBinding(key1) end
             if key2 then SetBinding(key2) end
             SaveBindings(GetCurrentBindingSet())
-            UpdateKeyText()
+            if refreshAllPingRows then refreshAllPingRows() else UpdateKeyText() end
         end)
         clearBtn:SetPoint("LEFT", captureBtn, "RIGHT", 6, 0)
 
         captureBtn.isCapturing = false
         captureBtn:EnableKeyboard(false)
-        captureBtn:SetScript("OnClick", function(self)
-            if self.isCapturing then
-                self.isCapturing = false
-                self:EnableKeyboard(false)
-                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
-                UpdateKeyText()
-                return
-            end
-            self.isCapturing = true
-            self:EnableKeyboard(true)
-            self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-            keyText:SetText("Press a key...")
-            keyText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-        end)
-        captureBtn:SetScript("OnKeyDown", function(self, key)
-            if not self.isCapturing then self:SetPropagateKeyboardInput(true) return end
-            self:SetPropagateKeyboardInput(false)
-            if key == "ESCAPE" then
-                self.isCapturing = false
-                self:EnableKeyboard(false)
-                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
-                UpdateKeyText()
-                return
-            end
-            -- Ignore bare modifier keys
-            if key == "LSHIFT" or key == "RSHIFT" or key == "LCTRL" or key == "RCTRL"
-               or key == "LALT" or key == "RALT" then
-                return
-            end
-            -- Build full key string with modifiers
-            local mods = ""
-            if IsShiftKeyDown() then mods = mods .. "SHIFT-" end
-            if IsControlKeyDown() then mods = mods .. "CTRL-" end
-            if IsAltKeyDown() then mods = mods .. "ALT-" end
-            local fullKey = mods .. key
+        captureBtn:RegisterForClicks("AnyDown")
+        captureBtn:EnableMouseWheel(true)
+        table.insert(pingCaptureButtons, captureBtn)
 
-            -- Clear any previous binding for this action
-            local oldKey1, oldKey2 = GetBindingKey(entry.binding)
-            if oldKey1 then SetBinding(oldKey1) end
-            if oldKey2 then SetBinding(oldKey2) end
+        local function SuspendPingBindings()
+            if isPingSuspended then return end
+            wipe(suspendedPingBindings)
+            for _, other in ipairs(PING_KEYBIND_ENTRIES) do
+                local key1, key2 = GetBindingKey(other.binding)
+                if key1 or key2 then
+                    suspendedPingBindings[other.binding] = { key1, key2 }
+                    if key1 then SetBinding(key1) end
+                    if key2 then SetBinding(key2) end
+                end
+            end
+            isPingSuspended = true
+        end
+
+        local function RestorePingBindings()
+            if not isPingSuspended then return end
+            for action, keys in pairs(suspendedPingBindings) do
+                if keys[1] then SetBinding(keys[1], action) end
+                if keys[2] then SetBinding(keys[2], action) end
+            end
+            wipe(suspendedPingBindings)
+            isPingSuspended = false
+        end
+
+        local function FinishCapture(self, fullKey)
+            -- Restore other bindings (except the key we're about to use)
+            for _, other in ipairs(PING_KEYBIND_ENTRIES) do
+                if other.binding ~= entry.binding then
+                    local keys = suspendedPingBindings[other.binding]
+                    if keys then
+                        if keys[1] and keys[1] ~= fullKey then SetBinding(keys[1], other.binding) end
+                        if keys[2] and keys[2] ~= fullKey then SetBinding(keys[2], other.binding) end
+                    end
+                end
+            end
+            wipe(suspendedPingBindings)
+            isPingSuspended = false
 
             SetBinding(fullKey, entry.binding)
             SaveBindings(GetCurrentBindingSet())
@@ -3033,19 +3047,90 @@ local function BuildClickCastSettings(content, gfdb, onChange)
             self.isCapturing = false
             self:EnableKeyboard(false)
             self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+            -- Dismiss any stuck ping listener
+            -- Update ALL rows since we may have cleared another entry's key
+            if refreshAllPingRows then refreshAllPingRows() end
+        end
+
+        local function CancelCapture(self)
+            -- Restore all bindings that were suspended
+            RestorePingBindings()
+            self.isCapturing = false
+            self:EnableKeyboard(false)
+            self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+            -- Dismiss any stuck ping listener
             UpdateKeyText()
+        end
+
+        local function GetModifierPrefix()
+            local mods = ""
+            if IsAltKeyDown() then mods = mods .. "ALT-" end
+            if IsControlKeyDown() then mods = mods .. "CTRL-" end
+            if IsShiftKeyDown() then mods = mods .. "SHIFT-" end
+            return mods
+        end
+
+        -- Mouse button names to WoW binding names
+        local MOUSE_BIND_NAMES = {
+            LeftButton = "BUTTON1", RightButton = "BUTTON2",
+            MiddleButton = "BUTTON3", Button4 = "BUTTON4", Button5 = "BUTTON5",
+        }
+
+        captureBtn:SetScript("OnClick", function(self, button)
+            if not self.isCapturing then
+                -- Start capture on left click
+                if button == "LeftButton" then
+                    -- Suspend all ping bindings first so they don't fire
+                    -- when the user presses the key they want to rebind
+                    SuspendPingBindings()
+                    self.isCapturing = true
+                    self:EnableKeyboard(true)
+                    self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                    keyText:SetText("Press a key or click...")
+                    keyText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                end
+                return
+            end
+            -- Capturing: bind the mouse button (except unmodified left which toggles)
+            local bindName = MOUSE_BIND_NAMES[button]
+            if not bindName then return end
+            local mods = GetModifierPrefix()
+            -- Unmodified left click cancels capture instead of binding
+            if button == "LeftButton" and mods == "" then
+                CancelCapture(self)
+                return
+            end
+            FinishCapture(self, mods .. bindName)
+        end)
+        captureBtn:SetScript("OnMouseWheel", function(self, delta)
+            if not self.isCapturing then return end
+            local scrollKey = delta > 0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN"
+            FinishCapture(self, GetModifierPrefix() .. scrollKey)
+        end)
+        captureBtn:SetScript("OnKeyDown", function(self, key)
+            if not self.isCapturing then self:SetPropagateKeyboardInput(true) return end
+            self:SetPropagateKeyboardInput(false)
+            if key == "ESCAPE" then
+                CancelCapture(self)
+                return
+            end
+            -- Ignore bare modifier keys
+            if key == "LSHIFT" or key == "RSHIFT" or key == "LCTRL" or key == "RCTRL"
+               or key == "LALT" or key == "RALT" then
+                return
+            end
+            FinishCapture(self, GetModifierPrefix() .. key)
         end)
         captureBtn:SetScript("OnEnter", function(self)
             if not self.isCapturing then self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.7) end
         end)
         captureBtn:SetScript("OnLeave", function(self)
-            if self.isCapturing then
-                -- Cancel capture when mouse leaves — prevents stuck keyboard capture
-                self.isCapturing = false
-                self:EnableKeyboard(false)
-                UpdateKeyText()
+            -- Don't cancel capture on leave — the user may move
+            -- the mouse while pressing a key. Capture ends on key
+            -- press or Escape.
+            if not self.isCapturing then
+                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
             end
-            self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
         end)
 
         return row
@@ -3054,6 +3139,13 @@ local function BuildClickCastSettings(content, gfdb, onChange)
     for _, entry in ipairs(PING_KEYBIND_ENTRIES) do
         CreatePingKeybindRow(content, entry, y)
         y = y - 30
+    end
+
+    -- Wire up cross-row refresh (called when a binding is set/cleared to update all rows)
+    refreshAllPingRows = function()
+        for _, updater in ipairs(pingRowUpdaters) do
+            updater()
+        end
     end
 
     y = y - 5
@@ -3329,19 +3421,12 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         if not self.isCapturing then self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.7) end
     end)
     keyCaptureBtn:SetScript("OnLeave", function(self)
-        if self.isCapturing then
-            -- Cancel capture when mouse leaves — prevents stuck keyboard capture
-            self.isCapturing = false
-            self:EnableKeyboard(false)
-            if addState.key then
-                keyCaptureText:SetText(addState.key)
-                keyCaptureText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-            else
-                keyCaptureText:SetText("Click to bind a key")
-                keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-            end
+        -- Don't cancel capture on leave — the user may move
+        -- the mouse while pressing a key. Capture ends on key
+        -- press or Escape.
+        if not self.isCapturing then
+            self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
         end
-        self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
     end)
     ay = ay - FORM_ROW
 
@@ -3429,14 +3514,37 @@ local function BuildClickCastSettings(content, gfdb, onChange)
     macroInput:SetScript("OnEditFocusGained", function() macroInputBg:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
     macroInput:SetScript("OnEditFocusLost", function() macroInputBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1) end)
 
-    -- Clear editbox focus when the content is hidden (tab change / panel close)
-    -- to prevent stuck keyboard capture from editboxes.
+    -- Clear editbox focus and cancel any active key captures when the
+    -- content is hidden (tab change / panel close) to prevent stuck
+    -- keyboard capture.
     content:HookScript("OnHide", function()
         if spellInput then spellInput:ClearFocus() end
         if macroInput then macroInput:ClearFocus() end
         if keyCaptureBtn and keyCaptureBtn.isCapturing then
             keyCaptureBtn.isCapturing = false
             keyCaptureBtn:EnableKeyboard(false)
+        end
+        for _, btn in ipairs(pingCaptureButtons) do
+            if btn.isCapturing then
+                btn.isCapturing = false
+                btn:EnableKeyboard(false)
+            end
+        end
+        -- Restore suspended ping bindings after the secure call chain
+        -- completes — SetBinding is protected and can't run inside
+        -- the securecall(CloseWindows) → OnHide chain.
+        if isPingSuspended then
+            local saved = {}
+            for k, v in pairs(suspendedPingBindings) do saved[k] = v end
+            wipe(suspendedPingBindings)
+            isPingSuspended = false
+            C_Timer.After(0, function()
+                for action, keys in pairs(saved) do
+                    if keys[1] then SetBinding(keys[1], action) end
+                    if keys[2] then SetBinding(keys[2], action) end
+                end
+                SaveBindings(GetCurrentBindingSet())
+            end)
         end
     end)
 

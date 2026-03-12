@@ -4246,6 +4246,18 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         if RefreshObjectiveTracker then RefreshObjectiveTracker() end
         if RefreshPowerBarAltColors then RefreshPowerBarAltColors() end
     end)
+
+    -- Safety re-anchor pass: Blizzard's Edit Mode system re-applies per-spec
+    -- layouts on spec change (EDIT_MODE_LAYOUTS_UPDATED), which can override
+    -- QUI's frame positions set at 0.2s. The anchoring module handles the
+    -- event directly, but this later pass catches any edge cases where
+    -- Blizzard's layout application is delayed beyond the event handler.
+    C_Timer.After(1.0, function()
+        if not InCombatLockdown() then
+            local ApplyAnchors = _G.QUI_ApplyAllFrameAnchors
+            if ApplyAnchors then ApplyAnchors() end
+        end
+    end)
 end
 
 function QUICore:ShowProfileChangeNotification()

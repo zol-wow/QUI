@@ -1049,6 +1049,29 @@ anchoredFramesCombatFrame:SetScript("OnEvent", function()
     end)
 end)
 
+-- Re-apply QUI anchors when Blizzard re-applies its Edit Mode layout.
+-- This fires on spec change (Blizzard swaps per-spec Edit Mode layouts),
+-- login, and any other scenario where Blizzard repositions system frames.
+-- Without this, Blizzard's layout pass can override QUI's frame positions.
+local layoutUpdateFrame = CreateFrame("Frame")
+layoutUpdateFrame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+local _layoutUpdatePending = false
+layoutUpdateFrame:SetScript("OnEvent", function()
+    if _layoutUpdatePending then return end
+    _layoutUpdatePending = true
+    -- Delay to let Blizzard finish its full layout pass before we re-stamp
+    C_Timer.After(0.3, function()
+        _layoutUpdatePending = false
+        if InCombatLockdown() then
+            pendingAnchoredFrameUpdateAfterCombat = true
+            return
+        end
+        if QUI_Anchoring and not nsHelpers.IsEditModeActive() then
+            QUI_Anchoring:ApplyAllFrameAnchors()
+        end
+    end)
+end)
+
 -- Update frames anchored to a specific anchor target
 function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)
     if InCombatLockdown() then

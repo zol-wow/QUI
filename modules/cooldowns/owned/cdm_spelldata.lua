@@ -103,29 +103,25 @@ local function HasValidTexture(icon)
 end
 
 ---------------------------------------------------------------------------
--- FORCE LOAD CDM: Open settings panel invisibly to force Blizzard init
+-- FORCE LOAD CDM: Ensure Blizzard_CooldownManager addon is loaded
+-- TAINT SAFETY: Previous approach called CooldownViewerSettings:Show()
+-- from addon code (via C_Timer.After). Despite the deferral, C_Timer
+-- callbacks still run in addon (insecure) execution context. Blizzard's
+-- OnShow handler populates module-level tables (wasOnGCDLookup, etc.)
+-- which become permanently tainted. Later, when CooldownViewer refreshes
+-- from a protected context (e.g. cutscene exit → SetAttribute → Show),
+-- those tables are forbidden → "attempted to index a forbidden table".
+-- Fix: Just ensure the addon is loaded via C_AddOns.LoadAddOn and let
+-- Blizzard initialize viewers naturally via events. The periodic ScanAll
+-- ticker (0.5s) picks up children once they're ready.
 ---------------------------------------------------------------------------
 local function ForceLoadCDM()
     if InCombatLockdown() then return end
-    local settingsFrame = _G["CooldownViewerSettings"]
-    if settingsFrame then
-        -- TAINT SAFETY: Defer Show/Hide via C_Timer.After(0) so Blizzard's
-        -- OnShow handler (which writes isActive, allowAvailableAlert, etc.
-        -- to viewer children) runs outside QUI's execution context.
-        -- Without deferral, those fields become "secret boolean tainted by
-        -- QUI" and crash Blizzard_CooldownViewer SetIsActive comparisons.
-        settingsFrame:SetAlpha(0)
-        C_Timer.After(0, function()
-            if InCombatLockdown() then return end
-            if not settingsFrame then return end
-            settingsFrame:Show()
-            C_Timer.After(0.2, function()
-                if settingsFrame then
-                    settingsFrame:Hide()
-                    settingsFrame:SetAlpha(1)
-                end
-            end)
-        end)
+    -- Ensure the Blizzard addon is loaded (no-op if already loaded)
+    if C_AddOns and C_AddOns.LoadAddOn then
+        pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownManager")
+    elseif LoadAddOn then
+        pcall(LoadAddOn, "Blizzard_CooldownManager")
     end
 end
 
@@ -143,7 +139,15 @@ local function HookViewerAlpha(viewer, viewerName)
     viewerAlphaHooked[viewerName] = true
     hooksecurefunc(viewer, "SetAlpha", function(self, alpha)
         if viewersHidden and alpha > 0 then
-            self:SetAlpha(0)
+            -- TAINT SAFETY: Defer SetAlpha(0) to next frame so addon code
+            -- doesn't run inside the same execution context as a protected
+            -- call chain (e.g. cutscene exit → SetAttribute → Show).
+            -- The alpha enforcer OnUpdate (0.1s) is the backstop.
+            C_Timer.After(0, function()
+                if viewersHidden and self:GetAlpha() > 0 then
+                    self:SetAlpha(0)
+                end
+            end)
         end
     end)
 end

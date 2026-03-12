@@ -18,6 +18,32 @@ local inspectPaneInitialized = false
 local inspectOverlays = {}  -- Stores overlay frames for inspect slots
 local inspectLayoutApplied = false
 local currentInspectTab = 1  -- 1=Character, 2=PvP, 3=Guild
+
+---------------------------------------------------------------------------
+-- COMBAT DEFERRAL — InspectFrame is a managed panel; SetWidth,
+-- ClearAllPoints, SetPoint on it or its children are protected during
+-- combat.  Defer to PLAYER_REGEN_ENABLED.
+---------------------------------------------------------------------------
+local pendingInspectMode = nil  -- "extended" (tab 1/2) or "normal" (tab 3)
+local pendingInspectTab  = nil  -- tab number for extended mode
+-- Filled after SetInspectExtendedMode / SetInspectNormalMode are defined:
+local InspectModeHandlers = {}
+
+local inspectCombatFrame = CreateFrame("Frame")
+inspectCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+inspectCombatFrame:SetScript("OnEvent", function()
+    if not pendingInspectMode then return end
+    if not InspectFrame or not InspectFrame:IsShown() then
+        pendingInspectMode = nil
+        pendingInspectTab  = nil
+        return
+    end
+
+    local handler = InspectModeHandlers[pendingInspectMode]
+    if handler then handler() end
+    pendingInspectMode = nil
+    pendingInspectTab  = nil
+end)
 local inspectSettingsPanel = nil
 local currentInspectGUID = nil  -- Tracks inspected unit's GUID for validation
 
@@ -1001,13 +1027,20 @@ end
 local function SetInspectExtendedMode(tabNum)
     if not InspectFrame then return end
     currentInspectTab = tabNum
-    InspectFrame:SetWidth(INSPECT_CONFIG.FRAME_TARGET_WIDTH)
-    RepositionInspectTabs()
-    RepositionInspectCloseButton(true)
+
+    -- Protected: SetWidth, ClearAllPoints, SetPoint on managed panel children
+    if InCombatLockdown() then
+        pendingInspectMode = "extended"
+        pendingInspectTab  = tabNum
+    else
+        InspectFrame:SetWidth(INSPECT_CONFIG.FRAME_TARGET_WIDTH)
+        RepositionInspectTabs()
+        RepositionInspectCloseButton(true)
+    end
+
     if _G.QUI_InspectFrameSkinning and _G.QUI_InspectFrameSkinning.SetExtended then
         _G.QUI_InspectFrameSkinning.SetExtended(true)
     end
-    -- Show iLvl display on Character/PvP tabs
     local centerILvl = (frameState[InspectFrame] or EMPTY).centerILvl
     if centerILvl then
         centerILvl:Show()
@@ -1020,18 +1053,29 @@ end
 local function SetInspectNormalMode()
     if not InspectFrame then return end
     currentInspectTab = 3
-    InspectFrame:SetWidth(INSPECT_CONFIG.FRAME_DEFAULT_WIDTH)
-    ResetInspectTabsPosition()
-    RepositionInspectCloseButton(false)
+
+    -- Protected: SetWidth, ClearAllPoints, SetPoint on managed panel children
+    if InCombatLockdown() then
+        pendingInspectMode = "normal"
+        pendingInspectTab  = nil
+    else
+        InspectFrame:SetWidth(INSPECT_CONFIG.FRAME_DEFAULT_WIDTH)
+        ResetInspectTabsPosition()
+        RepositionInspectCloseButton(false)
+    end
+
     if _G.QUI_InspectFrameSkinning and _G.QUI_InspectFrameSkinning.SetExtended then
         _G.QUI_InspectFrameSkinning.SetExtended(false)
     end
-    -- Hide iLvl display on Guild tab (not relevant)
     local centerILvl = (frameState[InspectFrame] or EMPTY).centerILvl
     if centerILvl then
         centerILvl:Hide()
     end
 end
+
+-- Wire deferred handlers now that the functions exist
+InspectModeHandlers["extended"] = function() SetInspectExtendedMode(pendingInspectTab or 1) end
+InspectModeHandlers["normal"]   = SetInspectNormalMode
 
 ---------------------------------------------------------------------------
 -- Inspect Settings Button and Panel
@@ -1504,7 +1548,11 @@ local function HookInspectFrame()
 
     InspectFrame:HookScript("OnHide", function()
         inspectLayoutApplied = false
-        InspectFrame:SetWidth(INSPECT_CONFIG.FRAME_DEFAULT_WIDTH)
+        if not InCombatLockdown() then
+            InspectFrame:SetWidth(INSPECT_CONFIG.FRAME_DEFAULT_WIDTH)
+        end
+        pendingInspectMode = nil
+        pendingInspectTab  = nil
         GameTooltip:Hide()
     end)
 

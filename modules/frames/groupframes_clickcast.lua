@@ -568,10 +568,19 @@ end
 function QUI_GFCC:RegisterAllFrames()
     if not isEnabled then return end
     local GF = ns.QUI_GroupFrames
-    if not GF then return end
+    if not GF or not GF.headers then return end
 
-    for _, frame in pairs(GF.unitFrameMap) do
-        SetupFrameClickCast(frame)
+    -- Walk header children directly rather than relying on a cached list.
+    -- This always gets current children regardless of creation timing.
+    for _, headerKey in ipairs({"party", "raid", "self"}) do
+        local header = GF.headers[headerKey]
+        if header then
+            for i = 1, 40 do
+                local child = header:GetAttribute("child" .. i)
+                if not child then break end
+                SetupFrameClickCast(child)
+            end
+        end
     end
 end
 
@@ -708,26 +717,9 @@ function QUI_GFCC:GetModifierLabels()
     return MODIFIER_LABELS
 end
 
----------------------------------------------------------------------------
--- GLOBAL PING BUTTONS: SecureActionButtons for Bindings.xml keybinds.
--- Created once at load time with fixed macrotext so they work in combat.
--- Mouseover fallback to target covers nameplates, world frames, and
--- targeted units with no hover.
----------------------------------------------------------------------------
-local PING_BUTTONS = {
-    { name = "QUI_PingButton_Contextual", macro = "/ping [@mouseover,exists][@target,exists]" },
-    { name = "QUI_PingButton_Assist",     macro = "/ping [@mouseover,exists] assist; [@target,exists] assist" },
-    { name = "QUI_PingButton_Attack",     macro = "/ping [@mouseover,exists] attack; [@target,exists] attack" },
-    { name = "QUI_PingButton_Warning",    macro = "/ping [@mouseover,exists] warning; [@target,exists] warning" },
-    { name = "QUI_PingButton_OnMyWay",    macro = "/ping [@mouseover,exists] onmyway; [@target,exists] onmyway" },
-}
-
-for _, def in ipairs(PING_BUTTONS) do
-    local btn = CreateFrame("Button", def.name, UIParent, "SecureActionButtonTemplate")
-    btn:SetAttribute("type", "macro")
-    btn:SetAttribute("macrotext", def.macro)
-    btn:Hide()
-end
+-- Global ping keybinds use Blizzard's native binding actions directly
+-- (TOGGLEPINGLISTENER, PINGATTACK, PINGWARNING, PINGONMYWAY, PINGASSIST).
+-- No SecureActionButtons needed — the UI binds keys to these native actions.
 
 ---------------------------------------------------------------------------
 -- EVENTS: Spec change and combat end
@@ -735,8 +727,50 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 eventFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_ENTERING_WORLD" then
+        -- Migrate old QUI ping bindings (CLICK format and QUI_PING_* action
+        -- names) to Blizzard's native ping actions.
+        local OLD_TO_NATIVE = {
+            ["CLICK QUI_PingButton_Contextual:LeftButton"] = "TOGGLEPINGLISTENER",
+            ["CLICK QUI_PingButton_Assist:LeftButton"]     = "PINGASSIST",
+            ["CLICK QUI_PingButton_Attack:LeftButton"]     = "PINGATTACK",
+            ["CLICK QUI_PingButton_Warning:LeftButton"]    = "PINGWARNING",
+            ["CLICK QUI_PingButton_OnMyWay:LeftButton"]    = "PINGONMYWAY",
+            ["QUI_PING"]         = "TOGGLEPINGLISTENER",
+            ["QUI_PING_ASSIST"]  = "PINGASSIST",
+            ["QUI_PING_ATTACK"]  = "PINGATTACK",
+            ["QUI_PING_WARNING"] = "PINGWARNING",
+            ["QUI_PING_ONMYWAY"] = "PINGONMYWAY",
+        }
+        local didMigrate = false
+        for oldBinding, nativeAction in pairs(OLD_TO_NATIVE) do
+            local key1, key2 = GetBindingKey(oldBinding)
+            if key1 then SetBinding(key1, nativeAction); didMigrate = true end
+            if key2 then SetBinding(key2, nativeAction); didMigrate = true end
+        end
+        if didMigrate then SaveBindings(GetCurrentBindingSet()) end
+
+        -- After /reload or zone transition, re-register all frames.
+        -- Spec data and group composition may not be fully available during
+        -- ADDON_LOADED, so this catch-up ensures bindings are applied.
+        if not isEnabled then
+            -- Try to initialize if not done yet (covers case where
+            -- ADDON_LOADED ran before DB was ready)
+            QUI_GFCC:Initialize()
+        end
+        if isEnabled and not InCombatLockdown() then
+            C_Timer.After(1.0, function()
+                if not InCombatLockdown() then
+                    QUI_GFCC:RefreshBindings()
+                end
+            end)
+        end
+        return
+    end
+
     if not isEnabled then return end
 
     if event == "PLAYER_SPECIALIZATION_CHANGED" then

@@ -2059,27 +2059,24 @@ function classicEngine:LayoutViewer(name, key)
 end
 
 ---------------------------------------------------------------------------
--- FORCE LOAD CDM: Open settings panel invisibly to force Blizzard init
--- Shows at alpha 0 so OnShow scripts fire but user sees nothing
+-- FORCE LOAD CDM: Ensure Blizzard_CooldownManager addon is loaded
+-- TAINT SAFETY: Previous approach called CooldownViewerSettings:Show()
+-- from addon code. This taints Blizzard's module-level tables
+-- (wasOnGCDLookup, etc.) because Show → OnShow → RefreshData runs
+-- in insecure addon execution context. Those tables then become
+-- forbidden when accessed from protected contexts (cutscene exit,
+-- SetAttribute chains), causing "attempted to index a forbidden table".
+-- Fix: Just load the addon and let Blizzard initialize naturally.
 ---------------------------------------------------------------------------
 local function ForceLoadCDM()
     if InCombatLockdown() then return end
-    local settingsFrame = _G["CooldownViewerSettings"]
-    if settingsFrame then
-        settingsFrame:SetAlpha(0)
-        settingsFrame:Show()
-
-        -- One frame tick is enough for Blizzard to create child frames
-        -- let's be safe at .2 seconds though
-        C_Timer.After(0.2, function()
-            if settingsFrame then
-                settingsFrame:Hide()
-                settingsFrame:SetAlpha(1)
-            end
-            -- CDM frames may now exist after force-load
-            if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
-        end)
+    if C_AddOns and C_AddOns.LoadAddOn then
+        pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownManager")
+    elseif LoadAddOn then
+        pcall(LoadAddOn, "Blizzard_CooldownManager")
     end
+    -- CDM frames may now exist after force-load
+    if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
 end
 
 ---------------------------------------------------------------------------
