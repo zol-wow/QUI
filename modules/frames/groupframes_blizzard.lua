@@ -1,8 +1,8 @@
 --[[
     QUI Group Frames - Blizzard Frame Hider
     Hides default Blizzard party/raid frames when QUI group frames are enabled.
-    Mirrors DandersFrames approach: alpha=0, selection highlight suppression,
-    event stripping, and hooksecurefunc on CompactUnitFrame_UpdateSelectionHighlight.
+    Uses hooksecurefunc to catch Blizzard re-showing frames (reactive, not polling).
+    Alpha=0, selection highlight suppression, event stripping.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -18,67 +18,14 @@ ns.QUI_GroupFrameBlizzard = QUI_GFB
 -- Track what we've hidden/stripped so we can restore
 local hiddenFrames = {}
 local strippedFrames = {}
-local watcherFrame = nil
+local hookedFrames = {}  -- frames with Show hooks installed
 
-local function IsFrameVisible(frame)
-    if not frame then return false end
-    if frame.IsShown and not frame:IsShown() then return false end
-    if frame.GetAlpha then
-        local alpha = Helpers.SafeToNumber(frame:GetAlpha(), 1)
-        if alpha <= 0 then return false end
-    end
-    return true
-end
-
-local function AnyPartyFrameVisible()
-    if IsFrameVisible(CompactPartyFrame) or IsFrameVisible(PartyFrame) then
-        return true
-    end
-
-    for i = 1, 5 do
-        local mf = _G["CompactPartyFrameMember" .. i]
-        if IsFrameVisible(mf) then
-            return true
-        end
-    end
-
-    for i = 1, 4 do
-        local pf = _G["PartyMemberFrame" .. i]
-        if IsFrameVisible(pf) then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function AnyRaidFrameVisible()
-    if IsFrameVisible(CompactRaidFrameContainer)
-        or IsFrameVisible(CompactRaidFrameManager)
-    then
-        return true
-    end
-
-    for i = 1, 40 do
-        local rf = _G["CompactRaidFrame" .. i]
-        if IsFrameVisible(rf) then
-            return true
-        end
-    end
-
-    for group = 1, 8 do
-        if IsFrameVisible(_G["CompactRaidGroup" .. group]) then
-            return true
-        end
-        for member = 1, 5 do
-            local rf = _G["CompactRaidGroup" .. group .. "Member" .. member]
-            if IsFrameVisible(rf) then
-                return true
-            end
-        end
-    end
-
-    return false
+---------------------------------------------------------------------------
+-- Should we be hiding?
+---------------------------------------------------------------------------
+local function ShouldHide()
+    local db = GetDB()
+    return db and db.enabled
 end
 
 ---------------------------------------------------------------------------
@@ -95,7 +42,10 @@ end
 
 local function SafeHideFrameOffscreen(frame)
     if not frame then return end
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        SafeHideFrame(frame)
+        return
+    end
     pcall(function()
         frame:SetAlpha(0)
         frame:EnableMouse(false)
@@ -107,7 +57,10 @@ end
 
 local function SafeScaleContainer(frame, hide)
     if not frame then return end
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        if hide then SafeHideFrame(frame) end
+        return
+    end
     pcall(function()
         if hide then
             frame:SetAlpha(0)
@@ -143,7 +96,6 @@ local function StripUnitFrameEvents(frame)
     pcall(function()
         frame:UnregisterAllEvents()
         -- Keep UNIT_AURA alive so Blizzard's aura cache still updates
-        -- (DandersFrames "Blizzard mode" pattern — avoids stale aura data)
         local unit = frame.unit or frame.displayedUnit
         if unit and frame.RegisterUnitEvent then
             frame:RegisterUnitEvent("UNIT_AURA", unit)
@@ -177,12 +129,34 @@ local function RestoreFrame(frame)
 end
 
 ---------------------------------------------------------------------------
+-- HOOK: Install a Show hook on a frame to re-hide it when Blizzard restores it
+---------------------------------------------------------------------------
+local function InstallShowHook(frame)
+    if not frame or hookedFrames[frame] then return end
+    hooksecurefunc(frame, "Show", function(self)
+        if not ShouldHide() then return end
+        pcall(function()
+            self:SetAlpha(0)
+            self:EnableMouse(false)
+        end)
+    end)
+    -- Also catch SetAlpha restores (Blizzard may call SetAlpha(1) without Show)
+    hooksecurefunc(frame, "SetAlpha", function(self, alpha)
+        if not ShouldHide() then return end
+        if alpha and alpha > 0 then
+            pcall(function()
+                self:SetAlpha(0)
+            end)
+        end
+    end)
+    hookedFrames[frame] = true
+end
+
+---------------------------------------------------------------------------
 -- HOOK: Suppress Blizzard selection highlight updates
 -- TAINT SAFETY: These hooks fire for ALL CompactUnitFrames, including
 -- nameplate frames. During combat, any addon code in the posthook can
--- taint the nameplate widget chain (CompactUnitFrame_UpdateWidgetSet →
--- RegisterForWidgetSet → ProcessWidget → UIWidgetTemplateStatusBar:Setup),
--- causing secret value arithmetic errors. InCombatLockdown() guard prevents
+-- taint the nameplate widget chain. InCombatLockdown() guard prevents
 -- addon data access during combat. Unit check before GetDB() minimizes
 -- addon code execution for non-party/raid frames (nameplates, boss frames).
 ---------------------------------------------------------------------------
@@ -194,8 +168,7 @@ if CompactUnitFrame_UpdateSelectionHighlight then
         if not unit then return end
         if not (unit == "player" or unit:match("^party") or unit:match("^raid")) then return end
 
-        local db = GetDB()
-        if not db or not db.enabled then return end
+        if not ShouldHide() then return end
 
         if frame.selectionHighlight and frame.selectionHighlight.SetShown then
             frame.selectionHighlight:SetShown(false)
@@ -217,8 +190,7 @@ local function SuppressBlizzardReadyCheck(frame)
     if not unit then return end
     if not (unit == "player" or unit:match("^party") or unit:match("^raid")) then return end
 
-    local db = GetDB()
-    if not db or not db.enabled then return end
+    if not ShouldHide() then return end
 
     if frame.readyCheckIcon then
         frame.readyCheckIcon:SetAlpha(0)
@@ -234,8 +206,6 @@ end
 
 ---------------------------------------------------------------------------
 -- HOOK: Re-strip events when Blizzard tries to restore them
--- (DandersFrames pattern — Blizzard calls CompactUnitFrame_UpdateUnitEvents
--- on hidden frames during roster changes, which restores their events)
 ---------------------------------------------------------------------------
 if CompactUnitFrame_UpdateUnitEvents then
     hooksecurefunc("CompactUnitFrame_UpdateUnitEvents", function(frame)
@@ -254,9 +224,10 @@ end
 local function HideBlizzardPartyFrames()
     if InCombatLockdown() then return end
 
-    -- Modern PartyFrame container (some Blizzard layouts use this wrapper)
+    -- Modern PartyFrame container
     if PartyFrame then
         SafeHideFrame(PartyFrame)
+        InstallShowHook(PartyFrame)
     end
 
     -- CompactPartyFrame (Retail party frames)
@@ -264,19 +235,20 @@ local function HideBlizzardPartyFrames()
         SafeHideFrame(CompactPartyFrame)
         HideSelectionHighlights(CompactPartyFrame)
         StripUnitFrameEvents(CompactPartyFrame)
+        InstallShowHook(CompactPartyFrame)
 
         -- Hide border/title overlays
         SafeHideFrame(CompactPartyFrame.borderFrame)
         SafeHideFrame(CompactPartyFrame.title)
 
-        -- Individual member frames: alpha=0, suppress highlights/readycheck, strip events
+        -- Individual member frames
         for i = 1, 5 do
             local mf = _G["CompactPartyFrameMember" .. i]
             if mf then
                 SafeHideFrame(mf)
                 HideSelectionHighlights(mf)
                 StripUnitFrameEvents(mf)
-                -- Hide ready check elements on Blizzard frames
+                InstallShowHook(mf)
                 if mf.readyCheckIcon then pcall(function() mf.readyCheckIcon:SetAlpha(0) end) end
                 if mf.readyCheckDecline then pcall(function() mf.readyCheckDecline:SetAlpha(0) end) end
             end
@@ -289,6 +261,7 @@ local function HideBlizzardPartyFrames()
         if pf then
             SafeHideFrameOffscreen(pf)
             StripUnitFrameEvents(pf)
+            InstallShowHook(pf)
         end
     end
 end
@@ -301,6 +274,9 @@ local function HideBlizzardRaidFrames()
 
     -- CompactRaidFrameContainer — scale trick makes it effectively invisible
     SafeScaleContainer(CompactRaidFrameContainer, true)
+    if CompactRaidFrameContainer then
+        InstallShowHook(CompactRaidFrameContainer)
+    end
 
     -- CompactRaidFrameManager (the "raid" tab on left side)
     if CompactRaidFrameManager then
@@ -308,6 +284,10 @@ local function HideBlizzardRaidFrames()
         SafeHideFrame(CompactRaidFrameManager.container)
         SafeHideFrame(CompactRaidFrameManager.toggleButton)
         SafeHideFrame(CompactRaidFrameManager.displayFrame)
+        InstallShowHook(CompactRaidFrameManager)
+        if CompactRaidFrameManager.displayFrame then
+            InstallShowHook(CompactRaidFrameManager.displayFrame)
+        end
     end
 
     -- Individual CompactRaidFrame1-40
@@ -317,18 +297,24 @@ local function HideBlizzardRaidFrames()
             SafeHideFrame(rf)
             HideSelectionHighlights(rf)
             StripUnitFrameEvents(rf)
+            InstallShowHook(rf)
         end
     end
 
     -- CompactRaidGroup headers and their members
     for group = 1, 8 do
-        SafeHideFrame(_G["CompactRaidGroup" .. group])
+        local gf = _G["CompactRaidGroup" .. group]
+        if gf then
+            SafeHideFrame(gf)
+            InstallShowHook(gf)
+        end
         for member = 1, 5 do
             local rf = _G["CompactRaidGroup" .. group .. "Member" .. member]
             if rf then
                 SafeHideFrame(rf)
                 HideSelectionHighlights(rf)
                 StripUnitFrameEvents(rf)
+                InstallShowHook(rf)
             end
         end
     end
@@ -338,8 +324,7 @@ end
 -- HIDE: All Blizzard group frames
 ---------------------------------------------------------------------------
 function QUI_GFB:HideBlizzardFrames()
-    local db = GetDB()
-    if not db or not db.enabled then return end
+    if not ShouldHide() then return end
 
     if InCombatLockdown() then
         self.pendingHide = true
@@ -348,9 +333,6 @@ function QUI_GFB:HideBlizzardFrames()
 
     HideBlizzardPartyFrames()
     HideBlizzardRaidFrames()
-
-    -- Start watcher to re-hide frames if Blizzard restores them
-    self:StartWatcher()
 end
 
 ---------------------------------------------------------------------------
@@ -377,53 +359,8 @@ function QUI_GFB:RestoreBlizzardFrames()
     -- Restore scaled containers
     SafeScaleContainer(CompactRaidFrameContainer, false)
 
-    -- Stop watcher
-    self:StopWatcher()
-end
-
----------------------------------------------------------------------------
--- WATCHER: Re-hide if Blizzard restores frames
----------------------------------------------------------------------------
-function QUI_GFB:StartWatcher()
-    if watcherFrame then return end
-
-    watcherFrame = CreateFrame("Frame")
-    local elapsed = 0
-    watcherFrame:SetScript("OnUpdate", function(self, dt)
-        elapsed = elapsed + dt
-        if elapsed < 1.0 then return end
-        elapsed = 0
-
-        if Helpers.IsEditModeActive and Helpers.IsEditModeActive() then return end
-        if InCombatLockdown() then return end
-
-        local db = GetDB()
-        if not db or not db.enabled then return end
-
-        -- Re-hide party frames if Blizzard restored any parent/member frame.
-        if AnyPartyFrameVisible() then
-            C_Timer.After(0, function()
-                if InCombatLockdown() then return end
-                HideBlizzardPartyFrames()
-            end)
-        end
-
-        -- Re-hide raid frames if any parent/member frame is restored.
-        if AnyRaidFrameVisible() then
-            C_Timer.After(0, function()
-                if InCombatLockdown() then return end
-                HideBlizzardRaidFrames()
-            end)
-        end
-    end)
-end
-
-function QUI_GFB:StopWatcher()
-    if watcherFrame then
-        watcherFrame:SetScript("OnUpdate", nil)
-        watcherFrame:Hide()
-        watcherFrame = nil
-    end
+    -- Note: hooks remain installed but ShouldHide() will return false,
+    -- so they become no-ops until re-enabled.
 end
 
 ---------------------------------------------------------------------------
@@ -449,22 +386,23 @@ local blizzardEventFrame = CreateFrame("Frame")
 blizzardEventFrame:RegisterEvent("ADDON_LOADED")
 blizzardEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 blizzardEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+blizzardEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+blizzardEventFrame:RegisterEvent("PARTY_MEMBER_ENABLE")
+blizzardEventFrame:RegisterEvent("PARTY_MEMBER_DISABLE")
 blizzardEventFrame:SetScript("OnEvent", function(_, event, addonName)
     if event == "ADDON_LOADED" and addonName ~= "Blizzard_CompactRaidFrames" then
         return
     end
 
-    local db = GetDB()
-    if not db or not db.enabled then
-        return
-    end
+    if not ShouldHide() then return end
 
     if InCombatLockdown() then
         QUI_GFB.pendingHide = true
         return
     end
 
-    C_Timer.After(0, function()
+    -- Delayed to let Blizzard frames initialize/reposition first
+    C_Timer.After(0.2, function()
         if InCombatLockdown() then
             QUI_GFB.pendingHide = true
             return
