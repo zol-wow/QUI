@@ -629,7 +629,7 @@ end
 -- SHARED EVENT HANDLING
 ---------------------------------------------------------------------------
 local visibilityEventFrame = CreateFrame("Frame")
-visibilityEventFrame:RegisterEvent("PLAYER_LOGIN")
+visibilityEventFrame:RegisterEvent("ADDON_LOADED")
 visibilityEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 visibilityEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -664,11 +664,16 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         UpdateHealthState()
     end
 
-    if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+    if event == "ADDON_LOADED" then
+        local addonName = ...
+        if addonName ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+    end
+
+    if event == "ADDON_LOADED" or event == "PLAYER_ENTERING_WORLD" then
         UpdateHealthState()
-        -- Schedule delayed setup so CDM/UF frames have time to initialize.
-        -- PLAYER_LOGIN only fires on first login, NOT on /reload — so we
-        -- must also schedule on PLAYER_ENTERING_WORLD to cover reloads.
+        -- Schedule delayed setup so CDM/UF frames have time to render.
+        -- Also runs on PLAYER_ENTERING_WORLD to cover zone transitions.
         if _pendingSetupTimer then
             _pendingSetupTimer:Cancel()
         end

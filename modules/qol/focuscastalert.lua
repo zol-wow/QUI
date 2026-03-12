@@ -1,4 +1,4 @@
-local addonName, ns = ...
+local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
@@ -559,7 +559,7 @@ local function TogglePreview(show)
 end
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_START", "focus")
@@ -574,8 +574,10 @@ eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "focus")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "focus")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 eventFrame:SetScript("OnEvent", function(self, event, unit, castGUID, spellID, ...)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(0.5, RefreshFocusCastAlert)
+    if event == "ADDON_LOADED" then
+        if unit ~= ADDON_NAME then return end  -- unit is arg1 here
+        self:UnregisterEvent("ADDON_LOADED")
+        RefreshFocusCastAlert()
         return
     end
 

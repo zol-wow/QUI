@@ -2724,11 +2724,13 @@ local function OnEvent(self, event, arg1, ...)
     if not db or not db.enabled then return end
 
     -- Unit-specific events — dispatch via lookup map
-    local frame = arg1 and QUI_GF.unitFrameMap[arg1]
+    -- Guard: arg1 is a unit string for unit events, but a boolean for
+    -- PLAYER_ENTERING_WORLD (isInitialLogin) — only index the map with strings.
+    local frame = (type(arg1) == "string") and QUI_GF.unitFrameMap[arg1]
 
     -- Self-healing: rebuild map on lookup miss (QUI pattern)
     -- Handles stale maps from combat zone transitions or delayed header updates
-    if arg1 and not frame and (arg1:match("^party%d") or arg1:match("^raid%d") or arg1 == "player") then
+    if type(arg1) == "string" and not frame and (arg1:match("^party%d") or arg1:match("^raid%d") or arg1 == "player") then
         local now = GetTime()
         if not QUI_GF.lastMapRebuild or (now - QUI_GF.lastMapRebuild) > 1.0 then
             QUI_GF.lastMapRebuild = now
@@ -3148,18 +3150,18 @@ function QUI_GF:Disable()
 end
 
 ---------------------------------------------------------------------------
--- STARTUP: Init on PLAYER_LOGIN
+-- STARTUP: Init on ADDON_LOADED
 ---------------------------------------------------------------------------
 local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
-initFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(0.5, function()
-            QUI_GF:Initialize()
-        end)
+initFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        QUI_GF:Initialize()
     elseif event == "PLAYER_ENTERING_WORLD" then
         if QUI_GF.initialized then
             C_Timer.After(1.0, function()

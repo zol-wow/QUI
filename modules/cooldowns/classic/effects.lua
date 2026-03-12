@@ -4,7 +4,7 @@
 -- 1. Hides Blizzard Red/Flash Effects (Pandemic, ProcStartFlipbook, Finish)
 -- 2. Hides ALL Overlay Glows (golden proc glows, spell activation alerts, etc.)
 
-local _, ns = ...
+local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 
 -- TAINT SAFETY: Store per-frame state in local weak-keyed tables instead of
@@ -269,7 +269,6 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
 
 local function IsClassicEngineSelected()
     if ns.CDMProvider and ns.CDMProvider.GetActiveEngineName then
@@ -294,7 +293,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg)
     -- Only run when classic CDM engine is active
     if not IsClassicEngineSelected() then return end
 
-    if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
+    if event == "ADDON_LOADED" and (arg == "Blizzard_CooldownManager" or arg == ADDON_NAME) then
         EnsureGlowHooks()
         -- Consolidated timer: apply settings and hide glows together
         C_Timer.After(0.5, function()
@@ -307,9 +306,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg)
             ApplyToAllViewers()
             HideExistingBlizzardGlows()
         end)
-    elseif event == "PLAYER_LOGIN" then
-        EnsureGlowHooks()
-        C_Timer.After(0.5, HideExistingBlizzardGlows)
     end
 end)
 

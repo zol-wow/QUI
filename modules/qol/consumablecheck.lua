@@ -1,4 +1,4 @@
-local addonName, ns = ...
+local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
@@ -1493,12 +1493,15 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("READY_CHECK")
 eventFrame:RegisterEvent("READY_CHECK_FINISHED")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_ALIVE")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
+    if event == "ADDON_LOADED" then
+        local loadedAddon = ...
+        if loadedAddon ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
         InitializeButtons()
     elseif event == "READY_CHECK" then
         OnReadyCheck(...)

@@ -3310,7 +3310,9 @@ function ActionBars:Initialize()
     end
 
     local db = GetDB()
-    if not db or not db.enabled then return end
+    if not db or not db.enabled then
+        return
+    end
 
     ActionBars.initialized = true
     ActionBars.levelSuppressionActive = ShouldSuppressMouseoverHideForLevel()
@@ -3341,6 +3343,24 @@ function ActionBars:Initialize()
 
     -- Apply bar layout settings (scale, lock, range indicator, empty slots)
     ApplyBarLayoutSettings()
+
+    -- Hook Blizzard's Layout() on each bar frame to reapply QUI button
+    -- spacing after Blizzard's Edit Mode recalculates container positions.
+    -- Without this, Edit Mode layout overwrites QUI spacing on reload.
+    local _layoutHookGuard = false
+    for barKey, _ in pairs(BUTTON_PATTERNS) do
+        if barKey ~= "pet" and barKey ~= "stance" then
+            local barFrame = GetBarFrame(barKey)
+            if barFrame and barFrame.Layout then
+                hooksecurefunc(barFrame, "Layout", function()
+                    if _layoutHookGuard or not ActionBars.initialized or InCombatLockdown() then return end
+                    _layoutHookGuard = true
+                    ApplyButtonSpacing(barKey)
+                    _layoutHookGuard = false
+                end)
+            end
+        end
+    end
 
     -- Keep bars visible while Spellbook UI is open (optional setting).
     HookSpellBookVisibilityFrames()
@@ -3423,7 +3443,6 @@ local function QueueAllButtonVisualRefresh(delay)
 end
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
 eventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
@@ -3441,11 +3460,16 @@ eventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
 eventFrame:RegisterEvent("ADDON_LOADED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
-        -- Delay initialization to ensure all frames exist
-        C_Timer.After(0.5, function()
+    if event == "ADDON_LOADED" then
+        local addonName = ...
+        if addonName == ADDON_NAME then
             ActionBars:Initialize()
-        end)
+        end
+        HandleSpellBookAddonLoaded(addonName)
+        if addonName == "Blizzard_ActionBar" then
+            HookSpellFlyoutSkinning()
+            C_Timer.After(0, SkinSpellFlyoutButtons)
+        end
 
     elseif event == "ACTIONBAR_SLOT_CHANGED" then
         -- Defer slot-change processing during combat to avoid taint
@@ -3512,6 +3536,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
+        local isLogin, isReload = ...
+        if isReload then
+            if not InCombatLockdown() then
+                -- Second spacing pass during combat /reload safe window.
+                ApplyAllBarSpacing()
+            end
+            -- Safety net: Blizzard's Layout() may fire after safe window
+            -- closes. Mark pending so PLAYER_REGEN_ENABLED reapplies.
+            ActionBars.pendingSpacing = true
+        end
         if UpdateLevelSuppressionState() then
             if type(_G.QUI_RefreshActionBars) == "function" then
                 _G.QUI_RefreshActionBars()
@@ -3529,14 +3563,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.After(0.05, function()
             SetupBarMouseover("bar1")
         end)
-
-    elseif event == "ADDON_LOADED" then
-        local addonName = ...
-        HandleSpellBookAddonLoaded(addonName)
-        if addonName == "Blizzard_ActionBar" then
-            HookSpellFlyoutSkinning()
-            C_Timer.After(0, SkinSpellFlyoutButtons)
-        end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Process pending initialization (from /reload during combat)

@@ -1743,16 +1743,14 @@ end
 
 -- Initialize when QUICore is enabled
 local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function(self, event)
-    -- Defer initialization to let QUICore load first
-    C_Timer.After(0.5, function()
-        local db = GetDB()
-        if db.loot or db.lootRoll then
-            Loot:Initialize()
-            -- Hook Edit Mode after initialization
-            Loot:HookBlizzardEditMode()
-        end
-    end)
-    self:UnregisterEvent("PLAYER_LOGIN")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:SetScript("OnEvent", function(self, event, arg1)
+    if arg1 ~= ADDON_NAME then return end
+    self:UnregisterEvent("ADDON_LOADED")
+    local db = GetDB()
+    if db.loot or db.lootRoll then
+        Loot:Initialize()
+        -- Hook Edit Mode after initialization
+        Loot:HookBlizzardEditMode()
+    end
 end)

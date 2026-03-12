@@ -45,6 +45,10 @@ local originalMicroMenuParent = nil
 local originalBagsBarParent = nil
 local minimapOriginalOnMouseUp = nil
 
+-- External HUD overlay detection
+local externalHudActive = false
+local quiUpdatingMinimap = false
+
 ---=================================================================================
 --- BLIZZARD LAYOUT NO-OPS
 --- Blizzard's Minimap.lua calls self:Layout() internally (line ~479).
@@ -2818,11 +2822,11 @@ local function UpdateMinimapSize()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
-    -- Set minimap size
+    -- Set minimap size (guard flag prevents external HUD false positives)
+    quiUpdatingMinimap = true
     Minimap:SetSize(settings.size, settings.size)
-
-    -- Apply scale multiplier
     Minimap:SetScale(settings.scale or 1.0)
+    quiUpdatingMinimap = false
 
     -- Force render update by toggling zoom.
     -- Use SetZoom API instead of ZoomIn/ZoomOut:Click() — clicking protected
@@ -2907,6 +2911,45 @@ local function SetupMinimapDragging()
         -- No position saved, use default
         Minimap:ClearAllPoints()
         Minimap:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 790, 285)
+    end
+end
+
+---=================================================================================
+--- EXTERNAL HUD DETECTION
+--- Detects when an external addon scales up / fades out the Minimap for a
+--- full-screen HUD overlay, and hides all QUI decorations so they don't
+--- appear as opaque artifacts on top of the transparent overlay.
+---=================================================================================
+
+local function HideAllDecorations()
+    if backdropFrame then backdropFrame:Hide() end
+    if clockFrame then clockFrame:Hide() end
+    if coordsFrame then coordsFrame:Hide() end
+    if zoneTextFrame then zoneTextFrame:Hide() end
+    if datatextFrame then datatextFrame:Hide() end
+    if drawerToggleButton then drawerToggleButton:Hide() end
+    if drawerFrame then drawerFrame:Hide() end
+    StopUpdateTickers()
+end
+
+local function CheckExternalHud()
+    if quiUpdatingMinimap then return end
+
+    local settings = GetSettings()
+    if not settings or not settings.enabled then return end
+
+    local currentScale = Minimap:GetScale()
+    local currentAlpha = Minimap:GetEffectiveAlpha()
+    local expectedScale = settings.scale or 1.0
+
+    local hudDetected = (currentScale > expectedScale * 2.0) or (currentAlpha < 0.5)
+
+    if hudDetected and not externalHudActive then
+        externalHudActive = true
+        HideAllDecorations()
+    elseif not hudDetected and externalHudActive then
+        externalHudActive = false
+        Minimap_Module:Refresh()
     end
 end
 
@@ -3094,6 +3137,14 @@ function Minimap_Module:Initialize()
     SetupMiddleClickMenu()
     SetupAutoZoom()
 
+    -- Detect external HUD overlays that scale up / fade out the Minimap
+    hooksecurefunc(Minimap, "SetScale", function()
+        C_Timer.After(0, CheckExternalHud)
+    end)
+    hooksecurefunc(Minimap, "SetAlpha", function()
+        C_Timer.After(0, CheckExternalHud)
+    end)
+
     -- Start performance-optimized ticker updates
     StartUpdateTickers()
 
@@ -3192,6 +3243,12 @@ function Minimap_Module:Refresh()
         return
     end
 
+    -- If an external HUD overlay is active, keep decorations hidden
+    if externalHudActive then
+        HideAllDecorations()
+        return
+    end
+
     -- Restart tickers with potentially new intervals
     StartUpdateTickers()
 
@@ -3248,22 +3305,20 @@ end
 ---=================================================================================
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == "Blizzard_HybridMinimap" then
-        -- Handle HybridMinimap loading (Delves/scenarios)
-        local settings = GetSettings()
-        if settings and settings.enabled then
-            SetMinimapShape(settings.shape)
-        end
-    elseif event == "PLAYER_LOGIN" then
-        -- Delay initialization slightly to ensure all frames exist
-        C_Timer.After(0.5, function()
+    if event == "ADDON_LOADED" then
+        if arg1 == ADDON_NAME then
             Minimap_Module:Initialize()
-        end)
+        elseif arg1 == "Blizzard_HybridMinimap" then
+            -- Handle HybridMinimap loading (Delves/scenarios)
+            local settings = GetSettings()
+            if settings and settings.enabled then
+                SetMinimapShape(settings.shape)
+            end
+        end
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat ended: run deferred drawer setup if one was requested during combat
         if pendingDrawerSetup then

@@ -352,7 +352,9 @@ local function LayoutContainer(trackerKey)
     -- icons are updated natively.  Rebuilding mid-combat destroys the working
     -- layout (ClearPool) and may produce wrong positions.
     -- A full rebuild fires on PLAYER_REGEN_ENABLED via _G.QUI_RefreshNCDM.
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        return
+    end
 
     -- Edit Mode: containers are visible with overlays but skip layout
     -- to avoid flicker while the user is looking at overlays.  Icons are
@@ -765,6 +767,8 @@ local function LayoutContainer(trackerKey)
         local db = GetDB()
         if db and db.utility and db.utility.anchorBelowEssential then
             C_Timer.After(0.05, function()
+                -- Skip during combat — PLAYER_REGEN_ENABLED RefreshAll handles recovery
+                if InCombatLockdown() then return end
                 if _G.QUI_ApplyUtilityAnchor then
                     _G.QUI_ApplyUtilityAnchor()
                 end
@@ -777,6 +781,8 @@ local function LayoutContainer(trackerKey)
         vs.cdmUpdatePending = true
         C_Timer.After(0.05, function()
             vs.cdmUpdatePending = nil
+            -- Skip during combat — PLAYER_REGEN_ENABLED RefreshAll handles recovery
+            if InCombatLockdown() then return end
             UpdateLockedBarsForViewer(trackerKey)
             if _G.QUI_UpdateCDMAnchoredUnitFrames then
                 _G.QUI_UpdateCDMAnchoredUnitFrames()
@@ -793,12 +799,16 @@ end
 -- REFRESH ALL
 ---------------------------------------------------------------------------
 local function RefreshAll(forceSync)
-    if not initialized then return end
+    if not initialized then
+        return
+    end
 
     -- Defer to combat end — rebuilding destroys the current layout.
     -- The classic engine's combatFrame calls _G.QUI_RefreshNCDM on
     -- PLAYER_REGEN_ENABLED, which routes here and provides recovery.
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        return
+    end
 
     -- Cancel any pending refresh timers from a prior overlapping RefreshAll call.
     -- This prevents interleaved layouts when e.g. a 0.2s profile-change refresh
@@ -1334,17 +1344,18 @@ function ownedEngine:Initialize()
     -- the deferred re-layout below fills them once spell data arrives.
     RefreshAll(true)
 
-    -- Post-layout: reapply frame anchoring overrides so resource bars and
-    -- other anchored frames pick up the newly computed CDM container dimensions.
-    C_Timer.After(0.25, function()
-        if _G.QUI_UpdateCDMAnchorProxyFrames then
-            _G.QUI_UpdateCDMAnchorProxyFrames()
-        end
-        if _G.QUI_ApplyAllFrameAnchors then
-            _G.QUI_ApplyAllFrameAnchors()
-        end
-        UpdateAllLockedBars()
-    end)
+    -- Synchronous post-layout: apply frame anchoring overrides NOW while
+    -- still in the ADDON_LOADED safe window (InCombatLockdown=false).
+    -- Containers anchored to other frames (e.g. utility→essential) need
+    -- the anchoring system to set their position. This MUST be synchronous
+    -- because deferred timers fire after the safe window closes.
+    if _G.QUI_UpdateCDMAnchorProxyFrames then
+        _G.QUI_UpdateCDMAnchorProxyFrames()
+    end
+    if _G.QUI_ApplyAllFrameAnchors then
+        _G.QUI_ApplyAllFrameAnchors()
+    end
+    UpdateAllLockedBars()
 
     -- Apply HUD visibility now that containers exist (covers /reload while mounted).
     -- Containers start at alpha=0 (CreateContainer). Set the correct target
@@ -1411,7 +1422,21 @@ function ownedEngine:Initialize()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             local isLogin, isReload = arg1, arg2
-            if not isLogin and not isReload then
+            if isReload and not InCombatLockdown() then
+                -- Second layout pass during combat /reload safe window.
+                -- Catches Blizzard viewer children that populated after
+                -- the initial ADDON_LOADED scan.
+                if ns.CDMSpellData then
+                    ns.CDMSpellData:ForceScan()
+                end
+                RefreshAll(true)
+                if _G.QUI_UpdateCDMAnchorProxyFrames then
+                    _G.QUI_UpdateCDMAnchorProxyFrames()
+                end
+                if _G.QUI_ApplyAllFrameAnchors then
+                    _G.QUI_ApplyAllFrameAnchors()
+                end
+            elseif not isLogin and not isReload then
                 C_Timer.After(0.3, RefreshAll)
             end
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then

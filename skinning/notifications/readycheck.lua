@@ -1,4 +1,4 @@
-local addonName, ns = ...
+local ADDON_NAME, ns = ...
 local Addon = ns.Addon
 
 local GetCore = ns.Helpers.GetCore
@@ -465,9 +465,10 @@ _G.QUI_RefreshReadyCheckColors = RefreshReadyCheckColors
 ---------------------------------------------------------------------------
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
+        self:UnregisterEvent("ADDON_LOADED")
         if _G.ReadyCheckFrame then
             SkinReadyCheckFrame()
         end

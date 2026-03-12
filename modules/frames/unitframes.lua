@@ -3655,30 +3655,30 @@ end
 -- EVENT: Addon loaded
 ---------------------------------------------------------------------------
 local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-initFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        -- Delay initialization to ensure DB is ready
+initFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        QUI_UF:Initialize()
+        -- Hook Blizzard Edit Mode after frames are created
+        QUI_UF:HookBlizzardEditMode()
+        -- Register frames with Clique and click-cast after creation
+        -- (deferred: external addon may not be loaded yet)
         C_Timer.After(0.5, function()
-            QUI_UF:Initialize()
-            -- Hook Blizzard Edit Mode after frames are created
-            QUI_UF:HookBlizzardEditMode()
-            -- Register frames with Clique and click-cast after creation
-            C_Timer.After(0.5, function()
-                QUI_UF:RegisterWithClique()
-                local GFCC = ns.QUI_GroupFrameClickCast
-                if GFCC then
-                    -- Initialize if not already done (e.g. group frames disabled)
-                    if not GFCC:IsEnabled() then
-                        GFCC:Initialize()
-                    end
-                    if GFCC:IsEnabled() then
-                        GFCC:RegisterUnitFrames()
-                    end
+            QUI_UF:RegisterWithClique()
+            local GFCC = ns.QUI_GroupFrameClickCast
+            if GFCC then
+                -- Initialize if not already done (e.g. group frames disabled)
+                if not GFCC:IsEnabled() then
+                    GFCC:Initialize()
                 end
-            end)
+                if GFCC:IsEnabled() then
+                    GFCC:RegisterUnitFrames()
+                end
+            end
         end)
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Re-hide Blizzard castbars immediately — Blizzard can re-register

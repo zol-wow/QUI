@@ -433,7 +433,7 @@ end
 -- Initialize
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -442,14 +442,14 @@ eventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 
 eventFrame:SetScript("OnEvent", function(self, event, unit, _, spellID)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(1, function()
-            CreateReticle()
-            UpdateReticle()
-            SetupCursorFollowing()
-            SetupRightClickHide()
-            lastCombatState = InCombatLockdown()
-        end)
+    if event == "ADDON_LOADED" then
+        if unit ~= ADDON_NAME then return end  -- unit is arg1 here
+        self:UnregisterEvent("ADDON_LOADED")
+        CreateReticle()
+        UpdateReticle()
+        SetupCursorFollowing()
+        SetupRightClickHide()
+        lastCombatState = InCombatLockdown()
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         UpdateReticle()

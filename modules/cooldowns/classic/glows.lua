@@ -3,7 +3,7 @@
 -- Uses LibCustomGlow for custom glow styles (Pixel Glow, Autocast Shine, Button Glow)
 -- Replaces Blizzard's SpellActivationAlert with the configured custom glow
 
-local _, ns = ...
+local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 
 -- Get LibCustomGlow for custom glow styles
@@ -608,21 +608,16 @@ end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function(self, event, arg)
     -- Only run when classic CDM engine is active
     if not IsClassicEngineSelected() then return end
 
-    if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
-        EnsureGlowSetup()
-    elseif event == "PLAYER_LOGIN" then
-        -- Backup: ensure setup by login even if CDM loaded earlier
+    if event == "ADDON_LOADED" and (arg == "Blizzard_CooldownManager" or arg == ADDON_NAME) then
         EnsureGlowSetup()
     end
     -- Unregister once setup is done to stop receiving unnecessary events
     if glowSetupDone then
         self:UnregisterEvent("ADDON_LOADED")
-        self:UnregisterEvent("PLAYER_LOGIN")
     end
 end)
 

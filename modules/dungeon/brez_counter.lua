@@ -570,7 +570,7 @@ end
 -- Event handler
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ENCOUNTER_START")
 eventFrame:RegisterEvent("ENCOUNTER_END")
@@ -580,11 +580,12 @@ eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(1, function()
-            CreateBrezFrame()
-            EvaluateVisibility()
-        end)
+    if event == "ADDON_LOADED" then
+        local addonName = ...
+        if addonName ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        CreateBrezFrame()
+        EvaluateVisibility()
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Delay 1 frame to let instance info settle

@@ -1,4 +1,4 @@
-local addonName, ns = ...
+local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
@@ -437,7 +437,7 @@ end
 local pixelCacheFrame = CreateFrame("Frame")
 pixelCacheFrame:RegisterEvent("UI_SCALE_CHANGED")
 pixelCacheFrame:RegisterEvent("DISPLAY_SIZE_CHANGED")
-pixelCacheFrame:RegisterEvent("PLAYER_LOGIN")
+pixelCacheFrame:RegisterEvent("ADDON_LOADED")
 pixelCacheFrame:SetScript("OnEvent", UpdateCachedPixelSize)
 
 ---------------------------------------------------------------------------
@@ -864,11 +864,11 @@ end
 ---------------------------------------------------------------------------
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        -- Defer slightly to ensure all tooltips are created
-        C_Timer.After(0.5, function()
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
+        self:UnregisterEvent("ADDON_LOADED")
+        do
             -----------------------------------------------------------------
             -- TAINT SAFETY: Do NOT replace global Blizzard functions with
             -- addon wrappers (pcall or otherwise). Direct replacement
@@ -946,7 +946,7 @@ eventFrame:SetScript("OnEvent", function(self, event)
 
             -- Post processor handles both skinning and health bar
             SetupTooltipPostProcessor()
-        end)
+        end
     end
 end)
 

@@ -60,7 +60,7 @@ function QUI:OnInitialize()
     self:RegisterChatCommand("rl", "SlashCommandReload")
     self:RegisterChatCommand("qpull", "SlashCommandPull")
     self:RegisterChatCommand("quipull", "SlashCommandPull")
-    
+
     -- Register our media files with LibSharedMedia
     self:CheckMediaRegistration()
 end
@@ -149,6 +149,11 @@ function QUI:SlashCommandPull(input)
 end
 
 function QUI:OnEnable()
+    -- Run backward-compatibility migrations now that QUICore:OnInitialize()
+    -- has created the real profile database (QUIDB → QUI.db).
+    -- OnEnable runs after all OnInitialize calls but still during ADDON_LOADED.
+    self:BackwardsCompat()
+
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("ADDON_LOADED")
     self:RegisterOptionalPullAlias()
@@ -204,8 +209,6 @@ function QUI:ADDON_LOADED(_, addonName)
 end
 
 function QUI:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
-    QUI:BackwardsCompat()
-
     -- Ensure debug table exists
     if not self.db.char.debug then
         self.db.char.debug = { reload = false }

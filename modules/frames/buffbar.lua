@@ -2695,15 +2695,15 @@ end
 ---------------------------------------------------------------------------
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(1, Initialize)
-        -- Additional force populate attempts
-        C_Timer.After(2, ForcePopulateBuffIcons)
-        C_Timer.After(4, ForcePopulateBuffIcons)
+    if event == "ADDON_LOADED" then
+        local addonName = ...
+        if addonName ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        Initialize()
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isInitialLogin, isReloadingUi = ...
         if isInitialLogin or isReloadingUi then

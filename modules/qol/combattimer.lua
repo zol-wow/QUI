@@ -425,13 +425,14 @@ end
 ---------------------------------------------------------------------------
 -- Initialize
 ---------------------------------------------------------------------------
-eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(1, function()
-            CreateTimerFrame()
-            UpdateEventRegistrations()
-        end)
+    if event == "ADDON_LOADED" then
+        local addonName = ...
+        if addonName ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        CreateTimerFrame()
+        UpdateEventRegistrations()
     elseif event == "PLAYER_REGEN_DISABLED" then
         OnCombatStart()
     elseif event == "PLAYER_REGEN_ENABLED" then

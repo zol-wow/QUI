@@ -1172,7 +1172,7 @@ end
 -- Event Handling
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_CAN_GLIDE_CHANGED")
@@ -1186,15 +1186,15 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterUnitEvent("UNIT_AURA", "player")  -- Only player auras (Thrill of the Skies buff)
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(1, function()
-            CreateSkyridingFrame()
-            ApplySettings()
-            -- Start OnUpdate for animations
-            if skyridingFrame then
-                skyridingFrame:SetScript("OnUpdate", OnUpdate)
-            end
-        end)
+    if event == "ADDON_LOADED" then
+        if arg1 ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        CreateSkyridingFrame()
+        ApplySettings()
+        -- Start OnUpdate for animations
+        if skyridingFrame then
+            skyridingFrame:SetScript("OnUpdate", OnUpdate)
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         RefreshSkyridingState()
         -- Loading screens can briefly preserve the pre-instance mount/glide state.

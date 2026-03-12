@@ -1,4 +1,4 @@
-local addonName, ns = ...
+local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
@@ -268,15 +268,15 @@ end
 -- EVENT HANDLING
 ---------------------------------------------------------------------------
 
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        C_Timer.After(1, function()
-            UpdatePetWarningEventRegistration()
-            if InCombatLockdown() and combatEventsRegistered then
-                StartPetWarningPolling()
-            end
-        end)
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 ~= ADDON_NAME then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        UpdatePetWarningEventRegistration()
+        if InCombatLockdown() and combatEventsRegistered then
+            StartPetWarningPolling()
+        end
     elseif event == "PLAYER_REGEN_DISABLED" then
         StartPetWarningPolling()
     elseif event == "PLAYER_REGEN_ENABLED" then

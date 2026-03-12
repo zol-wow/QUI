@@ -4693,14 +4693,6 @@ function QUICore:OnEnable()
     self._preservedPanelScale = self.db.profile.configPanelScale
     self._preservedPanelAlpha = self.db.profile.configPanelAlpha
 
-    -- DEFERRED 0.1s: Hook setup (spreads work across frames)
-    C_Timer.After(0.1, function()
-        if not InCombatLockdown() then
-            self:HookViewers()
-            self:HookEditMode()
-        end
-    end)
-
     -- Helper: apply frame anchoring overrides — marks frames in the gatekeeper set
     -- and positions them. Called after each init stage to catch newly created frames.
     local function ApplyFrameOverrides()
@@ -4708,6 +4700,19 @@ function QUICore:OnEnable()
             ns.QUI_Anchoring:ApplyAllFrameAnchors()
         end
     end
+
+    -- IMMEDIATE: Apply frame anchoring synchronously during ADDON_LOADED
+    -- safe window. Containers anchored to other frames need positioning
+    -- now before InCombatLockdown() starts returning true.
+    ApplyFrameOverrides()
+
+    -- DEFERRED 0.1s: Hook setup (spreads work across frames)
+    C_Timer.After(0.1, function()
+        if not InCombatLockdown() then
+            self:HookViewers()
+            self:HookEditMode()
+        end
+    end)
 
     -- DEFERRED 0.5s: Unit frames (secure APIs now safe) + global font override + alerts
     C_Timer.After(0.5, function()
@@ -4723,7 +4728,9 @@ function QUICore:OnEnable()
             self:ApplyGlobalFont()
         end
         -- Mark newly created frames + position overrides (gatekeeper blocks later module repositioning)
-        ApplyFrameOverrides()
+        if not InCombatLockdown() then
+            ApplyFrameOverrides()
+        end
     end)
 
     -- DEFERRED 1.0s: First viewer reskin + UI hider + buff borders
@@ -4740,23 +4747,27 @@ function QUICore:OnEnable()
         if RefreshBuffBorders then
             RefreshBuffBorders()
         end
-        ApplyFrameOverrides()
+        if not InCombatLockdown() then
+            ApplyFrameOverrides()
+        end
     end)
 
     -- DEFERRED 2.0s: Safety retry for late-loading frames
     C_Timer.After(2.0, function()
         if not InCombatLockdown() then
             self:ForceReskinAllViewers()
+            ApplyFrameOverrides()
         end
-        ApplyFrameOverrides()
     end)
 
     -- DEFERRED 3.0s: Register all frames as anchor targets + final override apply
     C_Timer.After(3.0, function()
-        if ns.QUI_Anchoring then
-            ns.QUI_Anchoring:RegisterAllFrameTargets()
+        if not InCombatLockdown() then
+            if ns.QUI_Anchoring then
+                ns.QUI_Anchoring:RegisterAllFrameTargets()
+            end
+            ApplyFrameOverrides()
         end
-        ApplyFrameOverrides()
     end)
 
     self:SetupEncounterWarningsSecretValuePatch()

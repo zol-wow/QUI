@@ -123,7 +123,6 @@ function CDMProvider:InitializeEngine()
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm then
         engineName = QUICore.db.profile.ncdm.engine or "owned"
     end
-
     local engine = self.engines[engineName]
     if not engine then
         -- Fallback to classic if selected engine isn't registered
