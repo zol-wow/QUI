@@ -109,13 +109,22 @@ local function ForceLoadCDM()
     if InCombatLockdown() then return end
     local settingsFrame = _G["CooldownViewerSettings"]
     if settingsFrame then
+        -- TAINT SAFETY: Defer Show/Hide via C_Timer.After(0) so Blizzard's
+        -- OnShow handler (which writes isActive, allowAvailableAlert, etc.
+        -- to viewer children) runs outside QUI's execution context.
+        -- Without deferral, those fields become "secret boolean tainted by
+        -- QUI" and crash Blizzard_CooldownViewer SetIsActive comparisons.
         settingsFrame:SetAlpha(0)
-        settingsFrame:Show()
-        C_Timer.After(0.2, function()
-            if settingsFrame then
-                settingsFrame:Hide()
-                settingsFrame:SetAlpha(1)
-            end
+        C_Timer.After(0, function()
+            if InCombatLockdown() then return end
+            if not settingsFrame then return end
+            settingsFrame:Show()
+            C_Timer.After(0.2, function()
+                if settingsFrame then
+                    settingsFrame:Hide()
+                    settingsFrame:SetAlpha(1)
+                end
+            end)
         end)
     end
 end
@@ -540,6 +549,11 @@ function CDMSpellData:Initialize()
     -- icons during the ~0.5s window before the deferred init completes.
     HideBlizzardViewers()
     ForceLoadCDM()
+    -- Immediate scan: succeeds during /reload when viewers are already
+    -- populated.  At ADDON_LOADED the safe window allows this even on
+    -- combat reload (InCombatLockdown() returns false).
+    ScanAll()
+    -- Deferred re-scan: handles first login where viewers populate after us.
     C_Timer.After(0.5, function()
         UpdateCooldownViewerCVar()
         HideBlizzardViewers()  -- re-apply in case ForceLoadCDM restored them
