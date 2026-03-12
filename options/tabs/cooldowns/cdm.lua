@@ -2135,8 +2135,12 @@ local function CreateCDMSetupPage(parent)
             if widthSlider then
                 widthSlider:SetAlpha(autoWidthActive and 0.4 or 1.0)
             end
-            local forceGrowth = placementMode == "onTop" or placementMode == "below" or placementMode == "onTopResourceBars"
-                or ((trackedData.orientation == "vertical") and (placementMode == "left" or placementMode == "right"))
+            -- Owned engine always respects growUp directly (no anchor override),
+            -- so only force-disable the dropdown for the classic (Blizzard) engine.
+            local isOwnedEngine = db.ncdm and db.ncdm.engine == "owned"
+            local forceGrowth = not isOwnedEngine
+                and (placementMode == "onTop" or placementMode == "below" or placementMode == "onTopResourceBars"
+                    or ((trackedData.orientation == "vertical") and (placementMode == "left" or placementMode == "right")))
             growthDropdown:SetAlpha(forceGrowth and 0.4 or 1.0)
             stackTip:SetAlpha(forceGrowth and 0.4 or 1.0)
             if growthDropdown.SetEnabled then

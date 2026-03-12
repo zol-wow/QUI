@@ -2306,6 +2306,13 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         -- and can drift when combat-safe reapply paths are constrained.
         useSizeStable = false
     end
+    if key == "buffBar" then
+        -- Tracked buff bars change height dynamically as buffs appear/disappear
+        -- (SetSize in CDMBars:LayoutBars).  Size-stable CENTER anchoring causes
+        -- bidirectional growth; raw point anchoring (e.g. BOTTOM→TOP) keeps the
+        -- growth edge fixed so bars stack in the configured direction.
+        useSizeStable = false
+    end
 
     -- Boss frames: single setting applied to all with stacking Y offset
     if key == "bossFrames" and type(resolved) == "table" and not resolved.GetObjectType then
@@ -2547,6 +2554,9 @@ _G.QUI_ReanchorFramePositionOnly = function(key)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
+    if CASTBAR_ANCHOR_KEYS[key] or key == "buffBar" then
+        useSizeStable = false
+    end
 
     pcall(function()
         resolved:ClearAllPoints()
@@ -2583,6 +2593,9 @@ _G.QUI_AnchorOverlayToParent = function(overlayFrame, key, overlayW, overlayH)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
+    if CASTBAR_ANCHOR_KEYS[key] or key == "buffBar" then
+        useSizeStable = false
+    end
 
     overlayFrame:ClearAllPoints()
     if overlayW and overlayW > 0 then overlayFrame:SetWidth(overlayW) end

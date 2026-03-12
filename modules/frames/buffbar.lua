@@ -217,6 +217,19 @@ local function ApplyTrackedBarAnchor(settings)
         -- Keep configured source/target points for backward compatibility.
     end
 
+    -- Owned engine uses explicit SetSize() on the viewer container, so the
+    -- source anchor must match the growth direction.  Otherwise WoW expands
+    -- the frame from its anchored point (e.g. CENTER → grows both ways).
+    if IsOwnedEngine() then
+        local orientation = settings.orientation or "horizontal"
+        local growUp = settings.growUp ~= false
+        if orientation == "vertical" then
+            sourcePoint = growUp and "LEFT" or "RIGHT"
+        else
+            sourcePoint = growUp and "BOTTOM" or "TOP"
+        end
+    end
+
     offsetX = QUICore:PixelRound(offsetX + spacingX, viewer)
     offsetY = QUICore:PixelRound(offsetY + spacingY, viewer)
 
@@ -1800,7 +1813,7 @@ LayoutBuffIcons = function()
 end
 
 ---------------------------------------------------------------------------
--- BAR ALIGNMENT MANAGER (FORCED UPWARD GROWTH)
+-- BAR ALIGNMENT MANAGER
 ---------------------------------------------------------------------------
 
 local barState = {
