@@ -2929,7 +2929,8 @@ local function HideAllDecorations()
     if datatextFrame then datatextFrame:Hide() end
     if drawerToggleButton then drawerToggleButton:Hide() end
     if drawerFrame then drawerFrame:Hide() end
-    StopUpdateTickers()
+    if clockTicker then clockTicker:Cancel(); clockTicker = nil end
+    if coordsTicker then coordsTicker:Cancel(); coordsTicker = nil end
 end
 
 local function CheckExternalHud()
