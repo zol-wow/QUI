@@ -39,6 +39,7 @@ local coordsTicker = nil
 local pendingMinimapRefresh = false
 local pendingDrawerSetup = false
 local middleClickMenuHooked = false
+local middleClickBlockerOverlay = nil
 local microMenuShowHooked = false
 local bagsBarShowHooked = false
 local originalMicroMenuParent = nil
@@ -1718,16 +1719,22 @@ local function SetupMiddleClickMenu()
     if middleClickMenuHooked then return end
     middleClickMenuHooked = true
 
-    -- TAINT SAFETY: Use HookScript instead of SetScript so Blizzard's
-    -- original OnMouseUp handler keeps running in secure context.
-    -- SetScript would replace the handler, causing PingLocation() to
-    -- execute in QUI's addon context → ADDON_ACTION_FORBIDDEN.
-    Minimap:HookScript("OnMouseUp", function(self, button)
-        local settings = GetSettings()
-        if settings and settings.enabled and settings.middleClickMenuEnabled and button == "MiddleButton" then
-            ShowMiddleClickMenu()
-        end
-    end)
+    -- Use a transparent overlay to intercept MiddleButton clicks before they
+    -- reach the Minimap. This prevents Blizzard's OnMouseUp from firing a ping.
+    -- The overlay only registers MiddleButton — all other clicks pass through.
+    if not middleClickBlockerOverlay then
+        middleClickBlockerOverlay = CreateFrame("Button", nil, Minimap)
+        middleClickBlockerOverlay:SetAllPoints(Minimap)
+        middleClickBlockerOverlay:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+        middleClickBlockerOverlay:RegisterForClicks("MiddleButtonUp")
+        middleClickBlockerOverlay:SetPassThroughButtons("LeftButton", "RightButton")
+        middleClickBlockerOverlay:SetScript("OnClick", function(self, button)
+            local settings = GetSettings()
+            if settings and settings.enabled and settings.middleClickMenuEnabled and button == "MiddleButton" then
+                ShowMiddleClickMenu()
+            end
+        end)
+    end
 end
 
 ---=================================================================================
@@ -2811,6 +2818,17 @@ local function RefreshButtonDrawer()
         StyleDrawerFrame()
         LayoutDrawerButtons()
         UpdateDrawerAnchor()
+
+        -- Apply auto-hide toggle state immediately
+        if drawerToggleButton then
+            if settings.buttonDrawer.autoHideToggle then
+                if not Minimap:IsMouseOver() and not IsMouseOverDrawer() then
+                    drawerToggleButton:SetAlpha(0)
+                end
+            else
+                drawerToggleButton:SetAlpha(1)
+            end
+        end
     else
         SetupButtonDrawer()
     end
