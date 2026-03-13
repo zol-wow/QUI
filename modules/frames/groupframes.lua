@@ -25,6 +25,7 @@ ns.QUI_GroupFrames = QUI_GF
 
 -- Frame references
 QUI_GF.headers = {}          -- "party", "raid" header frames
+QUI_GF.anchorFrames = {}     -- non-secure runtime roots for party/raid blocks
 QUI_GF.petHeader = nil       -- pet header
 QUI_GF.spotlightHeader = nil -- spotlight header
 QUI_GF.allFrames = {}        -- flat list of all child frames (for iteration)
@@ -268,11 +269,30 @@ local function GetTexturePath(textureName)
         local general = GetGeneralSettings()
         textureName = general and general.texture or "Quazii v5"
     end
-    local path = LSM:Fetch("statusbar", textureName)
+    local path = LSM and LSM:Fetch("statusbar", textureName, true)
+    if not path and textureName and textureName:find("[/\\]") then
+        path = textureName
+    end
     if not cachedTexturePath then
         cachedTexturePath = path
     end
-    return path or "Interface\\TargetingFrame\\UI-StatusBar"
+    return path or "Interface\\Buttons\\WHITE8X8"
+end
+
+local function ApplyStatusBarTexture(statusBar, textureName)
+    if not statusBar then return end
+
+    statusBar:SetStatusBarTexture(GetTexturePath(textureName))
+
+    -- Some texture objects retain stale coords/tiling after reload/layout churn.
+    -- Re-selecting the texture in options fixes that because WoW rebuilds the
+    -- internal region state; do the same normalization here.
+    local tex = statusBar:GetStatusBarTexture()
+    if tex then
+        tex:SetTexCoord(0, 1, 0, 1)
+        if tex.SetHorizTile then tex:SetHorizTile(false) end
+        if tex.SetVertTile then tex:SetVertTile(false) end
+    end
 end
 
 local function InvalidateCache()
@@ -1483,7 +1503,7 @@ local function DecorateGroupFrame(frame)
     healthBar:ClearAllPoints()
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
-    healthBar:SetStatusBarTexture(GetTexturePath())
+    ApplyStatusBarTexture(healthBar)
     healthBar:SetMinMaxValues(0, 100)
     healthBar:SetValue(100)
     healthBar:EnableMouse(false)
@@ -1504,7 +1524,7 @@ local function DecorateGroupFrame(frame)
     local vdb = GetVisualDB(isRaid)
     local predSettings = vdb and vdb.healPrediction
     local healPredictionBar = frame.healPredictionBar or CreateFrame("StatusBar", nil, healthBar)
-    healPredictionBar:SetStatusBarTexture(GetTexturePath())
+    ApplyStatusBarTexture(healPredictionBar)
     healPredictionBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
     healPredictionBar:ClearAllPoints()
     healPredictionBar:SetAllPoints(healthBar)
@@ -1544,7 +1564,7 @@ local function DecorateGroupFrame(frame)
         powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
         powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
         powerBar:SetHeight(powerHeight)
-        powerBar:SetStatusBarTexture(GetTexturePath())
+        ApplyStatusBarTexture(powerBar)
         powerBar:SetMinMaxValues(0, 100)
         powerBar:SetValue(100)
         powerBar:EnableMouse(false)
@@ -1954,20 +1974,194 @@ local function RebuildUnitFrameMap()
     end
 end
 
+local function EnsureAnchorFrame(key)
+    local root = QUI_GF.anchorFrames[key]
+    if root then return root end
+
+    local name = key == "raid" and "QUI_RaidFramesRoot" or "QUI_PartyFramesRoot"
+    root = CreateFrame("Frame", name, UIParent)
+    root:EnableMouse(false)
+    root:Hide()
+
+    QUI_GF.anchorFrames[key] = root
+    return root
+end
+
+local function GetAnchorPosition(key, db)
+    if key == "raid" and db and db.unifiedPosition == false then
+        local pos = db.raidPosition
+        return pos and pos.offsetX or -400, pos and pos.offsetY or 0
+    end
+
+    local pos = db and db.position
+    return pos and pos.offsetX or -400, pos and pos.offsetY or 0
+end
+
+local function GetHeaderLeadEdge(isRaid)
+    local layout = GetLayoutSettings(isRaid)
+    local grow = layout and layout.growDirection or "DOWN"
+    local groupBy = isRaid and (layout and layout.groupBy or "GROUP") or "GROUP"
+    local leadEdge = "LEFT"
+
+    if grow == "LEFT" then
+        leadEdge = "RIGHT"
+    elseif isRaid and (grow == "DOWN" or grow == "UP") and groupBy ~= "NONE" and
+        (layout and layout.groupGrowDirection) == "LEFT" then
+        leadEdge = "RIGHT"
+    end
+
+    return grow, leadEdge
+end
+
+local function AnchorHeaderToRoot(root, header, grow, leadEdge, attachTo, gap, isSelfHeader)
+    if not (root and header) then return end
+
+    header:SetParent(root)
+    header:ClearAllPoints()
+
+    if attachTo then
+        if grow == "UP" then
+            header:SetPoint("BOTTOM" .. leadEdge, attachTo, "TOP" .. leadEdge, 0, gap or 0)
+        elseif grow == "LEFT" then
+            if isSelfHeader then
+                header:SetPoint("TOPRIGHT", attachTo, "TOPLEFT", -(gap or 0), 0)
+            else
+                header:SetPoint("TOPRIGHT", attachTo, "TOPLEFT", -(gap or 0), 0)
+            end
+        elseif grow == "RIGHT" then
+            if isSelfHeader then
+                header:SetPoint("TOPLEFT", attachTo, "TOPRIGHT", gap or 0, 0)
+            else
+                header:SetPoint("TOPLEFT", attachTo, "TOPRIGHT", gap or 0, 0)
+            end
+        else
+            header:SetPoint("TOP" .. leadEdge, attachTo, "BOTTOM" .. leadEdge, 0, -(gap or 0))
+        end
+        return
+    end
+
+    if grow == "UP" then
+        header:SetPoint("BOTTOM" .. leadEdge, root, "BOTTOM" .. leadEdge, 0, 0)
+    elseif grow == "LEFT" then
+        header:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
+    elseif grow == "RIGHT" then
+        header:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
+    else
+        header:SetPoint("TOP" .. leadEdge, root, "TOP" .. leadEdge, 0, 0)
+    end
+end
+
+local function UpdateAnchorRoot(key, mainHeader, selfHeader, isRaid)
+    local root = EnsureAnchorFrame(key)
+    local grow, leadEdge = GetHeaderLeadEdge(isRaid)
+    local gap = 4
+
+    local mainVisible = mainHeader and mainHeader:IsShown()
+    local selfVisible = selfHeader and selfHeader:IsShown()
+
+    if not mainVisible and not selfVisible then
+        root:Hide()
+        return
+    end
+
+    local mainW = mainVisible and Helpers.SafeValue(mainHeader:GetWidth(), 1) or 0
+    local mainH = mainVisible and Helpers.SafeValue(mainHeader:GetHeight(), 1) or 0
+    local selfW = selfVisible and Helpers.SafeValue(selfHeader:GetWidth(), 1) or 0
+    local selfH = selfVisible and Helpers.SafeValue(selfHeader:GetHeight(), 1) or 0
+
+    local totalW, totalH
+    if grow == "LEFT" or grow == "RIGHT" then
+        totalW = math.max(1, mainW + (mainVisible and selfVisible and gap or 0) + selfW)
+        totalH = math.max(1, math.max(mainH, selfH))
+    else
+        totalW = math.max(1, math.max(mainW, selfW))
+        totalH = math.max(1, mainH + (mainVisible and selfVisible and gap or 0) + selfH)
+    end
+
+    root:SetSize(totalW, totalH)
+
+    if selfVisible then
+        AnchorHeaderToRoot(root, selfHeader, grow, leadEdge, nil, 0, true)
+    end
+
+    if mainVisible then
+        AnchorHeaderToRoot(root, mainHeader, grow, leadEdge, selfVisible and selfHeader or nil, selfVisible and gap or 0, false)
+    end
+
+    root:Show()
+end
+
+local function UpdateAnchorFrames()
+    local db = GetSettings()
+    if not db then return end
+
+    local partyRoot = EnsureAnchorFrame("party")
+    local raidRoot = EnsureAnchorFrame("raid")
+    local partyX, partyY = GetAnchorPosition("party", db)
+    local raidX, raidY = GetAnchorPosition("raid", db)
+
+    if partyRoot:GetNumPoints() == 0 then
+        partyRoot:SetPoint("CENTER", UIParent, "CENTER", partyX, partyY)
+    end
+    if raidRoot:GetNumPoints() == 0 then
+        raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidX, raidY)
+    end
+
+    local selfHdr = QUI_GF.headers.self
+    local selfOnRaid = selfHdr and selfHdr:IsShown() and IsInRaid()
+
+    UpdateAnchorRoot("party", QUI_GF.headers.party, selfOnRaid and nil or selfHdr, false)
+    UpdateAnchorRoot("raid", QUI_GF.headers.raid, selfOnRaid and selfHdr or nil, true)
+end
+
 ---------------------------------------------------------------------------
 -- HEADER: Configure secure header attributes
 ---------------------------------------------------------------------------
+local function GetVisiblePartyUnitCount()
+    local layout = GetLayoutSettings(false)
+    if not layout then return 0 end
+
+    local db = GetSettings()
+    local selfFirst = db and db.selfFirst
+
+    if IsInRaid() then
+        return 0
+    end
+
+    if IsInGroup() then
+        local subgroupCount
+        if type(GetNumSubgroupMembers) == "function" then
+            subgroupCount = GetNumSubgroupMembers() or 0
+        else
+            subgroupCount = math.max((GetNumGroupMembers() or 0) - 1, 0)
+        end
+
+        if selfFirst or layout.showPlayer == false then
+            return subgroupCount
+        end
+
+        return subgroupCount + 1
+    end
+
+    if selfFirst or not layout.showSolo then
+        return 0
+    end
+
+    return 1
+end
+
 local function ConfigurePartyHeader(header)
     local layout = GetLayoutSettings(false)
     if not layout then return end
 
     local db = GetSettings()
     local selfFirst = db and db.selfFirst
+    local inParty = IsInGroup() and not IsInRaid()
+    local showSolo = (not inParty) and layout.showSolo and not selfFirst
 
     header:SetAttribute("showParty", true)
-    header:SetAttribute("showPlayer", selfFirst and false or (layout.showPlayer ~= false))
+    header:SetAttribute("showPlayer", (not selfFirst and ((inParty and layout.showPlayer ~= false) or showSolo)) and true or false)
     header:SetAttribute("showRaid", false)
-    local showSolo = layout.showSolo and not selfFirst
     header:SetAttribute("showSolo", showSolo or false)
     header:SetAttribute("maxColumns", 1)
     header:SetAttribute("unitsPerColumn", 5)
@@ -2112,6 +2306,8 @@ local function CreateHeaders()
     local db = GetSettings()
     if not db then return end
     local position = db.position
+    local partyRoot = EnsureAnchorFrame("party")
+    local raidRoot = EnsureAnchorFrame("raid")
 
     -- initialConfigFunction runs in secure context for each new child
     local initConfigFunc = [[
@@ -2126,7 +2322,7 @@ local function CreateHeaders()
     ]]
 
     -- Party header
-    local partyHeader = CreateFrame("Frame", "QUI_PartyHeader", UIParent, "SecureGroupHeaderTemplate")
+    local partyHeader = CreateFrame("Frame", "QUI_PartyHeader", partyRoot, "SecureGroupHeaderTemplate")
     partyHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
     partyHeader:SetAttribute("initialConfigFunction", initConfigFunc)
     ConfigurePartyHeader(partyHeader)
@@ -2136,7 +2332,8 @@ local function CreateHeaders()
     local offsetY = position and position.offsetY or 0
     local partyW, partyH = CalculateHeaderSize(db, 5)
     partyHeader:SetSize(partyW, partyH)
-    partyHeader:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    partyRoot:ClearAllPoints()
+    partyRoot:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
     partyHeader:SetMovable(true)
     partyHeader:SetClampedToScreen(true)
 
@@ -2162,7 +2359,7 @@ local function CreateHeaders()
     end)
 
     -- Raid header
-    local raidHeader = CreateFrame("Frame", "QUI_RaidHeader", UIParent, "SecureGroupHeaderTemplate")
+    local raidHeader = CreateFrame("Frame", "QUI_RaidHeader", raidRoot, "SecureGroupHeaderTemplate")
     raidHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
     raidHeader:SetAttribute("initialConfigFunction", initConfigFunc)
     ConfigureRaidHeader(raidHeader)
@@ -2178,7 +2375,8 @@ local function CreateHeaders()
         raidOffX = raidPos and raidPos.offsetX or -400
         raidOffY = raidPos and raidPos.offsetY or 0
     end
-    raidHeader:SetPoint("CENTER", UIParent, "CENTER", raidOffX, raidOffY)
+    raidRoot:ClearAllPoints()
+    raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidOffX, raidOffY)
     raidHeader:SetMovable(true)
     raidHeader:SetClampedToScreen(true)
 
@@ -2204,7 +2402,7 @@ local function CreateHeaders()
     end)
 
     -- Self header — shows only the player, used for self-first feature
-    local selfHeader = CreateFrame("Frame", "QUI_SelfHeader", UIParent, "SecureGroupHeaderTemplate")
+    local selfHeader = CreateFrame("Frame", "QUI_SelfHeader", partyRoot, "SecureGroupHeaderTemplate")
     selfHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
     selfHeader:SetAttribute("initialConfigFunction", initConfigFunc)
     selfHeader:SetAttribute("showPlayer", true)
@@ -2222,7 +2420,6 @@ local function CreateHeaders()
     selfHeader:SetAttribute("_initialAttribute-unit-width", selfW)
     selfHeader:SetAttribute("_initialAttribute-unit-height", selfH)
     selfHeader:SetSize(selfW, selfH)
-    selfHeader:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY + selfH + 4)
     selfHeader:SetMovable(true)
     selfHeader:SetClampedToScreen(true)
 
@@ -2256,11 +2453,7 @@ local function UpdateHeaderSizes()
 
     local partyHdr = QUI_GF.headers.party
     if partyHdr then
-        local count = IsInGroup() and not IsInRaid() and GetNumGroupMembers() or 5
-        local partyVDB = db.party or db
-        if partyVDB.layout and partyVDB.layout.showPlayer ~= false then
-            count = math.max(count, 1)  -- showPlayer adds the player
-        end
+        local count = math.max(GetVisiblePartyUnitCount(), 1)
         local w, h = CalculateHeaderSize(db, count)
         partyHdr:SetSize(w, h)
         QUI:DebugPrint(("[GF] UpdateHeaderSizes party: count=%d size=(%d,%d)"):format(count, w, h))
@@ -2275,7 +2468,7 @@ local function UpdateHeaderSizes()
         QUI:DebugPrint(("[GF] UpdateHeaderSizes raid: count=%d size=(%d,%d)"):format(count, w, h))
     end
 
-    -- Self header uses party dimensions and anchors above the active group header
+    -- Self header uses party dimensions; root layout handles ordering.
     local selfHdr = QUI_GF.headers.self
     if selfHdr then
         local partyDims = db.party and db.party.dimensions
@@ -2287,13 +2480,9 @@ local function UpdateHeaderSizes()
         -- Resize existing child
         local child = selfHdr:GetAttribute("child1")
         if child then child:SetSize(sw, sh) end
-        -- Anchor above the active header
-        selfHdr:ClearAllPoints()
-        local anchor = IsInRaid() and raidHdr or partyHdr
-        if anchor then
-            selfHdr:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 4)
-        end
     end
+
+    UpdateAnchorFrames()
 end
 
 ---------------------------------------------------------------------------
@@ -2330,16 +2519,24 @@ local function UpdateHeaderVisibility()
         if QUI_GF.headers.party then QUI_GF.headers.party:Hide() end
         if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
         if QUI_GF.headers.self then QUI_GF.headers.self:Hide() end
+        UpdateAnchorFrames()
         return
     end
 
     if QUI_GF.testMode then
         -- Test mode handled by edit mode module
+        UpdateAnchorFrames()
         return
     end
 
     local selfFirst = db.selfFirst
     local selfHeader = QUI_GF.headers.self
+
+    if QUI_GF.headers.party then ConfigurePartyHeader(QUI_GF.headers.party) end
+    if QUI_GF.headers.raid then ConfigureRaidHeader(QUI_GF.headers.raid) end
+    if selfHeader then
+        selfHeader:SetAttribute("showSolo", selfFirst and true or false)
+    end
 
     if IsInRaid() then
         if QUI_GF.headers.party then QUI_GF.headers.party:Hide() end
@@ -2372,6 +2569,9 @@ local function UpdateHeaderVisibility()
         end
     end
 
+    UpdateHeaderSizes()
+    UpdateAnchorFrames()
+
     -- Defer decoration + map rebuild to next frame (after header creates children)
     C_Timer.After(0.1, function()
         DecorateHeaderChildren(QUI_GF.headers.party)
@@ -2379,6 +2579,7 @@ local function UpdateHeaderVisibility()
         DecorateHeaderChildren(QUI_GF.headers.self)
         RebuildUnitFrameMap()
         QUI_GF:RefreshAllFrames()
+        UpdateAnchorFrames()
     end)
 end
 
@@ -2426,6 +2627,7 @@ local function UpdateFrameScaling(forceUpdate)
                     child.healthBar:ClearAllPoints()
                     child.healthBar:SetPoint("TOPLEFT", child, "TOPLEFT", borderSize, -borderSize)
                     child.healthBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + sepH)
+                    ApplyStatusBarTexture(child.healthBar)
 
                     -- Re-apply orientation after resize
                     local vertFill = (GetHealthFillDirection(child._isRaid) == "VERTICAL")
@@ -2437,7 +2639,9 @@ local function UpdateFrameScaling(forceUpdate)
                         child.powerBar:SetPoint("BOTTOMLEFT", child, "BOTTOMLEFT", borderSize, borderSize)
                         child.powerBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize)
                         child.powerBar:SetHeight(powerHeight)
+                        ApplyStatusBarTexture(child.powerBar)
                     end
+                    if child.healPredictionBar then ApplyStatusBarTexture(child.healPredictionBar) end
                 end
                 i = i + 1
             end
@@ -2983,6 +3187,9 @@ end
 function QUI_GF:RefreshAllFrames()
     for _, frame in pairs(self.unitFrameMap) do
         if frame and frame:IsShown() then
+            if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
+            if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
+            if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
             UpdateFrame(frame)
         end
     end
@@ -3140,6 +3347,10 @@ function QUI_GF:Disable()
         end
     end
 
+    for _, proxy in pairs(self.anchorFrames) do
+        proxy:Hide()
+    end
+
     if ns.QUI_GroupFramePrivateAuras and ns.QUI_GroupFramePrivateAuras.CleanupAll then
         ns.QUI_GroupFramePrivateAuras:CleanupAll()
     end
@@ -3190,6 +3401,21 @@ end
 
 function QUI_GF:GetHeaders()
     return self.headers
+end
+
+function QUI_GF:GetAnchorFrame(frameType)
+    if self.editMode or self.testMode then
+        return nil
+    end
+    local frame = self.anchorFrames and self.anchorFrames[frameType]
+    if frame and frame:IsShown() then
+        return frame
+    end
+    return nil
+end
+
+function QUI_GF:UpdateAnchorFrames()
+    UpdateAnchorFrames()
 end
 
 function QUI_GF:IsEnabled()

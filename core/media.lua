@@ -46,6 +46,10 @@ LSM:Register(BACKGROUND, "Square", squareTexturePath)
 LSM:Register(STATUSBAR, "Square", squareTexturePath)
 LSM:Register(BORDER, "Square", squareTexturePath)
 
+-- Register a deterministic flat statusbar so profiles using "Flat" do not
+-- depend on another addon/media pack having registered that name first.
+LSM:Register(STATUSBAR, "Flat", "Interface\\Buttons\\WHITE8X8")
+
 -- Register Quazii v2 texture
 local quaziiV2TexturePath = "Interface\\AddOns\\QUI\\assets\\Quazii_v2.tga"
 LSM:Register(BACKGROUND, "Quazii v2", quaziiV2TexturePath)
