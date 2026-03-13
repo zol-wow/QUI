@@ -3629,22 +3629,6 @@ local function InitializeResourceBars(self)
         return
     end
 
-    if InCombatLockdown() then
-        -- RegisterEvent itself can be forbidden in combat in tainted flows.
-        -- Retry initialization via timer until combat ends.
-        if not self._resourceBarsInitRetryPending then
-            self._resourceBarsInitRetryPending = true
-            C_Timer.After(1, function()
-                self._resourceBarsInitRetryPending = false
-                if not self._resourceBarsInitialized then
-                    InitializeResourceBars(self)
-                end
-            end)
-        end
-        return
-    end
-
-    self._resourceBarsInitRetryPending = false
     self._resourceBarsInitialized = true
 
     -- Register additional events

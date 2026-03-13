@@ -3336,12 +3336,6 @@ end
 function ActionBars:Initialize()
     if ActionBars.initialized then return end
 
-    -- Defer initialization if in combat (protects SetScale calls on action bars)
-    if InCombatLockdown() then
-        ActionBars.pendingInitialize = true
-        return
-    end
-
     local db = GetDB()
     if not db or not db.enabled then
         return
@@ -3598,11 +3592,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Process pending initialization (from /reload during combat)
-        if ActionBars.pendingInitialize then
-            ActionBars.pendingInitialize = false
-            ActionBars:Initialize()
-        end
         -- Process any pending refresh operations
         if ActionBars.pendingRefresh then
             ActionBars.pendingRefresh = false

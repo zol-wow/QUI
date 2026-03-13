@@ -3479,12 +3479,6 @@ end
 -- INITIALIZE
 ---------------------------------------------------------------------------
 function QUI_UF:Initialize()
-    -- Defer initialization if in combat (protects RegisterStateDriver calls)
-    if InCombatLockdown() then
-        QUI_UF.pendingInitialize = true
-        return
-    end
-
     local db = GetDB()
     if not db then return end
 
@@ -3657,7 +3651,6 @@ end
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 initFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
@@ -3688,16 +3681,6 @@ initFrame:SetScript("OnEvent", function(self, event, arg1)
         C_Timer.After(1.0, function()
             QUI_UF:RefreshAll()
         end)
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Process pending initialization (from /reload during combat)
-        if QUI_UF.pendingInitialize then
-            QUI_UF.pendingInitialize = false
-            QUI_UF:Initialize()
-            QUI_UF:HookBlizzardEditMode()
-            C_Timer.After(0.5, function()
-                QUI_UF:RegisterWithClique()
-            end)
-        end
     end
 end)
 

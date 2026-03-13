@@ -2872,7 +2872,6 @@ local function UpdateMinimapSize()
 end
 
 local function SetupMinimapDragging()
-    if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -3126,12 +3125,12 @@ end
 function Minimap_Module:Initialize()
     local settings = GetSettings()
     if not settings then return end
-    
+
     if not settings.enabled then
         -- If disabled, make sure we don't interfere
         return
     end
-    
+
     -- Set shape first (affects other elements)
     SetMinimapShape(settings.shape)
     
