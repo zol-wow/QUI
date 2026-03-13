@@ -4083,7 +4083,9 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             local currentScale = UIParent:GetScale()
             if currentScale and math.abs(newProfileScale - currentScale) > 0.001 then
                 self._preservedUIScale = newProfileScale
-                self:SafeReload()
+                C_Timer.After(0, function()
+                    QUICore:SafeReload()
+                end)
                 return
             end
             -- Existing profile has a saved scale - apply it
