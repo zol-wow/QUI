@@ -1299,19 +1299,28 @@ local function LayoutViewer(viewerName, trackerKey)
     local baseTotalHeight = totalHeight
     local proxyTotalHeight = totalHeight
     vs.cdmProxyYOffset = 0
+    local growReverse = (settings.growthDirection == "UP")
+    local growUp = not isVertical and growReverse
+    local growLeft = isVertical and growReverse
     if not isVertical and numRowsUsed > 0 then
-        local pos = baseTotalHeight / 2  -- top of layout (CENTER-relative)
-        local actualTop = pos
-        local actualBot = -baseTotalHeight / 2
+        local pos = growUp and (-baseTotalHeight / 2) or (baseTotalHeight / 2)
+        local actualTop = growUp and (baseTotalHeight / 2) or pos
+        local actualBot = growUp and pos or (-baseTotalHeight / 2)
         local tmpIdx = 1
         for _, rc in ipairs(rows) do
             local n = math.min(rc.count, #iconsToLayout - tmpIdx + 1)
             if n <= 0 then break end
             local ih = rc.size / (rc.aspectRatioCrop or 1.0)
             local yOff = rc.yOffset or 0
-            actualTop = math.max(actualTop, pos + yOff)
-            actualBot = math.min(actualBot, pos - ih + yOff)
-            pos = pos - ih - rowGap
+            if growUp then
+                actualBot = math.min(actualBot, pos + yOff)
+                actualTop = math.max(actualTop, pos + ih + yOff)
+                pos = pos + ih + rowGap
+            else
+                actualTop = math.max(actualTop, pos + yOff)
+                actualBot = math.min(actualBot, pos - ih + yOff)
+                pos = pos - ih - rowGap
+            end
             tmpIdx = tmpIdx + n
         end
         proxyTotalHeight = actualTop - actualBot
@@ -1336,8 +1345,8 @@ local function LayoutViewer(viewerName, trackerKey)
     -- viewer (since CDM viewers use CENTER anchoring from Edit Mode).
     -- Loop safety: we no longer call SetSize on the viewer, and OnSizeChanged
     -- no longer calls LayoutViewer, so CENTER anchoring cannot create loops.
-    local currentY = baseTotalHeight / 2  -- Start from top (positive Y from center)
-    local currentX = -totalWidth / 2  -- Start from left (negative X from center) for vertical
+    local currentY = growUp and (-baseTotalHeight / 2) or (baseTotalHeight / 2)
+    local currentX = growLeft and (totalWidth / 2) or (-totalWidth / 2)
 
     for rowNum, rowConfig in ipairs(rows) do
         local rowIcons = {}
@@ -1364,15 +1373,18 @@ local function LayoutViewer(viewerName, trackerKey)
 
             if isVertical then
                 -- Vertical: icons stack top-to-bottom within each column
-                -- Columns stack left-to-right
-                local colCenterX = currentX + (iconWidth / 2)
+                local colCenterX = growLeft and (currentX - iconWidth / 2) or (currentX + iconWidth / 2)
                 local colStartY = baseTotalHeight / 2 - iconHeight / 2
                 y = colStartY - ((i - 1) * (iconHeight + rowConfig.padding)) + rowConfig.yOffset
                 x = colCenterX + (rowConfig.xOffset or 0)
             else
                 -- Horizontal: icons spread left-to-right within each row
-                -- Rows stack top-to-bottom
-                local rowCenterY = currentY - (iconHeight / 2) + rowConfig.yOffset
+                local rowCenterY
+                if growUp then
+                    rowCenterY = currentY + (iconHeight / 2) + rowConfig.yOffset
+                else
+                    rowCenterY = currentY - (iconHeight / 2) + rowConfig.yOffset
+                end
                 local rowStartX = -rowWidth / 2 + iconWidth / 2
                 x = rowStartX + ((i - 1) * (iconWidth + rowConfig.padding)) + (rowConfig.xOffset or 0)
                 y = rowCenterY
@@ -1430,12 +1442,20 @@ local function LayoutViewer(viewerName, trackerKey)
         end
 
         if isVertical then
-            currentX = currentX + iconWidth + rowGap
+            if growLeft then
+                currentX = currentX - iconWidth - rowGap
+            else
+                currentX = currentX + iconWidth + rowGap
+            end
         else
-            currentY = currentY - iconHeight - rowGap
+            if growUp then
+                currentY = currentY + iconHeight + rowGap
+            else
+                currentY = currentY - iconHeight - rowGap
+            end
         end
     end
-    
+
     -- Store formula dimensions for proxy frames and dependent anchoring.
     vs.cdmIconWidth = maxRowWidth
     vs.cdmTotalHeight = proxyTotalHeight
@@ -1468,10 +1488,14 @@ local function LayoutViewer(viewerName, trackerKey)
         QUI:DebugPrint(format("|cff34D399CDM|r LayoutViewer %s: icons=%d maxRowW=%.0f%s%s",
             trackerKey, #iconsToLayout, maxRowWidth, hDbg, rowDbg))
     end
-    vs.cdmRow1IconHeight = rows[1] and (rows[1].size / (rows[1].aspectRatioCrop or 1.0)) or 0
-    vs.cdmRow1BorderSize = rows[1] and rows[1].borderSize or 0
-    vs.cdmBottomRowBorderSize = rows[#rows] and rows[#rows].borderSize or 0
-    vs.cdmBottomRowYOffset = rows[#rows] and rows[#rows].yOffset or 0
+    -- When growing UP, row 1 is visually at the bottom and the last row is at the top.
+    -- Consumers expect cdmRow1* = visual top, cdmBottomRow* = visual bottom.
+    local visualTopRow = growUp and rows[#rows] or rows[1]
+    local visualBottomRow = growUp and rows[1] or rows[#rows]
+    vs.cdmRow1IconHeight = visualTopRow and (visualTopRow.size / (visualTopRow.aspectRatioCrop or 1.0)) or 0
+    vs.cdmRow1BorderSize = visualTopRow and visualTopRow.borderSize or 0
+    vs.cdmBottomRowBorderSize = visualBottomRow and visualBottomRow.borderSize or 0
+    vs.cdmBottomRowYOffset = visualBottomRow and visualBottomRow.yOffset or 0
     -- In vertical mode, use total width for all row width vars so power bars span full viewer width
     if isVertical then
         vs.cdmRow1Width = maxRowWidth
@@ -1479,16 +1503,18 @@ local function LayoutViewer(viewerName, trackerKey)
         vs.cdmPotentialRow1Width = maxRowWidth
         vs.cdmPotentialBottomRowWidth = maxRowWidth
     else
-        local row1Width = rowWidths[1] or maxRowWidth
-        local bottomRowWidth = rowWidths[#rows] or maxRowWidth
+        local visualTopRowWidth = growUp and (rowWidths[#rows] or maxRowWidth) or (rowWidths[1] or maxRowWidth)
+        local visualBottomRowWidth = growUp and (rowWidths[1] or maxRowWidth) or (rowWidths[#rows] or maxRowWidth)
+        local row1Width = visualTopRowWidth
+        local bottomRowWidth = visualBottomRowWidth
         if applyHUDMinWidth then
             row1Width = math.max(row1Width, minWidth)
             bottomRowWidth = math.max(bottomRowWidth, minWidth)
         end
-        vs.cdmRow1Width = row1Width  -- Row 1 specifically for power bar snap
-        vs.cdmBottomRowWidth = bottomRowWidth  -- Bottom row for Utility snap
-        vs.cdmPotentialRow1Width = potentialRow1Width  -- Based on settings, not actual icons
-        vs.cdmPotentialBottomRowWidth = potentialBottomRowWidth
+        vs.cdmRow1Width = row1Width  -- Visual top row for power bar snap
+        vs.cdmBottomRowWidth = bottomRowWidth  -- Visual bottom row for Utility snap
+        vs.cdmPotentialRow1Width = growUp and potentialBottomRowWidth or potentialRow1Width
+        vs.cdmPotentialBottomRowWidth = growUp and potentialRow1Width or potentialBottomRowWidth
     end
 
 

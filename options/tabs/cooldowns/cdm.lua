@@ -60,6 +60,9 @@ local function EnsureNCDMDefaults(db)
     if not db.ncdm.essential then
         db.ncdm.essential = { enabled = true }
     end
+    if db.ncdm.essential.growthDirection == nil then
+        db.ncdm.essential.growthDirection = "DOWN"
+    end
     for i = 1, 3 do
         local rowKey = "row" .. i
         if not db.ncdm.essential[rowKey] then
@@ -77,6 +80,9 @@ local function EnsureNCDMDefaults(db)
     -- Ensure utility exists
     if not db.ncdm.utility then
         db.ncdm.utility = { enabled = true }
+    end
+    if db.ncdm.utility.growthDirection == nil then
+        db.ncdm.utility.growthDirection = "DOWN"
     end
     for i = 1, 3 do
         local rowKey = "row" .. i
@@ -1365,9 +1371,25 @@ local function CreateCDMSetupPage(parent)
                 {value = "HORIZONTAL", text = "Horizontal"},
                 {value = "VERTICAL", text = "Vertical"},
             }
-            local directionDropdown = GUI:CreateFormDropdown(tabContent, "Layout Direction", directionOptions, "layoutDirection", ess, RefreshNCDM)
+            local directionDropdown = GUI:CreateFormDropdown(tabContent, "Layout Direction", directionOptions, "layoutDirection", ess, function()
+                RefreshNCDM()
+                rebuildEssential()
+            end)
             directionDropdown:SetPoint("TOPLEFT", PAD, y)
             directionDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
+            -- Growth Direction dropdown (labels change based on layout direction)
+            ess.growthDirection = ess.growthDirection or "DOWN"
+            local isVert = (ess.layoutDirection == "VERTICAL")
+            local growthOptions = {
+                {value = "DOWN", text = isVert and "Right (default)" or "Down (default)"},
+                {value = "UP", text = isVert and "Left" or "Up"},
+            }
+            local growthDropdown = GUI:CreateFormDropdown(tabContent, "Growth Direction", growthOptions, "growthDirection", ess, RefreshNCDM)
+            growthDropdown:SetPoint("TOPLEFT", PAD, y)
+            growthDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
             tabContent._currentY = y
 
@@ -1464,9 +1486,25 @@ local function CreateCDMSetupPage(parent)
                 {value = "HORIZONTAL", text = "Horizontal"},
                 {value = "VERTICAL", text = "Vertical"},
             }
-            local directionDropdown = GUI:CreateFormDropdown(tabContent, "Layout Direction", directionOptions, "layoutDirection", util, RefreshNCDM)
+            local directionDropdown = GUI:CreateFormDropdown(tabContent, "Layout Direction", directionOptions, "layoutDirection", util, function()
+                RefreshNCDM()
+                rebuildUtility()
+            end)
             directionDropdown:SetPoint("TOPLEFT", PAD, y)
             directionDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+            tabContent._currentY = y
+
+            -- Growth Direction dropdown (labels change based on layout direction)
+            util.growthDirection = util.growthDirection or "DOWN"
+            local isVert = (util.layoutDirection == "VERTICAL")
+            local growthOptions = {
+                {value = "DOWN", text = isVert and "Right (default)" or "Down (default)"},
+                {value = "UP", text = isVert and "Left" or "Up"},
+            }
+            local growthDropdown = GUI:CreateFormDropdown(tabContent, "Growth Direction", growthOptions, "growthDirection", util, RefreshNCDM)
+            growthDropdown:SetPoint("TOPLEFT", PAD, y)
+            growthDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
             tabContent._currentY = y
 
