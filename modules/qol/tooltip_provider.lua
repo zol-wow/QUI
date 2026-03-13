@@ -8,6 +8,7 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local GetCore = Helpers.GetCore
 
 ---------------------------------------------------------------------------
 -- PROVIDER STATE
@@ -62,6 +63,11 @@ local WorldFrame = WorldFrame
 local cachedUIScale = 1
 
 local function UpdateCachedUIScale()
+    local core = GetCore and GetCore()
+    if core and type(core.uiscale) == "number" and core.uiscale > 0 then
+        cachedUIScale = core.uiscale
+        return
+    end
     local ok, scale = pcall(UIParent.GetEffectiveScale, UIParent)
     if ok and scale and type(scale) == "number" and scale > 0 then
         cachedUIScale = scale
@@ -300,10 +306,32 @@ function TooltipProvider:PositionTooltipAtCursor(tooltip, settings)
 
     -- Use cached scale (updated on UI_SCALE_CHANGED) to avoid calling
     -- GetEffectiveScale() during combat where it may return secret values.
+    local core = GetCore and GetCore()
     local scale = cachedUIScale
+    if core and type(core.uiscale) == "number" and core.uiscale > 0 then
+        scale = core.uiscale
+    end
+    if scale <= 0 then
+        scale = 1
+    end
     local anchor, offsetX, offsetY = self:GetCursorAnchorConfig(settings)
+    local x = (cursorX / scale) + offsetX
+    local y = (cursorY / scale) + offsetY
+
+    -- Snap the final tooltip rect to the pixel grid so the existing 1px border
+    -- math in the skinning layer does not land on fractional screen coordinates.
+    -- Use the cached UIParent scale path here rather than frame:GetEffectiveScale()
+    -- so cursor anchoring stays combat-safe.
+    if core and core.GetPixelPerfectScale and scale > 0 then
+        local px = core:GetPixelPerfectScale() / scale
+        if px > 0 then
+            x = math.floor((x / px) + 0.5) * px
+            y = math.floor((y / px) + 0.5) * px
+        end
+    end
+
     tooltip:ClearAllPoints()
-    tooltip:SetPoint(anchor, UIParent, "BOTTOMLEFT", (cursorX / scale) + offsetX, (cursorY / scale) + offsetY)
+    tooltip:SetPoint(anchor, UIParent, "BOTTOMLEFT", x, y)
 end
 
 ---------------------------------------------------------------------------

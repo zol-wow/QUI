@@ -25,6 +25,7 @@ local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 -- asynchronously — the border renders at the wrong size (often sub-pixel and
 -- invisible). Each tooltip gets its own table, auto-cleaned via weak keys.
 local tooltipBackdrops = Helpers.CreateStateTable()
+local tooltipBorders = Helpers.CreateStateTable()
 
 local function GetTooltipBackdrop(tooltip)
     local info = tooltipBackdrops[tooltip]
@@ -41,6 +42,30 @@ local function GetTooltipBackdrop(tooltip)
     return info
 end
 
+local function GetTooltipBorder(tooltip)
+    local border = tooltipBorders[tooltip]
+    if border then return border end
+    if not tooltip or not tooltip.CreateTexture then return nil end
+
+    border = {
+        top = tooltip:CreateTexture(nil, "BORDER"),
+        bottom = tooltip:CreateTexture(nil, "BORDER"),
+        left = tooltip:CreateTexture(nil, "BORDER"),
+        right = tooltip:CreateTexture(nil, "BORDER"),
+    }
+
+    local core = GetCore and GetCore()
+    for _, edge in pairs(border) do
+        edge:SetTexture(FLAT_TEXTURE)
+        if core and core.ApplyPixelSnapping then
+            pcall(core.ApplyPixelSnapping, core, edge)
+        end
+    end
+
+    tooltipBorders[tooltip] = border
+    return border
+end
+
 -- Snap an edge size to the nearest physical pixel boundary so thin borders
 -- always render as whole pixels. Without this, fractional virtual-coord sizes
 -- can round to 0 pixels at certain UI scales, making borders invisible.
@@ -50,6 +75,65 @@ local function SnapToPixel(tooltip, edge)
     if not ok or type(scale) ~= "number" or scale <= 0 then return edge end
     if Helpers.IsSecretValue and Helpers.IsSecretValue(scale) then return edge end
     return PixelUtil.GetNearestPixelSize(edge, scale)
+end
+
+-- Snap the shown tooltip rect to the pixel grid so the far edges of a 1px
+-- backdrop do not land on fractional coordinates and disappear intermittently.
+-- This only mutates the tooltip frame itself, never its NineSlice child.
+local function SnapTooltipRect(tooltip)
+    if not tooltip or not tooltip.SetSize or not tooltip.GetWidth or not tooltip.GetHeight then return end
+    local core = GetCore and GetCore()
+    if not core then return end
+
+    if core.ApplyPixelSnapping then
+        pcall(core.ApplyPixelSnapping, core, tooltip)
+    end
+
+    if not core.PixelRound then return end
+
+    local okW, width = pcall(tooltip.GetWidth, tooltip)
+    local okH, height = pcall(tooltip.GetHeight, tooltip)
+    if not okW or not okH then return end
+    if type(width) ~= "number" or type(height) ~= "number" then return end
+    if width <= 0 or height <= 0 then return end
+    if Helpers.IsSecretValue and (Helpers.IsSecretValue(width) or Helpers.IsSecretValue(height)) then return end
+
+    local snappedWidth = core:PixelRound(width, tooltip)
+    local snappedHeight = core:PixelRound(height, tooltip)
+    if snappedWidth <= 0 or snappedHeight <= 0 then return end
+
+    if math.abs(snappedWidth - width) > 0.001 or math.abs(snappedHeight - height) > 0.001 then
+        pcall(tooltip.SetSize, tooltip, snappedWidth, snappedHeight)
+    end
+end
+
+local function ApplyTooltipBorder(tooltip, edgeSize, sr, sg, sb, sa)
+    local border = GetTooltipBorder(tooltip)
+    if not border then return end
+
+    border.top:ClearAllPoints()
+    border.top:SetPoint("TOPLEFT", tooltip, "TOPLEFT", 0, 0)
+    border.top:SetPoint("TOPRIGHT", tooltip, "TOPRIGHT", 0, 0)
+    border.top:SetHeight(edgeSize)
+
+    border.bottom:ClearAllPoints()
+    border.bottom:SetPoint("BOTTOMLEFT", tooltip, "BOTTOMLEFT", 0, 0)
+    border.bottom:SetPoint("BOTTOMRIGHT", tooltip, "BOTTOMRIGHT", 0, 0)
+    border.bottom:SetHeight(edgeSize)
+
+    border.left:ClearAllPoints()
+    border.left:SetPoint("TOPLEFT", border.top, "BOTTOMLEFT", 0, 0)
+    border.left:SetPoint("BOTTOMLEFT", border.bottom, "TOPLEFT", 0, 0)
+    border.left:SetWidth(edgeSize)
+
+    border.right:ClearAllPoints()
+    border.right:SetPoint("TOPRIGHT", border.top, "BOTTOMRIGHT", 0, 0)
+    border.right:SetPoint("BOTTOMRIGHT", border.bottom, "TOPRIGHT", 0, 0)
+    border.right:SetWidth(edgeSize)
+
+    for _, edge in pairs(border) do
+        edge:SetVertexColor(sr or 1, sg or 1, sb or 1, sa or 1)
+    end
 end
 
 -- Get skinning colors (uses unified color system)
@@ -296,7 +380,11 @@ local function ApplyTooltipBackdrop(tooltip, edgeSize, sr, sg, sb, sa, bgr, bgg,
     backdrop.insets.bottom = edgeSize
     pcall(tooltip.SetBackdrop, tooltip, backdrop)
     pcall(tooltip.SetBackdropColor, tooltip, bgr, bgg, bgb, bga)
-    pcall(tooltip.SetBackdropBorderColor, tooltip, sr, sg, sb, sa)
+    -- Keep the backdrop border itself transparent and render the visible border
+    -- with addon-owned textures. This avoids inconsistent edge rasterization on
+    -- Blizzard tooltip backdrops while preserving background insets/padding.
+    pcall(tooltip.SetBackdropBorderColor, tooltip, 0, 0, 0, 0)
+    ApplyTooltipBorder(tooltip, edgeSize, sr, sg, sb, sa)
 end
 
 ---------------------------------------------------------------------------
@@ -352,6 +440,8 @@ local function SkinTooltip(tooltip)
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if skinnedTooltips[tooltip] then return end
 
+    SnapTooltipRect(tooltip)
+
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
 
@@ -385,6 +475,8 @@ end
 local function ReapplySkin(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+
+    SnapTooltipRect(tooltip)
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = GetEffectiveBorderThickness()
@@ -429,7 +521,11 @@ local function CombatSafeReapply(tooltip)
     if tooltip.SetBackdropColor then
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
         pcall(tooltip.SetBackdropColor, tooltip, bgr, bgg, bgb, bga)
-        pcall(tooltip.SetBackdropBorderColor, tooltip, sr, sg, sb, sa)
+        pcall(tooltip.SetBackdropBorderColor, tooltip, 0, 0, 0, 0)
+        local thickness = GetEffectiveBorderThickness()
+        local px = SkinBase.GetPixelSize(tooltip, 1)
+        local edge = SnapToPixel(tooltip, (thickness or 1) * px)
+        ApplyTooltipBorder(tooltip, edge, sr, sg, sb, sa)
     end
 end
 
