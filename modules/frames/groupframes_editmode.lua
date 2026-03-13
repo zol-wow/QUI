@@ -1456,8 +1456,8 @@ local function RestoreHeaderAnchors()
 
     for _, hKey in ipairs({"party", "raid"}) do
         local hdr = GF.headers[hKey]
-        if hdr then
-            -- Determine position table for this header
+        local target = GF.anchorFrames and GF.anchorFrames[hKey] or hdr
+        if target then
             local pos
             if unified or hKey == "party" then
                 pos = db and db.position
@@ -1467,36 +1467,16 @@ local function RestoreHeaderAnchors()
             local oX = pos and pos.offsetX or -400
             local oY = pos and pos.offsetY or 0
 
-            hdr:SetParent(UIParent)
-            hdr:ClearAllPoints()
-
-            -- Recompute header size for current roster
-            if GF.CalculateHeaderSize and db then
-                local count
-                if hKey == "party" then
-                    count = IsInGroup() and not IsInRaid() and GetNumGroupMembers() or 5
-                else
-                    count = IsInRaid() and GetNumGroupMembers() or 25
-                    count = math.max(count, 5)
-                end
-                local w, h = GF.CalculateHeaderSize(db, count)
-                hdr:SetSize(w, h)
-                QUI:DebugPrint(("[GF] RestoreHeaderAnchors %s: pos=(%d,%d) size=(%d,%d)"):format(hKey, oX, oY, w, h))
-            end
-
-            hdr:SetPoint("CENTER", UIParent, "CENTER", oX, oY)
+            target:SetParent(UIParent)
+            target:ClearAllPoints()
+            target:SetPoint("CENTER", UIParent, "CENTER", oX, oY)
+            QUI:DebugPrint(("[GF] RestoreHeaderAnchors %s root: pos=(%d,%d)"):format(hKey, oX, oY))
         end
     end
 
-    -- Restore self header — re-parent to UIParent and anchor above active header
     local selfHdr = GF.headers.self
     if selfHdr then
-        selfHdr:SetParent(UIParent)
         selfHdr:ClearAllPoints()
-        local anchor = IsInRaid() and GF.headers.raid or GF.headers.party
-        if anchor then
-            selfHdr:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 4)
-        end
     end
 end
 
@@ -1761,6 +1741,9 @@ function QUI_GFEM:DisableEditMode()
 
     -- Re-anchor headers to UIParent at saved offset
     RestoreHeaderAnchors()
+    if GF and GF.UpdateAnchorFrames then
+        GF:UpdateAnchorFrames()
+    end
 
     -- Disable test mode if active
     if isTestMode then

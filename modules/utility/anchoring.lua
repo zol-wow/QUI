@@ -1282,7 +1282,12 @@ local FRAME_RESOLVERS = {
             local active = GFEM:GetActiveFrame("party")
             if active then return active end
         end
-        return ns.QUI_GroupFrames and ns.QUI_GroupFrames.headers and ns.QUI_GroupFrames.headers.party
+        local GF = ns.QUI_GroupFrames
+        if GF and GF.GetAnchorFrame then
+            local anchor = GF:GetAnchorFrame("party")
+            if anchor then return anchor end
+        end
+        return GF and GF.headers and GF.headers.party
     end,
     raidFrames = function()
         local GFEM = ns.QUI_GroupFrameEditMode
@@ -1290,7 +1295,12 @@ local FRAME_RESOLVERS = {
             local active = GFEM:GetActiveFrame("raid")
             if active then return active end
         end
-        return ns.QUI_GroupFrames and ns.QUI_GroupFrames.headers and ns.QUI_GroupFrames.headers.raid
+        local GF = ns.QUI_GroupFrames
+        if GF and GF.GetAnchorFrame then
+            local anchor = GF:GetAnchorFrame("raid")
+            if anchor then return anchor end
+        end
+        return GF and GF.headers and GF.headers.raid
     end,
     -- Display
     minimap = function() return _G["Minimap"] end,
@@ -1884,6 +1894,15 @@ local function ResolveFrameForKey(key)
     do
         local cdmProxy = GetCDMAnchorProxy(key)
         if cdmProxy then return cdmProxy end
+    end
+
+    -- Group frame runtime roots own the full visible party/raid block.
+    if key == "partyFrames" or key == "raidFrames" then
+        local GF = ns.QUI_GroupFrames
+        if GF and GF.GetAnchorFrame then
+            local proxy = GF:GetAnchorFrame(key == "partyFrames" and "party" or "raid")
+            if proxy then return proxy end
+        end
     end
 
     -- Dynamic custom tracker bars (customTracker:<barID>)
@@ -2851,6 +2870,15 @@ _G.QUI_ReanchorFramePositionOnly = function(key)
             resolved:SetPoint(point, parentFrame, relative, offsetX, offsetY)
         end
     end)
+
+    if key == "partyFrames" or key == "raidFrames" then
+        local GF = ns.QUI_GroupFrames
+        if GF and GF.UpdateAnchorFrames then
+            C_Timer.After(0, function()
+                GF:UpdateAnchorFrames()
+            end)
+        end
+    end
 end
 
 -- Anchor an arbitrary overlay frame to a key's configured parent.
