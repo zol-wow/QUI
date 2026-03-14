@@ -545,6 +545,8 @@ local function BuildSkinningTab(tabContent)
         if not db.loot then db.loot = {} end
         if db.loot.enabled == nil then db.loot.enabled = true end
         if db.loot.lootUnderMouse == nil then db.loot.lootUnderMouse = false end
+        if db.loot.lootUnderMouseOffsetX == nil then db.loot.lootUnderMouseOffsetX = 0 end
+        if db.loot.lootUnderMouseOffsetY == nil then db.loot.lootUnderMouseOffsetY = 0 end
         if db.loot.showTransmogMarker == nil then db.loot.showTransmogMarker = true end
 
         if not db.lootRoll then db.lootRoll = {} end
@@ -590,6 +592,16 @@ local function BuildSkinningTab(tabContent)
         local lootUnderMouseCheck = GUI:CreateFormCheckbox(tabContent, "Loot Under Mouse", "lootUnderMouse", lootDB)
         lootUnderMouseCheck:SetPoint("TOPLEFT", PAD, y)
         lootUnderMouseCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local lootOffsetXSlider = GUI:CreateFormSlider(tabContent, "Loot Cursor X Offset", -200, 200, 1, "lootUnderMouseOffsetX", lootDB)
+        lootOffsetXSlider:SetPoint("TOPLEFT", PAD, y)
+        lootOffsetXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local lootOffsetYSlider = GUI:CreateFormSlider(tabContent, "Loot Cursor Y Offset", -200, 200, 1, "lootUnderMouseOffsetY", lootDB)
+        lootOffsetYSlider:SetPoint("TOPLEFT", PAD, y)
+        lootOffsetYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         local transmogCheck = GUI:CreateFormCheckbox(tabContent, "Show Transmog Markers", "showTransmogMarker", lootDB)

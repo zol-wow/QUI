@@ -292,8 +292,10 @@ local function OnLootOpened(autoLoot)
     if db.loot.lootUnderMouse then
         local x, y = GetCursorPosition()
         local scale = UIParent:GetEffectiveScale()
+        local offsetX = tonumber(db.loot.lootUnderMouseOffsetX) or 0
+        local offsetY = tonumber(db.loot.lootUnderMouseOffsetY) or 0
         lootFrame:ClearAllPoints()
-        lootFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x/scale, y/scale)
+        lootFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (x / scale) + offsetX, (y / scale) + offsetY)
     elseif db.loot.position and db.loot.position.point then
         lootFrame:ClearAllPoints()
         lootFrame:SetPoint(db.loot.position.point, UIParent, db.loot.position.relPoint or "CENTER",

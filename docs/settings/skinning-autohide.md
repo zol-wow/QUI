@@ -104,6 +104,8 @@ Custom loot window behavior. Found in `db.profile.loot`.
 |---|---|---|---|
 | `loot.enabled` | boolean | `true` | Enable the custom loot window |
 | `loot.lootUnderMouse` | boolean | `false` | Position loot window at cursor |
+| `loot.lootUnderMouseOffsetX` | number | `0` | Cursor anchor X offset for loot window |
+| `loot.lootUnderMouseOffsetY` | number | `0` | Cursor anchor Y offset for loot window |
 | `loot.showTransmogMarker` | boolean | `true` | Show uncollected transmog marker |
 
 ---

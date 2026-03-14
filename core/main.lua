@@ -600,6 +600,8 @@ local defaults = {
         loot = {
             enabled = true,           -- Enable custom loot window
             lootUnderMouse = false,   -- Position loot window at cursor
+            lootUnderMouseOffsetX = 0, -- Cursor anchor X offset (pixels)
+            lootUnderMouseOffsetY = 0, -- Cursor anchor Y offset (pixels)
             showTransmogMarker = true, -- Show marker on uncollected appearances
             position = { point = "TOP", relPoint = "TOP", x = 289.166, y = -165.667 },
         },
