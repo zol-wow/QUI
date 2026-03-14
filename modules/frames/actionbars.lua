@@ -34,6 +34,8 @@ local ICON_TEXCOORD = {0.07, 0.93, 0.07, 0.93}
 
 -- Blizzard's range indicator placeholder (to detect and hide)
 local RANGE_INDICATOR = RANGE_INDICATOR or "●"
+local VISUAL_REFRESH_DELAY = 0.05
+local WORLD_INITIAL_REFRESH_DELAY = 0.5
 
 -- Bar frame name mappings (MainMenuBar was renamed to MainActionBar in Midnight 12.0)
 local BAR_FRAMES = {
@@ -98,6 +100,9 @@ local ActionBars = {
     fadeState = {},             -- Per-bar fade state tracking
     fadeFrame = nil,            -- OnUpdate frame for smooth fading
     levelSuppressionActive = nil, -- Cached state for below-max-level suppression
+    initialWorldRefreshQueued = false, -- One delayed pass to catch late-created bars (stance/pet)
+    visualRefreshQueued = false,
+    reactiveSkinRefreshQueued = false,
 }
 
 -- Store QUI state outside secure Blizzard frame tables.
@@ -1213,30 +1218,30 @@ end
 local function StripBlizzardArtwork(button)
     local state = GetFrameState(button)
     local icon, iconUsesNormalTexture = GetButtonIconTexture(button)
-    local isStance = GetBarKeyFromButton(button) == "stance"
 
     -- Always re-hide NormalTexture — Blizzard may reset it after our init
     -- (e.g. action bar updates that call SetNormalTexture post-PLAYER_LOGIN).
-    -- EXCEPTION: stance buttons can use NormalTexture as their icon.
+    -- If a button currently uses NormalTexture as the icon source, keep it.
+    -- Otherwise hide NormalTexture, including for stance buttons.
     local normalTex = button:GetNormalTexture()
-    if normalTex and not isStance and not iconUsesNormalTexture then
+    if normalTex and not iconUsesNormalTexture then
         normalTex:SetAlpha(0)
     end
-    if button.NormalTexture and not isStance and not iconUsesNormalTexture then
+    if button.NormalTexture and not iconUsesNormalTexture then
         button.NormalTexture:SetAlpha(0)
     end
 
-    -- One-time operations (mask removal, background hiding)
-    if state.stripped then return end
-    state.stripped = true
-
     -- Remove mask textures from icon
+    -- Re-run when icon object changes (can happen for stance/pet during paging).
     if icon and not iconUsesNormalTexture and icon.GetMaskTexture and icon.RemoveMaskTexture then
-        for i = 1, 10 do
-            local mask = icon:GetMaskTexture(i)
-            if mask then
-                icon:RemoveMaskTexture(mask)
+        if state.lastMaskStrippedIcon ~= icon then
+            for i = 1, 10 do
+                local mask = icon:GetMaskTexture(i)
+                if mask then
+                    icon:RemoveMaskTexture(mask)
+                end
             end
+            state.lastMaskStrippedIcon = icon
         end
     end
 
@@ -3522,9 +3527,39 @@ end
 local function QueueAllButtonVisualRefresh(delay)
     if ActionBars.visualRefreshQueued then return end
     ActionBars.visualRefreshQueued = true
-    C_Timer.After(delay or 0.05, function()
+    C_Timer.After(delay or VISUAL_REFRESH_DELAY, function()
         ActionBars.visualRefreshQueued = nil
         RefreshAllButtonVisuals()
+    end)
+end
+
+-- Reapply full skin for bars whose button textures are frequently reset by Blizzard
+-- during form/pet/page changes.
+local function RefreshReactiveBarSkin(barKey)
+    local effectiveSettings = GetEffectiveSettings(barKey)
+    if not effectiveSettings then return end
+
+    local buttons = GetBarButtons(barKey)
+    if not buttons or #buttons == 0 then return end
+
+    for _, button in ipairs(buttons) do
+        local state = GetFrameState(button)
+        state.skinKey = nil
+        SkinButton(button, effectiveSettings)
+        UpdateButtonText(button, effectiveSettings)
+        UpdateEmptySlotVisibility(button, effectiveSettings)
+    end
+end
+
+local function QueueReactiveBarSkinRefresh(delay)
+    -- Stance/pet buttons can have their textures reset by Blizzard during
+    -- form/page transitions, so queue a dedicated reskin pass for those bars.
+    if ActionBars.reactiveSkinRefreshQueued then return end
+    ActionBars.reactiveSkinRefreshQueued = true
+    C_Timer.After(delay or VISUAL_REFRESH_DELAY, function()
+        ActionBars.reactiveSkinRefreshQueued = nil
+        RefreshReactiveBarSkin("stance")
+        RefreshReactiveBarSkin("pet")
     end)
 end
 
@@ -3581,6 +3616,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- Refresh QUI-managed visuals immediately so displayed buttons match
         -- the active page even while combat lockdown defers slot updates.
         QueueAllButtonVisualRefresh(0.05)
+        QueueReactiveBarSkinRefresh(0.05)
 
     elseif event == "CURSOR_CHANGED" then
         -- Show/hide drag preview on hidden empty slots
@@ -3629,6 +3665,17 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isLogin, isReload = ...
+        if (isLogin or isReload) and not ActionBars.initialWorldRefreshQueued then
+            -- Initialization now runs at ADDON_LOADED. Some Blizzard bar buttons
+            -- (especially stance/pet variants) can be created slightly later, so
+            -- schedule one delayed full refresh to ensure they get skinned.
+            ActionBars.initialWorldRefreshQueued = true
+            C_Timer.After(WORLD_INITIAL_REFRESH_DELAY, function()
+                if type(_G.QUI_RefreshActionBars) == "function" then
+                    _G.QUI_RefreshActionBars()
+                end
+            end)
+        end
         if isReload then
             if not InCombatLockdown() then
                 -- Second spacing pass during combat /reload safe window.
