@@ -85,6 +85,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.51.0 - 2026-03-14
+
+### Added
+- added configurable breakpoint indicators to resource bars
+- added balance druid and frost dk to secondary resource bar swap group
+- added options to omit % signs on health text and power text on unit frames
+- added x- and y-offset for loot window relative to mouse cursor
+
+### Fixed
+- fixed paging arrow showing even when turned off
 ## v2.50.2 - 2026-03-14
 
 ### Added
