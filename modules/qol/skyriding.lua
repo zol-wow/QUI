@@ -23,6 +23,7 @@ local BASE_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED
 local skyridingFrame
 local vigorBar, vigorBackground, rechargeOverlay, shadowTexture
 local flashTexture, flashAnim
+local vigorMarkerOverlay, swMarkerOverlay
 local segmentMarkers = {}
 local secondWindPips = {}
 local vigorText, speedText
@@ -75,6 +76,40 @@ local DOT_TEXTURE = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_reticle_dot"
 ---------------------------------------------------------------------------
 local function GetSettings()
     return Helpers.GetModuleDB("skyriding")
+end
+
+local function RoundToNearestInt(value)
+    return math.floor((value or 0) + 0.5)
+end
+
+local function GetFramePixelMetrics(frame)
+    local pixelSize = QUICore:GetPixelSize(frame)
+    if not pixelSize or pixelSize <= 0 then
+        pixelSize = 1
+    end
+
+    local widthPixels = math.max(1, RoundToNearestInt((frame:GetWidth() or 0) / pixelSize))
+    local heightPixels = math.max(1, RoundToNearestInt((frame:GetHeight() or 0) / pixelSize))
+    return pixelSize, widthPixels, heightPixels
+end
+
+local function GetSegmentBoundaryPixel(totalWidthPixels, segmentCount, boundaryIndex)
+    if segmentCount <= 0 then return 0 end
+    return RoundToNearestInt((totalWidthPixels * boundaryIndex) / segmentCount)
+end
+
+local function GetSegmentMarkerColor(settings, fallbackColor)
+    local configuredColor = settings and settings.segmentColor
+    if type(configuredColor) == "table" then
+        return configuredColor[1] or fallbackColor[1],
+               configuredColor[2] or fallbackColor[2],
+               configuredColor[3] or fallbackColor[3],
+               configuredColor[4] or 1
+    end
+
+    -- Default to high-contrast black dividers when no explicit segmentColor is set.
+    -- Soft tints can disappear against textured statusbars at some scales.
+    return 0, 0, 0, 0.9
 end
 
 ---------------------------------------------------------------------------
@@ -259,6 +294,16 @@ local function CreateSkyridingFrame()
     vigorBar:SetMinMaxValues(0, 1)
     vigorBar:SetValue(0)
 
+    -- Keep segment markers on a dedicated overlay frame so they are never occluded
+    -- by internal StatusBar texture layer ordering.
+    vigorMarkerOverlay = CreateFrame("Frame", nil, skyridingFrame)
+    vigorMarkerOverlay:SetAllPoints(vigorBar)
+    vigorMarkerOverlay:SetFrameStrata(skyridingFrame:GetFrameStrata())
+    vigorMarkerOverlay:SetFrameLevel(vigorBar:GetFrameLevel() + 2)
+    if vigorMarkerOverlay.SetIgnoreParentScale then
+        vigorMarkerOverlay:SetIgnoreParentScale(false)
+    end
+
     -- Recharge overlay (shows within current charging segment)
     rechargeOverlay = vigorBar:CreateTexture(nil, "OVERLAY")
     rechargeOverlay:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -294,6 +339,8 @@ local function CreateSkyridingFrame()
     QUICore:SetPixelPerfectPoint(skyridingFrame.border, "TOPLEFT", skyridingFrame, "TOPLEFT", -1, 1)
     QUICore:SetPixelPerfectPoint(skyridingFrame.border, "BOTTOMRIGHT", skyridingFrame, "BOTTOMRIGHT", 1, -1)
     QUICore:SetPixelPerfectBackdrop(skyridingFrame.border, 1, nil, 0, 0, 0, 1)
+    skyridingFrame.border:SetFrameStrata(skyridingFrame:GetFrameStrata())
+    skyridingFrame.border:SetFrameLevel(skyridingFrame:GetFrameLevel() + 4)
     if skyridingFrame.border.Center then skyridingFrame.border.Center:Hide() end
 
     -- Vigor text (left side)
@@ -317,11 +364,13 @@ local function CreateSkyridingFrame()
 
     -- Create segment markers (up to 10 for flexibility)
     for i = 1, 10 do
-        local marker = vigorBar:CreateTexture(nil, "ARTWORK", nil, 3)
+        local marker = vigorMarkerOverlay:CreateTexture(nil, "OVERLAY", nil, 4)
         marker:SetTexture("Interface\\Buttons\\WHITE8x8")
+        marker:SetBlendMode("BLEND")
         marker:SetVertexColor(0, 0, 0, 0.5)
         marker:SetWidth(QUICore:Pixels(1, vigorBar))
         marker:SetHeight(height)
+        QUICore:ApplyPixelSnapping(marker)
         marker:Hide()
         segmentMarkers[i] = marker
     end
@@ -354,6 +403,14 @@ local function CreateSkyridingFrame()
     secondWindMiniBar:SetMinMaxValues(0, 1)
     secondWindMiniBar:Hide()
 
+    swMarkerOverlay = CreateFrame("Frame", nil, skyridingFrame)
+    swMarkerOverlay:SetAllPoints(secondWindMiniBar)
+    swMarkerOverlay:SetFrameStrata(skyridingFrame:GetFrameStrata())
+    swMarkerOverlay:SetFrameLevel(secondWindMiniBar:GetFrameLevel() + 2)
+    if swMarkerOverlay.SetIgnoreParentScale then
+        swMarkerOverlay:SetIgnoreParentScale(false)
+    end
+
     -- Second Wind background
     swBackground = secondWindMiniBar:CreateTexture(nil, "BACKGROUND")
     swBackground:SetAllPoints(secondWindMiniBar)
@@ -364,14 +421,18 @@ local function CreateSkyridingFrame()
     QUICore:SetPixelPerfectPoint(swBorder, "TOPLEFT", secondWindMiniBar, "TOPLEFT", -1, 1)
     QUICore:SetPixelPerfectPoint(swBorder, "BOTTOMRIGHT", secondWindMiniBar, "BOTTOMRIGHT", 1, -1)
     QUICore:SetPixelPerfectBackdrop(swBorder, 1, nil, 0, 0, 0, 1)
+    swBorder:SetFrameStrata(skyridingFrame:GetFrameStrata())
+    swBorder:SetFrameLevel(secondWindMiniBar:GetFrameLevel() + 4)
     if swBorder.Center then swBorder.Center:Hide() end
 
     -- Second Wind segment markers (up to 5)
     for i = 1, 5 do
-        local marker = secondWindMiniBar:CreateTexture(nil, "ARTWORK", nil, 3)
+        local marker = swMarkerOverlay:CreateTexture(nil, "OVERLAY", nil, 4)
         marker:SetTexture("Interface\\Buttons\\WHITE8x8")
+        marker:SetBlendMode("BLEND")
         marker:SetVertexColor(0, 0, 0, 0.5)
         marker:SetWidth(QUICore:Pixels(1, secondWindMiniBar))
+        QUICore:ApplyPixelSnapping(marker)
         marker:Hide()
         swSegmentMarkers[i] = marker
     end
@@ -450,10 +511,12 @@ local function UpdateSegmentMarkers(maxCharges)
     if not settings or not skyridingFrame then return end
 
     local showSegments = settings.showSegments ~= false
-    local barWidth = skyridingFrame:GetWidth()
-    local barHeight = skyridingFrame:GetHeight()
-    local segmentWidth = barWidth / maxCharges
-    local thickness = QUICore:Pixels(settings.segmentThickness or 1, vigorBar)
+    local markerFrame = vigorMarkerOverlay or vigorBar or skyridingFrame
+    local pixelContext = skyridingFrame or markerFrame
+    local pixelSize, barWidthPixels = GetFramePixelMetrics(pixelContext)
+    local thicknessPixels = math.max(1, RoundToNearestInt(settings.segmentThickness or 1))
+    local markerWidthPixels = math.max(1, math.min(barWidthPixels, thicknessPixels))
+    local halfMarkerWidthPixels = math.floor(markerWidthPixels / 2)
 
     -- Use soft colors: 30% of bar color instead of harsh black
     local barColor = settings.barColor or {0.2, 0.8, 1.0, 1}
@@ -463,21 +526,27 @@ local function UpdateSegmentMarkers(maxCharges)
         barColor[3] * 0.25,
         0.6
     }
+    local markerR, markerG, markerB, markerA = GetSegmentMarkerColor(settings, softColor)
 
     for i = 1, 10 do
         local marker = segmentMarkers[i]
         if showSegments and i < maxCharges then
-            local xPos = i * segmentWidth
+            local boundaryPixel = GetSegmentBoundaryPixel(barWidthPixels, maxCharges, i)
+            local markerLeftPixel = boundaryPixel - halfMarkerWidthPixels
+            markerLeftPixel = math.max(0, math.min(barWidthPixels - markerWidthPixels, markerLeftPixel))
+
             marker:ClearAllPoints()
-            marker:SetPoint("LEFT", vigorBar, "LEFT", QUICore:PixelRound(xPos - (thickness / 2), vigorBar), 0)
-            marker:SetWidth(math.max(QUICore:Pixels(1, vigorBar), thickness))
-            marker:SetHeight(barHeight)
-            marker:SetVertexColor(softColor[1], softColor[2], softColor[3], softColor[4])
+            local snappedX = QUICore:PixelRound(markerLeftPixel * pixelSize, pixelContext)
+            marker:SetPoint("TOPLEFT", markerFrame, "TOPLEFT", snappedX, 0)
+            marker:SetPoint("BOTTOMLEFT", markerFrame, "BOTTOMLEFT", snappedX, 0)
+            marker:SetWidth(QUICore:Pixels(markerWidthPixels, pixelContext))
+            marker:SetVertexColor(markerR, markerG, markerB, markerA)
             marker:Show()
         else
             marker:Hide()
         end
     end
+
 end
 
 ---------------------------------------------------------------------------
@@ -569,7 +638,6 @@ local function UpdateSecondWind()
 
     elseif mode == "MINIBAR" then
         local swHeight = settings.secondWindHeight or 6
-        local barWidth = skyridingFrame:GetWidth()
 
         secondWindMiniBar:ClearAllPoints()
         secondWindMiniBar:SetPoint("TOPLEFT", skyridingFrame, "BOTTOMLEFT", 0, -2)
@@ -590,29 +658,39 @@ local function UpdateSecondWind()
         secondWindMiniBar:Show()
 
         -- Position segment markers for Second Wind
-        local segmentWidth = barWidth / max
-        local thickness = QUICore:Pixels(settings.segmentThickness or 1, secondWindMiniBar)
+        local markerFrame = swMarkerOverlay or secondWindMiniBar or skyridingFrame
+        local pixelContext = skyridingFrame or markerFrame
+        local pixelSize, barWidthPixels = GetFramePixelMetrics(pixelContext)
+        local thicknessPixels = math.max(1, RoundToNearestInt(settings.segmentThickness or 1))
+        local markerWidthPixels = math.max(1, math.min(barWidthPixels, thicknessPixels))
+        local halfMarkerWidthPixels = math.floor(markerWidthPixels / 2)
         local softColor = {
             color[1] * 0.25,
             color[2] * 0.25,
             color[3] * 0.25,
             0.6
         }
+        local markerR, markerG, markerB, markerA = GetSegmentMarkerColor(settings, softColor)
 
         for i = 1, 5 do
             local marker = swSegmentMarkers[i]
             if i < max then
-                local xPos = i * segmentWidth
+                local boundaryPixel = GetSegmentBoundaryPixel(barWidthPixels, max, i)
+                local markerLeftPixel = boundaryPixel - halfMarkerWidthPixels
+                markerLeftPixel = math.max(0, math.min(barWidthPixels - markerWidthPixels, markerLeftPixel))
+
                 marker:ClearAllPoints()
-                marker:SetPoint("LEFT", secondWindMiniBar, "LEFT", QUICore:PixelRound(xPos - (thickness / 2), secondWindMiniBar), 0)
-                marker:SetWidth(math.max(QUICore:Pixels(1, secondWindMiniBar), thickness))
-                marker:SetHeight(swHeight)
-                marker:SetVertexColor(softColor[1], softColor[2], softColor[3], softColor[4])
+                local snappedX = QUICore:PixelRound(markerLeftPixel * pixelSize, pixelContext)
+                marker:SetPoint("TOPLEFT", markerFrame, "TOPLEFT", snappedX, 0)
+                marker:SetPoint("BOTTOMLEFT", markerFrame, "BOTTOMLEFT", snappedX, 0)
+                marker:SetWidth(QUICore:Pixels(markerWidthPixels, pixelContext))
+                marker:SetVertexColor(markerR, markerG, markerB, markerA)
                 marker:Show()
             else
                 marker:Hide()
             end
         end
+
     end
     -- mode == "HIDDEN" does nothing (all hidden)
 
@@ -957,11 +1035,16 @@ local function ApplySettings()
     local offsetY = settings.offsetY or -150
     local locked = settings.locked ~= false
 
-    -- Size and position (skip if anchoring system has overridden this frame)
+    -- Keep existing slider semantics (width/height are UI units, not physical pixels).
+    -- Divider math handles pixel snapping independently.
     skyridingFrame:SetSize(width, height)
     if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(skyridingFrame)) then
         skyridingFrame:ClearAllPoints()
-        skyridingFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+        if QUICore and QUICore.SetSnappedPoint then
+            QUICore:SetSnappedPoint(skyridingFrame, "CENTER", UIParent, "CENTER", offsetX, offsetY)
+        else
+            skyridingFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+        end
     end
 
     -- Apply HUD layer priority
@@ -970,6 +1053,22 @@ local function ApplySettings()
     if QUICore and QUICore.GetHUDFrameLevel then
         local frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
         skyridingFrame:SetFrameLevel(frameLevel)
+    end
+    if skyridingFrame.border then
+        skyridingFrame.border:SetFrameStrata(skyridingFrame:GetFrameStrata())
+        skyridingFrame.border:SetFrameLevel(skyridingFrame:GetFrameLevel() + 4)
+    end
+    if swBorder and secondWindMiniBar then
+        swBorder:SetFrameStrata(skyridingFrame:GetFrameStrata())
+        swBorder:SetFrameLevel(secondWindMiniBar:GetFrameLevel() + 4)
+    end
+    if vigorMarkerOverlay and vigorBar then
+        vigorMarkerOverlay:SetFrameStrata(skyridingFrame:GetFrameStrata())
+        vigorMarkerOverlay:SetFrameLevel(vigorBar:GetFrameLevel() + 2)
+    end
+    if swMarkerOverlay and secondWindMiniBar then
+        swMarkerOverlay:SetFrameStrata(skyridingFrame:GetFrameStrata())
+        swMarkerOverlay:SetFrameLevel(secondWindMiniBar:GetFrameLevel() + 2)
     end
 
     -- Draggable state
@@ -1134,6 +1233,7 @@ local function OnUpdate(self, delta)
     UpdateRechargeAnimation()
     UpdateSecondWindRecharge()
     UpdateSpeed()
+
 end
 
 ---------------------------------------------------------------------------
@@ -1142,6 +1242,8 @@ end
 local function RefreshSkyridingState()
     groundedTime = 0
     fadeStart = 0
+    -- Force marker recalculation on next UpdateVigorBar.
+    lastMaxCharges = -1
 
     _vigorDirty = true
     _secondWindDirty = true
@@ -1183,6 +1285,7 @@ eventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
 eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("UI_SCALE_CHANGED")
 eventFrame:RegisterUnitEvent("UNIT_AURA", "player")  -- Only player auras (Thrill of the Skies buff)
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
@@ -1221,6 +1324,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_REGEN_ENABLED" then
         inCombat = false
         if skyridingFrame then UpdateVisibility() end
+    elseif event == "UI_SCALE_CHANGED" then
+        -- UI scale can be finalized after ADDON_LOADED/PLAYER_ENTERING_WORLD.
+        -- Defer one tick so all handlers apply scale first, then re-run full layout.
+        C_Timer.After(0, function()
+            if not skyridingFrame then return end
+            lastMaxCharges = -1
+            ApplySettings()
+        end)
     elseif event == "UNIT_AURA" and arg1 == "player" then
         local settings = GetSettings()
         if not settings or settings.enabled == false then
