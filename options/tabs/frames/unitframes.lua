@@ -381,6 +381,12 @@ local function CreateUnitFramesPage(parent)
         if unitKey == "target" and unitDB.invertHealthDirection == nil then
             unitDB.invertHealthDirection = false
         end
+        if unitDB.hideHealthPercentSymbol == nil then
+            unitDB.hideHealthPercentSymbol = false
+        end
+        if unitDB.hidePowerPercentSymbol == nil then
+            unitDB.hidePowerPercentSymbol = false
+        end
 
         -- Refresh function for this specific unit
         local function RefreshUnit()
@@ -914,6 +920,11 @@ local function CreateUnitFramesPage(parent)
         healthStyleDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local hideHealthPercentSymbolCheck = GUI:CreateFormCheckbox(tabContent, "Hide % Symbol", "hideHealthPercentSymbol", unitDB, RefreshUnit)
+        hideHealthPercentSymbolCheck:SetPoint("TOPLEFT", PAD, y)
+        hideHealthPercentSymbolCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         local healthDividerOptions = {
             {value = " | ", text = "|  (pipe)"},
             {value = " - ", text = "-  (dash)"},
@@ -1008,6 +1019,11 @@ local function CreateUnitFramesPage(parent)
         local powerTextFormatDropdown = GUI:CreateFormDropdown(tabContent, "Display Format", powerTextFormatOptions, "powerTextFormat", unitDB, RefreshUnit)
         powerTextFormatDropdown:SetPoint("TOPLEFT", PAD, y)
         powerTextFormatDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local hidePowerPercentSymbolCheck = GUI:CreateFormCheckbox(tabContent, "Hide % Symbol", "hidePowerPercentSymbol", unitDB, RefreshUnit)
+        hidePowerPercentSymbolCheck:SetPoint("TOPLEFT", PAD, y)
+        hidePowerPercentSymbolCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         local powerTextColorPicker  -- Forward declare for closure

@@ -441,9 +441,10 @@ end
 ---------------------------------------------------------------------------
 -- HELPER: Format health text based on display style
 ---------------------------------------------------------------------------
-local function FormatHealthText(hp, hpPct, style, divider, maxHp)
+local function FormatHealthText(hp, hpPct, style, divider, maxHp, hidePercentSymbol)
     style = style or "both"
     divider = divider or " | "
+    local pctSuffix = hidePercentSymbol and "" or "%"
 
     -- Use pcall to handle Midnight secret values from UnitHealth()
     -- Prefer AbbreviateNumbers (Midnight API) over AbbreviateLargeNumbers (legacy)
@@ -455,7 +456,7 @@ local function FormatHealthText(hp, hpPct, style, divider, maxHp)
 
     if style == "percent" then
         if hpPct then
-            local success, result = pcall(function() return string.format("%d%%", hpPct) end)
+            local success, result = pcall(function() return string.format("%d%s", hpPct, pctSuffix) end)
             return success and result or ""
         end
         return ""
@@ -463,13 +464,13 @@ local function FormatHealthText(hp, hpPct, style, divider, maxHp)
         return hpStr or ""
     elseif style == "both" then
         if hpPct then
-            local success, result = pcall(function() return string.format("%s%s%d%%", hpStr or "", divider, hpPct) end)
+            local success, result = pcall(function() return string.format("%s%s%d%s", hpStr or "", divider, hpPct, pctSuffix) end)
             return success and result or hpStr or ""
         end
         return hpStr or ""
     elseif style == "both_reverse" then
         if hpPct then
-            local success, result = pcall(function() return string.format("%d%%%s%s", hpPct, divider, hpStr or "") end)
+            local success, result = pcall(function() return string.format("%d%s%s%s", hpPct, pctSuffix, divider, hpStr or "") end)
             return success and result or hpStr or ""
         end
         return hpStr or ""
@@ -479,9 +480,9 @@ local function FormatHealthText(hp, hpPct, style, divider, maxHp)
             local success, missing = pcall(function() return 100 - hpPct end)
             if not success then return "" end
             if missing > 0 then
-                return string.format("-%d%%", missing)
+                return string.format("-%d%s", missing, pctSuffix)
             end
-            return "0%"
+            return "0" .. pctSuffix
         end
         return ""
     elseif style == "missing_value" then
@@ -507,9 +508,10 @@ end
 -- NOTE: powerPct should be pre-calculated using GetPowerPct() to handle secret values
 -- All operations wrapped in pcall to ensure we NEVER return secret values
 ---------------------------------------------------------------------------
-local function FormatPowerText(power, powerPct, style, divider)
+local function FormatPowerText(power, powerPct, style, divider, hidePercentSymbol)
     style = style or "percent"
     divider = divider or " | "
+    local pctSuffix = hidePercentSymbol and "" or "%"
 
     -- Format current power value (pcall for secret value protection)
     -- Prefer AbbreviateNumbers (Midnight API) over AbbreviateLargeNumbers (legacy)
@@ -525,7 +527,7 @@ local function FormatPowerText(power, powerPct, style, divider)
     if style == "percent" then
         local fmtOk = pcall(function()
             if powerPct then
-                result = string.format("%d%%", powerPct)
+                result = string.format("%d%s", powerPct, pctSuffix)
             end
         end)
         if not fmtOk then result = "" end
@@ -537,7 +539,7 @@ local function FormatPowerText(power, powerPct, style, divider)
     elseif style == "both" then
         local fmtOk = pcall(function()
             if powerPct then
-                result = string.format("%s%s%d%%", powerStr or "", divider, powerPct)
+                result = string.format("%s%s%d%s", powerStr or "", divider, powerPct, pctSuffix)
             else
                 result = powerStr or ""
             end
@@ -708,10 +710,11 @@ local function UpdateHealth(frame)
             end
 
             local divider = settings and settings.healthDivider or " | "
+            local hidePercentSymbol = settings and settings.hideHealthPercentSymbol == true
 
             if hp then
                 local hpPct = GetHealthPct(unit, false)
-                local healthStr = FormatHealthText(hp, hpPct, displayStyle, divider, maxHP)
+                local healthStr = FormatHealthText(hp, hpPct, displayStyle, divider, maxHP, hidePercentSymbol)
                 frame.healthText:SetText(healthStr)
                 frame.healthText:Show()
             else
@@ -1078,7 +1081,8 @@ local function UpdatePowerText(frame)
     -- Format power text (pass pre-calculated percentage)
     local style = settings.powerTextFormat or "percent"
     local divider = settings.healthDivider or " | "
-    local powerStr = FormatPowerText(power, powerPct, style, divider)
+    local hidePercentSymbol = settings.hidePowerPercentSymbol == true
+    local powerStr = FormatPowerText(power, powerPct, style, divider, hidePercentSymbol)
 
     -- The string comparison (powerStr ~= "") fails on secret-derived strings.
     -- BUT SetText() can still display them! So just try to set it directly.
@@ -2470,7 +2474,17 @@ function QUI_UF:ShowPreview(unitKey)
                     frame.nameText:SetText("Boss " .. i)
                 end
                 if frame.healthText then
-                    frame.healthText:SetText("75.0K - " .. (75 - (i * 5)) .. "%")
+                    local previewHPPct = 75 - (i * 5)
+                    local previewMaxHP = 100000
+                    local previewHP = math.floor(previewMaxHP * (previewHPPct / 100))
+                    frame.healthText:SetText(FormatHealthText(
+                        previewHP,
+                        previewHPPct,
+                        settings and settings.healthDisplayStyle or "both",
+                        settings and settings.healthDivider or " | ",
+                        previewMaxHP,
+                        settings and settings.hideHealthPercentSymbol == true
+                    ))
                 end
                 if frame.powerBar and settings and settings.showPowerBar then
                     frame.powerBar:SetMinMaxValues(0, 100)
@@ -2481,7 +2495,13 @@ function QUI_UF:ShowPreview(unitKey)
                 -- Set fake power text
                 if frame.powerText then
                     if settings and settings.showPowerText then
-                        frame.powerText:SetText("60%")
+                        frame.powerText:SetText(FormatPowerText(
+                            60,
+                            60,
+                            settings.powerTextFormat or "percent",
+                            settings.healthDivider or " | ",
+                            settings.hidePowerPercentSymbol == true
+                        ))
                         if settings.powerTextUsePowerColor then
                             frame.powerText:SetTextColor(0, 0.6, 1, 1)
                         elseif settings.powerTextUseClassColor then
@@ -2583,7 +2603,17 @@ function QUI_UF:ShowPreview(unitKey)
     
     -- Set fake health text
     if frame.healthText then
-        frame.healthText:SetText("75.0K - 75%")
+        local previewHPPct = 75
+        local previewMaxHP = 100000
+        local previewHP = math.floor(previewMaxHP * (previewHPPct / 100))
+        frame.healthText:SetText(FormatHealthText(
+            previewHP,
+            previewHPPct,
+            settings and settings.healthDisplayStyle or "both",
+            settings and settings.healthDivider or " | ",
+            previewMaxHP,
+            settings and settings.hideHealthPercentSymbol == true
+        ))
     end
     
     -- Set fake power
@@ -2596,7 +2626,13 @@ function QUI_UF:ShowPreview(unitKey)
     -- Set fake power text
     if frame.powerText then
         if settings and settings.showPowerText then
-            frame.powerText:SetText("60%")
+            frame.powerText:SetText(FormatPowerText(
+                60,
+                60,
+                settings.powerTextFormat or "percent",
+                settings.healthDivider or " | ",
+                settings.hidePowerPercentSymbol == true
+            ))
             if settings.powerTextUsePowerColor then
                 frame.powerText:SetTextColor(0, 0.6, 1, 1)
             elseif settings.powerTextUseClassColor then
@@ -2922,8 +2958,17 @@ function QUI_UF:RefreshFrame(unitKey)
                     frame.healthText:Show()
                     -- In preview mode, set preview text; otherwise update with real data
                     if self.previewMode[bossKey] then
-                        -- Use same mock format as ShowPreview: "75.0K - X%"
-                        frame.healthText:SetText("75.0K - " .. (75 - (i * 5)) .. "%")
+                        local previewHPPct = 75 - (i * 5)
+                        local previewMaxHP = 100000
+                        local previewHP = math.floor(previewMaxHP * (previewHPPct / 100))
+                        frame.healthText:SetText(FormatHealthText(
+                            previewHP,
+                            previewHPPct,
+                            settings.healthDisplayStyle or "both",
+                            settings.healthDivider or " | ",
+                            previewMaxHP,
+                            settings.hideHealthPercentSymbol == true
+                        ))
                     else
                         UpdateHealth(frame)
                     end
@@ -2950,8 +2995,13 @@ function QUI_UF:RefreshFrame(unitKey)
                     frame.powerText:Show()
                     -- In preview mode, set preview text; otherwise update with real data
                     if self.previewMode[bossKey] then
-                        -- Use same mock value as ShowPreview
-                        frame.powerText:SetText("60%")
+                        frame.powerText:SetText(FormatPowerText(
+                            60,
+                            60,
+                            settings.powerTextFormat or "percent",
+                            settings.healthDivider or " | ",
+                            settings.hidePowerPercentSymbol == true
+                        ))
                     else
                         UpdatePowerText(frame)
                     end
