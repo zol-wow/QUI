@@ -477,11 +477,10 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             elseif growDir == "DOWN" then stepY = -(iconSize + spacing)
             end
 
-            -- CENTER: centering offset
+            -- CENTER: center icon centers around the anchor point
             local defCenterOff = 0
             if growDir == "CENTER" then
-                local totalSpan = maxIcons * iconSize + math.max(maxIcons - 1, 0) * spacing
-                defCenterOff = -totalSpan / 2
+                defCenterOff = -(math.max(maxIcons - 1, 0) * (iconSize + spacing)) / 2
             end
 
             -- Sample defensive textures for preview

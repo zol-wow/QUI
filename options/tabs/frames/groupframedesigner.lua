@@ -1248,11 +1248,10 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     elseif defGrowDir == "DOWN" then defStepY = -(defSize + defSpacing)
     end
 
-    -- Centering offset for CENTER grow direction
+    -- Center icon centers around the anchor point
     local defCenterOff = 0
     if defGrowDir == "CENTER" then
-        local totalSpan = defMaxIcons * defSize + math.max(defMaxIcons - 1, 0) * defSpacing
-        defCenterOff = -totalSpan / 2
+        defCenterOff = -(math.max(defMaxIcons - 1, 0) * (defSize + defSpacing)) / 2
     end
 
     local defTextures = { 135936, 135987, 136120, 135874, 236220 }

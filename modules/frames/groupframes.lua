@@ -1309,12 +1309,11 @@ local function UpdateDefensiveIndicator(frame)
     local growFn = DEFENSIVE_GROWTH_OFFSETS[growDir] or DEFENSIVE_GROWTH_OFFSETS.RIGHT
     local stepX, stepY = growFn(iconSize, spacing)
 
-    -- CENTER: calculate centering offset based on visible count
+    -- CENTER: center active icon centers around the anchor point
     local centerOffX = 0
     if growDir == "CENTER" then
-        local visibleCount = math.min(#foundAuras, #frame.defensiveIcons)
-        local totalSpan = visibleCount * iconSize + math.max(visibleCount - 1, 0) * spacing
-        centerOffX = -totalSpan / 2
+        local visibleCount = math.min(#foundAuras, maxIcons, #frame.defensiveIcons)
+        centerOffX = -(math.max(visibleCount - 1, 0) * (iconSize + spacing)) / 2
     end
 
     -- Expose active defensive auraInstanceIDs for buff deduplication
