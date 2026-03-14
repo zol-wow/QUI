@@ -10,6 +10,7 @@ local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local LSM = LibStub("LibSharedMedia-3.0")
 local QUICore = ns.Addon
+local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
@@ -25,6 +26,20 @@ ns.QUI_GroupFrameIndicators = QUI_GFI
 ---------------------------------------------------------------------------
 local iconPool = {}
 local POOL_SIZE = 40
+local spellNameCache = {}
+
+local FILTER_RAID = "PLAYER|HELPFUL|RAID"
+local FILTER_RIC = "PLAYER|HELPFUL|RAID_IN_COMBAT"
+local FILTER_EXT = "PLAYER|HELPFUL|EXTERNAL_DEFENSIVE"
+local FILTER_DISP = "PLAYER|HELPFUL|RAID_PLAYER_DISPELLABLE"
+local SECRET_TRACKED_AURAS = {
+    [10060] = {
+        name = "Power Infusion",
+        signature = "1:0:0:1",
+        filter = "HELPFUL",
+        scanLimit = 100,
+    },
+}
 
 local function GetFontPath()
     local db = GetDB()
@@ -32,6 +47,154 @@ local function GetFontPath()
     local general = vdb and vdb.general
     local fontName = general and general.font or "Quazii"
     return LSM:Fetch("font", fontName) or "Fonts\\FRIZQT__.TTF"
+end
+
+local function GetTrackedSpellName(spellID)
+    local key = tonumber(spellID) or spellID
+    local cached = spellNameCache[key]
+    if cached ~= nil then
+        return cached or nil
+    end
+
+    local name
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, result = pcall(C_Spell.GetSpellName, key)
+        if ok and type(result) == "string" and result ~= "" then
+            name = result
+        end
+    elseif GetSpellInfo then
+        local ok, result = pcall(GetSpellInfo, key)
+        if ok and type(result) == "string" and result ~= "" then
+            name = result
+        end
+    end
+
+    spellNameCache[key] = name or false
+    return name
+end
+
+local function MakeAuraSignature(passesRaid, passesRic, passesExt, passesDisp)
+    return (passesRaid and "1" or "0")
+        .. ":" .. (passesRic and "1" or "0")
+        .. ":" .. (passesExt and "1" or "0")
+        .. ":" .. (passesDisp and "1" or "0")
+end
+
+local function GetAuraFilterMatch(unit, auraInstanceID, filterString)
+    if not unit or auraInstanceID == nil then
+        return nil
+    end
+    if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then
+        return nil
+    end
+
+    local ok, filteredOut = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, auraInstanceID, filterString)
+    if not ok or IsSecretValue(filteredOut) then
+        return nil
+    end
+
+    return not filteredOut
+end
+
+local function IsSecretTrackedAura(unit, auraData, config)
+    if not config then
+        return false
+    end
+
+    local auraInstanceID = auraData and auraData.auraInstanceID
+    if auraInstanceID == nil then
+        return false
+    end
+
+    local auraSpellID = auraData and auraData.spellId
+    if auraSpellID and not IsSecretValue(auraSpellID) then
+        return false
+    end
+
+    local auraName = auraData and auraData.name
+    if auraName and not IsSecretValue(auraName) and auraName ~= config.name then
+        return false
+    end
+
+    local passesRaid = GetAuraFilterMatch(unit, auraInstanceID, FILTER_RAID)
+    local passesRic = GetAuraFilterMatch(unit, auraInstanceID, FILTER_RIC)
+    local passesExt = GetAuraFilterMatch(unit, auraInstanceID, FILTER_EXT)
+    local passesDisp = GetAuraFilterMatch(unit, auraInstanceID, FILTER_DISP)
+
+    if passesRaid == nil or passesRic == nil or passesExt == nil or passesDisp == nil then
+        return false
+    end
+
+    return MakeAuraSignature(passesRaid, passesRic, passesExt, passesDisp) == config.signature
+end
+
+local function FindSecretTrackedAura(unit, spellID, helpfulAuras)
+    local config = SECRET_TRACKED_AURAS[spellID]
+    if not config then
+        return nil
+    end
+
+    if helpfulAuras then
+        for _, helpfulAura in ipairs(helpfulAuras) do
+            if IsSecretTrackedAura(unit, helpfulAura, config) then
+                return helpfulAura
+            end
+        end
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+        local scanFilter = config.filter or "HELPFUL"
+        local scanLimit = config.scanLimit or 100
+        local ok, allAuras = pcall(C_UnitAuras.GetUnitAuras, unit, scanFilter, scanLimit)
+        if ok and allAuras then
+            for _, auraData in ipairs(allAuras) do
+                if IsSecretTrackedAura(unit, auraData, config) then
+                    return auraData
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function FindTrackedAuraData(unit, spellID, activeAurasByID, activeAurasByName, helpfulAuras)
+    local auraData = activeAurasByID[spellID]
+    if auraData then
+        return auraData
+    end
+
+    -- Secret tracked auras can lose both readable spellId and reliable
+    -- spell-name lookup in combat, so try their signature matcher before
+    -- depending on name resolution.
+    local secretAura = FindSecretTrackedAura(unit, spellID, helpfulAuras)
+    if secretAura then
+        return secretAura
+    end
+
+    local spellName = GetTrackedSpellName(spellID)
+    if not spellName then
+        return nil
+    end
+
+    auraData = activeAurasByName[spellName]
+    if auraData then
+        return auraData
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+        local okHelpful, helpfulAura = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
+        if okHelpful and helpfulAura then
+            return helpfulAura
+        end
+
+        local okHarmful, harmfulAura = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HARMFUL")
+        if okHarmful and harmfulAura then
+            return harmfulAura
+        end
+    end
+
+    return nil
 end
 
 local function CreateIconIndicator(parent)
@@ -215,19 +378,30 @@ local function UpdateFrameIndicators(frame)
 
     -- Build a set of active auras on the unit from shared cache
     local activeAuras = {} -- [spellID] = auraData
+    local activeAuraNames = {} -- [spellName] = auraData
+    local helpfulAuras = nil
     local GFA = ns.QUI_GroupFrameAuras
     local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
     if cache then
         if cache.helpful then
+            helpfulAuras = cache.helpful
             for _, auraData in ipairs(cache.helpful) do
                 local spellID = SafeValue(auraData.spellId, nil)
                 if spellID then activeAuras[spellID] = auraData end
+                local spellName = SafeValue(auraData.name, nil)
+                if spellName and not activeAuraNames[spellName] then
+                    activeAuraNames[spellName] = auraData
+                end
             end
         end
         if cache.harmful then
             for _, auraData in ipairs(cache.harmful) do
                 local spellID = SafeValue(auraData.spellId, nil)
                 if spellID then activeAuras[spellID] = auraData end
+                local spellName = SafeValue(auraData.name, nil)
+                if spellName and not activeAuraNames[spellName] then
+                    activeAuraNames[spellName] = auraData
+                end
             end
         end
     else
@@ -236,9 +410,16 @@ local function UpdateFrameIndicators(frame)
             for _, filter in ipairs({"HELPFUL", "HARMFUL"}) do
                 local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit, filter, 40)
                 if ok and auras then
+                    if filter == "HELPFUL" then
+                        helpfulAuras = auras
+                    end
                     for _, auraData in ipairs(auras) do
                         local spellID = SafeValue(auraData.spellId, nil)
                         if spellID then activeAuras[spellID] = auraData end
+                        local spellName = SafeValue(auraData.name, nil)
+                        if spellName and not activeAuraNames[spellName] then
+                            activeAuraNames[spellName] = auraData
+                        end
                     end
                 end
             end
@@ -264,7 +445,7 @@ local function UpdateFrameIndicators(frame)
     for _, spellID in ipairs(trackedSpells) do
         if count >= maxIcons then break end
 
-        local auraData = activeAuras[spellID]
+        local auraData = FindTrackedAuraData(unit, spellID, activeAuras, activeAuraNames, helpfulAuras)
         if auraData then
             -- Skip if already shown as a defensive indicator
             local defIDs = frame._defensiveAuraIDs

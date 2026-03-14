@@ -464,7 +464,8 @@ local FILTER_MODE_OPTIONS = {
 
 ---------------------------------------------------------------------------
 -- AURA FILTER PRESETS: Common healer/support spell IDs per spec
--- Spells on Blizzard's Midnight whitelist — spellId readable in combat
+-- Most tracked auras have readable spellIds in combat; some use
+-- secret-aura fallbacks in the indicator runtime when Blizzard hides them.
 ---------------------------------------------------------------------------
 local AURA_FILTER_PRESETS = {
     {
@@ -512,6 +513,7 @@ local AURA_FILTER_PRESETS = {
             { id = 194384, name = "Atonement" },
             { id = 17,     name = "Power Word: Shield" },
             { id = 41635,  name = "Prayer of Mending" },
+            { id = 10060,  name = "Power Infusion" },
             { id = 47788,  name = "Guardian Spirit" },
             { id = 33206,  name = "Pain Suppression" },
         },
@@ -523,6 +525,7 @@ local AURA_FILTER_PRESETS = {
             { id = 139,    name = "Renew" },
             { id = 77489,  name = "Echo of Light" },
             { id = 41635,  name = "Prayer of Mending" },
+            { id = 10060,  name = "Power Infusion" },
             { id = 47788,  name = "Guardian Spirit" },
             { id = 64844,  name = "Divine Hymn" },
         },
