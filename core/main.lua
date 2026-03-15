@@ -814,6 +814,7 @@ local defaults = {
                 texture = "Quazii v5",
                 useClassColor = true,
                 barColor = {0.204, 0.827, 0.6, 1},  -- mint accent fallback
+                colorOverrides = {},
                 barOpacity = 1.0,
                 borderSize = 2,
                 bgColor = {0, 0, 0, 1},

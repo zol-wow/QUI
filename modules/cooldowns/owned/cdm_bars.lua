@@ -126,6 +126,101 @@ local function CreateBar(parent)
     return bar
 end
 
+local function GetBarDisplayName(frame)
+    if not frame or not frame.GetRegions then return nil end
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+            local okText, rawText = pcall(region.GetText, region)
+            local text = okText and SafeValue(rawText, nil) or nil
+            if type(text) == "string" and text ~= "" then
+                local justify = region.GetJustifyH and region:GetJustifyH()
+                if justify ~= "RIGHT" then
+                    return text
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function GetBlizzTrackedBarSpellData(blizzBarChild)
+    if not blizzBarChild then return nil end
+
+    local resolvedSpellID, baseSpellID, overrideSpellID, name
+    local cdInfo = blizzBarChild.cooldownInfo
+    if cdInfo then
+        overrideSpellID = SafeToNumber(cdInfo.overrideSpellID, nil)
+        baseSpellID = SafeToNumber(cdInfo.spellID, nil)
+        name = SafeValue(cdInfo.name, nil)
+        resolvedSpellID = overrideSpellID or baseSpellID
+    end
+
+    local cdID = blizzBarChild.cooldownID
+    if (not resolvedSpellID or not name) and cdID
+        and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local okInfo, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+        if okInfo and info then
+            overrideSpellID = overrideSpellID or SafeToNumber(info.overrideSpellID, nil)
+            baseSpellID = baseSpellID or SafeToNumber(info.spellID, nil)
+            name = name or SafeValue(info.name, nil)
+            resolvedSpellID = resolvedSpellID or overrideSpellID or baseSpellID
+        end
+    end
+
+    if not name then
+        name = GetBarDisplayName(blizzBarChild) or GetBarDisplayName(blizzBarChild.Bar)
+    end
+
+    if not resolvedSpellID and name and C_Spell and C_Spell.GetSpellInfo then
+        local okSpellInfo, spellInfo = pcall(C_Spell.GetSpellInfo, name)
+        if okSpellInfo and spellInfo and spellInfo.spellID then
+            baseSpellID = baseSpellID or spellInfo.spellID
+            resolvedSpellID = resolvedSpellID or spellInfo.spellID
+        end
+    end
+
+    if not resolvedSpellID and not name and not cdID then
+        return nil
+    end
+
+    return {
+        spellID = resolvedSpellID,
+        baseSpellID = baseSpellID or resolvedSpellID,
+        overrideSpellID = overrideSpellID,
+        name = name,
+        cooldownID = cdID,
+    }
+end
+
+local function GetTrackedBarOverrideColor(settings, spellData)
+    local overrides = settings and settings.colorOverrides
+    if type(overrides) ~= "table" or type(spellData) ~= "table" then
+        return nil
+    end
+
+    local color = spellData.spellID and overrides[spellData.spellID]
+    if type(color) == "table" then
+        return color
+    end
+
+    color = spellData.overrideSpellID and overrides[spellData.overrideSpellID]
+    if type(color) == "table" then
+        return color
+    end
+
+    color = spellData.baseSpellID and overrides[spellData.baseSpellID]
+    if type(color) == "table" then
+        return color
+    end
+
+    color = spellData.cooldownID and overrides[spellData.cooldownID]
+    if type(color) == "table" then
+        return color
+    end
+
+    return nil
+end
+
 ---------------------------------------------------------------------------
 -- CONFIGURE BAR (clean rewrite of ApplyBarStyle for owned frames)
 ---------------------------------------------------------------------------
@@ -163,6 +258,8 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     local showTextOnVertical = settings.showTextOnVertical or false
 
     local isActive = bar._active
+    local spellData = GetBlizzTrackedBarSpellData(bar._blizzBar)
+    local overrideColor = GetTrackedBarOverrideColor(settings, spellData)
 
     -- For vertical bars: swap width/height conceptually
     local frameWidth, frameHeight
@@ -253,8 +350,10 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
 
     -- Apply bar color (class or custom) with opacity
     if statusBar and statusBar.SetStatusBarColor then
-        local c = barColor
-        if useClassColor then
+        local c = overrideColor or barColor
+        if overrideColor then
+            statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
+        elseif useClassColor then
             local _, class = UnitClass("player")
             local safeClass = Helpers.SafeToString(class, nil)
             local color = safeClass and RAID_CLASS_COLORS[safeClass]
@@ -374,8 +473,9 @@ local function ExtractSpellID(blizzBarChild)
         if not frame or not frame.GetRegions then return nil end
         for _, region in ipairs({ frame:GetRegions() }) do
             if region and region:GetObjectType() == "FontString" then
-                local okT, text = pcall(region.GetText, region)
-                if okT and type(text) == "string" and text ~= "" then
+                local okT, rawText = pcall(region.GetText, region)
+                local text = okT and SafeValue(rawText, nil) or nil
+                if type(text) == "string" and text ~= "" then
                     local justify = region:GetJustifyH()
                     if justify ~= "RIGHT" then return text end
                 end

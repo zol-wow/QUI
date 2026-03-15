@@ -454,6 +454,9 @@ end
 local function GetTrackedBarSettings()
     local db = GetDB()
     if db and db.trackedBar then
+        if db.trackedBar.colorOverrides == nil then
+            db.trackedBar.colorOverrides = {}
+        end
         return db.trackedBar
     end
     -- Return defaults if no DB
@@ -490,7 +493,240 @@ local function GetTrackedBarSettings()
         fillDirection = "up",
         iconPosition = "top",
         showTextOnVertical = false,
+        colorOverrides = {},
     }
+end
+
+local function GetTrackedBarSourceViewer()
+    return _G["BuffBarCooldownViewer"] or GetBuffBarViewer()
+end
+
+local function GetTrackedBarName(frame)
+    if not frame or not frame.GetRegions then return nil end
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+            local okText, rawText = pcall(region.GetText, region)
+            local text = okText and Helpers.SafeValue(rawText, nil) or nil
+            if type(text) == "string" and text ~= "" then
+                local justify = region.GetJustifyH and region:GetJustifyH()
+                if justify ~= "RIGHT" then
+                    return text
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function GetTrackedBarSpellData(frame)
+    if not frame then return nil end
+
+    local resolvedSpellID, baseSpellID, overrideSpellID, name
+    local cdInfo = frame.cooldownInfo
+    if cdInfo then
+        overrideSpellID = Helpers.SafeToNumber(cdInfo.overrideSpellID, nil)
+        baseSpellID = Helpers.SafeToNumber(cdInfo.spellID, nil)
+        name = Helpers.SafeValue(cdInfo.name, nil)
+        resolvedSpellID = overrideSpellID or baseSpellID
+    end
+
+    if (not resolvedSpellID or not name) and frame.cooldownID
+        and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local okInfo, apiInfo = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, frame.cooldownID)
+        if okInfo and apiInfo then
+            overrideSpellID = overrideSpellID or Helpers.SafeToNumber(apiInfo.overrideSpellID, nil)
+            baseSpellID = baseSpellID or Helpers.SafeToNumber(apiInfo.spellID, nil)
+            name = name or Helpers.SafeValue(apiInfo.name, nil)
+            resolvedSpellID = resolvedSpellID or overrideSpellID or baseSpellID
+        end
+    end
+
+    if not name then
+        name = GetTrackedBarName(frame) or GetTrackedBarName(frame.Bar)
+    end
+
+    if not resolvedSpellID and name and C_Spell and C_Spell.GetSpellInfo then
+        local okSpellInfo, spellInfo = pcall(C_Spell.GetSpellInfo, name)
+        if okSpellInfo and spellInfo and spellInfo.spellID then
+            baseSpellID = baseSpellID or spellInfo.spellID
+            resolvedSpellID = resolvedSpellID or spellInfo.spellID
+        end
+    end
+
+    if not name and resolvedSpellID and C_Spell and C_Spell.GetSpellInfo then
+        local okSpellInfo, spellInfo = pcall(C_Spell.GetSpellInfo, resolvedSpellID)
+        if okSpellInfo and spellInfo and spellInfo.name then
+            name = spellInfo.name
+        end
+    end
+
+    if not resolvedSpellID and not name and not frame.cooldownID then
+        return nil
+    end
+
+    return {
+        spellID = resolvedSpellID,
+        baseSpellID = baseSpellID or resolvedSpellID,
+        overrideSpellID = overrideSpellID,
+        name = name,
+        cooldownID = frame.cooldownID,
+    }
+end
+
+local function GetTrackedBarIconTexture(frame, spellData)
+    if not frame then return nil end
+    local iconContainer = frame.Icon
+    local iconTexture = iconContainer and (iconContainer.Icon or iconContainer.icon or iconContainer.texture)
+    if iconTexture and iconTexture.GetTexture then
+        local okTex, rawTexture = pcall(iconTexture.GetTexture, iconTexture)
+        local texture = okTex and Helpers.SafeValue(rawTexture, nil) or nil
+        if okTex and texture and texture ~= 0 and texture ~= "" then
+            return texture
+        end
+    end
+
+    local spellID = spellData and (spellData.overrideSpellID or spellData.spellID or spellData.baseSpellID)
+    if spellID and C_Spell and C_Spell.GetSpellInfo then
+        local okSpellInfo, info = pcall(C_Spell.GetSpellInfo, spellID)
+        if okSpellInfo and info and info.iconID then
+            return info.iconID
+        end
+    end
+
+    return nil
+end
+
+local function IsTrackedBarActive(frame)
+    if not frame or not frame.IsShown then return false end
+    local okShown, shown = pcall(frame.IsShown, frame)
+    return okShown and shown or false
+end
+
+local function GetTrackedBarColorOverride(settings, spellData)
+    local overrides = settings and settings.colorOverrides
+    if type(overrides) ~= "table" or type(spellData) ~= "table" then
+        return nil
+    end
+
+    local color = spellData.spellID and overrides[spellData.spellID]
+    if type(color) == "table" then
+        return color
+    end
+
+    color = spellData.overrideSpellID and overrides[spellData.overrideSpellID]
+    if type(color) == "table" then
+        return color
+    end
+
+    color = spellData.baseSpellID and overrides[spellData.baseSpellID]
+    if type(color) == "table" then
+        return color
+    end
+
+    color = spellData.cooldownID and overrides[spellData.cooldownID]
+    if type(color) == "table" then
+        return color
+    end
+
+    return nil
+end
+
+local function GetTrackedBarRuntimeEntries()
+    local viewer = GetTrackedBarSourceViewer()
+    if not viewer then return {} end
+
+    local entries = {}
+    local selection = viewer.Selection
+    local okChildren, children = pcall(function()
+        return { viewer:GetChildren() }
+    end)
+    if not okChildren or not children then
+        return entries
+    end
+
+    for _, child in ipairs(children) do
+        if child and child ~= selection and child.IsObjectType and child:IsObjectType("Frame")
+            and child.Bar and child.Bar.IsObjectType and child.Bar:IsObjectType("StatusBar")
+            and (child.cooldownID or child.layoutIndex) then
+            local spellData = GetTrackedBarSpellData(child)
+            if spellData then
+                entries[#entries + 1] = {
+                    spellID = spellData.spellID,
+                    baseSpellID = spellData.baseSpellID,
+                    overrideSpellID = spellData.overrideSpellID,
+                    name = spellData.name or "",
+                    iconTexture = GetTrackedBarIconTexture(child, spellData),
+                    cooldownID = spellData.cooldownID,
+                    layoutIndex = child.layoutIndex or 9999,
+                    isActive = IsTrackedBarActive(child),
+                }
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b)
+        local layoutA = a.layoutIndex or 9999
+        local layoutB = b.layoutIndex or 9999
+        if layoutA ~= layoutB then
+            return layoutA < layoutB
+        end
+        local nameA = tostring(a.name or "")
+        local nameB = tostring(b.name or "")
+        if nameA ~= nameB then
+            return nameA < nameB
+        end
+        return (a.spellID or 0) < (b.spellID or 0)
+    end)
+
+    return entries
+end
+
+local trackedBarRuntimeFingerprint = ""
+local trackedBarRuntimeNotifyPending = false
+
+local function BuildTrackedBarRuntimeFingerprint(entries)
+    if type(entries) ~= "table" or #entries == 0 then
+        return ""
+    end
+
+    local parts = {}
+    for i, entry in ipairs(entries) do
+        parts[i] = table.concat({
+            tostring(entry.layoutIndex or 9999),
+            tostring(entry.spellID or 0),
+            tostring(entry.baseSpellID or 0),
+            tostring(entry.overrideSpellID or 0),
+            tostring(entry.cooldownID or 0),
+        }, ":")
+    end
+    return table.concat(parts, ",")
+end
+
+local function NotifyTrackedBarRuntimeChanged(force)
+    local callback = _G.QUI_RefreshTrackedBarColorOverrideList
+    if type(callback) ~= "function" then
+        return
+    end
+
+    local entries = GetTrackedBarRuntimeEntries()
+    local fingerprint = BuildTrackedBarRuntimeFingerprint(entries)
+    if not force and fingerprint == trackedBarRuntimeFingerprint then
+        return
+    end
+    trackedBarRuntimeFingerprint = fingerprint
+
+    if trackedBarRuntimeNotifyPending then
+        return
+    end
+    trackedBarRuntimeNotifyPending = true
+
+    C_Timer.After(0, function()
+        trackedBarRuntimeNotifyPending = false
+        local refreshCallback = _G.QUI_RefreshTrackedBarColorOverrideList
+        if type(refreshCallback) == "function" then
+            pcall(refreshCallback)
+        end
+    end)
 end
 
 ---------------------------------------------------------------------------
@@ -1243,6 +1479,8 @@ local function ApplyBarStyle(frame, settings, overrideBarWidth)
     local showTextOnVertical = settings.showTextOnVertical or false
     local bfs = barFrameState[frame]
     local isActive = not (bfs and bfs.isActive == false)
+    local spellData = GetTrackedBarSpellData(frame)
+    local overrideColor = GetTrackedBarColorOverride(settings, spellData)
 
     -- For vertical bars: swap width/height conceptually
     -- "Bar Height" setting becomes bar width, "Bar Width" becomes bar height
@@ -1481,8 +1719,10 @@ local function ApplyBarStyle(frame, settings, overrideBarWidth)
     -- 5. Apply bar color (class or custom) with opacity
     if statusBar and statusBar.SetStatusBarColor then
         pcall(function()
-            local c = barColor
-            if useClassColor then
+            local c = overrideColor or barColor
+            if overrideColor then
+                statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
+            elseif useClassColor then
                 local _, class = UnitClass("player")
                 local safeClass = Helpers.SafeToString(class, nil)
                 local color = safeClass and RAID_CLASS_COLORS[safeClass]
@@ -1835,6 +2075,7 @@ LayoutBuffBars = function()
 
         local settings = GetTrackedBarSettings()
         if not settings.enabled then
+            NotifyTrackedBarRuntimeChanged()
             isBarLayoutRunning = false
             return
         end
@@ -1874,6 +2115,7 @@ LayoutBuffBars = function()
             CDMBars:Refresh(viewer, settings, resolvedBarWidth)
         end
 
+        NotifyTrackedBarRuntimeChanged()
         isBarLayoutRunning = false
         return
     end
@@ -1911,12 +2153,14 @@ LayoutBuffBars = function()
         local bars = GetBuffBarFrames()
         local count = #bars
         if count == 0 then
+            NotifyTrackedBarRuntimeChanged()
             isBarLayoutRunning = false
             return
         end
 
         local refBar = bars[1]
         if not refBar then
+            NotifyTrackedBarRuntimeChanged()
             isBarLayoutRunning = false
             return
         end
@@ -2059,6 +2303,7 @@ LayoutBuffBars = function()
             end)
         end
 
+        NotifyTrackedBarRuntimeChanged()
         isBarLayoutRunning = false
         return
     end
@@ -2086,12 +2331,14 @@ LayoutBuffBars = function()
     local count = #bars
     if count == 0 then
         barState.lastCount = 0
+        NotifyTrackedBarRuntimeChanged()
         isBarLayoutRunning = false
         return
     end
 
     local refBar = bars[1]
     if not refBar then
+        NotifyTrackedBarRuntimeChanged()
         isBarLayoutRunning = false
         return
     end
@@ -2176,6 +2423,7 @@ LayoutBuffBars = function()
     end
 
     if not effectiveBarHeight or effectiveBarHeight == 0 then
+        NotifyTrackedBarRuntimeChanged()
         isBarLayoutRunning = false
         return
     end
@@ -2322,6 +2570,7 @@ LayoutBuffBars = function()
         _G.QUI_SetCDMViewerBounds(viewer, bw, bh)
     end
 
+    NotifyTrackedBarRuntimeChanged()
     isBarLayoutRunning = false
 end
 
@@ -2832,6 +3081,7 @@ end
 QUI_BuffBar.LayoutIcons = LayoutBuffIcons
 QUI_BuffBar.LayoutBars = LayoutBuffBars
 QUI_BuffBar.Initialize = Initialize
+QUI_BuffBar.GetTrackedBarRuntimeEntries = GetTrackedBarRuntimeEntries
 
 -- Force refresh function (can be called from GUI)
 function QUI_BuffBar.Refresh()
@@ -2868,3 +3118,6 @@ end
 
 -- Global refresh function for GUI
 _G.QUI_RefreshBuffBar = QUI_BuffBar.Refresh
+_G.QUI_GetTrackedBarRuntimeEntries = function()
+    return GetTrackedBarRuntimeEntries()
+end

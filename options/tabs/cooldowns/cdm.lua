@@ -4,6 +4,7 @@ local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
 local UIKit = ns.UIKit
+local LSM = LibStub("LibSharedMedia-3.0")
 
 local GetCore = ns.Helpers.GetCore
 
@@ -193,6 +194,7 @@ local function EnsureNCDMDefaults(db)
     if trackedData.texture == nil then trackedData.texture = "Quazii v5" end
     if trackedData.useClassColor == nil then trackedData.useClassColor = true end
     if trackedData.barColor == nil then trackedData.barColor = {0.204, 0.827, 0.6, 1} end
+    if trackedData.colorOverrides == nil then trackedData.colorOverrides = {} end
     if trackedData.barOpacity == nil then trackedData.barOpacity = 1.0 end
     if trackedData.borderSize == nil then trackedData.borderSize = 2 end
     if trackedData.bgColor == nil then trackedData.bgColor = {0, 0, 0, 1} end
@@ -1578,10 +1580,15 @@ local function CreateCDMSetupPage(parent)
         if buffData.anchorOffsetX == nil then buffData.anchorOffsetX = 0 end
         if buffData.anchorOffsetY == nil then buffData.anchorOffsetY = 0 end
 
+        local RefreshTrackedBarOverrideList
+
         -- Callback to refresh buff bar
         local function RefreshBuff()
             if _G.QUI_RefreshBuffBar then
                 _G.QUI_RefreshBuffBar()
+            end
+            if RefreshTrackedBarOverrideList then
+                RefreshTrackedBarOverrideList()
             end
         end
 
@@ -1795,6 +1802,7 @@ local function CreateCDMSetupPage(parent)
         if trackedData.texture == nil then trackedData.texture = "Quazii v5" end
         if trackedData.useClassColor == nil then trackedData.useClassColor = true end
         if trackedData.barColor == nil then trackedData.barColor = {0.204, 0.827, 0.6, 1} end
+        if trackedData.colorOverrides == nil then trackedData.colorOverrides = {} end
         if trackedData.barOpacity == nil then trackedData.barOpacity = 1.0 end
         if trackedData.borderSize == nil then trackedData.borderSize = 2 end
         if trackedData.bgColor == nil then trackedData.bgColor = {0, 0, 0, 1} end
@@ -2241,7 +2249,493 @@ local function CreateCDMSetupPage(parent)
         spacingSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        tabContent:SetHeight(math.abs(y) + 20)
+        y = y - 8
+
+        local overrideHeader = GUI:CreateSectionHeader(tabContent, "Per-Spell Bar Colors")
+        overrideHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - overrideHeader.gap
+
+        local overrideDesc = GUI:CreateLabel(tabContent, "Preview the tracked bars Blizzard currently has instantiated for this spec and assign custom fill colors per spell. Saved overrides stay editable even when a bar is not active.", 11, C.textMuted)
+        overrideDesc:SetPoint("TOPLEFT", PAD, y)
+        overrideDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        overrideDesc:SetJustifyH("LEFT")
+        overrideDesc:SetWordWrap(true)
+        overrideDesc:SetHeight(34)
+        y = y - 42
+
+        local overrideListTopY = y
+        local overrideListFrame = CreateFrame("Frame", nil, tabContent)
+        overrideListFrame:SetPoint("TOPLEFT", PAD, overrideListTopY)
+        overrideListFrame:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        overrideListFrame:SetHeight(1)
+
+        local overrideEntryFrames = {}
+        local overrideEmptyLabel
+
+        local function HideUnusedOverrideRows(startIndex)
+            for i = startIndex or 1, #overrideEntryFrames do
+                if overrideEntryFrames[i] then
+                    overrideEntryFrames[i]:Hide()
+                end
+            end
+            if overrideEmptyLabel then
+                overrideEmptyLabel:Hide()
+            end
+        end
+
+        local function GetEmptyOverrideLabel()
+            if not overrideEmptyLabel then
+                overrideEmptyLabel = GUI:CreateLabel(overrideListFrame, "No tracked bars detected yet. Blizzard only instantiates bars for the current spec/runtime state, so trigger a proc or aura if you want it to appear here.", 11, C.textMuted)
+                overrideEmptyLabel:SetJustifyH("LEFT")
+                overrideEmptyLabel:SetWordWrap(true)
+                overrideEmptyLabel:SetHeight(32)
+            end
+            return overrideEmptyLabel
+        end
+
+        local function GetTrackedBarCanonicalKey(entry)
+            return entry and (entry.baseSpellID or entry.spellID or entry.overrideSpellID or entry.cooldownID) or nil
+        end
+
+        local function GetTrackedBarKnownKeys(entry)
+            local keys, seen = {}, {}
+            local candidates = {
+                entry and entry.baseSpellID,
+                entry and entry.spellID,
+                entry and entry.overrideSpellID,
+                entry and entry.cooldownID,
+            }
+            for _, key in pairs(candidates) do
+                if key and not seen[key] then
+                    seen[key] = true
+                    keys[#keys + 1] = key
+                end
+            end
+            return keys
+        end
+
+        local function GetSpellInfoSafe(spellID)
+            if not spellID or not C_Spell or not C_Spell.GetSpellInfo then
+                return nil
+            end
+            local okInfo, info = pcall(C_Spell.GetSpellInfo, spellID)
+            return okInfo and info or nil
+        end
+
+        local function GetTrackedBarPreviewColor(entry)
+            local overrides = trackedData.colorOverrides or {}
+            local override = entry.spellID and overrides[entry.spellID]
+            if type(override) ~= "table" then
+                override = entry.overrideSpellID and overrides[entry.overrideSpellID]
+            end
+            if type(override) ~= "table" then
+                override = entry.baseSpellID and overrides[entry.baseSpellID]
+            end
+            if type(override) ~= "table" then
+                override = entry.cooldownID and overrides[entry.cooldownID]
+            end
+            if type(override) == "table" then
+                return override[1] or 0.204, override[2] or 0.827, override[3] or 0.6, override[4] or 1
+            end
+
+            if trackedData.useClassColor then
+                local _, class = UnitClass("player")
+                local color = class and RAID_CLASS_COLORS[class]
+                if color then
+                    return color.r, color.g, color.b, 1
+                end
+            end
+
+            local fallback = trackedData.barColor or {0.204, 0.827, 0.6, 1}
+            return fallback[1] or 0.204, fallback[2] or 0.827, fallback[3] or 0.6, fallback[4] or 1
+        end
+
+        local function HasTrackedBarOverride(entry)
+            local overrides = trackedData.colorOverrides or {}
+            return type(entry.spellID and overrides[entry.spellID]) == "table"
+                or type(entry.overrideSpellID and overrides[entry.overrideSpellID]) == "table"
+                or type(entry.baseSpellID and overrides[entry.baseSpellID]) == "table"
+                or type(entry.cooldownID and overrides[entry.cooldownID]) == "table"
+        end
+
+        local function BuildTrackedBarPreviewEntries()
+            local entries = {}
+            local seenKeys = {}
+            local runtimeEntries = _G.QUI_GetTrackedBarRuntimeEntries and _G.QUI_GetTrackedBarRuntimeEntries() or {}
+
+            for _, entry in ipairs(runtimeEntries) do
+                local key = entry.baseSpellID or entry.spellID or entry.overrideSpellID or entry.cooldownID
+                if key then
+                    local spellInfo = GetSpellInfoSafe(key)
+                    entries[#entries + 1] = {
+                        spellID = entry.spellID,
+                        baseSpellID = entry.baseSpellID,
+                        overrideSpellID = entry.overrideSpellID,
+                        cooldownID = entry.cooldownID,
+                        name = entry.name ~= "" and entry.name or ((spellInfo and spellInfo.name) or ("Tracked Bar " .. tostring(key))),
+                        iconTexture = entry.iconTexture or (spellInfo and spellInfo.iconID) or "Interface\\Icons\\INV_Misc_QuestionMark",
+                        layoutIndex = entry.layoutIndex or 9999,
+                        isActive = entry.isActive == true,
+                        isSavedOnly = false,
+                    }
+                    seenKeys[key] = true
+                    if entry.baseSpellID then seenKeys[entry.baseSpellID] = true end
+                    if entry.overrideSpellID then seenKeys[entry.overrideSpellID] = true end
+                    if entry.spellID then seenKeys[entry.spellID] = true end
+                    if entry.cooldownID then seenKeys[entry.cooldownID] = true end
+                end
+            end
+
+            for savedKey in pairs(trackedData.colorOverrides or {}) do
+                if type(savedKey) == "number" and not seenKeys[savedKey] then
+                    local spellInfo = GetSpellInfoSafe(savedKey)
+                    entries[#entries + 1] = {
+                        spellID = spellInfo and savedKey or nil,
+                        baseSpellID = spellInfo and savedKey or nil,
+                        overrideSpellID = nil,
+                        cooldownID = savedKey,
+                        name = (spellInfo and spellInfo.name) or ("Tracked Bar " .. tostring(savedKey)),
+                        iconTexture = (spellInfo and spellInfo.iconID) or "Interface\\Icons\\INV_Misc_QuestionMark",
+                        layoutIndex = 9999,
+                        isActive = false,
+                        isSavedOnly = true,
+                    }
+                end
+            end
+
+            table.sort(entries, function(a, b)
+                if a.isSavedOnly ~= b.isSavedOnly then
+                    return not a.isSavedOnly
+                end
+                if (a.layoutIndex or 9999) ~= (b.layoutIndex or 9999) then
+                    return (a.layoutIndex or 9999) < (b.layoutIndex or 9999)
+                end
+                if (a.name or "") ~= (b.name or "") then
+                    return (a.name or "") < (b.name or "")
+                end
+                return (a.spellID or 0) < (b.spellID or 0)
+            end)
+
+            return entries
+        end
+
+        local function CreateMiniActionButton(parent, text, width)
+            local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+            button:SetSize(width or 44, 20)
+            local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(button)) or 1
+            button:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = px,
+            })
+            button:SetBackdropColor(0.10, 0.10, 0.10, 1)
+            button:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+
+            local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetPoint("CENTER")
+            label:SetText(text)
+            label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+            button._label = label
+
+            button:SetScript("OnEnter", function(self)
+                if self._disabled then return end
+                self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], C.accent[4] or 1)
+            end)
+            button:SetScript("OnLeave", function(self)
+                self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+            end)
+
+            button.SetButtonEnabled = function(self, enabled)
+                self._disabled = not enabled
+                self:EnableMouse(enabled)
+                self:SetAlpha(enabled and 1 or 0.4)
+            end
+
+            button:SetButtonEnabled(true)
+            return button
+        end
+
+        local function CreateTrackedBarPreviewWidget(parent)
+            local holder = CreateFrame("Frame", nil, parent)
+            local preview = CreateFrame("Frame", nil, holder)
+            preview:SetPoint("CENTER")
+            holder.preview = preview
+
+            local statusBar = CreateFrame("StatusBar", nil, preview)
+            statusBar:SetMinMaxValues(0, 1)
+            holder.statusBar = statusBar
+
+            local bg = preview:CreateTexture(nil, "BACKGROUND")
+            holder.bg = bg
+
+            local iconFrame = CreateFrame("Frame", nil, preview)
+            iconFrame.icon = iconFrame:CreateTexture(nil, "ARTWORK")
+            iconFrame.icon:SetAllPoints()
+            iconFrame.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            holder.iconFrame = iconFrame
+
+            local borderFrame = CreateFrame("Frame", nil, preview)
+            borderFrame._top = borderFrame:CreateTexture(nil, "OVERLAY")
+            borderFrame._top:SetColorTexture(0, 0, 0, 1)
+            borderFrame._bottom = borderFrame:CreateTexture(nil, "OVERLAY")
+            borderFrame._bottom:SetColorTexture(0, 0, 0, 1)
+            borderFrame._left = borderFrame:CreateTexture(nil, "OVERLAY")
+            borderFrame._left:SetColorTexture(0, 0, 0, 1)
+            borderFrame._right = borderFrame:CreateTexture(nil, "OVERLAY")
+            borderFrame._right:SetColorTexture(0, 0, 0, 1)
+            holder.borderFrame = borderFrame
+
+            return holder
+        end
+
+        local function UpdateTrackedBarPreviewWidget(holder, entry)
+            local orientation = trackedData.orientation or "horizontal"
+            local isVertical = (orientation == "vertical")
+            local hideIcon = trackedData.hideIcon == true
+            local iconSize = trackedData.barHeight or 25
+            local barWidth = trackedData.barWidth or 215
+            local barHeight = trackedData.barHeight or 25
+            local bgColor = trackedData.bgColor or {0, 0, 0, 1}
+            local bgOpacity = trackedData.bgOpacity or 0.5
+            local borderSize = trackedData.borderSize or 2
+            local barOpacity = trackedData.barOpacity or 1
+            local iconPosition = trackedData.iconPosition or "top"
+            local previewR, previewG, previewB = GetTrackedBarPreviewColor(entry)
+
+            local statusWidth, statusHeight
+            local totalWidth, totalHeight
+            if isVertical then
+                statusWidth = barHeight
+                statusHeight = barWidth
+                totalWidth = statusWidth
+                totalHeight = hideIcon and statusHeight or (statusHeight + iconSize)
+            else
+                statusWidth = barWidth
+                statusHeight = barHeight
+                totalWidth = hideIcon and statusWidth or (statusWidth + iconSize)
+                totalHeight = statusHeight
+            end
+
+            local maxPreviewWidth = 150
+            local maxPreviewHeight = 36
+            local scale = math.min(1, maxPreviewWidth / math.max(totalWidth, 1), maxPreviewHeight / math.max(totalHeight, 1))
+            scale = math.max(scale, 0.35)
+
+            holder:SetSize(math.max(1, totalWidth * scale), math.max(1, totalHeight * scale))
+            local preview = holder.preview
+            preview:SetSize(totalWidth, totalHeight)
+            preview:SetScale(scale)
+            preview:SetPoint("CENTER")
+
+            local statusBar = holder.statusBar
+            statusBar:ClearAllPoints()
+            statusBar:SetValue(0.72)
+            local texturePath = LSM and (LSM:Fetch("statusbar", trackedData.texture or "Quazii v5") or LSM:Fetch("statusbar", "Quazii v5"))
+            statusBar:SetStatusBarTexture(texturePath or "Interface\\Buttons\\WHITE8X8")
+            statusBar:SetStatusBarColor(previewR, previewG, previewB, barOpacity)
+
+            local bg = holder.bg
+            bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgOpacity)
+
+            local iconFrame = holder.iconFrame
+            iconFrame:ClearAllPoints()
+            if not hideIcon then
+                iconFrame:Show()
+                iconFrame:SetSize(iconSize, iconSize)
+                iconFrame.icon:SetTexture(entry.iconTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+            else
+                iconFrame:Hide()
+            end
+
+            if isVertical then
+                if not hideIcon then
+                    if iconPosition == "bottom" then
+                        iconFrame:SetPoint("BOTTOM", preview, "BOTTOM", 0, 0)
+                        statusBar:SetPoint("TOPLEFT", preview, "TOPLEFT", 0, 0)
+                        statusBar:SetPoint("TOPRIGHT", preview, "TOPRIGHT", 0, 0)
+                        statusBar:SetPoint("BOTTOM", iconFrame, "TOP", 0, 0)
+                    else
+                        iconFrame:SetPoint("TOP", preview, "TOP", 0, 0)
+                        statusBar:SetPoint("BOTTOMLEFT", preview, "BOTTOMLEFT", 0, 0)
+                        statusBar:SetPoint("BOTTOMRIGHT", preview, "BOTTOMRIGHT", 0, 0)
+                        statusBar:SetPoint("TOP", iconFrame, "BOTTOM", 0, 0)
+                    end
+                else
+                    statusBar:SetAllPoints(preview)
+                end
+                if statusBar.SetOrientation then
+                    statusBar:SetOrientation("VERTICAL")
+                end
+                if statusBar.SetReverseFill then
+                    statusBar:SetReverseFill((trackedData.fillDirection or "up") == "down")
+                end
+            else
+                if not hideIcon then
+                    iconFrame:SetPoint("LEFT", preview, "LEFT", 0, 0)
+                    statusBar:SetPoint("TOPRIGHT", preview, "TOPRIGHT", 0, 0)
+                    statusBar:SetPoint("BOTTOMRIGHT", preview, "BOTTOMRIGHT", 0, 0)
+                    statusBar:SetPoint("LEFT", iconFrame, "RIGHT", 0, 0)
+                else
+                    statusBar:SetAllPoints(preview)
+                end
+                if statusBar.SetOrientation then
+                    statusBar:SetOrientation("HORIZONTAL")
+                end
+            end
+
+            bg:SetAllPoints(statusBar)
+
+            local borderFrame = holder.borderFrame
+            if borderSize > 0 then
+                borderFrame:Show()
+                borderFrame:ClearAllPoints()
+                borderFrame:SetPoint("TOPLEFT", preview, "TOPLEFT", -borderSize, borderSize)
+                borderFrame:SetPoint("BOTTOMRIGHT", preview, "BOTTOMRIGHT", borderSize, -borderSize)
+                borderFrame._top:ClearAllPoints()
+                borderFrame._top:SetPoint("TOPLEFT")
+                borderFrame._top:SetPoint("TOPRIGHT")
+                borderFrame._top:SetHeight(borderSize)
+                borderFrame._bottom:ClearAllPoints()
+                borderFrame._bottom:SetPoint("BOTTOMLEFT")
+                borderFrame._bottom:SetPoint("BOTTOMRIGHT")
+                borderFrame._bottom:SetHeight(borderSize)
+                borderFrame._left:ClearAllPoints()
+                borderFrame._left:SetPoint("TOPLEFT")
+                borderFrame._left:SetPoint("BOTTOMLEFT")
+                borderFrame._left:SetWidth(borderSize)
+                borderFrame._right:ClearAllPoints()
+                borderFrame._right:SetPoint("TOPRIGHT")
+                borderFrame._right:SetPoint("BOTTOMRIGHT")
+                borderFrame._right:SetWidth(borderSize)
+            else
+                borderFrame:Hide()
+            end
+        end
+
+        local function GetOrCreateOverrideRow(index)
+            local row = overrideEntryFrames[index]
+            if row then
+                row:Show()
+                return row
+            end
+
+            row = CreateFrame("Frame", nil, overrideListFrame)
+            row.icon = row:CreateTexture(nil, "ARTWORK")
+            row.icon:SetSize(22, 22)
+            row.icon:SetPoint("LEFT", 0, 0)
+            row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+            row.nameLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.nameLabel:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+            row.nameLabel:SetWidth(170)
+            row.nameLabel:SetJustifyH("LEFT")
+
+            row.previewWidget = CreateTrackedBarPreviewWidget(row)
+            row.previewWidget:SetPoint("LEFT", row.nameLabel, "RIGHT", 10, 0)
+
+            row.swatchState = { value = {1, 1, 1, 1} }
+            row.colorPicker = GUI:CreateColorPicker(row, "", "value", row.swatchState, function(r, g, b, a)
+                local entry = row._entry
+                local spellKey = GetTrackedBarCanonicalKey(entry)
+                if not spellKey then return end
+                for _, key in ipairs(GetTrackedBarKnownKeys(entry)) do
+                    if key ~= spellKey then
+                        trackedData.colorOverrides[key] = nil
+                    end
+                end
+                trackedData.colorOverrides[spellKey] = {r, g, b, a or 1}
+                RefreshBuff()
+            end)
+            row.colorPicker:SetSize(18, 18)
+            row.colorPicker:SetPoint("LEFT", row.previewWidget, "RIGHT", 10, 0)
+            if row.colorPicker.label then
+                row.colorPicker.label:SetText("")
+                row.colorPicker.label:Hide()
+            end
+            if row.colorPicker.swatch then
+                row.colorPicker.swatch:ClearAllPoints()
+                row.colorPicker.swatch:SetPoint("CENTER", row.colorPicker, "CENTER", 0, 0)
+            end
+
+            row.clearButton = CreateMiniActionButton(row, "Clear", 44)
+            row.clearButton:SetPoint("LEFT", row.colorPicker, "RIGHT", 8, 0)
+            row.clearButton:SetScript("OnClick", function()
+                for _, key in ipairs(GetTrackedBarKnownKeys(row._entry)) do
+                    trackedData.colorOverrides[key] = nil
+                end
+                RefreshBuff()
+            end)
+
+            overrideEntryFrames[index] = row
+            return row
+        end
+
+        RefreshTrackedBarOverrideList = function()
+            if not overrideListFrame or not overrideListFrame:IsShown() then return end
+
+            local entries = BuildTrackedBarPreviewEntries()
+            local rowY = 0
+            local rowHeight = 44
+
+            if #entries == 0 then
+                local emptyLabel = GetEmptyOverrideLabel()
+                emptyLabel:SetPoint("TOPLEFT", 0, rowY)
+                emptyLabel:SetPoint("RIGHT", overrideListFrame, "RIGHT", 0, 0)
+                emptyLabel:Show()
+                HideUnusedOverrideRows(1)
+                rowY = rowY - 36
+            else
+                HideUnusedOverrideRows(#entries + 1)
+                for i, entry in ipairs(entries) do
+                    local row = GetOrCreateOverrideRow(i)
+                    row._entry = entry
+                    row:SetPoint("TOPLEFT", 0, rowY)
+                    row:SetPoint("RIGHT", overrideListFrame, "RIGHT", 0, 0)
+                    row:SetHeight(rowHeight - 4)
+                    row:Show()
+
+                    row.icon:SetTexture(entry.iconTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+                    local displayKey = entry.baseSpellID or entry.spellID or entry.overrideSpellID or entry.cooldownID or 0
+                    if entry.isSavedOnly then
+                        row.nameLabel:SetText(string.format("%s (%d) [saved]", entry.name or "Unknown", displayKey))
+                        row.nameLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                    else
+                        row.nameLabel:SetText(string.format("%s (%d)", entry.name or "Unknown", displayKey))
+                        row.nameLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                    end
+
+                    UpdateTrackedBarPreviewWidget(row.previewWidget, entry)
+
+                    local r, g, b, a = GetTrackedBarPreviewColor(entry)
+                    row.swatchState.value = {r, g, b, a or 1}
+                    if row.colorPicker and row.colorPicker.swatch then
+                        row.colorPicker.swatch:SetBackdropColor(r, g, b, a or 1)
+                    end
+
+                    row.clearButton:SetButtonEnabled(HasTrackedBarOverride(entry))
+
+                    rowY = rowY - rowHeight
+                end
+            end
+
+            local totalHeight = math.max(1, math.abs(rowY))
+            overrideListFrame:SetHeight(totalHeight)
+            tabContent:SetHeight(math.abs(overrideListTopY) + totalHeight + 20)
+        end
+
+        _G.QUI_RefreshTrackedBarColorOverrideList = function()
+            if RefreshTrackedBarOverrideList and overrideListFrame and overrideListFrame:IsShown() then
+                RefreshTrackedBarOverrideList()
+            end
+        end
+
+        tabContent:HookScript("OnShow", function()
+            if RefreshTrackedBarOverrideList then
+                RefreshTrackedBarOverrideList()
+            end
+        end)
+
+        RefreshTrackedBarOverrideList()
     end
 
 
