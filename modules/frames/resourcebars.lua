@@ -2087,6 +2087,9 @@ function QUICore:GetSecondaryPowerBar()
     bar.FragmentedPowerBars = {}
     bar.FragmentedPowerBarTexts = {}
 
+    -- CHARGED COMBO POINT OVERLAYS
+    bar.chargedOverlays = {}
+
     -- TICKS
     bar.ticks = {}
     bar.indicatorLines = {}
@@ -2657,6 +2660,86 @@ function QUICore:UpdateSecondaryPowerBarIndicators(bar, max, isVertical)
     UpdateBarIndicatorLines(bar, bar.indicatorLines, values, max, thickness, color, isVertical)
 end
 
+-- CHARGED COMBO POINT OVERLAYS
+function QUICore:UpdateChargedComboPoints(bar, resource, max, current, isVertical)
+    bar.chargedOverlays = bar.chargedOverlays or {}
+
+    -- Hide all existing overlays
+    for _, overlay in ipairs(bar.chargedOverlays) do
+        overlay:Hide()
+    end
+
+    -- Only applies to combo points
+    if resource ~= Enum.PowerType.ComboPoints then return end
+    if not max or max <= 0 then return end
+
+    -- Query charged power points from the WoW API
+    local chargedPoints = GetUnitChargedPowerPoints and GetUnitChargedPowerPoints("player")
+    if not chargedPoints or #chargedPoints == 0 then return end
+
+    local pc = self.db.profile.powerColors
+    if not pc then return end
+
+    local chargedColor = pc.chargedComboPoints or { 0.00, 0.68, 1.00, 1 }
+
+    local width = bar:GetWidth()
+    local height = bar:GetHeight()
+    if width <= 0 or height <= 0 then return end
+
+    local segmentSize = isVertical and (height / max) or (width / max)
+
+    for idx, cpIndex in ipairs(chargedPoints) do
+        -- cpIndex is 1-based combo point index
+        if cpIndex >= 1 and cpIndex <= max then
+            local overlay = bar.chargedOverlays[idx]
+            if not overlay then
+                overlay = CreateFrame("Frame", nil, bar, "BackdropTemplate")
+                overlay.tex = overlay:CreateTexture(nil, "ARTWORK", nil, 2)
+                overlay.tex:SetAllPoints()
+                bar.chargedOverlays[idx] = overlay
+            end
+
+            overlay:SetFrameLevel(bar.StatusBar:GetFrameLevel() + 1)
+            overlay:ClearAllPoints()
+
+            local px = QUICore:GetPixelSize(overlay)
+            if isVertical then
+                local yOff = (cpIndex - 1) * segmentSize
+                overlay:SetPoint("BOTTOMLEFT", bar.StatusBar, "BOTTOMLEFT", 0, QUICore:PixelRound(yOff, bar))
+                overlay:SetSize(width, QUICore:PixelRound(segmentSize, bar))
+            else
+                local xOff = (cpIndex - 1) * segmentSize
+                overlay:SetPoint("TOPLEFT", bar.StatusBar, "TOPLEFT", QUICore:PixelRound(xOff, bar), 0)
+                overlay:SetSize(QUICore:PixelRound(segmentSize, bar), height)
+            end
+
+            -- Color fill only on filled charged points
+            local isFilled = cpIndex <= current
+            if isFilled then
+                local tex = LSM:Fetch("statusbar", GetBarTexture(self.db.profile.secondaryPowerBar))
+                overlay.tex:SetTexture(tex)
+                overlay.tex:SetVertexColor(chargedColor[1], chargedColor[2], chargedColor[3], chargedColor[4] or 1)
+            else
+                overlay.tex:SetTexture(nil)
+            end
+
+            -- Border outline always visible on charged positions
+            overlay:SetBackdrop({
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = px,
+            })
+            overlay:SetBackdropBorderColor(chargedColor[1], chargedColor[2], chargedColor[3], chargedColor[4] or 1)
+            overlay:Show()
+        end
+    end
+
+    -- Hide extra overlays
+    for i = #chargedPoints + 1, #bar.chargedOverlays do
+        if bar.chargedOverlays[i] then
+            bar.chargedOverlays[i]:Hide()
+        end
+    end
+end
 
 function QUICore:UpdateSecondaryPowerBar()
     local cfg = self.db.profile.secondaryPowerBar
@@ -3262,6 +3345,9 @@ end
         self:UpdateSecondaryPowerBarTicks(bar, resource, max)
     end
     self:UpdateSecondaryPowerBarIndicators(bar, max, isVertical)
+
+    -- Charged combo point overlays
+    self:UpdateChargedComboPoints(bar, resource, max, current, isVertical)
 
     -- Hide legacy decimal overlay (no longer used - decimals now rendered via string.format)
     if bar.SoulShardDecimal then
