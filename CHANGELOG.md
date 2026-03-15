@@ -88,6 +88,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.52.1 - 2026-03-15
+
+### Added
+- added guild rank to tooltip
+
+### Fixed
+- fixed targetName comparison taint
 ## v2.52.0 - 2026-03-15
 
 ### Added
