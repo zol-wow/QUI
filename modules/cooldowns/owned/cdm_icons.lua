@@ -793,19 +793,45 @@ end
 -- forwards them to the WoW secure action system.  The parent icon
 -- stays as a plain Frame so layout/pooling remain taint-free.
 ---------------------------------------------------------------------------
+local function SyncClickButtonFrameLevel(icon)
+    if not icon or not icon.clickButton or not icon.TextOverlay then return end
+    local requiredLevel = icon.TextOverlay:GetFrameLevel() + 2
+    if icon.clickButton:GetFrameLevel() ~= requiredLevel then
+        icon.clickButton:SetFrameLevel(requiredLevel)
+    end
+end
+
+-- Keep text above cooldown (baseline) and optionally above another frame level.
+-- Also keeps clickButton above text if one exists.
+function CDMIcons:EnsureTextOverlayLevel(icon, minLevel)
+    if not icon or not icon.TextOverlay then return end
+
+    local requiredLevel = minLevel
+    if icon.Cooldown and icon.Cooldown.GetFrameLevel then
+        local baselineLevel = icon.Cooldown:GetFrameLevel() + 2
+        if not requiredLevel or requiredLevel < baselineLevel then
+            requiredLevel = baselineLevel
+        end
+    end
+
+    if requiredLevel and icon.TextOverlay:GetFrameLevel() < requiredLevel then
+        icon.TextOverlay:SetFrameLevel(requiredLevel)
+    end
+
+    SyncClickButtonFrameLevel(icon)
+end
+
 local function EnsureClickButton(icon)
-    if icon.clickButton then return icon.clickButton end
+    if icon.clickButton then
+        CDMIcons:EnsureTextOverlayLevel(icon)
+        return icon.clickButton
+    end
 
     local btn = CreateFrame("Button", nil, icon, "SecureActionButtonTemplate")
     btn:SetAllPoints()
     btn:RegisterForClicks("AnyUp", "AnyDown")
     btn:EnableMouse(true)
     btn:Hide()
-
-    -- Sit above TextOverlay so the button receives clicks
-    if icon.TextOverlay then
-        btn:SetFrameLevel(icon.TextOverlay:GetFrameLevel() + 2)
-    end
 
     -- Forward tooltip events to the parent icon's handler
     btn:SetScript("OnEnter", function(self)
@@ -820,6 +846,7 @@ local function EnsureClickButton(icon)
     end)
 
     icon.clickButton = btn
+    CDMIcons:EnsureTextOverlayLevel(icon)
     return btn
 end
 

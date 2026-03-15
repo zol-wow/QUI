@@ -109,12 +109,21 @@ end
 -- LibCustomGlow sets glow at icon:GetFrameLevel() + 8, but HUD layering
 -- can push CooldownFrameTemplate above that. Reference the Cooldown frame
 -- directly (same pattern as TextOverlay in cdm_icons.lua:659).
--- Layer order: Cooldown swipe (cdLevel) → Glow (+1) → Text (+2)
+-- Layer order: Cooldown swipe (cdLevel) → Glow (+1) → Text (+1) → ClickButton (+2)
 local function EnsureGlowAboveCooldown(icon, glowFrame)
     if not glowFrame or not icon or not icon.Cooldown then return end
+
     local cdLevel = icon.Cooldown:GetFrameLevel()
-    if glowFrame:GetFrameLevel() <= cdLevel then
-        glowFrame:SetFrameLevel(cdLevel + 1)
+    local glowLevel = glowFrame:GetFrameLevel()
+    if glowLevel <= cdLevel then
+        glowLevel = cdLevel + 1
+        glowFrame:SetFrameLevel(glowLevel)
+    end
+
+    -- Keep stack/proc text above glow and click button above text.
+    local CDMIcons = ns.CDMIcons
+    if CDMIcons and CDMIcons.EnsureTextOverlayLevel then
+        CDMIcons:EnsureTextOverlayLevel(icon, glowLevel + 1)
     end
 end
 
