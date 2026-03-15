@@ -11,11 +11,136 @@ local C = GUI.Colors
 -- Import shared utilities
 local Shared = ns.QUI_Options
 
+local PAD = 10
+local FORM_ROW = 32
+
+---------------------------------------------------------------------------
+-- REUSABLE: Custom Glow section builder
+-- Used by both the global Effects tab and per-bar Custom Bar settings.
+-- prefix: key prefix (e.g. "essential", "utility", or "" for custom bars)
+-- dbTable: table to read/write keys like prefix.."Enabled", prefix.."GlowType", etc.
+---------------------------------------------------------------------------
+local function CreateGlowSection(tabContent, sectionTitle, prefix, dbTable, y, refreshFn)
+    local sectionHeader = GUI:CreateSectionHeader(tabContent, sectionTitle)
+    sectionHeader:SetPoint("TOPLEFT", PAD, y)
+    y = y - sectionHeader.gap
+
+    local sectionDesc = GUI:CreateLabel(tabContent, "Replace Blizzard's glow with a custom glow effect when abilities proc.", 11, C.textMuted)
+    sectionDesc:SetPoint("TOPLEFT", PAD, y)
+    sectionDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    sectionDesc:SetJustifyH("LEFT")
+    y = y - 24
+
+    if not dbTable then
+        return y
+    end
+
+    local enabledKey = prefix .. "Enabled"
+    local glowTypeKey = prefix .. "GlowType"
+    local colorKey = prefix .. "Color"
+    local linesKey = prefix .. "Lines"
+    local thicknessKey = prefix .. "Thickness"
+    local scaleKey = prefix .. "Scale"
+    local frequencyKey = prefix .. "Frequency"
+    local xOffsetKey = prefix .. "XOffset"
+    local yOffsetKey = prefix .. "YOffset"
+
+    local function UpdateWidgetState(widgets)
+        local glowType = dbTable[glowTypeKey] or "Pixel Glow"
+        local isPixel = glowType == "Pixel Glow"
+        local isAutocast = glowType == "Autocast Shine"
+        local isButton = glowType == "Button Glow"
+
+        if widgets.lines then widgets.lines:SetEnabled(isPixel or isAutocast) end
+        if widgets.thickness then widgets.thickness:SetEnabled(isPixel) end
+        if widgets.scale then widgets.scale:SetEnabled(isAutocast) end
+        if widgets.speed then widgets.speed:SetEnabled(true) end
+        if widgets.xOffset then widgets.xOffset:SetEnabled(not isButton) end
+        if widgets.yOffset then widgets.yOffset:SetEnabled(not isButton) end
+    end
+
+    -- Enable toggle
+    local glowEnable = GUI:CreateFormCheckbox(tabContent, "Enable Custom Glow", enabledKey, dbTable, refreshFn)
+    glowEnable:SetPoint("TOPLEFT", PAD, y)
+    glowEnable:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    -- Glow Type dropdown
+    local glowTypeOptions = {
+        {value = "Pixel Glow", text = "Pixel Glow"},
+        {value = "Autocast Shine", text = "Autocast Shine"},
+        {value = "Button Glow", text = "Button Glow"},
+    }
+
+    -- Store references to conditional widgets for visibility updates
+    local widgets = {}
+
+    local glowTypeDropdown = GUI:CreateFormDropdown(tabContent, "Glow Type", glowTypeOptions, glowTypeKey, dbTable, function()
+        if refreshFn then refreshFn() end
+        UpdateWidgetState(widgets)
+    end)
+    glowTypeDropdown:SetPoint("TOPLEFT", PAD, y)
+    glowTypeDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    -- Color picker
+    local glowColor = GUI:CreateFormColorPicker(tabContent, "Glow Color", colorKey, dbTable, refreshFn)
+    glowColor:SetPoint("TOPLEFT", PAD, y)
+    glowColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    y = y - FORM_ROW
+
+    -- Lines
+    local lines = GUI:CreateFormSlider(tabContent, "Lines", 1, 30, 1, linesKey, dbTable, refreshFn)
+    lines:SetPoint("TOPLEFT", PAD, y)
+    lines:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgets.lines = lines
+    y = y - FORM_ROW
+
+    -- Thickness
+    local thickness = GUI:CreateFormSlider(tabContent, "Thickness", 1, 10, 1, thicknessKey, dbTable, refreshFn)
+    thickness:SetPoint("TOPLEFT", PAD, y)
+    thickness:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgets.thickness = thickness
+    y = y - FORM_ROW
+
+    -- Scale
+    local scale = GUI:CreateFormSlider(tabContent, "Shine Scale", 0.5, 3.0, 0.1, scaleKey, dbTable, refreshFn)
+    scale:SetPoint("TOPLEFT", PAD, y)
+    scale:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgets.scale = scale
+    y = y - FORM_ROW
+
+    -- Animation Speed
+    local speed = GUI:CreateFormSlider(tabContent, "Animation Speed", 0.1, 2.0, 0.05, frequencyKey, dbTable, refreshFn)
+    speed:SetPoint("TOPLEFT", PAD, y)
+    speed:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgets.speed = speed
+    y = y - FORM_ROW
+
+    -- X Offset
+    local xOffset = GUI:CreateFormSlider(tabContent, "X Offset", -20, 20, 1, xOffsetKey, dbTable, refreshFn)
+    xOffset:SetPoint("TOPLEFT", PAD, y)
+    xOffset:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgets.xOffset = xOffset
+    y = y - FORM_ROW
+
+    -- Y Offset
+    local yOffset = GUI:CreateFormSlider(tabContent, "Y Offset", -20, 20, 1, yOffsetKey, dbTable, refreshFn)
+    yOffset:SetPoint("TOPLEFT", PAD, y)
+    yOffset:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgets.yOffset = yOffset
+    y = y - FORM_ROW
+
+    -- Initial enable/disable state based on glow type
+    UpdateWidgetState(widgets)
+
+    return y
+end
+
 local function BuildEffectsTab(tabContent)
     local db = Shared.GetDB()
     local y = -10
-    local FORM_ROW = 32
-    local PAD = 10
+    -- PAD and FORM_ROW are module-level constants above
 
     -- Set search context for auto-registration
     GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 6, subTabName = "Effects"})
@@ -193,123 +318,6 @@ local function BuildEffectsTab(tabContent)
         y = y - 24
     end
 
-    local function CreateGlowSection(tabContent, sectionTitle, prefix, dbTable, y, refreshFn)
-        local sectionHeader = GUI:CreateSectionHeader(tabContent, sectionTitle)
-        sectionHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - sectionHeader.gap
-
-        local sectionDesc = GUI:CreateLabel(tabContent, "Replace Blizzard's glow with a custom glow effect when abilities proc.", 11, C.textMuted)
-        sectionDesc:SetPoint("TOPLEFT", PAD, y)
-        sectionDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        sectionDesc:SetJustifyH("LEFT")
-        y = y - 24
-
-        if not dbTable then
-            return y
-        end
-
-        local enabledKey = prefix .. "Enabled"
-        local glowTypeKey = prefix .. "GlowType"
-        local colorKey = prefix .. "Color"
-        local linesKey = prefix .. "Lines"
-        local thicknessKey = prefix .. "Thickness"
-        local scaleKey = prefix .. "Scale"
-        local frequencyKey = prefix .. "Frequency"
-        local xOffsetKey = prefix .. "XOffset"
-        local yOffsetKey = prefix .. "YOffset"
-
-        local function UpdateWidgetState(widgets)
-            local glowType = dbTable[glowTypeKey] or "Pixel Glow"
-            local isPixel = glowType == "Pixel Glow"
-            local isAutocast = glowType == "Autocast Shine"
-            local isButton = glowType == "Button Glow"
-
-            if widgets.lines then widgets.lines:SetEnabled(isPixel or isAutocast) end
-            if widgets.thickness then widgets.thickness:SetEnabled(isPixel) end
-            if widgets.scale then widgets.scale:SetEnabled(isAutocast) end
-            if widgets.speed then widgets.speed:SetEnabled(true) end
-            if widgets.xOffset then widgets.xOffset:SetEnabled(not isButton) end
-            if widgets.yOffset then widgets.yOffset:SetEnabled(not isButton) end
-        end
-
-        -- Enable toggle
-        local glowEnable = GUI:CreateFormCheckbox(tabContent, "Enable Custom Glow", enabledKey, dbTable, refreshFn)
-        glowEnable:SetPoint("TOPLEFT", PAD, y)
-        glowEnable:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Glow Type dropdown
-        local glowTypeOptions = {
-            {value = "Pixel Glow", text = "Pixel Glow"},
-            {value = "Autocast Shine", text = "Autocast Shine"},
-            {value = "Button Glow", text = "Button Glow"},
-        }
-
-        -- Store references to conditional widgets for visibility updates
-        local widgets = {}
-
-        local glowTypeDropdown = GUI:CreateFormDropdown(tabContent, "Glow Type", glowTypeOptions, glowTypeKey, dbTable, function()
-            if refreshFn then refreshFn() end
-            UpdateWidgetState(widgets)
-        end)
-        glowTypeDropdown:SetPoint("TOPLEFT", PAD, y)
-        glowTypeDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Color picker
-        local glowColor = GUI:CreateFormColorPicker(tabContent, "Glow Color", colorKey, dbTable, refreshFn)
-        glowColor:SetPoint("TOPLEFT", PAD, y)
-        glowColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Lines
-        local lines = GUI:CreateFormSlider(tabContent, "Lines", 1, 30, 1, linesKey, dbTable, refreshFn)
-        lines:SetPoint("TOPLEFT", PAD, y)
-        lines:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        widgets.lines = lines
-        y = y - FORM_ROW
-
-        -- Thickness
-        local thickness = GUI:CreateFormSlider(tabContent, "Thickness", 1, 10, 1, thicknessKey, dbTable, refreshFn)
-        thickness:SetPoint("TOPLEFT", PAD, y)
-        thickness:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        widgets.thickness = thickness
-        y = y - FORM_ROW
-
-        -- Scale
-        local scale = GUI:CreateFormSlider(tabContent, "Shine Scale", 0.5, 3.0, 0.1, scaleKey, dbTable, refreshFn)
-        scale:SetPoint("TOPLEFT", PAD, y)
-        scale:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        widgets.scale = scale
-        y = y - FORM_ROW
-
-        -- Animation Speed
-        local speed = GUI:CreateFormSlider(tabContent, "Animation Speed", 0.1, 2.0, 0.05, frequencyKey, dbTable, refreshFn)
-        speed:SetPoint("TOPLEFT", PAD, y)
-        speed:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        widgets.speed = speed
-        y = y - FORM_ROW
-
-        -- X Offset
-        local xOffset = GUI:CreateFormSlider(tabContent, "X Offset", -20, 20, 1, xOffsetKey, dbTable, refreshFn)
-        xOffset:SetPoint("TOPLEFT", PAD, y)
-        xOffset:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        widgets.xOffset = xOffset
-        y = y - FORM_ROW
-
-        -- Y Offset
-        local yOffset = GUI:CreateFormSlider(tabContent, "Y Offset", -20, 20, 1, yOffsetKey, dbTable, refreshFn)
-        yOffset:SetPoint("TOPLEFT", PAD, y)
-        yOffset:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        widgets.yOffset = yOffset
-        y = y - FORM_ROW
-
-        -- Initial enable/disable state based on glow type
-        UpdateWidgetState(widgets)
-
-        return y
-    end
-
     -- =====================================================
     -- CUSTOM GLOW - ESSENTIAL
     -- =====================================================
@@ -325,5 +333,6 @@ end
 
 -- Export
 ns.QUI_CDMEffectsOptions = {
-    BuildEffectsTab = BuildEffectsTab
+    BuildEffectsTab = BuildEffectsTab,
+    CreateGlowSection = CreateGlowSection,
 }

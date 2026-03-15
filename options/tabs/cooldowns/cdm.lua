@@ -220,6 +220,26 @@ local function EnsureNCDMDefaults(db)
     if trackedData.fillDirection == nil then trackedData.fillDirection = "up" end
     if trackedData.iconPosition == nil then trackedData.iconPosition = "top" end
     if trackedData.showTextOnVertical == nil then trackedData.showTextOnVertical = false end
+
+    -- Ensure customBars exists
+    if not db.ncdm.customBars then db.ncdm.customBars = { bars = {} } end
+    if not db.ncdm.customBars.bars then db.ncdm.customBars.bars = {} end
+
+    -- Ensure char-scope customBars entries exist
+    if charDB then
+        if not charDB.ncdm then charDB.ncdm = {} end
+        if not charDB.ncdm.customBars then charDB.ncdm.customBars = {} end
+        for _, barDef in ipairs(db.ncdm.customBars.bars) do
+            if barDef.id then
+                if not charDB.ncdm.customBars[barDef.id] then
+                    charDB.ncdm.customBars[barDef.id] = { entries = {} }
+                end
+                if not charDB.ncdm.customBars[barDef.id].entries then
+                    charDB.ncdm.customBars[barDef.id].entries = {}
+                end
+            end
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -1553,7 +1573,7 @@ local function CreateCDMSetupPage(parent)
         local y = -10
 
         -- Set search context for widget auto-registration
-        GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 4, subTabName = "Buff"})
+        GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 5, subTabName = "Buff"})
 
         -- Ensure buff settings exist with all required fields
         if not db.ncdm then db.ncdm = {} end
@@ -4638,7 +4658,7 @@ local function CreateCDMSetupPage(parent)
         local y = -10
 
         -- Set search context for widget auto-registration
-        GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 5, subTabName = "Class Resource Bar"})
+        GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 6, subTabName = "Class Resource Bar"})
 
         -- Ensure powerBar settings exist
         if not db.powerBar then db.powerBar = {} end
@@ -4835,6 +4855,1098 @@ local function CreateCDMSetupPage(parent)
         tabContent:SetHeight(math.abs(y) + 60)
     end
 
+    ---------------------------------------------------------------------------------
+    -- Custom Bars tab builder
+    ---------------------------------------------------------------------------------
+    local function BuildCustomBarsTab(tabContent)
+        local PAD = 10
+        local FORM_ROW = 32
+        local y = -10
+
+        -- Register search context and sidebar entries
+        GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 4, subTabName = "Custom Bars"})
+
+        local customBarsDB = db.ncdm.customBars
+        if not customBarsDB then
+            customBarsDB = { bars = {} }
+            db.ncdm.customBars = customBarsDB
+        end
+        if not customBarsDB.bars then customBarsDB.bars = {} end
+
+        local bars = customBarsDB.bars
+        local selectedBarIndex = tabContent._selectedBarIndex or (bars[1] and 1 or nil)
+
+        -- Validate selection
+        if selectedBarIndex and not bars[selectedBarIndex] then
+            selectedBarIndex = bars[1] and 1 or nil
+        end
+        tabContent._selectedBarIndex = selectedBarIndex
+
+        -- Register each bar as a third-level sidebar entry in the sidebar registry.
+        -- SectionRegistry key = tabIndex * 10000 + subTabIndex (framework convention)
+        local sidebarKey = 4 * 10000 + 4
+        GUI.SectionRegistry[sidebarKey] = {}
+        GUI.SectionRegistryOrder[sidebarKey] = {}
+
+        for i, barDef in ipairs(bars) do
+            local barName = barDef.name or barDef.id
+            table.insert(GUI.SectionRegistryOrder[sidebarKey], barName)
+            GUI.SectionRegistry[sidebarKey][barName] = {
+                frame = tabContent,
+                scrollParent = nil,
+                contentParent = tabContent,
+            }
+            GUI:RegisterSectionNavigateHandler(4, 4, barName, function()
+                tabContent._selectedBarIndex = i
+                TeardownTabContent(tabContent)
+                BuildCustomBarsTab(tabContent)
+                return true
+            end)
+        end
+
+        -- Suppress internal section headers from registering as sidebar entries
+        GUI._suppressSearchRegistration = true
+
+        local function rebuildCustomBars()
+            GUI._suppressSearchRegistration = false
+            TeardownTabContent(tabContent)
+            BuildCustomBarsTab(tabContent)
+            GUI:RefreshSidebarTree()
+        end
+
+        local function RefreshCustomBar()
+            if not selectedBarIndex or not bars[selectedBarIndex] then return end
+            if ns.CDMCustomBars then
+                ns.CDMCustomBars:RefreshBar(bars[selectedBarIndex].id)
+            end
+            if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
+        end
+
+        -- Bar management section
+        local mgmtHeader = GUI:CreateSectionHeader(tabContent, "Custom CDM Bars")
+        mgmtHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - mgmtHeader.gap
+
+        -- Bar selector dropdown
+        if #bars > 0 then
+            local barOptions = {}
+            for i, barDef in ipairs(bars) do
+                barOptions[#barOptions + 1] = { value = i, text = barDef.name or barDef.id }
+            end
+            -- Use a temp table for dropdown binding
+            local selectorState = { _barIndex = selectedBarIndex or 1 }
+            local barSelector = GUI:CreateFormDropdown(tabContent, "Select Bar", barOptions, "_barIndex", selectorState, function()
+                tabContent._selectedBarIndex = selectorState._barIndex
+                rebuildCustomBars()
+            end)
+            barSelector:SetPoint("TOPLEFT", PAD, y)
+            barSelector:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+        else
+            local noBarLabel = tabContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            noBarLabel:SetPoint("TOPLEFT", PAD, y)
+            noBarLabel:SetText("No custom bars. Click 'Add Bar' to create one.")
+            noBarLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+            y = y - 24
+        end
+
+        -- Add / Delete buttons
+        local btnRow = CreateFrame("Frame", nil, tabContent)
+        btnRow:SetHeight(28)
+        btnRow:SetPoint("TOPLEFT", PAD, y)
+        btnRow:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+
+        local maxBars = ns.CDMCustomBars and ns.CDMCustomBars:GetMaxBars() or 8
+        local addBtn = GUI:CreateButton(btnRow, "Add Bar", 100, 24, function()
+            if #bars >= maxBars then return end
+            if ns.CDMCustomBars then
+                local barDef = ns.CDMCustomBars:CreateBarDef()
+                if barDef then
+                    tabContent._selectedBarIndex = #bars
+                    rebuildCustomBars()
+                end
+            end
+        end)
+        addBtn:SetPoint("LEFT", 0, 0)
+        if #bars >= maxBars then
+            addBtn:Disable()
+        end
+
+        if selectedBarIndex and bars[selectedBarIndex] then
+            local deleteBtn = GUI:CreateButton(btnRow, "Delete Bar", 100, 24, function()
+                local barDef = bars[selectedBarIndex]
+                if not barDef then return end
+                GUI:ShowConfirmation({
+                    title = "Delete Custom Bar",
+                    message = "Are you sure you want to delete \"" .. (barDef.name or barDef.id) .. "\"? This cannot be undone.",
+                    acceptText = "Delete",
+                    cancelText = "Cancel",
+                    isDestructive = true,
+                    onAccept = function()
+                        if ns.CDMCustomBars then
+                            ns.CDMCustomBars:RemoveBarDef(barDef.id)
+                        end
+                        tabContent._selectedBarIndex = nil
+                        rebuildCustomBars()
+                    end,
+                })
+            end)
+            deleteBtn:SetPoint("LEFT", addBtn, "RIGHT", 8, 0)
+        end
+
+        y = y - FORM_ROW
+
+        -- Per-bar settings (only when a bar is selected)
+        if selectedBarIndex and bars[selectedBarIndex] then
+            local barDef = bars[selectedBarIndex]
+
+            -- Bar name
+            local nameHeader = GUI:CreateSectionHeader(tabContent, "Bar Settings")
+            nameHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - nameHeader.gap
+
+            -- Name edit box
+            local nameBox = GUI:CreateInlineEditBox(tabContent, {
+                label = "Bar Name",
+                text = barDef.name or "",
+                width = 200,
+                onConfirm = function(newText)
+                    barDef.name = newText
+                    rebuildCustomBars()
+                end,
+            })
+            nameBox:SetPoint("TOPLEFT", PAD, y)
+            y = y - FORM_ROW
+
+            -- Enabled
+            local enableCheck = GUI:CreateFormCheckbox(tabContent, "Enabled", "enabled", barDef, function()
+                RefreshCustomBar()
+            end)
+            enableCheck:SetPoint("TOPLEFT", PAD, y)
+            enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Tracked Spells (bar preview + spell picker)
+            local spellHeader = GUI:CreateSectionHeader(tabContent, "Tracked Spells")
+            spellHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - spellHeader.gap
+
+            -- Ensure char-scope entries exist
+            local charDB_local = QUICore and QUICore.db and QUICore.db.char
+            if charDB_local then
+                if not charDB_local.ncdm then charDB_local.ncdm = {} end
+                if not charDB_local.ncdm.customBars then charDB_local.ncdm.customBars = {} end
+                if not charDB_local.ncdm.customBars[barDef.id] then
+                    charDB_local.ncdm.customBars[barDef.id] = { entries = {} }
+                end
+                if not charDB_local.ncdm.customBars[barDef.id].entries then
+                    charDB_local.ncdm.customBars[barDef.id].entries = {}
+                end
+            end
+
+            local barEntries = charDB_local and charDB_local.ncdm
+                and charDB_local.ncdm.customBars and charDB_local.ncdm.customBars[barDef.id]
+                and charDB_local.ncdm.customBars[barDef.id].entries or {}
+
+            -- Entry manipulation helpers
+            local function addEntryToBar(entryType, entryID)
+                table.insert(barEntries, {
+                    id = entryID,
+                    type = entryType,
+                    enabled = true,
+                })
+                RefreshCustomBar()
+                rebuildCustomBars()
+            end
+
+            local function replaceEntryAtIndex(index, entryType, entryID)
+                barEntries[index] = {
+                    id = entryID,
+                    type = entryType,
+                    enabled = true,
+                }
+                RefreshCustomBar()
+                rebuildCustomBars()
+            end
+
+            local function removeEntryAtIndex(index)
+                table.remove(barEntries, index)
+                RefreshCustomBar()
+                rebuildCustomBars()
+            end
+
+            -----------------------------------------------------------
+            -- GetCDMSpellPool: build spell list from Blizzard CDM API
+            -----------------------------------------------------------
+            local function GetCDMSpellPool()
+                local pool = {}
+                local seen = {}
+
+                local function scanCategory(cat, catLabel)
+                    local allIDs = C_CooldownViewer
+                        and C_CooldownViewer.GetCooldownViewerCategorySet
+                        and C_CooldownViewer.GetCooldownViewerCategorySet(cat, true) or {}
+                    local knownIDs = C_CooldownViewer
+                        and C_CooldownViewer.GetCooldownViewerCategorySet
+                        and C_CooldownViewer.GetCooldownViewerCategorySet(cat, false) or {}
+
+                    local knownSet = {}
+                    for _, cdID in ipairs(knownIDs) do
+                        knownSet[cdID] = true
+                    end
+
+                    for _, cdID in ipairs(allIDs) do
+                        local ok, cdInfo = pcall(function()
+                            return C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                        end)
+                        if ok and cdInfo then
+                            local sid = cdInfo.overrideSpellID or cdInfo.spellID
+                            if sid and not seen[sid] then
+                                seen[sid] = true
+                                local name = C_Spell.GetSpellName and C_Spell.GetSpellName(sid)
+                                local icon = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)
+                                if name and name ~= "" then
+                                    pool[#pool + 1] = {
+                                        spellID = sid,
+                                        name = name,
+                                        icon = icon,
+                                        cdmCat = cat,
+                                        catLabel = catLabel,
+                                        isKnown = knownSet[cdID] or false,
+                                    }
+                                end
+                            end
+                        end
+                    end
+                end
+
+                scanCategory(0, "Essential")
+                scanCategory(1, "Utility")
+
+                table.sort(pool, function(a, b)
+                    if a.isKnown ~= b.isKnown then return a.isKnown end
+                    if a.cdmCat ~= b.cdmCat then return a.cdmCat < b.cdmCat end
+                    return (a.name or "") < (b.name or "")
+                end)
+
+                return pool
+            end
+
+            -----------------------------------------------------------
+            -- Custom Spell ID Popup
+            -----------------------------------------------------------
+            local function ShowCustomSpellIDPopup(callback)
+                local dimmer = CreateFrame("Frame", nil, UIParent)
+                dimmer:SetAllPoints()
+                dimmer:SetFrameStrata("FULLSCREEN_DIALOG")
+                dimmer:SetFrameLevel(100)
+                dimmer:EnableMouse(true)
+
+                local dimmerBg = dimmer:CreateTexture(nil, "BACKGROUND")
+                dimmerBg:SetAllPoints()
+                dimmerBg:SetColorTexture(0, 0, 0, 0.5)
+
+                local dialog = CreateFrame("Frame", nil, dimmer, "BackdropTemplate")
+                dialog:SetSize(260, 120)
+                dialog:SetPoint("CENTER")
+                dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+                dialog:SetFrameLevel(110)
+                dialog:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                dialog:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.97)
+                dialog:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.4)
+
+                local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                title:SetPoint("TOP", 0, -12)
+                title:SetText("Enter Spell ID")
+                title:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+                local editBox = CreateFrame("EditBox", nil, dialog, "BackdropTemplate")
+                editBox:SetSize(180, 24)
+                editBox:SetPoint("TOP", title, "BOTTOM", 0, -12)
+                editBox:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                editBox:SetBackdropColor(0.1, 0.1, 0.12, 1)
+                editBox:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+                editBox:SetFontObject(GameFontNormal)
+                editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                editBox:SetMaxLetters(7)
+                editBox:SetNumeric(true)
+                editBox:SetAutoFocus(true)
+                editBox:SetTextInsets(6, 6, 0, 0)
+
+                local errorText = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                errorText:SetPoint("TOP", editBox, "BOTTOM", 0, -4)
+                errorText:SetTextColor(1, 0.3, 0.3, 1)
+                errorText:SetText("")
+
+                local function closePopup()
+                    dimmer:Hide()
+                    dimmer:SetParent(nil)
+                end
+
+                local function tryAdd()
+                    local text = editBox:GetText()
+                    local sid = tonumber(text)
+                    if not sid or sid <= 0 then
+                        errorText:SetText("Invalid spell ID")
+                        return
+                    end
+                    local name = C_Spell.GetSpellName and C_Spell.GetSpellName(sid)
+                    if not name or name == "" then
+                        errorText:SetText("Spell not found")
+                        return
+                    end
+                    for _, entry in ipairs(barEntries) do
+                        if entry.type == "spell" and entry.id == sid then
+                            errorText:SetText("Already on this bar")
+                            return
+                        end
+                    end
+                    closePopup()
+                    callback("spell", sid)
+                end
+
+                editBox:SetScript("OnEnterPressed", tryAdd)
+                editBox:SetScript("OnEscapePressed", closePopup)
+
+                local addBtnPopup = GUI:CreateButton(dialog, "Add", 80, 22, tryAdd)
+                addBtnPopup:SetPoint("BOTTOMRIGHT", dialog, "BOTTOM", -4, 10)
+
+                local cancelBtn = GUI:CreateButton(dialog, "Cancel", 80, 22, closePopup)
+                cancelBtn:SetPoint("BOTTOMLEFT", dialog, "BOTTOM", 4, 10)
+
+                dimmer:SetScript("OnMouseDown", function(self, button)
+                    if button == "LeftButton" then
+                        closePopup()
+                    end
+                end)
+            end
+
+            -----------------------------------------------------------
+            -- Spell Picker Dropdown
+            -----------------------------------------------------------
+            local activePickerFrame = nil
+            local activePickerBackdrop = nil
+
+            local function DismissPicker()
+                if activePickerFrame then
+                    activePickerFrame:Hide()
+                    activePickerFrame:SetParent(nil)
+                    activePickerFrame = nil
+                end
+                if activePickerBackdrop then
+                    activePickerBackdrop:Hide()
+                    activePickerBackdrop:SetParent(nil)
+                    activePickerBackdrop = nil
+                end
+            end
+
+            local function ShowSpellPicker(anchorFrame, slotIndex)
+                DismissPicker()
+
+                local MENU_WIDTH = 280
+                local ROW_HEIGHT = 26
+                local ICON_SIZE = 24
+                local MAX_VISIBLE_HEIGHT = 260
+                local MENU_PAD = 4
+
+                local spellPool = GetCDMSpellPool()
+
+                -- Exclude spells/trinkets already on this bar
+                local existingSpells = {}
+                local existingTrinkets = {}
+                for i, entry in ipairs(barEntries) do
+                    if not slotIndex or i ~= slotIndex then
+                        if entry.type == "spell" then
+                            existingSpells[entry.id] = true
+                        elseif entry.type == "trinket" then
+                            existingTrinkets[entry.id] = true
+                        end
+                    end
+                end
+
+                -- Build menu items
+                local menuItems = {}
+
+                if slotIndex then
+                    menuItems[#menuItems + 1] = {
+                        type = "action",
+                        text = "Remove Spell",
+                        isRemove = true,
+                        textColor = {1, 0.4, 0.4},
+                    }
+                    menuItems[#menuItems + 1] = { type = "divider" }
+                end
+
+                menuItems[#menuItems + 1] = {
+                    type = "action",
+                    text = "Custom Spell ID",
+                    isCustomID = true,
+                    textColor = {C.accent[1], C.accent[2], C.accent[3]},
+                }
+
+                -- Trinket options
+                for _, slotID in ipairs({13, 14}) do
+                    if not existingTrinkets[slotID] then
+                        local itemID = GetInventoryItemID("player", slotID)
+                        local tName = "Trinket " .. (slotID == 13 and "1" or "2")
+                        local tIcon = nil
+                        if itemID then
+                            tName = C_Item.GetItemNameByID(itemID) or tName
+                            tIcon = C_Item.GetItemIconByID(itemID)
+                        end
+                        menuItems[#menuItems + 1] = {
+                            type = "trinket",
+                            slotID = slotID,
+                            name = tName,
+                            icon = tIcon,
+                            isKnown = true,
+                        }
+                    end
+                end
+
+                menuItems[#menuItems + 1] = { type = "divider" }
+
+                -- Group CDM spells by category and known status
+                local essentialKnown = {}
+                local utilityKnown = {}
+                local unlearnedSpells = {}
+
+                for _, spell in ipairs(spellPool) do
+                    if not existingSpells[spell.spellID] then
+                        if not spell.isKnown then
+                            unlearnedSpells[#unlearnedSpells + 1] = spell
+                        elseif spell.cdmCat == 0 then
+                            essentialKnown[#essentialKnown + 1] = spell
+                        else
+                            utilityKnown[#utilityKnown + 1] = spell
+                        end
+                    end
+                end
+
+                if #essentialKnown > 0 then
+                    menuItems[#menuItems + 1] = { type = "header", text = "Essential" }
+                    for _, spell in ipairs(essentialKnown) do
+                        menuItems[#menuItems + 1] = {
+                            type = "spell",
+                            spellID = spell.spellID,
+                            name = spell.name,
+                            icon = spell.icon,
+                            isKnown = true,
+                        }
+                    end
+                end
+
+                if #utilityKnown > 0 then
+                    if #essentialKnown > 0 then
+                        menuItems[#menuItems + 1] = { type = "divider" }
+                    end
+                    menuItems[#menuItems + 1] = { type = "header", text = "Utility" }
+                    for _, spell in ipairs(utilityKnown) do
+                        menuItems[#menuItems + 1] = {
+                            type = "spell",
+                            spellID = spell.spellID,
+                            name = spell.name,
+                            icon = spell.icon,
+                            isKnown = true,
+                        }
+                    end
+                end
+
+                if #unlearnedSpells > 0 then
+                    menuItems[#menuItems + 1] = { type = "divider" }
+                    menuItems[#menuItems + 1] = { type = "header", text = "Unlearned" }
+                    for _, spell in ipairs(unlearnedSpells) do
+                        menuItems[#menuItems + 1] = {
+                            type = "spell",
+                            spellID = spell.spellID,
+                            name = spell.name,
+                            icon = spell.icon,
+                            isKnown = false,
+                        }
+                    end
+                end
+
+                -- Calculate content height
+                local totalHeight = MENU_PAD * 2
+                for _, item in ipairs(menuItems) do
+                    if item.type == "divider" then
+                        totalHeight = totalHeight + 9
+                    elseif item.type == "header" then
+                        totalHeight = totalHeight + 20
+                    else
+                        totalHeight = totalHeight + ROW_HEIGHT
+                    end
+                end
+
+                local needsScroll = totalHeight > MAX_VISIBLE_HEIGHT
+                local menuHeight = needsScroll and MAX_VISIBLE_HEIGHT or totalHeight
+
+                -- Backdrop to catch outside clicks
+                local backdrop = CreateFrame("Button", nil, UIParent)
+                backdrop:SetAllPoints()
+                backdrop:SetFrameStrata("FULLSCREEN_DIALOG")
+                backdrop:SetFrameLevel(85)
+                backdrop:SetScript("OnClick", function() DismissPicker() end)
+                activePickerBackdrop = backdrop
+
+                -- Menu frame
+                local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+                menu:SetSize(MENU_WIDTH, menuHeight)
+                menu:SetFrameStrata("FULLSCREEN_DIALOG")
+                menu:SetFrameLevel(90)
+                menu:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                menu:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.95)
+                menu:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.3)
+
+                -- Anchor below the clicked button using absolute coords
+                local anchorLeft = anchorFrame:GetLeft()
+                local anchorBottom = anchorFrame:GetBottom()
+                if anchorLeft and anchorBottom then
+                    menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", anchorLeft, anchorBottom - 2)
+                else
+                    menu:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
+                end
+                menu:SetClampedToScreen(true)
+
+                -- Scrollable or direct content
+                local contentParent
+                local scrollFrame
+                if needsScroll then
+                    scrollFrame = CreateFrame("ScrollFrame", nil, menu)
+                    scrollFrame:SetPoint("TOPLEFT", MENU_PAD, -MENU_PAD)
+                    scrollFrame:SetPoint("BOTTOMRIGHT", -MENU_PAD, MENU_PAD)
+                    scrollFrame:EnableMouseWheel(true)
+
+                    contentParent = CreateFrame("Frame", nil, scrollFrame)
+                    contentParent:SetSize(MENU_WIDTH - MENU_PAD * 2, totalHeight)
+                    scrollFrame:SetScrollChild(contentParent)
+
+                    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+                        local current = self:GetVerticalScroll()
+                        local maxScroll = totalHeight - (menuHeight - MENU_PAD * 2)
+                        local newScroll = math.max(0, math.min(maxScroll, current - delta * ROW_HEIGHT * 3))
+                        self:SetVerticalScroll(newScroll)
+                    end)
+                else
+                    contentParent = menu
+                end
+
+                local forwardWheel = scrollFrame and function(self, delta)
+                    local handler = scrollFrame:GetScript("OnMouseWheel")
+                    if handler then handler(scrollFrame, delta) end
+                end or nil
+
+                -- Render menu items
+                local itemY = needsScroll and 0 or -MENU_PAD
+
+                for _, item in ipairs(menuItems) do
+                    if item.type == "divider" then
+                        local line = contentParent:CreateTexture(nil, "ARTWORK")
+                        line:SetHeight(1)
+                        line:SetPoint("TOPLEFT", MENU_PAD, itemY - 4)
+                        line:SetPoint("RIGHT", contentParent, "RIGHT", -MENU_PAD, 0)
+                        line:SetColorTexture(1, 1, 1, 0.10)
+                        itemY = itemY - 9
+
+                    elseif item.type == "header" then
+                        local label = contentParent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        label:SetPoint("TOPLEFT", MENU_PAD + 4, itemY - 4)
+                        label:SetText(item.text)
+                        label:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.8)
+                        itemY = itemY - 20
+
+                    else
+                        local row = CreateFrame("Button", nil, contentParent)
+                        row:SetHeight(ROW_HEIGHT)
+                        row:SetPoint("TOPLEFT", MENU_PAD, itemY)
+                        row:SetPoint("RIGHT", contentParent, "RIGHT", -MENU_PAD, 0)
+
+                        local highlight = row:CreateTexture(nil, "BACKGROUND")
+                        highlight:SetAllPoints()
+                        highlight:SetColorTexture(1, 1, 1, 0.08)
+                        highlight:Hide()
+
+                        row:SetScript("OnEnter", function() highlight:Show() end)
+                        row:SetScript("OnLeave", function() highlight:Hide() end)
+
+                        if forwardWheel then
+                            row:EnableMouseWheel(true)
+                            row:SetScript("OnMouseWheel", forwardWheel)
+                        end
+
+                        local rowText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                        rowText:SetPoint("LEFT", 6, 0)
+                        rowText:SetPoint("RIGHT", row, "RIGHT", -(item.icon and (ICON_SIZE + 10) or 6), 0)
+                        rowText:SetJustifyH("LEFT")
+                        rowText:SetText(item.text or item.name or "")
+
+                        if item.textColor then
+                            rowText:SetTextColor(item.textColor[1], item.textColor[2], item.textColor[3], 1)
+                        elseif item.isKnown == false then
+                            rowText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.4)
+                        else
+                            rowText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                        end
+
+                        if item.icon then
+                            local iconTex = row:CreateTexture(nil, "ARTWORK")
+                            iconTex:SetSize(ICON_SIZE, ICON_SIZE)
+                            iconTex:SetPoint("RIGHT", -4, 0)
+                            iconTex:SetTexture(item.icon)
+                            iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                            if item.isKnown == false then
+                                iconTex:SetDesaturated(true)
+                                iconTex:SetAlpha(0.4)
+                            end
+                        end
+
+                        row:SetScript("OnClick", function()
+                            if item.isRemove then
+                                DismissPicker()
+                                removeEntryAtIndex(slotIndex)
+                            elseif item.isCustomID then
+                                DismissPicker()
+                                ShowCustomSpellIDPopup(function(entryType, entryID)
+                                    if slotIndex then
+                                        replaceEntryAtIndex(slotIndex, entryType, entryID)
+                                    else
+                                        addEntryToBar(entryType, entryID)
+                                    end
+                                end)
+                            elseif item.type == "trinket" then
+                                DismissPicker()
+                                if slotIndex then
+                                    replaceEntryAtIndex(slotIndex, "trinket", item.slotID)
+                                else
+                                    addEntryToBar("trinket", item.slotID)
+                                end
+                            elseif item.spellID then
+                                DismissPicker()
+                                if slotIndex then
+                                    replaceEntryAtIndex(slotIndex, "spell", item.spellID)
+                                else
+                                    addEntryToBar("spell", item.spellID)
+                                end
+                            end
+                        end)
+
+                        -- Brighten text on hover for enabled rows
+                        if item.isKnown ~= false then
+                            row:HookScript("OnEnter", function()
+                                rowText:SetTextColor(1, 1, 1, 1)
+                            end)
+                            row:HookScript("OnLeave", function()
+                                if item.textColor then
+                                    rowText:SetTextColor(item.textColor[1], item.textColor[2], item.textColor[3], 1)
+                                else
+                                    rowText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                                end
+                            end)
+                        end
+
+                        itemY = itemY - ROW_HEIGHT
+                    end
+                end
+
+                activePickerFrame = menu
+            end
+
+            -----------------------------------------------------------
+            -- Bar Preview Row (spell icons + [+] button)
+            -----------------------------------------------------------
+            local PREVIEW_ICON = 32
+            local PREVIEW_PAD = 3
+
+            local previewRow = CreateFrame("Frame", nil, tabContent)
+            previewRow:SetHeight(PREVIEW_ICON + 4)
+            previewRow:SetPoint("TOPLEFT", PAD, y)
+            previewRow:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+
+            local px = 0
+            for entryIndex, entry in ipairs(barEntries) do
+                local iconBtn = CreateFrame("Button", nil, previewRow, "BackdropTemplate")
+                iconBtn:SetSize(PREVIEW_ICON, PREVIEW_ICON)
+                iconBtn:SetPoint("LEFT", px, 0)
+                iconBtn:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                iconBtn:SetBackdropColor(0.1, 0.1, 0.12, 1)
+                iconBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+
+                local texturePath = "Interface\\Icons\\INV_Misc_QuestionMark"
+                if entry.type == "spell" then
+                    local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(entry.id)
+                    if tex then texturePath = tex end
+                elseif entry.type == "item" then
+                    local ico = C_Item.GetItemIconByID(entry.id)
+                    if ico then texturePath = ico end
+                elseif entry.type == "trinket" then
+                    local itemID = GetInventoryItemID("player", entry.id)
+                    if itemID then
+                        local ico = C_Item.GetItemIconByID(itemID)
+                        if ico then texturePath = ico end
+                    end
+                end
+
+                local iconTex = iconBtn:CreateTexture(nil, "ARTWORK")
+                iconTex:SetPoint("TOPLEFT", 1, -1)
+                iconTex:SetPoint("BOTTOMRIGHT", -1, 1)
+                iconTex:SetTexture(texturePath)
+                iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+                iconBtn:SetScript("OnEnter", function(self)
+                    self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                    local name = "Unknown"
+                    if entry.type == "spell" then
+                        local info = C_Spell.GetSpellInfo(entry.id)
+                        name = info and info.name or tostring(entry.id)
+                    elseif entry.type == "item" then
+                        name = C_Item.GetItemNameByID(entry.id) or tostring(entry.id)
+                    elseif entry.type == "trinket" then
+                        local itemID = GetInventoryItemID("player", entry.id)
+                        name = itemID and C_Item.GetItemNameByID(itemID) or ("Trinket " .. entry.id)
+                    end
+                    GameTooltip:SetText(name, 1, 1, 1)
+                    GameTooltip:Show()
+                end)
+                iconBtn:SetScript("OnLeave", function(self)
+                    self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+                    GameTooltip:Hide()
+                end)
+
+                local capturedIndex = entryIndex
+                iconBtn:SetScript("OnClick", function(self)
+                    ShowSpellPicker(self, capturedIndex)
+                end)
+
+                px = px + PREVIEW_ICON + PREVIEW_PAD
+            end
+
+            -- [+] button
+            local plusBtn = CreateFrame("Button", nil, previewRow, "BackdropTemplate")
+            plusBtn:SetSize(PREVIEW_ICON, PREVIEW_ICON)
+            plusBtn:SetPoint("LEFT", px, 0)
+            plusBtn:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = 1,
+            })
+            plusBtn:SetBackdropColor(0.1, 0.1, 0.12, 1)
+            plusBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+
+            local plusText = plusBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            plusText:SetPoint("CENTER", 0, 0)
+            plusText:SetText("+")
+            plusText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+
+            plusBtn:SetScript("OnEnter", function(self)
+                self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                plusText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+            end)
+            plusBtn:SetScript("OnLeave", function(self)
+                self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+                plusText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+            end)
+            plusBtn:SetScript("OnClick", function(self)
+                ShowSpellPicker(self, nil)
+            end)
+
+            y = y - (PREVIEW_ICON + 12)
+
+            if #barEntries == 0 then
+                local emptyLabel = tabContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                emptyLabel:SetPoint("TOPLEFT", PAD, y)
+                emptyLabel:SetText("Click [+] to add spells to this bar.")
+                emptyLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                y = y - 24
+            end
+
+            -- Display settings section
+            local displayHeader = GUI:CreateSectionHeader(tabContent, "Display Settings")
+            displayHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - displayHeader.gap
+
+            -- Icon size
+            local sizeSlider = GUI:CreateFormSlider(tabContent, "Icon Size", 16, 80, 1, "iconSize", barDef, RefreshCustomBar)
+            sizeSlider:SetPoint("TOPLEFT", PAD, y)
+            sizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Border size
+            local borderSlider = GUI:CreateFormSlider(tabContent, "Border Size", 0, 5, 1, "borderSize", barDef, RefreshCustomBar)
+            borderSlider:SetPoint("TOPLEFT", PAD, y)
+            borderSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Border color
+            local borderColor = GUI:CreateFormColorPicker(tabContent, "Border Color", "borderColorTable", barDef, RefreshCustomBar)
+            borderColor:SetPoint("TOPLEFT", PAD, y)
+            borderColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Padding
+            local padSlider = GUI:CreateFormSlider(tabContent, "Icon Spacing", -20, 20, 1, "padding", barDef, RefreshCustomBar)
+            padSlider:SetPoint("TOPLEFT", PAD, y)
+            padSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Zoom
+            local zoomSlider = GUI:CreateFormSlider(tabContent, "Icon Zoom", 0, 0.2, 0.01, "zoom", barDef, RefreshCustomBar)
+            zoomSlider:SetPoint("TOPLEFT", PAD, y)
+            zoomSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Aspect ratio crop
+            local aspectSlider = GUI:CreateFormSlider(tabContent, "Aspect Ratio", 0.5, 2.0, 0.05, "aspectRatioCrop", barDef, RefreshCustomBar)
+            aspectSlider:SetPoint("TOPLEFT", PAD, y)
+            aspectSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Growth direction
+            local dirOptions = {
+                {value = "RIGHT", text = "Right"},
+                {value = "LEFT", text = "Left"},
+                {value = "UP", text = "Up"},
+                {value = "DOWN", text = "Down"},
+                {value = "CENTERED_HORIZONTAL", text = "Centered Horizontal"},
+            }
+            local dirDropdown = GUI:CreateFormDropdown(tabContent, "Growth Direction", dirOptions, "growthDirection", barDef, RefreshCustomBar)
+            dirDropdown:SetPoint("TOPLEFT", PAD, y)
+            dirDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Opacity
+            local opacitySlider = GUI:CreateFormSlider(tabContent, "Opacity", 0, 1, 0.05, "opacity", barDef, RefreshCustomBar)
+            opacitySlider:SetPoint("TOPLEFT", PAD, y)
+            opacitySlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Desaturate on cooldown
+            local desatCheck = GUI:CreateFormCheckbox(tabContent, "Desaturate on Cooldown", "desaturateOnCooldown", barDef, RefreshCustomBar)
+            desatCheck:SetPoint("TOPLEFT", PAD, y)
+            desatCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Duration text settings
+            local durHeader = GUI:CreateSectionHeader(tabContent, "Duration Text")
+            durHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - durHeader.gap
+
+            local durSizeSlider = GUI:CreateFormSlider(tabContent, "Font Size", 0, 24, 1, "durationSize", barDef, RefreshCustomBar)
+            durSizeSlider:SetPoint("TOPLEFT", PAD, y)
+            durSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local durColor = GUI:CreateFormColorPicker(tabContent, "Text Color", "durationTextColor", barDef, RefreshCustomBar)
+            durColor:SetPoint("TOPLEFT", PAD, y)
+            durColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local durAnchorOpts = {
+                {value = "CENTER", text = "Center"},
+                {value = "TOP", text = "Top"},
+                {value = "BOTTOM", text = "Bottom"},
+                {value = "TOPLEFT", text = "Top Left"},
+                {value = "TOPRIGHT", text = "Top Right"},
+                {value = "BOTTOMLEFT", text = "Bottom Left"},
+                {value = "BOTTOMRIGHT", text = "Bottom Right"},
+            }
+            local durAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Anchor", durAnchorOpts, "durationAnchor", barDef, RefreshCustomBar)
+            durAnchorDropdown:SetPoint("TOPLEFT", PAD, y)
+            durAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Stack text settings
+            local stackHeader = GUI:CreateSectionHeader(tabContent, "Stack/Charge Text")
+            stackHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - stackHeader.gap
+
+            local stackSizeSlider = GUI:CreateFormSlider(tabContent, "Font Size", 0, 24, 1, "stackSize", barDef, RefreshCustomBar)
+            stackSizeSlider:SetPoint("TOPLEFT", PAD, y)
+            stackSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local stackColor = GUI:CreateFormColorPicker(tabContent, "Text Color", "stackTextColor", barDef, RefreshCustomBar)
+            stackColor:SetPoint("TOPLEFT", PAD, y)
+            stackColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local stackAnchorOpts = {
+                {value = "BOTTOMRIGHT", text = "Bottom Right"},
+                {value = "BOTTOMLEFT", text = "Bottom Left"},
+                {value = "TOPRIGHT", text = "Top Right"},
+                {value = "TOPLEFT", text = "Top Left"},
+                {value = "CENTER", text = "Center"},
+            }
+            local stackAnchorDropdown = GUI:CreateFormDropdown(tabContent, "Anchor", stackAnchorOpts, "stackAnchor", barDef, RefreshCustomBar)
+            stackAnchorDropdown:SetPoint("TOPLEFT", PAD, y)
+            stackAnchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Effects section (per-bar)
+            if not barDef.effects then
+                barDef.effects = {
+                    showCooldownSwipe = true,
+                    showGCDSwipe = false,
+                    showBuffSwipe = false,
+                    overlayColorMode = "default",
+                    overlayColor = {1, 1, 1, 1},
+                    swipeColorMode = "default",
+                    swipeColor = {1, 1, 1, 1},
+                    glow = {},
+                }
+            end
+            if not barDef.effects.glow then barDef.effects.glow = {} end
+            local fx = barDef.effects
+
+            -- Callback that refreshes the bar AND rebuilds the tab (for conditional UI)
+            local function RefreshAndRebuild()
+                RefreshCustomBar()
+                rebuildCustomBars()
+            end
+
+            local fxHeader = GUI:CreateSectionHeader(tabContent, "Cooldown Swipe")
+            fxHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - fxHeader.gap
+
+            local swipeCDCheck = GUI:CreateFormCheckbox(tabContent, "Show Cooldown Swipe", "showCooldownSwipe", fx, RefreshCustomBar)
+            swipeCDCheck:SetPoint("TOPLEFT", PAD, y)
+            swipeCDCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local swipeGCDCheck = GUI:CreateFormCheckbox(tabContent, "Show GCD Swipe", "showGCDSwipe", fx, RefreshCustomBar)
+            swipeGCDCheck:SetPoint("TOPLEFT", PAD, y)
+            swipeGCDCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local swipeBuffCheck = GUI:CreateFormCheckbox(tabContent, "Show Buff/Aura Swipe", "showBuffSwipe", fx, RefreshCustomBar)
+            swipeBuffCheck:SetPoint("TOPLEFT", PAD, y)
+            swipeBuffCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Overlay color (buff/aura swipe)
+            local overlayColorOpts = {
+                {value = "default", text = "Default (Blizzard Yellow)"},
+                {value = "class", text = "Class Color"},
+                {value = "accent", text = "QUI Accent"},
+                {value = "custom", text = "Custom"},
+            }
+            local overlayColorDrop = GUI:CreateFormDropdown(tabContent, "Overlay Color", overlayColorOpts, "overlayColorMode", fx, RefreshAndRebuild)
+            overlayColorDrop:SetPoint("TOPLEFT", PAD, y)
+            overlayColorDrop:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            if fx.overlayColorMode == "custom" then
+                local overlayPicker = GUI:CreateFormColorPicker(tabContent, "Custom Overlay Color", "overlayColor", fx, RefreshCustomBar)
+                overlayPicker:SetPoint("TOPLEFT", PAD, y)
+                overlayPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+                y = y - FORM_ROW
+            end
+
+            -- Swipe color (cooldown radial darkening)
+            local swipeColorOpts = {
+                {value = "default", text = "Default (Dark)"},
+                {value = "class", text = "Class Color"},
+                {value = "accent", text = "QUI Accent"},
+                {value = "custom", text = "Custom"},
+            }
+            local swipeColorDrop = GUI:CreateFormDropdown(tabContent, "Swipe Color", swipeColorOpts, "swipeColorMode", fx, RefreshAndRebuild)
+            swipeColorDrop:SetPoint("TOPLEFT", PAD, y)
+            swipeColorDrop:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            if fx.swipeColorMode == "custom" then
+                local swipePicker = GUI:CreateFormColorPicker(tabContent, "Custom Swipe Color", "swipeColor", fx, RefreshCustomBar)
+                swipePicker:SetPoint("TOPLEFT", PAD, y)
+                swipePicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+                y = y - FORM_ROW
+            end
+
+            -- Custom Glow section (reuse shared builder from Effects tab)
+            if ns.QUI_CDMEffectsOptions and ns.QUI_CDMEffectsOptions.CreateGlowSection then
+                y = ns.QUI_CDMEffectsOptions.CreateGlowSection(
+                    tabContent, "CUSTOM GLOW", "", fx.glow, y, RefreshCustomBar
+                )
+            end
+
+            -- Keybind display section
+            if not fx.keybinds then
+                fx.keybinds = {
+                    showKeybinds = false,
+                    keybindTextSize = 12,
+                    keybindTextColor = {1, 0.82, 0, 1},
+                    keybindAnchor = "TOPLEFT",
+                    keybindOffsetX = 2,
+                    keybindOffsetY = 2,
+                }
+            end
+            local kb = fx.keybinds
+
+            local kbHeader = GUI:CreateSectionHeader(tabContent, "Keybind Display")
+            kbHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - kbHeader.gap
+
+            local kbCheck = GUI:CreateFormCheckbox(tabContent, "Show Keybinds", "showKeybinds", kb, RefreshCustomBar)
+            kbCheck:SetPoint("TOPLEFT", PAD, y)
+            kbCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local kbSizeSlider = GUI:CreateFormSlider(tabContent, "Text Size", 6, 24, 1, "keybindTextSize", kb, RefreshCustomBar)
+            kbSizeSlider:SetPoint("TOPLEFT", PAD, y)
+            kbSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local kbColor = GUI:CreateFormColorPicker(tabContent, "Text Color", "keybindTextColor", kb, RefreshCustomBar)
+            kbColor:SetPoint("TOPLEFT", PAD, y)
+            kbColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local kbAnchorOpts = {
+                {value = "TOPLEFT", text = "Top Left"},
+                {value = "TOPRIGHT", text = "Top Right"},
+                {value = "BOTTOMLEFT", text = "Bottom Left"},
+                {value = "BOTTOMRIGHT", text = "Bottom Right"},
+                {value = "CENTER", text = "Center"},
+            }
+            local kbAnchorDrop = GUI:CreateFormDropdown(tabContent, "Anchor", kbAnchorOpts, "keybindAnchor", kb, RefreshCustomBar)
+            kbAnchorDrop:SetPoint("TOPLEFT", PAD, y)
+            kbAnchorDrop:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local kbXSlider = GUI:CreateFormSlider(tabContent, "X Offset", -20, 20, 1, "keybindOffsetX", kb, RefreshCustomBar)
+            kbXSlider:SetPoint("TOPLEFT", PAD, y)
+            kbXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local kbYSlider = GUI:CreateFormSlider(tabContent, "Y Offset", -20, 20, 1, "keybindOffsetY", kb, RefreshCustomBar)
+            kbYSlider:SetPoint("TOPLEFT", PAD, y)
+            kbYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+        end
+
+        -- Extra bottom padding for dropdowns
+        tabContent:SetHeight(math.abs(y) + 60)
+
+        -- Restore search registration for other tabs
+        GUI._suppressSearchRegistration = false
+    end
+
     -- Engine selection dropdown (above sub-tabs)
     local PAD = 10
     local ENGINE_ROW = 32
@@ -4869,6 +5981,7 @@ local function CreateCDMSetupPage(parent)
         {name = "Essential", builder = BuildEssentialTab},
         {name = "Utility", builder = BuildUtilityTab},
         {name = "Custom Entries", builder = BuildCustomEntriesTab},
+        {name = "Custom Bars", builder = BuildCustomBarsTab},
         {name = "Buff", builder = BuildBuffTab},
         {name = "Class Resource Bar", builder = BuildPowerbarTab},
     }

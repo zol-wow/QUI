@@ -78,9 +78,18 @@ local function IsNudgeTargetFrameName(frameName)
     return false
 end
 
+-- Lookup table for custom bar display labels (populated by RebuildCDMViewers)
+local CDM_CUSTOM_DISPLAY_LABELS = {}
+
 local function GetNudgeDisplayName(frameName)
     if not frameName then
         return ""
+    end
+
+    -- Custom CDM bar display labels
+    local customLabel = CDM_CUSTOM_DISPLAY_LABELS[frameName]
+    if customLabel then
+        return customLabel
     end
 
     -- Friendly names for unit-frame anchors
@@ -389,18 +398,45 @@ end
 -- All CDM viewers that should get nudge overlays
 -- Each entry maps a resolver key to its display name. The actual frame is
 -- obtained at runtime via _G.QUI_GetCDMViewerFrame(key).
-local CDM_VIEWERS = {
+local CDM_VIEWERS_STATIC = {
     { key = "essential", name = "EssentialCooldownViewer", anchorKey = "cdmEssential" },
     { key = "utility",   name = "UtilityCooldownViewer",   anchorKey = "cdmUtility" },
     { key = "buffIcon",  name = "BuffIconCooldownViewer",  anchorKey = "buffIcon" },
     { key = "buffBar",   name = "BuffBarCooldownViewer",   anchorKey = "buffBar" },
 }
+local CDM_VIEWERS = {}
 -- Reverse lookup: name -> key (used by generic functions that receive a name)
 local CDM_NAME_TO_KEY = {}
-for _, entry in ipairs(CDM_VIEWERS) do
-    CDM_VIEWER_LOOKUP[entry.name] = true
-    CDM_NAME_TO_KEY[entry.name] = entry.key
+
+-- Rebuild CDM_VIEWERS from static entries + dynamic custom bars.
+-- Called on each ShowViewerOverlays (once per edit mode enter).
+local function RebuildCDMViewers()
+    wipe(CDM_VIEWERS)
+    wipe(CDM_VIEWER_LOOKUP)
+    wipe(CDM_NAME_TO_KEY)
+    wipe(CDM_CUSTOM_DISPLAY_LABELS)
+    for _, entry in ipairs(CDM_VIEWERS_STATIC) do
+        CDM_VIEWERS[#CDM_VIEWERS + 1] = entry
+        CDM_VIEWER_LOOKUP[entry.name] = true
+        CDM_NAME_TO_KEY[entry.name] = entry.key
+    end
+    if ns.CDMCustomBars then
+        for _, entry in ipairs(ns.CDMCustomBars:GetViewerEntries()) do
+            CDM_VIEWERS[#CDM_VIEWERS + 1] = entry
+            CDM_VIEWER_LOOKUP[entry.name] = true
+            CDM_NAME_TO_KEY[entry.name] = entry.key
+            if entry.displayLabel then
+                CDM_CUSTOM_DISPLAY_LABELS[entry.name] = entry.displayLabel
+            end
+        end
+    end
 end
+
+-- Initial population with static entries
+RebuildCDMViewers()
+
+-- Export so other modules can refresh after adding/removing custom bars
+ns.RebuildCDMViewers = RebuildCDMViewers
 
 -- Resolve a CDM viewer frame by name (checks CDM_NAME_TO_KEY first, falls back to _G)
 local function ResolveCDMFrame(viewerName)
@@ -953,6 +989,9 @@ end
 
 -- Show overlays on all CDM viewers
 function QUICore:ShowViewerOverlays()
+    -- Rebuild viewer list to include any dynamic custom bars
+    RebuildCDMViewers()
+
     -- Force CDM frames to full alpha so overlays (children) are visible.
     -- HUD visibility may have faded them to 0; we restore on edit mode exit.
     if _G.QUI_RefreshCDMVisibility then

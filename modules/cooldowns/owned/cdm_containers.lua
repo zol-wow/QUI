@@ -875,6 +875,7 @@ local function RefreshAll(forceSync)
             _G.QUI_ApplyUtilityAnchor()
         end
         LayoutContainer("buff")
+        if ns.CDMCustomBars then ns.CDMCustomBars:RefreshAll() end
         UpdateAllLockedBars()
         if _G.QUI_UpdateCDMAnchoredUnitFrames then
             _G.QUI_UpdateCDMAnchoredUnitFrames()
@@ -906,6 +907,10 @@ local function RefreshAll(forceSync)
         refreshTimers[3] = C_Timer.NewTimer(0.03, function()
             refreshTimers[3] = nil
             LayoutContainer("buff")
+        end)
+        refreshTimers[5] = C_Timer.NewTimer(0.04, function()
+            refreshTimers[5] = nil
+            if ns.CDMCustomBars then ns.CDMCustomBars:RefreshAll() end
         end)
 
         -- Update locked bars and refresh swipe/glow after all layouts complete
@@ -1076,7 +1081,17 @@ _G.QUI_SaveCDMPosition = function(viewerName)
         UtilityCooldownViewer   = "utility",
         BuffIconCooldownViewer  = "buff",
     })[viewerName]
-    if trackerKey then SaveContainerPosition(trackerKey) end
+    if trackerKey then
+        SaveContainerPosition(trackerKey)
+        return
+    end
+    -- Check custom bars (frame names like "QUI_CustomBar_custom_1")
+    if ns.CDMCustomBars and viewerName then
+        local barID = viewerName:match("^QUI_CustomBar_(.+)$")
+        if barID then
+            ns.CDMCustomBars:SaveBarPosition(barID)
+        end
+    end
 end
 
 -- Hide Blizzard .Selection frames during Edit Mode so only QUI overlays
@@ -1247,6 +1262,14 @@ _G.QUI_OnEditModeEnterCDM = function()
     DisableMouseForEditMode("buff")
     DisableMouseForEditMode("trackedBar")
 
+    -- Show and prepare custom bar containers for edit mode
+    if ns.CDMCustomBars then
+        for _, frame in ipairs(ns.CDMCustomBars:GetContainerFrames()) do
+            frame:Show()
+            frame:SetAlpha(1)
+        end
+    end
+
     -- Show overlays on QUI containers (containers stay visible).
     local QUICore = ns.Addon
     if QUICore and QUICore.ShowViewerOverlays then
@@ -1264,6 +1287,7 @@ _G.QUI_OnEditModeExitCDM = function()
     SaveContainerPosition("utility")
     SaveContainerPosition("buff")
     SaveContainerPosition("trackedBar")
+    if ns.CDMCustomBars then ns.CDMCustomBars:SaveAllPositions() end
 
     -- Restore mouse on icon frames.
     RestoreMouseAfterEditMode()
@@ -1353,6 +1377,11 @@ function ownedEngine:Initialize()
     InitContainers()
     InitBuffContainer()
 
+    -- Initialize custom bars
+    if ns.CDMCustomBars then
+        ns.CDMCustomBars:Initialize()
+    end
+
     -- Start the CDMIcons update ticker
     if ns.CDMIcons then
         ns.CDMIcons:StartUpdateTicker()
@@ -1401,6 +1430,11 @@ function ownedEngine:Initialize()
     if containers.utility then containers.utility:SetAlpha(targetAlpha) end
     if containers.buff then containers.buff:SetAlpha(targetAlpha) end
     if containers.trackedBar then containers.trackedBar:SetAlpha(targetAlpha) end
+    if ns.CDMCustomBars then
+        for _, frame in ipairs(ns.CDMCustomBars:GetContainerFrames()) do
+            frame:SetAlpha(targetAlpha)
+        end
+    end
     if _G.QUI_RefreshCDMVisibility then
         _G.QUI_RefreshCDMVisibility()
     end
@@ -1500,6 +1534,11 @@ function ownedEngine:GetViewerFrame(key)
         local container = containers[containerKey]
         if container then return container end
     end
+    -- Check custom bar containers
+    if ns.CDMCustomBars then
+        local container = ns.CDMCustomBars:GetContainerByKey(key)
+        if container then return container end
+    end
     -- Fall back to Blizzard frame (before containers exist or for unmanaged viewers)
     local blizzName = BLIZZARD_FALLBACKS[key]
     return blizzName and _G[blizzName] or nil
@@ -1511,6 +1550,12 @@ function ownedEngine:GetViewerFrames()
     if containers.utility then frames[#frames + 1] = containers.utility end
     if containers.buff then frames[#frames + 1] = containers.buff end
     if containers.trackedBar then frames[#frames + 1] = containers.trackedBar end
+    -- Include custom bar containers
+    if ns.CDMCustomBars then
+        for _, frame in ipairs(ns.CDMCustomBars:GetContainerFrames()) do
+            frames[#frames + 1] = frame
+        end
+    end
     return frames
 end
 

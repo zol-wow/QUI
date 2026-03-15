@@ -1552,6 +1552,15 @@ function CDMIcons:SetPool(viewerType, pool)
     iconPools[viewerType] = pool or {}
 end
 
+function CDMIcons:RegisterExternalPool(poolKey, pool)
+    iconPools[poolKey] = pool
+end
+
+function CDMIcons:UnregisterExternalPool(poolKey)
+    self:ClearPool(poolKey)
+    iconPools[poolKey] = nil
+end
+
 ---------------------------------------------------------------------------
 -- BUILD ICONS: Create icons from harvested spell data + custom entries
 ---------------------------------------------------------------------------

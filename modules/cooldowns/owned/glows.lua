@@ -49,11 +49,14 @@ end
 -- DETERMINE VIEWER TYPE FROM ICON
 -- Uses icon._spellEntry.viewerType instead of checking parent frame.
 ---------------------------------------------------------------------------
+local CUSTOM_BAR_PREFIX = "customBar_"
+
 local function GetViewerType(icon)
     if not icon or not icon._spellEntry then return nil end
     local vt = icon._spellEntry.viewerType
     if vt == "essential" then return "Essential"
     elseif vt == "utility" then return "Utility"
+    elseif vt and vt:sub(1, #CUSTOM_BAR_PREFIX) == CUSTOM_BAR_PREFIX then return vt
     end
     return nil
 end
@@ -94,6 +97,24 @@ local function GetViewerSettings(viewerType)
             scale = settings.utilityScale or 1,
             xOffset = settings.utilityXOffset or 0,
             yOffset = settings.utilityYOffset or 0,
+        }
+    elseif viewerType and viewerType:sub(1, #CUSTOM_BAR_PREFIX) == CUSTOM_BAR_PREFIX then
+        if not ns.CDMCustomBars then return nil end
+        local effects = ns.CDMCustomBars:GetBarEffects(viewerType)
+        local glow = effects and effects.glow
+        if not glow or not glow.Enabled then return nil end
+        local glowType = glow.GlowType or "Pixel Glow"
+        if glowType == "Proc Glow" then glowType = "Pixel Glow" end
+        return {
+            enabled = true,
+            glowType = glowType,
+            color = glow.Color or {0.95, 0.95, 0.32, 1},
+            lines = glow.Lines or 14,
+            frequency = glow.Frequency or 0.25,
+            thickness = glow.Thickness or 2,
+            scale = glow.Scale or 1,
+            xOffset = glow.XOffset or 0,
+            yOffset = glow.YOffset or 0,
         }
     end
 
@@ -206,6 +227,28 @@ end
 ---------------------------------------------------------------------------
 -- SCAN ALL ICONS AND SYNC GLOW STATE
 ---------------------------------------------------------------------------
+local function SyncIconGlow(icon)
+    if not icon._spellEntry then return end
+    local baseID = icon._spellEntry.spellID
+    local overrideID = icon._spellEntry.overrideSpellID
+    local shouldGlow = IsOverlayed(baseID)
+        or (overrideID and overrideID ~= baseID and IsOverlayed(overrideID))
+
+    if not shouldGlow and C_Spell and C_Spell.GetOverrideSpell then
+        local currentOverride = C_Spell.GetOverrideSpell(baseID)
+        if currentOverride and currentOverride ~= baseID
+            and currentOverride ~= overrideID then
+            shouldGlow = IsOverlayed(currentOverride)
+        end
+    end
+
+    if shouldGlow and not activeGlowIcons[icon] then
+        StartGlow(icon)
+    elseif not shouldGlow and activeGlowIcons[icon] then
+        StopGlow(icon)
+    end
+end
+
 local function ScanAllGlows()
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
@@ -213,29 +256,16 @@ local function ScanAllGlows()
     for _, viewerType in ipairs({"essential", "utility"}) do
         local pool = CDMIcons:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
-            if icon._spellEntry then
-                local baseID = icon._spellEntry.spellID
-                local overrideID = icon._spellEntry.overrideSpellID
-                local shouldGlow = IsOverlayed(baseID)
-                    or (overrideID and overrideID ~= baseID and IsOverlayed(overrideID))
+            SyncIconGlow(icon)
+        end
+    end
 
-                -- Check current runtime override: the spell may be temporarily
-                -- replaced (e.g., Judgment → Hammer of Wrath via Wake of Ashes).
-                -- The glow event fires for the override's spell ID, which differs
-                -- from both baseID and the static scan-time overrideSpellID.
-                if not shouldGlow and C_Spell and C_Spell.GetOverrideSpell then
-                    local currentOverride = C_Spell.GetOverrideSpell(baseID)
-                    if currentOverride and currentOverride ~= baseID
-                        and currentOverride ~= overrideID then
-                        shouldGlow = IsOverlayed(currentOverride)
-                    end
-                end
-
-                if shouldGlow and not activeGlowIcons[icon] then
-                    StartGlow(icon)
-                elseif not shouldGlow and activeGlowIcons[icon] then
-                    StopGlow(icon)
-                end
+    -- Scan custom bar icon pools
+    if ns.CDMCustomBars then
+        for _, entry in ipairs(ns.CDMCustomBars:GetViewerEntries()) do
+            local pool = CDMIcons:GetIconPool(entry.key)
+            for _, icon in ipairs(pool) do
+                SyncIconGlow(icon)
             end
         end
     end

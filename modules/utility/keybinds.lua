@@ -66,13 +66,24 @@ local function IsAnyKeybindFeatureEnabled()
     if not core or not core.db or not core.db.profile then return false end
 
     local viewers = core.db.profile.viewers
-    if not viewers then return false end
-
-    for viewerName, settings in pairs(viewers) do
-        if settings.showKeybinds or settings.showMacroNames or settings.showStackCounts then
-            return true
+    if viewers then
+        for _, settings in pairs(viewers) do
+            if settings.showKeybinds or settings.showMacroNames or settings.showStackCounts then
+                return true
+            end
         end
     end
+
+    -- Check custom bar keybind settings
+    if QUI.CDMCustomBars then
+        for _, entry in ipairs(QUI.CDMCustomBars:GetViewerEntries()) do
+            local effects = QUI.CDMCustomBars:GetBarEffects(entry.key)
+            if effects and effects.keybinds and effects.keybinds.showKeybinds then
+                return true
+            end
+        end
+    end
+
     return false
 end
 
@@ -82,12 +93,23 @@ local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 
 -- Helper: get viewer settings safely
+local CUSTOM_BAR_PREFIX = "customBar_"
+
 local function GetViewerSettings(viewerName)
     local QUICore = _G.QUI and _G.QUI.QUICore
     if not QUICore or not QUICore.db or not QUICore.db.profile then return nil end
     local viewers = QUICore.db.profile.viewers
-    if not viewers then return nil end
-    return viewers[VIEWER_DB_KEY[viewerName] or viewerName]
+    if viewers then
+        local settings = viewers[VIEWER_DB_KEY[viewerName] or viewerName]
+        if settings then return settings end
+    end
+    -- Fall back to custom bar keybind settings
+    if viewerName and viewerName:sub(1, #CUSTOM_BAR_PREFIX) == CUSTOM_BAR_PREFIX
+        and QUI.CDMCustomBars then
+        local effects = QUI.CDMCustomBars:GetBarEffects(viewerName)
+        if effects and effects.keybinds then return effects.keybinds end
+    end
+    return nil
 end
 
 -- Helper: get current specialization ID
@@ -1373,16 +1395,29 @@ end
 local function ClearAllStoredKeybinds()
     ClearStoredKeybinds("essential")
     ClearStoredKeybinds("utility")
+    -- Clear custom bar keybinds
+    if QUI.CDMCustomBars then
+        for _, entry in ipairs(QUI.CDMCustomBars:GetViewerEntries()) do
+            ClearStoredKeybinds(entry.key)
+        end
+    end
 end
 
--- Update keybinds on Essential and Utility viewers
+-- Update keybinds on Essential, Utility, and custom bar viewers
 local function UpdateAllKeybinds()
     -- Force cache rebuild
     lastCacheUpdate = 0
     RebuildCache()
-    
+
     UpdateViewerKeybinds("essential")
     UpdateViewerKeybinds("utility")
+
+    -- Update custom bar keybinds
+    if QUI.CDMCustomBars then
+        for _, entry in ipairs(QUI.CDMCustomBars:GetViewerEntries()) do
+            UpdateViewerKeybinds(entry.key)
+        end
+    end
 end
 
 -- Throttle for event-driven updates

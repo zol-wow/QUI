@@ -1333,6 +1333,10 @@ local CUSTOM_TRACKER_ANCHOR_PREFIX = "customTracker:"
 local CUSTOM_TRACKER_ANCHOR_CATEGORY = "Custom Trackers"
 local CUSTOM_TRACKER_ANCHOR_CATEGORY_ORDER = 90
 
+local CUSTOM_CDM_BAR_ANCHOR_PREFIX = "customCDMBar:"
+local CUSTOM_CDM_BAR_ANCHOR_CATEGORY = "Custom CDM Bars"
+local CUSTOM_CDM_BAR_ANCHOR_CATEGORY_ORDER = 85
+
 local function GetCustomTrackerBarIDFromAnchorKey(key)
     if type(key) ~= "string" then return nil end
     if key:sub(1, #CUSTOM_TRACKER_ANCHOR_PREFIX) ~= CUSTOM_TRACKER_ANCHOR_PREFIX then
@@ -1358,11 +1362,37 @@ local function ResolveCustomTrackerFrameForKey(key)
     return activeBars[barID]
 end
 
+local function GetCustomCDMBarIDFromAnchorKey(key)
+    if type(key) ~= "string" then return nil end
+    if key:sub(1, #CUSTOM_CDM_BAR_ANCHOR_PREFIX) ~= CUSTOM_CDM_BAR_ANCHOR_PREFIX then
+        return nil
+    end
+    local barID = key:sub(#CUSTOM_CDM_BAR_ANCHOR_PREFIX + 1)
+    if barID == "" then
+        return nil
+    end
+    return barID
+end
+
+local function ResolveCustomCDMBarFrameForKey(key)
+    local barID = GetCustomCDMBarIDFromAnchorKey(key)
+    if not barID then
+        return nil
+    end
+    if not ns.CDMCustomBars then
+        return nil
+    end
+    return ns.CDMCustomBars:GetContainerByKey(barID)
+end
+
 local function HasFrameResolverForKey(key)
     if FRAME_RESOLVERS[key] then
         return true
     end
-    return GetCustomTrackerBarIDFromAnchorKey(key) ~= nil
+    if GetCustomTrackerBarIDFromAnchorKey(key) ~= nil then
+        return true
+    end
+    return GetCustomCDMBarIDFromAnchorKey(key) ~= nil
 end
 
 -- Resolve a frame for direct anchoring apply.
@@ -1377,7 +1407,9 @@ local function ResolveApplyFrameForKey(key)
         end
         return frame
     end
-    return ResolveCustomTrackerFrameForKey(key)
+    local trackerFrame = ResolveCustomTrackerFrameForKey(key)
+    if trackerFrame then return trackerFrame end
+    return ResolveCustomCDMBarFrameForKey(key)
 end
 
 -- Blizzard-managed right-side frames are controlled by UIParentPanelManager.
@@ -2058,6 +2090,44 @@ local function ClearCustomTrackerAnchorTargets()
     end
 end
 
+local function ClearCustomCDMBarAnchorTargets()
+    for name in pairs(QUI_Anchoring.anchorTargets) do
+        if GetCustomCDMBarIDFromAnchorKey(name) then
+            QUI_Anchoring.anchorTargets[name] = nil
+        end
+    end
+end
+
+local function RegisterCustomCDMBarAnchorTargets(self)
+    ClearCustomCDMBarAnchorTargets()
+
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local bars = profile and profile.ncdm and profile.ncdm.customBars and profile.ncdm.customBars.bars
+    if type(bars) ~= "table" then
+        return
+    end
+
+    for index, barConfig in ipairs(bars) do
+        local barID = barConfig and barConfig.id
+        if type(barID) == "string" and barID ~= "" and barConfig.enabled then
+            local anchorKey = CUSTOM_CDM_BAR_ANCHOR_PREFIX .. barID
+            local frame = ResolveCustomCDMBarFrameForKey(anchorKey)
+            if frame then
+                local displayName = barConfig.name
+                if type(displayName) ~= "string" or displayName == "" then
+                    displayName = ("Custom CDM Bar %d"):format(index)
+                end
+                self:RegisterAnchorTarget(anchorKey, frame, {
+                    displayName = displayName,
+                    category = CUSTOM_CDM_BAR_ANCHOR_CATEGORY,
+                    categoryOrder = CUSTOM_CDM_BAR_ANCHOR_CATEGORY_ORDER,
+                    order = index,
+                })
+            end
+        end
+    end
+end
+
 local function RegisterCustomTrackerAnchorTargets(self)
     ClearCustomTrackerAnchorTargets()
 
@@ -2107,6 +2177,7 @@ function QUI_Anchoring:RegisterAllFrameTargets()
         end
     end
     RegisterCustomTrackerAnchorTargets(self)
+    RegisterCustomCDMBarAnchorTargets(self)
 end
 
 -- Helper: mark a frame as overridden (blocks module positioning via PositionFrame/RegisterAnchoredFrame)

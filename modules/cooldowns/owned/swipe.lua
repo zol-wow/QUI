@@ -65,11 +65,33 @@ local BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A = 0.93, 0.77, 0.0, 
 -- Classification uses icon._auraActive (from hook) and icon._isOnGCD (from API)
 -- (set by cdm_icons.lua during cooldown updates).
 ---------------------------------------------------------------------------
+local CUSTOM_BAR_PREFIX = "customBar_"
+
 local function ApplySwipeToIcon(icon, settings)
     if not icon or not icon.Cooldown or not icon._spellEntry then return end
     settings = settings or GetSettings()
 
     local entry = icon._spellEntry
+
+    -- Per-bar swipe overrides for custom bars
+    if entry.viewerType and entry.viewerType:sub(1, #CUSTOM_BAR_PREFIX) == CUSTOM_BAR_PREFIX then
+        if ns.CDMCustomBars then
+            local barEffects = ns.CDMCustomBars:GetBarEffects(entry.viewerType)
+            if barEffects then
+                settings = {
+                    showBuffSwipe = barEffects.showBuffSwipe,
+                    showBuffIconSwipe = false,
+                    showGCDSwipe = barEffects.showGCDSwipe,
+                    showCooldownSwipe = barEffects.showCooldownSwipe,
+                    overlayColorMode = barEffects.overlayColorMode or "default",
+                    overlayColor = barEffects.overlayColor,
+                    swipeColorMode = barEffects.swipeColorMode or "default",
+                    swipeColor = barEffects.swipeColor,
+                }
+            end
+        end
+    end
+
     local isBuffIcon = (entry.viewerType == "buff")
 
     -- Classify: aura, gcd, or cooldown
@@ -192,6 +214,16 @@ local function RefreshAllSwipes()
         local pool = CDMIcons:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
             ApplySwipeToIcon(icon, settings)
+        end
+    end
+
+    -- Custom bar icons (per-bar settings applied inside ApplySwipeToIcon)
+    if ns.CDMCustomBars then
+        for _, entry in ipairs(ns.CDMCustomBars:GetViewerEntries()) do
+            local pool = CDMIcons:GetIconPool(entry.key)
+            for _, icon in ipairs(pool) do
+                ApplySwipeToIcon(icon)
+            end
         end
     end
 end

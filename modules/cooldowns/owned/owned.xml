@@ -3,6 +3,7 @@
     <Script file="cdm_spelldata.lua"/>
     <Script file="cdm_icons.lua"/>
     <Script file="cdm_bars.lua"/>
+    <Script file="cdm_custom_bars.lua"/>
     <Script file="cdm_containers.lua"/>
     <Script file="glows.lua"/>
     <Script file="swipe.lua"/>

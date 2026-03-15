@@ -846,6 +846,7 @@ local defaults = {
                 enabled = true,
                 spellIDs = { 1254638 },
             },
+            customBars = { bars = {} },
         },
 
         -- CDM Visibility (essentials, utility, buffs, power bars)
