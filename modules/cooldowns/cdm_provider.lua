@@ -80,6 +80,17 @@ function CDMProvider:GetActiveEngineName()
     return self.activeEngineName
 end
 
+--- Check if CDM module is enabled (profile ncdm.enabled ~= false).
+--- Used by engine files that run at load time (e.g. combat handlers, SetCVar).
+--- @return boolean
+function CDMProvider:IsCDMEnabled()
+    local QUICore = ns.Addon
+    if not QUICore or not QUICore.db or not QUICore.db.profile or not QUICore.db.profile.ncdm then
+        return true
+    end
+    return QUICore.db.profile.ncdm.enabled ~= false
+end
+
 ---------------------------------------------------------------------------
 -- GLOBAL WIRING
 ---------------------------------------------------------------------------
@@ -116,6 +127,14 @@ end
 
 function CDMProvider:InitializeEngine()
     if self.initialized then return end
+
+    -- Check if CDM is disabled
+    local QUICore = ns.Addon
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm then
+        if QUICore.db.profile.ncdm.enabled == false then
+            return
+        end
+    end
 
     -- Read engine selection from profile
     local QUICore = ns.Addon

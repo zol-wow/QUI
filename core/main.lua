@@ -629,6 +629,7 @@ local defaults = {
         -- QUI New Cooldown Display Manager (NCDM)
         -- Per-row configuration for Essential and Utility viewers
         ncdm = {
+            enabled = true,   -- Set false to disable CDM entirely (uses Blizzard default; reload UI to apply)
             engine = "owned",  -- CDM engine: "classic" (Blizzard hooks) or "owned" (addon-owned frames)
             essential = {
                 enabled = true,

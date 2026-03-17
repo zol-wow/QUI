@@ -56,6 +56,10 @@ local function EnsureNCDMDefaults(db)
     if not db.ncdm then
         db.ncdm = {}
     end
+    
+    if db.ncdm.enabled == nil then
+        db.ncdm.enabled = true
+    end
 
     -- Ensure essential exists
     if not db.ncdm.essential then
@@ -4835,12 +4839,37 @@ local function CreateCDMSetupPage(parent)
         tabContent:SetHeight(math.abs(y) + 60)
     end
 
-    -- Engine selection dropdown (above sub-tabs)
+    -- Enable/disable CDM and engine selection (above sub-tabs)
     local PAD = 10
     local ENGINE_ROW = 32
     local engineY = -8
 
     GUI:SetSearchContext({tabIndex = 4, tabName = "Cooldown Manager"})
+
+    -- Enable Cooldown Manager checkbox
+    local enableCallback = function()
+        RefreshNCDM()
+        GUI:ShowConfirmation({
+            title = "Reload UI?",
+            message = "Enabling or disabling the Cooldown Manager requires a UI reload to take effect.",
+            acceptText = "Reload",
+            cancelText = "Later",
+            onAccept = function() QUI:SafeReload() end,
+        })
+    end
+    local enableCheck = GUI:CreateFormCheckbox(content, "Enable Cooldown Manager", "enabled", db.ncdm, enableCallback)
+    enableCheck:SetPoint("TOPLEFT", PAD, engineY)
+    enableCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    engineY = engineY - ENGINE_ROW
+
+    local enableTip = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    enableTip:SetPoint("TOPLEFT", PAD, engineY)
+    enableTip:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    enableTip:SetTextColor(0.5, 0.5, 0.5, 1)
+    enableTip:SetText("Uncheck to disable QUI's CDM entirely (Blizzard's default cooldown display will show).")
+    enableTip:SetJustifyH("LEFT")
+    enableTip:SetWordWrap(true)
+    engineY = engineY - (enableTip:GetStringHeight() + 4)
 
     local engineOptions = {
         {value = "owned", text = "QUI CDM Engine"},

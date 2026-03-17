@@ -16,8 +16,10 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 
--- Enable CDM immediately when file loads (before any events fire)
-pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
+-- Enable CDM CVar when file loads only if CDM is enabled
+if ns.CDMProvider and ns.CDMProvider.IsCDMEnabled and ns.CDMProvider:IsCDMEnabled() then
+    pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
+end
 
 ---------------------------------------------------------------------------
 -- MODULE
