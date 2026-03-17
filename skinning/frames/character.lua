@@ -54,6 +54,27 @@ local function GetFontPath()
 end
 
 ---------------------------------------------------------------------------
+-- Helper: Style a thin QUI scrollbar
+---------------------------------------------------------------------------
+local function StyleThinScrollBar(scrollBar, r, g, b)
+    if not scrollBar then return end
+
+    if scrollBar.Track then scrollBar.Track:SetAlpha(0) end
+    if scrollBar.Background then scrollBar.Background:SetAlpha(0) end
+
+    local thumb = scrollBar.ThumbTexture or (scrollBar.GetThumbTexture and scrollBar:GetThumbTexture()) or scrollBar.Thumb
+    if thumb then
+        thumb:SetColorTexture(r, g, b, 0.78)
+        thumb:SetWidth(8 * QUICore:GetPixelSize(scrollBar))
+    end
+
+    local upBtn = scrollBar.ScrollUpButton or scrollBar.Back
+    local downBtn = scrollBar.ScrollDownButton or scrollBar.Forward
+    if upBtn then upBtn:SetAlpha(0) upBtn:SetSize(1, 1) end
+    if downBtn then downBtn:SetAlpha(0) downBtn:SetSize(1, 1) end
+end
+
+---------------------------------------------------------------------------
 -- Helper: Check if skinning is enabled
 ---------------------------------------------------------------------------
 local function IsSkinningEnabled()
@@ -604,6 +625,10 @@ local function SkinEquipmentManager()
         pane.ScrollBox:ForEachFrame(SkinEquipmentSetEntry)
     end
 
+    if pane then
+        StyleThinScrollBar(pane.ScrollBar or (pane.ScrollBox and pane.ScrollBox.ScrollBar), sr, sg, sb)
+    end
+
     -- Skin buttons
     StyleEquipMgrButton(PaperDollFrameEquipSet)
     StyleEquipMgrButton(PaperDollFrameSaveSet)
@@ -642,6 +667,9 @@ RefreshEquipmentManagerColors = function()
                 entry.HighlightBar:SetColorTexture(sr, sg, sb, 0.15)
             end
         end)
+    end
+    if pane then
+        StyleThinScrollBar(pane.ScrollBar or (pane.ScrollBox and pane.ScrollBox.ScrollBar), sr, sg, sb)
     end
 
     -- Update buttons
@@ -756,15 +784,7 @@ local function SkinTitleManagerPane()
     end
 
     -- Style scrollbar
-    if pane.ScrollBar then
-        local scrollBar = pane.ScrollBar
-        if scrollBar.Track then
-            scrollBar.Track:SetAlpha(0.3)
-        end
-        if scrollBar.Thumb then
-            scrollBar.Thumb:SetAlpha(0.5)
-        end
-    end
+    StyleThinScrollBar(pane.ScrollBar or (pane.ScrollBox and pane.ScrollBox.ScrollBar), sr, sg, sb)
 
     skinnedEntries[pane] = true
 end
@@ -803,6 +823,7 @@ RefreshTitlePaneColors = function()
             end
         end)
     end
+    StyleThinScrollBar(pane.ScrollBar or (pane.ScrollBox and pane.ScrollBox.ScrollBar), sr, sg, sb)
 end
 
 -- Hook setup function (called from initialization after CharacterFrame loads)
