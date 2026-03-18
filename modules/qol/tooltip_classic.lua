@@ -162,8 +162,12 @@ local function AreUnitsEquivalent(unitA, unitB)
     if not unitA or not unitB then return false end
     if Helpers.IsSecretValue(unitA) or Helpers.IsSecretValue(unitB) then return false end
 
-    local okUnitIsUnit, matches = pcall(UnitIsUnit, unitA, unitB)
-    if okUnitIsUnit and not Helpers.IsSecretValue(matches) and matches == true then
+    -- Keep UnitIsUnit evaluation and boolean coercion inside pcall to avoid
+    -- leaking secret booleans into unprotected boolean tests.
+    local okUnitIsUnit, isSameUnit = pcall(function()
+        return UnitIsUnit(unitA, unitB) == true
+    end)
+    if okUnitIsUnit and isSameUnit then
         return true
     end
 
