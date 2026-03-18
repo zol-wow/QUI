@@ -33,6 +33,10 @@ ns.CustomCDM = CustomCDM
 -- HELPER: Get custom entries data from DB
 ---------------------------------------------------------------------------
 local function GetCustomData(trackerKey)
+    if Helpers and Helpers.GetNCDMCustomEntries then
+        return Helpers.GetNCDMCustomEntries(trackerKey)
+    end
+
     local QUICore = GetCore()
     if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm
         and QUICore.db.char.ncdm[trackerKey] and QUICore.db.char.ncdm[trackerKey].customEntries then

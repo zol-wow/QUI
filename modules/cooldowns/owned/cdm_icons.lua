@@ -82,6 +82,10 @@ local blizzStackState = setmetatable({}, { __mode = "k" })
 local GetDB = Helpers.CreateDBGetter("ncdm")
 
 local function GetCustomData(trackerKey)
+    if Helpers and Helpers.GetNCDMCustomEntries then
+        return Helpers.GetNCDMCustomEntries(trackerKey)
+    end
+
     if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm
         and QUICore.db.char.ncdm[trackerKey] and QUICore.db.char.ncdm[trackerKey].customEntries then
         return QUICore.db.char.ncdm[trackerKey].customEntries
