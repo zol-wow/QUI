@@ -630,6 +630,7 @@ local defaults = {
         -- Per-row configuration for Essential and Utility viewers
         ncdm = {
             engine = "owned",  -- CDM engine: "classic" (Blizzard hooks) or "owned" (addon-owned frames)
+            customEntriesSpecSpecific = false, -- If true, custom entries are stored separately per spec (within each profile)
             essential = {
                 enabled = true,
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)

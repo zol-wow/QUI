@@ -17,9 +17,12 @@ local GetTextureList = Shared.GetTextureList
 
 -- Helper: Get char-scope custom entries for a tracker
 local function GetCharCustomEntries(trackerKey)
+    if ns.Helpers and ns.Helpers.GetNCDMCustomEntries then
+        return ns.Helpers.GetNCDMCustomEntries(trackerKey)
+    end
+
     local QUICore = ns.Addon
-    if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm
-        and QUICore.db.char.ncdm[trackerKey] then
+    if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm and QUICore.db.char.ncdm[trackerKey] then
         return QUICore.db.char.ncdm[trackerKey].customEntries
     end
     return nil
@@ -55,6 +58,9 @@ local function EnsureNCDMDefaults(db)
     -- Ensure ncdm table exists
     if not db.ncdm then
         db.ncdm = {}
+    end
+    if db.ncdm.customEntriesSpecSpecific == nil then
+        db.ncdm.customEntriesSpecSpecific = false
     end
 
     -- Ensure essential exists
@@ -102,51 +108,51 @@ local function EnsureNCDMDefaults(db)
         end
     end
 
-    -- Ensure char-scope customEntries exist for both trackers + one-time migration from profile
+    -- Ensure character custom-entry tables exist for both trackers
     local QUICore = ns.Addon
     local charDB = QUICore and QUICore.db and QUICore.db.char
     if charDB then
-        if not charDB.ncdm then charDB.ncdm = {} end
-        for _, key in ipairs({"essential", "utility"}) do
-            if not charDB.ncdm[key] then charDB.ncdm[key] = {} end
-            if not charDB.ncdm[key].customEntries then
-                charDB.ncdm[key].customEntries = { enabled = true, placement = "after", entries = {} }
+        local function NormalizeCustomData(customData)
+            if type(customData) ~= "table" then
+                customData = {}
             end
-            local charCustom = charDB.ncdm[key].customEntries
-            if not charCustom.entries then charCustom.entries = {} end
-            if charCustom.placement == nil then charCustom.placement = "after" end
+            if customData.enabled == nil then customData.enabled = true end
+            if customData.placement ~= "before" and customData.placement ~= "after" then
+                customData.placement = "after"
+            end
+            if type(customData.entries) ~= "table" then customData.entries = {} end
 
-            -- One-time migration: copy from profile to char if char is empty and profile has data
-            local profileTracker = db.ncdm[key]
-            if profileTracker and profileTracker.customEntries then
-                local profileEntries = profileTracker.customEntries.entries
-                if profileEntries and #profileEntries > 0 and #charCustom.entries == 0 then
-                    -- Copy entries from profile to char
-                    for _, entry in ipairs(profileEntries) do
-                        table.insert(charCustom.entries, {
-                            id = entry.id,
-                            type = entry.type,
-                            enabled = entry.enabled,
-                            position = entry.position,
-                        })
+            for i = #customData.entries, 1, -1 do
+                local entry = customData.entries[i]
+                if type(entry) ~= "table" then
+                    table.remove(customData.entries, i)
+                else
+                    if entry.enabled == nil then entry.enabled = true end
+                    if entry.position ~= nil and (type(entry.position) ~= "number" or entry.position < 1) then
+                        entry.position = nil
                     end
-                    -- Copy enabled/placement preferences
-                    if profileTracker.customEntries.enabled ~= nil then
-                        charCustom.enabled = profileTracker.customEntries.enabled
-                    end
-                    if profileTracker.customEntries.placement then
-                        charCustom.placement = profileTracker.customEntries.placement
-                    end
-                    -- Clear profile entries to prevent re-migration
-                    wipe(profileTracker.customEntries.entries)
                 end
             end
 
-            -- Sanitize entries: ensure 'enabled' field and valid position values
-            for _, entry in ipairs(charCustom.entries) do
-                if entry.enabled == nil then entry.enabled = true end
-                if entry.position ~= nil and (type(entry.position) ~= "number" or entry.position < 1) then
-                    entry.position = nil
+            return customData
+        end
+
+        if not charDB.ncdm then charDB.ncdm = {} end
+        for _, key in ipairs({"essential", "utility"}) do
+            if not charDB.ncdm[key] then charDB.ncdm[key] = {} end
+            local trackerChar = charDB.ncdm[key]
+
+            trackerChar.customEntries = NormalizeCustomData(trackerChar.customEntries)
+            if type(trackerChar.customEntriesByProfile) == "table" then
+                for _, profileBucket in pairs(trackerChar.customEntriesByProfile) do
+                    if type(profileBucket) == "table" then
+                        profileBucket.shared = NormalizeCustomData(profileBucket.shared)
+                        if type(profileBucket.bySpec) == "table" then
+                            for specID, specData in pairs(profileBucket.bySpec) do
+                                profileBucket.bySpec[specID] = NormalizeCustomData(specData)
+                            end
+                        end
+                    end
                 end
             end
         end
@@ -782,6 +788,16 @@ local function CreateCDMSetupPage(parent)
             BuildCustomEntriesTab(tabContent)
         end
 
+        -- Keep context + entry list in sync when swapping specs while this tab is open.
+        local specChangeListener = CreateFrame("Frame", nil, tabContent)
+        specChangeListener:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+        specChangeListener:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+        specChangeListener:SetScript("OnEvent", function()
+            if tabContent:IsShown() then
+                rebuildCustomEntries()
+            end
+        end)
+
         local essCustom = GetCharCustomEntries("essential")
         local utilCustom = GetCharCustomEntries("utility")
 
@@ -790,6 +806,48 @@ local function CreateCDMSetupPage(parent)
             info:SetPoint("TOPLEFT", PAD, y)
             tabContent:SetHeight(math.abs(y) + 50)
             return
+        end
+
+        -- Storage scope section (shared vs spec-specific, per profile)
+        local scopeHeader = GUI:CreateSectionHeader(tabContent, "Storage Scope")
+        scopeHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - scopeHeader.gap
+
+        local scopeCheck = GUI:CreateFormCheckbox(tabContent, "Use Spec-Specific Custom Entries (per profile)", "customEntriesSpecSpecific", db.ncdm, function()
+            if db.ncdm.customEntriesSpecSpecific and ns.Helpers and ns.Helpers.SeedNCDMCustomEntriesForCurrentSpec then
+                ns.Helpers.SeedNCDMCustomEntriesForCurrentSpec("essential")
+                ns.Helpers.SeedNCDMCustomEntriesForCurrentSpec("utility")
+            end
+            RefreshNCDM()
+            rebuildCustomEntries()
+        end)
+        scopeCheck:SetPoint("TOPLEFT", PAD, y)
+        scopeCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local scopeHint = GUI:CreateLabel(tabContent, "When enabled, each profile keeps separate custom entries per spec. When disabled, that profile shares one custom entry list across specs.", 10, C.textMuted)
+        scopeHint:SetPoint("TOPLEFT", PAD, y + 4)
+        scopeHint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        scopeHint:SetJustifyH("LEFT")
+        scopeHint:SetWordWrap(true)
+        scopeHint:SetHeight(28)
+        y = y - 34
+
+        do
+            local coreNow = ns.Addon
+            local activeProfile = (coreNow and coreNow.db and coreNow.db.GetCurrentProfile and coreNow.db:GetCurrentProfile()) or "Default"
+            local specLabel = "Unknown Spec"
+            local specIndex = GetSpecialization()
+            if specIndex then
+                local _, specName = GetSpecializationInfo(specIndex)
+                if specName then specLabel = specName end
+            end
+            local scopeLabel = db.ncdm.customEntriesSpecSpecific and "Spec-specific" or "Shared"
+            local activeContext = GUI:CreateLabel(tabContent, "Active context: " .. activeProfile .. " - " .. specLabel .. " (" .. scopeLabel .. ")", 10, C.textMuted)
+            activeContext:SetPoint("TOPLEFT", PAD, y)
+            activeContext:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            activeContext:SetJustifyH("LEFT")
+            y = y - 20
         end
 
         -- Essential Bar Settings section

@@ -217,6 +217,245 @@ function Helpers.GetModuleSettings(moduleName, defaults)
 end
 
 ---------------------------------------------------------------------------
+-- NCDM CUSTOM ENTRIES HELPERS
+-- Character-scope data partitioned by profile and optionally by spec.
+---------------------------------------------------------------------------
+
+local function NormalizeNCDMCustomEntries(data)
+    if type(data) ~= "table" then
+        data = {}
+    end
+
+    if data.enabled == nil then
+        data.enabled = true
+    end
+    if data.placement ~= "before" and data.placement ~= "after" then
+        data.placement = "after"
+    end
+    if type(data.entries) ~= "table" then
+        data.entries = {}
+    end
+
+    for i = #data.entries, 1, -1 do
+        local entry = data.entries[i]
+        if type(entry) ~= "table" then
+            table.remove(data.entries, i)
+        else
+            if entry.enabled == nil then
+                entry.enabled = true
+            end
+            if entry.position ~= nil then
+                local pos = tonumber(entry.position)
+                if pos and pos >= 1 then
+                    entry.position = math.max(1, math.floor(pos))
+                else
+                    entry.position = nil
+                end
+            end
+        end
+    end
+
+    return data
+end
+
+local function CloneNCDMCustomEntries(source)
+    local cloned = {
+        enabled = true,
+        placement = "after",
+        entries = {},
+    }
+
+    if type(source) ~= "table" then
+        return cloned
+    end
+
+    if source.enabled ~= nil then
+        cloned.enabled = source.enabled
+    end
+    if source.placement then
+        cloned.placement = source.placement
+    end
+
+    if type(source.entries) == "table" then
+        for _, entry in ipairs(source.entries) do
+            if type(entry) == "table" then
+                local copiedEntry = {}
+                for k, v in pairs(entry) do
+                    if type(v) == "table" then
+                        local sub = {}
+                        for sk, sv in pairs(v) do
+                            sub[sk] = sv
+                        end
+                        copiedEntry[k] = sub
+                    else
+                        copiedEntry[k] = v
+                    end
+                end
+                table.insert(cloned.entries, copiedEntry)
+            end
+        end
+    end
+
+    return NormalizeNCDMCustomEntries(cloned)
+end
+
+local function CreateNCDMSpecTemplate(sharedData)
+    return NormalizeNCDMCustomEntries({
+        enabled = (type(sharedData) == "table" and sharedData.enabled ~= nil) and sharedData.enabled or true,
+        placement = (type(sharedData) == "table" and sharedData.placement) or "after",
+        entries = {},
+    })
+end
+
+--- Get the current specialization ID.
+--- @return number|nil specID
+function Helpers.GetCurrentSpecID()
+    local specIndex = GetSpecialization and GetSpecialization()
+    if not specIndex then
+        return nil
+    end
+    local specID = GetSpecializationInfo and GetSpecializationInfo(specIndex)
+    if type(specID) ~= "number" then
+        return nil
+    end
+    return specID
+end
+
+--- Resolve NCDM custom entries for the active profile/spec context.
+--- Data is stored in db.char to survive profile switches, but partitioned by
+--- profile name and (optionally) by spec when enabled per-profile.
+--- @param trackerKey string "essential" or "utility"
+--- @return table|nil
+function Helpers.GetNCDMCustomEntries(trackerKey)
+    if type(trackerKey) ~= "string" or trackerKey == "" then
+        return nil
+    end
+
+    local core = Helpers.GetQUICore()
+    if not (core and core.db and core.db.char and core.db.profile) then
+        return nil
+    end
+
+    local charDB = core.db.char
+    local profileDB = core.db.profile
+
+    if type(charDB.ncdm) ~= "table" then
+        charDB.ncdm = {}
+    end
+    if type(charDB.ncdm[trackerKey]) ~= "table" then
+        charDB.ncdm[trackerKey] = {}
+    end
+    local trackerCharDB = charDB.ncdm[trackerKey]
+
+    -- Legacy shared storage (kept for backward compatibility and as fallback seed).
+    trackerCharDB.customEntries = NormalizeNCDMCustomEntries(trackerCharDB.customEntries)
+
+    if type(trackerCharDB.customEntriesByProfile) ~= "table" then
+        trackerCharDB.customEntriesByProfile = {}
+    end
+
+    local profileName = (core.db.GetCurrentProfile and core.db:GetCurrentProfile()) or "Default"
+    local profileBucket = trackerCharDB.customEntriesByProfile[profileName]
+    if type(profileBucket) ~= "table" then
+        profileBucket = {}
+        trackerCharDB.customEntriesByProfile[profileName] = profileBucket
+    end
+
+    if type(profileBucket.shared) ~= "table" then
+        local legacyProfileData = profileDB and profileDB.ncdm and profileDB.ncdm[trackerKey] and profileDB.ncdm[trackerKey].customEntries
+        local hasLegacyProfileData = type(legacyProfileData) == "table"
+            and (
+                (type(legacyProfileData.entries) == "table" and #legacyProfileData.entries > 0)
+                or legacyProfileData.enabled ~= nil
+                or legacyProfileData.placement ~= nil
+            )
+        if hasLegacyProfileData then
+            profileBucket.shared = CloneNCDMCustomEntries(legacyProfileData)
+        else
+            profileBucket.shared = CloneNCDMCustomEntries(trackerCharDB.customEntries)
+        end
+    end
+    profileBucket.shared = NormalizeNCDMCustomEntries(profileBucket.shared)
+
+    local useSpecSpecific = profileDB and profileDB.ncdm and profileDB.ncdm.customEntriesSpecSpecific == true
+    if not useSpecSpecific then
+        return profileBucket.shared
+    end
+
+    if type(profileBucket.bySpec) ~= "table" then
+        profileBucket.bySpec = {}
+    end
+
+    local specID = Helpers.GetCurrentSpecID()
+    if not specID then
+        return profileBucket.shared
+    end
+
+    local specKey = tostring(specID)
+    if type(profileBucket.bySpec[specKey]) ~= "table" then
+        profileBucket.bySpec[specKey] = CreateNCDMSpecTemplate(profileBucket.shared)
+    end
+    profileBucket.bySpec[specKey] = NormalizeNCDMCustomEntries(profileBucket.bySpec[specKey])
+    return profileBucket.bySpec[specKey]
+end
+
+--- Seed the current spec's custom-entry bucket from shared data.
+--- Intended for one-time use when spec-specific mode is first enabled.
+--- @param trackerKey string "essential" or "utility"
+--- @return boolean seeded True when a seed copy was applied
+function Helpers.SeedNCDMCustomEntriesForCurrentSpec(trackerKey)
+    if type(trackerKey) ~= "string" or trackerKey == "" then
+        return false
+    end
+
+    local core = Helpers.GetQUICore()
+    if not (core and core.db and core.db.char and core.db.profile) then
+        return false
+    end
+
+    local profileDB = core.db.profile
+    if not (profileDB and profileDB.ncdm and profileDB.ncdm.customEntriesSpecSpecific == true) then
+        return false
+    end
+
+    local specID = Helpers.GetCurrentSpecID()
+    if not specID then
+        return false
+    end
+
+    -- Ensure base structures exist and are normalized.
+    Helpers.GetNCDMCustomEntries(trackerKey)
+
+    local charDB = core.db.char
+    local trackerCharDB = charDB and charDB.ncdm and charDB.ncdm[trackerKey]
+    if type(trackerCharDB) ~= "table" then
+        return false
+    end
+
+    local profileName = (core.db.GetCurrentProfile and core.db:GetCurrentProfile()) or "Default"
+    local profileBucket = trackerCharDB.customEntriesByProfile and trackerCharDB.customEntriesByProfile[profileName]
+    if type(profileBucket) ~= "table" or type(profileBucket.shared) ~= "table" then
+        return false
+    end
+
+    if type(profileBucket.bySpec) ~= "table" then
+        profileBucket.bySpec = {}
+    end
+
+    local specKey = tostring(specID)
+    local currentSpecData = profileBucket.bySpec[specKey]
+    local hasEntries = type(currentSpecData) == "table"
+        and type(currentSpecData.entries) == "table"
+        and #currentSpecData.entries > 0
+    if hasEntries then
+        return false
+    end
+
+    profileBucket.bySpec[specKey] = CloneNCDMCustomEntries(profileBucket.shared)
+    return true
+end
+
+---------------------------------------------------------------------------
 -- CDM HUD MIN-WIDTH HELPERS
 -- Shared constants/parsing/migration for frameAnchoring.hudMinWidth
 ---------------------------------------------------------------------------
