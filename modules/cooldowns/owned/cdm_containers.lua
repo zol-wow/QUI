@@ -1216,6 +1216,8 @@ local function LayoutContainer(trackerKey)
     end
 
     -- Calculate row/column dimensions
+    -- Use first row's padding as vertical gap between rows so spacing is uniform
+    local rowGap = (rows[1] and rows[1].padding) or ROW_GAP
     local iconIndex = 1
     local maxRowWidth = 0
     local maxColHeight = 0
@@ -1266,10 +1268,10 @@ local function LayoutContainer(trackerKey)
 
         if isVertical then
             totalWidth = totalWidth + iconWidth
-            if numRowsUsed > 1 then totalWidth = totalWidth + ROW_GAP end
+            if numRowsUsed > 1 then totalWidth = totalWidth + rowGap end
         else
             totalHeight = totalHeight + iconHeight
-            if numRowsUsed > 1 then totalHeight = totalHeight + ROW_GAP end
+            if numRowsUsed > 1 then totalHeight = totalHeight + rowGap end
         end
         tempIdx = tempIdx + iconsInRow
         end -- if iconsInRow > 0
@@ -1300,11 +1302,11 @@ local function LayoutContainer(trackerKey)
             if growUp then
                 actualBot = math.min(actualBot, pos + yOff)
                 actualTop = math.max(actualTop, pos + ih + yOff)
-                pos = pos + ih + ROW_GAP
+                pos = pos + ih + rowGap
             else
                 actualTop = math.max(actualTop, pos + yOff)
                 actualBot = math.min(actualBot, pos - ih + yOff)
-                pos = pos - ih - ROW_GAP
+                pos = pos - ih - rowGap
             end
             tmpIdx = tmpIdx + n
             end -- if n > 0
@@ -1392,15 +1394,15 @@ local function LayoutContainer(trackerKey)
 
         if isVertical then
             if growLeft then
-                currentX = currentX - iconWidth - ROW_GAP
+                currentX = currentX - iconWidth - rowGap
             else
-                currentX = currentX + iconWidth + ROW_GAP
+                currentX = currentX + iconWidth + rowGap
             end
         else
             if growUp then
-                currentY = currentY + iconHeight + ROW_GAP
+                currentY = currentY + iconHeight + rowGap
             else
-                currentY = currentY - iconHeight - ROW_GAP
+                currentY = currentY - iconHeight - rowGap
             end
         end
         end -- if iconsInRow > 0
