@@ -605,7 +605,17 @@ RefreshPreview = function()
             bar._fill:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
             bar._fill:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
             bar._fill:SetWidth(math_max(1, barWidth * fillPct))
-            bar._fill:SetColorTexture(barR, barG, barB, barOpacity)
+            -- Per-spell bar color override
+            local fillR, fillG, fillB = barR, barG, barB
+            if db.colorOverrides and entry.id then
+                local oc = db.colorOverrides[entry.id]
+                if type(oc) == "table" then
+                    fillR = oc[1] or fillR
+                    fillG = oc[2] or fillG
+                    fillB = oc[3] or fillB
+                end
+            end
+            bar._fill:SetColorTexture(fillR, fillG, fillB, barOpacity)
             bar._fill:Show()
 
             -- Icon
@@ -972,6 +982,40 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
         OnOverrideChange()
     end)
     PlaceWidget(glowColorPicker)
+
+    -- Bar color override (only for bar-type containers)
+    local cType = ResolveContainerType(containerKey)
+    if cType == "auraBar" then
+        local containerDB = GetContainerDB(containerKey)
+        if containerDB then
+            if type(containerDB.colorOverrides) ~= "table" then
+                containerDB.colorOverrides = {}
+            end
+            local existingColor = containerDB.colorOverrides[spellID]
+            local barColorDB = { barColor = existingColor or (containerDB.barColor and {unpack(containerDB.barColor)}) or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
+
+            local barColorEnabled = existingColor ~= nil
+            local barColorCheck = GUI:CreateFormCheckbox(overridePanel, "Bar Color Override", nil, nil, function()
+                barColorEnabled = not barColorEnabled
+                if barColorEnabled then
+                    containerDB.colorOverrides[spellID] = barColorDB.barColor
+                else
+                    containerDB.colorOverrides[spellID] = nil
+                end
+                OnOverrideChange()
+            end)
+            barColorCheck.CheckBox:SetChecked(barColorEnabled)
+            PlaceWidget(barColorCheck)
+
+            local barColorPicker = GUI:CreateFormColorPicker(overridePanel, "Bar Color", "barColor", barColorDB, function()
+                if barColorEnabled then
+                    containerDB.colorOverrides[spellID] = barColorDB.barColor
+                    OnOverrideChange()
+                end
+            end)
+            PlaceWidget(barColorPicker)
+        end
+    end
 
     -- Duration text toggle
     local durCheck = GUI:CreateFormCheckbox(overridePanel, "Hide Duration Text", "hideDurationText", proxyDB, OnOverrideChange)
