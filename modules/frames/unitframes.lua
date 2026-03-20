@@ -6,13 +6,16 @@
 
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local GetDB = Helpers.CreateDBGetter("quiUnitFrames")
 
 local GetCore = ns.Helpers.GetCore
+
+-- ADDON_LOADED safe window flag for combat /reload support
+local inInitSafeWindow = false
 
 ---------------------------------------------------------------------------
 -- MODULE TABLE
@@ -29,10 +32,10 @@ QUI_UF.auraPreviewMode = {}  -- Tracks buff/debuff preview state (keyed by "unit
 -- Reference to castbar module
 local QUI_Castbar = ns.QUI_Castbar
 
--- Check if a frame has an active anchoring override (blocks module positioning)
+-- Check if a frame is owned by the layout system (blocks module positioning)
 local function IsFrameOverridden(frame)
     local anchoring = ns.QUI_Anchoring
-    return anchoring and anchoring.overriddenFrames and anchoring.overriddenFrames[frame]
+    return anchoring and anchoring.layoutOwnedFrames and anchoring.layoutOwnedFrames[frame]
 end
 
 -- When frame anchoring overrides are active, keep auto-sized dimensions stable
@@ -296,19 +299,9 @@ local function HideUnitTooltip()
     GameTooltip:Hide()
 end
 
----------------------------------------------------------------------------
--- HELPER: Get font path from LSM
----------------------------------------------------------------------------
-local function GetFontPath()
-    return Helpers.GetGeneralFont()
-end
+local GetFontPath = Helpers.GetGeneralFont
 
----------------------------------------------------------------------------
--- HELPER: Get font outline from general settings
----------------------------------------------------------------------------
-local function GetFontOutline()
-    return Helpers.GetGeneralFontOutline()
-end
+local GetFontOutline = Helpers.GetGeneralFontOutline
 
 ---------------------------------------------------------------------------
 -- HELPER: Get texture path from LSM (falls back to general default)
@@ -553,36 +546,6 @@ local function FormatPowerText(power, powerPct, style, divider, hidePercentSymbo
     end
 
     return result
-end
-
----------------------------------------------------------------------------
--- HELPER: Get hostility/reaction color for a unit (based on reaction to player)
----------------------------------------------------------------------------
-local function GetUnitHostilityColor(unit)
-    if not UnitExists(unit) then
-        return 0.5, 0.5, 0.5, 1
-    end
-
-    -- Get custom hostility colors from DB
-    local db = GetDB()
-    local general = db and db.general
-
-    local reaction = Helpers.SafeToNumber(UnitReaction(unit, "player"), nil)
-    if reaction then
-        if reaction >= 5 then
-            local c = general and general.hostilityColorFriendly or { 0.2, 0.8, 0.2, 1 }
-            return c[1], c[2], c[3], c[4] or 1
-        elseif reaction == 4 then
-            local c = general and general.hostilityColorNeutral or { 1, 1, 0.2, 1 }
-            return c[1], c[2], c[3], c[4] or 1
-        else
-            local c = general and general.hostilityColorHostile or { 0.8, 0.2, 0.2, 1 }
-            return c[1], c[2], c[3], c[4] or 1
-        end
-    end
-
-    -- Default to gray if we can't determine reaction
-    return 0.5, 0.5, 0.5, 1
 end
 
 ---------------------------------------------------------------------------
@@ -1547,11 +1510,13 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
     frame:SetSize(width, height)
 
-    -- Position relative to UIParent CENTER (config offsets are virtual coords)
-    if QUICore.SetSnappedPoint then
-        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
-    else
-        frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    -- Position relative to UIParent CENTER (skip if anchoring engine manages this frame)
+    if not IsFrameOverridden(frame) then
+        if QUICore.SetSnappedPoint then
+            QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        else
+            frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        end
     end
 
     -- Make it movable in Edit Mode
@@ -1889,11 +1854,13 @@ local function CreateUnitFrame(unit, unitKey)
     local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
     frame:SetSize(width, height)
 
-    -- Position relative to UIParent CENTER (config offsets are virtual coords)
-    if QUICore.SetSnappedPoint then
-        QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
-    else
-        frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+    -- Position relative to UIParent CENTER (skip if anchoring engine manages this frame)
+    if not IsFrameOverridden(frame) then
+        if QUICore.SetSnappedPoint then
+            QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        else
+            frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
+        end
     end
 
     -- Make it movable in Edit Mode (we'll handle this later)
@@ -2801,7 +2768,7 @@ function QUI_UF:RefreshFrame(unitKey)
         local general = GetGeneralSettings()
         local spacing = settings and settings.spacing or 40
         
-        if not settings or InCombatLockdown() then
+        if not settings or (InCombatLockdown() and not inInitSafeWindow) then
             -- Just update non-secure elements
             for i = 1, 5 do
                 local frame = self.frames["boss" .. i]
@@ -3087,7 +3054,8 @@ function QUI_UF:RefreshFrame(unitKey)
     end
 
     -- Skip frame modifications during combat (secure frames are protected)
-    if InCombatLockdown() then
+    -- Exception: ADDON_LOADED safe window allows protected calls during combat /reload
+    if InCombatLockdown() and not inInitSafeWindow then
         -- Only update non-secure elements (colors, text)
         UpdateFrame(frame)
         return
@@ -3529,8 +3497,13 @@ end
 -- INITIALIZE
 ---------------------------------------------------------------------------
 function QUI_UF:Initialize()
+    -- ADDON_LOADED safe window: protected calls are allowed even though
+    -- InCombatLockdown() returns true during a combat /reload.
+    inInitSafeWindow = true
+
+
     local db = GetDB()
-    if not db then return end
+    if not db then inInitSafeWindow = false return end
 
     local unitFramesEnabled = db.enabled == true
     local standaloneActive = IsStandalonePlayerCastbarActive(db)
@@ -3674,6 +3647,8 @@ function QUI_UF:Initialize()
     if _G.QUI_RefreshUnitframesVisibility then
         _G.QUI_RefreshUnitframesVisibility()
     end
+
+    inInitSafeWindow = false
 end
 
 ---------------------------------------------------------------------------
@@ -3798,14 +3773,6 @@ _G.QUI_HideAuraPreview = function(unitKey, auraType)
     QUI_UF:HideAuraPreview(unitKey, auraType)
 end
 
-_G.QUI_ToggleUnitFrameEditMode = function()
-    QUI_UF:ToggleEditMode()
-end
-
--- Register slider references for real-time sync during edit mode
-_G.QUI_RegisterEditModeSliders = function(unitKey, xSlider, ySlider)
-    QUI_UF:RegisterEditModeSliders(unitKey, xSlider, ySlider)
-end
 
 -- Apply standalone player castbar mode live from options.
 _G.QUI_ToggleStandaloneCastbar = function()
@@ -3857,17 +3824,6 @@ local function GetAnchorDimensions(anchorFrame, anchorType)
     local centerX, centerY = anchorFrame:GetCenter()
     if not centerX or not centerY then return nil end
 
-    -- Debug: log anchor dimensions during Edit Mode
-    local isEditMode = Helpers.IsEditModeActive()
-    if isEditMode and QUI and QUI.DebugPrint then
-        local afScale = anchorFrame.GetScale and anchorFrame:GetScale() or 1
-        local afLogW = anchorFrame:GetWidth() or 0
-        local afL, afR = anchorFrame:GetLeft(), anchorFrame:GetRight()
-        local afBoundsW = (afL and afR) and (afR - afL) or 0
-        QUI:DebugPrint(format("|cff88CCFF GetAnchorDim|r type=%s: w=%.0f h=%.0f logW=%.0f boundsW=%.0f scale=%.3f cx=%.0f cy=%.0f",
-            anchorType or "?", width, height, afLogW, afBoundsW, afScale, centerX, centerY))
-    end
-
     return {
         width = width,
         height = height,
@@ -3879,27 +3835,8 @@ local function GetAnchorDimensions(anchorFrame, anchorType)
     }
 end
 
--- Helper: Resolve anchor frame, preferring the proxy (which auto-follows the
--- source via WoW's native anchor system, surviving Edit Mode drag in realtime).
+-- Helper: Resolve anchor frame for a given anchor type.
 local function GetAnchorFrameOrProxy(anchorType)
-    local proxyKey
-    if anchorType == "essential" then
-        proxyKey = "cdmEssential"
-    elseif anchorType == "utility" then
-        proxyKey = "cdmUtility"
-    elseif anchorType == "primary" then
-        proxyKey = "primaryPower"
-    elseif anchorType == "secondary" then
-        proxyKey = "secondaryPower"
-    end
-    if proxyKey then
-        local getProxy = _G.QUI_GetCDMAnchorProxyFrame
-        if type(getProxy) == "function" then
-            local proxy = getProxy(proxyKey)
-            if proxy then return proxy end
-        end
-    end
-    -- Fallback to direct frame
     return GetAnchorFrame(anchorType)
 end
 
@@ -3925,16 +3862,6 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
                 local frameHeight = frame:GetHeight()
                 local gap = QUICore:PixelRound(playerSettings.anchorGap or 10, frame)
                 local yOffset = QUICore:PixelRound(playerSettings.anchorYOffset or 0, frame)
-
-                -- Debug: log anchor dimensions during Edit Mode
-                local isEditMode = Helpers.IsEditModeActive()
-                if isEditMode and QUI and QUI.DebugPrint then
-                    local afScale = anchorFrame.GetScale and anchorFrame:GetScale() or 1
-                    local afL, afR = anchorFrame:GetLeft(), anchorFrame:GetRight()
-                    local afBoundsW = (afL and afR) and (afR - afL) or 0
-                    QUI:DebugPrint(format("|cff88CCFF UF Anchor|r player→%s: anchorW=%.0f anchorH=%.0f anchorBoundsW=%.0f anchorScale=%.3f gap=%.0f yOff=%.0f",
-                        playerAnchorType, anchor.width, anchor.height, afBoundsW, afScale, gap, yOffset))
-                end
 
                 -- Relative anchor: player RIGHT edge → anchor LEFT edge, with gap.
                 -- Y offset aligns unit frame TOP with anchor TOP, then applies user offset.
@@ -3967,16 +3894,6 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
                 local frameHeight = frame:GetHeight()
                 local gap = QUICore:PixelRound(targetSettings.anchorGap or 10, frame)
                 local yOffset = QUICore:PixelRound(targetSettings.anchorYOffset or 0, frame)
-
-                -- Debug: log anchor dimensions during Edit Mode
-                local isEditMode = Helpers.IsEditModeActive()
-                if isEditMode and QUI and QUI.DebugPrint then
-                    local afScale = anchorFrame.GetScale and anchorFrame:GetScale() or 1
-                    local afL, afR = anchorFrame:GetLeft(), anchorFrame:GetRight()
-                    local afBoundsW = (afL and afR) and (afR - afL) or 0
-                    QUI:DebugPrint(format("|cff88CCFF UF Anchor|r target→%s: anchorW=%.0f anchorH=%.0f anchorBoundsW=%.0f anchorScale=%.3f gap=%.0f yOff=%.0f",
-                        targetAnchorType, anchor.width, anchor.height, afBoundsW, afScale, gap, yOffset))
-                end
 
                 -- Relative anchor: target LEFT edge → anchor RIGHT edge, with gap.
                 local yShift = (anchor.height / 2) - (frameHeight / 2) + yOffset
@@ -4040,4 +3957,594 @@ _G.QUI_UpdateLockedCastbarToFrame = function()
     if _G.QUI_RefreshCastbar then
         _G.QUI_RefreshCastbar("player")
     end
+end
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE ELEMENT REGISTRATION
+---------------------------------------------------------------------------
+do
+    local function RegisterLayoutModeElements()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+
+        local UNIT_KEYS = {
+            { key = "playerFrame", label = "Player Frame",       unit = "player",       order = 1 },
+            { key = "targetFrame", label = "Target Frame",       unit = "target",       order = 2 },
+            { key = "totFrame",    label = "Target of Target",   unit = "targettarget", order = 3 },
+            { key = "focusFrame",  label = "Focus Frame",        unit = "focus",        order = 4 },
+            { key = "petFrame",    label = "Pet Frame",          unit = "pet",          order = 5 },
+        }
+
+        local function GetUFDB()
+            local core = ns.Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.quiUnitFrames
+        end
+
+        local function RefreshUF()
+            if _G.QUI_RefreshUnitframesVisibility then _G.QUI_RefreshUnitframesVisibility() end
+        end
+
+        for _, info in ipairs(UNIT_KEYS) do
+            um:RegisterElement({
+                key = info.key,
+                label = info.label,
+                group = "Unit Frames",
+                order = info.order,
+                isOwned = true,
+                isEnabled = function()
+                    local ufdb = GetUFDB()
+                    if not ufdb or not ufdb.enabled then return false end
+                    return ufdb[info.unit] and ufdb[info.unit].enabled ~= false
+                end,
+                setEnabled = function(val)
+                    local ufdb = GetUFDB()
+                    if ufdb and ufdb[info.unit] then ufdb[info.unit].enabled = val end
+                    RefreshUF()
+                end,
+                getFrame = function()
+                    return QUI_UF.frames and QUI_UF.frames[info.unit]
+                end,
+                onOpen = function()
+                    if _G.QUI_ShowUnitFramePreview then _G.QUI_ShowUnitFramePreview(info.unit) end
+                end,
+                onClose = function()
+                    if _G.QUI_HideUnitFramePreview then _G.QUI_HideUnitFramePreview(info.unit) end
+                end,
+            })
+        end
+
+        -- Boss frames (single mover for boss1, rest chain below)
+        um:RegisterElement({
+            key = "bossFrames",
+            label = "Boss Frames",
+            group = "Unit Frames",
+            order = 10,
+            isOwned = true,
+            isEnabled = function()
+                local ufdb = GetUFDB()
+                if not ufdb or not ufdb.enabled then return false end
+                return ufdb.boss and ufdb.boss.enabled ~= false
+            end,
+            setEnabled = function(val)
+                local ufdb = GetUFDB()
+                if ufdb and ufdb.boss then ufdb.boss.enabled = val end
+                RefreshUF()
+            end,
+            getFrame = function()
+                return QUI_UF.frames and QUI_UF.frames.boss1
+            end,
+            getSize = function()
+                -- Measure actual visual extent of all shown boss frames + castbars
+                if not QUI_UF.frames or not QUI_UF.frames.boss1 then return nil end
+                local boss1 = QUI_UF.frames.boss1
+                local w = boss1:GetWidth()
+                local top = boss1:GetTop()
+                local bottom = boss1:GetBottom()
+                if not top or not bottom then return nil end
+
+                for i = 1, 5 do
+                    local f = QUI_UF.frames["boss" .. i]
+                    if f and f:IsShown() then
+                        local fB = f:GetBottom()
+                        if fB and fB < bottom then bottom = fB end
+                        local cb = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["boss" .. i]
+                        if cb and cb:IsShown() then
+                            local cbB = cb:GetBottom()
+                            if cbB and cbB < bottom then bottom = cbB end
+                        end
+                    end
+                end
+                return w, top - bottom
+            end,
+            getCenterOffset = function()
+                if not QUI_UF.frames or not QUI_UF.frames.boss1 then return 0, 0 end
+                local boss1 = QUI_UF.frames.boss1
+                local boss1H = boss1:GetHeight() or 34
+                local top = boss1:GetTop()
+                local bottom = boss1:GetBottom()
+                if not top or not bottom then return 0, 0 end
+
+                for i = 1, 5 do
+                    local f = QUI_UF.frames["boss" .. i]
+                    if f and f:IsShown() then
+                        local fB = f:GetBottom()
+                        if fB and fB < bottom then bottom = fB end
+                        local cb = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["boss" .. i]
+                        if cb and cb:IsShown() then
+                            local cbB = cb:GetBottom()
+                            if cbB and cbB < bottom then bottom = cbB end
+                        end
+                    end
+                end
+                local totalH = top - bottom
+                if totalH <= boss1H then return 0, 0 end
+                return 0, -(totalH - boss1H) / 2
+            end,
+            onOpen = function()
+                if _G.QUI_ShowUnitFramePreview then _G.QUI_ShowUnitFramePreview("boss") end
+            end,
+            onClose = function()
+                if _G.QUI_HideUnitFramePreview then _G.QUI_HideUnitFramePreview("boss") end
+            end,
+        })
+    end
+
+    -- Deferred: unit frames initialize at 0.5s, register at 2s
+    C_Timer.After(2, RegisterLayoutModeElements)
+end
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE SETTINGS PROVIDERS
+---------------------------------------------------------------------------
+do
+    local function RegisterSettingsProviders()
+        local settingsPanel = ns.QUI_LayoutMode_Settings
+        if not settingsPanel then return end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return end
+
+        local C = GUI.Colors or {}
+        local U = ns.QUI_LayoutMode_Utils
+        local P = U.PlaceRow
+        local PADDING = 0
+        local FORM_ROW = U and U.FORM_ROW or 32
+
+        -- DB key map: layout mode key → unit key
+        local UNIT_KEY_MAP = {
+            playerFrame = "player",
+            targetFrame = "target",
+            totFrame    = "targettarget",
+            focusFrame  = "focus",
+            petFrame    = "pet",
+            bossFrames  = "boss",
+        }
+
+        -- Anchoring key map: unit key → frame anchoring key
+        local ANCHOR_KEY_MAP = {
+            player       = "playerFrame",
+            target       = "targetFrame",
+            targettarget = "totFrame",
+            focus        = "focusFrame",
+            pet          = "petFrame",
+            boss         = "bossFrames",
+        }
+
+        local function GetUFDB()
+            local core = Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.quiUnitFrames
+        end
+
+        local function RefreshUF()
+            if _G.QUI_RefreshUnitFrames then _G.QUI_RefreshUnitFrames() end
+        end
+
+        local anchorOptions = {
+            {value = "TOPLEFT", text = "Top Left"},
+            {value = "TOP", text = "Top"},
+            {value = "TOPRIGHT", text = "Top Right"},
+            {value = "LEFT", text = "Left"},
+            {value = "CENTER", text = "Center"},
+            {value = "RIGHT", text = "Right"},
+            {value = "BOTTOMLEFT", text = "Bottom Left"},
+            {value = "BOTTOM", text = "Bottom"},
+            {value = "BOTTOMRIGHT", text = "Bottom Right"},
+        }
+
+        local cornerOptions = {
+            {value = "TOPLEFT", text = "Top Left"},
+            {value = "TOPRIGHT", text = "Top Right"},
+            {value = "BOTTOMLEFT", text = "Bottom Left"},
+            {value = "BOTTOMRIGHT", text = "Bottom Right"},
+        }
+
+        local growOptions = {
+            {value = "LEFT", text = "Left"},
+            {value = "RIGHT", text = "Right"},
+            {value = "UP", text = "Up"},
+            {value = "DOWN", text = "Down"},
+        }
+
+        local function GetTextureList()
+            return U.GetTextureList()
+        end
+
+        local function CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
+            return U.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
+        end
+
+        local function BuildPositionCollapsible(content, frameKey, anchorOpts, sections, relayout)
+            U.BuildPositionCollapsible(content, frameKey, anchorOpts, sections, relayout)
+        end
+
+        -----------------------------------------------------------------------
+        -- Build unit frame settings
+        -----------------------------------------------------------------------
+        local function BuildUnitSettings(content, key, width)
+            local ufdb = GetUFDB()
+            if not ufdb then return 80 end
+
+            local unitKey = UNIT_KEY_MAP[key]
+            if not unitKey or not ufdb[unitKey] then return 80 end
+
+            local unitDB = ufdb[unitKey]
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            -- Size & Appearance
+            local sizeRows = 4
+            if unitKey == "boss" then sizeRows = sizeRows + 1 end
+            CreateCollapsible(content, "Size & Appearance", sizeRows * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormSlider(body, "Width", 100, 500, 1, "width", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Height", 20, 100, 1, "height", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Border Size", 0, 5, 1, "borderSize", unitDB, RefreshUF), body, sy)
+                if unitKey == "boss" then
+                    sy = P(GUI:CreateFormSlider(body, "Boss Spacing", 0, 100, 1, "spacing", unitDB, RefreshUF), body, sy)
+                end
+                P(GUI:CreateFormDropdown(body, "Bar Texture", GetTextureList(), "texture", unitDB, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Health Bar Colors
+            local colorRows = 2
+            if unitKey ~= "player" then colorRows = colorRows + 1 end
+            CreateCollapsible(content, "Health Colors", colorRows * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", unitDB, RefreshUF), body, sy)
+                if unitKey ~= "player" then
+                    sy = P(GUI:CreateFormCheckbox(body, "Use Hostility Color", "useHostilityColor", unitDB, RefreshUF), body, sy)
+                end
+                P(GUI:CreateFormColorPicker(body, "Custom Health Color", "customHealthColor", unitDB, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Absorb Indicator
+            if unitDB.absorbs == nil then unitDB.absorbs = {} end
+            Helpers.EnsureDefaults(unitDB.absorbs, {
+                enabled = true,
+                opacity = 0.7,
+                color = {0.2, 0.8, 0.8},
+                texture = "QUI Stripes",
+            })
+
+            CreateCollapsible(content, "Absorbs", 4 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local abs = unitDB.absorbs
+                sy = P(GUI:CreateFormCheckbox(body, "Show Absorbs", "enabled", abs, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Opacity", 0, 1, 0.05, "opacity", abs, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormColorPicker(body, "Absorb Color", "color", abs, RefreshUF), body, sy)
+                P(GUI:CreateFormDropdown(body, "Absorb Texture", GetTextureList(), "texture", abs, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Heal Prediction (player & target only)
+            if unitKey == "player" or unitKey == "target" then
+                if unitDB.healPrediction == nil then unitDB.healPrediction = {} end
+                Helpers.EnsureDefaults(unitDB.healPrediction, {
+                    enabled = false,
+                    opacity = 0.5,
+                    color = {0.2, 1, 0.2},
+                })
+
+                CreateCollapsible(content, "Heal Prediction", 3 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    local hp = unitDB.healPrediction
+                    sy = P(GUI:CreateFormCheckbox(body, "Show Incoming Heals", "enabled", hp, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Opacity", 0, 1, 0.05, "opacity", hp, RefreshUF), body, sy)
+                    P(GUI:CreateFormColorPicker(body, "Heal Color", "color", hp, RefreshUF), body, sy)
+                end, sections, relayout)
+            end
+
+            -- Name Text
+            CreateCollapsible(content, "Name Text", 7 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Name", "showName", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 24, 1, "nameFontSize", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormColorPicker(body, "Name Color", "nameTextColor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "nameAnchor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "nameOffsetX", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Y Offset", -50, 50, 1, "nameOffsetY", unitDB, RefreshUF), body, sy)
+                P(GUI:CreateFormSlider(body, "Max Length (0=none)", 0, 30, 1, "maxNameLength", unitDB, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Health Text
+            local healthDisplayOptions = {
+                {value = "percent", text = "Percent"},
+                {value = "absolute", text = "Absolute"},
+                {value = "both", text = "Both"},
+                {value = "both_reverse", text = "Both (Reverse)"},
+                {value = "missing_percent", text = "Missing %"},
+                {value = "missing_value", text = "Missing Value"},
+            }
+            local dividerOptions = {
+                {value = " | ", text = "|"},
+                {value = " - ", text = "-"},
+                {value = " / ", text = "/"},
+                {value = " \226\128\162 ", text = "\226\128\162"},
+            }
+
+            CreateCollapsible(content, "Health Text", 8 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Health", "showHealth", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Display Style", healthDisplayOptions, "healthDisplayStyle", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Divider", dividerOptions, "healthDivider", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormColorPicker(body, "Text Color", "healthTextColor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 24, 1, "healthFontSize", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "healthAnchor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "healthOffsetX", unitDB, RefreshUF), body, sy)
+                P(GUI:CreateFormSlider(body, "Y Offset", -50, 50, 1, "healthOffsetY", unitDB, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Power Bar
+            CreateCollapsible(content, "Power Bar", 5 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Power Bar", "showPowerBar", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Height", 1, 20, 1, "powerBarHeight", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Show Border", "powerBarBorder", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Use Power Type Color", "powerBarUsePowerColor", unitDB, RefreshUF), body, sy)
+                P(GUI:CreateFormColorPicker(body, "Custom Bar Color", "powerBarColor", unitDB, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Power Text
+            local powerFormatOptions = {
+                {value = "percent", text = "Percent"},
+                {value = "current", text = "Current"},
+                {value = "both", text = "Both"},
+            }
+
+            CreateCollapsible(content, "Power Text", 8 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Power Text", "showPowerText", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Format", powerFormatOptions, "powerTextFormat", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Use Power Type Color", "powerTextUsePowerColor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormColorPicker(body, "Custom Text Color", "powerTextColor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 24, 1, "powerTextFontSize", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "powerTextAnchor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "powerTextOffsetX", unitDB, RefreshUF), body, sy)
+                P(GUI:CreateFormSlider(body, "Y Offset", -50, 50, 1, "powerTextOffsetY", unitDB, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Auras - Debuffs
+            if unitDB.auras == nil then unitDB.auras = {} end
+            local auras = unitDB.auras
+
+            CreateCollapsible(content, "Debuff Icons", 9 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Debuffs", "showDebuffs", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "debuffHideSwipe", auras, RefreshUF), body, sy)
+                if unitKey ~= "player" then
+                    sy = P(GUI:CreateFormCheckbox(body, "Only My Debuffs", "onlyMyDebuffs", auras, RefreshUF), body, sy)
+                end
+                sy = P(GUI:CreateFormSlider(body, "Icon Size", 12, 50, 1, "iconSize", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Anchor", cornerOptions, "debuffAnchor", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Grow Direction", growOptions, "debuffGrow", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Max Icons", 1, 32, 1, "debuffMaxIcons", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "debuffOffsetX", auras, RefreshUF), body, sy)
+                P(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "debuffOffsetY", auras, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Auras - Buffs
+            CreateCollapsible(content, "Buff Icons", 8 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Buffs", "showBuffs", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "buffHideSwipe", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Icon Size", 12, 50, 1, "buffIconSize", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Anchor", cornerOptions, "buffAnchor", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Grow Direction", growOptions, "buffGrow", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Max Icons", 1, 32, 1, "buffMaxIcons", auras, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "buffOffsetX", auras, RefreshUF), body, sy)
+                P(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "buffOffsetY", auras, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Target Marker
+            if unitDB.targetMarker == nil then unitDB.targetMarker = {} end
+            CreateCollapsible(content, "Target Marker", 4 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local tm = unitDB.targetMarker
+                sy = P(GUI:CreateFormCheckbox(body, "Show Target Marker", "enabled", tm, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Size", 8, 48, 1, "size", tm, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "anchor", tm, RefreshUF), body, sy)
+                P(GUI:CreateFormSlider(body, "X Offset", -50, 50, 1, "xOffset", tm, RefreshUF), body, sy)
+            end, sections, relayout)
+
+            -- Leader Icon (player, target, focus only)
+            if unitKey == "player" or unitKey == "target" or unitKey == "focus" then
+                if unitDB.leaderIcon == nil then unitDB.leaderIcon = {} end
+                CreateCollapsible(content, "Leader Icon", 4 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    local li = unitDB.leaderIcon
+                    sy = P(GUI:CreateFormCheckbox(body, "Show Leader/Assistant", "enabled", li, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "size", li, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "anchor", li, RefreshUF), body, sy)
+                    P(GUI:CreateFormSlider(body, "X Offset", -50, 50, 1, "xOffset", li, RefreshUF), body, sy)
+                end, sections, relayout)
+            end
+
+            -- Player-only: Status Indicators
+            if unitKey == "player" then
+                if unitDB.indicators == nil then unitDB.indicators = {} end
+                local ind = unitDB.indicators
+
+                -- Rested
+                if ind.rested == nil then ind.rested = {} end
+                CreateCollapsible(content, "Rested Indicator", 4 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    local r = ind.rested
+                    sy = P(GUI:CreateFormCheckbox(body, "Enable", "enabled", r, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "size", r, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "anchor", r, RefreshUF), body, sy)
+                    P(GUI:CreateFormSlider(body, "X Offset", -50, 50, 1, "offsetX", r, RefreshUF), body, sy)
+                end, sections, relayout)
+
+                -- Combat
+                if ind.combat == nil then ind.combat = {} end
+                CreateCollapsible(content, "Combat Indicator", 4 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    local cb = ind.combat
+                    sy = P(GUI:CreateFormCheckbox(body, "Enable", "enabled", cb, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "size", cb, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "anchor", cb, RefreshUF), body, sy)
+                    P(GUI:CreateFormSlider(body, "X Offset", -50, 50, 1, "offsetX", cb, RefreshUF), body, sy)
+                end, sections, relayout)
+
+                -- Stance/Form
+                if ind.stance == nil then ind.stance = {} end
+                CreateCollapsible(content, "Stance/Form Text", 7 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    local st = ind.stance
+                    sy = P(GUI:CreateFormCheckbox(body, "Show Stance/Form", "enabled", st, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 24, 1, "fontSize", st, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormDropdown(body, "Anchor", anchorOptions, "anchor", st, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "X Offset", -50, 50, 1, "offsetX", st, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Y Offset", -50, 50, 1, "offsetY", st, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", st, RefreshUF), body, sy)
+                    P(GUI:CreateFormColorPicker(body, "Custom Color", "customColor", st, RefreshUF), body, sy)
+                end, sections, relayout)
+            end
+
+            -- Target-only: Inline ToT
+            if unitKey == "target" then
+                CreateCollapsible(content, "Inline Target-of-Target", 5 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    sy = P(GUI:CreateFormCheckbox(body, "Show Inline ToT", "showInlineToT", unitDB, RefreshUF), body, sy)
+
+                    local sepOptions = {
+                        {value = ">>", text = ">>"},
+                        {value = ">", text = ">"},
+                        {value = "-", text = "-"},
+                        {value = "|", text = "|"},
+                        {value = "->", text = "->"},
+                        {value = "\226\128\148>", text = "\226\128\148>"},
+                        {value = ">>>", text = ">>>"},
+                    }
+                    sy = P(GUI:CreateFormDropdown(body, "Separator", sepOptions, "totSeparator", unitDB, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormCheckbox(body, "Divider Uses Class/React Color", "totDividerUseClassColor", unitDB, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormColorPicker(body, "Custom Divider Color", "totDividerColor", unitDB, RefreshUF), body, sy)
+                    P(GUI:CreateFormSlider(body, "Name Character Limit", 0, 100, 1, "totNameCharLimit", unitDB, RefreshUF), body, sy)
+                end, sections, relayout)
+
+                -- Invert Healthbar
+                CreateCollapsible(content, "Health Direction", 1 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    P(GUI:CreateFormCheckbox(body, "Invert Health Direction (LTR)", "invertHealthDirection", unitDB, RefreshUF), body, sy)
+                end, sections, relayout)
+            end
+
+            -- Embedded Castbar (for tot, pet, boss — player/target/focus have separate movers)
+            if unitKey == "targettarget" or unitKey == "pet" or unitKey == "boss" then
+                if not unitDB.castbar then
+                    unitDB.castbar = { enabled = true, width = 250, height = 25, fontSize = 12, iconSize = 25, iconScale = 1.0, color = {1, 0.7, 0, 1}, bgColor = {0.149, 0.149, 0.149, 1}, borderSize = 1, iconBorderSize = 2, texture = "Solid" }
+                end
+                local castDB = unitDB.castbar
+                if not castDB.fontSize then castDB.fontSize = 12 end
+                if not castDB.iconSize then castDB.iconSize = 25 end
+                if not castDB.iconScale then castDB.iconScale = 1.0 end
+                if not castDB.height then castDB.height = 25 end
+                if castDB.widthAdjustment == nil then castDB.widthAdjustment = 0 end
+                if castDB.showIcon == nil then castDB.showIcon = true end
+                if castDB.iconAnchor == nil then castDB.iconAnchor = "LEFT" end
+                if castDB.iconSpacing == nil then castDB.iconSpacing = 0 end
+                if castDB.iconBorderSize == nil then castDB.iconBorderSize = 2 end
+
+                local function RefreshCB()
+                    if _G.QUI_RefreshCastbar then _G.QUI_RefreshCastbar(unitKey) end
+                    -- Show/hide preview in layout mode
+                    if _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() then
+                        if castDB.enabled then
+                            if _G.QUI_ShowCastbarPreview then _G.QUI_ShowCastbarPreview(unitKey) end
+                        else
+                            if _G.QUI_HideCastbarPreview then _G.QUI_HideCastbarPreview(unitKey) end
+                        end
+                    end
+                end
+
+                CreateCollapsible(content, "Castbar", 7 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    sy = P(GUI:CreateFormCheckbox(body, "Enable Castbar", "enabled", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormCheckbox(body, "Show Spell Icon", "showIcon", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Width", 50, 2000, 1, "width", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Bar Height", 4, 60, 1, "height", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 24, 1, "fontSize", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormColorPicker(body, "Castbar Color", "color", castDB, RefreshCB), body, sy)
+                    P(GUI:CreateFormColorPicker(body, "Background Color", "bgColor", castDB, RefreshCB), body, sy)
+                end, sections, relayout)
+
+                CreateCollapsible(content, "Castbar Style", 5 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    sy = P(GUI:CreateFormDropdown(body, "Bar Texture", GetTextureList(), "texture", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Border Size", 0, 5, 1, "borderSize", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Icon Size", 8, 80, 1, "iconSize", castDB, RefreshCB), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Icon Scale", 0.5, 2.0, 0.1, "iconScale", castDB, RefreshCB, { precision = 1 }), body, sy)
+                    P(GUI:CreateFormSlider(body, "Icon Border Size", 0, 5, 0.1, "iconBorderSize", castDB, RefreshCB, { precision = 1 }), body, sy)
+                end, sections, relayout)
+
+                if unitKey ~= "boss" and unitKey ~= "pet" then
+                    -- Not applicable to boss/pet but keep for tot if needed in future
+                end
+
+                if unitKey == "target" or unitKey == "focus" or unitKey == "boss" then
+                    if castDB.notInterruptibleColor == nil then castDB.notInterruptibleColor = {0.7, 0.2, 0.2, 1} end
+                    CreateCollapsible(content, "Uninterruptible", 1 * FORM_ROW + 8, function(body)
+                        local sy = -4
+                        P(GUI:CreateFormColorPicker(body, "Uninterruptible Color", "notInterruptibleColor", castDB, RefreshCB), body, sy)
+                    end, sections, relayout)
+                end
+            end
+
+            -- Position / Anchoring
+            local anchorKey = ANCHOR_KEY_MAP[unitKey]
+            if anchorKey then
+                local anchorOpts = { sliderRange = {-3000, 3000} }
+                if unitKey == "player" or unitKey == "target" then
+                    anchorOpts.autoWidth = true
+                    anchorOpts.autoHeight = true
+                end
+                BuildPositionCollapsible(content, anchorKey, anchorOpts, sections, relayout)
+            end
+
+            relayout()
+            return content:GetHeight()
+        end
+
+        -----------------------------------------------------------------------
+        -- Register providers
+        -----------------------------------------------------------------------
+        local ALL_UF_KEYS = {
+            "playerFrame", "targetFrame", "totFrame",
+            "focusFrame", "petFrame", "bossFrames",
+        }
+
+        settingsPanel:RegisterProvider(ALL_UF_KEYS, {
+            build = BuildUnitSettings,
+        })
+    end
+
+    C_Timer.After(3, RegisterSettingsProviders)
+end
+
+if ns.Registry then
+    ns.Registry:Register("unitframes", {
+        refresh = _G.QUI_RefreshUnitFrames,
+        priority = 20,
+        group = "frames",
+        importCategories = { "unitFrames" },
+    })
 end

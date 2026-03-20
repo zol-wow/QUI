@@ -25,9 +25,7 @@ local UpdateEventRegistrations
 ---------------------------------------------------------------------------
 -- Get settings from database
 ---------------------------------------------------------------------------
-local function GetSettings()
-    return Helpers.GetModuleDB("crosshair")
-end
+local GetSettings = Helpers.CreateDBGetter("crosshair")
 
 ---------------------------------------------------------------------------
 -- Range checking via shared RangeUtils (cached action bar scan)
@@ -267,10 +265,12 @@ local function UpdateCrosshair()
     local strata = settings.strata or "HIGH"
     local onlyInCombat = settings.onlyInCombat
     
-    -- Apply strata and position
+    -- Apply strata and position (skip if anchoring engine manages this frame)
     crosshairFrame:SetFrameStrata(strata)
-    crosshairFrame:ClearAllPoints()
-    crosshairFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("crosshair")) then
+        crosshairFrame:ClearAllPoints()
+        crosshairFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    end
     
     -- Size the border textures (slightly larger than main lines)
     horizBorder:SetSize((size * 2) + borderSize * 2, thickness + borderSize * 2)
@@ -399,6 +399,15 @@ end)
 -- Global refresh function for GUI
 ---------------------------------------------------------------------------
 _G.QUI_RefreshCrosshair = UpdateCrosshair
+
+if ns.Registry then
+    ns.Registry:Register("crosshair", {
+        refresh = _G.QUI_RefreshCrosshair,
+        priority = 30,
+        group = "qol",
+        importCategories = { "castBars" },
+    })
+end
 
 QUI.Crosshair = {
     Update = UpdateCrosshair,

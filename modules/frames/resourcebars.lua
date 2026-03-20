@@ -1,6 +1,6 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local UIKit = ns.UIKit
 
 local Helpers = ns.Helpers
@@ -12,6 +12,15 @@ local function snapPx(value, px)
     if value == 0 then return 0 end
     return floor(value / px + 0.5) * px
 end
+
+-- Upvalue caching for hot-path performance
+local type = type
+local pairs = pairs
+local ipairs = ipairs
+local pcall = pcall
+local math_floor = math.floor
+local math_max = math.max
+local math_min = math.min
 
 -- Pre-create named frames so Edit Mode layout anchoring can resolve
 -- "QUIPowerBar" / "QUISecondaryPowerBar" before full initialization.
@@ -34,6 +43,8 @@ end
 
 -- Check if CDM visibility says we should be hidden
 local function IsCDMVisibilityHidden()
+    -- Layout mode suspends all visibility rules
+    if Helpers.IsLayoutModeActive() then return false end
     if _G.QUI_ShouldCDMBeVisible then
         return not _G.QUI_ShouldCDMBeVisible()
     end
@@ -43,6 +54,7 @@ end
 -- Returns configured hidden alpha when CDM visibility is currently hidden.
 -- nil means CDM visibility is not currently hiding the bars.
 local function GetCDMHiddenAlpha()
+    if Helpers.IsLayoutModeActive() then return nil end
     if _G.QUI_ShouldCDMBeVisible and not _G.QUI_ShouldCDMBeVisible() then
         local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
         return (vis and vis.fadeOutAlpha) or 0
@@ -80,14 +92,6 @@ local function ShouldShowBar(cfg)
     return true
 end
 
--- Edit Mode state tracking for power bars
-local PowerBarEditMode = {
-    active = false,
-    sliders = {
-        primary = { x = nil, y = nil },
-        secondary = { x = nil, y = nil }
-    }
-}
 
 -- Helper: Read CDM viewer state (taint-safe, avoids reading __cdm* frame properties).
 -- Returns a table with iconWidth, totalHeight, row1Width, etc., or nil if unavailable.
@@ -161,37 +165,6 @@ end
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 
--- Register slider references for real-time sync during edit mode
-function QUICore:RegisterPowerBarEditModeSliders(barKey, xSlider, ySlider)
-    PowerBarEditMode.sliders[barKey] = PowerBarEditMode.sliders[barKey] or {}
-    PowerBarEditMode.sliders[barKey].x = xSlider
-    PowerBarEditMode.sliders[barKey].y = ySlider
-end
-
--- Update sliders when position changes during edit mode
-function QUICore:NotifyPowerBarPositionChanged(barKey, offsetX, offsetY)
-    local sliders = PowerBarEditMode.sliders[barKey]
-    if sliders then
-        if sliders.x and sliders.x.SetValue then
-            sliders.x:SetValue(offsetX, true)  -- true = skip onChange callback
-        end
-        if sliders.y and sliders.y.SetValue then
-            sliders.y:SetValue(offsetY, true)
-        end
-    end
-
-    -- Update info text on overlay if visible
-    local bar = (barKey == "primary") and self.powerBar or self.secondaryPowerBar
-    if bar and bar.editOverlay and bar.editOverlay.infoText then
-        local label = (barKey == "primary") and "Primary" or "Secondary"
-        bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, offsetX, offsetY))
-    end
-
-    -- Notify unit frames that may be anchored to this power bar
-    if _G.QUI_UpdateAnchoredUnitFrames then
-        _G.QUI_UpdateAnchoredUnitFrames()
-    end
-end
 
 --TABLES
 
@@ -1099,8 +1072,7 @@ local function UpdateBarIndicatorLines(bar, indicatorPool, values, maxValue, thi
         return
     end
 
-    local px = QUICore:GetPixelSize(bar)
-    local lineThickness = (thickness or 1) * px
+    local lineThickness = QUICore:Pixels(thickness or 1, bar)
     local lineColor = color or { 1, 1, 1, 1 }
 
     for i, value in ipairs(values) do
@@ -1115,11 +1087,11 @@ local function UpdateBarIndicatorLines(bar, indicatorPool, values, maxValue, thi
 
         if isVertical then
             local y = (value / maxValue) * height
-            indicator:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, snapPx(y - (lineThickness / 2), px))
+            indicator:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, QUICore:PixelRound(y - (lineThickness / 2), bar))
             indicator:SetSize(width, lineThickness)
         else
             local x = (value / maxValue) * width
-            indicator:SetPoint("LEFT", bar.StatusBar, "LEFT", snapPx(x - (lineThickness / 2), px), 0)
+            indicator:SetPoint("LEFT", bar.StatusBar, "LEFT", QUICore:PixelRound(x - (lineThickness / 2), bar), 0)
             indicator:SetSize(lineThickness, height)
         end
 
@@ -1128,369 +1100,9 @@ local function UpdateBarIndicatorLines(bar, indicatorPool, values, maxValue, thi
 end
 
 
--- EDIT MODE HELPERS
-
--- Create a nudge button for fine-tuning position
-local function CreatePowerBarNudgeButton(parent, direction, deltaX, deltaY, barKey)
-    local btn = CreateFrame("Button", nil, parent)
-    btn:SetSize(18, 18)
-    -- Use TOOLTIP strata so nudge buttons appear above all other frames
-    btn:SetFrameStrata("TOOLTIP")
-    btn:SetFrameLevel(100)
-
-    -- Background
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0.1, 0.1, 0.1, 0.7)
-    btn.bg = bg
-
-    -- Chevron lines
-    local line1 = btn:CreateTexture(nil, "ARTWORK")
-    line1:SetColorTexture(1, 1, 1, 0.9)
-    line1:SetSize(7, 2)
-    local line2 = btn:CreateTexture(nil, "ARTWORK")
-    line2:SetColorTexture(1, 1, 1, 0.9)
-    line2:SetSize(7, 2)
-
-    -- Direction-specific positioning
-    if direction == "DOWN" then
-        line1:SetPoint("CENTER", btn, "CENTER", -2, 1)
-        line1:SetRotation(math.rad(-45))
-        line2:SetPoint("CENTER", btn, "CENTER", 2, 1)
-        line2:SetRotation(math.rad(45))
-    elseif direction == "UP" then
-        line1:SetPoint("CENTER", btn, "CENTER", -2, -1)
-        line1:SetRotation(math.rad(45))
-        line2:SetPoint("CENTER", btn, "CENTER", 2, -1)
-        line2:SetRotation(math.rad(-45))
-    elseif direction == "LEFT" then
-        line1:SetPoint("CENTER", btn, "CENTER", -1, -2)
-        line1:SetRotation(math.rad(-45))
-        line2:SetPoint("CENTER", btn, "CENTER", -1, 2)
-        line2:SetRotation(math.rad(45))
-    elseif direction == "RIGHT" then
-        line1:SetPoint("CENTER", btn, "CENTER", 1, -2)
-        line1:SetRotation(math.rad(45))
-        line2:SetPoint("CENTER", btn, "CENTER", 1, 2)
-        line2:SetRotation(math.rad(-45))
-    end
-    btn.line1 = line1
-    btn.line2 = line2
-
-    -- Hover effect
-    btn:SetScript("OnEnter", function(self)
-        self.line1:SetColorTexture(0.204, 0.827, 0.6, 1)
-        self.line2:SetColorTexture(0.204, 0.827, 0.6, 1)
-    end)
-    btn:SetScript("OnLeave", function(self)
-        self.line1:SetColorTexture(1, 1, 1, 0.9)
-        self.line2:SetColorTexture(1, 1, 1, 0.9)
-    end)
-
-    btn:SetScript("OnClick", function()
-        local cfg = (barKey == "primary") and QUICore.db.profile.powerBar or QUICore.db.profile.secondaryPowerBar
-        local shift = IsShiftKeyDown()
-        local step = shift and 10 or 1
-        cfg.offsetX = (cfg.offsetX or 0) + (deltaX * step)
-        cfg.offsetY = (cfg.offsetY or 0) + (deltaY * step)
-
-        -- Set to manual positioning mode
-        cfg.autoAttach = false
-        cfg.useRawPixels = true
-
-        -- Refresh the bar position
-        if barKey == "primary" then
-            QUICore:UpdatePowerBar()
-        else
-            QUICore:UpdateSecondaryPowerBar()
-        end
-
-        -- Notify options panel
-        QUICore:NotifyPowerBarPositionChanged(barKey, cfg.offsetX, cfg.offsetY)
-    end)
-
-    return btn
-end
-
--- Create edit mode overlay for a power bar
--- Helper: resolve the anchor proxy for a power bar (used for Edit Mode overlay sizing).
--- The proxy includes HUD min-width inflation so the overlay covers the full
--- proxy bounds, matching what downstream frames (unit frames) see.
-local function GetPowerBarProxy(barKey)
-    local getProxy = _G.QUI_GetCDMAnchorProxyFrame
-    if not getProxy then return nil end
-    local proxyKey = (barKey == "primary") and "primaryPower" or "secondaryPower"
-    return getProxy(proxyKey)
-end
-
-local function SetPowerBarEditOverlayStyle(overlay, bgColor, borderColor)
-    if not overlay then return end
-
-    if not overlay.Background then
-        overlay.Background = UIKit.CreateBackground(overlay, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
-    else
-        overlay.Background:SetVertexColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
-    end
-
-    if UIKit and UIKit.CreateBackdropBorder then
-        overlay.Border = UIKit.CreateBackdropBorder(
-            overlay,
-            2,
-            borderColor[1],
-            borderColor[2],
-            borderColor[3],
-            borderColor[4] or 1
-        )
-    end
-end
-
-local function CreatePowerBarEditOverlay(bar, barKey)
-    if bar.editOverlay then return bar.editOverlay end
-    if InCombatLockdown() then return nil end
-
-    local overlay = CreateFrame("Frame", nil, bar)
-    overlay:SetAllPoints()
-    overlay:SetFrameLevel(bar:GetFrameLevel() + 10)
-    SetPowerBarEditOverlayStyle(overlay, { 0.2, 0.8, 1, 0.3 }, { 0.2, 0.8, 1, 1 })
-
-    -- Nudge buttons
-    overlay.nudgeLeft = CreatePowerBarNudgeButton(overlay, "LEFT", -1, 0, barKey)
-    overlay.nudgeLeft:SetPoint("RIGHT", overlay, "LEFT", -4, 0)
-
-    overlay.nudgeRight = CreatePowerBarNudgeButton(overlay, "RIGHT", 1, 0, barKey)
-    overlay.nudgeRight:SetPoint("LEFT", overlay, "RIGHT", 4, 0)
-
-    overlay.nudgeUp = CreatePowerBarNudgeButton(overlay, "UP", 0, 1, barKey)
-    overlay.nudgeUp:SetPoint("BOTTOM", overlay, "TOP", 0, 4)
-
-    overlay.nudgeDown = CreatePowerBarNudgeButton(overlay, "DOWN", 0, -1, barKey)
-    overlay.nudgeDown:SetPoint("TOP", overlay, "BOTTOM", 0, -4)
-
-    -- Info text above UP arrow
-    local infoText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    infoText:SetPoint("BOTTOM", overlay.nudgeUp, "TOP", 0, 2)
-    infoText:SetTextColor(0.7, 0.7, 0.7, 1)
-    overlay.infoText = infoText
-
-    -- Store barKey for selection manager
-    overlay.elementKey = barKey
-
-    -- Hide nudge buttons initially (will show on click/selection)
-    overlay.nudgeLeft:Hide()
-    overlay.nudgeRight:Hide()
-    overlay.nudgeUp:Hide()
-    overlay.nudgeDown:Hide()
-    infoText:Hide()
-
-    -- Allow clicks to pass through overlay to bar for dragging
-    overlay:EnableMouse(false)
-
-    overlay:Hide()
-    bar.editOverlay = overlay
-    return overlay
-end
-
--- Enable edit mode for power bars
-function QUICore:EnablePowerBarEditMode()
-    if InCombatLockdown() then return end
-    PowerBarEditMode.active = true
-
-    local bars = {
-        { bar = self.powerBar, key = "primary", cfg = self.db.profile.powerBar },
-        { bar = self.secondaryPowerBar, key = "secondary", cfg = self.db.profile.secondaryPowerBar }
-    }
-
-    for _, data in ipairs(bars) do
-        local bar = data.bar
-        local barKey = data.key
-        local cfg = data.cfg
-
-        if bar and cfg and cfg.enabled then
-            -- Ensure bar is visible
-            bar:Show()
-
-            -- Create and show overlay
-            CreatePowerBarEditOverlay(bar, barKey)
-
-            -- Size overlay to the proxy bounds (includes HUD min-width inflation)
-            -- so the Edit Mode overlay shows the full area that downstream frames
-            -- (unit frames, castbars) see as the resource bar's anchor footprint.
-            local proxy = GetPowerBarProxy(barKey)
-            if proxy and proxy:GetWidth() > 1 then
-                bar.editOverlay:ClearAllPoints()
-                bar.editOverlay:SetPoint("CENTER", bar, "CENTER", 0, 0)
-                bar.editOverlay:SetSize(proxy:GetWidth(), proxy:GetHeight())
-            else
-                bar.editOverlay:ClearAllPoints()
-                bar.editOverlay:SetAllPoints(bar)
-            end
-
-            bar.editOverlay:Show()
-
-            -- Check if this bar is locked by the anchoring system
-            local isLocked = _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(bar)
-
-            -- Update info text with current position
-            if bar.editOverlay.infoText then
-                local label = (barKey == "primary") and "Primary" or "Secondary"
-                local x = cfg.offsetX or 0
-                local y = cfg.offsetY or 0
-                if isLocked then
-                    bar.editOverlay.infoText:SetText(string.format("%s  (Locked)", label))
-                else
-                    bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, x, y))
-                end
-            end
-
-            if isLocked then
-                -- Locked: grey overlay, no drag
-                SetPowerBarEditOverlayStyle(bar.editOverlay, { 0.5, 0.5, 0.5, 0.3 }, { 0.5, 0.5, 0.5, 0.8 })
-                if bar.editOverlay.infoText then
-                    bar.editOverlay.infoText:SetTextColor(0.5, 0.5, 0.5, 0.8)
-                    bar.editOverlay.infoText:Show()
-                end
-                bar:SetMovable(false)
-                bar:EnableMouse(false)
-                bar:RegisterForDrag()
-                bar:SetScript("OnMouseDown", nil)
-                bar:SetScript("OnDragStart", nil)
-                bar:SetScript("OnDragStop", nil)
-            else
-            -- Restore default (unlocked) overlay visuals
-            SetPowerBarEditOverlayStyle(bar.editOverlay, { 0.2, 0.8, 1, 0.3 }, { 0.2, 0.8, 1, 1 })
-            if bar.editOverlay.infoText then
-                bar.editOverlay.infoText:SetTextColor(0.7, 0.7, 0.7, 1)
-                bar.editOverlay.infoText:Show()
-            end
-
-            -- Enable dragging
-            bar:SetMovable(true)
-            bar:EnableMouse(true)
-            bar:RegisterForDrag("LeftButton")
-
-            -- Store barKey on bar for click handler
-            bar._editModeBarKey = barKey
-
-            -- Click handler to select this element and show its arrows
-            bar:SetScript("OnMouseDown", function(self, button)
-                if button == "LeftButton" and PowerBarEditMode.active then
-                    if QUICore and QUICore.SelectEditModeElement then
-                        QUICore:SelectEditModeElement("powerbar", self._editModeBarKey)
-                    end
-                end
-            end)
-
-            bar:SetScript("OnDragStart", function(self)
-                if PowerBarEditMode.active then
-                    self:StartMoving()
-                    self._isMoving = true
-
-                    -- Update position in real-time during drag
-                    self:SetScript("OnUpdate", function(frame)
-                        if not frame._isMoving then
-                            frame:SetScript("OnUpdate", nil)
-                            return
-                        end
-
-                        local selfX = Helpers.SafeValue(frame:GetCenter(), nil)
-                        local _, selfY = frame:GetCenter()
-                        selfY = Helpers.SafeValue(selfY, nil)
-                        local parentX = Helpers.SafeValue(UIParent:GetCenter(), nil)
-                        local _, parentY = UIParent:GetCenter()
-                        parentY = Helpers.SafeValue(parentY, nil)
-                        if selfX and selfY and parentX and parentY then
-                            local offsetX = QUICore:PixelRound(selfX - parentX)
-                            local offsetY = QUICore:PixelRound(selfY - parentY)
-
-                            -- Update database in real-time
-                            cfg.offsetX = offsetX
-                            cfg.offsetY = offsetY
-                            cfg.autoAttach = false  -- User is manually positioning
-                            cfg.useRawPixels = true -- Pixel-perfect mode
-
-                            -- Notify options panel
-                            QUICore:NotifyPowerBarPositionChanged(barKey, offsetX, offsetY)
-                        end
-                    end)
-                end
-            end)
-
-            bar:SetScript("OnDragStop", function(self)
-                self:StopMovingOrSizing()
-                self._isMoving = false
-                self:SetScript("OnUpdate", nil)
-
-                -- Final position save
-                local selfX = Helpers.SafeValue(self:GetCenter(), nil)
-                local _, selfY = self:GetCenter()
-                selfY = Helpers.SafeValue(selfY, nil)
-                local parentX = Helpers.SafeValue(UIParent:GetCenter(), nil)
-                local _, parentY = UIParent:GetCenter()
-                parentY = Helpers.SafeValue(parentY, nil)
-                if selfX and selfY and parentX and parentY then
-                    local offsetX = QUICore:PixelRound(selfX - parentX)
-                    local offsetY = QUICore:PixelRound(selfY - parentY)
-
-                    cfg.offsetX = offsetX
-                    cfg.offsetY = offsetY
-                    cfg.autoAttach = false
-                    cfg.useRawPixels = true
-
-                    -- Notify options panel
-                    QUICore:NotifyPowerBarPositionChanged(barKey, offsetX, offsetY)
-                end
-            end)
-
-            -- Keyboard handling is centralized in EditModeKeyHandler (core/main.lua).
-            -- Per-bar EnableKeyboard is removed to prevent input blocking.
-            end -- else (free)
-        end
-    end
-end
-
--- Disable edit mode for power bars
-function QUICore:DisablePowerBarEditMode()
-    PowerBarEditMode.active = false
-
-    -- Clear Edit Mode selection if a power bar was selected
-    if self.ClearEditModeSelection then
-        self:ClearEditModeSelection()
-    end
-
-    local bars = { self.powerBar, self.secondaryPowerBar }
-
-    for _, bar in ipairs(bars) do
-        if bar then
-            -- Hide overlay and restore to bar-relative sizing
-            if bar.editOverlay then
-                bar.editOverlay:Hide()
-                bar.editOverlay:ClearAllPoints()
-                bar.editOverlay:SetAllPoints(bar)
-            end
-
-            -- Disable dragging, click handlers, and keyboard
-            bar:RegisterForDrag()
-            bar:EnableKeyboard(false)
-            bar:SetScript("OnMouseDown", nil)
-            bar:SetScript("OnDragStart", nil)
-            bar:SetScript("OnDragStop", nil)
-            bar:SetScript("OnKeyDown", nil)
-            bar:SetScript("OnUpdate", nil)
-        end
-    end
-
-    -- Refresh bars to apply saved positions
-    self:UpdatePowerBar()
-    self:UpdateSecondaryPowerBar()
-
-    -- Defensive: ensure overlays are hidden after updates
-    for _, bar in ipairs(bars) do
-        if bar and bar.editOverlay then
-            bar.editOverlay:Hide()
-        end
-    end
-end
+-- Old Edit Mode overlay system removed — Layout Mode handles replace these.
+-- (See git history for CreatePowerBarNudgeButton, SetPowerBarEditOverlayStyle,
+-- CreatePowerBarEditOverlay, EnablePowerBarEditMode, DisablePowerBarEditMode)
 
 
 -- PRIMARY POWER BAR
@@ -1608,7 +1220,7 @@ function QUICore:UpdatePowerBar()
 
     -- CDM visibility can hide bars independently of bar visibility mode.
     -- Honor configured CDM fadeOutAlpha instead of forcing fully transparent.
-    if not PowerBarEditMode.active then
+    do -- CDM hidden alpha check (old edit mode guard removed)
         local cdmHiddenAlpha = GetCDMHiddenAlpha()
         if cdmHiddenAlpha ~= nil then
             bar:SetAlpha(cdmHiddenAlpha)
@@ -1619,7 +1231,7 @@ function QUICore:UpdatePowerBar()
 
     -- Visibility mode check (always/combat/hostile)
     -- Use alpha instead of Hide so anchored frames keep their reference
-    local visibilityHidden = not PowerBarEditMode.active and not ShouldShowBar(cfg)
+    local visibilityHidden = not ShouldShowBar(cfg)
     if visibilityHidden then
         bar:SetAlpha(0)
         SafeShow(bar)
@@ -1679,21 +1291,6 @@ function QUICore:UpdatePowerBar()
         end
     end
 
-    -- Debug: log power bar width calculation during Edit Mode
-    local isEditMode = Helpers.IsEditModeActive()
-    if isEditMode and QUI and QUI.DebugPrint then
-        local essViewer = _G.QUI_GetCDMViewerFrame("essential")
-        local essLogW = essViewer and essViewer:GetWidth() or 0
-        local essScale = essViewer and essViewer.GetScale and essViewer:GetScale() or 1
-        local essL, essR = essViewer and essViewer:GetLeft(), essViewer and essViewer:GetRight()
-        local essBoundsW = (essL and essR) and (essR - essL) or 0
-        local essVS = GetViewerState(essViewer)
-        local essCdmW = (essVS and essVS.iconWidth) or 0
-        QUI:DebugPrint(format("|cffFF9900PowerBar|r UpdatePowerBar: cfgW=%s finalW=%.0f essLogical=%.0f essBounds=%.0f essCdmIconW=%.0f essScale=%.3f locked=%s",
-            tostring(cfg.width or "nil"), width, essLogW, essBoundsW, essCdmW, essScale,
-            cfg.lockedToEssential and "ess" or (cfg.lockedToUtility and "util" or "no")))
-    end
-
     -- Calculate desired position and size (pixel-snapped for crisp borders)
     local offsetX, offsetY
     local isSwapped = ShouldSwapBars()
@@ -1736,7 +1333,7 @@ function QUICore:UpdatePowerBar()
     -- Only reposition when offset actually changed (prevents flicker)
     -- Skip if frame has an active anchoring override
     local swapMode = isSwapped and "swappedToSecondary" or nil
-    if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar)) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode) then
+    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("primaryPower")) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode) then
         bar:ClearAllPoints()
         bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
         bar._cachedX = offsetX
@@ -2042,16 +1639,6 @@ _G.QUI_UpdateLockedPowerBar = function()
         end
     end
 
-    -- Debug: log locked power bar calculation during Edit Mode
-    local isEditMode = Helpers.IsEditModeActive()
-    if isEditMode and QUI and QUI.DebugPrint then
-        QUI:DebugPrint(format("|cffFF9900PowerBar|r UpdateLockedPowerBar: newW=%s vsIconW=%s vsRow1W=%s rawRow1W=%s logicalW=%.0f",
-            tostring(newWidth or "nil"),
-            tostring(evs and evs.iconWidth or "nil"),
-            tostring(evs and evs.row1Width or "nil"),
-            tostring(evs and evs.rawRow1Width or "nil"),
-            Helpers.SafeValue(essentialViewer:GetWidth(), 0)))
-    end
 
     -- First CDM update: mark primary locked bar as ready so it becomes visible.
     local needsUpdate = false
@@ -3070,7 +2657,7 @@ function QUICore:UpdateSecondaryPowerBar()
 
     -- CDM visibility can hide bars independently of bar visibility mode.
     -- Honor configured CDM fadeOutAlpha instead of forcing fully transparent.
-    if not PowerBarEditMode.active then
+    do -- CDM hidden alpha check (old edit mode guard removed)
         local cdmHiddenAlpha = GetCDMHiddenAlpha()
         if cdmHiddenAlpha ~= nil then
             bar:SetAlpha(cdmHiddenAlpha)
@@ -3081,7 +2668,7 @@ function QUICore:UpdateSecondaryPowerBar()
 
     -- Visibility mode check (always/combat/hostile)
     -- Use alpha instead of Hide so anchored frames keep their reference
-    local visibilityHidden = not PowerBarEditMode.active and not ShouldShowBar(cfg)
+    local visibilityHidden = not ShouldShowBar(cfg)
     if visibilityHidden then
         bar:SetAlpha(0)
         SafeShow(bar)
@@ -3157,7 +2744,7 @@ function QUICore:UpdateSecondaryPowerBar()
                 offsetY = offsetY + deltaY
             end
 
-            if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar)) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= "swappedToPrimary") then
+            if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("secondaryPower")) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= "swappedToPrimary") then
                 bar:ClearAllPoints()
                 bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
                 bar._cachedX = offsetX
@@ -3234,7 +2821,7 @@ function QUICore:UpdateSecondaryPowerBar()
                 -- Position the bar (add user adjustment on top of calculated base position)
                 local finalX = offsetX + (cfg.offsetX or 0)
                 local finalY = offsetY + (cfg.offsetY or 0)
-                if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar)) and (bar._cachedX ~= finalX or bar._cachedY ~= finalY or bar._cachedAutoMode ~= "lockedToPrimary") then
+                if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("secondaryPower")) and (bar._cachedX ~= finalX or bar._cachedY ~= finalY or bar._cachedAutoMode ~= "lockedToPrimary") then
                     bar:ClearAllPoints()
                     bar:SetPoint("CENTER", UIParent, "CENTER", finalX, finalY)
                     bar._cachedX = finalX
@@ -3298,7 +2885,7 @@ function QUICore:UpdateSecondaryPowerBar()
                 -- Add user adjustment on top of calculated base position
                 local finalX = offsetX + (cfg.offsetX or 0)
                 local finalY = offsetY + (cfg.offsetY or 0)
-                if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar)) and (bar._cachedX ~= finalX or bar._cachedY ~= finalY or bar._cachedAutoMode ~= "lockedToPrimaryCached") then
+                if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("secondaryPower")) and (bar._cachedX ~= finalX or bar._cachedY ~= finalY or bar._cachedAutoMode ~= "lockedToPrimaryCached") then
                     bar:ClearAllPoints()
                     bar:SetPoint("CENTER", UIParent, "CENTER", finalX, finalY)
                     bar._cachedX = finalX
@@ -3385,7 +2972,7 @@ function QUICore:UpdateSecondaryPowerBar()
             if not wantedAnchor then
                 -- Fall through to manual positioning below
             else
-                if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar)) and (bar._cachedAnchor ~= wantedAnchor or bar._cachedX ~= wantedOffsetX or bar._cachedAutoMode ~= true) then
+                if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("secondaryPower")) and (bar._cachedAnchor ~= wantedAnchor or bar._cachedX ~= wantedOffsetX or bar._cachedAutoMode ~= true) then
                     bar:ClearAllPoints()
                     bar:SetPoint("BOTTOM", wantedAnchor, "TOP", wantedOffsetX, 0)
                     bar._cachedAnchor = wantedAnchor
@@ -3433,7 +3020,7 @@ function QUICore:UpdateSecondaryPowerBar()
             local wantedX, wantedY
             wantedX = QUICore:PixelRound(baseX + (cfg.offsetX or 0), bar)
             wantedY = QUICore:PixelRound(baseY + (cfg.offsetY or 0), bar)
-            if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar)) and (bar._cachedX ~= wantedX or bar._cachedY ~= wantedY or bar._cachedAutoMode ~= false) then
+            if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("secondaryPower")) and (bar._cachedX ~= wantedX or bar._cachedY ~= wantedY or bar._cachedAutoMode ~= false) then
                 bar:ClearAllPoints()
                 bar:SetPoint("CENTER", UIParent, "CENTER", wantedX, wantedY)
                 bar._cachedX = wantedX
@@ -3816,22 +3403,7 @@ local function InitializeResourceBars(self)
         end
     end)
 
-    -- Hook Blizzard Edit Mode for power bars (via centralized dispatcher)
-    C_Timer.After(0.6, function()
-        if not QUICore._powerBarEditModeHooked then
-            QUICore._powerBarEditModeHooked = true
-            QUICore:RegisterEditModeEnter(function()
-                if not InCombatLockdown() then
-                    QUICore:EnablePowerBarEditMode()
-                end
-            end)
-            QUICore:RegisterEditModeExit(function()
-                if not InCombatLockdown() then
-                    QUICore:DisablePowerBarEditMode()
-                end
-            end)
-        end
-    end)
+    -- Old Edit Mode overlay callbacks removed — Layout Mode handles replace these.
 end
 
 
@@ -3863,4 +3435,357 @@ if QUICore and QUICore.RegisterPostEnable then
     QUICore:RegisterPostEnable(function(core)
         InitializeResourceBars(core)
     end)
+end
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE ELEMENT REGISTRATION
+---------------------------------------------------------------------------
+do
+    local function RegisterLayoutModeElements()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+
+        local function GetPowerDB(which)
+            local core = ns.Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile[which]
+        end
+
+        um:RegisterElement({
+            key = "primaryPower",
+            label = "Primary Power",
+            group = "Resource Bars",
+            order = 1,
+            isOwned = true,
+            isEnabled = function()
+                local db = GetPowerDB("powerBar")
+                return db and db.enabled ~= false
+            end,
+            setEnabled = function(val)
+                local db = GetPowerDB("powerBar")
+                if db then db.enabled = val end
+                if QUICore and QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
+            end,
+            getFrame = function()
+                return QUICore and QUICore.powerBar
+            end,
+        })
+
+        um:RegisterElement({
+            key = "secondaryPower",
+            label = "Secondary Power",
+            group = "Resource Bars",
+            order = 2,
+            isOwned = true,
+            isEnabled = function()
+                local db = GetPowerDB("secondaryPowerBar")
+                return db and db.enabled ~= false
+            end,
+            setEnabled = function(val)
+                local db = GetPowerDB("secondaryPowerBar")
+                if db then db.enabled = val end
+                if QUICore and QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
+            end,
+            getFrame = function()
+                return QUICore and QUICore.secondaryPowerBar
+            end,
+        })
+    end
+
+    C_Timer.After(2, RegisterLayoutModeElements)
+end
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE SETTINGS PROVIDERS
+---------------------------------------------------------------------------
+do
+    local function RegisterSettingsProviders()
+        local settingsPanel = ns.QUI_LayoutMode_Settings
+        if not settingsPanel then return end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return end
+
+        local C = GUI.Colors or {}
+        local U = ns.QUI_LayoutMode_Utils
+        local FORM_ROW = U and U.FORM_ROW or 32
+
+        local function GetProfileDB()
+            local core = Helpers.GetCore()
+            return core and core.db and core.db.profile
+        end
+
+        local function RefreshPowerBars()
+            if QUICore and QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
+            if QUICore and QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
+        end
+
+        local visibilityOptions = {
+            {value = "always", text = "Always"},
+            {value = "combat", text = "In Combat"},
+            {value = "hostile", text = "Hostile Target"},
+        }
+
+        local orientationOptions = {
+            {value = "HORIZONTAL", text = "Horizontal"},
+            {value = "VERTICAL", text = "Vertical"},
+        }
+
+        local colorModeOptions = {
+            {value = "power", text = "Power Type Color"},
+            {value = "class", text = "Class Color"},
+            {value = "custom", text = "Custom Color"},
+        }
+
+        -----------------------------------------------------------------------
+        -- Primary Power Bar settings builder
+        -----------------------------------------------------------------------
+        local function BuildPrimaryPowerSettings(content, key, width)
+            local profile = GetProfileDB()
+            local primary = profile and profile.powerBar
+            if not primary then return 80 end
+
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            -- Enable toggle (standalone row)
+            local enableRow = CreateFrame("Frame", nil, content)
+            enableRow:SetHeight(FORM_ROW)
+            local enableCheck = GUI:CreateFormCheckbox(enableRow, "Enable", "enabled", primary, function()
+                RefreshPowerBars()
+            end)
+            enableCheck:SetPoint("TOPLEFT", 0, 0)
+            enableCheck:SetPoint("RIGHT", enableRow, "RIGHT", 0, 0)
+            sections[#sections + 1] = enableRow
+
+            -- General
+            U.CreateCollapsible(content, "General", 4 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local visDD = GUI:CreateFormDropdown(body, "Visibility", visibilityOptions, "visibility", primary, RefreshPowerBars)
+                sy = U.PlaceRow(visDD, body, sy)
+
+                local oriDD = GUI:CreateFormDropdown(body, "Orientation", orientationOptions, "orientation", primary, RefreshPowerBars)
+                sy = U.PlaceRow(oriDD, body, sy)
+
+                local autoCheck = GUI:CreateFormCheckbox(body, "Auto Attach", "autoAttach", primary, RefreshPowerBars)
+                sy = U.PlaceRow(autoCheck, body, sy)
+
+                local standCheck = GUI:CreateFormCheckbox(body, "Standalone Mode", "standaloneMode", primary, RefreshPowerBars)
+                U.PlaceRow(standCheck, body, sy)
+            end, sections, relayout)
+
+            -- Dimensions
+            U.CreateCollapsible(content, "Dimensions", 5 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local wSlider = GUI:CreateFormSlider(body, "Width", 50, 600, 1, "width", primary, RefreshPowerBars)
+                sy = U.PlaceRow(wSlider, body, sy)
+
+                local hSlider = GUI:CreateFormSlider(body, "Height", 2, 40, 1, "height", primary, RefreshPowerBars)
+                sy = U.PlaceRow(hSlider, body, sy)
+
+                local snapSlider = GUI:CreateFormSlider(body, "Snap Gap", 0, 20, 1, "snapGap", primary, RefreshPowerBars)
+                sy = U.PlaceRow(snapSlider, body, sy)
+
+                local xSlider = GUI:CreateFormSlider(body, "X Offset", -500, 500, 1, "offsetX", primary, RefreshPowerBars)
+                sy = U.PlaceRow(xSlider, body, sy)
+
+                local ySlider = GUI:CreateFormSlider(body, "Y Offset", -500, 500, 1, "offsetY", primary, RefreshPowerBars)
+                U.PlaceRow(ySlider, body, sy)
+            end, sections, relayout)
+
+            -- Appearance
+            U.CreateCollapsible(content, "Appearance", 2 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local texDD = GUI:CreateFormDropdown(body, "Bar Texture", U.GetTextureList(), "texture", primary, RefreshPowerBars)
+                sy = U.PlaceRow(texDD, body, sy)
+
+                local borderSlider = GUI:CreateFormSlider(body, "Border Size", 0, 5, 1, "borderSize", primary, RefreshPowerBars)
+                U.PlaceRow(borderSlider, body, sy)
+            end, sections, relayout)
+
+            -- Text
+            U.CreateCollapsible(content, "Text", 5 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", primary, RefreshPowerBars)
+                sy = U.PlaceRow(showTextCheck, body, sy)
+
+                local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", primary, RefreshPowerBars)
+                sy = U.PlaceRow(showPctCheck, body, sy)
+
+                local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", primary, RefreshPowerBars)
+                sy = U.PlaceRow(textSizeSlider, body, sy)
+
+                local textXSlider = GUI:CreateFormSlider(body, "Text X Offset", -50, 50, 1, "textX", primary, RefreshPowerBars)
+                sy = U.PlaceRow(textXSlider, body, sy)
+
+                local textYSlider = GUI:CreateFormSlider(body, "Text Y Offset", -50, 50, 1, "textY", primary, RefreshPowerBars)
+                U.PlaceRow(textYSlider, body, sy)
+            end, sections, relayout)
+
+            -- Colors
+            U.CreateCollapsible(content, "Colors", 3 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local colorDD = GUI:CreateFormDropdown(body, "Color Mode", colorModeOptions, "colorMode", primary, RefreshPowerBars)
+                sy = U.PlaceRow(colorDD, body, sy)
+
+                local customPicker = GUI:CreateFormColorPicker(body, "Custom Color", "customColor", primary, RefreshPowerBars)
+                sy = U.PlaceRow(customPicker, body, sy)
+
+                local bgPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", primary, RefreshPowerBars)
+                U.PlaceRow(bgPicker, body, sy)
+            end, sections, relayout)
+
+            -- Lock
+            U.CreateCollapsible(content, "Lock", 2 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local lockEss = GUI:CreateFormCheckbox(body, "Lock to Essential", "lockedToEssential", primary, RefreshPowerBars)
+                sy = U.PlaceRow(lockEss, body, sy)
+
+                local lockUtil = GUI:CreateFormCheckbox(body, "Lock to Utility", "lockedToUtility", primary, RefreshPowerBars)
+                U.PlaceRow(lockUtil, body, sy)
+            end, sections, relayout)
+
+            -- Position / Anchoring (with auto-width support)
+            U.BuildPositionCollapsible(content, key, { autoWidth = true }, sections, relayout)
+
+            relayout()
+            return content:GetHeight()
+        end
+
+        -----------------------------------------------------------------------
+        -- Secondary Power Bar settings builder
+        -----------------------------------------------------------------------
+        local function BuildSecondaryPowerSettings(content, key, width)
+            local profile = GetProfileDB()
+            local secondary = profile and profile.secondaryPowerBar
+            if not secondary then return 80 end
+
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            -- Enable toggle (standalone row)
+            local enableRow = CreateFrame("Frame", nil, content)
+            enableRow:SetHeight(FORM_ROW)
+            local enableCheck = GUI:CreateFormCheckbox(enableRow, "Enable", "enabled", secondary, function()
+                RefreshPowerBars()
+            end)
+            enableCheck:SetPoint("TOPLEFT", 0, 0)
+            enableCheck:SetPoint("RIGHT", enableRow, "RIGHT", 0, 0)
+            sections[#sections + 1] = enableRow
+
+            -- General (extra controls for secondary)
+            U.CreateCollapsible(content, "General", 7 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local visDD = GUI:CreateFormDropdown(body, "Visibility", visibilityOptions, "visibility", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(visDD, body, sy)
+
+                local oriDD = GUI:CreateFormDropdown(body, "Orientation", orientationOptions, "orientation", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(oriDD, body, sy)
+
+                local autoCheck = GUI:CreateFormCheckbox(body, "Auto Attach", "autoAttach", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(autoCheck, body, sy)
+
+                local standCheck = GUI:CreateFormCheckbox(body, "Standalone Mode", "standaloneMode", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(standCheck, body, sy)
+
+                local swapCheck = GUI:CreateFormCheckbox(body, "Swap to Primary Position", "swapToPrimaryPosition", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(swapCheck, body, sy)
+
+                local hideCheck = GUI:CreateFormCheckbox(body, "Hide Primary on Swap", "hidePrimaryOnSwap", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(hideCheck, body, sy)
+
+                local fragCheck = GUI:CreateFormCheckbox(body, "Show Fragmented Power Bar Text", "showFragmentedPowerBarText", secondary, RefreshPowerBars)
+                U.PlaceRow(fragCheck, body, sy)
+            end, sections, relayout)
+
+            -- Dimensions
+            U.CreateCollapsible(content, "Dimensions", 5 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local wSlider = GUI:CreateFormSlider(body, "Width", 50, 600, 1, "width", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(wSlider, body, sy)
+
+                local hSlider = GUI:CreateFormSlider(body, "Height", 2, 40, 1, "height", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(hSlider, body, sy)
+
+                local snapSlider = GUI:CreateFormSlider(body, "Snap Gap", 0, 20, 1, "snapGap", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(snapSlider, body, sy)
+
+                local xSlider = GUI:CreateFormSlider(body, "X Offset", -500, 500, 1, "offsetX", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(xSlider, body, sy)
+
+                local ySlider = GUI:CreateFormSlider(body, "Y Offset", -500, 500, 1, "offsetY", secondary, RefreshPowerBars)
+                U.PlaceRow(ySlider, body, sy)
+            end, sections, relayout)
+
+            -- Appearance
+            U.CreateCollapsible(content, "Appearance", 2 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local texDD = GUI:CreateFormDropdown(body, "Bar Texture", U.GetTextureList(), "texture", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(texDD, body, sy)
+
+                local borderSlider = GUI:CreateFormSlider(body, "Border Size", 0, 5, 1, "borderSize", secondary, RefreshPowerBars)
+                U.PlaceRow(borderSlider, body, sy)
+            end, sections, relayout)
+
+            -- Text
+            U.CreateCollapsible(content, "Text", 5 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(showTextCheck, body, sy)
+
+                local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(showPctCheck, body, sy)
+
+                local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(textSizeSlider, body, sy)
+
+                local textXSlider = GUI:CreateFormSlider(body, "Text X Offset", -50, 50, 1, "textX", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(textXSlider, body, sy)
+
+                local textYSlider = GUI:CreateFormSlider(body, "Text Y Offset", -50, 50, 1, "textY", secondary, RefreshPowerBars)
+                U.PlaceRow(textYSlider, body, sy)
+            end, sections, relayout)
+
+            -- Colors
+            U.CreateCollapsible(content, "Colors", 3 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local colorDD = GUI:CreateFormDropdown(body, "Color Mode", colorModeOptions, "colorMode", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(colorDD, body, sy)
+
+                local customPicker = GUI:CreateFormColorPicker(body, "Custom Color", "customColor", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(customPicker, body, sy)
+
+                local bgPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", secondary, RefreshPowerBars)
+                U.PlaceRow(bgPicker, body, sy)
+            end, sections, relayout)
+
+            -- Lock
+            U.CreateCollapsible(content, "Lock", 2 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local lockEss = GUI:CreateFormCheckbox(body, "Lock to Essential", "lockedToEssential", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(lockEss, body, sy)
+
+                local lockUtil = GUI:CreateFormCheckbox(body, "Lock to Utility", "lockedToUtility", secondary, RefreshPowerBars)
+                U.PlaceRow(lockUtil, body, sy)
+            end, sections, relayout)
+
+            -- Position / Anchoring
+            U.BuildPositionCollapsible(content, key, { autoWidth = true }, sections, relayout)
+
+            relayout()
+            return content:GetHeight()
+        end
+
+        -----------------------------------------------------------------------
+        -- Register all providers
+        -----------------------------------------------------------------------
+        settingsPanel:RegisterProvider("primaryPower", {
+            build = BuildPrimaryPowerSettings,
+        })
+
+        settingsPanel:RegisterProvider("secondaryPower", {
+            build = BuildSecondaryPowerSettings,
+        })
+    end
+
+    C_Timer.After(3, RegisterSettingsProviders)
 end

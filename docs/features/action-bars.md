@@ -11,11 +11,11 @@ QUI skins and enhances all 8 standard action bars plus special bars like Pet, St
 
 ## Overview
 
-The action bar module applies visual skinning to your buttons (icon zoom, backdrops, borders) and adds functional enhancements like mouseover fade, range and usability indicators, and customizable text overlays. You can configure settings globally and then override them on a per-bar basis for fine control.
+QUI uses a **native action bar engine** built on Blizzard's `ActionBarButtonTemplate`. Bar 1 is created with paging support, and bars 2-8 are reparented Blizzard frames. The module applies visual skinning to your buttons (icon zoom, backdrops, borders) and adds functional enhancements like mouseover fade, range and usability indicators, and customizable text overlays. You can configure settings globally and then override them on a per-bar basis for fine control.
 
 ## How to Enable
 
-Action bar enhancements are enabled by default. To access settings, open `/qui` and navigate to the **Frames > Action Bars** tab.
+Action bar enhancements are enabled by default. To access settings, open `/qui` and navigate to the **Action Bars** tab.
 
 ## Key Features
 

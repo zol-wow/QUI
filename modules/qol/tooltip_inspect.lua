@@ -383,10 +383,6 @@ function TooltipInspect:GetCachedPlayerData(unit)
     return GetCacheEntry(guid)
 end
 
-function TooltipInspect:GetCachedItemLevel(unit)
-    local playerData = self:GetCachedPlayerData(unit)
-    return playerData and playerData.itemLevel or nil
-end
 
 function TooltipInspect:QueueInspect(unit)
     if not IsTooltipPlayerItemLevelEnabled() then return false end

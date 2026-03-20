@@ -33,160 +33,48 @@ local NINE_POINT_OPTIONS = {
     {value = "BOTTOMRIGHT", text = "Bottom Right"},
 }
 
-local DEFAULTS = {
-    enabled      = false,
-    parent       = "screen",
-    point        = "CENTER",
-    relative     = "CENTER",
-    offsetX      = 0,
-    offsetY      = 0,
-    sizeStable   = true,
-    autoWidth    = false,
-    widthAdjust  = 0,
-    autoHeight   = false,
-    heightAdjust = 0,
-}
-
 ---------------------------------------------------------------------------
--- DATABASE HELPERS
+-- DATABASE HELPERS (delegate to shared infrastructure in utility/anchoring.lua)
 ---------------------------------------------------------------------------
 local function GetAnchoringDB()
+    local AnchorOpts = GetAnchorOpts()
+    if AnchorOpts and AnchorOpts.GetAnchoringDB then
+        return AnchorOpts:GetAnchoringDB()
+    end
+    -- Fallback if utility module not loaded yet
     local core = GetCore()
     local db = core and core.db and core.db.profile
     if not db then return nil end
     if type(db.frameAnchoring) ~= "table" then
         db.frameAnchoring = {}
     end
-
-    -- Migrate and normalize legacy scalar keys to object style:
-    -- frameAnchoring.hudMinWidth = { enabled = bool, width = number }
-    local hudMinWidth
-    if Helpers.MigrateHUDMinWidthSettings then
-        hudMinWidth = Helpers.MigrateHUDMinWidthSettings(db.frameAnchoring)
-    end
-    if not hudMinWidth then
-        local enabled, width = false, HUD_MIN_WIDTH_DEFAULT
-        if Helpers.ParseHUDMinWidth then
-            enabled, width = Helpers.ParseHUDMinWidth(db.frameAnchoring)
-        end
-        hudMinWidth = {
-            enabled = enabled == true,
-            width = width or HUD_MIN_WIDTH_DEFAULT,
-        }
-        db.frameAnchoring.hudMinWidth = hudMinWidth
-        db.frameAnchoring.hudMinWidthEnabled = nil
-    end
-
     return db.frameAnchoring
 end
 
 local function GetFrameDB(key)
-    local anchoringDB = GetAnchoringDB()
-    if not anchoringDB then return nil end
-    if not anchoringDB[key] then
-        anchoringDB[key] = {}
+    local AnchorOpts = GetAnchorOpts()
+    if AnchorOpts and AnchorOpts.GetFrameDB then
+        return AnchorOpts:GetFrameDB(key)
     end
-    -- Backfill missing defaults (handles entries created before new fields were added)
-    for k, v in pairs(DEFAULTS) do
-        if anchoringDB[key][k] == nil then
-            anchoringDB[key][k] = v
-        end
-    end
-    return anchoringDB[key]
+    return nil
 end
 
 ---------------------------------------------------------------------------
 -- SHARED: Build frame entry widgets for a single frame key
+-- Delegates to BuildAnchoringSection from utility/anchoring.lua
 ---------------------------------------------------------------------------
 local function BuildFrameEntry(tabContent, frameDef, y)
-    local PAD = PADDING
     local AnchorOpts = GetAnchorOpts()
-    local ninePointOptions = AnchorOpts and AnchorOpts:GetNinePointAnchorOptions() or NINE_POINT_OPTIONS
-
-    local frameDB = GetFrameDB(frameDef.key)
-    if not frameDB then return y end
-
-    local function OnChange()
-        if _G.QUI_ApplyFrameAnchor then
-            _G.QUI_ApplyFrameAnchor(frameDef.key)
-        end
+    if AnchorOpts and AnchorOpts.BuildAnchoringSection then
+        local newY = AnchorOpts:BuildAnchoringSection(tabContent, frameDef.key, {
+            name = frameDef.name,
+            autoWidth = frameDef.autoWidth,
+            autoHeight = frameDef.autoHeight,
+        }, y)
+        return newY
     end
 
-    -- Frame section header (blue title + underline)
-    local sectionHeader = GUI:CreateSectionHeader(tabContent, frameDef.name)
-    sectionHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - sectionHeader.gap
-
-    -- Enable toggle
-    local toggle = GUI:CreateFormToggle(tabContent, "Enable Override", "enabled", frameDB, OnChange)
-    toggle:SetPoint("TOPLEFT", PAD + 10, y)
-    toggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    -- Anchor To dropdown (uses anchor target registry)
-    if AnchorOpts then
-        local anchorDropdown = AnchorOpts:CreateAnchorDropdown(
-            tabContent, "Anchor To", frameDB, "parent",
-            PAD + 10, y, nil, OnChange,
-            nil, nil, frameDef.key  -- excludeSelf
-        )
-        if anchorDropdown then
-            anchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
-        end
-    end
-
-    -- From Point dropdown (source anchor)
-    local fromPoint = GUI:CreateFormDropdown(tabContent, "From Point", ninePointOptions, "point", frameDB, OnChange)
-    fromPoint:SetPoint("TOPLEFT", PAD + 10, y)
-    fromPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    -- To Point dropdown (target anchor)
-    local toPoint = GUI:CreateFormDropdown(tabContent, "To Point", ninePointOptions, "relative", frameDB, OnChange)
-    toPoint:SetPoint("TOPLEFT", PAD + 10, y)
-    toPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    -- Offset X slider
-    local sliderX = GUI:CreateFormSlider(tabContent, "Offset X", -500, 500, 1, "offsetX", frameDB, OnChange)
-    sliderX:SetPoint("TOPLEFT", PAD + 10, y)
-    sliderX:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    -- Offset Y slider
-    local sliderY = GUI:CreateFormSlider(tabContent, "Offset Y", -500, 500, 1, "offsetY", frameDB, OnChange)
-    sliderY:SetPoint("TOPLEFT", PAD + 10, y)
-    sliderY:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    -- Auto-width toggle (match anchor target width)
-    if frameDef.autoWidth then
-        local autoWidthToggle = GUI:CreateFormToggle(tabContent, "Auto-Width (Match Anchor Target)", "autoWidth", frameDB, OnChange)
-        autoWidthToggle:SetPoint("TOPLEFT", PAD + 10, y)
-        autoWidthToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local widthAdjust = GUI:CreateFormSlider(tabContent, "Width Adjustment", -20, 20, 1, "widthAdjust", frameDB, OnChange)
-        widthAdjust:SetPoint("TOPLEFT", PAD + 10, y)
-        widthAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-    end
-
-    -- Auto-height toggle (match CDM Essential row 1 icon height)
-    if frameDef.autoHeight then
-        local autoHeightToggle = GUI:CreateFormToggle(tabContent, "Auto-Height (Match CDM Row 1 Icon)", "autoHeight", frameDB, OnChange)
-        autoHeightToggle:SetPoint("TOPLEFT", PAD + 10, y)
-        autoHeightToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local heightAdjust = GUI:CreateFormSlider(tabContent, "Height Adjustment", -20, 20, 1, "heightAdjust", frameDB, OnChange)
-        heightAdjust:SetPoint("TOPLEFT", PAD + 10, y)
-        heightAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-    end
-
-    y = y - 2  -- Small spacing between frame entries (header already adds separation)
+    -- Fallback: just return y if shared builder not available
     return y
 end
 
@@ -194,7 +82,7 @@ end
 -- TAB BUILDERS (one per category)
 ---------------------------------------------------------------------------
 local function BuildCDMTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 1, subTabName = "CDM"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning", subTabIndex = 1, subTabName = "CDM"})
     local y = -10
     local anchoringDB = GetAnchoringDB()
     local hudMinWidth = anchoringDB and anchoringDB.hudMinWidth
@@ -250,20 +138,11 @@ local function BuildCDMTab(tabContent)
         y = y - 24
     end
 
-    local frames = {
-        { key = "cdmEssential", name = "CDM Essential Viewer" },
-        { key = "cdmUtility",   name = "CDM Utility Viewer" },
-        { key = "buffIcon",     name = "CDM Buff Icons" },
-        { key = "buffBar",      name = "CDM Buff Bars" },
-        { key = "rotationAssistIcon", name = "CDM Rotation Assist Icon" },
-    }
-    for _, frameDef in ipairs(frames) do
-        y = BuildFrameEntry(tabContent, frameDef, y)
-    end
+    -- CDM frames — positioning moved to Edit Mode settings panels.
 end
 
 local function BuildResourceBarsTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 2, subTabName = "Resource Bars"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning", subTabIndex = 2, subTabName = "Resource Bars"})
     local y = -10
     local frames = {
         { key = "primaryPower",   name = "Primary Power Bar",   autoWidth = true },
@@ -274,111 +153,19 @@ local function BuildResourceBarsTab(tabContent)
     end
 end
 
-local function BuildUnitFramesTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 3, subTabName = "Unit Frames"})
-    local y = -10
-    local frames = {
-        { key = "playerFrame", name = "Player Frame",    autoWidth = true, autoHeight = true },
-        { key = "targetFrame", name = "Target Frame",    autoWidth = true, autoHeight = true },
-        { key = "totFrame",    name = "Target of Target", autoWidth = true },
-        { key = "focusFrame",  name = "Focus Frame",     autoWidth = true },
-        { key = "petFrame",    name = "Pet Frame",       autoWidth = true },
-        { key = "bossFrames",  name = "Boss Frames",     autoWidth = true },
-    }
-
-    -- QUI Group Frames (conditional)
-    local gfDB = QUI and QUI.db and QUI.db.profile and QUI.db.profile.quiGroupFrames
-    if gfDB and gfDB.enabled then
-        table.insert(frames, { key = "partyFrames", name = "Party Frames" })
-        table.insert(frames, { key = "raidFrames",  name = "Raid Frames" })
-    end
-
-    -- DandersFrames entries (conditional)
-    local dandersAvailable = ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable()
-    if dandersAvailable then
-        table.insert(frames, { key = "dandersParty", name = "DandersFrames Party" })
-        table.insert(frames, { key = "dandersRaid",  name = "DandersFrames Raid" })
-    end
-
-    for _, frameDef in ipairs(frames) do
-        y = BuildFrameEntry(tabContent, frameDef, y)
-    end
-end
-
-local function BuildCastbarsTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 4, subTabName = "Castbars"})
-    local y = -10
-    local PAD = PADDING
-    local castbarUnits = { "player", "target", "focus" }
-    local previewActive = false
-
-    -- Preview All Castbars toggle
-    GUI:SetSearchSection("Castbar Preview")
-    local castbarKeys = { "playerCastbar", "targetCastbar", "focusCastbar" }
-    local previewToggle = GUI:CreateFormToggle(tabContent, "Preview All Castbars", nil, nil, function(val)
-        previewActive = val
-        for _, unitKey in ipairs(castbarUnits) do
-            if val then
-                if _G.QUI_ShowCastbarPreview then _G.QUI_ShowCastbarPreview(unitKey) end
-            else
-                if _G.QUI_HideCastbarPreview then _G.QUI_HideCastbarPreview(unitKey) end
-            end
-        end
-        -- Reapply castbar anchoring overrides after preview refresh repositions frames
-        C_Timer.After(0.2, function()
-            for _, key in ipairs(castbarKeys) do
-                if _G.QUI_ApplyFrameAnchor then
-                    _G.QUI_ApplyFrameAnchor(key)
-                end
-            end
-        end)
-    end)
-    previewToggle:SetPoint("TOPLEFT", PAD, y)
-    previewToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW - 8
-
-    local frames = {
-        { key = "playerCastbar", name = "Player Castbar", autoWidth = true },
-        { key = "targetCastbar", name = "Target Castbar", autoWidth = true },
-        { key = "focusCastbar",  name = "Focus Castbar",  autoWidth = true },
-    }
-    for _, frameDef in ipairs(frames) do
-        y = BuildFrameEntry(tabContent, frameDef, y)
-    end
-end
+-- Unit Frames and Castbars sub-tabs removed — anchoring controls are now
+-- embedded directly in each frame's own options panel.
 
 local function BuildActionBarsTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 5, subTabName = "Action Bars"})
-    local y = -10
-    local frames = {
-        { key = "bar1",      name = "Action Bar 1 (Main)" },
-        { key = "bar2",      name = "Action Bar 2" },
-        { key = "bar3",      name = "Action Bar 3" },
-        { key = "bar4",      name = "Action Bar 4" },
-        { key = "bar5",      name = "Action Bar 5" },
-        { key = "bar6",      name = "Action Bar 6" },
-        { key = "bar7",      name = "Action Bar 7" },
-        { key = "bar8",      name = "Action Bar 8" },
-        { key = "petBar",    name = "Pet Action Bar" },
-        { key = "stanceBar", name = "Stance Bar" },
-        { key = "microMenu", name = "Micro Menu" },
-        { key = "bagBar",    name = "Bag Bar" },
-        { key = "extraActionButton", name = "Extra Action Button" },
-        { key = "zoneAbility", name = "Zone Ability Button" },
-    }
-    for _, frameDef in ipairs(frames) do
-        y = BuildFrameEntry(tabContent, frameDef, y)
-    end
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning", subTabIndex = 3, subTabName = "Action Bars"})
+    -- All action bar positioning moved to Edit Mode settings panels.
 end
 
 local function BuildDisplayTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 6, subTabName = "Display"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning", subTabIndex = 1, subTabName = "Display"})
     local y = -10
+    -- Buff/Debuff frame positioning moved to Layout Mode settings panels.
     local frames = {
-        { key = "minimap",          name = "Minimap" },
-        { key = "objectiveTracker", name = "Objective Tracker" },
-        { key = "buffFrame",        name = "Buff Frame" },
-        { key = "debuffFrame",      name = "Debuff Frame" },
         { key = "chatFrame1",       name = "Chat Frame" },
     }
 
@@ -388,27 +175,12 @@ local function BuildDisplayTab(tabContent)
 end
 
 local function BuildQoLTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 7, subTabName = "QoL"})
-    local y = -10
-    local frames = {
-        { key = "brezCounter", name = "Brez Counter" },
-        { key = "combatTimer", name = "Combat Timer" },
-        { key = "rangeCheck", name = "Target Distance Bracket Display" },
-        { key = "actionTracker", name = "Action Tracker" },
-        { key = "xpTracker", name = "XP Tracker" },
-        { key = "skyriding", name = "Skyriding" },
-        { key = "petWarning", name = "Pet Warning" },
-        { key = "focusCastAlert", name = "Focus Cast Alert" },
-        { key = "missingRaidBuffs", name = "Missing Raid Buffs" },
-        { key = "mplusTimer", name = "M+ Timer" },
-    }
-    for _, frameDef in ipairs(frames) do
-        y = BuildFrameEntry(tabContent, frameDef, y)
-    end
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning", subTabIndex = 5, subTabName = "QoL"})
+    -- All QoL frame positioning moved to Edit Mode settings panels.
 end
 
 local function BuildCustomTrackersTab(tabContent)
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 8, subTabName = "Custom Trackers"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning", subTabIndex = 6, subTabName = "Custom CDM Bars"})
     local y = -10
     local core = GetCore()
     local db = core and core.db and core.db.profile
@@ -418,11 +190,11 @@ local function BuildCustomTrackersTab(tabContent)
         ns.QUI_Anchoring:RegisterAllFrameTargets()
     end
 
-    GUI:SetSearchSection("Custom Tracker Preview")
+    GUI:SetSearchSection("Custom CDM Bar Preview")
     local previewState = {
         enabled = _G.QUI_IsAnchoringPreviewAllCustomTrackers and _G.QUI_IsAnchoringPreviewAllCustomTrackers() or false
     }
-    local previewToggle = GUI:CreateFormToggle(tabContent, "Preview All Custom Trackers", "enabled", previewState, function(val)
+    local previewToggle = GUI:CreateFormToggle(tabContent, "Preview All Custom CDM Bars", "enabled", previewState, function(val)
         previewState.enabled = val and true or false
         if _G.QUI_SetAnchoringPreviewAllCustomTrackers then
             _G.QUI_SetAnchoringPreviewAllCustomTrackers(previewState.enabled)
@@ -478,7 +250,7 @@ local function BuildCustomTrackersTab(tabContent)
         if type(barID) == "string" and barID ~= "" then
             local displayName = barConfig.name
             if type(displayName) ~= "string" or displayName == "" then
-                displayName = ("Tracker %d"):format(i)
+                displayName = ("CDM Bar %d"):format(i)
             end
             y = BuildFrameEntry(tabContent, {
                 key = "customTracker:" .. barID,
@@ -502,27 +274,39 @@ end
 local function CreateFrameAnchoringPage(parent)
     local scroll, content = CreateScrollableContent(parent)
 
-    GUI:CreateSubTabs(content, {
-        { name = "CDM",           builder = BuildCDMTab },
-        { name = "Resource Bars", builder = BuildResourceBarsTab },
-        { name = "Unit Frames",   builder = BuildUnitFramesTab },
-        { name = "Castbars",      builder = BuildCastbarsTab },
-        { name = "Action Bars",   builder = BuildActionBarsTab },
-        { name = "Display",       builder = BuildDisplayTab },
-        { name = "QoL",           builder = BuildQoLTab },
-        { name = "Custom Trackers", builder = BuildCustomTrackersTab },
-        { name = "3rd Party Addons", builder = function(tabContent)
-            if ns.QUI_ThirdPartyAnchoringOptions and ns.QUI_ThirdPartyAnchoringOptions.BuildThirdPartyTab then
-                ns.QUI_ThirdPartyAnchoringOptions.BuildThirdPartyTab(tabContent)
-            else
-                local label = GUI:CreateLabel(tabContent, "3rd Party Addons options failed to load. Please reload UI.", 12, {1, 0.3, 0.3, 1})
-                label:SetPoint("TOPLEFT", PADDING, -10)
-                tabContent:SetHeight(120)
-            end
-        end },
-    })
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning"})
 
-    content:SetHeight(600)
+    local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(content, PADDING)
+
+    -- Display: Chat Frame
+    local chatFrameDef = { key = "chatFrame1", name = "Chat Frame" }
+    CreateCollapsible("Chat Frame", 8 * FORM_ROW + 8, function(body)
+        local AnchorOpts = GetAnchorOpts()
+        if AnchorOpts and AnchorOpts.BuildAnchoringSection then
+            local finalY = AnchorOpts:BuildAnchoringSection(body, chatFrameDef.key, { name = chatFrameDef.name, noHeader = true }, -4)
+            local realHeight = math.abs(finalY) + 4
+            body:SetHeight(realHeight)
+            local sec = body:GetParent()
+            if sec then
+                sec._contentHeight = realHeight
+                if sec._expanded then
+                    sec:SetHeight(24 + realHeight)
+                end
+            end
+        end
+    end)
+
+    -- 3rd Party Addons
+    CreateCollapsible("3rd Party Addons", 400, function(body)
+        if ns.QUI_ThirdPartyAnchoringOptions and ns.QUI_ThirdPartyAnchoringOptions.BuildThirdPartyTab then
+            ns.QUI_ThirdPartyAnchoringOptions.BuildThirdPartyTab(body)
+        else
+            local label = GUI:CreateLabel(body, "3rd Party Addons options failed to load. Please reload UI.", 12, {1, 0.3, 0.3, 1})
+            label:SetPoint("TOPLEFT", 0, -4)
+        end
+    end)
+
+    relayout()
 
     return scroll
 end

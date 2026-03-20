@@ -1,5 +1,4 @@
 local ADDON_NAME, ns = ...
-local Addon = ns.Addon
 
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
@@ -10,9 +9,6 @@ local SkinBase = ns.SkinBase
 ---------------------------------------------------------------------------
 
 local FONT_FLAGS = "OUTLINE"
-
--- Forward declaration for mover (used in ResetReadyCheckPosition)
-local readyCheckMover = nil
 
 ---------------------------------------------------------------------------
 -- POSITION SAVING/LOADING
@@ -26,154 +22,7 @@ local function GetSettings()
     return nil
 end
 
-local function SaveReadyCheckPosition(point, relativeTo, relativePoint, x, y)
-    local settings = GetSettings()
-    if settings then
-        settings.readyCheckPosition = {
-            point = point,
-            relativePoint = relativePoint,
-            x = x,
-            y = y
-        }
-    end
-end
-
-local function GetReadyCheckPosition()
-    local settings = GetSettings()
-    if settings and settings.readyCheckPosition then
-        return settings.readyCheckPosition
-    end
-    return nil
-end
-
-local function ResetReadyCheckPosition()
-    local settings = GetSettings()
-    if settings then
-        settings.readyCheckPosition = nil
-    end
-    -- Reset to default position
-    local frame = _G.ReadyCheckFrame
-    if frame then
-        if not InCombatLockdown() then
-            frame:ClearAllPoints()
-            frame:SetPoint("CENTER", UIParent, "CENTER", 0, -10)
-        else
-            local f = CreateFrame("Frame")
-            f:RegisterEvent("PLAYER_REGEN_ENABLED")
-            f:SetScript("OnEvent", function(self)
-                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                if frame and not InCombatLockdown() then
-                    frame:ClearAllPoints()
-                    frame:SetPoint("CENTER", UIParent, "CENTER", 0, -10)
-                end
-            end)
-        end
-    end
-    -- Also reset mover overlay if it exists
-    if readyCheckMover then
-        readyCheckMover:ClearAllPoints()
-        readyCheckMover:SetPoint("CENTER", UIParent, "CENTER", 0, -10)
-    end
-end
-
--- Expose reset function globally
-_G.QUI_ResetReadyCheckPosition = ResetReadyCheckPosition
-
----------------------------------------------------------------------------
--- MOVER OVERLAY
----------------------------------------------------------------------------
-
-local function CreateMover()
-    if readyCheckMover then return end
-
-    local frame = _G.ReadyCheckFrame
-    if not frame then return end
-
-    -- Get skin colors for mover
-    local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
-    if QUI and QUI.GetSkinColor then
-        sr, sg, sb, sa = QUI:GetSkinColor()
-    end
-
-    -- Create mover overlay
-    readyCheckMover = CreateFrame("Frame", "QUI_ReadyCheckMover", UIParent, "BackdropTemplate")
-    readyCheckMover:SetSize(frame:GetWidth() + 4, frame:GetHeight() + 4)
-    local mvPx = SkinBase.GetPixelSize(readyCheckMover, 1)
-    local mvEdge2 = 2 * mvPx
-    readyCheckMover:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = mvEdge2,
-    })
-    readyCheckMover:SetBackdropColor(sr, sg, sb, 0.3)
-    readyCheckMover:SetBackdropBorderColor(sr, sg, sb, 1)
-    readyCheckMover:EnableMouse(true)
-    readyCheckMover:SetMovable(true)
-    readyCheckMover:RegisterForDrag("LeftButton")
-    readyCheckMover:SetFrameStrata("FULLSCREEN_DIALOG")
-    readyCheckMover:Hide()
-
-    -- Position mover at frame's location (or saved position)
-    local pos = GetReadyCheckPosition()
-    if pos then
-        readyCheckMover:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
-    else
-        readyCheckMover:SetPoint("CENTER", UIParent, "CENTER", 0, -10)
-    end
-
-    -- Mover label
-    readyCheckMover.text = readyCheckMover:CreateFontString(nil, "OVERLAY")
-    readyCheckMover.text:SetPoint("CENTER")
-    readyCheckMover.text:SetFont(STANDARD_TEXT_FONT, 11, FONT_FLAGS)
-    readyCheckMover.text:SetText("Ready Check")
-    readyCheckMover.text:SetTextColor(1, 1, 1)
-
-    -- Drag handlers
-    readyCheckMover:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-
-    readyCheckMover:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        -- Save position (snapped to pixel grid)
-        if not Addon or not Addon.SnapFramePosition then
-            local point, _, relPoint, x, y = self:GetPoint()
-            if point then
-                SaveReadyCheckPosition(point, nil, relPoint, x, y)
-            end
-            return
-        end
-        local point, _, relPoint, x, y = Addon:SnapFramePosition(self)
-        if point then
-            SaveReadyCheckPosition(point, nil, relPoint, x, y)
-        end
-    end)
-end
-
-local function ShowMover()
-    CreateMover()
-    if readyCheckMover then
-        readyCheckMover:Show()
-    end
-end
-
-local function HideMover()
-    if readyCheckMover then
-        readyCheckMover:Hide()
-    end
-end
-
-local function ToggleMover()
-    if readyCheckMover and readyCheckMover:IsShown() then
-        HideMover()
-    else
-        ShowMover()
-    end
-end
-
--- Expose toggle function globally
-_G.QUI_ToggleReadyCheckMover = ToggleMover
+-- Legacy position helpers removed — frameAnchoring system handles positioning.
 
 ---------------------------------------------------------------------------
 -- HELPER FUNCTIONS
@@ -373,13 +222,11 @@ local function SkinReadyCheckFrame()
     -- TAINT SAFETY: Use hooksecurefunc + C_Timer.After(0) to break taint chain from secure context.
     hooksecurefunc(frame, "Show", function(self)
         C_Timer.After(0, function()
-            if InCombatLockdown() then return end
             HideBlizzardDecorations()
-            -- Restore saved position
-            local pos = GetReadyCheckPosition()
-            if pos then
-                self:ClearAllPoints()
-                self:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
+            -- Reapply frameAnchoring position (Blizzard resets on Show)
+            -- Skip if in combat — ReadyCheckFrame is protected, can't reposition
+            if not InCombatLockdown() and _G.QUI_ApplyFrameAnchor then
+                _G.QUI_ApplyFrameAnchor("readyCheck")
             end
         end)
     end)
@@ -410,18 +257,6 @@ local function SkinReadyCheckFrame()
         if InCombatLockdown() then return end
         if SkinBase.GetFrameData(self, "unlocked") then
             self:StopMovingOrSizing()
-            -- Save position (snapped to pixel grid)
-            if not Addon or not Addon.SnapFramePosition then
-                local point, _, relPoint, x, y = self:GetPoint()
-                if point then
-                    SaveReadyCheckPosition(point, nil, relPoint, x, y)
-                end
-                return
-            end
-            local point, _, relativePoint, x, y = Addon:SnapFramePosition(self)
-            if point then
-                SaveReadyCheckPosition(point, nil, relativePoint, x, y)
-            end
         end
     end)
 
@@ -459,6 +294,15 @@ end
 
 -- Expose refresh function globally (required for live preview)
 _G.QUI_RefreshReadyCheckColors = RefreshReadyCheckColors
+
+if ns.Registry then
+    ns.Registry:Register("skinReadyCheck", {
+        refresh = _G.QUI_RefreshReadyCheckColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION

@@ -34,9 +34,7 @@ local XPTrackerState = {
 ---------------------------------------------------------------------------
 -- Get settings from database
 ---------------------------------------------------------------------------
-local function GetSettings()
-    return Helpers.GetModuleDB("xpTracker")
-end
+local GetSettings = Helpers.CreateDBGetter("xpTracker")
 
 ---------------------------------------------------------------------------
 -- Format helpers
@@ -309,7 +307,7 @@ local function CreateFrame_XPTracker()
     xpBar:SetMinMaxValues(0, 1)
     xpBar:SetValue(0)
     local barColor = settings.barColor or {0.2, 0.5, 1.0, 1}
-    local LSM = LibStub("LibSharedMedia-3.0", true)
+    local LSM = ns.LSM
     local texturePath
     if LSM then
         texturePath = LSM:Fetch("statusbar", settings.barTexture or "Solid")
@@ -371,7 +369,7 @@ local function CreateFrame_XPTracker()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
         local s = GetSettings()
-        local isOverridden = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self)
+        local isOverridden = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("xpTracker")
         if s and not s.locked and not isOverridden then
             self:StartMoving()
         end
@@ -570,7 +568,7 @@ local function UpdateAppearance()
     frame:SetSize(width, barFrameHeight)
 
     -- Position
-    if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(frame)) then
+    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("xpTracker")) then
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 150)
     end
@@ -616,7 +614,7 @@ local function UpdateAppearance()
     frame.restedOverlay:SetHeight(barHeight)
 
     -- Bar texture
-    local LSM = LibStub("LibSharedMedia-3.0", true)
+    local LSM = ns.LSM
     local texturePath
     if LSM then
         texturePath = LSM:Fetch("statusbar", settings.barTexture or "Solid")
@@ -874,10 +872,18 @@ end)
 ---------------------------------------------------------------------------
 _G.QUI_RefreshXPTracker = RefreshXPTracker
 _G.QUI_ToggleXPTrackerPreview = TogglePreview
-_G.QUI_IsXPTrackerPreviewMode = IsPreviewMode
 
 QUI.XPTracker = {
     Refresh = RefreshXPTracker,
     TogglePreview = TogglePreview,
     IsPreviewMode = IsPreviewMode,
 }
+
+if ns.Registry then
+    ns.Registry:Register("xpTracker", {
+        refresh = _G.QUI_RefreshXPTracker,
+        priority = 40,
+        group = "trackers",
+        importCategories = { "trackersTimers" },
+    })
+end

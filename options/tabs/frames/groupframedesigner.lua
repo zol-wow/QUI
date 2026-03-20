@@ -1,6 +1,7 @@
 --[[
-    QUI Group Frame Designer
-    Interactive preview-based editor for group frame settings.
+    QUI Click-Cast Settings
+    Click-casting binding management for group frames.
+    Visual/element settings moved to Layout Mode (layoutmode_composer.lua).
 ]]
 
 local ADDON_NAME, ns = ...
@@ -344,8 +345,8 @@ local function CreateVisualProxy(gfdb, mode)
     return proxy
 end
 
-local SEARCH_TAB_INDEX = 6
-local SEARCH_TAB_NAME = "Group Frames"
+local SEARCH_TAB_INDEX = 5
+local SEARCH_TAB_NAME = "Click-Cast"
 local SEARCH_SUBTAB_GENERAL_INDEX = 1
 local SEARCH_SUBTAB_GENERAL_NAME = "General"
 local SEARCH_SUBTAB_PARTY_INDEX = 2
@@ -719,7 +720,7 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     healthBar:SetPoint("TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
 
-    local LSM = LibStub("LibSharedMedia-3.0", true)
+    local LSM = ns.LSM
     local textureName = general.texture or "Quazii v5"
     local texturePath = LSM and LSM:Fetch("statusbar", textureName) or "Interface\\TargetingFrame\\UI-StatusBar"
     healthBar:SetStatusBarTexture(texturePath)
@@ -1251,10 +1252,11 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     elseif defGrowDir == "DOWN" then defStepY = -(defSize + defSpacing)
     end
 
-    -- Center icon centers around the anchor point
+    -- Centering offset for CENTER grow direction
     local defCenterOff = 0
     if defGrowDir == "CENTER" then
-        defCenterOff = -(math.max(defMaxIcons - 1, 0) * (defSize + defSpacing)) / 2
+        local totalSpan = defMaxIcons * defSize + math.max(defMaxIcons - 1, 0) * defSpacing
+        defCenterOff = -totalSpan / 2
     end
 
     local defTextures = { 135936, 135987, 136120, 135874, 236220 }
@@ -1505,6 +1507,7 @@ local function BuildHealthSettings(content, gfdb, onChange)
     L:Row(GUI:CreateFormSlider(content, "X Offset", -100, 100, 1, "healthOffsetX", health, onChange), SLIDER_HEIGHT, cond)
     L:Row(GUI:CreateFormSlider(content, "Y Offset", -100, 100, 1, "healthOffsetY", health, onChange), SLIDER_HEIGHT, cond)
     L:Row(GUI:CreateFormColorPicker(content, "Text Color", "healthTextColor", health, onChange), FORM_ROW, cond)
+    L:Row(GUI:CreateFormCheckbox(content, "Hide % Symbol", "hideHealthPercentSymbol", health, onChange), FORM_ROW, cond)
 
     L:Header(GUI:CreateSectionHeader(content, "Absorb Shield"))
     L:Row(GUI:CreateFormCheckbox(content, "Show Absorb Shield", "enabled", absorbs, onChange), FORM_ROW)
@@ -1854,6 +1857,12 @@ local function BuildBuffsSettings(content, gfdb, onChange)
     L:Row(GUI:CreateFormSlider(content, "X Offset", -100, 100, 1, "buffOffsetX", auras, onChange), SLIDER_HEIGHT, cond)
     L:Row(GUI:CreateFormSlider(content, "Y Offset", -100, 100, 1, "buffOffsetY", auras, onChange), SLIDER_HEIGHT, cond)
 
+    L:Header(GUI:CreateSectionHeader(content, "Duration Text"))
+    L:Row(GUI:CreateFormCheckbox(content, "Show Duration Text", "showDurationText", auras, onChange), FORM_ROW, cond)
+    L:Row(GUI:CreateFormSlider(content, "Duration Font Size", 6, 16, 1, "durationFontSize", auras, onChange), SLIDER_HEIGHT, cond)
+    L:Row(GUI:CreateFormCheckbox(content, "Color by Time Remaining", "showDurationColor", auras, onChange), FORM_ROW, cond)
+    L:Row(GUI:CreateFormCheckbox(content, "Expiring Pulse", "showExpiringPulse", auras, onChange), FORM_ROW, cond)
+
     -- Filtering section
     L:Header(GUI:CreateSectionHeader(content, "Buff Filtering"))
 
@@ -1962,6 +1971,12 @@ local function BuildDebuffsSettings(content, gfdb, onChange)
     L:Row(GUI:CreateFormSlider(content, "Spacing", 0, 8, 1, "debuffSpacing", auras, onChange), SLIDER_HEIGHT, cond)
     L:Row(GUI:CreateFormSlider(content, "X Offset", -100, 100, 1, "debuffOffsetX", auras, onChange), SLIDER_HEIGHT, cond)
     L:Row(GUI:CreateFormSlider(content, "Y Offset", -100, 100, 1, "debuffOffsetY", auras, onChange), SLIDER_HEIGHT, cond)
+
+    L:Header(GUI:CreateSectionHeader(content, "Duration Text"))
+    L:Row(GUI:CreateFormCheckbox(content, "Show Duration Text", "showDurationText", auras, onChange), FORM_ROW, cond)
+    L:Row(GUI:CreateFormSlider(content, "Duration Font Size", 6, 16, 1, "durationFontSize", auras, onChange), SLIDER_HEIGHT, cond)
+    L:Row(GUI:CreateFormCheckbox(content, "Color by Time Remaining", "showDurationColor", auras, onChange), FORM_ROW, cond)
+    L:Row(GUI:CreateFormCheckbox(content, "Expiring Pulse", "showExpiringPulse", auras, onChange), FORM_ROW, cond)
 
     -- Filtering section
     L:Header(GUI:CreateSectionHeader(content, "Debuff Filtering"))
@@ -2327,25 +2342,11 @@ local function BuildGeneralSettings(content, gfdb, onChange)
     posHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - posHeader.gap
 
-    local unifiedCheck = GUI:CreateFormCheckbox(content, "Unified Party & Raid Position", "unifiedPosition", gfdb, function()
-        GUI:ShowConfirmation({
-            title = "Reload Required",
-            message = "Changing group frame positioning mode requires a UI reload to take effect.",
-            acceptText = "Reload Now",
-            cancelText = "Later",
-            isDestructive = false,
-            onAccept = function() QUI:SafeReload() end,
-        })
-    end)
-    unifiedCheck:SetPoint("TOPLEFT", PAD, y)
-    unifiedCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    local unifiedHint = GUI:CreateLabel(content,
-        "When disabled, party and raid frames have separate movers and can be positioned independently.", 10, C.textMuted)
-    unifiedHint:SetPoint("TOPLEFT", PAD + 4, y + 4)
-    unifiedHint:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    unifiedHint:SetJustifyH("LEFT")
+    local posHint = GUI:CreateLabel(content,
+        "Party and raid frames have separate movers and can be positioned independently via Edit Mode.", 10, C.textMuted)
+    posHint:SetPoint("TOPLEFT", PAD + 4, y + 4)
+    posHint:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    posHint:SetJustifyH("LEFT")
     y = y - 20
 
     content:SetHeight(math.abs(y) + 10)
@@ -2718,20 +2719,7 @@ local function BuildContextSettings(content, gfdb, onChange)
         y = y - SLIDER_HEIGHT
     end
 
-    -- Position
-    local posHeader = GUI:CreateSectionHeader(content, "Position")
-    posHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - posHeader.gap
-
-    local xSlider = GUI:CreateFormSlider(content, "X Offset", -800, 800, 1, "offsetX", position, onChange)
-    xSlider:SetPoint("TOPLEFT", PAD, y)
-    xSlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    y = y - SLIDER_HEIGHT
-
-    local ySlider = GUI:CreateFormSlider(content, "Y Offset", -500, 500, 1, "offsetY", position, onChange)
-    ySlider:SetPoint("TOPLEFT", PAD, y)
-    ySlider:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    y = y - SLIDER_HEIGHT
+    -- Group frame positioning moved to Edit Mode.
 
     ---------------------------------------------------------------------------
     -- Range Check
@@ -2884,21 +2872,14 @@ end
 
 
 ---------------------------------------------------------------------------
--- CLICK-CAST SETTINGS
+-- CLICK-CAST SETTINGS — Section builders
+-- Each builder populates its own content frame and returns the final y offset.
+-- A shared `state` table carries cross-section references (cleanup, callbacks).
 ---------------------------------------------------------------------------
-local function BuildClickCastSettings(content, gfdb, onChange)
-    local y = -10
-    SetGeneralSearchContext("Click-Cast")
 
-    local cc = gfdb.clickCast
-    if not cc then gfdb.clickCast = {} cc = gfdb.clickCast end
-
-    local refreshClickCast = function()
-        local GFCC_ref = ns.QUI_GroupFrameClickCast
-        if GFCC_ref and not InCombatLockdown() then
-            GFCC_ref:RefreshBindings()
-        end
-    end
+-- Section 1: General click-cast toggles
+local function BuildClickCastGeneral(content, cc, refreshClickCast, startY, state)
+    local y = startY or -10
 
     local enableCheck = GUI:CreateFormCheckbox(content, "Enable Click-Casting", "enabled", cc, refreshClickCast)
     enableCheck:SetPoint("TOPLEFT", PAD, y)
@@ -2949,9 +2930,15 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         y = y - FORM_ROW
     end
 
-    ---------------------------------------------------------------------------
-    -- Global Ping Keybinds section
-    ---------------------------------------------------------------------------
+    if state then state.perSpecCheck = perSpecCheck end
+    content:SetHeight(math.abs(y) + 10)
+    return y
+end
+
+-- Section 2: Global Ping Keybinds
+local function BuildClickCastPings(content, startY, state)
+    local y = startY or -10
+
     local pingHeader = GUI:CreateSectionHeader(content, "Global Ping Keybinds")
     pingHeader:SetPoint("TOPLEFT", PAD, y)
     pingHeader:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
@@ -3179,7 +3166,27 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         end
     end
 
-    y = y - 5
+    -- Export cleanup refs for OnHide handler
+    if state then
+        state.pingCaptureButtons = pingCaptureButtons
+        state.isPingSuspended = function() return isPingSuspended end
+        state.suspendedPingBindings = suspendedPingBindings
+        state.clearPingSuspension = function()
+            local saved = {}
+            for k, v in pairs(suspendedPingBindings) do saved[k] = v end
+            wipe(suspendedPingBindings)
+            isPingSuspended = false
+            return saved
+        end
+    end
+
+    content:SetHeight(math.abs(y) + 10)
+    return y
+end
+
+-- Section 3: Manage Bindings (current list + add form)
+local function BuildClickCastBindings(content, cc, refreshClickCast, startY, state)
+    local y = startY or -10
 
     local GFCC = ns.QUI_GroupFrameClickCast
 
@@ -3751,8 +3758,76 @@ local function BuildClickCastSettings(content, gfdb, onChange)
         end)
     end
 
-    perSpecCheck.track:HookScript("OnClick", function()
-        C_Timer.After(0.05, function() RefreshBindingList() end)
+    -- Export cleanup refs for OnHide handler
+    if state then
+        state.spellInput = spellInput
+        state.macroInput = macroInput
+        state.keyCaptureBtn = keyCaptureBtn
+        state.RefreshBindingList = RefreshBindingList
+    end
+
+    return y
+end
+
+---------------------------------------------------------------------------
+-- Combined builder for group frame designer widget bar (calls all 3 sections)
+---------------------------------------------------------------------------
+local function BuildClickCastSettings(content, gfdb, onChange)
+    SetGeneralSearchContext("Click-Cast")
+
+    local cc = gfdb.clickCast
+    if not cc then gfdb.clickCast = {} cc = gfdb.clickCast end
+
+    local refreshClickCast = function()
+        local GFCC_ref = ns.QUI_GroupFrameClickCast
+        if GFCC_ref and not InCombatLockdown() then
+            GFCC_ref:RefreshBindings()
+        end
+    end
+
+    local state = {}
+    local y = BuildClickCastGeneral(content, cc, refreshClickCast, -10, state)
+    y = BuildClickCastPings(content, y, state)
+    BuildClickCastBindings(content, cc, refreshClickCast, y, state)
+
+    -- Wire cross-section: per-spec toggle refreshes binding list
+    if state.perSpecCheck and state.RefreshBindingList then
+        state.perSpecCheck.track:HookScript("OnClick", function()
+            C_Timer.After(0.05, function() state.RefreshBindingList() end)
+        end)
+    end
+
+    -- Clear editbox focus and cancel any active key captures when the
+    -- content is hidden (tab change / panel close) to prevent stuck
+    -- keyboard capture.
+    content:HookScript("OnHide", function()
+        if state.spellInput then state.spellInput:ClearFocus() end
+        if state.macroInput then state.macroInput:ClearFocus() end
+        if state.keyCaptureBtn and state.keyCaptureBtn.isCapturing then
+            state.keyCaptureBtn.isCapturing = false
+            state.keyCaptureBtn:EnableKeyboard(false)
+        end
+        if state.pingCaptureButtons then
+            for _, btn in ipairs(state.pingCaptureButtons) do
+                if btn.isCapturing then
+                    btn.isCapturing = false
+                    btn:EnableKeyboard(false)
+                end
+            end
+        end
+        -- Restore suspended ping bindings after the secure call chain
+        -- completes — SetBinding is protected and can't run inside
+        -- the securecall(CloseWindows) → OnHide chain.
+        if state.isPingSuspended and state.isPingSuspended() then
+            local saved = state.clearPingSuspension()
+            C_Timer.After(0, function()
+                for action, keys in pairs(saved) do
+                    if keys[1] then SetBinding(keys[1], action) end
+                    if keys[2] then SetBinding(keys[2], action) end
+                end
+                SaveBindings(GetCurrentBindingSet())
+            end)
+        end
     end)
 end
 
@@ -4751,8 +4826,111 @@ local function CreateDesignerPage(parent)
 end
 
 ---------------------------------------------------------------------------
+-- CLICK-CAST PAGE (standalone tab, replaces old Group Frames tab)
+---------------------------------------------------------------------------
+local function CreateClickCastPage(parent)
+    local scroll, content = CreateScrollableContent(parent)
+
+    GUI:SetSearchContext({tabIndex = 5, tabName = "Click-Cast", subTabIndex = 1, subTabName = "Click-Cast"})
+
+    local gfdb = GetGFDB()
+    if not gfdb then
+        local info = GUI:CreateLabel(content, "Group frame settings not available.", 12, C.textMuted)
+        info:SetPoint("TOPLEFT", PAD, -10)
+        content:SetHeight(100)
+        return
+    end
+
+    local cc = gfdb.clickCast
+    if not cc then gfdb.clickCast = {} cc = gfdb.clickCast end
+
+    local refreshClickCast = function()
+        local GFCC_ref = ns.QUI_GroupFrameClickCast
+        if GFCC_ref and not InCombatLockdown() then
+            GFCC_ref:RefreshBindings()
+        end
+    end
+
+    local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(content, PAD)
+    local state = {}
+
+    CreateCollapsible("Settings", 1, function(body)
+        SetGeneralSearchContext("Click-Cast")
+        BuildClickCastGeneral(body, cc, refreshClickCast, -10, state)
+        C_Timer.After(0, function()
+            local h = body:GetHeight()
+            if h and h > 10 then
+                local section = body:GetParent()
+                section._contentHeight = h
+            end
+        end)
+    end)
+
+    CreateCollapsible("Global Ping Keybinds", 1, function(body)
+        BuildClickCastPings(body, -10, state)
+        C_Timer.After(0, function()
+            local h = body:GetHeight()
+            if h and h > 10 then
+                local section = body:GetParent()
+                section._contentHeight = h
+            end
+        end)
+    end)
+
+    CreateCollapsible("Bindings", 1, function(body)
+        BuildClickCastBindings(body, cc, refreshClickCast, -10, state)
+        C_Timer.After(0, function()
+            local h = body:GetHeight()
+            if h and h > 10 then
+                local section = body:GetParent()
+                section._contentHeight = h
+            end
+        end)
+    end)
+
+    -- Wire cross-section: per-spec toggle refreshes binding list
+    if state.perSpecCheck and state.RefreshBindingList then
+        state.perSpecCheck.track:HookScript("OnClick", function()
+            C_Timer.After(0.05, function() state.RefreshBindingList() end)
+        end)
+    end
+
+    -- Clear editbox focus and cancel any active key captures when the
+    -- scroll content is hidden (tab change / panel close) to prevent
+    -- stuck keyboard capture.
+    content:HookScript("OnHide", function()
+        if state.spellInput then state.spellInput:ClearFocus() end
+        if state.macroInput then state.macroInput:ClearFocus() end
+        if state.keyCaptureBtn and state.keyCaptureBtn.isCapturing then
+            state.keyCaptureBtn.isCapturing = false
+            state.keyCaptureBtn:EnableKeyboard(false)
+        end
+        if state.pingCaptureButtons then
+            for _, btn in ipairs(state.pingCaptureButtons) do
+                if btn.isCapturing then
+                    btn.isCapturing = false
+                    btn:EnableKeyboard(false)
+                end
+            end
+        end
+        if state.isPingSuspended and state.isPingSuspended() then
+            local saved = state.clearPingSuspension()
+            C_Timer.After(0, function()
+                for action, keys in pairs(saved) do
+                    if keys[1] then SetBinding(keys[1], action) end
+                    if keys[2] then SetBinding(keys[2], action) end
+                end
+                SaveBindings(GetCurrentBindingSet())
+            end)
+        end
+    end)
+
+    relayout()
+end
+
+---------------------------------------------------------------------------
 -- EXPORT
 ---------------------------------------------------------------------------
 ns.QUI_GroupFramesOptions = {
-    CreateGroupFramesPage = CreateDesignerPage,
+    CreateClickCastPage = CreateClickCastPage,
 }

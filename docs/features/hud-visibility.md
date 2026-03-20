@@ -23,8 +23,8 @@ Each group uses the same set of visibility rules, but is configured independentl
 
 Visibility rules are configured in the QUI options panel:
 
-- Open `/qui` and navigate to the **UI > HUD Visibility** tab.
-- Select the frame group you want to configure (CDM, Unit Frames, or Custom Trackers).
+- HUD visibility settings for CDM are accessed through **Layout Mode** (`/qui layout`).
+- Unit Frame and Custom Tracker visibility settings are in the **General & QoL** tab in `/qui`.
 
 ## Key Features
 
@@ -37,6 +37,7 @@ Visibility rules are configured in the QUI options panel:
 - **Mouseover reveal** -- When enabled, moving your cursor over the frame area brings frames to full visibility regardless of other hide rules.
 - **Castbar exception** -- For Unit Frames, an option to always show castbars even when the unit frame itself is hidden, so you never miss a cast.
 - **Vehicle hide (CDM only)** -- An additional hide rule specifically for the CDM that hides bars when you are in a vehicle.
+- **Show below 100% health (Unit Frames only)** -- Show unit frames when the player's health drops below 100%, useful for keeping frames hidden during full health but visible when taking damage.
 
 ## Visibility Rules Reference
 

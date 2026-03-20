@@ -4,38 +4,28 @@
     <Script file="qol/qol.lua"/>
     <Script file="ui/hud_visibility.lua"/>
     <Script file="qol/crosshair.lua"/>
-    <Script file="frames/buffdebuff.lua"/>
     <Script file="chat/chat.lua"/>
-    <Script file="qol/tooltips.lua"/>
     <Script file="character/character.lua"/>
-    <Script file="qol/skyriding.lua"/>
-    <Script file="qol/xptracker.lua"/>
-    <Script file="frames/raidbuffs.lua"/>
     <Script file="ui/autohide.lua"/>
     <Script file="skinning/skinning.lua"/>
     <Script file="ui/minimap.lua"/>
-    <Script file="cooldowns/cdm_effects.lua"/>
-    <Script file="utility/keybinds.lua"/>
     <Script file="frames/castbar.lua"/>
     <Script file="ui/hudlayering.lua"/>
     <Script file="ui/frameanchoring.lua"/>
     <Script file="core/profiles.lua"/>
     <Script file="core/import.lua"/>
-    <Script file="cooldowns/cdm.lua"/>
     <Script file="trackers/customtrackers.lua"/>
+    <Script file="trackers/preytracker.lua"/>
     <Script file="frames/unitframes.lua"/>
     <Script file="frames/groupframedesigner.lua"/>
     <Script file="frames/actionbars.lua"/>
     <Script file="utility/anchoring.lua"/>
-    <Script file="utility/dandersframes.lua"/>
     <Script file="utility/thirdpartyaddons.lua"/>
-    <Script file="qol/party_keystones.lua"/>
     <!-- Help content data (load before coordinators) -->
     <Script file="core/help_content.lua"/>
     <!-- Page coordinators (load after subtab files) -->
     <Script file="core/welcome.lua"/>
     <Script file="core/general.lua"/>
     <Script file="ui/autohides.lua"/>
-    <Script file="ui/minimap_page.lua"/>
     <Script file="core/help.lua"/>
 </Ui>

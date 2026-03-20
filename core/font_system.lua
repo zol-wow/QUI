@@ -6,7 +6,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 
 ---------------------------------------------------------------------------
 -- SAFE FONT HELPER
@@ -45,20 +45,9 @@ local QUAZII_FONT_PATH = [[Interface\AddOns\QUI\assets\Quazii.ttf]]
 --   - Tooltips: skinning/system/tooltips.lua (ApplyTooltipFontSizeToFrame)
 --   - Chat frames: per-frame SetFont below
 --   - ObjectiveTracker: per-frame ApplyFontToFrameRecursive below
-local BLIZZARD_FONT_OBJECTS = {
-    -- ALL shared Font objects are excluded — see taint safety note above.
-    -- Game fonts: taint UIWidgetTemplateTextWithState (GetStringHeight)
-    -- Number fonts: taint ActionButton text metrics
-    -- Quest fonts: may be inherited by secure UI elements
-    -- Tooltip fonts: handled per-instance by skinning/system/tooltips.lua
-    -- Chat fonts: handled per-frame below (SetFont on ScrollingMessageFrame)
-}
 
 -- Track if hooks are already set up (one-time)
 local globalFontHooksInitialized = false
-
--- Debounce for hook callbacks
-local globalFontPending = false
 
 local function GetGlobalFontPath()
     if not QUICore.db or not QUICore.db.profile or not QUICore.db.profile.general then
@@ -105,35 +94,12 @@ local function ApplyFontToFrameRecursive(frame, fontPath)
     end
 end
 
--- Schedule debounced font application (for hooks)
-local function ScheduleGlobalFontApply()
-    if globalFontPending then return end
-    globalFontPending = true
-    C_Timer.After(0.05, function()
-        globalFontPending = false
-        if QUICore.ApplyGlobalFont then
-            QUICore:ApplyGlobalFont()
-        end
-    end)
-end
-
 function QUICore:ApplyGlobalFont()
     -- Check if feature is enabled
     if not self.db or not self.db.profile or not self.db.profile.general then return end
     if not self.db.profile.general.applyGlobalFontToBlizzard then return end
 
     local fontPath = GetGlobalFontPath()
-
-    -- Override Blizzard font objects
-    for _, fontObjName in ipairs(BLIZZARD_FONT_OBJECTS) do
-        local fontObj = _G[fontObjName]
-        if fontObj and fontObj.GetFont and fontObj.SetFont then
-            local _, size, flags = fontObj:GetFont()
-            if size then
-                fontObj:SetFont(fontPath, size, flags or "")
-            end
-        end
-    end
 
     -- Set up hooks (one-time)
     if not globalFontHooksInitialized then
@@ -219,4 +185,11 @@ function QUICore:ApplyGlobalFont()
 
     -- Tooltip fonts are applied per-instance by skinning/system/tooltips.lua.
     -- Recursive application here would taint UIWidget child FontStrings.
+
+    -- Override scrolling combat text (floating damage/heal numbers) font.
+    -- DAMAGE_TEXT_FONT is a simple global string variable used by Blizzard's
+    -- CombatText system — safe to override without taint concerns.
+    if self.db.profile.general.overrideSCTFont then
+        _G.DAMAGE_TEXT_FONT = fontPath
+    end
 end

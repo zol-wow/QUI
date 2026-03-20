@@ -80,14 +80,14 @@ local function CreateWelcomePage(parent)
 
     local steps = {
         {num = "1.", text = "Import the Edit Mode string (below) into Blizzard Edit Mode to position default frames"},
-        {num = "2.", text = "Open |cff34D399/qui|r to browse and configure settings for each module"},
-        {num = "3.", text = "Import a QUI profile from the |cff34D399Import & Export Strings|r tab for a recommended starting layout"},
-        {num = "4.", text = "Type |cff34D399/rl|r to reload the UI after making changes"},
+        {num = "2.", text = "Open |cff60A5FA/qui|r to browse and configure settings for each module"},
+        {num = "3.", text = "Import a QUI profile from the |cff60A5FAImport & Export Strings|r tab for a recommended starting layout"},
+        {num = "4.", text = "Type |cff60A5FA/rl|r to reload the UI after making changes"},
     }
 
     for _, step in ipairs(steps) do
         local stepLabel = CreateWrappedLabel(content,
-            "|cff34D399" .. step.num .. "|r  " .. step.text,
+            "|cff60A5FA" .. step.num .. "|r  " .. step.text,
             12, C.text, contentWidth - PADDING * 2 - 10)
         stepLabel:SetPoint("TOPLEFT", PADDING + 10, y)
         y = y - (stepLabel:GetStringHeight() or 14) - 8
@@ -108,7 +108,7 @@ local function CreateWelcomePage(parent)
 
     y = CreateQA(content,
         "How do I move and resize frames?",
-        "Open Blizzard Edit Mode (Escape > Edit Mode, or type /qui editmode) to reposition the default Blizzard frames. For best results with QUI's skinning, anchoring, and auto-sizing features, set all frames to 100% size in Edit Mode. QUI's own frame anchoring is under the Anchoring & Layout tab in /qui.",
+        "Open Blizzard Edit Mode (Escape > Edit Mode, or type /qui editmode) to reposition the default Blizzard frames. For best results with QUI's skinning, anchoring, and auto-sizing features, set all frames to 100% size in Edit Mode. QUI's own frame anchoring is under the Frame Positioning tab in /qui, and in each frame's own options panel.",
         y, contentWidth)
 
     y = CreateQA(content,

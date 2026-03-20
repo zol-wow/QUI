@@ -1,6 +1,6 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
@@ -532,11 +532,11 @@ end
 -- Apply border settings to icons
 local function ApplyIconBorderSettings()
     local settings = GetSettings()
-    local borderSettings = settings.iconBorder or { show = true, width = 1, useClassColor = false, color = { 0.2, 1.0, 0.6, 1 } }
+    local borderSettings = settings.iconBorder or { show = true, width = 1, useClassColor = false, color = { 0.376, 0.647, 0.980, 1 } }
     local borderWidth = borderSettings.show and (borderSettings.width or 1) or 0
 
     -- Determine border color
-    local br, bg, bb, ba = 0.2, 1.0, 0.6, 1
+    local br, bg, bb, ba = 0.376, 0.647, 0.980, 1
     if borderSettings.useClassColor then
         local _, class = UnitClass("player")
         if class and RAID_CLASS_COLORS[class] then
@@ -596,7 +596,7 @@ local function CreateMainFrame()
     mainFrame:SetMovable(true)
     mainFrame:RegisterForDrag("LeftButton")
     mainFrame:SetScript("OnDragStart", function(self)
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
+        if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs") then return end
         if not InCombatLockdown() then
             self:StartMoving()
         end
@@ -719,7 +719,7 @@ local function ApplySkin()
     if not mainFrame then return end
 
     local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
+    local sr, sg, sb, sa = 0.376, 0.647, 0.980, 1
     local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95
 
     if QUI and QUI.GetSkinColor then
@@ -766,9 +766,6 @@ function QUI_RaidBuffs:Refresh()
     UpdateDisplay()
 end
 
-_G.QUI_RefreshRaidBuffColors = function()
-    QUI_RaidBuffs:RefreshColors()
-end
 
 _G.QUI_RefreshRaidBuffs = function()
     QUI_RaidBuffs:Refresh()
@@ -952,7 +949,7 @@ UpdateDisplay = function()
 
     -- Restore saved position (skip if anchoring system has overridden this frame)
     -- Position is saved using grow-direction-appropriate anchor, so icons stay in place
-    if settings.position and not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(mainFrame)) then
+    if settings.position and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs")) then
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint(settings.position.point, UIParent, settings.position.relPoint, settings.position.x, settings.position.y)
     end
@@ -1075,10 +1072,6 @@ function QUI_RaidBuffs:Toggle()
     UpdateDisplay()
 end
 
-function QUI_RaidBuffs:ForceUpdate()
-    UpdateDisplay()
-    ApplySkin()
-end
 
 function QUI_RaidBuffs:Debug()
     local settings = GetSettings()
@@ -1222,10 +1215,12 @@ function QUI_RaidBuffs:IsPreviewMode()
     return previewMode
 end
 
--- Global function for options panel
-_G.QUI_ToggleRaidBuffsPreview = function()
-    if ns.RaidBuffs then
-        return ns.RaidBuffs:TogglePreview()
-    end
-    return false
+
+if ns.Registry then
+    ns.Registry:Register("raidbuffs", {
+        refresh = _G.QUI_RefreshRaidBuffs,
+        priority = 20,
+        group = "frames",
+        importCategories = { "groupFrames" },
+    })
 end

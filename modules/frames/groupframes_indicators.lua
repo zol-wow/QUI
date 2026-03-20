@@ -8,7 +8,7 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local QUICore = ns.Addon
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
@@ -280,7 +280,7 @@ end
 ---------------------------------------------------------------------------
 -- INDICATOR STATE per frame
 ---------------------------------------------------------------------------
-local frameIndicatorState = setmetatable({}, { __mode = "k" })
+local frameIndicatorState = Helpers.CreateStateTable()
 
 local function GetIndicatorState(frame)
     local state = frameIndicatorState[frame]

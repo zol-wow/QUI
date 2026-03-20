@@ -1,13 +1,13 @@
 ---
 layout: default
-title: Anchoring & Layout
+title: Frame Positioning
 parent: Settings Reference
 nav_order: 6
 ---
 
-# Anchoring & Layout
+# Frame Positioning & Layout
 
-The Anchoring & Layout tab controls frame positioning, the anchoring system that chains frames together, HUD layering, and global options panel settings. QUI uses a pixel-nudge system in Edit Mode to precisely position frames, and an anchoring system that lets frames follow each other when repositioned.
+The **Frame Positioning** tab (formerly "Anchoring & Layout") controls frame positioning, the anchoring system that chains frames together, HUD layering, and global options panel settings. QUI uses Layout Mode (`/qui layout`) as the primary tool for visual frame positioning, and an anchoring system that lets frames follow each other when repositioned.
 
 **DB path:** Various sub-paths within `db.profile`
 

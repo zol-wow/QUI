@@ -19,6 +19,8 @@ local function GetPixelSizeOrDefault(frame, default)
     return fallback
 end
 
+local Helpers = ns.Helpers
+
 local QUI_Anchoring_Options = {}
 ns.QUI_Anchoring_Options = QUI_Anchoring_Options
 
@@ -43,6 +45,310 @@ local function GetColors()
         border = {0.3, 0.3, 0.3},
         accent = {0.2, 0.6, 1}
     }
+end
+
+local GetCore = Helpers.GetCore
+
+---------------------------------------------------------------------------
+-- ANCHORING DATABASE DEFAULTS & HELPERS (shared infrastructure)
+---------------------------------------------------------------------------
+local ANCHORING_DEFAULTS = {
+    parent         = "screen",
+    point          = "CENTER",
+    relative       = "CENTER",
+    offsetX        = 0,
+    offsetY        = 0,
+    sizeStable     = true,
+    autoWidth      = false,
+    widthAdjust    = 0,
+    autoHeight     = false,
+    heightAdjust   = 0,
+    hideWithParent = false,
+    keepInPlace    = false,
+}
+
+local HUD_MIN_WIDTH_DEFAULT = (Helpers and Helpers.HUD_MIN_WIDTH_DEFAULT) or 200
+
+function QUI_Anchoring_Options:GetAnchoringDB()
+    local core = GetCore()
+    local db = core and core.db and core.db.profile
+    if not db then return nil end
+    if type(db.frameAnchoring) ~= "table" then
+        db.frameAnchoring = {}
+    end
+
+    -- Migrate and normalize legacy scalar keys to object style:
+    -- frameAnchoring.hudMinWidth = { enabled = bool, width = number }
+    local hudMinWidth
+    if Helpers and Helpers.MigrateHUDMinWidthSettings then
+        hudMinWidth = Helpers.MigrateHUDMinWidthSettings(db.frameAnchoring)
+    end
+    if not hudMinWidth then
+        local enabled, width = false, HUD_MIN_WIDTH_DEFAULT
+        if Helpers and Helpers.ParseHUDMinWidth then
+            enabled, width = Helpers.ParseHUDMinWidth(db.frameAnchoring)
+        end
+        hudMinWidth = {
+            enabled = enabled == true,
+            width = width or HUD_MIN_WIDTH_DEFAULT,
+        }
+        db.frameAnchoring.hudMinWidth = hudMinWidth
+        db.frameAnchoring.hudMinWidthEnabled = nil
+    end
+
+    return db.frameAnchoring
+end
+
+function QUI_Anchoring_Options:GetFrameDB(key)
+    local anchoringDB = self:GetAnchoringDB()
+    if not anchoringDB then return nil end
+    if not anchoringDB[key] then
+        anchoringDB[key] = {}
+    end
+    -- Backfill missing defaults (handles entries created before new fields were added)
+    for k, v in pairs(ANCHORING_DEFAULTS) do
+        if anchoringDB[key][k] == nil then
+            anchoringDB[key][k] = v
+        end
+    end
+    return anchoringDB[key]
+end
+
+function QUI_Anchoring_Options:GetAnchoringDefaults()
+    return ANCHORING_DEFAULTS
+end
+
+---------------------------------------------------------------------------
+-- BUILD ANCHORING SECTION (reusable, embeddable in any options panel)
+-- Parameters:
+--   tabContent: Parent scroll content frame
+--   frameKey: Anchoring DB key (e.g. "playerFrame", "xpTracker")
+--   options: {
+--     name: Display name for section header (optional, defaults to frameKey)
+--     autoWidth: Show auto-width toggle (default false)
+--     autoHeight: Show auto-height toggle (default false)
+--     hideWithParent: Show hide-with-parent toggle (default true)
+--     sliderRange: {min, max} for offset sliders (default {-500, 500})
+--     noHeader: If true, skip the section header (default false)
+--   }
+--   y: Starting Y offset
+-- Returns: newY, widgetRefs
+---------------------------------------------------------------------------
+local FORM_ROW = 32
+
+function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, options, y)
+    options = options or {}
+    local PAD = 15  -- matches Shared.PADDING
+    local GUI = GetGUI()
+    if not GUI then return y, nil end
+
+    local ninePointOptions = self:GetNinePointAnchorOptions()
+    local frameDB = self:GetFrameDB(frameKey)
+    if not frameDB then return y, nil end
+
+    -- Default range based on screen size so sliders can reach all positions
+    local screenW = math.ceil((UIParent and UIParent:GetWidth() or 1920) / 2)
+    local screenH = math.ceil((UIParent and UIParent:GetHeight() or 1080) / 2)
+    local defaultRange = math.max(screenW, screenH)
+    local sliderMin = options.sliderRange and options.sliderRange[1] or -defaultRange
+    local sliderMax = options.sliderRange and options.sliderRange[2] or defaultRange
+
+    local widgetRefs = {}
+
+    local function OnChange()
+        if _G.QUI_ApplyFrameAnchor then
+            _G.QUI_ApplyFrameAnchor(frameKey)
+        end
+        -- Bidirectional sync: if layout mode is open, mark changes and
+        -- reposition the mover handle to follow the frame's new position.
+        -- We clear any stale pending position first so SyncHandle reads
+        -- the frame's actual position rather than an outdated offset.
+        local inLayoutMode = _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive()
+        if inLayoutMode then
+            if _G.QUI_LayoutModeMarkChanged then
+                _G.QUI_LayoutModeMarkChanged()
+            end
+            if _G.QUI_LayoutModeClearPending then
+                _G.QUI_LayoutModeClearPending(frameKey)
+            end
+        end
+        if _G.QUI_LayoutModeSyncHandle then
+            _G.QUI_LayoutModeSyncHandle(frameKey)
+        end
+
+        -- Re-apply and sync any frames anchored to this frame.
+        -- Use ForceReapply to clear stale anchors (e.g. from drag
+        -- operations that set children to CENTER/UIParent) and guarantee
+        -- the child re-anchors to its configured parent frame.
+        local anchoringDB = GetCore()
+        anchoringDB = anchoringDB and anchoringDB.db and anchoringDB.db.profile and anchoringDB.db.profile.frameAnchoring
+        if anchoringDB then
+            for childKey, childSettings in pairs(anchoringDB) do
+                if type(childSettings) == "table" and childSettings.parent == frameKey then
+                    if inLayoutMode and _G.QUI_LayoutModeClearPending then
+                        _G.QUI_LayoutModeClearPending(childKey)
+                    end
+                    if _G.QUI_ForceReapplyFrameAnchor then
+                        _G.QUI_ForceReapplyFrameAnchor(childKey)
+                    elseif _G.QUI_ApplyFrameAnchor then
+                        _G.QUI_ApplyFrameAnchor(childKey)
+                    end
+                    if _G.QUI_LayoutModeSyncHandle then
+                        _G.QUI_LayoutModeSyncHandle(childKey)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Section header
+    if not options.noHeader then
+        local headerName = options.name or frameKey
+        local sectionHeader = GUI:CreateSectionHeader(tabContent, headerName .. " Anchoring")
+        sectionHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - sectionHeader.gap
+    end
+
+    -- Anchor To dropdown (uses anchor target registry)
+    local anchorDropdown = self:CreateAnchorDropdown(
+        tabContent, "Anchor To", frameDB, "parent",
+        PAD + 10, y, nil, OnChange,
+        nil, nil, frameKey  -- excludeSelf
+    )
+    if anchorDropdown then
+        anchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgetRefs.anchorDropdown = anchorDropdown
+        y = y - FORM_ROW
+    end
+
+    -- From Point dropdown (source anchor)
+    local fromPoint = GUI:CreateFormDropdown(tabContent, "From Point", ninePointOptions, "point", frameDB, OnChange)
+    fromPoint:SetPoint("TOPLEFT", PAD + 10, y)
+    fromPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgetRefs.fromPoint = fromPoint
+    y = y - FORM_ROW
+
+    -- To Point dropdown (target anchor)
+    local toPoint = GUI:CreateFormDropdown(tabContent, "To Point", ninePointOptions, "relative", frameDB, OnChange)
+    toPoint:SetPoint("TOPLEFT", PAD + 10, y)
+    toPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgetRefs.toPoint = toPoint
+    y = y - FORM_ROW
+
+    -- Offset X slider
+    local sliderX = GUI:CreateFormSlider(tabContent, "Offset X", sliderMin, sliderMax, 1, "offsetX", frameDB, OnChange)
+    sliderX:SetPoint("TOPLEFT", PAD + 10, y)
+    sliderX:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgetRefs.sliderX = sliderX
+    y = y - FORM_ROW
+
+    -- Offset Y slider
+    local sliderY = GUI:CreateFormSlider(tabContent, "Offset Y", sliderMin, sliderMax, 1, "offsetY", frameDB, OnChange)
+    sliderY:SetPoint("TOPLEFT", PAD + 10, y)
+    sliderY:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    widgetRefs.sliderY = sliderY
+    y = y - FORM_ROW
+
+    -- Auto-width toggle (match anchor target width)
+    if options.autoWidth then
+        local autoWidthToggle = GUI:CreateFormToggle(tabContent, "Auto-Width (Match Anchor Target)", "autoWidth", frameDB, OnChange)
+        autoWidthToggle:SetPoint("TOPLEFT", PAD + 10, y)
+        autoWidthToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgetRefs.autoWidth = autoWidthToggle
+        y = y - FORM_ROW
+
+        local widthAdjust = GUI:CreateFormSlider(tabContent, "Width Adjustment", -20, 20, 1, "widthAdjust", frameDB, OnChange)
+        widthAdjust:SetPoint("TOPLEFT", PAD + 10, y)
+        widthAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgetRefs.widthAdjust = widthAdjust
+        y = y - FORM_ROW
+    end
+
+    -- Auto-height toggle
+    if options.autoHeight then
+        local autoHeightToggle = GUI:CreateFormToggle(tabContent, "Auto-Height (Match CDM Row 1 Icon)", "autoHeight", frameDB, OnChange)
+        autoHeightToggle:SetPoint("TOPLEFT", PAD + 10, y)
+        autoHeightToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgetRefs.autoHeight = autoHeightToggle
+        y = y - FORM_ROW
+
+        local heightAdjust = GUI:CreateFormSlider(tabContent, "Height Adjustment", -20, 20, 1, "heightAdjust", frameDB, OnChange)
+        heightAdjust:SetPoint("TOPLEFT", PAD + 10, y)
+        heightAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgetRefs.heightAdjust = heightAdjust
+        y = y - FORM_ROW
+    end
+
+    -- Hide With Anchor toggle
+    if options.hideWithParent ~= false then
+        local hideToggle = GUI:CreateFormToggle(tabContent, "Hide With Anchor", "hideWithParent", frameDB, OnChange)
+        hideToggle:SetPoint("TOPLEFT", PAD + 10, y)
+        hideToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgetRefs.hideWithParent = hideToggle
+        y = y - FORM_ROW
+    end
+
+    -- Keep In Place toggle
+    if options.hideWithParent ~= false then
+        local keepToggle = GUI:CreateFormToggle(tabContent, "Keep In Place When Hidden", "keepInPlace", frameDB, OnChange)
+        keepToggle:SetPoint("TOPLEFT", PAD + 10, y)
+        keepToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        widgetRefs.keepInPlace = keepToggle
+        y = y - FORM_ROW
+    end
+
+    y = y - 2  -- Small spacing after section
+
+    -- Live-update: listen for anchor changes from layout mode
+    local listenerRegistered = false
+    local function RegisterLiveUpdates()
+        if listenerRegistered then return end
+        listenerRegistered = true
+        local QUI = _G.QUI
+        if QUI and QUI.RegisterMessage then
+            QUI:RegisterMessage("QUI_FRAME_ANCHOR_CHANGED", function(_, changedKey, data)
+                if changedKey ~= frameKey then return end
+                -- Re-read DB values and update widgets
+                local db = self:GetFrameDB(frameKey)
+                if not db then return end
+                if widgetRefs.sliderX and widgetRefs.sliderX.SetValue then
+                    widgetRefs.sliderX:SetValue(db.offsetX or 0, true)
+                end
+                if widgetRefs.sliderY and widgetRefs.sliderY.SetValue then
+                    widgetRefs.sliderY:SetValue(db.offsetY or 0, true)
+                end
+                if widgetRefs.anchorDropdown and widgetRefs.anchorDropdown.SetValue then
+                    widgetRefs.anchorDropdown:SetValue(db.parent or "screen", true)
+                end
+                if widgetRefs.fromPoint and widgetRefs.fromPoint.SetValue then
+                    widgetRefs.fromPoint:SetValue(db.point or "CENTER", true)
+                end
+                if widgetRefs.toPoint and widgetRefs.toPoint.SetValue then
+                    widgetRefs.toPoint:SetValue(db.relative or "CENTER", true)
+                end
+            end)
+        end
+    end
+
+    local function UnregisterLiveUpdates()
+        if not listenerRegistered then return end
+        listenerRegistered = false
+        local QUI = _G.QUI
+        if QUI and QUI.UnregisterMessage then
+            pcall(QUI.UnregisterMessage, QUI, "QUI_FRAME_ANCHOR_CHANGED")
+        end
+    end
+
+    -- Register immediately and unregister on hide
+    RegisterLiveUpdates()
+    tabContent:HookScript("OnHide", function()
+        UnregisterLiveUpdates()
+    end)
+    tabContent:HookScript("OnShow", function()
+        RegisterLiveUpdates()
+    end)
+
+    return y, widgetRefs
 end
 
 ---------------------------------------------------------------------------

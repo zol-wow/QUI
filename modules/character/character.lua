@@ -120,7 +120,7 @@ local EQUIPMENT_SLOTS = {
 local C = {
     bg = { 0.067, 0.094, 0.153, 0.95 },        -- Deep Cool Grey
     bgLight = { 0.122, 0.161, 0.216, 1 },      -- Dark Slate
-    accent = { 0.204, 0.827, 0.6, 1 },         -- Soft Mint
+    accent = { 0.376, 0.647, 0.980, 1 },         -- Sky Blue
     text = { 0.953, 0.957, 0.965, 1 },         -- Off-White
     textMuted = { 0.6, 0.65, 0.7, 1 },         -- Grey
     border = { 0.2, 0.25, 0.3, 1 },            -- Cool Grey
@@ -134,7 +134,7 @@ local C = {
     versatility = { 0.024, 0.714, 0.831, 1 },  -- Cyan
 
     -- Status colors
-    enchanted = { 0.204, 0.827, 0.6, 1 },      -- Green/Mint (enchanted)
+    enchanted = { 0.376, 0.647, 0.980, 1 },      -- Sky Blue (enchanted)
     missing = { 0.6, 0.6, 0.6, 0.7 },          -- Muted grey (missing enchant)
 }
 
@@ -1842,10 +1842,10 @@ local function RefreshCharacterPanelFonts()
         if classColor then
             headerColor = {classColor.r, classColor.g, classColor.b}
         else
-            headerColor = settings.headerColor or {0.204, 0.827, 0.6}
+            headerColor = settings.headerColor or {0.376, 0.647, 0.980}
         end
     else
-        headerColor = settings.headerColor or {0.204, 0.827, 0.6}
+        headerColor = settings.headerColor or {0.376, 0.647, 0.980}
     end
 
     -- Clean up invalid references
@@ -1900,16 +1900,16 @@ local function RefreshCharacterPanelFonts()
         if classColor then
             enchantColor = {classColor.r, classColor.g, classColor.b}
         else
-            enchantColor = settings.enchantTextColor or {0.204, 0.827, 0.6}
+            enchantColor = settings.enchantTextColor or {0.376, 0.647, 0.980}
         end
     else
-        enchantColor = settings.enchantTextColor or {0.204, 0.827, 0.6}
+        enchantColor = settings.enchantTextColor or {0.376, 0.647, 0.980}
     end
 
     -- Enchant font: use custom font if specified, otherwise global font
     local enchantFont = font
     if settings.enchantFont then
-        local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+        local LSM = ns.LSM
         if LSM then
             local fontPath = LSM:Fetch("font", settings.enchantFont)
             if fontPath then
@@ -2045,10 +2045,10 @@ local function CreateSectionHeader(parent, text, yOffset)
         if classColor then
             headerColor = {classColor.r, classColor.g, classColor.b}
         else
-            headerColor = settings.headerColor or {0.204, 0.827, 0.6}
+            headerColor = settings.headerColor or {0.376, 0.647, 0.980}
         end
     else
-        headerColor = settings.headerColor or {0.204, 0.827, 0.6}
+        headerColor = settings.headerColor or {0.376, 0.647, 0.980}
     end
 
     local header = parent:CreateFontString(nil, "OVERLAY")
@@ -3634,9 +3634,9 @@ local function HookCharacterFrame()
             charDB.statsTextSize = 12
             charDB.statsTextColor = {0.953, 0.957, 0.965}
             charDB.headerClassColor = true
-            charDB.headerColor = {0.204, 0.827, 0.6}
+            charDB.headerColor = {0.376, 0.647, 0.980}
             charDB.enchantClassColor = true
-            charDB.enchantTextColor = {0.204, 0.827, 0.6}
+            charDB.enchantTextColor = {0.376, 0.647, 0.980}
             charDB.noEnchantTextColor = {0.5, 0.5, 0.5}
             charDB.upgradeTrackColor = {0.98, 0.60, 0.35, 1}
 
@@ -3746,3 +3746,12 @@ QUI.CharacterShared = {
     GetILvlColor = GetILvlColor,
     AbbreviateClassName = AbbreviateClassName,
 }
+
+if ns.Registry then
+    ns.Registry:Register("character", {
+        refresh = _G.QUI_RefreshCharacterPane,
+        priority = 45,
+        group = "character",
+        importCategories = { "skinning" },
+    })
+end

@@ -10,7 +10,7 @@ nav_order: 1
 A comprehensive UI customization addon for World of Warcraft Midnight (12.0+).
 {: .fs-6 .fw-300 }
 
-**Current Version: 2.44.3**
+**Current Version: 2.51.1**
 {: .label .label-green }
 
 [Get Started](getting-started/){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
@@ -33,12 +33,12 @@ QUI provides a unified configuration panel for managing unit frames, cooldowns, 
 | **Cooldown Manager** | Track abilities, buffs, and debuffs with a fully customizable icon-based HUD. |
 | **Custom Unit Frames** | Styled player, target, focus, and boss frames with aura filtering and cast bars. |
 | **Group Frames** | Enhanced party and raid frames with click-casting, indicators, and aura management. |
-| **Action Bar Skinning** | Clean, minimal action bar styling with button spacing and visibility controls. |
+| **Action Bars** | Native action bar engine with clean styling, button spacing, mouseover fade, and per-bar overrides. |
 | **Chat Enhancement** | Streamlined chat frame with improved fonts, fading, and URL copying. |
 | **Tooltip Customization** | Restyled tooltips with additional info like item level and spec. |
 | **Character Pane** | Enhanced character sheet with gear info and inspect integration. |
 | **M+ Timer** | Mythic Plus dungeon timer with key depletion tracking and party keystones. |
-| **Data Panels** | Configurable information panels showing DPS, gold, durability, and more. |
+| **Minimap & Data Panels** | Full minimap customization with button drawer, clock, coordinates, and configurable data panels. |
 | **Skinning System** | Visual overhaul of Blizzard frames including game menu, alerts, loot, and ready checks. |
 
 ---

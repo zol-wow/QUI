@@ -12,8 +12,6 @@ local GetCore = ns.Helpers.GetCore
 
 -- Module reference
 local CharacterSkinning = {}
-QUICore.CharacterSkinning = CharacterSkinning
-
 -- Configuration constants (centralized for easy adjustment)
 local CONFIG = {
     PANEL_WIDTH_EXTENSION = 55,   -- Extra width for stats panel
@@ -38,20 +36,9 @@ local titleHighlights = Helpers.CreateStateTable()   -- button → highlight tex
 ---------------------------------------------------------------------------
 -- Helper: Get skin colors from QUI system
 ---------------------------------------------------------------------------
-local function GetSkinColors()
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
-    local sr, sg, sb, sa = Helpers.GetSkinBorderColor(settings, "characterFrame")
-    local bgr, bgg, bgb, bga = Helpers.GetSkinBgColor()
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
-end
+local GetSkinColors = Helpers.CreateSkinColorGetter("characterFrame")
 
----------------------------------------------------------------------------
--- Helper: Get font path from settings
----------------------------------------------------------------------------
-local function GetFontPath()
-    return Helpers.GetGeneralFont()
-end
+local GetFontPath = Helpers.GetGeneralFont
 
 ---------------------------------------------------------------------------
 -- Helper: Style a thin QUI scrollbar
@@ -853,13 +840,17 @@ _G.QUI_CharacterFrameSkinning = {
     SkinTitleManager = SkinTitleManagerPane,
 }
 
--- Legacy compatibility aliases (deprecated - use QUI_CharacterFrameSkinning table)
+-- Legacy compatibility alias (deprecated - use QUI_CharacterFrameSkinning table)
 _G.QUI_RefreshCharacterFrameColors = RefreshCharacterFrameColors
 
--- Legacy global function aliases for qui_character.lua
-_G.QUI_SkinEquipmentManager = SkinEquipmentManager
-_G.QUI_SkinTitleManager = SkinTitleManagerPane
-_G.QUI_SetCharacterFrameBgExtended = SetCharacterFrameBgExtended
+if ns.Registry then
+    ns.Registry:Register("skinCharacter", {
+        refresh = _G.QUI_RefreshCharacterFrameColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION

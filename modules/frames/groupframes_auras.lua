@@ -6,7 +6,7 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local QUICore = ns.Addon
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
@@ -20,11 +20,11 @@ local QUI_GFA = {}
 ns.QUI_GroupFrameAuras = QUI_GFA
 
 -- Weak-keyed state for aura icons (taint safety)
-local auraIconState = setmetatable({}, { __mode = "k" })
+local auraIconState = Helpers.CreateStateTable()
 
 -- Layout versioning: only reposition icons when settings change
 local layoutVersion = 0
-local frameLayoutVersions = setmetatable({}, { __mode = "k" })
+local frameLayoutVersions = Helpers.CreateStateTable()
 
 -- UNIT_AURA throttling: coalesce rapid events per unit
 local AURA_THROTTLE = 0.05 -- 50ms coalesce window
@@ -149,16 +149,22 @@ local function SharedTimerOnUpdate(self, dt)
 
             if remaining > 0 then
                 if icon.durationText then
-                    icon.durationText:SetText(FormatDuration(remaining))
                     -- Determine context from icon's parent unit frame
                     local isRaid = icon.unitFrame and icon.unitFrame._isRaid
                     local vdb = db and (isRaid and db.raid or db.party) or db
-                    local showDurationColor = vdb and vdb.auras and vdb.auras.showDurationColor ~= false
-                    if showDurationColor then
-                        local r, g, b = GetDurationColor(remaining, dur)
-                        icon.durationText:SetTextColor(r, g, b, 1)
+                    local auraSettings = vdb and vdb.auras
+                    local showDurationText = not auraSettings or auraSettings.showDurationText ~= false
+                    if showDurationText then
+                        icon.durationText:SetText(FormatDuration(remaining))
+                        local showDurationColor = not auraSettings or auraSettings.showDurationColor ~= false
+                        if showDurationColor then
+                            local r, g, b = GetDurationColor(remaining, dur)
+                            icon.durationText:SetTextColor(r, g, b, 1)
+                        else
+                            icon.durationText:SetTextColor(1, 1, 1, 1)
+                        end
                     else
-                        icon.durationText:SetTextColor(1, 1, 1, 1)
+                        icon.durationText:SetText("")
                     end
                 end
             else
@@ -753,6 +759,11 @@ local function UpdateFrameAuras(frame)
                 frame.debuffIcons[i]:ClearAllPoints()
                 frame.debuffIcons[i]:SetPoint(dAnchor, frame, dAnchor, dOffX + offX, dOffY + offY)
                 frame.debuffIcons[i]:SetSize(iconSize, iconSize)
+                -- Apply duration font size from settings
+                if frame.debuffIcons[i].durationText then
+                    local dfs = auraSettings.durationFontSize or 9
+                    frame.debuffIcons[i].durationText:SetFont(GetFontPath(), dfs, "OUTLINE")
+                end
             end
             if entry then
                 UpdateAuraIcon(frame.debuffIcons[i], entry.auraData, unit)
@@ -895,6 +906,11 @@ local function UpdateFrameAuras(frame)
                 frame.buffIcons[i]:ClearAllPoints()
                 frame.buffIcons[i]:SetPoint(bAnchor, frame, bAnchor, bOffX + offX, bOffY + offY)
                 frame.buffIcons[i]:SetSize(iconSize, iconSize)
+                -- Apply duration font size from settings
+                if frame.buffIcons[i].durationText then
+                    local bfs = auraSettings.durationFontSize or 9
+                    frame.buffIcons[i].durationText:SetFont(GetFontPath(), bfs, "OUTLINE")
+                end
             end
             if entry then
                 UpdateAuraIcon(frame.buffIcons[i], entry.auraData, unit)

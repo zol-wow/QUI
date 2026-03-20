@@ -9,9 +9,7 @@ local NUM_BAG_FRAMES = NUM_BAG_FRAMES or 4
 ---------------------------------------------------------------------------
 
 -- Get settings from database
-local function GetSettings()
-    return Helpers.GetModuleDB("general")
-end
+local GetSettings = Helpers.CreateDBGetter("general")
 
 -- Find keystone in player's bags
 local function FindKeystoneInBags()

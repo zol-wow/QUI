@@ -123,7 +123,7 @@ local function CreateCustomTrackersPage(parent)
     local db = GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 10, tabName = "Custom Trackers"})
+    GUI:SetSearchContext({tabIndex = 8, tabName = "Custom CDM Bars"})
 
     -- Ensure customTrackers.bars exists
     if not db.customTrackers then
@@ -297,7 +297,7 @@ local function CreateCustomTrackersPage(parent)
     -- Build tab content for a single tracker bar
     ---------------------------------------------------------------------------
     local function BuildTrackerBarTab(tabContent, barConfig, barIndex, subTabsRef)
-        GUI:SetSearchContext({tabIndex = 10, tabName = "Custom Trackers", subTabIndex = barIndex, subTabName = barConfig.name or ("Bar " .. barIndex)})
+        GUI:SetSearchContext({tabIndex = 8, tabName = "Custom CDM Bars", subTabIndex = barIndex, subTabName = barConfig.name or ("Bar " .. barIndex)})
         local y = -10
 
         local entryListFrame  -- Forward declaration for refresh callback
@@ -338,13 +338,13 @@ local function CreateCustomTrackersPage(parent)
         -- Bar Name (editable, updates tab text instantly)
         local nameRow = GUI:CreateFormEditBox(tabContent, "Bar Name", nil, nil, nil, {
             width = 200,
-            value = barConfig.name or "Tracker",
+            value = barConfig.name or "CDM Bar",
             commitOnEnter = false,
             commitOnFocusLost = false,
             live = true,
             onTextChanged = function(self)
                 local newName = self:GetText()
-                if newName == "" then newName = "Tracker" end
+                if newName == "" then newName = "CDM Bar" end
                 barConfig.name = newName
 
                 if subTabsRef and subTabsRef.tabButtons and subTabsRef.tabButtons[barIndex] then
@@ -372,15 +372,15 @@ local function CreateCustomTrackersPage(parent)
                 print("|cffff0000QUI:|r " .. (err or "Export failed"))
                 return
             end
-            GUI:ShowExportPopup("Export Tracker Bar", exportStr)
+            GUI:ShowExportPopup("Export CDM Bar", exportStr)
         end)
         exportBarBtn:SetPoint("TOPLEFT", PAD, y)
 
         -- Delete Bar button
         local deleteBtn = GUI:CreateButton(tabContent, "Delete Bar", 120, 26, function()
             GUI:ShowConfirmation({
-                title = "Delete Tracker Bar?",
-                message = "Delete this tracker bar?",
+                title = "Delete CDM Bar?",
+                message = "Delete this CDM bar?",
                 warningText = "This cannot be undone.",
                 acceptText = "Delete",
                 cancelText = "Cancel",
@@ -400,7 +400,7 @@ local function CreateCustomTrackersPage(parent)
                     -- Prompt reload to rebuild tabs
                     GUI:ShowConfirmation({
                         title = "Reload UI?",
-                        message = "Tracker deleted. Reload UI to see changes?",
+                        message = "CDM bar deleted. Reload UI to see changes?",
                         acceptText = "Reload",
                         cancelText = "Later",
                 onAccept = function() QUI:SafeReload() end,
@@ -1642,21 +1642,18 @@ local function CreateCustomTrackersPage(parent)
 
     ---------------------------------------------------------------------------
     -- Build sub-tabs dynamically from bars
-    ---------------------------------------------------------------------------
-    -- Reference to be populated after subTabs creation (for live tab text updates)
-    local subTabsRef = {}
+    local Helpers = ns.Helpers
+    local P = Helpers.PlaceRow
 
-    local tabDefs = {}
+    local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(content, PAD)
 
     ---------------------------------------------------------------------------
-    -- SPELL SCANNER TAB (always first)
+    -- SPELL SCANNER (collapsible)
     ---------------------------------------------------------------------------
-    table.insert(tabDefs, {
-        name = "Setup Custom Buff Tracking",
-        builder = function(tabContent)
-            GUI:SetSearchContext({tabIndex = 10, tabName = "Custom Trackers", subTabIndex = 1, subTabName = "Spell Scanner"})
-            local y = -10
-            local scanner = QUI.SpellScanner
+    CreateCollapsible("Setup Custom Buff Tracking", 550, function(tabContent)
+        GUI:SetSearchContext({tabIndex = 8, tabName = "Custom CDM Bars"})
+        local y = -4
+        local scanner = QUI.SpellScanner
             local scannedListFrame  -- Forward declaration for refresh
 
             -- Header
@@ -1679,7 +1676,7 @@ local function CreateCustomTrackersPage(parent)
             y = y - 32
 
             -- Step 2
-            local step2 = GUI:CreateLabel(tabContent, "2. Add those spells/items to a Custom Tracker bar", 11, C.text)
+            local step2 = GUI:CreateLabel(tabContent, "2. Add those spells/items to a Custom CDM Bar", 11, C.text)
             step2:SetPoint("TOPLEFT", PAD, y)
             step2:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             step2:SetJustifyH("LEFT")
@@ -1914,216 +1911,63 @@ local function CreateCustomTrackersPage(parent)
             importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 10, 0)
 
             tabContent:SetHeight(550)
-        end,
-    })
+    end)
 
-    -- Add a tab for each existing bar
-    for i, barConfig in ipairs(bars) do
-        local tabName = barConfig.name or ("Tracker " .. i)
-        -- Truncate long names for tab display
-        if #tabName > 20 then
-            tabName = tabName:sub(1, 17) .. "..."
-        end
-        table.insert(tabDefs, {
-            name = tabName,
-            builder = function(tabContent)
-                -- Pass i+1 for subTabIndex since Spell Scanner is tab 1
-                BuildTrackerBarTab(tabContent, barConfig, i + 1, subTabsRef)
-            end,
-        })
-    end
+    ---------------------------------------------------------------------------
+    -- IMPORT / EXPORT (collapsible)
+    ---------------------------------------------------------------------------
+    CreateCollapsible("Import / Export CDM Bars", 80, function(body)
+        local desc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        desc:SetPoint("TOPLEFT", 4, -4)
+        desc:SetPoint("RIGHT", body, "RIGHT", -4, 0)
+        desc:SetTextColor(0.6, 0.6, 0.6, 0.8)
+        desc:SetText("Per-bar settings are in Layout Mode (/qui layout)")
+        desc:SetJustifyH("LEFT")
 
-    -- If no bars exist (only Spell Scanner tab), show empty state
-    if #tabDefs == 1 then
-        local emptyHeader = GUI:CreateSectionHeader(content, "Custom Tracker Bars")
-        emptyHeader:SetPoint("TOPLEFT", PAD, -15)
-
-        local emptyLabel = GUI:CreateLabel(content, "No tracker bars created yet. A default bar will be created on next /reload.", 12, C.textMuted)
-        emptyLabel:SetPoint("TOPLEFT", PAD, -60)
-        emptyLabel:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        emptyLabel:SetJustifyH("LEFT")
-
-        -- Add bar button
-        local addBtn = GUI:CreateButton(content, "+ Add Tracker Bar", 160, 28, function()
-            local newID = "tracker" .. (time() % 100000)
-            -- Calculate position relative to player frame
-            local newOffsetX, newOffsetY = CalculatePlayerRelativeOffset(-20, -50)
-            local newBar = {
-                id = newID,
-                name = "Tracker " .. (#bars + 1),
-                enabled = false,
-                locked = false,
-                offsetX = newOffsetX,
-                offsetY = newOffsetY,
-                growDirection = "RIGHT",
-                iconSize = 28,
-                spacing = 4,
-                borderSize = 2,
-                shape = "square",
-                zoom = 0,
-                durationSize = 13,
-                durationColor = {1, 1, 1, 1},
-                durationOffsetX = 0,
-                durationOffsetY = 0,
-                stackSize = 9,
-                stackColor = {1, 1, 1, 1},
-                stackOffsetX = 3,
-                stackOffsetY = -1,
-                bgOpacity = 0,
-                hideGCD = true,
-                showRechargeSwipe = false,
-                entries = {},
-            }
-            table.insert(db.customTrackers.bars, newBar)
-            if QUICore and QUICore.CustomTrackers then
-                QUICore.CustomTrackers:RefreshAll()
-            end
-            GUI:ShowConfirmation({
-                title = "Reload UI?",
-                message = "Tracker bar created. Reload UI to configure it?",
-                acceptText = "Reload",
-                cancelText = "Later",
-                onAccept = function() QUI:SafeReload() end,
-            })
+        local exportAllBtn = GUI:CreateButton(body, "Export All Bars", 120, 24, function()
+            local exportStr, err = QUICore:ExportAllTrackerBars()
+            if not exportStr then print("|cffff0000QUI:|r " .. (err or "Export failed")); return end
+            GUI:ShowExportPopup("Export All CDM Bars", exportStr)
         end)
-        addBtn:SetPoint("TOPLEFT", PAD, -100)
-        content:SetHeight(200)
-    else
-        -- Add a "+" tab to create new bars
-        table.insert(tabDefs, {
-            name = "+ Add Bar",
-            builder = function(tabContent)
-                local y = -10
-                local header = GUI:CreateSectionHeader(tabContent, "Add New Tracker Bar")
-                header:SetPoint("TOPLEFT", PAD, y)
-                y = y - header.gap
+        exportAllBtn:SetPoint("TOPLEFT", 4, -24)
 
-                local desc = GUI:CreateLabel(tabContent, "Create a new tracker bar to monitor consumables, trinkets, or ability cooldowns.", 11, C.textMuted)
-                desc:SetPoint("TOPLEFT", PAD, y)
-                desc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-                desc:SetJustifyH("LEFT")
-                y = y - 30
-
-                local addBtn = GUI:CreateButton(tabContent, "Create New Tracker Bar", 180, 28, function()
-                    local newID = "tracker" .. (time() % 100000)
-                    -- Calculate position relative to player frame (stagger by bar count)
-                    local staggerY = #bars * 40  -- Each new bar 40px lower
-                    local newOffsetX, newOffsetY = CalculatePlayerRelativeOffset(-20, -50 - staggerY)
-                    local newBar = {
-                        id = newID,
-                        name = "Tracker " .. (#bars + 1),
-                        enabled = false,
-                        locked = false,
-                        offsetX = newOffsetX,
-                        offsetY = newOffsetY,
-                        growDirection = "RIGHT",
-                        iconSize = 28,
-                        spacing = 4,
-                        borderSize = 2,
-                        shape = "square",
-                        zoom = 0,
-                        durationSize = 13,
-                        durationColor = {1, 1, 1, 1},
-                        durationOffsetX = 0,
-                        durationOffsetY = 0,
-                        stackSize = 9,
-                        stackColor = {1, 1, 1, 1},
-                        stackOffsetX = 3,
-                        stackOffsetY = -1,
-                        bgOpacity = 0,
-                        hideGCD = true,
-                        showRechargeSwipe = false,
-                        entries = {},
-                    }
-                    table.insert(db.customTrackers.bars, newBar)
-                    if QUICore and QUICore.CustomTrackers then
-                        QUICore.CustomTrackers:RefreshAll()
-                    end
+        local importBarsBtn = GUI:CreateButton(body, "Import Bars", 120, 24, function()
+            GUI:ShowImportPopup({
+                title = "Import CDM Bars",
+                hint = "Paste the export string below. 'Merge' adds to existing bars, 'Replace All' overwrites.",
+                hasMerge = true,
+                onImport = function(str) return QUICore:ImportAllTrackerBars(str, false) end,
+                onReplace = function(str) return QUICore:ImportAllTrackerBars(str, true) end,
+                onSuccess = function()
                     GUI:ShowConfirmation({
-                        title = "Reload UI?",
-                        message = "Tracker bar created. Reload UI to configure it?",
-                        acceptText = "Reload",
-                        cancelText = "Later",
+                        title = "Reload UI?", message = "CDM bars imported. Reload UI to see changes?",
+                        acceptText = "Reload", cancelText = "Later",
                         onAccept = function() QUI:SafeReload() end,
                     })
-                end)
-                addBtn:SetPoint("TOPLEFT", PAD, y)
-                y = y - 50
+                end,
+            })
+        end)
+        importBarsBtn:SetPoint("LEFT", exportAllBtn, "RIGHT", 8, 0)
 
-                -- Import/Export All Bars section
-                local ieHeader = GUI:CreateSectionHeader(tabContent, "Import / Export All Tracker Bars")
-                ieHeader:SetPoint("TOPLEFT", PAD, y)
-                y = y - ieHeader.gap
-
-                -- Export All Bars button
-                local exportAllBtn = GUI:CreateButton(tabContent, "Export All Bars", 140, 26, function()
-                    local exportStr, err = QUICore:ExportAllTrackerBars()
-                    if not exportStr then
-                        print("|cffff0000QUI:|r " .. (err or "Export failed"))
-                        return
-                    end
-                    GUI:ShowExportPopup("Export All Tracker Bars", exportStr)
-                end)
-                exportAllBtn:SetPoint("TOPLEFT", PAD, y)
-
-                -- Import Bars button
-                local importBarsBtn = GUI:CreateButton(tabContent, "Import Bars", 140, 26, function()
-                    GUI:ShowImportPopup({
-                        title = "Import Tracker Bars",
-                        hint = "Paste the export string below. 'Merge' adds to existing bars, 'Replace All' overwrites.",
-                        hasMerge = true,
-                        onImport = function(str)
-                            return QUICore:ImportAllTrackerBars(str, false)  -- merge
-                        end,
-                        onReplace = function(str)
-                            return QUICore:ImportAllTrackerBars(str, true)  -- replace
-                        end,
-                        onSuccess = function()
-                            GUI:ShowConfirmation({
-                                title = "Reload UI?",
-                                message = "Tracker bars imported. Reload UI to see changes?",
-                                acceptText = "Reload",
-                                cancelText = "Later",
-                                onAccept = function() QUI:SafeReload() end,
-                            })
-                        end,
+        local importSingleBtn = GUI:CreateButton(body, "Import Single Bar", 120, 24, function()
+            GUI:ShowImportPopup({
+                title = "Import Single CDM Bar",
+                hint = "Paste a single bar export string below",
+                hasMerge = false,
+                onImport = function(str) return QUICore:ImportSingleTrackerBar(str) end,
+                onSuccess = function()
+                    GUI:ShowConfirmation({
+                        title = "Reload UI?", message = "CDM bar imported. Reload UI to see changes?",
+                        acceptText = "Reload", cancelText = "Later",
+                        onAccept = function() QUI:SafeReload() end,
                     })
-                end)
-                importBarsBtn:SetPoint("LEFT", exportAllBtn, "RIGHT", 10, 0)
+                end,
+            })
+        end)
+        importSingleBtn:SetPoint("LEFT", importBarsBtn, "RIGHT", 8, 0)
+    end)
 
-                -- Import Single Bar button
-                local importSingleBtn = GUI:CreateButton(tabContent, "Import Single Bar", 140, 26, function()
-                    GUI:ShowImportPopup({
-                        title = "Import Single Tracker Bar",
-                        hint = "Paste a single bar export string below",
-                        hasMerge = false,
-                        onImport = function(str)
-                            return QUICore:ImportSingleTrackerBar(str)
-                        end,
-                        onSuccess = function()
-                            GUI:ShowConfirmation({
-                                title = "Reload UI?",
-                                message = "Tracker bar imported. Reload UI to see changes?",
-                                acceptText = "Reload",
-                                cancelText = "Later",
-                                onAccept = function() QUI:SafeReload() end,
-                            })
-                        end,
-                    })
-                end)
-                importSingleBtn:SetPoint("LEFT", importBarsBtn, "RIGHT", 10, 0)
-
-                tabContent:SetHeight(250)
-            end,
-        })
-
-        -- Create sub-tabs
-        local subTabs = GUI:CreateSubTabs(content, tabDefs)
-        -- Get tabButtons from the sticky bar group for live tab text updates
-        subTabsRef.tabButtons = GUI._lastSubTabGroup and GUI._lastSubTabGroup.tabButtons or subTabs.tabButtons
-
-        content:SetHeight(750)
-    end
+    relayout()
 end
 
 ---------------------------------------------------------------------------

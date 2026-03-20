@@ -231,7 +231,7 @@ local function BuildThirdPartyTab(tabContent)
     local y = -10
     local PAD = PADDING
 
-    GUI:SetSearchContext({tabIndex = 3, tabName = "Anchoring & Layout", subTabIndex = 9, subTabName = "3rd Party Addons"})
+    GUI:SetSearchContext({tabIndex = 3, tabName = "Frame Positioning", subTabIndex = 7, subTabName = "3rd Party Addons"})
 
     local info = GUI:CreateLabel(tabContent, "Configure QUI-driven anchoring integrations for supported external addons.", 11, C.textMuted)
     info:SetPoint("TOPLEFT", PAD, y)

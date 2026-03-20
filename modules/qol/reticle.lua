@@ -92,8 +92,8 @@ local function GetRingColor()
         end
         return 1, 1, 1, 1
     else
-        local c = settings.customColor or {0.204, 0.827, 0.6, 1}
-        return c[1] or 0.204, c[2] or 0.827, c[3] or 0.6, c[4] or 1
+        local c = settings.customColor or {0.376, 0.647, 0.980, 1}
+        return c[1] or 0.376, c[2] or 0.647, c[3] or 0.980, c[4] or 1
     end
 end
 
@@ -498,6 +498,15 @@ end)
 _G.QUI_RefreshReticle = function()
     InvalidateCache()
     UpdateReticle()
+end
+
+if ns.Registry then
+    ns.Registry:Register("reticle", {
+        refresh = _G.QUI_RefreshReticle,
+        priority = 30,
+        group = "qol",
+        importCategories = { "castBars" },
+    })
 end
 
 ---------------------------------------------------------------------------

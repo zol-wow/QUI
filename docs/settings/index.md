@@ -13,23 +13,41 @@ Settings are stored in `QUI.db.profile` (profile-level, shared across characters
 
 ## In-Game Tabs
 
-The QUI options panel contains the following tabs:
+The QUI options panel (`/qui`) contains the following tabs:
 
 | # | Tab | Description |
 |---|-----|-------------|
 | 1 | **Welcome** | First-time setup wizard and version info |
 | 2 | **General & QoL** | Global appearance, automation, skinning, and quality-of-life features |
-| 3 | **Anchoring & Layout** | Frame positioning, anchoring, and HUD layering |
-| 4 | **Cooldown Manager** | Essential, Utility, Buff, and Tracked bars plus glow/swipe effects |
-| 5 | **Unit Frames** | Player, Target, ToT, Pet, Focus, and Boss unit frames |
-| 6 | **Group Frames** | Party and raid frames with healer features and click-casting |
-| 7 | **Action Bars** | Button skinning, mouseover fade, per-bar overrides |
-| 8 | **Minimap & Datatext** | Minimap customization and data panel configuration |
-| 9 | **Skinning & Autohide** | Blizzard frame skinning and conditional frame hiding |
-| 10 | **Custom Trackers** | User-defined spell and item tracking bars |
-| 11 | **Frame Levels** | HUD layering priority for all QUI frames |
-| 12 | **Profiles** | AceDB profile management (create, copy, delete, switch) |
-| 13 | **Import & Export Strings** | Profile import/export and bundled preset strings |
+| 3 | **Frame Positioning** | Frame anchoring relationships and positioning |
+| 4 | **Unit Frames** | Player, Target, ToT, Pet, Focus, and Boss unit frames |
+| 5 | **Click-Cast** | Click-casting bindings for group frames and unit frames |
+| 6 | **Action Bars** | Button skinning, mouseover fade, per-bar overrides |
+| 7 | **Skinning & Autohide** | Blizzard frame skinning and conditional frame hiding |
+| 8 | **Custom CDM Bars** | User-defined spell and item tracking bars |
+| 9 | **Frame Levels** | HUD layering priority for all QUI frames |
+| 10 | **Profiles** | AceDB profile management (create, copy, delete, switch) |
+| 11 | **Import & Export Strings** | Profile import/export and bundled preset strings |
+| 12 | **Search** | Search across all settings |
+| 13 | **Help** | Help and documentation pages |
+
+### Layout Mode Settings
+
+The following settings have been moved out of the main options panel and into **Layout Mode** (`/qui layout`):
+
+| Module | Access |
+|--------|--------|
+| **Cooldown Manager** | Layout Mode toolbar and settings panels |
+| **Group Frames** | Layout Mode toolbar and drawer (Composer + settings panels) |
+| **Minimap & Datatext** | Layout Mode toolbar and settings panels |
+
+### Action Buttons
+
+The options panel sidebar also includes quick-access action buttons:
+
+- **CDM Settings** -- Opens the CDM settings panel directly
+- **Blizz Edit Mode** -- Opens Blizzard's Edit Mode
+- **QUI Edit Mode** -- Toggles QUI Layout Mode
 
 ## How Settings Are Organized
 

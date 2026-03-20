@@ -3,11 +3,9 @@
 -- Uses C_AssistedCombat API (Starter Build / Rotation Helper)
 
 local ADDON_NAME, QUI = ...
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = QUI.LSM
 
-local function GetCore()
-    return (QUI and QUI.QUICore) or (_G.QUI and _G.QUI.QUICore)
-end
+local GetCore = QUI.Helpers.GetCore
 
 -- Locals for performance
 local GetTime = GetTime
@@ -205,7 +203,7 @@ CreateIconFrame = function()
     -- Drag handlers
     iconFrame:SetScript("OnDragStart", function(self)
         local db = GetDB()
-        local isAnchoredOverride = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self)
+        local isAnchoredOverride = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("rotationAssistIcon")
         if db and not db.isLocked and not isAnchoredOverride then
             self:StartMoving()
         end
@@ -215,7 +213,7 @@ CreateIconFrame = function()
         self:StopMovingOrSizing()
 
         -- Frame anchoring owns position while an override is active.
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then
+        if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("rotationAssistIcon") then
             return
         end
 
@@ -446,7 +444,7 @@ RefreshIconFrame = function()
     pcall(iconFrame.SetSize, iconFrame, size, size)
 
     -- Position (manual only when no frame-anchoring override is active)
-    local isAnchoredOverride = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(iconFrame)
+    local isAnchoredOverride = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("rotationAssistIcon")
     if not isAnchoredOverride then
         iconFrame:ClearAllPoints()
         local posX = db.positionX or 0
@@ -538,8 +536,11 @@ RefreshIconFrame = function()
         iconFrame.keybindText:SetPoint(anchor, iconFrame, anchor, offsetX, offsetY)
     end
 
-    -- Don't call UpdateVisibility() here - let OnUpdate show the frame
-    -- only after a spell has been fetched, to avoid empty border flash
+    -- Force a full visibility + display recheck with the new settings.
+    -- Reset lastSpellID so the next DoUpdate() treats the current spell as
+    -- "changed" and runs UpdateIconDisplay → UpdateVisibility.
+    lastSpellID = nil
+    DoUpdate()
 end
 
 --------------------------------------------------------------------------------
@@ -612,3 +613,12 @@ QUI.RotationAssistIcon = {
     Refresh = RefreshRotationAssistIcon,
     GetFrame = function() return iconFrame end,
 }
+
+if QUI.Registry then
+    QUI.Registry:Register("rotationAssist", {
+        refresh = _G.QUI_RefreshRotationAssistIcon,
+        priority = 40,
+        group = "combat",
+        importCategories = { "cdm" },
+    })
+end

@@ -29,6 +29,7 @@ Chat enhancements are enabled by default. To access settings, open `/qui` and na
 - **Copy button** -- A button that copies the chat contents. Multiple visibility modes: always visible, visible on hover, hidden, or disabled entirely.
 - **Intro message** -- Toggle whether QUI shows its login message when you first log in or reload.
 - **Message history** -- Navigate through your previously sent messages using the up and down arrow keys. Stores up to 50 messages.
+- **Sound alerts** -- Configurable sound alerts for incoming chat messages with LibSharedMedia support for custom alert sounds.
 
 ## Important Settings
 

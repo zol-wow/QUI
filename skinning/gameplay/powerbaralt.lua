@@ -49,15 +49,7 @@ local function GetModuleSkinColors()
     return SkinBase.GetSkinColors(GetGeneralSettings(), "powerBarAlt")
 end
 
-local function GetBarPosition()
-    local db = GetDB()
-    return db.powerBarAltPosition
-end
-
-local function SaveBarPosition(point, relPoint, x, y)
-    local db = GetDB()
-    db.powerBarAltPosition = { point = point, relPoint = relPoint, x = x, y = y }
-end
+-- Legacy position helpers removed — frameAnchoring system handles positioning.
 
 ---------------------------------------------------------------------------
 -- TOOLTIP HANDLING
@@ -159,13 +151,8 @@ local function CreateQUIAltPowerBar()
     local bar = CreateFrame("StatusBar", "QUI_AltPowerBar", UIParent)
     bar:SetSize(BAR_WIDTH, BAR_HEIGHT)
 
-    -- Load saved position or use default
-    local pos = GetBarPosition()
-    if pos and pos.point then
-        bar:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
-    else
-        bar:SetPoint("TOP", UIParent, "TOP", 0, -100)
-    end
+    -- Default position; ApplyAllFrameAnchors overrides from frameAnchoring DB
+    bar:SetPoint("TOP", UIParent, "TOP", 0, -100)
 
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
     bar:SetStatusBarColor(sr, sg, sb)
@@ -279,102 +266,14 @@ end
 
 _G.QUI_RefreshPowerBarAltColors = RefreshPowerBarAltColors
 
----------------------------------------------------------------------------
--- MOVER OVERLAY
----------------------------------------------------------------------------
-
-local function CreateMover()
-    if powerBarMover then return end
-    if not QUIAltPowerBar then return end
-
-    -- Get skin colors for mover
-    local sr, sg, sb = SkinBase.GetSkinColors(GetGeneralSettings(), "powerBarAlt")
-
-    -- Create mover overlay
-    powerBarMover = CreateFrame("Frame", "QUI_AltPowerBarMover", UIParent, "BackdropTemplate")
-    powerBarMover:SetSize(BAR_WIDTH + 4, BAR_HEIGHT + 4)
-    powerBarMover:SetPoint("CENTER", QUIAltPowerBar, "CENTER")
-    local mvPx = SkinBase.GetPixelSize(powerBarMover, 1)
-    powerBarMover:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = mvPx,
+if ns.Registry then
+    ns.Registry:Register("skinPowerBarAlt", {
+        refresh = _G.QUI_RefreshPowerBarAltColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
     })
-    powerBarMover:SetBackdropColor(sr, sg, sb, 0.3)
-    powerBarMover:SetBackdropBorderColor(sr, sg, sb, 1)
-    powerBarMover:EnableMouse(true)
-    powerBarMover:SetMovable(true)
-    powerBarMover:RegisterForDrag("LeftButton")
-    powerBarMover:SetFrameStrata("FULLSCREEN_DIALOG")
-    powerBarMover:Hide()
-
-    -- Mover label
-    powerBarMover.text = powerBarMover:CreateFontString(nil, "OVERLAY")
-    powerBarMover.text:SetPoint("CENTER")
-    powerBarMover.text:SetFont(STANDARD_TEXT_FONT, 10, FONT_FLAGS)
-    powerBarMover.text:SetText("Encounter Power Bar")
-    powerBarMover.text:SetTextColor(1, 1, 1)
-
-    -- Drag handlers
-    powerBarMover:SetScript("OnDragStart", function(self)
-        QUIAltPowerBar:StartMoving()
-    end)
-
-    powerBarMover:SetScript("OnDragStop", function(self)
-        QUIAltPowerBar:StopMovingOrSizing()
-        -- Save position (snapped to pixel grid)
-        local core = GetCore()
-        local point, _, relPoint, x, y = core:SnapFramePosition(QUIAltPowerBar)
-        if point then
-            SaveBarPosition(point, relPoint, x, y)
-        end
-        -- Re-anchor mover to bar
-        self:ClearAllPoints()
-        self:SetPoint("CENTER", QUIAltPowerBar, "CENTER")
-    end)
 end
-
----------------------------------------------------------------------------
--- MOVER TOGGLE (called from options)
----------------------------------------------------------------------------
-
-local function ShowMover()
-    CreateMover()
-    if powerBarMover then
-        powerBarMover:Show()
-        -- Show the bar too so user can see what they're positioning
-        if QUIAltPowerBar then
-            QUIAltPowerBar:Show()
-            -- Show placeholder if no active power bar
-            if not QUIAltPowerBar.powerName then
-                QUIAltPowerBar.text:SetText("Encounter Power Bar")
-                QUIAltPowerBar:SetMinMaxValues(0, 100)
-                QUIAltPowerBar:SetValue(50)
-            end
-        end
-    end
-end
-
-local function HideMover()
-    if powerBarMover then
-        powerBarMover:Hide()
-    end
-    -- Re-update bar visibility based on actual power state
-    if QUIAltPowerBar then
-        UpdateBar(QUIAltPowerBar)
-    end
-end
-
-local function ToggleMover()
-    if powerBarMover and powerBarMover:IsShown() then
-        HideMover()
-    else
-        ShowMover()
-    end
-end
-
--- Expose toggle function globally
-_G.QUI_TogglePowerBarAltMover = ToggleMover
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION

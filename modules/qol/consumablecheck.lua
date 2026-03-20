@@ -171,9 +171,7 @@ local PHIAL_SUBCLASS_ID = Enum and Enum.ItemConsumableSubclass and Enum.ItemCons
 -- UTILITY FUNCTIONS
 ---------------------------------------------------------------------------
 
-local function GetSettings()
-    return Helpers.GetModuleDB("general")
-end
+local GetSettings = Helpers.CreateDBGetter("general")
 
 local function GetButtonSize()
     local settings = GetSettings()
@@ -265,14 +263,6 @@ local function SetPreferredItemID(buttonType, itemID)
     if key then
         settings[key] = itemID
     end
-end
-
-local function IsConsumableClass(itemID)
-    local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
-    if not ITEM_CLASS_CONSUMABLE_ID or not classID then
-        return false
-    end
-    return classID == ITEM_CLASS_CONSUMABLE_ID
 end
 
 local function CollectItemTotalsFromList(itemIDs, totals)
@@ -478,7 +468,7 @@ end
 ---------------------------------------------------------------------------
 
 local ConsumablesFrame = CreateFrame("Frame", "QUI_ConsumablesFrame", UIParent)
-ConsumablesFrame:SetSize(DEFAULT_BUTTON_SIZE * 6 + BUTTON_SPACING * 5, DEFAULT_BUTTON_SIZE)
+ConsumablesFrame:SetSize(DEFAULT_BUTTON_SIZE * 6 + BUTTON_SPACING * 5, DEFAULT_BUTTON_SIZE + 18)
 ConsumablesFrame:Hide()
 ConsumablesFrame.buttons = {}
 
@@ -527,9 +517,12 @@ RequestHideConsumablesFrame = function()
 end
 
 -- Close button
+local CLOSE_BUTTON_HEIGHT = 18
+
 local closeButton = CreateFrame("Button", nil, ConsumablesFrame)
-closeButton:SetSize(DEFAULT_BUTTON_SIZE * 4, 18)
-closeButton:SetPoint("TOP", ConsumablesFrame, "BOTTOM", 0, 0)
+closeButton:SetSize(DEFAULT_BUTTON_SIZE * 4, CLOSE_BUTTON_HEIGHT)
+closeButton:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", 0, 0)
+closeButton:SetPoint("BOTTOMRIGHT", ConsumablesFrame, "BOTTOMRIGHT", 0, 0)
 
 closeButton.bg = closeButton:CreateTexture(nil, "BACKGROUND")
 closeButton.bg:SetAllPoints()
@@ -1094,49 +1087,50 @@ UpdateConsumables = function()
         HideConsumablePicker()
     end
 
-    -- Position visible buttons
+    -- Position visible buttons (above the close button)
     if not InCombatLockdown() then
         local xOffset = 0
         local buttonSize = ConsumablesFrame.buttonSize or DEFAULT_BUTTON_SIZE
+        local buttonY = CLOSE_BUTTON_HEIGHT  -- buttons sit above close button
 
         if settings.consumableFood ~= false then
             buttons.food:ClearAllPoints()
-            buttons.food:SetPoint("LEFT", ConsumablesFrame, "LEFT", xOffset, 0)
+            buttons.food:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", xOffset, buttonY)
             buttons.food:Show()
             xOffset = xOffset + buttonSize + BUTTON_SPACING
             visibleCount = visibleCount + 1
         end
         if settings.consumableFlask ~= false then
             buttons.flask:ClearAllPoints()
-            buttons.flask:SetPoint("LEFT", ConsumablesFrame, "LEFT", xOffset, 0)
+            buttons.flask:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", xOffset, buttonY)
             buttons.flask:Show()
             xOffset = xOffset + buttonSize + BUTTON_SPACING
             visibleCount = visibleCount + 1
         end
         if settings.consumableOilMH ~= false then
             buttons.oilMH:ClearAllPoints()
-            buttons.oilMH:SetPoint("LEFT", ConsumablesFrame, "LEFT", xOffset, 0)
+            buttons.oilMH:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", xOffset, buttonY)
             buttons.oilMH:Show()
             xOffset = xOffset + buttonSize + BUTTON_SPACING
             visibleCount = visibleCount + 1
         end
         if settings.consumableRune ~= false then
             buttons.rune:ClearAllPoints()
-            buttons.rune:SetPoint("LEFT", ConsumablesFrame, "LEFT", xOffset, 0)
+            buttons.rune:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", xOffset, buttonY)
             buttons.rune:Show()
             xOffset = xOffset + buttonSize + BUTTON_SPACING
             visibleCount = visibleCount + 1
         end
         if settings.consumableHealthstone ~= false and HasWarlockInGroup() then
             buttons.healthstone:ClearAllPoints()
-            buttons.healthstone:SetPoint("LEFT", ConsumablesFrame, "LEFT", xOffset, 0)
+            buttons.healthstone:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", xOffset, buttonY)
             buttons.healthstone:Show()
             xOffset = xOffset + buttonSize + BUTTON_SPACING
             visibleCount = visibleCount + 1
         end
         if settings.consumableOilOH ~= false and IsDualWielding() then
             buttons.oilOH:ClearAllPoints()
-            buttons.oilOH:SetPoint("LEFT", ConsumablesFrame, "LEFT", xOffset, 0)
+            buttons.oilOH:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", xOffset, buttonY)
             buttons.oilOH:Show()
             xOffset = xOffset + buttonSize + BUTTON_SPACING
             visibleCount = visibleCount + 1
@@ -1145,10 +1139,7 @@ UpdateConsumables = function()
         local frameWidth = visibleCount > 0
             and (visibleCount * buttonSize + (visibleCount - 1) * BUTTON_SPACING)
             or buttonSize
-        ConsumablesFrame:SetSize(frameWidth, buttonSize)
-        if ConsumablesFrame.closeButton then
-            ConsumablesFrame.closeButton:SetWidth(frameWidth)
-        end
+        ConsumablesFrame:SetSize(frameWidth, buttonSize + CLOSE_BUTTON_HEIGHT)
     end
 end
 
@@ -1197,90 +1188,23 @@ ConsumablesFrame:SetScript("OnHide", function(self)
 end)
 
 ---------------------------------------------------------------------------
--- POSITIONING & MOVER
+-- POSITIONING (frameAnchoring handles position via layout mode)
 ---------------------------------------------------------------------------
-
-local CLOSE_BUTTON_HEIGHT = 18
-
-local MoverFrame = CreateFrame("Frame", "QUI_ConsumablesMover", UIParent, "BackdropTemplate")
-MoverFrame:SetSize(200, 60)
-MoverFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-MoverFrame:SetFrameStrata("DIALOG")
-MoverFrame:SetMovable(true)
-MoverFrame:EnableMouse(true)
-MoverFrame:RegisterForDrag("LeftButton")
-MoverFrame:SetClampedToScreen(true)
-MoverFrame:Hide()
-
-MoverFrame:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 1,
-})
-MoverFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-MoverFrame:SetBackdropBorderColor(0.4, 0.8, 1.0, 1)
-
-MoverFrame.text = MoverFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-MoverFrame.text:SetPoint("CENTER")
-MoverFrame.text:SetText("Consumables Check\nDrag to position")
-MoverFrame.text:SetTextColor(0.4, 0.8, 1.0, 1)
-
-MoverFrame.closeBtn = CreateFrame("Button", nil, MoverFrame)
-MoverFrame.closeBtn:SetSize(16, 16)
-MoverFrame.closeBtn:SetPoint("TOPRIGHT", -2, -2)
-MoverFrame.closeBtn:SetNormalTexture("Interface\\Buttons\\UI-StopButton")
-MoverFrame.closeBtn:SetScript("OnClick", function() MoverFrame:Hide() end)
-
-MoverFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-MoverFrame:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    local settings = GetSettings()
-    if settings then
-        local point, _, relativePoint, x, y = self:GetPoint()
-        settings.consumableFreePosition = { point = point, relativePoint = relativePoint, x = x, y = y }
-    end
-end)
-
-local function ToggleMover()
-    if MoverFrame:IsShown() then
-        MoverFrame:Hide()
-    else
-        local settings = GetSettings()
-        if settings and settings.consumableFreePosition then
-            local pos = settings.consumableFreePosition
-            MoverFrame:ClearAllPoints()
-            MoverFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
-        end
-        MoverFrame:Show()
-    end
-end
 
 local function PositionConsumablesFrame()
     ConsumablesFrame:SetScale(GetConsumableScale())
+    ConsumablesFrame:SetParent(UIParent)
+    ConsumablesFrame:SetFrameStrata("DIALOG")
+    -- Skip repositioning when layout mode owns the frame (avoids fighting the handle system)
+    local anchoring = ns.QUI_Anchoring
+    if anchoring and anchoring.layoutOwnedFrames and anchoring.layoutOwnedFrames[ConsumablesFrame] then
+        return
+    end
+    -- Default position; frameAnchoring overrides if the user has positioned in layout mode
     ConsumablesFrame:ClearAllPoints()
-    local settings = GetSettings()
-    local anchorMode = settings and settings.consumableAnchorMode ~= false
-
-    if anchorMode then
-        local userOffset = (settings and settings.consumableIconOffset) or 5
-        local totalOffset = userOffset + CLOSE_BUTTON_HEIGHT + 2
-        if ReadyCheckFrame then
-            ConsumablesFrame:SetPoint("BOTTOM", ReadyCheckFrame, "TOP", 0, totalOffset)
-            ConsumablesFrame:SetParent(ReadyCheckFrame)
-            ConsumablesFrame:SetFrameStrata("DIALOG")
-        else
-            ConsumablesFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-            ConsumablesFrame:SetParent(UIParent)
-        end
-    else
-        ConsumablesFrame:SetParent(UIParent)
-        ConsumablesFrame:SetFrameStrata("DIALOG")
-        if settings and settings.consumableFreePosition then
-            local pos = settings.consumableFreePosition
-            ConsumablesFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
-        else
-            ConsumablesFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-        end
+    ConsumablesFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+    if _G.QUI_ApplyAllFrameAnchors then
+        _G.QUI_ApplyAllFrameAnchors()
     end
 end
 
@@ -1325,29 +1249,9 @@ local function ShowConsumablesStandalone()
     UpdateConsumables()
     ConsumablesFrame:SetScale(GetConsumableScale())
     ConsumablesFrame:SetAlpha(1)
-
-    local settings = GetSettings()
-    local anchorMode = settings and settings.consumableAnchorMode ~= false
-
-    ConsumablesFrame:ClearAllPoints()
     ConsumablesFrame:SetParent(UIParent)
     ConsumablesFrame:SetFrameStrata("DIALOG")
-
-    if not anchorMode and settings and settings.consumableFreePosition then
-        local pos = settings.consumableFreePosition
-        ConsumablesFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
-    else
-        local userOffset = (settings and settings.consumableIconOffset) or 5
-        local totalOffset = userOffset + CLOSE_BUTTON_HEIGHT + 2
-        local savedPos = settings and settings.readyCheckPosition
-        if savedPos then
-            local readyCheckHalfHeight = 55
-            ConsumablesFrame:SetPoint("BOTTOM", UIParent, savedPos.relativePoint, savedPos.x, savedPos.y + readyCheckHalfHeight + totalOffset)
-        else
-            ConsumablesFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-        end
-    end
-
+    PositionConsumablesFrame()
     ConsumablesFrame:Show()
 end
 
@@ -1569,17 +1473,15 @@ _G.QUI_RefreshConsumables = function()
     end
 end
 
-_G.QUI_RepositionConsumables = function()
-    if ConsumablesFrame:IsShown() then
-        InitializeButtons()
-        UpdateConsumables()
-        if ConsumablesFrame:GetParent() == ReadyCheckFrame then
-            PositionConsumablesFrame()
-        end
-    end
-end
-
-_G.QUI_ToggleConsumablesMover = ToggleMover
 
 _G.QUI_ShowConsumables = function() ShowConsumablesStandalone() end
 _G.QUI_HideConsumables = function() RequestHideConsumablesFrame() end
+
+if ns.Registry then
+    ns.Registry:Register("consumables", {
+        refresh = _G.QUI_RefreshConsumables,
+        priority = 30,
+        group = "qol",
+        importCategories = { "qol" },
+    })
+end

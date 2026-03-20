@@ -558,15 +558,16 @@ end
 -- SUB-TAB BUILDER: Quazii's Strings (preset import strings)
 --------------------------------------------------------------------------------
 local function BuildQuaziiStringsTab(tabContent)
-    local y = -10
     local PAD = 10
     local BOX_HEIGHT = 70
+    local SECTION_HEIGHT = BOX_HEIGHT + 8 + 24 + 12  -- textbox + gap + button + pad
+    local CreateCollapsiblePage = Shared.CreateCollapsiblePage
 
     GUI:SetSearchContext({tabIndex = 13, tabName = "Import & Export Strings", subTabIndex = 2, subTabName = "Quazii's Strings"})
 
     -- Disclaimer banner
     local warnBg = CreateFrame("Frame", nil, tabContent)
-    warnBg:SetPoint("TOPLEFT", PAD, y)
+    warnBg:SetPoint("TOPLEFT", PAD, -10)
     warnBg:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     ApplyImportSurface(warnBg, {0.5, 0.25, 0.0, 0.25}, {0.961, 0.620, 0.043, 0.6})
 
@@ -585,21 +586,17 @@ local function BuildQuaziiStringsTab(tabContent)
     warnText:SetJustifyH("LEFT")
     warnText:SetWordWrap(true)
 
-    -- Size the banner to fit the wrapped text
     warnBg:SetScript("OnShow", function(self)
         C_Timer.After(0, function()
             local textHeight = warnText:GetStringHeight() or 14
             self:SetHeight(textHeight + 32)
         end)
     end)
-    warnBg:SetHeight(60)  -- initial estimate, OnShow will correct
-
-    y = y - 68
+    warnBg:SetHeight(60)
 
     -- Store all text boxes for clearing selections
     local allTextBoxes = {}
 
-    -- Helper to clear all selections except the target
     local function selectOnly(targetEditBox)
         for _, editBox in ipairs(allTextBoxes) do
             if editBox ~= targetEditBox then
@@ -611,175 +608,37 @@ local function BuildQuaziiStringsTab(tabContent)
         targetEditBox:HighlightText()
     end
 
-    -- =====================================================
-    -- DETAILS! STRING
-    -- =====================================================
-    local detailsHeader = GUI:CreateSectionHeader(tabContent, "Details! String")
-    detailsHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - detailsHeader.gap
+    local sections, relayout, CreateCollapsible = CreateCollapsiblePage(tabContent, PAD, -78)
 
-    local detailsString = ""
-    if _G.QUI and _G.QUI.imports and _G.QUI.imports.QuaziiDetails then
-        detailsString = _G.QUI.imports.QuaziiDetails.data or ""
+    -- Helper to build a string section body
+    local function BuildStringSection(body, importKey)
+        local str = ""
+        if _G.QUI and _G.QUI.imports and _G.QUI.imports[importKey] then
+            str = _G.QUI.imports[importKey].data or ""
+        end
+
+        local container = CreateScrollableTextBox(body, BOX_HEIGHT, str)
+        container:SetPoint("TOPLEFT", 0, -4)
+        container:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+        table.insert(allTextBoxes, container.editBox)
+
+        local btn = GUI:CreateButton(body, "SELECT ALL", 120, 24, function()
+            selectOnly(container.editBox)
+        end)
+        btn:SetPoint("TOPLEFT", 0, -(BOX_HEIGHT + 12))
+
+        local tip = GUI:CreateLabel(body, "then press Ctrl+C to copy", 11, C.textMuted)
+        tip:SetPoint("LEFT", btn, "RIGHT", 10, 0)
     end
 
-    local detailsContainer = CreateScrollableTextBox(tabContent, BOX_HEIGHT, detailsString)
-    detailsContainer:SetPoint("TOPLEFT", PAD, y)
-    detailsContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    table.insert(allTextBoxes, detailsContainer.editBox)
+    CreateCollapsible("Details! String", SECTION_HEIGHT, function(body) BuildStringSection(body, "QuaziiDetails") end)
+    CreateCollapsible("Plater String", SECTION_HEIGHT, function(body) BuildStringSection(body, "Plater") end)
+    CreateCollapsible("Platynator String", SECTION_HEIGHT, function(body) BuildStringSection(body, "Platynator") end)
+    CreateCollapsible("QUI Import/Export String - Default Profile", SECTION_HEIGHT, function(body) BuildStringSection(body, "QUIProfile") end)
+    CreateCollapsible("QUI Import/Export String - Dark Mode", SECTION_HEIGHT, function(body) BuildStringSection(body, "QUIProfileDarkMode") end)
+    CreateCollapsible("Quazii Edit Mode String", SECTION_HEIGHT, function(body) BuildStringSection(body, "EditMode") end)
 
-    y = y - BOX_HEIGHT - 8
-
-    local detailsBtn = GUI:CreateButton(tabContent, "SELECT ALL", 120, 24, function()
-        selectOnly(detailsContainer.editBox)
-    end)
-    detailsBtn:SetPoint("TOPLEFT", PAD, y)
-
-    local detailsTip = GUI:CreateLabel(tabContent, "then press Ctrl+C to copy", 11, C.textMuted)
-    detailsTip:SetPoint("LEFT", detailsBtn, "RIGHT", 10, 0)
-    y = y - 40
-
-    -- =====================================================
-    -- PLATER STRING
-    -- =====================================================
-    local platerHeader = GUI:CreateSectionHeader(tabContent, "Plater String")
-    platerHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - platerHeader.gap
-
-    local platerString = ""
-    if _G.QUI and _G.QUI.imports and _G.QUI.imports.Plater then
-        platerString = _G.QUI.imports.Plater.data or ""
-    end
-
-    local platerContainer = CreateScrollableTextBox(tabContent, BOX_HEIGHT, platerString)
-    platerContainer:SetPoint("TOPLEFT", PAD, y)
-    platerContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    table.insert(allTextBoxes, platerContainer.editBox)
-
-    y = y - BOX_HEIGHT - 8
-
-    local platerBtn = GUI:CreateButton(tabContent, "SELECT ALL", 120, 24, function()
-        selectOnly(platerContainer.editBox)
-    end)
-    platerBtn:SetPoint("TOPLEFT", PAD, y)
-
-    local platerTip = GUI:CreateLabel(tabContent, "then press Ctrl+C to copy", 11, C.textMuted)
-    platerTip:SetPoint("LEFT", platerBtn, "RIGHT", 10, 0)
-    y = y - 40
-
-    -- =====================================================
-    -- PLATYNATOR STRING
-    -- =====================================================
-    local platHeader = GUI:CreateSectionHeader(tabContent, "Platynator String")
-    platHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - platHeader.gap
-
-    local platString = ""
-    if _G.QUI and _G.QUI.imports and _G.QUI.imports.Platynator then
-        platString = _G.QUI.imports.Platynator.data or ""
-    end
-
-    local platContainer = CreateScrollableTextBox(tabContent, BOX_HEIGHT, platString)
-    platContainer:SetPoint("TOPLEFT", PAD, y)
-    platContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    table.insert(allTextBoxes, platContainer.editBox)
-
-    y = y - BOX_HEIGHT - 8
-
-    local platBtn = GUI:CreateButton(tabContent, "SELECT ALL", 120, 24, function()
-        selectOnly(platContainer.editBox)
-    end)
-    platBtn:SetPoint("TOPLEFT", PAD, y)
-
-    local platTip = GUI:CreateLabel(tabContent, "then press Ctrl+C to copy", 11, C.textMuted)
-    platTip:SetPoint("LEFT", platBtn, "RIGHT", 10, 0)
-    y = y - 40
-
-    -- =====================================================
-    -- QUI IMPORT/EXPORT STRING - DEFAULT PROFILE
-    -- =====================================================
-    local quiHeader = GUI:CreateSectionHeader(tabContent, "QUI Import/Export String - Default Profile")
-    quiHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - quiHeader.gap
-
-    local quiString = ""
-    if _G.QUI and _G.QUI.imports and _G.QUI.imports.QUIProfile then
-        quiString = _G.QUI.imports.QUIProfile.data or ""
-    end
-
-    local quiContainer = CreateScrollableTextBox(tabContent, BOX_HEIGHT, quiString)
-    quiContainer:SetPoint("TOPLEFT", PAD, y)
-    quiContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    table.insert(allTextBoxes, quiContainer.editBox)
-
-    y = y - BOX_HEIGHT - 8
-
-    local quiBtn = GUI:CreateButton(tabContent, "SELECT ALL", 120, 24, function()
-        selectOnly(quiContainer.editBox)
-    end)
-    quiBtn:SetPoint("TOPLEFT", PAD, y)
-
-    local quiTip = GUI:CreateLabel(tabContent, "then press Ctrl+C to copy", 11, C.textMuted)
-    quiTip:SetPoint("LEFT", quiBtn, "RIGHT", 10, 0)
-    y = y - 40
-
-    -- =====================================================
-    -- QUI IMPORT/EXPORT STRING - DARK MODE
-    -- =====================================================
-    local quiDarkHeader = GUI:CreateSectionHeader(tabContent, "QUI Import/Export String - Dark Mode")
-    quiDarkHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - quiDarkHeader.gap
-
-    local quiDarkString = ""
-    if _G.QUI and _G.QUI.imports and _G.QUI.imports.QUIProfileDarkMode then
-        quiDarkString = _G.QUI.imports.QUIProfileDarkMode.data or ""
-    end
-
-    local quiDarkContainer = CreateScrollableTextBox(tabContent, BOX_HEIGHT, quiDarkString)
-    quiDarkContainer:SetPoint("TOPLEFT", PAD, y)
-    quiDarkContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    table.insert(allTextBoxes, quiDarkContainer.editBox)
-
-    y = y - BOX_HEIGHT - 8
-
-    local quiDarkBtn = GUI:CreateButton(tabContent, "SELECT ALL", 120, 24, function()
-        selectOnly(quiDarkContainer.editBox)
-    end)
-    quiDarkBtn:SetPoint("TOPLEFT", PAD, y)
-
-    local quiDarkTip = GUI:CreateLabel(tabContent, "then press Ctrl+C to copy", 11, C.textMuted)
-    quiDarkTip:SetPoint("LEFT", quiDarkBtn, "RIGHT", 10, 0)
-    y = y - 40
-
-    -- =====================================================
-    -- QUAZII EDIT MODE STRING
-    -- =====================================================
-    local editModeHeader = GUI:CreateSectionHeader(tabContent, "Quazii Edit Mode String")
-    editModeHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - editModeHeader.gap
-
-    local editModeString = ""
-    if _G.QUI and _G.QUI.imports and _G.QUI.imports.EditMode then
-        editModeString = _G.QUI.imports.EditMode.data or ""
-    end
-
-    local editModeContainer = CreateScrollableTextBox(tabContent, BOX_HEIGHT, editModeString)
-    editModeContainer:SetPoint("TOPLEFT", PAD, y)
-    editModeContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    table.insert(allTextBoxes, editModeContainer.editBox)
-
-    y = y - BOX_HEIGHT - 8
-
-    local editModeBtn = GUI:CreateButton(tabContent, "SELECT ALL", 120, 24, function()
-        selectOnly(editModeContainer.editBox)
-    end)
-    editModeBtn:SetPoint("TOPLEFT", PAD, y)
-
-    local editModeTip = GUI:CreateLabel(tabContent, "then press Ctrl+C to copy", 11, C.textMuted)
-    editModeTip:SetPoint("LEFT", editModeBtn, "RIGHT", 10, 0)
-    y = y - 30
-
-    tabContent:SetHeight(math.abs(y) + 30)
+    relayout()
 end
 
 --------------------------------------------------------------------------------

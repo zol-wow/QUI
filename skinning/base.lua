@@ -71,6 +71,25 @@ function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 end
 
 ---------------------------------------------------------------------------
+-- ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+-- Applies a pixel-perfect backdrop directly to a BackdropTemplate frame.
+-- Unlike CreateBackdrop, this sets the backdrop on the frame itself
+-- (for frames that already have BackdropTemplate or are addon-owned).
+---------------------------------------------------------------------------
+function SkinBase.ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not frame then return end
+    local px = SkinBase.GetPixelSize(frame, 1)
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px },
+    })
+    frame:SetBackdropColor(bgr or 0.05, bgg or 0.05, bgb or 0.05, bga or 0.95)
+    frame:SetBackdropBorderColor(sr or 0, sg or 0, sb or 0, sa or 1)
+end
+
+---------------------------------------------------------------------------
 -- GetBackdrop(frame)
 -- Returns the QUI backdrop for a frame, or nil if none exists.
 ---------------------------------------------------------------------------

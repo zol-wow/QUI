@@ -315,3 +315,12 @@ end
 ---------------------------------------------------------------------------
 _G.QUI_ApplyMPlusTimerSkin = ApplyMPlusTimerSkin
 _G.QUI_RefreshMPlusTimerColors = RefreshMPlusTimerColors
+
+if ns.Registry then
+    ns.Registry:Register("skinMPlusTimer", {
+        refresh = _G.QUI_RefreshMPlusTimerColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end

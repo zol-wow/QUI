@@ -311,6 +311,9 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "objectiveTrackerTitleColor",
     "objectiveTrackerTextColor",
     "skinInstanceFrames",
+    "skinAuctionHouse",
+    "skinCraftingOrders",
+    "skinProfessions",
     "skinBgColor",
     "skinAlerts",
     "skinCharacterFrame",
@@ -733,8 +736,8 @@ local PROFILE_IMPORT_CATEGORIES = {
     },
     {
         id = "customTrackers",
-        label = "Custom Trackers",
-        description = "Custom tracker bar settings and individual imported tracker bars.",
+        label = "Custom CDM Bars",
+        description = "Custom CDM bar settings and individual imported bars.",
         recommended = true,
         topLevelKeys = { "customTrackersVisibility", "keybindOverridesEnabledTrackers" },
         paths = {
@@ -745,7 +748,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             {
                 id = "customTrackersShared",
                 label = "Shared Settings",
-                description = "Tracker keybind display and shared visibility settings.",
+                description = "CDM bar keybind display and shared visibility settings.",
                 topLevelKeys = { "customTrackersVisibility", "keybindOverridesEnabledTrackers" },
                 paths = {
                     "customTrackers.keybinds",
@@ -1255,6 +1258,7 @@ function QUICore:GetProfileImportCategories()
     return BuildProfileImportPreview({}, "QUI1").categories or {}
 end
 
+
 function QUICore:AnalyzeProfileImportString(str)
     local ok, payloadOrErr, prefix = ParseProfileImportString(self, str)
     if not ok then
@@ -1322,7 +1326,7 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs)
                 local importedBars = payloadOrErr.customTrackers and payloadOrErr.customTrackers.bars
                 local importedBar = type(importedBars) == "table" and importedBars[barIndex] or nil
                 local barName = type(importedBar) == "table" and importedBar.name or ("Bar " .. barIndex)
-                selectedLabels[#selectedLabels + 1] = ("Custom Trackers > %s"):format(tostring(barName))
+                selectedLabels[#selectedLabels + 1] = ("Custom CDM Bars > %s"):format(tostring(barName))
             end
         end
     end
@@ -1402,7 +1406,9 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs)
         RestoreDatatextPanelLayout(profile, previousProfile)
     end
 
-    if self.RefreshAll then
+    if ns.Registry then
+        ns.Registry:RefreshByCategories(selectedCategoryIDs)
+    elseif self.RefreshAll then
         self:RefreshAll()
     end
 
@@ -1661,7 +1667,7 @@ function QUICore:ImportAllTrackerBars(str, replaceExisting)
         end
     end
 
-    return true, "Tracker bars imported successfully."
+    return true, "CDM bars imported successfully."
 end
 
 ---=================================================================================

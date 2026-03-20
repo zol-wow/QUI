@@ -27,13 +27,19 @@ To reposition frames, use `/qui editmode` to enter the drag-and-drop edit mode.
 - **Power text** -- Formats include percent, current value, or both. Anchor position is adjustable.
 - **Name text** -- Optional class coloring, configurable font size, anchor position, and maximum length truncation to prevent overflow.
 - **Portrait** -- Optional unit portrait on the left or right side with border options.
-- **Castbar** -- Per-unit castbar with configurable width, height, color, and spell icon. Can be anchored to its unit frame or placed standalone. Highlights interruptible casts and displays channel tick marks.
+- **Castbar** -- Per-unit castbar with configurable width, height, color, and spell icon. Can be anchored to its unit frame or placed standalone. Highlights interruptible casts with customizable non-interruptible cast color, displays channel tick marks, and supports GCD display as a castbar for instant spells.
 - **Target inline ToT** -- On the target frame, shows the target-of-target name inline as ">> TotName" after the target's name.
 - **Auras (buffs/debuffs)** -- Configurable icon size, anchor position, growth direction, maximum icon count, and duration/stack text.
 - **Indicators** -- Rested indicator, combat indicator, stance indicator (player only), target marker (raid icons), and leader/assistant icons.
 - **Absorb shields** -- Visual overlay on the health bar showing absorb amounts with configurable opacity and texture.
 - **Heal prediction** -- Incoming heal overlay on the health bar.
 - **Dark mode** -- Separate health and background colors with independent opacity controls for a subdued visual style.
+- **Resource bar breakpoint indicators** -- Configurable breakpoint indicators on resource bars for specs that have meaningful thresholds.
+- **Secondary resource bar swap** -- Option to swap primary and secondary resource bar positions for certain specs (Balance Druid, Frost DK, Enhancement Shaman, Devourer DH, and others), with option to hide primary when swapped.
+- **Classification icons** -- Target, Focus, and Boss frames can display classification icons (elite, rare, rare-elite, etc.).
+- **Reverse health fill** -- Option to reverse the fill direction on target health bars.
+- **Health and power text options** -- Options to omit percent signs on health text and power text.
+- **Show below 100% health** -- Option to show unit frames only when player health drops below 100%.
 - **Player castbar standalone mode** -- The player castbar can function independently even when QUI unit frames are not enabled, giving you a custom castbar without replacing your frames.
 
 ## Important Settings

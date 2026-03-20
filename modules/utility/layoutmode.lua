@@ -1,0 +1,3234 @@
+---------------------------------------------------------------------------
+-- QUI Layout Mode — Core Engine
+-- Self-contained frame positioning system replacing Blizzard Edit Mode
+-- dependency. Provides registration API, hybrid overlay/proxy system,
+-- drag system, position save/load, and combat suspend/resume.
+--
+-- Hybrid approach:
+--   isOwned = true  → child overlay parented to the frame (no sync needed)
+--   isOwned = false → separate proxy mover parented to UIParent (synced)
+---------------------------------------------------------------------------
+local ADDON_NAME, ns = ...
+local Helpers = ns.Helpers
+
+local QUI_LayoutMode = {}
+ns.QUI_LayoutMode = QUI_LayoutMode
+
+-- Accent color: cached from GUI.Colors.accent, refreshed via RefreshAccentColor().
+-- Falls back to Sky Blue (#60A5FA) if GUI hasn't loaded yet.
+local ACCENT_R, ACCENT_G, ACCENT_B = 0.376, 0.647, 0.980
+
+-- Upvalue caching for hot-path performance
+local type = type
+local pairs = pairs
+local ipairs = ipairs
+local pcall = pcall
+local tostring = tostring
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+
+local function RefreshAccentColor()
+    local GUI = _G.QUI and _G.QUI.GUI
+    if GUI and GUI.Colors and GUI.Colors.accent then
+        ACCENT_R = GUI.Colors.accent[1]
+        ACCENT_G = GUI.Colors.accent[2]
+        ACCENT_B = GUI.Colors.accent[3]
+    end
+end
+
+-- Visual constants
+local HANDLE_STRATA      = "FULLSCREEN_DIALOG"
+local HANDLE_BG_ALPHA    = 0.55
+local HANDLE_HOVER_ALPHA = 0.85
+local HANDLE_DRAG_ALPHA  = 0.95
+local HANDLE_BORDER_SIZE = 1
+local HANDLE_BORDER_SIZE_ANCHORED = 2
+local HANDLE_MIN_SIZE    = 20
+local TINY_THRESHOLD     = 3   -- frames above this use real size, not the 20px floor
+
+-- Anchor indicator (custom TGA texture — WoW fonts can't render Unicode ⚓)
+
+-- Forward declarations
+local CreateHandle, CreateProxyMover, CreateChildOverlay
+local SyncHandle, HandleToOffsets, SetHandleFromOffsets
+local SnapshotPositions, CommitPositions, RevertPositions
+local ShowSaveDiscardPopup, AddHandleVisuals, AddHandleScripts
+local GetFrameAnchoring
+
+--- Migrate db.unlockMode → db.layoutMode for existing users.
+local function MigrateDBKey(db)
+    if db.unlockMode and not db.layoutMode then
+        db.layoutMode = db.unlockMode
+        db.unlockMode = nil
+    end
+end
+
+--- Get the persisted hidden-handles table from DB.
+local function GetHiddenHandlesDB()
+    local core = ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()
+    local db = core and core.db and core.db.profile
+    if not db then return nil end
+    MigrateDBKey(db)
+    if not db.layoutMode then db.layoutMode = {} end
+    if not db.layoutMode.hiddenHandles then db.layoutMode.hiddenHandles = {} end
+    return db.layoutMode.hiddenHandles
+end
+
+---------------------------------------------------------------------------
+-- STATE
+---------------------------------------------------------------------------
+QUI_LayoutMode.isActive       = false
+QUI_LayoutMode._combatSuspended = false
+QUI_LayoutMode._hasChanges      = false
+QUI_LayoutMode._pendingPositions   = {}  -- { [key] = {point, relPoint, offsetX, offsetY, anchorTarget?, anchorPointSelf?, anchorPointTarget?} }
+QUI_LayoutMode._snapshotPositions  = {}  -- captured on open for revert
+QUI_LayoutMode._handles           = {}  -- { [key] = handleFrame } (replaces _movers)
+QUI_LayoutMode._elements          = {}  -- { [key] = definition }
+QUI_LayoutMode._elementOrder      = {}  -- sorted array of keys
+QUI_LayoutMode._selectedKey       = nil -- currently selected handle key
+QUI_LayoutMode._enterCallbacks    = {}  -- registered open callbacks
+QUI_LayoutMode._exitCallbacks     = {}  -- registered close callbacks
+QUI_LayoutMode._savedMovableState = {}  -- { [key] = wasMovable } for owned frames
+
+-- Backward compat alias
+QUI_LayoutMode._movers = QUI_LayoutMode._handles
+
+---------------------------------------------------------------------------
+-- REGISTRATION API
+---------------------------------------------------------------------------
+
+--- Register an element for Layout Mode positioning.
+--- @param def table Element definition with required fields:
+---   key (string), label (string), group (string), order (number),
+---   getFrame (function) — returns frame to measure/position
+--- Optional fields:
+---   isOwned (boolean) — true = child overlay, false/nil = proxy mover
+---   isEnabled (function) — returns whether the element is currently enabled
+---   setEnabled (function) — callback to enable/disable the element in DB
+---   getSize (function) — override measured size (w, h); forces proxy mover
+---   getCenterOffset (function(w, h)) — returns (dx, dy) to shift mover center from frame center
+---   setupOverlay (function(overlay, frame)) — custom child overlay sizing/anchoring
+---   isAnchored (function) — true if anchored to another element
+---   onOpen (function) — called when Layout Mode opens
+---   onClose (function) — called when Layout Mode closes
+---   onLiveMove (function) — callback during/after drag
+---   loadPosition (function) — custom position loader (overrides frameAnchoring)
+---   savePosition (function) — custom position saver (overrides frameAnchoring)
+function QUI_LayoutMode:RegisterElement(def)
+    if not def or not def.key then return end
+
+    self._elements[def.key] = def
+    self:_RebuildOrder()
+
+    -- If Layout Mode is already active, create handle immediately (if enabled)
+    if self.isActive and not self._combatSuspended then
+        if not def.isEnabled or def.isEnabled() then
+            local handle = CreateHandle(def)
+            self._handles[def.key] = handle
+            SyncHandle(def.key)
+            handle:Show()
+        end
+    end
+end
+
+--- Unregister an element from Layout Mode.
+--- @param key string The element key to unregister
+function QUI_LayoutMode:UnregisterElement(key)
+    if not key then return end
+
+    self._elements[key] = nil
+    self:_RebuildOrder()
+
+    local handle = self._handles[key]
+    if handle then
+        handle:Hide()
+        -- Restore movable state for owned frames
+        if handle._isChildOverlay and handle._parentFrame then
+            local saved = self._savedMovableState[key]
+            if saved ~= nil then
+                pcall(handle._parentFrame.SetMovable, handle._parentFrame, saved)
+                self._savedMovableState[key] = nil
+            end
+        end
+        handle:SetParent(nil)
+        self._handles[key] = nil
+    end
+
+    self._pendingPositions[key] = nil
+
+    if self._selectedKey == key then
+        self._selectedKey = nil
+    end
+end
+
+--- Rebuild sorted element order from registered elements.
+function QUI_LayoutMode:_RebuildOrder()
+    local order = {}
+    for key in pairs(self._elements) do
+        order[#order + 1] = key
+    end
+    table.sort(order, function(a, b)
+        local da, db = self._elements[a], self._elements[b]
+        local ga, gb = da.group or "", db.group or ""
+        if ga ~= gb then return ga < gb end
+        return (da.order or 999) < (db.order or 999)
+    end)
+    self._elementOrder = order
+end
+
+--- Check if an element is currently enabled.
+function QUI_LayoutMode:IsElementEnabled(key)
+    local def = self._elements[key]
+    if not def then return false end
+    if not def.isEnabled then return true end  -- no isEnabled = always enabled
+    return def.isEnabled()
+end
+
+--- Toggle an element's enabled state and create/destroy handle.
+function QUI_LayoutMode:SetElementEnabled(key, enabled)
+    local def = self._elements[key]
+    if not def or not def.setEnabled then return end
+
+    def.setEnabled(enabled)
+
+    if not self.isActive then return end
+
+    if enabled then
+        -- Show preview if element has one
+        if def.onOpen then pcall(def.onOpen) end
+        -- Create handle if it doesn't exist
+        if not self._handles[key] then
+            local handle = CreateHandle(def)
+            self._handles[key] = handle
+            SyncHandle(key)
+            handle:Show()
+            -- If child overlay isn't visible (parent hidden), replace with proxy mover
+            if handle._isChildOverlay and not handle:IsVisible() then
+                handle:Hide()
+                handle:SetParent(nil)
+                handle = CreateProxyMover(def)
+                self._handles[key] = handle
+                SyncHandle(key)
+                handle:Show()
+            end
+            -- Deferred: attach preview to mover
+            C_Timer.After(0, function()
+                if not handle:IsShown() or handle._isChildOverlay then return end
+                local targetFrame = def.getFrame and def.getFrame()
+                if targetFrame and targetFrame:IsShown() then
+                    if not handle._savedTargetParent then
+                        handle._savedTargetParent = targetFrame:GetParent()
+                    end
+                    if not handle._savedTargetStrata then
+                        handle._savedTargetStrata = targetFrame:GetFrameStrata()
+                    end
+                    targetFrame:SetParent(handle)
+                    targetFrame:SetFrameStrata("DIALOG")
+                    targetFrame:SetFrameLevel(1)
+                    targetFrame:ClearAllPoints()
+                    -- Elements with getCenterOffset: offset the preview within the mover
+                    if def.getCenterOffset then
+                        local cdx, cdy = def.getCenterOffset(handle:GetSize())
+                        targetFrame:SetPoint("CENTER", handle, "CENTER", -cdx, -cdy)
+                    else
+                        targetFrame:SetAllPoints(handle)
+                    end
+                end
+            end)
+        end
+    else
+        -- Hide preview if element has one
+        if def.onClose then pcall(def.onClose) end
+        -- Restore preview frame parent and destroy handle
+        local handle = self._handles[key]
+        if handle then
+            if handle._savedTargetParent then
+                local targetFrame = def.getFrame and def.getFrame()
+                if targetFrame then
+                    pcall(targetFrame.SetParent, targetFrame, handle._savedTargetParent)
+                    if handle._savedTargetStrata then
+                        pcall(targetFrame.SetFrameStrata, targetFrame, handle._savedTargetStrata)
+                    end
+                end
+                handle._savedTargetParent = nil
+                handle._savedTargetStrata = nil
+            end
+            handle:Hide()
+            if handle._isChildOverlay and handle._parentFrame then
+                local saved = self._savedMovableState[key]
+                if saved ~= nil then
+                    pcall(handle._parentFrame.SetMovable, handle._parentFrame, saved)
+                    self._savedMovableState[key] = nil
+                end
+            end
+            handle:SetParent(nil)
+            self._handles[key] = nil
+        end
+        if self._selectedKey == key then
+            self:SelectMover(nil)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- CALLBACK REGISTRY
+---------------------------------------------------------------------------
+
+function QUI_LayoutMode:RegisterEnterCallback(callback)
+    if type(callback) == "function" then
+        self._enterCallbacks[#self._enterCallbacks + 1] = callback
+    end
+end
+
+function QUI_LayoutMode:RegisterExitCallback(callback)
+    if type(callback) == "function" then
+        self._exitCallbacks[#self._exitCallbacks + 1] = callback
+    end
+end
+
+---------------------------------------------------------------------------
+-- OPEN / CLOSE / TOGGLE
+---------------------------------------------------------------------------
+
+function QUI_LayoutMode:Toggle()
+    if self.isActive then
+        self:Close()
+    else
+        self:Open()
+    end
+end
+
+function QUI_LayoutMode:Open()
+    if self.isActive then return end
+    if InCombatLockdown() then
+        print("|cff60A5FAQUI:|r Cannot open Layout Mode during combat.")
+        return
+    end
+
+    -- Pick up any accent color changes before creating/showing handles
+    RefreshAccentColor()
+    if ns.QUI_LayoutMode_UI and ns.QUI_LayoutMode_UI.RefreshAccentColor then
+        ns.QUI_LayoutMode_UI:RefreshAccentColor()
+    end
+    if ns.QUI_LayoutMode_Utils and ns.QUI_LayoutMode_Utils.RefreshAccentColor then
+        ns.QUI_LayoutMode_Utils:RefreshAccentColor()
+    end
+    if ns.QUI_LayoutMode_Settings and ns.QUI_LayoutMode_Settings.RefreshAccentColor then
+        ns.QUI_LayoutMode_Settings:RefreshAccentColor()
+    end
+
+    self.isActive = true
+
+    self._hasChanges = false
+    self._selectedKey = nil
+
+    -- Snapshot current positions for revert
+    SnapshotPositions()
+
+    -- Fire enter callbacks
+    for _, cb in ipairs(self._enterCallbacks) do
+        pcall(cb)
+    end
+
+    -- Create and show handles (only for enabled elements, respecting persisted hidden state)
+    -- onOpen previews only fire for elements that are both enabled AND not hidden.
+    local hidden = GetHiddenHandlesDB()
+    for _, key in ipairs(self._elementOrder) do
+        local def = self._elements[key]
+        local enabled = not def.isEnabled or def.isEnabled()
+
+        if enabled then
+            -- Respect persisted hidden state
+            if hidden and hidden[key] then
+                -- Create handle but keep hidden, don't show preview
+                if not self._handles[key] then
+                    self._handles[key] = CreateHandle(def)
+                end
+                SyncHandle(key)
+                self._handles[key]:Hide()
+                if def.onClose then pcall(def.onClose) end
+            else
+                -- Activate preview FIRST so frame is shown before CreateHandle
+                if def.onOpen then pcall(def.onOpen) end
+                if not self._handles[key] then
+                    self._handles[key] = CreateHandle(def)
+                else
+                    -- Re-enable movable on existing child overlay parents
+                    local handle = self._handles[key]
+                    if handle._isChildOverlay and handle._parentFrame then
+                        local wasMovable = handle._parentFrame:IsMovable()
+                        self._savedMovableState[key] = wasMovable
+                        handle._parentFrame:SetMovable(true)
+                        handle._parentFrame:SetClampedToScreen(true)
+                    end
+                end
+
+                -- Check if this handle is anchored to another handle (not screen).
+                -- If so, defer showing until the deferred sync positions it correctly
+                -- — avoids a visible jump from fallback position to correct position.
+                local fa = GetFrameAnchoring()
+                local faEntry = fa and fa[key]
+                local isAnchored = faEntry and type(faEntry) == "table"
+                    and faEntry.parent and faEntry.parent ~= "screen"
+                    and faEntry.parent ~= "disabled"
+
+                SyncHandle(key)
+                local handle = self._handles[key]
+
+                if not isAnchored then
+                    handle:Show()
+                end
+
+                -- If child overlay isn't visible (parent hidden), replace with proxy mover
+                if handle._isChildOverlay and not handle:IsVisible() then
+                    handle:Hide()
+                    handle:SetParent(nil)
+                    handle = CreateProxyMover(def)
+                    self._handles[key] = handle
+                    SyncHandle(key)
+                    if not isAnchored then
+                        handle:Show()
+                    end
+                end
+            end
+        end
+    end
+
+    -- Sync anchored handles in topological order (parents before children)
+    -- so multi-level chains resolve correctly (e.g., cdmEssential →
+    -- targetFrame → totFrame). Done immediately — all handles exist now.
+    do
+        local fa = GetFrameAnchoring()
+        if fa then
+            local depths = {}
+            local function getDepth(key, seen)
+                if depths[key] then return depths[key] end
+                if seen and seen[key] then return 0 end  -- cycle guard
+                local entry = fa[key]
+                local parent = entry and type(entry) == "table" and entry.parent
+                if not parent or parent == "screen" or parent == "disabled" then
+                    depths[key] = 0
+                    return 0
+                end
+                if not seen then seen = {} end
+                seen[key] = true
+                depths[key] = getDepth(parent, seen) + 1
+                return depths[key]
+            end
+
+            local sorted = {}
+            local hiddenDB = GetHiddenHandlesDB()
+            for childKey in pairs(self._handles) do
+                local entry = fa[childKey]
+                if entry and type(entry) == "table" and entry.parent
+                    and entry.parent ~= "screen" and entry.parent ~= "disabled" then
+                    getDepth(childKey)
+                    sorted[#sorted + 1] = childKey
+                end
+            end
+            table.sort(sorted, function(a, b) return (depths[a] or 0) < (depths[b] or 0) end)
+            for _, childKey in ipairs(sorted) do
+                SyncHandle(childKey)
+                -- Show anchored handles now that they're correctly positioned
+                -- (they were deferred during initial creation to avoid jump).
+                local h = self._handles[childKey]
+                if h and not (hiddenDB and hiddenDB[childKey]) then
+                    h:Show()
+                end
+            end
+        end
+    end
+
+    -- Deferred: attach preview frames to proxy movers so movers render on top.
+    C_Timer.After(0, function()
+        local reparentedKeys = {}
+        local hiddenDB = GetHiddenHandlesDB()
+        for hKey, handle in pairs(self._handles) do
+            local isUserHidden = hiddenDB and hiddenDB[hKey]
+            if not isUserHidden and not handle._isChildOverlay then
+                local hDef = self._elements[hKey]
+                local targetFrame = hDef and hDef.getFrame and hDef.getFrame()
+                if targetFrame and targetFrame:IsShown() then
+                    if not handle._savedTargetParent then
+                        handle._savedTargetParent = targetFrame:GetParent()
+                    end
+                    if not handle._savedTargetStrata then
+                        handle._savedTargetStrata = targetFrame:GetFrameStrata()
+                    end
+                    targetFrame:SetParent(handle)
+                    -- Use DIALOG strata — one level below the handle's
+                    -- FULLSCREEN_DIALOG — so preview children (CDM icons,
+                    -- action buttons) never render above the mover overlay
+                    -- regardless of their frame level.
+                    targetFrame:SetFrameStrata("DIALOG")
+                    targetFrame:SetFrameLevel(1)
+                    targetFrame:ClearAllPoints()
+                    if hKey == "bossFrames" then
+                        -- Boss1 anchors to the TOP of the handle, not center
+                        targetFrame:SetPoint("TOPLEFT", handle, "TOPLEFT", 0, 0)
+                        targetFrame:SetPoint("TOPRIGHT", handle, "TOPRIGHT", 0, 0)
+                    elseif hDef.getCenterOffset then
+                        local cdx, cdy = hDef.getCenterOffset(handle:GetSize())
+                        targetFrame:SetPoint("CENTER", handle, "CENTER", -cdx, -cdy)
+                    else
+                        targetFrame:SetAllPoints(handle)
+                    end
+
+                    -- Boss frames: reparent all boss frames + castbars into the mover
+                    if hKey == "bossFrames" then
+                        local QUI_UF = ns.QUI_UnitFrames
+                        local bossFrames = QUI_UF and QUI_UF.frames
+                        if bossFrames then
+                            for i = 2, 5 do
+                                local bf = bossFrames["boss" .. i]
+                                if bf and bf:IsShown() then
+                                    if not handle._savedBossParents then handle._savedBossParents = {} end
+                                    handle._savedBossParents[i] = bf:GetParent()
+                                    bf:SetParent(handle)
+                                    bf:SetFrameStrata("DIALOG")
+                                    bf:SetFrameLevel(1)
+                                end
+                            end
+                            -- Reparent boss castbars
+                            local castbars = ns.QUI_Castbar and ns.QUI_Castbar.castbars
+                            if castbars then
+                                if not handle._savedCastbarParents then handle._savedCastbarParents = {} end
+                                for i = 1, 5 do
+                                    local cb = castbars["boss" .. i]
+                                    if cb and cb:IsShown() then
+                                        handle._savedCastbarParents[i] = cb:GetParent()
+                                        cb:SetParent(handle)
+                                        cb:SetFrameStrata("DIALOG")
+                                        cb:SetFrameLevel(2)
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    reparentedKeys[hKey] = true
+                end
+            end
+        end
+
+        -- Re-sync all handles after reparenting so positions reflect
+        -- any frame-size changes from the reparent.
+        for hKey in pairs(self._handles) do
+            SyncHandle(hKey)
+        end
+    end)
+
+    -- Show UI overlay, grid, toolbar (layoutmode_ui.lua)
+    local ui = ns.QUI_LayoutMode_UI
+    if ui then
+        ui:Show()
+    end
+
+    -- Register combat events
+    if not self._combatFrame then
+        self._combatFrame = CreateFrame("Frame")
+        self._combatFrame:SetScript("OnEvent", function(_, event)
+            if event == "PLAYER_REGEN_DISABLED" then
+                QUI_LayoutMode:_CombatSuspend()
+            elseif event == "PLAYER_REGEN_ENABLED" then
+                C_Timer.After(0.5, function()
+                    QUI_LayoutMode:_CombatResume()
+                end)
+            end
+        end)
+    end
+    self._combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    self._combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+
+    -- Show first-time tips
+    if not self._firstOpenDone then
+        self._firstOpenDone = true
+        print("|cff60A5FAQUI Layout Mode:|r Drag to move | Click to select | Arrow keys to nudge | Shift+Drag near edge = anchor | Escape to close")
+    end
+end
+
+function QUI_LayoutMode:Close(skipSaveCheck)
+    if not self.isActive then return end
+
+    -- If there are unsaved changes and we're not forcing close, show popup
+    if self._hasChanges and not skipSaveCheck then
+        ShowSaveDiscardPopup()
+        return
+    end
+
+    self.isActive = false
+    self._combatSuspended = false
+
+    -- Restore preview frame parents and hide handles
+    for key, handle in pairs(self._handles) do
+        if handle._savedTargetParent then
+            local def = self._elements[key]
+            local targetFrame = def and def.getFrame and def.getFrame()
+            if targetFrame then
+                pcall(targetFrame.SetParent, targetFrame, handle._savedTargetParent)
+                -- Restore original strata (was changed to DIALOG during layout mode)
+                if handle._savedTargetStrata then
+                    pcall(targetFrame.SetFrameStrata, targetFrame, handle._savedTargetStrata)
+                end
+            end
+            handle._savedTargetParent = nil
+            handle._savedTargetStrata = nil
+        end
+        -- Restore boss frame children
+        if handle._savedBossParents then
+            local QUI_UF = ns.QUI_UnitFrames
+            local bossFrames = QUI_UF and QUI_UF.frames
+            if bossFrames then
+                for i, savedParent in pairs(handle._savedBossParents) do
+                    local bf = bossFrames["boss" .. i]
+                    if bf then pcall(bf.SetParent, bf, savedParent) end
+                end
+            end
+            handle._savedBossParents = nil
+        end
+        if handle._savedCastbarParents then
+            local castbars = ns.QUI_Castbar and ns.QUI_Castbar.castbars
+            if castbars then
+                for i, savedParent in pairs(handle._savedCastbarParents) do
+                    local cb = castbars["boss" .. i]
+                    if cb then pcall(cb.SetParent, cb, savedParent) end
+                end
+            end
+            handle._savedCastbarParents = nil
+        end
+        handle:Hide()
+        if handle._isChildOverlay and handle._parentFrame then
+            local saved = self._savedMovableState[key]
+            if saved ~= nil then
+                pcall(handle._parentFrame.SetMovable, handle._parentFrame, saved)
+            end
+        end
+    end
+    self._savedMovableState = {}
+
+    -- Hide UI
+    local ui = ns.QUI_LayoutMode_UI
+    if ui then
+        ui:Hide()
+    end
+
+    -- Hide settings panel
+    local settings = ns.QUI_LayoutMode_Settings
+    if settings then
+        settings:Reset()
+    end
+
+    -- Fire element onClose callbacks
+    for _, key in ipairs(self._elementOrder) do
+        local def = self._elements[key]
+        if def.onClose then
+            pcall(def.onClose)
+        end
+    end
+
+    -- Re-enforce enabled/disabled state for owned elements
+    -- (ensures disabled frames stay hidden after edit mode)
+    for _, key in ipairs(self._elementOrder) do
+        local def = self._elements[key]
+        if def.setEnabled and def.isEnabled then
+            local enabled = def.isEnabled()
+            if not enabled then
+                pcall(def.setEnabled, false)
+            end
+        end
+    end
+
+    -- Fire exit callbacks
+    for _, cb in ipairs(self._exitCallbacks) do
+        pcall(cb)
+    end
+
+    -- Unregister combat events
+    if self._combatFrame then
+        self._combatFrame:UnregisterAllEvents()
+    end
+
+    self._selectedKey = nil
+    self._pendingPositions = {}
+    self._snapshotPositions = {}
+end
+
+function QUI_LayoutMode:SaveAndClose()
+    CommitPositions()
+    self._hasChanges = false
+    self:Close(true)
+end
+
+function QUI_LayoutMode:DiscardAndClose()
+    RevertPositions()
+    self._hasChanges = false
+    self:Close(true)
+end
+
+---------------------------------------------------------------------------
+-- COMBAT SUSPEND / RESUME
+---------------------------------------------------------------------------
+
+function QUI_LayoutMode:_CombatSuspend()
+    if not self.isActive then return end
+    self._combatSuspended = true
+
+    -- Hide all handles and UI but preserve state
+    for _, handle in pairs(self._handles) do
+        handle:Hide()
+    end
+
+    local ui = ns.QUI_LayoutMode_UI
+    if ui then
+        ui:Hide()
+    end
+
+    local settings = ns.QUI_LayoutMode_Settings
+    if settings then
+        settings:Hide()
+    end
+end
+
+function QUI_LayoutMode:_CombatResume()
+    if not self._combatSuspended then return end
+    if InCombatLockdown() then return end
+    self._combatSuspended = false
+
+    -- Re-show everything and re-sync handles
+    for _, key in ipairs(self._elementOrder) do
+        local handle = self._handles[key]
+        if handle then
+            SyncHandle(key)
+            handle:Show()
+        end
+    end
+
+    local ui = ns.QUI_LayoutMode_UI
+    if ui then
+        ui:Show()
+    end
+
+    -- Restore settings panel if a handle was selected
+    if self._selectedKey then
+        local settings = ns.QUI_LayoutMode_Settings
+        if settings then
+            settings:Show(self._selectedKey)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- SELECTION
+---------------------------------------------------------------------------
+
+--- Activate a newly registered element during an active layout mode session.
+--- Creates a handle and shows it. Used when elements are added dynamically.
+function QUI_LayoutMode:ActivateElement(key)
+    if not self.isActive then return end
+    local def = self._elements[key]
+    if not def then return end
+    if self._handles[key] then return end  -- already active
+
+    -- Fire preview
+    if def.onOpen then pcall(def.onOpen) end
+
+    -- Create handle
+    local handle = CreateHandle(def)
+    if handle then
+        self._handles[key] = handle
+        SyncHandle(key)
+        handle:Show()
+    end
+end
+
+function QUI_LayoutMode:SelectMover(key)
+    -- Deselect previous
+    if self._selectedKey and self._handles[self._selectedKey] then
+        local prev = self._handles[self._selectedKey]
+        if prev._border then
+            prev._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        end
+        prev._selected = false
+    end
+
+    self._selectedKey = key
+
+    if key and self._handles[key] then
+        local handle = self._handles[key]
+        handle._selected = true
+        if handle._border then
+            handle._border:SetColor(1, 1, 1, 1)
+        end
+    end
+
+    -- Update UI (nudge handler, coordinate display)
+    local ui = ns.QUI_LayoutMode_UI
+    if ui and ui.OnSelectionChanged then
+        ui:OnSelectionChanged(key)
+    end
+
+    -- Show/hide settings panel (toggle if clicking same key again)
+    local settings = ns.QUI_LayoutMode_Settings
+    if settings then
+        if key then
+            if key == self._prevSelectedKey and settings:IsShown() then
+                settings:Reset()
+            else
+                settings:Show(key)
+            end
+        else
+            settings:Reset()
+        end
+    end
+    self._prevSelectedKey = key
+end
+
+
+---------------------------------------------------------------------------
+-- POSITION HELPERS
+---------------------------------------------------------------------------
+
+GetFrameAnchoring = function()
+    local core = Helpers.GetCore()
+    local db = core and core.db and core.db.profile
+    if not db then return nil end
+    if type(db.frameAnchoring) ~= "table" then
+        db.frameAnchoring = {}
+    end
+    return db.frameAnchoring
+end
+
+--- Load position for an element key.
+--- Returns point, relPoint, offsetX, offsetY or nil if no saved position.
+local function LoadPosition(key)
+    local def = QUI_LayoutMode._elements[key]
+    if not def then return nil end
+
+    -- Custom loader takes priority
+    if def.loadPosition then
+        return def.loadPosition(key)
+    end
+
+    -- Default: read from frameAnchoring DB
+    local fa = GetFrameAnchoring()
+    if not fa then return nil end
+
+    local entry = fa[key]
+    if type(entry) ~= "table" then return nil end
+
+    return entry.point or "CENTER",
+           entry.relative or "CENTER",
+           entry.offsetX or 0,
+           entry.offsetY or 0
+end
+
+--- Save a pending position for a key.
+--- anchorTarget, anchorPointSelf, anchorPointTarget are optional (nil = absolute/screen).
+local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, anchorTarget, anchorPointSelf, anchorPointTarget)
+    QUI_LayoutMode._pendingPositions[key] = {
+        point = point,
+        relPoint = relPoint,
+        offsetX = offsetX,
+        offsetY = offsetY,
+        anchorTarget = anchorTarget,
+        anchorPointSelf = anchorPointSelf,
+        anchorPointTarget = anchorPointTarget,
+    }
+    QUI_LayoutMode._hasChanges = true
+
+    -- Write anchor data to DB immediately so settings panel widgets reflect
+    -- the pending state. The snapshot system handles revert on discard.
+    local fa = GetFrameAnchoring()
+    if fa then
+        if not fa[key] then fa[key] = {} end
+        if anchorTarget then
+            -- Compute relative offset from anchor parent.
+            -- offsetX/Y are CENTER-based from UIParent, but the anchoring system
+            -- needs offsets relative to the anchor point on the parent frame.
+            local ptSelf = anchorPointSelf or "CENTER"
+            local ptTarget = anchorPointTarget or "CENTER"
+            local relOx, relOy = offsetX, offsetY  -- fallback to absolute
+
+            -- Use handle edges for offset computation. During layout mode, actual
+            -- frames may be hidden, reparented to proxy movers, or at stale positions.
+            -- Handles always reflect the correct visual position.
+            local childHandle = QUI_LayoutMode._handles and QUI_LayoutMode._handles[key]
+            local parentHandle = QUI_LayoutMode._handles and QUI_LayoutMode._handles[anchorTarget]
+
+            if childHandle and parentHandle then
+                local pL, pR, pT, pB = parentHandle:GetLeft(), parentHandle:GetRight(), parentHandle:GetTop(), parentHandle:GetBottom()
+                local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
+
+                if pL and pR and pT and pB and cL and cR and cT and cB then
+                    -- Compute anchor point positions on each handle
+                    local function anchorPos(l, r, t, b, pt)
+                        local x, y = (l + r) / 2, (t + b) / 2  -- CENTER
+                        if pt:find("LEFT") then x = l
+                        elseif pt:find("RIGHT") then x = r end
+                        if pt:find("TOP") then y = t
+                        elseif pt:find("BOTTOM") then y = b end
+                        return x, y
+                    end
+
+                    local cx, cy = anchorPos(cL, cR, cT, cB, ptSelf)
+                    local px, py = anchorPos(pL, pR, pT, pB, ptTarget)
+                    relOx = math.floor(cx - px + 0.5)
+                    relOy = math.floor(cy - py + 0.5)
+
+                end
+            end
+
+            fa[key].offsetX = relOx
+            fa[key].offsetY = relOy
+            fa[key].parent = anchorTarget
+            fa[key].point = ptSelf
+            fa[key].relative = ptTarget
+        else
+            -- If the frame has an existing anchor with non-CENTER points,
+            -- compute relative offsets from handle positions rather than
+            -- writing absolute screen offsets.
+            local existingParent = fa[key].parent
+            local existingPt = fa[key].point or "CENTER"
+            local existingRelPt = fa[key].relative or "CENTER"
+
+            if existingParent and existingParent ~= "disabled"
+               and (existingPt ~= "CENTER" or existingRelPt ~= "CENTER") then
+                -- Compute relative offset from anchor parent
+                local childHandle = QUI_LayoutMode._handles and QUI_LayoutMode._handles[key]
+                local parentHandle = (existingParent == "screen") and nil
+                    or (QUI_LayoutMode._handles and QUI_LayoutMode._handles[existingParent])
+
+                -- For "screen" parent, use UIParent edges
+                local pL, pR, pT, pB
+                if existingParent == "screen" then
+                    pL, pB = 0, 0
+                    pR, pT = UIParent:GetWidth(), UIParent:GetHeight()
+                elseif parentHandle then
+                    pL, pR, pT, pB = parentHandle:GetLeft(), parentHandle:GetRight(), parentHandle:GetTop(), parentHandle:GetBottom()
+                end
+
+                if childHandle and pL and pR and pT and pB then
+                    local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
+                    if cL and cR and cT and cB then
+                        local function anchorPos(l, r, t, b, pt)
+                            local x, y = (l + r) / 2, (t + b) / 2
+                            if pt:find("LEFT") then x = l
+                            elseif pt:find("RIGHT") then x = r end
+                            if pt:find("TOP") then y = t
+                            elseif pt:find("BOTTOM") then y = b end
+                            return x, y
+                        end
+                        local cx, cy = anchorPos(cL, cR, cT, cB, existingPt)
+                        local px, py = anchorPos(pL, pR, pT, pB, existingRelPt)
+                        fa[key].offsetX = math.floor(cx - px + 0.5)
+                        fa[key].offsetY = math.floor(cy - py + 0.5)
+                    else
+                        fa[key].offsetX = offsetX
+                        fa[key].offsetY = offsetY
+                    end
+                else
+                    fa[key].offsetX = offsetX
+                    fa[key].offsetY = offsetY
+                end
+            else
+                fa[key].offsetX = offsetX
+                fa[key].offsetY = offsetY
+            end
+        end
+    end
+
+    -- Fire live-update message for options panel sync
+    local QUI = _G.QUI
+    if QUI and QUI.SendMessage then
+        QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", key)
+    end
+end
+
+--- Convert a handle's position to CENTER-based offsets relative to UIParent.
+--- Works for both proxy movers and child overlays.
+HandleToOffsets = function(handle)
+    local cx, cy
+    if handle._isChildOverlay and handle._parentFrame then
+        cx, cy = handle._parentFrame:GetCenter()
+    else
+        cx, cy = handle:GetCenter()
+    end
+    if not cx or not cy then return 0, 0 end
+
+    local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+    return math.floor(cx - pw / 2 + 0.5), math.floor(cy - ph / 2 + 0.5)
+end
+
+--- Position a handle from CENTER-based offsets.
+--- For child overlays, repositions the parent frame.
+SetHandleFromOffsets = function(handle, offsetX, offsetY)
+    if handle._isChildOverlay and handle._parentFrame then
+        local parent = handle._parentFrame
+        pcall(parent.ClearAllPoints, parent)
+        pcall(parent.SetPoint, parent, "CENTER", UIParent, "CENTER", offsetX or 0, offsetY or 0)
+    else
+        handle:ClearAllPoints()
+        handle:SetPoint("CENTER", UIParent, "CENTER", offsetX or 0, offsetY or 0)
+    end
+end
+
+--- Get the edges of a handle (for snap system).
+--- For child overlays, reads from parent frame.
+function QUI_LayoutMode:GetHandleEdges(handle)
+    if handle._isChildOverlay and handle._parentFrame then
+        local p = handle._parentFrame
+        return p:GetLeft(), p:GetRight(), p:GetTop(), p:GetBottom()
+    end
+    return handle:GetLeft(), handle:GetRight(), handle:GetTop(), handle:GetBottom()
+end
+
+--- Snapshot all current positions.
+SnapshotPositions = function()
+    local snapshot = {}
+    local fa = GetFrameAnchoring()
+
+    for key, def in pairs(QUI_LayoutMode._elements) do
+        if def.loadPosition then
+            local pt, relPt, ox, oy = def.loadPosition(key)
+            if pt then
+                snapshot[key] = { point = pt, relPoint = relPt, offsetX = ox, offsetY = oy, custom = true }
+            end
+        elseif fa and fa[key] then
+            local entry = fa[key]
+            if type(entry) == "table" then
+                snapshot[key] = {
+                    parent = entry.parent,
+                    point = entry.point,
+                    relative = entry.relative,
+                    offsetX = entry.offsetX,
+                    offsetY = entry.offsetY,
+                    sizeStable = entry.sizeStable,
+                    autoWidth = entry.autoWidth,
+                    widthAdjust = entry.widthAdjust,
+                    autoHeight = entry.autoHeight,
+                    heightAdjust = entry.heightAdjust,
+                    hideWithParent = entry.hideWithParent,
+                    keepInPlace = entry.keepInPlace,
+                }
+            end
+        else
+            local frame = def.getFrame and def.getFrame()
+            if frame and frame.GetCenter then
+                local cx, cy = frame:GetCenter()
+                if cx and cy then
+                    local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+                    snapshot[key] = {
+                        point = "CENTER",
+                        relPoint = "CENTER",
+                        offsetX = math.floor(cx - pw / 2 + 0.5),
+                        offsetY = math.floor(cy - ph / 2 + 0.5),
+                        _fromFrame = true,
+                    }
+                end
+            end
+        end
+    end
+
+    QUI_LayoutMode._snapshotPositions = snapshot
+end
+
+--- Commit pending positions to DB and apply.
+CommitPositions = function()
+    if InCombatLockdown() then
+        print("|cff60A5FAQUI:|r Cannot save positions during combat. Try again after combat ends.")
+        return
+    end
+
+    local fa = GetFrameAnchoring()
+
+    for key, pos in pairs(QUI_LayoutMode._pendingPositions) do
+        local def = QUI_LayoutMode._elements[key]
+        if def then
+            if def.savePosition then
+                def.savePosition(key, pos.point, pos.relPoint, pos.offsetX, pos.offsetY)
+            elseif fa then
+                if not fa[key] then
+                    fa[key] = {}
+                end
+                -- Anchor data (parent, point, relative, and relative offsets) was
+                -- already written to DB by SavePendingPosition. Only write screen
+                -- offsets for non-anchored frames — anchored frames have correct
+                -- relative offsets in the DB already.
+                if pos.anchorTarget then
+                    fa[key].parent = pos.anchorTarget
+                    fa[key].point = pos.anchorPointSelf or "CENTER"
+                    fa[key].relative = pos.anchorPointTarget or "CENTER"
+                    -- Offsets already written by SavePendingPosition (relative to parent)
+                else
+                    fa[key].offsetX = pos.offsetX
+                    fa[key].offsetY = pos.offsetY
+                end
+                if fa[key].sizeStable == nil then
+                    fa[key].sizeStable = true
+                end
+            end
+        end
+    end
+
+    local ApplyAll = _G.QUI_ApplyAllFrameAnchors
+    if ApplyAll then
+        ApplyAll()
+    end
+
+    -- Fire live-update messages for all committed keys
+    local QUI = _G.QUI
+    if QUI and QUI.SendMessage then
+        for key in pairs(QUI_LayoutMode._pendingPositions) do
+            QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", key)
+        end
+    end
+
+    QUI_LayoutMode._pendingPositions = {}
+end
+
+--- Revert to snapshot positions and apply.
+RevertPositions = function()
+    if InCombatLockdown() then
+        print("|cff60A5FAQUI:|r Cannot revert positions during combat.")
+        return
+    end
+
+    local fa = GetFrameAnchoring()
+
+    for key, snap in pairs(QUI_LayoutMode._snapshotPositions) do
+        local def = QUI_LayoutMode._elements[key]
+        if def then
+            if snap.custom and def.savePosition then
+                def.savePosition(key, snap.point, snap.relPoint, snap.offsetX, snap.offsetY)
+            elseif snap._fromFrame then
+                local frame = def.getFrame and def.getFrame()
+                if frame then
+                    pcall(frame.ClearAllPoints, frame)
+                    pcall(frame.SetPoint, frame, "CENTER", UIParent, "CENTER", snap.offsetX, snap.offsetY)
+                end
+            elseif fa then
+                if snap.parent == nil and not fa[key] then
+                    -- No entry existed before
+                else
+                    fa[key] = {
+                        parent = snap.parent,
+                        point = snap.point,
+                        relative = snap.relative,
+                        offsetX = snap.offsetX,
+                        offsetY = snap.offsetY,
+                        sizeStable = snap.sizeStable,
+                        autoWidth = snap.autoWidth,
+                        widthAdjust = snap.widthAdjust,
+                        autoHeight = snap.autoHeight,
+                        heightAdjust = snap.heightAdjust,
+                        hideWithParent = snap.hideWithParent,
+                        keepInPlace = snap.keepInPlace,
+                    }
+                end
+            end
+        end
+    end
+
+    for key in pairs(QUI_LayoutMode._pendingPositions) do
+        if not QUI_LayoutMode._snapshotPositions[key] then
+            if fa and fa[key] then
+                fa[key] = nil
+            end
+        end
+    end
+
+    local ApplyAll = _G.QUI_ApplyAllFrameAnchors
+    if ApplyAll then
+        ApplyAll()
+    end
+
+    -- Fire live-update messages for all reverted keys
+    local QUI = _G.QUI
+    if QUI and QUI.SendMessage then
+        for key in pairs(QUI_LayoutMode._snapshotPositions) do
+            QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", key)
+        end
+    end
+
+    -- Re-sync handles to reverted positions
+    for key in pairs(QUI_LayoutMode._handles) do
+        SyncHandle(key)
+    end
+
+    QUI_LayoutMode._pendingPositions = {}
+end
+
+---------------------------------------------------------------------------
+-- SHARED VISUAL BUILDER (used by both proxy movers and child overlays)
+---------------------------------------------------------------------------
+
+--- Add visual elements (bg, border, label, coords, group) to a handle frame.
+AddHandleVisuals = function(handle, def)
+    -- Background
+    local bg = handle:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.08, 0.08, 0.10, HANDLE_BG_ALPHA)
+    handle._bg = bg
+
+    -- Border (4 lines)
+    local border = {}
+    local function MakeBorderLine(point1, rel1, point2, rel2, isHoriz)
+        local line = handle:CreateTexture(nil, "BORDER")
+        line:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        line:ClearAllPoints()
+        line:SetPoint(point1, handle, rel1, 0, 0)
+        line:SetPoint(point2, handle, rel2, 0, 0)
+        if isHoriz then
+            line:SetHeight(HANDLE_BORDER_SIZE)
+        else
+            line:SetWidth(HANDLE_BORDER_SIZE)
+        end
+        return line
+    end
+
+    border.top    = MakeBorderLine("TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
+    border.bottom = MakeBorderLine("BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
+    border.left   = MakeBorderLine("TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
+    border.right  = MakeBorderLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
+
+    border.SetColor = function(_, r, g, b, a)
+        for _, line in pairs(border) do
+            if type(line) == "table" and line.SetColorTexture then
+                line:SetColorTexture(r, g, b, a or 1)
+            end
+        end
+    end
+    border.SetLineSize = function(_, size)
+        border.top:SetHeight(size)
+        border.bottom:SetHeight(size)
+        border.left:SetWidth(size)
+        border.right:SetWidth(size)
+    end
+    handle._border = border
+
+    -- Label text
+    local label = handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("CENTER", handle, "CENTER", 0, 6)
+    label:SetText(def.label or def.key)
+    label:SetTextColor(1, 1, 1, 1)
+    label:SetJustifyH("CENTER")
+    handle._label = label
+
+    -- Coordinate text
+    local coords = handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    coords:SetPoint("CENTER", handle, "CENTER", 0, -8)
+    coords:SetTextColor(0.8, 0.8, 0.8, 0.8)
+    coords:SetJustifyH("CENTER")
+    handle._coords = coords
+
+    -- Group label (small text at top)
+    if def.group then
+        local groupLabel = handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        groupLabel:SetPoint("TOP", handle, "TOP", 0, -3)
+        groupLabel:SetText(def.group)
+        groupLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.7)
+        groupLabel:SetScale(0.85)
+        handle._groupLabel = groupLabel
+    end
+
+end
+
+--- Add interaction scripts to a handle frame (click, hover, drag, escape).
+AddHandleScripts = function(handle, def)
+    handle:SetScript("OnEnter", function(self)
+        if not self._dragging then
+            self._bg:SetAlpha(HANDLE_HOVER_ALPHA)
+        end
+    end)
+
+    handle:SetScript("OnLeave", function(self)
+        if not self._dragging then
+            self._bg:SetAlpha(HANDLE_BG_ALPHA)
+        end
+    end)
+
+    handle:SetScript("OnClick", function(self)
+        QUI_LayoutMode:SelectMover(self._barKey)
+    end)
+
+    handle:SetScript("OnDragStart", function(self)
+        if InCombatLockdown() then return end
+
+        -- Check if frame has an active anchor (position controlled by anchoring system).
+        -- If so, block dragging unless Shift is held (Shift = re-anchor/detach intent).
+        local hasActiveAnchor = false
+        local fa = GetFrameAnchoring()
+        if fa and fa[self._barKey] and type(fa[self._barKey]) == "table" then
+            local parent = fa[self._barKey].parent
+            hasActiveAnchor = parent and parent ~= "disabled"
+        end
+
+        if hasActiveAnchor and not IsShiftKeyDown() then
+            -- Flash border to indicate locked state
+            if self._border and self._border.SetColor then
+                self._border:SetColor(1, 0.3, 0.3, 1)
+                C_Timer.After(0.3, function()
+                    if self._selected then
+                        self._border:SetColor(1, 1, 1, 1)
+                    else
+                        self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+                    end
+                end)
+            end
+            return
+        end
+
+        -- Track whether frame was anchored at drag start (for anchor preservation)
+        self._wasAnchoredOnDragStart = hasActiveAnchor
+
+        self._dragging = true
+        self._snapState = nil  -- reset snap hysteresis for new drag
+
+        -- Capture cursor-to-handle offset so snap can compute cursor-intended position
+        local cx, cy = GetCursorPosition()
+        local scale = UIParent:GetEffectiveScale()
+        cx, cy = cx / scale, cy / scale
+        local hx, hy
+        if self._isChildOverlay and self._parentFrame then
+            hx, hy = self._parentFrame:GetCenter()
+        else
+            hx, hy = self:GetCenter()
+        end
+        if hx and hy then
+            self._dragCursorOffX = hx - cx
+            self._dragCursorOffY = hy - cy
+        end
+
+        -- Track if Shift was held at drag start (intent: re-anchor/detach mode)
+        self._shiftDragStart = IsShiftKeyDown()
+
+        -- Anchor group drag: collect all DESCENDANT frames to move them
+        -- together as a unit. This runs regardless of Shift state — Shift
+        -- only controls the dragged frame's own anchor (detach/re-anchor),
+        -- not whether children follow along.
+        self._anchorGroupHandles = nil
+        do
+            -- Find which anchor group this frame belongs to by finding the root.
+            -- When Shift is held, the user is detaching/re-anchoring THIS frame,
+            -- so don't walk UP the chain — start from this frame as root.
+            local myKey = self._barKey
+            local anchorRoot
+
+            if self._shiftDragStart then
+                -- Shift-drag: this frame is the root (detaching from its parent)
+                anchorRoot = myKey
+            else
+                -- Normal drag: walk up to find the root of the anchor chain
+                local visited = {}
+                local current = myKey
+                while current and not visited[current] do
+                    visited[current] = true
+                    local pending = QUI_LayoutMode._pendingPositions[current]
+                    local parentKey = nil
+                    if pending and pending.anchorTarget then
+                        parentKey = pending.anchorTarget
+                    else
+                        local fa = GetFrameAnchoring()
+                        if fa and fa[current] and type(fa[current]) == "table" then
+                            local p = fa[current].parent
+                            if p and p ~= "screen" then parentKey = p end
+                        end
+                    end
+                    if parentKey and QUI_LayoutMode._handles[parentKey] then
+                        current = parentKey
+                    else
+                        anchorRoot = current
+                        break
+                    end
+                end
+                anchorRoot = anchorRoot or myKey
+            end
+
+            -- Collect all frames in this anchor group (root + all descendants)
+            local group = {}
+            local function collectChildren(parentKey)
+                -- Check pending positions
+                for k, pending in pairs(QUI_LayoutMode._pendingPositions) do
+                    if pending.anchorTarget == parentKey and not group[k] then
+                        local h = QUI_LayoutMode._handles[k]
+                        if h and h:IsShown() then
+                            group[k] = h
+                            collectChildren(k)
+                        end
+                    end
+                end
+                -- Check DB
+                local fa = GetFrameAnchoring()
+                if fa then
+                    for k, entry in pairs(fa) do
+                        if type(entry) == "table" and entry.parent == parentKey and not group[k] then
+                            -- Skip if pending has a different anchor
+                            local pending = QUI_LayoutMode._pendingPositions[k]
+                            if not pending or not pending.anchorTarget or pending.anchorTarget == parentKey then
+                                local h = QUI_LayoutMode._handles[k]
+                                if h and h:IsShown() then
+                                    group[k] = h
+                                    collectChildren(k)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Start from root
+            local rootHandle = QUI_LayoutMode._handles[anchorRoot]
+            if rootHandle and rootHandle:IsShown() then
+                group[anchorRoot] = rootHandle
+            end
+            collectChildren(anchorRoot)
+
+            -- Remove self from group (self is moved by StartMoving)
+            group[myKey] = nil
+
+            -- Store starting offsets for group members
+            if next(group) then
+                local startOx, startOy = HandleToOffsets(self)
+                local groupData = {}
+                for k, h in pairs(group) do
+                    local gox, goy = HandleToOffsets(h)
+                    groupData[k] = {
+                        handle = h,
+                        startOffX = gox,
+                        startOffY = goy,
+                        deltaFromDrag = { x = gox - startOx, y = goy - startOy },
+                    }
+                end
+                self._anchorGroupHandles = groupData
+                self._anchorGroupStartX = startOx
+                self._anchorGroupStartY = startOy
+                -- Build key set so snap system can exclude group members
+                local groupKeys = {}
+                for gk in pairs(groupData) do groupKeys[gk] = true end
+                self._anchorGroupKeys = groupKeys
+            end
+        end
+
+        self._bg:SetAlpha(HANDLE_DRAG_ALPHA)
+
+        -- Hide settings panel during drag
+        local settings = ns.QUI_LayoutMode_Settings
+        if settings and settings:IsShown() then
+            settings:Hide()
+            self._settingsWasShown = true
+        end
+
+        -- Drive all positioning from cursor in OnUpdate (no StartMoving).
+        -- This avoids jitter from StartMoving fighting with snap repositioning.
+        self:SetScript("OnUpdate", function(frame)
+            -- Compute handle position from cursor + captured offset
+            local curX, curY = GetCursorPosition()
+            local scale = UIParent:GetEffectiveScale()
+            if not curX or not curY or not scale or scale == 0 then return end
+            curX, curY = curX / scale, curY / scale
+
+            local intendedCX = curX + (frame._dragCursorOffX or 0)
+            local intendedCY = curY + (frame._dragCursorOffY or 0)
+            local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+            local ox = math.floor(intendedCX - pw / 2 + 0.5)
+            local oy = math.floor(intendedCY - ph / 2 + 0.5)
+
+            -- Position the handle itself
+            SetHandleFromOffsets(frame, ox, oy)
+
+            -- Snap + anchor system — run BEFORE positioning children and actual
+            -- frames so that children track the post-snap parent position.
+            -- (Runs even with snap off for Shift+anchor detection.)
+            local ui = ns.QUI_LayoutMode_UI
+            if ui and ui.ApplySnap then
+                ui:ApplySnap(frame)
+            end
+
+            -- Re-read parent position after snap (snap may have adjusted it)
+            local postSnapOx, postSnapOy = HandleToOffsets(frame)
+
+            -- Position the actual frame (proxy movers only)
+            if not frame._isChildOverlay then
+                local key = frame._barKey
+                local def2 = QUI_LayoutMode._elements[key]
+                if def2 then
+                    local targetFrame = def2.getFrame and def2.getFrame()
+                    if targetFrame then
+                        local frameOx, frameOy = postSnapOx, postSnapOy
+                        if def2.getCenterOffset then
+                            local cdx, cdy = def2.getCenterOffset(frame:GetSize())
+                            frameOx = frameOx - cdx
+                            frameOy = frameOy - cdy
+                        end
+                        pcall(targetFrame.ClearAllPoints, targetFrame)
+                        pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", frameOx, frameOy)
+                    end
+                end
+            end
+
+            -- Move anchor group members along with the dragging frame
+            if frame._anchorGroupHandles then
+                for k, data in pairs(frame._anchorGroupHandles) do
+                    local newOx = postSnapOx + data.deltaFromDrag.x
+                    local newOy = postSnapOy + data.deltaFromDrag.y
+                    SetHandleFromOffsets(data.handle, newOx, newOy)
+                    -- Also reposition the actual frame
+                    local def2 = QUI_LayoutMode._elements[k]
+                    if def2 then
+                        local targetFrame = def2.getFrame and def2.getFrame()
+                        if targetFrame then
+                            local frameOx, frameOy = newOx, newOy
+                            if def2.getCenterOffset then
+                                local cdx, cdy = def2.getCenterOffset(data.handle:GetSize())
+                                frameOx = frameOx - cdx
+                                frameOy = frameOy - cdy
+                            end
+                            pcall(targetFrame.ClearAllPoints, targetFrame)
+                            pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", frameOx, frameOy)
+                        end
+                    end
+                    -- Update coordinate display
+                    if data.handle._coords then
+                        data.handle._coords:SetText(string.format("X: %d  Y: %d", newOx, newOy))
+                    end
+                end
+            end
+
+            -- Update coordinate display
+            frame._coords:SetText(string.format("X: %d  Y: %d", postSnapOx, postSnapOy))
+        end)
+
+        QUI_LayoutMode:SelectMover(self._barKey)
+    end)
+
+    handle:SetScript("OnDragStop", function(self)
+        self._dragging = false
+        self._bg:SetAlpha(self:IsMouseOver() and HANDLE_HOVER_ALPHA or HANDLE_BG_ALPHA)
+
+        -- Remove drag OnUpdate
+        self:SetScript("OnUpdate", nil)
+
+        -- Store pending position (with anchor data if Shift+snap was active)
+        local ox, oy = HandleToOffsets(self)
+        local anchorKey = self._snapAnchorKey
+        local anchorPtSelf = self._snapAnchorPointSelf
+        local anchorPtTarget = self._snapAnchorPointTarget
+
+        -- If frame was anchored and dragged without Shift, preserve existing anchor
+        -- Use _shiftDragStart (captured at drag start) — if user started with Shift,
+        -- they intend to re-anchor or detach, so don't preserve the old anchor.
+        if not anchorKey and self._wasAnchoredOnDragStart and not self._shiftDragStart then
+            local pending = QUI_LayoutMode._pendingPositions[self._barKey]
+            if pending and pending.anchorTarget then
+                anchorKey = pending.anchorTarget
+                anchorPtSelf = pending.anchorPointSelf
+                anchorPtTarget = pending.anchorPointTarget
+            else
+                local fa = QUI.db.profile.frameAnchoring
+                if fa and fa[self._barKey] and type(fa[self._barKey]) == "table" then
+                    local entry = fa[self._barKey]
+                    if entry.parent and entry.parent ~= "disabled" then
+                        anchorKey = entry.parent
+                        anchorPtSelf = entry.point
+                        anchorPtTarget = entry.relative
+                    end
+                end
+            end
+        end
+
+        SavePendingPosition(self._barKey, "CENTER", "CENTER", ox, oy, anchorKey, anchorPtSelf, anchorPtTarget)
+
+        -- Explicit detach: Shift+drag with no new anchor target — set to disabled
+        -- so the frame is freely positionable via layout mode dragging
+        if not anchorKey and self._shiftDragStart and self._wasAnchoredOnDragStart then
+            local fa = GetFrameAnchoring()
+            if fa and fa[self._barKey] then
+                fa[self._barKey].parent = "disabled"
+                fa[self._barKey].point = nil
+                fa[self._barKey].relative = nil
+            end
+        end
+
+        -- Save final positions for anchor group members that moved with us
+        if self._anchorGroupHandles then
+            for k, data in pairs(self._anchorGroupHandles) do
+                local gox, goy = HandleToOffsets(data.handle)
+                -- Preserve existing anchor info for group members
+                local gAnchorKey, gAnchorPtSelf, gAnchorPtTarget
+                local gPending = QUI_LayoutMode._pendingPositions[k]
+                if gPending and gPending.anchorTarget then
+                    gAnchorKey = gPending.anchorTarget
+                    gAnchorPtSelf = gPending.anchorPointSelf
+                    gAnchorPtTarget = gPending.anchorPointTarget
+                else
+                    local fa = GetFrameAnchoring()
+                    if fa and fa[k] and type(fa[k]) == "table" then
+                        local entry = fa[k]
+                        if entry.parent and entry.parent ~= "screen" then
+                            gAnchorKey = entry.parent
+                            gAnchorPtSelf = entry.point
+                            gAnchorPtTarget = entry.relative
+                        end
+                    end
+                end
+                SavePendingPosition(k, "CENTER", "CENTER", gox, goy, gAnchorKey, gAnchorPtSelf, gAnchorPtTarget)
+            end
+            self._anchorGroupHandles = nil
+            self._anchorGroupKeys = nil
+        end
+
+        -- Final live-reposition (proxy movers only — child overlays already positioned)
+        if not self._isChildOverlay then
+            local key = self._barKey
+            local def2 = QUI_LayoutMode._elements[key]
+            if def2 then
+                local targetFrame = def2.getFrame and def2.getFrame()
+                if targetFrame then
+                    local frameOx, frameOy = ox, oy
+                    if def2.getCenterOffset then
+                        local cdx, cdy = def2.getCenterOffset(self:GetSize())
+                        frameOx = frameOx - cdx
+                        frameOy = frameOy - cdy
+                    end
+                    pcall(targetFrame.ClearAllPoints, targetFrame)
+                    pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", frameOx, frameOy)
+                end
+                if def2.onLiveMove then
+                    pcall(def2.onLiveMove, key)
+                end
+            end
+        else
+            local def2 = QUI_LayoutMode._elements[self._barKey]
+            if def2 and def2.onLiveMove then
+                pcall(def2.onLiveMove, self._barKey)
+            end
+        end
+
+        -- Update coordinate display and anchored state after drag
+        if anchorKey then
+            self._isAnchored = true
+            self._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+            -- Thicker border for anchored state
+            if self._border and self._border.SetLineSize then
+                self._border:SetLineSize(HANDLE_BORDER_SIZE_ANCHORED)
+            end
+        else
+            self._isAnchored = false
+            self._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+            -- Normal border for non-anchored state
+            if self._border and self._border.SetLineSize then
+                self._border:SetLineSize(HANDLE_BORDER_SIZE)
+            end
+        end
+
+        -- Restore border color on dragging handle (may still be gold from anchor preview)
+        if self._border and self._border.SetColor then
+            if self._selected then
+                self._border:SetColor(1, 1, 1, 1)
+            else
+                self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            end
+        end
+
+        -- Restore border on previously highlighted anchor target
+        if self._anchorHighlightTarget then
+            local prevTarget = QUI_LayoutMode._handles[self._anchorHighlightTarget]
+            if prevTarget and prevTarget._border then
+                if prevTarget._border.SetLineSize then
+                    prevTarget._border:SetLineSize(prevTarget._isAnchored and HANDLE_BORDER_SIZE_ANCHORED or HANDLE_BORDER_SIZE)
+                end
+                if prevTarget._border.SetColor then
+                    if prevTarget._selected then
+                        prevTarget._border:SetColor(1, 1, 1, 1)
+                    else
+                        prevTarget._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+                    end
+                end
+            end
+            self._anchorHighlightTarget = nil
+        end
+
+        -- Clear anchor line
+        local ui = ns.QUI_LayoutMode_UI
+        if ui and ui._anchorLine then
+            ui._anchorLine:Hide()
+        end
+
+        -- Clear snap guides
+        if ui and ui.ClearSnapGuides then
+            ui:ClearSnapGuides()
+        end
+
+        -- Re-show settings panel after drag, rebuilding to pick up position/anchor changes.
+        -- Collapsible expanded states are preserved across rebuilds.
+        if self._settingsWasShown then
+            self._settingsWasShown = nil
+            local settingsPanel = ns.QUI_LayoutMode_Settings
+            if settingsPanel then
+                settingsPanel._currentKey = nil
+                settingsPanel:Show(self._barKey)
+            end
+        end
+    end)
+
+    -- Disable keyboard on handles — nudge frame handles all keyboard input
+    handle:EnableKeyboard(false)
+end
+
+---------------------------------------------------------------------------
+-- HANDLE FACTORIES
+---------------------------------------------------------------------------
+
+--- Create a child overlay parented to the target frame.
+--- Falls back to proxy mover if the frame doesn't exist or is hidden.
+CreateChildOverlay = function(def)
+    local targetFrame = def.getFrame and def.getFrame()
+
+    if not targetFrame or not targetFrame:IsShown() then
+        -- Fallback to proxy if frame not available or hidden
+        return CreateProxyMover(def)
+    end
+
+    local name = "QUI_Overlay_" .. def.key
+    -- Parent to targetFrame; strata is set to FULLSCREEN_DIALOG which
+    -- renders above the target's children at their inherited strata.
+    local overlay = CreateFrame("Button", name, targetFrame)
+    overlay:SetFrameStrata(HANDLE_STRATA)
+    overlay:SetFrameLevel(100)
+
+    -- If setupOverlay is provided, let it handle sizing/anchoring
+    -- (e.g., XP tracker overlay spans bar + details pane)
+    if def.setupOverlay then
+        def.setupOverlay(overlay, targetFrame)
+    else
+        overlay:SetAllPoints(targetFrame)
+    end
+
+    overlay:RegisterForDrag("LeftButton")
+    overlay:EnableMouse(true)
+    overlay:Hide()
+
+    -- State
+    overlay._barKey = def.key
+    overlay._selected = false
+    overlay._dragging = false
+    overlay._isChildOverlay = true
+    overlay._parentFrame = targetFrame
+
+    -- Make parent movable (save old state for restore)
+    local wasMovable = targetFrame:IsMovable()
+    QUI_LayoutMode._savedMovableState[def.key] = wasMovable
+    targetFrame:SetMovable(true)
+    targetFrame:SetClampedToScreen(true)
+
+    -- Add visuals and scripts
+    AddHandleVisuals(overlay, def)
+    AddHandleScripts(overlay, def)
+
+    return overlay
+end
+
+--- Create a separate proxy mover (original approach for Blizzard frames).
+CreateProxyMover = function(def)
+    local name = "QUI_Mover_" .. def.key
+    local mover = CreateFrame("Button", name, UIParent)
+    mover:SetFrameStrata(HANDLE_STRATA)
+    mover:SetFrameLevel(100)
+    mover:SetSize(HANDLE_MIN_SIZE, HANDLE_MIN_SIZE)
+    mover:SetMovable(true)
+    mover:SetClampedToScreen(true)
+    mover:RegisterForDrag("LeftButton")
+    mover:EnableMouse(true)
+    mover:Hide()
+
+    -- State
+    mover._barKey = def.key
+    mover._selected = false
+    mover._dragging = false
+    mover._isChildOverlay = false
+
+    -- Add visuals and scripts
+    AddHandleVisuals(mover, def)
+    AddHandleScripts(mover, def)
+
+    return mover
+end
+
+--- Dispatcher: choose child overlay or proxy mover based on element definition.
+--- Elements with getSize use proxy movers, unless setupOverlay is also set
+--- (which means the child overlay can handle the extended size natively).
+--- Frames anchored to partyFrames/raidFrames use proxy movers because those
+--- parents use test containers in layout mode (different frame than actual header).
+local TEST_CONTAINER_PARENTS = { partyFrames = true, raidFrames = true }
+
+CreateHandle = function(def)
+    if def.isOwned and (not def.getSize or def.setupOverlay) then
+        -- Only force proxy mover for elements anchored to parents that use
+        -- test containers (party/raid). Other anchored elements (e.g. power
+        -- bars anchored to cdmEssential) keep child overlays for accurate sizing.
+        local fa = GetFrameAnchoring()
+        local entry = fa and fa[def.key]
+        if entry and type(entry) == "table" and entry.parent
+            and TEST_CONTAINER_PARENTS[entry.parent] then
+            return CreateProxyMover(def)
+        end
+        return CreateChildOverlay(def)
+    else
+        return CreateProxyMover(def)
+    end
+end
+
+---------------------------------------------------------------------------
+-- SYNC HANDLE
+---------------------------------------------------------------------------
+
+--- Sync a handle to match its element's current position and size.
+SyncHandle = function(key)
+    local handle = QUI_LayoutMode._handles[key]
+    local def = QUI_LayoutMode._elements[key]
+    if not handle or not def then return end
+
+    if handle._isChildOverlay then
+        -- Check if the parent frame changed (e.g., test container was rebuilt
+        -- by a settings change). Re-target the existing overlay to the new
+        -- frame instead of destroying and recreating it — avoids churn
+        -- during rapid changes (slider drags).
+        local currentFrame = def.getFrame and def.getFrame()
+        if currentFrame and currentFrame ~= handle._parentFrame then
+            handle._parentFrame = currentFrame
+            -- Reparent and re-anchor to new frame
+            handle:SetParent(currentFrame)
+            handle:SetFrameStrata(HANDLE_STRATA)
+            handle:SetFrameLevel(100)
+            if def.setupOverlay then
+                def.setupOverlay(handle, currentFrame)
+            else
+                handle:ClearAllPoints()
+                handle:SetAllPoints(currentFrame)
+            end
+            -- Update movable state on new frame
+            local wasMovable = currentFrame:IsMovable()
+            QUI_LayoutMode._savedMovableState[key] = wasMovable
+            currentFrame:SetMovable(true)
+            currentFrame:SetClampedToScreen(true)
+        end
+
+        -- Re-assert strata/level so the overlay stays above the parent
+        -- frame after settings-triggered refreshes that may reset levels.
+        handle:SetFrameStrata(HANDLE_STRATA)
+        handle:SetFrameLevel(100)
+
+        -- Child overlay: position is automatic via SetAllPoints.
+        -- Re-sync via setupOverlay if provided (dynamic sizing)
+        if def.setupOverlay then
+            def.setupOverlay(handle, handle._parentFrame)
+        end
+        -- Re-anchor parent frame if there's a pending position.
+        local pending = QUI_LayoutMode._pendingPositions[key]
+        if pending then
+            SetHandleFromOffsets(handle, pending.offsetX, pending.offsetY)
+        end
+
+        -- NOTE: Frames anchored to other elements use proxy movers (not
+        -- child overlays), so parent-handle-based repositioning is handled
+        -- in the proxy mover path below.
+    else
+        -- Proxy mover: full sync (size + position from frame)
+        local w, h
+        if def.getSize then
+            w, h = def.getSize()
+        end
+
+        if not w or not h then
+            local frame = def.getFrame and def.getFrame()
+            if frame and frame.GetSize then
+                local ok, fw, fh = pcall(frame.GetSize, frame)
+                if ok and fw and fh then
+                    w = Helpers.SafeToNumber(fw, HANDLE_MIN_SIZE)
+                    h = Helpers.SafeToNumber(fh, HANDLE_MIN_SIZE)
+                end
+            end
+        end
+
+        w = (w and w >= TINY_THRESHOLD) and w or math.max(w or HANDLE_MIN_SIZE, HANDLE_MIN_SIZE)
+        h = (h and h >= TINY_THRESHOLD) and h or math.max(h or HANDLE_MIN_SIZE, HANDLE_MIN_SIZE)
+        handle:SetSize(w, h)
+
+        -- Center offset: when getSize makes the mover larger than the frame,
+        -- shift the mover center so the frame aligns correctly within it.
+        local cdx, cdy = 0, 0
+        if def.getCenterOffset then
+            cdx, cdy = def.getCenterOffset(w, h)
+        end
+
+        -- Position: check pending first, then anchored-to-parent-handle, then saved, then frame
+        local pending = QUI_LayoutMode._pendingPositions[key]
+        if pending then
+            handle:ClearAllPoints()
+            handle:SetPoint("CENTER", UIParent, "CENTER", pending.offsetX, pending.offsetY)
+        else
+            -- For frames anchored to another frame (not screen), position the
+            -- handle relative to the PARENT HANDLE using the DB offsets. During
+            -- layout mode, actual frames may be hidden or at stale positions.
+            local fa = GetFrameAnchoring()
+            local entry = fa and fa[key]
+            local anchorParent = entry and entry.parent
+            local parentHandle = anchorParent and anchorParent ~= "screen" and anchorParent ~= "disabled"
+                and QUI_LayoutMode._handles and QUI_LayoutMode._handles[anchorParent]
+
+            if parentHandle and entry then
+                local ptSelf = entry.point or "CENTER"
+                local ptTarget = entry.relative or "CENTER"
+                local dbOx = entry.offsetX or 0
+                local dbOy = entry.offsetY or 0
+
+                local pL, pR, pT, pB = parentHandle:GetLeft(), parentHandle:GetRight(), parentHandle:GetTop(), parentHandle:GetBottom()
+                if pL and pR and pT and pB then
+                    -- Compute target anchor point on parent handle
+                    local function anchorPos(l, r, t, b, pt)
+                        local x, y = (l + r) / 2, (t + b) / 2
+                        if pt:find("LEFT") then x = l
+                        elseif pt:find("RIGHT") then x = r end
+                        if pt:find("TOP") then y = t
+                        elseif pt:find("BOTTOM") then y = b end
+                        return x, y
+                    end
+                    local px, py = anchorPos(pL, pR, pT, pB, ptTarget)
+
+                    -- Position child handle so its anchor point lands at parent anchor + offset
+                    -- For simplicity, use CENTER positioning with adjustment for the anchor point
+                    local cW, cH = handle:GetSize()
+                    local selfOffX, selfOffY = 0, 0
+                    if ptSelf:find("LEFT") then selfOffX = cW / 2
+                    elseif ptSelf:find("RIGHT") then selfOffX = -cW / 2 end
+                    if ptSelf:find("TOP") then selfOffY = -cH / 2
+                    elseif ptSelf:find("BOTTOM") then selfOffY = cH / 2 end
+
+                    local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+                    local centerX = math.floor(px + dbOx + selfOffX - pw / 2 + 0.5)
+                    local centerY = math.floor(py + dbOy + selfOffY - ph / 2 + 0.5)
+
+                    handle:ClearAllPoints()
+                    -- Don't add getCenterOffset (cdx/cdy) for anchored handles.
+                    -- selfOffX/selfOffY already positions the handle so its anchor
+                    -- edge aligns with the parent's anchor edge. getCenterOffset
+                    -- would shift boss1 away from the intended anchor point.
+                    handle:SetPoint("CENTER", UIParent, "CENTER", centerX, centerY)
+                else
+                    -- Parent handle not positioned yet, fall back to DB offsets
+                    local pt, relPt, ox, oy = LoadPosition(key)
+                    if pt then
+                        handle:ClearAllPoints()
+                        handle:SetPoint("CENTER", UIParent, "CENTER", (ox or 0), (oy or 0))
+                    end
+                end
+            else
+                local pt, relPt, ox, oy = LoadPosition(key)
+                if pt then
+                    if pt == "CENTER" and relPt == "CENTER" then
+                        handle:ClearAllPoints()
+                        handle:SetPoint("CENTER", UIParent, "CENTER", ox + cdx, oy + cdy)
+                    else
+                        local frame = def.getFrame and def.getFrame()
+                        if frame and frame.GetCenter then
+                            local cx, cy = frame:GetCenter()
+                            if cx and cy then
+                                local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+                                handle:ClearAllPoints()
+                                handle:SetPoint("CENTER", UIParent, "CENTER",
+                                    math.floor(cx - pw / 2 + cdx + 0.5), math.floor(cy - ph / 2 + cdy + 0.5))
+                            else
+                                handle:ClearAllPoints()
+                                handle:SetPoint("CENTER", UIParent, "CENTER", ox + cdx, oy + cdy)
+                            end
+                        else
+                            handle:ClearAllPoints()
+                            handle:SetPoint("CENTER", UIParent, "CENTER", ox + cdx, oy + cdy)
+                        end
+                    end
+                else
+                    local frame = def.getFrame and def.getFrame()
+                    if frame and frame.GetCenter then
+                        local cx, cy = frame:GetCenter()
+                        if cx and cy then
+                            local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+                            handle:ClearAllPoints()
+                            handle:SetPoint("CENTER", UIParent, "CENTER",
+                                math.floor(cx - pw / 2 + cdx + 0.5), math.floor(cy - ph / 2 + cdy + 0.5))
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Boss frames: re-anchor boss1 to the top of the handle after any sync.
+    -- ApplyFrameAnchor may have repositioned boss1 relative to a different
+    -- parent, breaking the TOP anchoring set during deferred reparenting.
+    if key == "bossFrames" and not handle._isChildOverlay then
+        local frame = def.getFrame and def.getFrame()
+        if frame and handle._savedTargetParent then
+            pcall(frame.ClearAllPoints, frame)
+            pcall(frame.SetPoint, frame, "TOPLEFT", handle, "TOPLEFT", 0, 0)
+            pcall(frame.SetPoint, frame, "TOPRIGHT", handle, "TOPRIGHT", 0, 0)
+        end
+    end
+
+    -- Check for existing anchor relationship (from DB or pending)
+    local existingAnchorKey = nil
+    local pending = QUI_LayoutMode._pendingPositions[key]
+    if pending and pending.anchorTarget then
+        existingAnchorKey = pending.anchorTarget
+    else
+        local fa = GetFrameAnchoring()
+        if fa and fa[key] and type(fa[key]) == "table" then
+            local parent = fa[key].parent
+            if parent and parent ~= "screen" then
+                existingAnchorKey = parent
+            end
+        end
+    end
+
+    -- Update coordinate text — show DB/pending offsets for anchored frames, screen offsets otherwise
+    local ox, oy
+    if existingAnchorKey then
+        -- Show the stored relative offsets (DB or pending) — don't reverse-compute
+        -- from frame positions, as layout mode reparents proxy targets.
+        if pending and pending.anchorTarget then
+            ox = pending.offsetX or 0
+            oy = pending.offsetY or 0
+        else
+            local fa = GetFrameAnchoring()
+            local entry = fa and fa[key]
+            ox = entry and entry.offsetX or 0
+            oy = entry and entry.offsetY or 0
+        end
+        handle._isAnchored = true
+        handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+        -- Thicker border for anchored handles
+        if handle._border and handle._border.SetLineSize then
+            handle._border:SetLineSize(HANDLE_BORDER_SIZE_ANCHORED)
+        end
+    else
+        ox, oy = HandleToOffsets(handle)
+        handle._isAnchored = false
+        handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+        -- Normal border for non-anchored handles
+        if handle._border and handle._border.SetLineSize then
+            handle._border:SetLineSize(HANDLE_BORDER_SIZE)
+        end
+    end
+
+    -- Handle label/group visibility based on size
+    local w, h
+    if handle._isChildOverlay and handle._parentFrame then
+        local ok, fw, fh = pcall(handle._parentFrame.GetSize, handle._parentFrame)
+        if ok then w, h = fw, fh end
+    else
+        w, h = handle:GetSize()
+    end
+    w = w or HANDLE_MIN_SIZE
+    h = h or HANDLE_MIN_SIZE
+
+    if w < 60 or h < 30 then
+        if handle._groupLabel then handle._groupLabel:Hide() end
+        handle._label:SetPoint("CENTER", handle, "CENTER", 0, 0)
+        handle._coords:Hide()
+    else
+        if handle._groupLabel then handle._groupLabel:Show() end
+        handle._label:SetPoint("CENTER", handle, "CENTER", 0, 6)
+        handle._coords:Show()
+    end
+end
+
+---------------------------------------------------------------------------
+-- PUBLIC SYNC — re-sync a handle's size/position from its target frame.
+-- Called by external modules after resizing managed frames (e.g. buff layout).
+---------------------------------------------------------------------------
+function QUI_LayoutMode:SyncElement(key)
+    if not self.isActive then return end
+    if not self._handles or not self._handles[key] then return end
+    SyncHandle(key)
+end
+
+---------------------------------------------------------------------------
+-- NUDGE (called by layoutmode_ui.lua arrow key handler)
+---------------------------------------------------------------------------
+
+function QUI_LayoutMode:NudgeMover(key, dx, dy)
+    if InCombatLockdown() then return false end
+
+    local handle = self._handles[key]
+    if not handle then return false end
+
+    local ox, oy = HandleToOffsets(handle)
+    ox = ox + dx
+    oy = oy + dy
+
+    if handle._isChildOverlay then
+        -- Child overlay: just reposition parent (overlay follows)
+        SetHandleFromOffsets(handle, ox, oy)
+    else
+        -- Proxy: reposition mover + actual frame
+        handle:ClearAllPoints()
+        handle:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+
+        local def = self._elements[key]
+        if def then
+            local frame = def.getFrame and def.getFrame()
+            if frame then
+                pcall(frame.ClearAllPoints, frame)
+                -- Boss frames: keep boss1 anchored to TOP of handle
+                if key == "bossFrames" then
+                    pcall(frame.SetPoint, frame, "TOPLEFT", handle, "TOPLEFT", 0, 0)
+                    pcall(frame.SetPoint, frame, "TOPRIGHT", handle, "TOPRIGHT", 0, 0)
+                else
+                    pcall(frame.SetPoint, frame, "CENTER", UIParent, "CENTER", ox, oy)
+                end
+            end
+        end
+    end
+
+    -- Store pending
+    SavePendingPosition(key, "CENTER", "CENTER", ox, oy)
+
+    -- Update coordinate text
+    handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+
+    return true
+end
+
+---------------------------------------------------------------------------
+-- SAVE/DISCARD POPUP
+---------------------------------------------------------------------------
+
+ShowSaveDiscardPopup = function()
+    local ui = ns.QUI_LayoutMode_UI
+    if ui and ui.ShowSaveDiscardPopup then
+        ui:ShowSaveDiscardPopup()
+    else
+        QUI_LayoutMode:SaveAndClose()
+    end
+end
+
+-- Escape key handling is done by the nudge frame in layoutmode_ui.lua
+
+---------------------------------------------------------------------------
+-- PROFILE / SPEC CHANGE HANDLING
+---------------------------------------------------------------------------
+local function OnProfileChanged()
+    if QUI_LayoutMode.isActive then
+        QUI_LayoutMode._hasChanges = false
+        QUI_LayoutMode._pendingPositions = {}
+        QUI_LayoutMode:Close(true)
+        print("|cff60A5FAQUI:|r Profile changed. Layout Mode closed — reopen to use new profile positions.")
+    end
+end
+
+C_Timer.After(1, function()
+    local core = Helpers.GetCore()
+    if core and core.db then
+        core.db.RegisterCallback(QUI_LayoutMode, "OnProfileChanged", OnProfileChanged)
+        core.db.RegisterCallback(QUI_LayoutMode, "OnProfileCopied", OnProfileChanged)
+        core.db.RegisterCallback(QUI_LayoutMode, "OnProfileReset", OnProfileChanged)
+    end
+end)
+
+---------------------------------------------------------------------------
+-- BACKWARD COMPATIBILITY
+---------------------------------------------------------------------------
+local function SetupBackwardCompat()
+    local core = Helpers.GetCore()
+    if not core then return end
+
+    core._editModeEnterCallbacks = core._editModeEnterCallbacks or {}
+    core._editModeExitCallbacks = core._editModeExitCallbacks or {}
+
+    function core:RegisterLayoutModeEnter(callback)
+        QUI_LayoutMode:RegisterEnterCallback(callback)
+    end
+
+    function core:RegisterLayoutModeExit(callback)
+        QUI_LayoutMode:RegisterExitCallback(callback)
+    end
+
+    local origRegEnter = core.RegisterEditModeEnter
+    function core:RegisterEditModeEnter(callback)
+        QUI_LayoutMode:RegisterEnterCallback(callback)
+    end
+
+    local origRegExit = core.RegisterEditModeExit
+    function core:RegisterEditModeExit(callback)
+        QUI_LayoutMode:RegisterExitCallback(callback)
+    end
+
+    for _, cb in ipairs(core._editModeEnterCallbacks) do
+        QUI_LayoutMode:RegisterEnterCallback(cb)
+    end
+    for _, cb in ipairs(core._editModeExitCallbacks) do
+        QUI_LayoutMode:RegisterExitCallback(cb)
+    end
+end
+
+C_Timer.After(0, function()
+    SetupBackwardCompat()
+end)
+
+---------------------------------------------------------------------------
+-- DISPLAY FRAME ELEMENT REGISTRATION
+-- Blizzard frames — use proxy movers (isOwned = false / default)
+---------------------------------------------------------------------------
+do
+    local function RegisterDisplayElements()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+
+        local DISPLAY_ELEMENTS = {
+            { key = "objectiveTracker", label = "Objective Tracker", frame = "ObjectiveTrackerFrame", order = 2 },
+            { key = "extraActionButton", label = "Extra Ability",   frame = "ExtraActionBarFrame",    order = 5 },
+            { key = "zoneAbility",     label = "Zone Ability",      frame = "ZoneAbilityFrame",       order = 6 },
+        }
+
+        for _, info in ipairs(DISPLAY_ELEMENTS) do
+            um:RegisterElement({
+                key = info.key,
+                label = info.label,
+                group = "Display",
+                order = info.order,
+                getFrame = function()
+                    return _G[info.frame]
+                end,
+            })
+        end
+    end
+
+    C_Timer.After(2, RegisterDisplayElements)
+end
+
+---------------------------------------------------------------------------
+-- QOL / UTILITY FRAME ELEMENT REGISTRATION
+-- Addon-owned frames — use child overlays (isOwned = true)
+---------------------------------------------------------------------------
+do
+    local function RegisterQoLElements()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+
+        local Helpers = ns.Helpers
+        local GetCore = Helpers.GetCore
+
+        local function GetProfileDB()
+            local core = GetCore()
+            return core and core.db and core.db.profile
+        end
+
+        -- Helper: standard module DB getter
+        local function ModuleDB(key)
+            local db = GetProfileDB()
+            return db and db[key]
+        end
+
+        -- Helper: nested setting under db.general
+        local function GeneralSubDB(subKey)
+            local db = GetProfileDB()
+            return db and db.general and db.general[subKey]
+        end
+
+        local QOL_ELEMENTS = {
+            {
+                key = "buffFrame", label = "Buff Frame", group = "Display", order = 3,
+                frame = "QUI_BuffIconContainer",
+                dbKey = "buffBorders", enabledField = "enableBuffs",
+                refresh = "QUI_RefreshBuffBorders",
+                previewOn  = function() if _G.QUI_BuffBordersShowPreview then _G.QUI_BuffBordersShowPreview() end end,
+                previewOff = function() if _G.QUI_BuffBordersHidePreview then _G.QUI_BuffBordersHidePreview() end end,
+            },
+            {
+                key = "debuffFrame", label = "Debuff Frame", group = "Display", order = 4,
+                frame = "QUI_DebuffIconContainer",
+                dbKey = "buffBorders", enabledField = "enableDebuffs",
+                refresh = "QUI_RefreshBuffBorders",
+                previewOn  = function() if _G.QUI_BuffBordersShowPreview then _G.QUI_BuffBordersShowPreview() end end,
+                previewOff = function() if _G.QUI_BuffBordersHidePreview then _G.QUI_BuffBordersHidePreview() end end,
+            },
+            {
+                key = "crosshair", label = "Crosshair", group = "QoL", order = 1,
+                frame = "QUI_Crosshair",
+                dbKey = "crosshair", enabledField = "enabled",
+                refresh = "QUI_RefreshCrosshair",
+            },
+            {
+                key = "skyriding", label = "Skyriding HUD", group = "QoL", order = 2,
+                frame = "QUI_Skyriding",
+                dbKey = "skyriding", enabledField = "enabled",
+                refresh = "QUI_RefreshSkyriding",
+                previewOn  = function() if _G.QUI_ToggleSkyridingPreview then _G.QUI_ToggleSkyridingPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleSkyridingPreview then _G.QUI_ToggleSkyridingPreview(false) end end,
+                getSize = function()
+                    local f = _G.QUI_Skyriding
+                    if not f then return nil end
+                    local w = f:GetWidth()
+                    local h = f:GetHeight()
+                    -- Include Second Wind display area
+                    local db = ModuleDB("skyriding")
+                    if db then
+                        local swMode = db.secondWindMode or "PIPS"
+                        if swMode == "MINIBAR" then
+                            h = h + 2 + (db.secondWindHeight or 6)
+                        elseif swMode == "PIPS" then
+                            h = h + 10
+                        end
+                    end
+                    return w, h
+                end,
+                getCenterOffset = function()
+                    local db = ModuleDB("skyriding")
+                    if not db then return 0, 0 end
+                    local swMode = db.secondWindMode or "PIPS"
+                    if swMode == "MINIBAR" then
+                        local extra = 2 + (db.secondWindHeight or 6)
+                        return 0, -(extra / 2)  -- Shift down (minibar below)
+                    elseif swMode == "PIPS" then
+                        return 0, 5  -- Shift up (pips above)
+                    end
+                    return 0, 0
+                end,
+            },
+            {
+                key = "xpTracker", label = "XP Tracker", group = "QoL", order = 3,
+                frame = "QUI_XPTracker",
+                dbKey = "xpTracker", enabledField = "enabled",
+                refresh = "QUI_RefreshXPTracker",
+                previewOn  = function() if _G.QUI_ToggleXPTrackerPreview then _G.QUI_ToggleXPTrackerPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleXPTrackerPreview then _G.QUI_ToggleXPTrackerPreview(false) end end,
+                setupOverlay = function(overlay, barFrame)
+                    overlay:ClearAllPoints()
+                    local details = barFrame.detailsFrame
+                    if details and details:IsShown() then
+                        local detailsTop = details:GetTop()
+                        local barTop = barFrame:GetTop()
+                        if detailsTop and barTop and detailsTop > barTop then
+                            overlay:SetPoint("TOPLEFT", details, "TOPLEFT", 0, 0)
+                            overlay:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", 0, 0)
+                        else
+                            overlay:SetPoint("TOPLEFT", barFrame, "TOPLEFT", 0, 0)
+                            overlay:SetPoint("BOTTOMRIGHT", details, "BOTTOMRIGHT", 0, 0)
+                        end
+                    else
+                        overlay:SetAllPoints(barFrame)
+                    end
+                end,
+            },
+            {
+                key = "combatTimer", label = "Combat Timer", group = "Instance", order = 3,
+                frame = "QUI_CombatTimer",
+                dbKey = "combatTimer", enabledField = "enabled",
+                refresh = "QUI_RefreshCombatTimer",
+                previewOn  = function() if _G.QUI_ToggleCombatTimerPreview then _G.QUI_ToggleCombatTimerPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleCombatTimerPreview then _G.QUI_ToggleCombatTimerPreview(false) end end,
+            },
+            {
+                key = "brezCounter", label = "Brez Counter", group = "Instance", order = 1,
+                frame = "QUI_BrezCounter",
+                dbKey = "brzCounter", enabledField = "enabled",
+                refresh = "QUI_RefreshBrezCounter",
+                previewOn  = function() if _G.QUI_ToggleBrezCounterPreview then _G.QUI_ToggleBrezCounterPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleBrezCounterPreview then _G.QUI_ToggleBrezCounterPreview(false) end end,
+            },
+            {
+                key = "mplusTimer", label = "M+ Timer", group = "Instance", order = 2,
+                frame = "QUI_MPlusTimerFrame",
+                dbKey = "mplusTimer", enabledField = "enabled",
+                previewOn  = function() local t = _G.QUI_MPlusTimer; if t and t.EnableDemoMode then t:EnableDemoMode() end end,
+                previewOff = function() local t = _G.QUI_MPlusTimer; if t and t.DisableDemoMode then t:DisableDemoMode() end end,
+            },
+            {
+                key = "rangeCheck", label = "Range Check", group = "QoL", order = 5,
+                frame = "QUI_RangeCheckFrame",
+                dbKey = "rangeCheck", enabledField = "enabled",
+                refresh = "QUI_RefreshRangeCheck",
+                previewOn  = function() if _G.QUI_ToggleRangeCheckPreview then _G.QUI_ToggleRangeCheckPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleRangeCheckPreview then _G.QUI_ToggleRangeCheckPreview(false) end end,
+            },
+            {
+                key = "actionTracker", label = "Action Tracker", group = "QoL", order = 6,
+                frame = "QUI_ActionTracker",
+                dbGetter = function() return GeneralSubDB("actionTracker") end,
+                enabledField = "enabled",
+                refresh = "QUI_RefreshActionTracker",
+                previewOn  = function() if _G.QUI_ToggleActionTrackerPreview then _G.QUI_ToggleActionTrackerPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleActionTrackerPreview then _G.QUI_ToggleActionTrackerPreview(false) end end,
+            },
+            {
+                key = "focusCastAlert", label = "Focus Cast Alert", group = "QoL", order = 7,
+                frame = "QUI_FocusCastAlertFrame",
+                dbGetter = function() return GeneralSubDB("focusCastAlert") end,
+                enabledField = "enabled",
+                refresh = "QUI_RefreshFocusCastAlert",
+                previewOn  = function() if _G.QUI_ToggleFocusCastAlertPreview then _G.QUI_ToggleFocusCastAlertPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleFocusCastAlertPreview then _G.QUI_ToggleFocusCastAlertPreview(false) end end,
+            },
+            {
+                key = "petWarning", label = "Pet Warning", group = "QoL", order = 8,
+                frame = "QUI_PetWarningFrame",
+                dbGetter = function()
+                    local db = GetProfileDB()
+                    return db and db.general
+                end,
+                enabledField = "petCombatWarning",
+                refresh = "QUI_RefreshPetWarning",
+                previewOn  = function() if _G.QUI_TogglePetWarningPreview then _G.QUI_TogglePetWarningPreview(true) end end,
+                previewOff = function() if _G.QUI_TogglePetWarningPreview then _G.QUI_TogglePetWarningPreview(false) end end,
+            },
+            {
+                key = "preyTracker", label = "Prey Tracker", group = "QoL", order = 9,
+                frame = "QUI_PreyTracker",
+                dbKey = "preyTracker", enabledField = "enabled",
+                refresh = "QUI_RefreshPreyTracker",
+                previewOn  = function() if _G.QUI_TogglePreyTrackerPreview then _G.QUI_TogglePreyTrackerPreview(true) end end,
+                previewOff = function() if _G.QUI_TogglePreyTrackerPreview then _G.QUI_TogglePreyTrackerPreview(false) end end,
+            },
+            {
+                key = "readyCheck", label = "Ready Check", group = "Instance", order = 4,
+                frame = nil,
+                blizzFrame = "ReadyCheckFrame",
+                dbGetter = function()
+                    local db = GetProfileDB()
+                    return db and db.general
+                end,
+                enabledField = "skinReadyCheck",
+            },
+            {
+                key = "consumables", label = "Consumable Check", group = "Instance", order = 4.5,
+                frame = "QUI_ConsumablesFrame",
+                dbGetter = function()
+                    local db = GetProfileDB()
+                    return db and db.general
+                end,
+                enabledField = "consumableCheckEnabled",
+                previewOn  = function() if _G.QUI_ShowConsumables then _G.QUI_ShowConsumables() end end,
+                previewOff = function() if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end end,
+            },
+            {
+                key = "missingRaidBuffs", label = "Missing Raid Buffs", group = "Instance", order = 5,
+                frame = "QUI_MissingRaidBuffs",
+                dbKey = "raidBuffs", enabledField = "enabled",
+                refresh = "QUI_RefreshRaidBuffs",
+                previewOn  = function() local r = ns.RaidBuffs; if r and r.EnablePreview then r:EnablePreview() end end,
+                previewOff = function() local r = ns.RaidBuffs; if r and r.DisablePreview then r:DisablePreview() end end,
+            },
+            {
+                key = "rotationAssistIcon", label = "Rotation Assist Icon", group = "Cooldown Manager", order = 5,
+                frame = "QUI_RotationAssistIcon",
+                dbKey = "rotationAssistIcon", enabledField = "enabled",
+                refresh = "QUI_RefreshRotationAssistIcon",
+            },
+            {
+                key = "totemBar", label = "Totem Bar", group = "Action Bars", order = 20,
+                frame = "QUI_TotemBar",
+                dbKey = "totemBar", enabledField = "enabled",
+                refresh = "QUI_RefreshTotemBar",
+                previewOn  = function() if _G.QUI_ShowTotemBarPreview then _G.QUI_ShowTotemBarPreview() end end,
+                previewOff = function() if _G.QUI_HideTotemBarPreview then _G.QUI_HideTotemBarPreview() end end,
+            },
+            {
+                key = "partyKeystones", label = "Party Keystones", group = "Instance", order = 6,
+                frame = "QUIKeyTrackerFrame",
+                dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
+                enabledField = "keyTrackerEnabled",
+                refresh = "QUI_RefreshKeyTracker",
+            },
+            {
+                key = "lootFrame", label = "Loot Frame", group = "Display", order = 7,
+                frame = "QUI_LootFrame",
+                dbKey = "loot", enabledField = "enabled",
+            },
+            {
+                key = "lootRollAnchor", label = "Loot Roll Anchor", group = "Display", order = 8,
+                frame = "QUI_LootRollAnchor",
+                dbKey = "lootRoll", enabledField = "enabled",
+            },
+            {
+                key = "alertAnchor", label = "Alert Anchor", group = "Display", order = 9,
+                frame = "QUI_AlertFrameHolder",
+                dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
+                enabledField = "skinAlerts",
+            },
+            {
+                key = "toastAnchor", label = "Toast Anchor", group = "Display", order = 10,
+                frame = "QUI_EventToastHolder",
+                dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
+                enabledField = "skinAlerts",
+            },
+            {
+                key = "bnetToastAnchor", label = "BNet Toast Anchor", group = "Display", order = 11,
+                frame = "QUI_BNetToastHolder",
+                dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
+                enabledField = "skinAlerts",
+            },
+            {
+                key = "powerBarAlt", label = "Encounter Power Bar", group = "Display", order = 12,
+                frame = "QUI_AltPowerBar",
+                dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
+                enabledField = "skinPowerBarAlt",
+            },
+            {
+                key = "tooltipAnchor", label = "Tooltip Anchor", group = "Display", order = 13,
+                frame = "QUI_TooltipAnchor",
+                dbKey = "tooltip", enabledField = "enabled",
+            },
+        }
+
+        for _, info in ipairs(QOL_ELEMENTS) do
+            local function GetDB()
+                if info.dbGetter then return info.dbGetter() end
+                return ModuleDB(info.dbKey)
+            end
+
+            um:RegisterElement({
+                key = info.key,
+                label = info.label,
+                group = info.group,
+                order = info.order,
+                isOwned = true,
+                isEnabled = function()
+                    local db = GetDB()
+                    return db and db[info.enabledField] ~= false
+                end,
+                setEnabled = function(val)
+                    local db = GetDB()
+                    if db then db[info.enabledField] = val end
+                    if info.refresh and _G[info.refresh] then
+                        _G[info.refresh]()
+                    end
+                end,
+                getFrame = info.getFrame or function()
+                    if info.frame then
+                        return _G[info.frame]
+                    elseif info.blizzFrame then
+                        return _G[info.blizzFrame]
+                    end
+                end,
+                getSize = info.getSize,
+                getCenterOffset = info.getCenterOffset,
+                setupOverlay = info.setupOverlay,
+                savePosition = info.savePosition,
+                loadPosition = info.loadPosition,
+                onOpen = info.previewOn,
+                onClose = info.previewOff,
+            })
+        end
+    end
+
+    C_Timer.After(2, RegisterQoLElements)
+end
+
+---------------------------------------------------------------------------
+-- READY CHECK SETTINGS PROVIDER
+---------------------------------------------------------------------------
+do
+    local function RegisterReadyCheckProvider()
+        local settingsPanel = ns.QUI_LayoutMode_Settings
+        if not settingsPanel then return end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return end
+
+        local Helpers = ns.Helpers
+        local U = ns.QUI_LayoutMode_Utils
+        local P = U.PlaceRow
+        local FORM_ROW = U and U.FORM_ROW or 32
+
+        local function GetGeneralDB()
+            local core = Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.general
+        end
+
+        local function RefreshColors()
+            if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end
+        end
+
+        local function BuildReadyCheckSettings(content, key, width)
+            local general = GetGeneralDB()
+            if not general then return 80 end
+
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            -- Skinning
+            U.CreateCollapsible(content, "Skinning", 1 * FORM_ROW + 8, function(body)
+                local sy = -4
+
+                local skinCheck = GUI:CreateFormCheckbox(body, "Skin Ready Check Frame", "skinReadyCheck", general, function()
+                    GUI:ShowConfirmation({
+                        title = "Reload UI?",
+                        message = "Skinning changes require a reload to take effect.",
+                        acceptText = "Reload",
+                        cancelText = "Later",
+                        onAccept = function() QUI:SafeReload() end,
+                    })
+                end)
+                P(skinCheck, body, sy)
+            end, sections, relayout)
+
+            -- Border Override
+            Helpers.EnsureDefaults(general, {
+                readyCheckBorderOverride = false,
+                readyCheckHideBorder = false,
+                readyCheckBorderUseClassColor = false,
+            })
+            if general.readyCheckBorderColor == nil then
+                local fallback = general.skinBorderColor or general.addonAccentColor or { 0.376, 0.647, 0.980, 1 }
+                general.readyCheckBorderColor = { fallback[1], fallback[2], fallback[3], fallback[4] or 1 }
+            end
+
+            U.CreateCollapsible(content, "Border", 4 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local colorPicker, hideCheck, classCheck
+
+                local function UpdateBorderState()
+                    local enabled = general.readyCheckBorderOverride
+                    if hideCheck then hideCheck:SetEnabled(enabled) end
+                    if classCheck then classCheck:SetEnabled(enabled) end
+                    if colorPicker then
+                        colorPicker:SetEnabled(enabled and not general.readyCheckBorderUseClassColor)
+                    end
+                end
+
+                local overrideCheck = GUI:CreateFormCheckbox(body, "Override Global Border", "readyCheckBorderOverride", general, function()
+                    UpdateBorderState()
+                    RefreshColors()
+                end)
+                sy = P(overrideCheck, body, sy)
+
+                hideCheck = GUI:CreateFormCheckbox(body, "Hide Border", "readyCheckHideBorder", general, RefreshColors)
+                sy = P(hideCheck, body, sy)
+
+                classCheck = GUI:CreateFormCheckbox(body, "Use Class Color", "readyCheckBorderUseClassColor", general, function()
+                    UpdateBorderState()
+                    RefreshColors()
+                end)
+                sy = P(classCheck, body, sy)
+
+                colorPicker = GUI:CreateFormColorPicker(body, "Border Color", "readyCheckBorderColor", general, RefreshColors, { noAlpha = true })
+                P(colorPicker, body, sy)
+
+                UpdateBorderState()
+            end, sections, relayout)
+
+            -- Position
+            U.BuildPositionCollapsible(content, "readyCheck", nil, sections, relayout)
+
+            relayout()
+            return content:GetHeight()
+        end
+
+        settingsPanel:RegisterProvider("readyCheck", {
+            build = BuildReadyCheckSettings,
+        })
+    end
+
+    C_Timer.After(3, RegisterReadyCheckProvider)
+end
+
+---------------------------------------------------------------------------
+-- M+ TIMER SETTINGS PROVIDER
+---------------------------------------------------------------------------
+do
+    local function RegisterMPlusTimerProvider()
+        local settingsPanel = ns.QUI_LayoutMode_Settings
+        if not settingsPanel then return end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return end
+
+        local Helpers = ns.Helpers
+        local LSM = ns.LSM
+        local U = ns.QUI_LayoutMode_Utils
+        local P = U.PlaceRow
+        local FORM_ROW = U and U.FORM_ROW or 32
+
+        local function GetMPlusDB()
+            local core = Helpers.GetCore()
+            local db = core and core.db and core.db.profile
+            return db and db.mplusTimer
+        end
+
+        local function GetGeneralDB()
+            local core = Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.general
+        end
+
+        local function RefreshLayout()
+            local MPlusTimer = _G.QUI_MPlusTimer
+            if MPlusTimer and MPlusTimer.UpdateLayout then MPlusTimer:UpdateLayout() end
+        end
+
+        local function RefreshSkin()
+            if _G.QUI_ApplyMPlusTimerSkin then _G.QUI_ApplyMPlusTimerSkin() end
+        end
+
+        local function RefreshAll()
+            RefreshLayout()
+            RefreshSkin()
+        end
+
+        local function RefreshColors()
+            if _G.QUI_RefreshMPlusTimerColors then _G.QUI_RefreshMPlusTimerColors() end
+        end
+
+        local function BuildMPlusTimerSettings(content, key, width)
+            local mpDB = GetMPlusDB()
+            if not mpDB then return 80 end
+
+            local general = GetGeneralDB()
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            -- Ensure defaults
+            Helpers.EnsureDefaults(mpDB, {
+                layoutMode = "full",
+                showTimer = true,
+                showBorder = true,
+                scale = 1.0,
+                showDeaths = true,
+                showAffixes = true,
+                showObjectives = true,
+                maxDungeonNameLength = 18,
+            })
+
+            -- General
+            U.CreateCollapsible(content, "General", 8 * FORM_ROW + 8, function(body)
+                local sy = -4
+
+                local layoutOptions = {
+                    { text = "Compact", value = "compact" },
+                    { text = "Full", value = "full" },
+                    { text = "Sleek", value = "sleek" },
+                }
+                sy = P(GUI:CreateFormDropdown(body, "Layout Mode", layoutOptions, "layoutMode", mpDB, RefreshAll), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Timer Scale", 0.5, 2.0, 0.05, "scale", mpDB, function()
+                    local MPlusTimer = _G.QUI_MPlusTimer
+                    if MPlusTimer and MPlusTimer.ApplyScale then MPlusTimer:ApplyScale() end
+                end, { deferOnDrag = true }), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Max Dungeon Name Length", 0, 40, 1, "maxDungeonNameLength", mpDB, function()
+                    local MPlusTimer = _G.QUI_MPlusTimer
+                    if MPlusTimer and MPlusTimer.RenderKeyDetails then MPlusTimer:RenderKeyDetails() end
+                end), body, sy)
+
+                sy = P(GUI:CreateFormCheckbox(body, "Show Timer Text (Full mode)", "showTimer", mpDB, RefreshLayout), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Show Deaths", "showDeaths", mpDB, RefreshLayout), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Show Affixes", "showAffixes", mpDB, RefreshLayout), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Show Objectives", "showObjectives", mpDB, RefreshLayout), body, sy)
+                P(GUI:CreateFormCheckbox(body, "Show Border", "showBorder", mpDB, RefreshSkin), body, sy)
+            end, sections, relayout)
+
+            -- Border Override
+            Helpers.EnsureDefaults(mpDB, {
+                borderOverride = false,
+                hideBorder = false,
+                borderUseClassColor = false,
+            })
+            if mpDB.borderColor == nil then
+                local fb = general and (general.skinBorderColor or general.addonAccentColor) or { 0.376, 0.647, 0.980, 1 }
+                mpDB.borderColor = { fb[1], fb[2], fb[3], fb[4] or 1 }
+            end
+
+            U.CreateCollapsible(content, "Border", 4 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local colorPicker, hideCheck, classCheck
+
+                local function UpdateState()
+                    local enabled = mpDB.borderOverride
+                    if hideCheck then hideCheck:SetEnabled(enabled) end
+                    if classCheck then classCheck:SetEnabled(enabled) end
+                    if colorPicker then colorPicker:SetEnabled(enabled and not mpDB.borderUseClassColor) end
+                end
+
+                local overrideCheck = GUI:CreateFormCheckbox(body, "Override Global Border", "borderOverride", mpDB, function()
+                    UpdateState()
+                    RefreshColors()
+                end)
+                sy = P(overrideCheck, body, sy)
+
+                hideCheck = GUI:CreateFormCheckbox(body, "Hide Border", "hideBorder", mpDB, RefreshColors)
+                sy = P(hideCheck, body, sy)
+
+                classCheck = GUI:CreateFormCheckbox(body, "Use Class Color", "borderUseClassColor", mpDB, function()
+                    UpdateState()
+                    RefreshColors()
+                end)
+                sy = P(classCheck, body, sy)
+
+                colorPicker = GUI:CreateFormColorPicker(body, "Border Color", "borderColor", mpDB, RefreshColors, { noAlpha = true })
+                P(colorPicker, body, sy)
+
+                UpdateState()
+            end, sections, relayout)
+
+            -- Background Override
+            Helpers.EnsureDefaults(mpDB, {
+                bgOverride = false,
+                hideBackground = false,
+            })
+            if mpDB.backgroundColor == nil then
+                local fb = general and general.skinBgColor or { 0.05, 0.05, 0.05, 0.95 }
+                mpDB.backgroundColor = { fb[1], fb[2], fb[3], fb[4] or 0.95 }
+            end
+
+            U.CreateCollapsible(content, "Background", 3 * FORM_ROW + 8, function(body)
+                local sy = -4
+                local colorPicker, hideCheck
+
+                local function UpdateState()
+                    local enabled = mpDB.bgOverride
+                    if hideCheck then hideCheck:SetEnabled(enabled) end
+                    if colorPicker then colorPicker:SetEnabled(enabled and not mpDB.hideBackground) end
+                end
+
+                local overrideCheck = GUI:CreateFormCheckbox(body, "Override Global Background", "bgOverride", mpDB, function()
+                    UpdateState()
+                    RefreshColors()
+                end)
+                sy = P(overrideCheck, body, sy)
+
+                hideCheck = GUI:CreateFormCheckbox(body, "Hide Background", "hideBackground", mpDB, function()
+                    UpdateState()
+                    RefreshColors()
+                end)
+                sy = P(hideCheck, body, sy)
+
+                colorPicker = GUI:CreateFormColorPicker(body, "Background Color", "backgroundColor", mpDB, RefreshColors)
+                P(colorPicker, body, sy)
+
+                UpdateState()
+            end, sections, relayout)
+
+            -- Forces Bar
+            Helpers.EnsureDefaults(mpDB, {
+                forcesBarEnabled = true,
+                forcesDisplayMode = "bar",
+                forcesPosition = "after_timer",
+                forcesTextFormat = "both",
+                forcesFont = "Poppins",
+                forcesFontSize = 11,
+                barUseClassColor = false,
+            })
+            if mpDB.barColor == nil then
+                local fb = general and (general.skinBorderColor or general.addonAccentColor) or { 0.376, 0.647, 0.980, 1 }
+                mpDB.barColor = { fb[1], fb[2], fb[3], fb[4] or 1 }
+            end
+
+            U.CreateCollapsible(content, "Forces Bar", 9 * FORM_ROW + 8, function(body)
+                local sy = -4
+
+                sy = P(GUI:CreateFormCheckbox(body, "Show Forces Bar", "forcesBarEnabled", mpDB, RefreshLayout), body, sy)
+
+                local displayModeOpts = {
+                    { text = "Progress Bar", value = "bar" },
+                    { text = "Text Only", value = "text" },
+                }
+                sy = P(GUI:CreateFormDropdown(body, "Display Mode", displayModeOpts, "forcesDisplayMode", mpDB, RefreshLayout), body, sy)
+
+                local posOpts = {
+                    { text = "After Timer Bars", value = "after_timer" },
+                    { text = "Before Timer Bars", value = "before_timer" },
+                    { text = "Before Objectives", value = "before_objectives" },
+                    { text = "After Objectives", value = "after_objectives" },
+                }
+                sy = P(GUI:CreateFormDropdown(body, "Position", posOpts, "forcesPosition", mpDB, RefreshLayout), body, sy)
+
+                local formatOpts = {
+                    { text = "Count (123/273)", value = "count" },
+                    { text = "Percentage (45.32%)", value = "percentage" },
+                    { text = "Both", value = "both" },
+                }
+                sy = P(GUI:CreateFormDropdown(body, "Text Format", formatOpts, "forcesTextFormat", mpDB, function()
+                    local MPlusTimer = _G.QUI_MPlusTimer
+                    if MPlusTimer and MPlusTimer.RenderForces then MPlusTimer:RenderForces() end
+                end), body, sy)
+
+                -- Font dropdown
+                local fontList = {}
+                if LSM then
+                    for name in pairs(LSM:HashTable("font")) do
+                        fontList[#fontList + 1] = {value = name, text = name}
+                    end
+                    table.sort(fontList, function(a, b) return a.text < b.text end)
+                end
+                if #fontList > 0 then
+                    sy = P(GUI:CreateFormDropdown(body, "Font", fontList, "forcesFont", mpDB, RefreshLayout), body, sy)
+                end
+
+                sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 18, 1, "forcesFontSize", mpDB, RefreshLayout), body, sy)
+
+                sy = P(GUI:CreateFormColorPicker(body, "Text Color", "forcesTextColor", mpDB, function()
+                    local MPlusTimer = _G.QUI_MPlusTimer
+                    if MPlusTimer and MPlusTimer.RenderForces then MPlusTimer:RenderForces() end
+                    RefreshSkin()
+                end), body, sy)
+
+                local barColorPicker
+                local barClassCheck = GUI:CreateFormCheckbox(body, "Use Class Color for Bar", "barUseClassColor", mpDB, function()
+                    if barColorPicker then barColorPicker:SetEnabled(not mpDB.barUseClassColor) end
+                    RefreshSkin()
+                end)
+                sy = P(barClassCheck, body, sy)
+
+                barColorPicker = GUI:CreateFormColorPicker(body, "Bar Fill Color", "barColor", mpDB, RefreshSkin, { noAlpha = true })
+                P(barColorPicker, body, sy)
+                barColorPicker:SetEnabled(not mpDB.barUseClassColor)
+            end, sections, relayout)
+
+            -- Position
+            U.BuildPositionCollapsible(content, "mplusTimer", nil, sections, relayout)
+
+            relayout()
+            return content:GetHeight()
+        end
+
+        settingsPanel:RegisterProvider("mplusTimer", {
+            build = BuildMPlusTimerSettings,
+        })
+    end
+
+    C_Timer.After(3, RegisterMPlusTimerProvider)
+end
+
+---------------------------------------------------------------------------
+-- OBJECTIVE TRACKER SETTINGS PROVIDER
+---------------------------------------------------------------------------
+do
+    local function RegisterObjectiveTrackerProvider()
+        local settingsPanel = ns.QUI_LayoutMode_Settings
+        if not settingsPanel then return end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return end
+
+        local Helpers = ns.Helpers
+        local U = ns.QUI_LayoutMode_Utils
+        local P = U.PlaceRow
+        local FORM_ROW = U and U.FORM_ROW or 32
+
+        local function GetGeneralDB()
+            local core = Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.general
+        end
+
+        local function RefreshOT()
+            if _G.QUI_RefreshObjectiveTracker then _G.QUI_RefreshObjectiveTracker() end
+        end
+
+        local function BuildObjectiveTrackerSettings(content, key, width)
+            local general = GetGeneralDB()
+            if not general then return 80 end
+
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            -- Ensure defaults
+            Helpers.EnsureDefaults(general, {
+                skinObjectiveTracker = false,
+                objectiveTrackerClickThrough = false,
+                objectiveTrackerHeight = 600,
+                objectiveTrackerWidth = 260,
+                objectiveTrackerModuleFontSize = 12,
+                objectiveTrackerTitleFontSize = 10,
+                objectiveTrackerTextFontSize = 10,
+                hideObjectiveTrackerBorder = false,
+                objectiveTrackerModuleColor = { 1.0, 0.82, 0.0, 1.0 },
+                objectiveTrackerTitleColor = { 1.0, 1.0, 1.0, 1.0 },
+                objectiveTrackerTextColor = { 0.8, 0.8, 0.8, 1.0 },
+            })
+
+            -- Skinning
+            U.CreateCollapsible(content, "Skinning", 2 * FORM_ROW + 8, function(body)
+                local sy = -4
+
+                sy = P(GUI:CreateFormCheckbox(body, "Skin Objective Tracker", "skinObjectiveTracker", general, function()
+                    GUI:ShowConfirmation({
+                        title = "Reload UI?",
+                        message = "Skinning changes require a reload to take effect.",
+                        acceptText = "Reload",
+                        cancelText = "Later",
+                        onAccept = function() QUI:SafeReload() end,
+                    })
+                end), body, sy)
+                P(GUI:CreateFormCheckbox(body, "Click Through", "objectiveTrackerClickThrough", general, RefreshOT), body, sy)
+            end, sections, relayout)
+
+            -- Dimensions
+            U.CreateCollapsible(content, "Dimensions", 2 * FORM_ROW + 8, function(body)
+                local sy = -4
+
+                sy = P(GUI:CreateFormSlider(body, "Max Height", 200, 1000, 10, "objectiveTrackerHeight", general, RefreshOT), body, sy)
+                P(GUI:CreateFormSlider(body, "Max Width", 150, 400, 10, "objectiveTrackerWidth", general, RefreshOT), body, sy)
+            end, sections, relayout)
+
+            -- Fonts
+            U.CreateCollapsible(content, "Fonts", 3 * FORM_ROW + 8, function(body)
+                local sy = -4
+
+                sy = P(GUI:CreateFormSlider(body, "Module Header Font", 6, 18, 1, "objectiveTrackerModuleFontSize", general, RefreshOT), body, sy)
+                sy = P(GUI:CreateFormSlider(body, "Quest Title Font", 6, 18, 1, "objectiveTrackerTitleFontSize", general, RefreshOT), body, sy)
+                P(GUI:CreateFormSlider(body, "Objective Text Font", 6, 18, 1, "objectiveTrackerTextFontSize", general, RefreshOT), body, sy)
+            end, sections, relayout)
+
+            -- Colors
+            U.CreateCollapsible(content, "Colors", 4 * FORM_ROW + 8, function(body)
+                local sy = -4
+
+                sy = P(GUI:CreateFormCheckbox(body, "Hide Border", "hideObjectiveTrackerBorder", general, RefreshOT), body, sy)
+                sy = P(GUI:CreateFormColorPicker(body, "Module Header Color", "objectiveTrackerModuleColor", general, RefreshOT), body, sy)
+                sy = P(GUI:CreateFormColorPicker(body, "Quest Title Color", "objectiveTrackerTitleColor", general, RefreshOT), body, sy)
+                P(GUI:CreateFormColorPicker(body, "Objective Text Color", "objectiveTrackerTextColor", general, RefreshOT), body, sy)
+            end, sections, relayout)
+
+            -- Position
+            U.BuildPositionCollapsible(content, "objectiveTracker", nil, sections, relayout)
+
+            relayout()
+            return content:GetHeight()
+        end
+
+        settingsPanel:RegisterProvider("objectiveTracker", {
+            build = BuildObjectiveTrackerSettings,
+        })
+    end
+
+    C_Timer.After(3, RegisterObjectiveTrackerProvider)
+end
+
+---------------------------------------------------------------------------
+-- HANDLE VISIBILITY & RESET (used by drawer UI)
+---------------------------------------------------------------------------
+
+--- Toggle mover handle visibility for preview (show handles for off-screen
+--- or disabled frames so users can see and reposition them).
+function QUI_LayoutMode:ToggleHandlePreview(key)
+    if not self.isActive then return false end
+    local def = self._elements[key]
+    if not def then return false end
+
+    local hidden = GetHiddenHandlesDB()
+    local handle = self._handles[key]
+
+    if handle and handle:IsShown() then
+        -- Restore preview frame parent before hiding
+        if handle._savedTargetParent then
+            local targetFrame = def.getFrame and def.getFrame()
+            if targetFrame then
+                pcall(targetFrame.SetParent, targetFrame, handle._savedTargetParent)
+            end
+            handle._savedTargetParent = nil
+        end
+        -- Hide it
+        handle:Hide()
+        if hidden then hidden[key] = true end
+        if def.onClose then pcall(def.onClose) end
+        return false
+    else
+        -- Activate preview FIRST so the frame exists before CreateHandle
+        if hidden then hidden[key] = nil end
+        if def.onOpen then pcall(def.onOpen) end
+        -- Create handle if needed (after onOpen so getFrame returns the correct frame)
+        if not handle then
+            handle = CreateHandle(def)
+            self._handles[key] = handle
+        end
+        SyncHandle(key)
+        handle:Show()
+
+        -- If child overlay isn't visible (parent hidden), replace with proxy mover
+        if handle._isChildOverlay and not handle:IsVisible() then
+            handle:Hide()
+            handle:SetParent(nil)
+            handle = CreateProxyMover(def)
+            self._handles[key] = handle
+            SyncHandle(key)
+            handle:Show()
+        end
+
+        -- Deferred: attach preview frame to proxy mover so they stay together
+        -- and the mover renders on top
+        C_Timer.After(0, function()
+            if not handle:IsShown() then return end
+            if handle._isChildOverlay then return end
+            local targetFrame = def.getFrame and def.getFrame()
+            if targetFrame and targetFrame:IsShown() then
+                -- Save original parent/strata for restore
+                if not handle._savedTargetParent then
+                    handle._savedTargetParent = targetFrame:GetParent()
+                end
+                if not handle._savedTargetStrata then
+                    handle._savedTargetStrata = targetFrame:GetFrameStrata()
+                end
+                -- Re-parent preview under the mover, behind it.
+                -- DIALOG strata keeps preview below the FULLSCREEN_DIALOG handle.
+                targetFrame:SetParent(handle)
+                targetFrame:SetFrameStrata("DIALOG")
+                targetFrame:SetFrameLevel(1)
+                targetFrame:ClearAllPoints()
+                if def.getCenterOffset then
+                    local cdx, cdy = def.getCenterOffset(handle:GetSize())
+                    targetFrame:SetPoint("CENTER", handle, "CENTER", -cdx, -cdy)
+                else
+                    targetFrame:SetAllPoints(handle)
+                end
+            end
+        end)
+        return true
+    end
+end
+
+--- Clear the hidden state for a key (used when enabling an element).
+function QUI_LayoutMode:ClearHiddenState(key)
+    local hidden = GetHiddenHandlesDB()
+    if hidden then hidden[key] = nil end
+end
+
+--- Returns whether a handle is currently shown (or would be shown based on persisted state).
+function QUI_LayoutMode:IsHandleShown(key)
+    if self.isActive then
+        local handle = self._handles[key]
+        return handle ~= nil and handle:IsShown()
+    end
+    -- When closed, check persisted state
+    local hidden = GetHiddenHandlesDB()
+    return not (hidden and hidden[key])
+end
+
+--- Reset a mover/frame to screen center (0, 0 offsets).
+function QUI_LayoutMode:ResetToCenter(key)
+    if not self.isActive then return end
+    local def = self._elements[key]
+    if not def then return end
+
+    -- Create handle if it doesn't exist
+    local handle = self._handles[key]
+    if not handle then
+        handle = CreateHandle(def)
+        self._handles[key] = handle
+    end
+
+    -- Save center position as pending
+    SavePendingPosition(key, "CENTER", "CENTER", 0, 0)
+
+    -- Reposition handle and actual frame to center
+    SetHandleFromOffsets(handle, 0, 0)
+    if not handle._isChildOverlay then
+        local frame = def.getFrame and def.getFrame()
+        if frame then
+            pcall(frame.ClearAllPoints, frame)
+            pcall(frame.SetPoint, frame, "CENTER", UIParent, "CENTER", 0, 0)
+        end
+    end
+
+    -- Update coords display
+    if handle._coords then
+        handle._coords:SetText("X: 0  Y: 0")
+    end
+    -- Show handle if hidden
+    if not handle:IsShown() then
+        handle:Show()
+    end
+
+    SyncHandle(key)
+end
+
+---------------------------------------------------------------------------
+-- GLOBAL API
+---------------------------------------------------------------------------
+_G.QUI_ToggleLayoutMode = function()
+    QUI_LayoutMode:Toggle()
+end
+
+_G.QUI_IsLayoutModeActive = function()
+    return QUI_LayoutMode.isActive
+end
+
+-- Sync a mover handle to match current DB position (called from options panel)
+_G.QUI_LayoutModeSyncHandle = function(key)
+    if QUI_LayoutMode.isActive and SyncHandle then
+        SyncHandle(key)
+    end
+end
+
+-- Re-sync all visible handles (called after frame refreshes to fix z-order).
+-- Two-pass: first sync all (recreates stale parents), then re-sync anchored
+-- children so they read updated parent handle bounds.
+_G.QUI_LayoutModeSyncAllHandles = function()
+    if not QUI_LayoutMode.isActive or not SyncHandle then return end
+    for hKey in pairs(QUI_LayoutMode._handles) do
+        SyncHandle(hKey)
+    end
+    local fa = GetFrameAnchoring()
+    if fa then
+        for childKey in pairs(QUI_LayoutMode._handles) do
+            local entry = fa[childKey]
+            if entry and type(entry) == "table" and entry.parent
+                and entry.parent ~= "screen" and entry.parent ~= "disabled" then
+                SyncHandle(childKey)
+            end
+        end
+    end
+end
+
+-- Mark layout mode as having unsaved changes
+_G.QUI_LayoutModeMarkChanged = function()
+    if QUI_LayoutMode.isActive then
+        QUI_LayoutMode._hasChanges = true
+    end
+end
+
+-- Clear a pending position so SyncHandle reads from the actual frame
+_G.QUI_LayoutModeClearPending = function(key)
+    if QUI_LayoutMode.isActive and key then
+        QUI_LayoutMode._pendingPositions[key] = nil
+    end
+end
+
+
+---------------------------------------------------------------------------
+-- REFRESH HOOKS: re-sync handles after module refreshes so child overlays
+-- maintain correct z-order (strata/level) and detect stale parent frames.
+---------------------------------------------------------------------------
+local _layoutSyncPending = false
+local function DebouncedLayoutSync()
+    if _layoutSyncPending then return end
+    _layoutSyncPending = true
+    C_Timer.After(0.05, function()
+        _layoutSyncPending = false
+        if _G.QUI_LayoutModeSyncAllHandles then
+            _G.QUI_LayoutModeSyncAllHandles()
+        end
+    end)
+end
+
+local function HookRefreshForLayoutSync(name)
+    local original = _G[name]
+    if not original then return end
+    _G[name] = function(...)
+        original(...)
+        if QUI_LayoutMode.isActive then
+            DebouncedLayoutSync()
+        end
+    end
+end
+
+-- Hook globals that exist at file-load time
+HookRefreshForLayoutSync("QUI_RefreshUnitFrames")
+HookRefreshForLayoutSync("QUI_RefreshCastbars")
+
+-- Hook globals that are defined by later-loading modules
+C_Timer.After(1, function()
+    HookRefreshForLayoutSync("QUI_RefreshNCDM")
+    HookRefreshForLayoutSync("QUI_RefreshBuffBar")
+    HookRefreshForLayoutSync("QUI_RefreshCustomTrackers")
+    HookRefreshForLayoutSync("QUI_RefreshBrezCounter")
+    HookRefreshForLayoutSync("QUI_RefreshCombatTimer")
+    HookRefreshForLayoutSync("QUI_RefreshXPTracker")
+end)

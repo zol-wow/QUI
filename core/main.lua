@@ -12,16 +12,7 @@ QUI.QUICore = QUICore
 -- Expose QUICore to namespace for other files
 ns.Addon = QUICore
 
--- Shared utility functions (ns.Utils created by utils.lua, extend here)
-ns.Utils = ns.Utils or {}
--- Note: IsSecretValue and other secret value utilities are in utils.lua
--- They're available via ns.Helpers.IsSecretValue and ns.Utils.IsSecretValue (alias)
-
--- Check if player is in instanced content (dungeon or raid)
-function ns.Utils.IsInInstancedContent()
-    local inInstance, instanceType = IsInInstance()
-    return inInstance and (instanceType == "party" or instanceType == "raid")
-end
+-- Shared utility functions and secrets are in utils.lua (ns.Helpers, ns.Utils)
 
 -- Global pending reload system
 QUICore.__pendingReload = false
@@ -83,7 +74,7 @@ function QUI:SafeReload()
     end
 end
 
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local LCG = LibStub("LibCustomGlow-1.0", true)
 
 local LibDualSpec   = LibStub("LibDualSpec-1.0", true)
@@ -103,3702 +94,14 @@ function QUICore:GetHUDFrameLevel(priority)
 end
 
 ---=================================================================================
---- SAFE BACKDROP UTILITY (Combat/Secret Value Protection)
----=================================================================================
-
--- Weak-keyed table to store pending backdrop data per frame (avoids writing properties
--- directly onto Blizzard secure frames, which can cause taint).
-local _pendingBackdropData = ns.Helpers.CreateStateTable()
-
--- Reusable named function: check if a frame has valid (non-secret) dimensions.
--- Avoids creating a throwaway closure on every pcall.
-local function _CheckFrameHasValidSize(frame)
-    local w = frame:GetWidth()
-    local h = frame:GetHeight()
-    if w and h then
-        local test = w + h  -- Will error if secret
-        return test > 0
-    end
-    return false
-end
-
--- Max retries for deferred backdrop processing before giving up (50 * 0.1s = 5 seconds)
-local BACKDROP_MAX_RETRIES = 50
-local _backdropRetryCount = 0
-
--- ForceReskinAllViewers coalescing: prevent duplicate timers from scheduling redundant reskins.
--- When multiple C_Timer.After calls would invoke ForceReskinAllViewers, only the first
--- schedules the work; subsequent calls within the coalescing window are skipped.
-local _reskinPending = false
-
-local function _ScheduleReskin(selfRef, delay)
-    if _reskinPending then return end
-    _reskinPending = true
-    C_Timer.After(delay, function()
-        _reskinPending = false
-        if not InCombatLockdown() then
-            selfRef:ForceReskinAllViewers()
-        end
-    end)
-end
-
--- Reusable scratch table for GetChildren() results to avoid per-call allocation.
--- _PackChildrenIntoScratch captures varargs from a single GetChildren() call.
-local _childrenScratch = {}
-local function _PackChildrenIntoScratch(...)
-    local n = select("#", ...)
-    for i = 1, n do
-        _childrenScratch[i] = select(i, ...)
-    end
-    return n
-end
-
--- Global SafeSetBackdrop function that defers SetBackdrop calls when frame dimensions
--- are secret values (Midnight 12.0 protection) or when in combat lockdown.
--- This prevents the "attempt to perform arithmetic on a secret value" error that occurs
--- when Blizzard's Backdrop.lua tries to use GetWidth()/GetHeight() during protected contexts.
---
--- @param frame The frame to set backdrop on (must have BackdropTemplate mixed in)
--- @param backdropInfo The backdrop info table, or nil to remove backdrop
--- @param borderColor Optional {r,g,b,a} table for border color after backdrop is set
--- @return boolean True if backdrop was set immediately, false if deferred
-function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor)
-    if not frame or not frame.SetBackdrop then return false end
-
-    -- Check if frame has valid (non-secret) dimensions
-    -- SetBackdrop internally calls GetWidth/GetHeight which can error on secret values
-    local hasValidSize = false
-    local ok, result = pcall(_CheckFrameHasValidSize, frame)
-    if ok and result then
-        hasValidSize = true
-    end
-
-    -- If dimensions are secret/invalid, defer the backdrop setup
-    if not hasValidSize then
-        _pendingBackdropData[frame] = { info = backdropInfo, borderColor = borderColor }
-        QUICore.__pendingBackdrops = QUICore.__pendingBackdrops or {}
-        QUICore.__pendingBackdrops[frame] = true
-
-        -- Set up deferred processing via OnUpdate (for when dimensions become valid)
-        if not QUICore.__backdropUpdateFrame then
-            local updateFrame = CreateFrame("Frame")
-            local elapsed = 0
-            updateFrame:SetScript("OnUpdate", function(self, delta)
-                elapsed = elapsed + delta
-                if elapsed < 0.1 then return end  -- Check every 0.1s
-                elapsed = 0
-
-                -- Max-retry: give up after ~5 seconds to prevent infinite polling
-                _backdropRetryCount = _backdropRetryCount + 1
-                if _backdropRetryCount > BACKDROP_MAX_RETRIES then
-                    -- Abandon remaining pending frames to stop the poller
-                    if QUICore.__pendingBackdrops then
-                        for pf in pairs(QUICore.__pendingBackdrops) do
-                            _pendingBackdropData[pf] = nil
-                        end
-                        wipe(QUICore.__pendingBackdrops)
-                    end
-                    self:SetScript("OnUpdate", nil)
-                    self:Hide()
-                    return
-                end
-
-                -- Performance: reuse module-level scratch table instead of allocating per tick.
-                -- Track total vs processed count to avoid a second pairs() scan to check emptiness.
-                local processed = QUICore.__backdropProcessed
-                if not processed then
-                    processed = {}
-                    QUICore.__backdropProcessed = processed
-                end
-                wipe(processed)
-                local totalCount = 0
-                for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
-                    totalCount = totalCount + 1
-                    local pendingData = _pendingBackdropData[pendingFrame]
-                    if pendingFrame and pendingData then
-                        -- Re-check if dimensions are now valid (reuse named function)
-                        local checkOk, checkResult = pcall(_CheckFrameHasValidSize, pendingFrame)
-
-                        if checkOk and checkResult and not InCombatLockdown() then
-                            local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
-                            if setOk then
-                                if pendingData.info and pendingData.borderColor then
-                                    local c = pendingData.borderColor
-                                    pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
-                                end
-                                _pendingBackdropData[pendingFrame] = nil
-                                processed[#processed + 1] = pendingFrame
-                            end
-                        end
-                    else
-                        processed[#processed + 1] = pendingFrame
-                    end
-                end
-
-                for _, pf in ipairs(processed) do
-                    QUICore.__pendingBackdrops[pf] = nil
-                end
-
-                -- Stop OnUpdate if no more pending (SetScript nil to avoid per-frame CPU cost)
-                if #processed >= totalCount then
-                    _backdropRetryCount = 0
-                    self:SetScript("OnUpdate", nil)
-                    self:Hide()
-                end
-            end)
-            QUICore.__backdropUpdateHandler = updateFrame:GetScript("OnUpdate")
-            QUICore.__backdropUpdateFrame = updateFrame
-        end
-        _backdropRetryCount = 0  -- reset retry count for new batch
-        if QUICore.__backdropUpdateHandler then
-            QUICore.__backdropUpdateFrame:SetScript("OnUpdate", QUICore.__backdropUpdateHandler)
-        end
-        QUICore.__backdropUpdateFrame:Show()
-        return false
-    end
-
-    -- If in combat, defer backdrop setup to avoid secret value errors
-    if InCombatLockdown() then
-        local alreadyPending = QUICore.__pendingBackdrops and QUICore.__pendingBackdrops[frame]
-        if not alreadyPending then
-            _pendingBackdropData[frame] = { info = backdropInfo, borderColor = borderColor }
-
-            if not QUICore.__backdropEventFrame then
-                local eventFrame = CreateFrame("Frame")
-                eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-                eventFrame:SetScript("OnEvent", function(self)
-                    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                    QUICore.__backdropEventListening = false
-                    local stillPending = false
-                    for pendingFrame in pairs(QUICore.__pendingBackdrops or {}) do
-                        local pendingData = _pendingBackdropData[pendingFrame]
-                        if pendingFrame and pendingData then
-                            if not InCombatLockdown() then
-                                local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
-                                if setOk then
-                                    if pendingData.info and pendingData.borderColor then
-                                        local c = pendingData.borderColor
-                                        pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
-                                    end
-                                    _pendingBackdropData[pendingFrame] = nil
-                                    QUICore.__pendingBackdrops[pendingFrame] = nil
-                                else
-                                    stillPending = true
-                                end
-                            else
-                                stillPending = true
-                            end
-                        else
-                            _pendingBackdropData[pendingFrame] = nil
-                            QUICore.__pendingBackdrops[pendingFrame] = nil
-                        end
-                    end
-                    if stillPending then
-                        -- Re-register so we retry on next combat exit
-                        self:RegisterEvent("PLAYER_REGEN_ENABLED")
-                    else
-                        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                        QUICore.__pendingBackdrops = {}
-                    end
-                end)
-                QUICore.__backdropEventFrame = eventFrame
-            end
-
-            QUICore.__pendingBackdrops = QUICore.__pendingBackdrops or {}
-            QUICore.__pendingBackdrops[frame] = true
-            -- Guard: only register if not already listening (avoids redundant event handler fires)
-            if not QUICore.__backdropEventListening then
-                QUICore.__backdropEventListening = true
-                QUICore.__backdropEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-            end
-        end
-        return false
-    end
-
-    -- Safe to set backdrop now
-    local setOk = pcall(frame.SetBackdrop, frame, backdropInfo)
-    if setOk and backdropInfo and borderColor then
-        frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
-    end
-    return setOk
-end
-
----=================================================================================
 --- VIEWER LIST
 ---=================================================================================
 
--- NOTE: All cooldown viewers are now handled by dedicated modules:
--- EssentialCooldownViewer/UtilityCooldownViewer → qui_ncdm.lua
--- BuffIconCooldownViewer/BuffBarCooldownViewer → qui_buffbar.lua
--- Viewer keys use the CDM resolver (_G.QUI_GetCDMViewerFrame) instead of raw _G lookups.
-QUICore.viewers = {
-    -- "essential",  -- Handled by NCDM
-    -- "utility",    -- Handled by NCDM
-    -- "buffIcon",   -- Handled by qui_buffbar.lua
-}
-
--- Reverse mapping: Blizzard frame name → resolver key (for edit-mode / nudge callers
--- that still pass the old frame name as an element key).
-local CDM_NAME_TO_RESOLVER_KEY = {
-    EssentialCooldownViewer = "essential",
-    UtilityCooldownViewer   = "utility",
-    BuffIconCooldownViewer  = "buffIcon",
-    BuffBarCooldownViewer   = "buffBar",
-}
-
--- Resolve a CDM viewer frame by Blizzard name or resolver key.
-local function ResolveCDMViewerByName(name)
-    local GetFrame = _G.QUI_GetCDMViewerFrame
-    if not GetFrame then return nil end
-    local key = CDM_NAME_TO_RESOLVER_KEY[name] or name
-    return GetFrame(key)
-end
-
-local defaults = {
-    profile = {
-        -- Nudge amount for moving frames
-        nudgeAmount = 1,
-
-        -- General Settings
-        general = {
-            uiScale = 0.64,  -- Default UI scale for 1440p+ monitors
-            font = "Quazii",  -- Default font face
-            fontOutline = "OUTLINE",  -- Default font outline: "", "OUTLINE", "THICKOUTLINE"
-            texture = "Quazii v5",  -- Default bar texture
-            darkMode = false,
-            darkModeHealthColor = { 0, 0, 0, 1 },
-            darkModeBgColor = { 0.592, 0.592, 0.592, 1 },
-            darkModeOpacity = 0.7,
-            darkModeHealthOpacity = 0.7,
-            darkModeBgOpacity = 0.7,
-            masterColorNameText = false,
-            masterColorToTText = false,
-            masterColorPowerText = false,
-            masterColorHealthText = false,
-            masterColorCastbarText = false,
-            defaultUseClassColor = true,
-            defaultHealthColor = { 0.2, 0.2, 0.2, 1 },
-            hostilityColorHostile = { 0.8, 0.2, 0.2, 1 },
-            hostilityColorNeutral = { 1, 1, 0.2, 1 },
-            hostilityColorFriendly = { 0.2, 0.8, 0.2, 1 },
-            defaultBgColor = { 0, 0, 0, 1 },
-            defaultOpacity = 1.0,
-            defaultHealthOpacity = 1.0,
-            defaultBgOpacity = 1.0,
-            applyGlobalFontToBlizzard = true,  -- Apply font to Blizzard UI elements
-            autoInsertKey = true,  -- Auto-insert keystone in M+ UI
-            skinKeystoneFrame = true,  -- Skin keystone insertion window
-            skinGameMenu = false,  -- Skin ESC menu (opt-in)
-            allowReloadInCombat = false,  -- Allow /reload during combat (bypass SafeReload)
-            addQUIButton = false,  -- Add QUI button to ESC menu (opt-in)
-            gameMenuFontSize = 12,  -- Game menu button font size
-            gameMenuDim = true,  -- Dim background when game menu is open
-            skinPowerBarAlt = true,  -- Skin encounter/quest power bar (PlayerPowerBarAlt)
-            skinOverrideActionBar = false,  -- Skin override/vehicle action bar (opt-in)
-            skinObjectiveTracker = false,  -- Skin objective tracker (opt-in)
-            objectiveTrackerHeight = 600,  -- Objective tracker max height
-            objectiveTrackerModuleFontSize = 12,  -- Module headers (QUESTS, ACHIEVEMENTS, etc.)
-            objectiveTrackerTitleFontSize = 10,  -- Quest/achievement titles
-            objectiveTrackerTextFontSize = 10,  -- Objective text lines
-            hideObjectiveTrackerBorder = false,  -- Hide the class-colored border
-            objectiveTrackerModuleColor = { 1.0, 0.82, 0.0, 1.0 },  -- Module header color (Blizzard gold)
-            objectiveTrackerTitleColor = { 1.0, 1.0, 1.0, 1.0 },  -- Quest title color (white)
-            objectiveTrackerTextColor = { 0.8, 0.8, 0.8, 1.0 },  -- Objective text color (light gray)
-            skinInstanceFrames = false,  -- Skin PVE/Dungeon/PVP frames (opt-in)
-            skinBgColor = { 0.008, 0.008, 0.008, 1 },  -- Skinning background color (with alpha)
-            skinAlerts = true,  -- Skin alert/toast frames
-            skinCharacterFrame = true,  -- Skin Character Frame (Character, Reputation, Currency tabs)
-            skinInspectFrame = true,  -- Skin Inspect Frame to match Character Frame
-            skinLootWindow = true,  -- Skin custom loot window
-            skinLootUnderMouse = true,  -- Position loot window at cursor
-            skinLootHistory = true,  -- Skin loot history frame
-            skinRollFrames = true,  -- Skin loot roll frames
-            skinRollSpacing = 6,  -- Spacing between roll frames
-            skinUseClassColor = true,  -- Use class color for skin accents
-            -- QoL Automation
-            sellJunk = true,
-            autoRepair = "personal",      -- "off", "personal", "guild"
-            autoRoleAccept = true,
-            autoAcceptInvites = "all",    -- "off", "all", "friends", "guild", "both"
-            autoAcceptQuest = false,
-            autoTurnInQuest = false,
-            questHoldShift = true,
-            fastAutoLoot = true,
-            autoSelectGossip = false,  -- Auto-select single gossip options
-            autoCombatLog = false,  -- Auto start/stop combat logging in M+ (opt-in)
-            autoCombatLogRaid = false,  -- Auto start/stop combat logging in raids (opt-in)
-            autoDeleteConfirm = true,  -- Auto-fill DELETE confirmation text
-            auctionHouseExpansionFilter = true,  -- Auto-enable current expansion filter in AH
-            -- Popup & Toast Blocker (granular, all OFF by default)
-            popupBlocker = {
-                enabled = false,
-                blockTalentMicroButtonAlerts = false, -- Unspent talent/spellbook reminder callouts
-                blockEventToasts = false, -- Event toast manager (often campaign/housing news)
-                blockMountAlerts = false, -- New mount toasts
-                blockPetAlerts = false, -- New pet toasts
-                blockToyAlerts = false, -- New toy toasts
-                blockCosmeticAlerts = false, -- New cosmetic toasts
-                blockWarbandSceneAlerts = false, -- Warband scene toasts (can include housing)
-                blockEntitlementAlerts = false, -- Entitlement/RAF delivery toasts
-                blockStaticTalentPopups = false, -- StaticPopup dialogs with talent/trait-related IDs
-                blockStaticHousingPopups = false, -- StaticPopup dialogs with housing-related IDs
-            },
-            -- Pet Warning (pet-spec classes: Hunter, Warlock, DK, Mage)
-            petCombatWarning = true,    -- Show combat warning in instances when pet missing/passive
-            petWarningOffsetX = 0,      -- Warning frame X offset from center
-            petWarningOffsetY = -200,   -- Warning frame Y offset from center
-            -- Focus Cast Alert (warn when hostile focus is casting and interrupt is ready)
-            focusCastAlert = {
-                enabled = false,
-                text = "Focus is casting. Kick!",
-                anchorTo = "screen", -- "screen", "essential", "focus"
-                offsetX = 0,
-                offsetY = -120,
-                font = "", -- empty = global QUI font
-                fontSize = 26,
-                fontOutline = "OUTLINE", -- "", "OUTLINE", "THICKOUTLINE"
-                textColor = {1, 0.2, 0.2, 1},
-                useClassColor = false,
-            },
-            -- Consumable Check (disabled by default)
-            consumableCheckEnabled = false,       -- Master toggle
-            consumableOnReadyCheck = true,        -- Show on ready check
-            consumableOnDungeon = false,          -- Show on dungeon entrance
-            consumableOnRaid = false,             -- Show on raid entrance
-            consumableOnResurrect = false,        -- Show on instanced resurrect
-            consumableFood = true,                -- Track food buff
-            consumableFlask = true,               -- Track flask buff
-            consumableOilMH = true,               -- Track main hand weapon enchant
-            consumableOilOH = true,               -- Track off hand weapon enchant
-            consumableRune = true,                -- Track augment rune
-            consumableHealthstone = true,         -- Track healthstones (warlock in group)
-            consumablePreferredFood = nil,        -- Preferred food item ID
-            consumablePreferredFlask = nil,       -- Preferred flask item ID
-            consumablePreferredRune = nil,        -- Preferred rune item ID
-            consumablePreferredOilMH = nil,       -- Preferred main hand oil item ID
-            consumablePreferredOilOH = nil,       -- Preferred off hand oil item ID
-            consumableExpirationWarning = false,  -- Warn when buffs expiring
-            consumableExpirationThreshold = 300,  -- Seconds before expiration warning
-            consumableAnchorMode = true,          -- Anchor to ready check frame
-            consumableIconOffset = 5,             -- Icon offset from anchor
-            consumableIconSize = 40,              -- Icon size in pixels
-            consumableScale = 1,                  -- Frame scale multiplier
-            -- Quick Salvage settings
-            quickSalvage = {
-                enabled = false,  -- Opt-in, OFF by default
-                modifier = "ALT",  -- "ALT", "ALTCTRL", "ALTSHIFT"
-            },
-            -- M+ Dungeon Teleport
-            mplusTeleportEnabled = true,  -- Click-to-teleport on M+ tab icons
-            keyTrackerEnabled = true,     -- Show party keys on M+ tab
-            keyTrackerFontSize = 9,       -- Font size for key tracker (7-12)
-            keyTrackerFont = nil,         -- Font name from LSM (nil = global QUI font "Quazii")
-            keyTrackerTextColor = {1, 1, 1, 1},  -- RGBA text color for dungeon/player text
-            keyTrackerPoint = "TOPRIGHT",         -- Anchor point on KeyTracker frame
-            keyTrackerRelPoint = "BOTTOMRIGHT",   -- Relative point on PVEFrame
-            keyTrackerOffsetX = 0,                -- X offset from anchor
-            keyTrackerOffsetY = 0,                -- Y offset from anchor
-            keyTrackerWidth = 170,                -- Frame width in pixels
-        },
-
-        -- Alert & Toast Skinning Settings (enabled via general.skinAlerts)
-        alerts = {
-            enabled = true,
-            alertPosition = { point = "TOP", relPoint = "TOP", x = 1.667, y = -293.333 },
-            toastPosition = { point = "CENTER", relPoint = "CENTER", x = -5.833, y = 268.333 },
-            bnetToastPosition = nil, -- nil = default Blizzard positioning
-        },
-
-        -- Missing Raid Buffs Display Settings
-        raidBuffs = {
-            enabled = true,
-            showOnlyInGroup = true,
-            providerMode = false,
-            hideLabelBar = false,  -- Hide the "Missing Buffs" label bar
-            iconSize = 32,
-            iconSpacing = 4,
-            labelFontSize = 12,
-            labelTextColor = nil,  -- nil = white, otherwise {r, g, b, a}
-            position = nil,
-            growDirection = "RIGHT",  -- LEFT, RIGHT, UP, DOWN, CENTER_H, CENTER_V
-            iconBorder = {
-                show = true,
-                width = 1,
-                useClassColor = false,
-                color = { 0.2, 1.0, 0.6, 1 },  -- Default mint accent
-            },
-            buffCount = {
-                show = true,
-                position = "BOTTOM",  -- TOP, BOTTOM, LEFT, RIGHT
-                fontSize = 10,
-                font = "Quazii",  -- Font name from LibSharedMedia
-                color = { 1, 1, 1, 1 },  -- White default
-                offsetX = 0,
-                offsetY = 0,
-            },
-        },
-
-        -- Custom M+ Timer Settings
-        mplusTimer = {
-            enabled = false,
-            layoutMode = "sleek",
-            showTimer = true,
-            showBorder = true,
-            showDeaths = true,
-            showAffixes = true,
-            showObjectives = true,
-            position = { x = -11.667, y = -204.998 },
-            forcesBarEnabled = true,
-            forcesDisplayMode = "bar",
-            forcesPosition = "after_timer",
-            forcesTextFormat = "both",
-            forcesLabel = "Forces",
-            forcesFont = "Poppins",
-            forcesFontSize = 11,
-            maxDungeonNameLength = 18,
-        },
-
-        -- Character Pane Settings
-        character = {
-            enabled = true,
-            showItemName = true,            -- Show equipment name (line 1)
-            showItemLevel = true,           -- Show item level & track (line 2)
-            showEnchants = true,            -- Show enchant status (line 3)
-            showGems = true,                -- Show gem indicators
-            showDurability = false,         -- Show durability bars
-            inspectEnabled = true,
-            showModelBackground = true,     -- Show background behind model
-            -- Inspect-specific overlay settings (separate from character)
-            showInspectItemName = true,
-            showInspectItemLevel = true,
-            showInspectEnchants = true,
-            showInspectGems = true,
-
-            -- In-pane customization
-            panelScale = 1.0,               -- Panel scale (0.75 - 1.5 multiplier, base 1.30)
-            overlayScale = 0.75,            -- Overlay scale for slot info
-            backgroundColor = {0, 0, 0, 0.762},  -- Black with transparency
-            statsTextSize = 13,             -- Stats text size in pixels (6 - 40)
-            statsTextColor = {1, 1, 1, 1},  -- Stats text color (white)
-            ilvlTextSize = 8,               -- Item level text size in pixels (8 - 16)
-            headerTextSize = 16,            -- Header text size in pixels (10 - 18)
-            secondaryStatFormat = "both",   -- Secondary stat format: "percent", "rating", "both"
-            compactStats = true,            -- Compact stats mode (reduced spacing)
-            headerClassColor = true,        -- Use class color for headers (default on)
-            headerColor = {0.204, 0.827, 0.6},  -- Header color (default accent/mint, used when headerClassColor is off)
-            enchantTextSize = 10,           -- Enchant text size in pixels (8 - 14) [DEPRECATED - use slotTextSize]
-            enchantClassColor = true,       -- Use class color for enchants (default on)
-            enchantTextColor = {0.204, 0.827, 0.6},  -- Enchant text color (used when enchantClassColor is off)
-            enchantFont = nil,              -- Enchant font (nil = use global font)
-            noEnchantTextColor = {1, 0.341, 0.314, 1},  -- "No Enchant" text color (red tint)
-            slotTextSize = 12,              -- Unified text size for all 3 slot lines (6 - 40)
-            slotPadding = 0,                -- Padding between slot elements
-            upgradeTrackColor = {1, 0.816, 0.145, 1},  -- Upgrade track text color (gold)
-        },
-
-        -- Loot Window Settings
-        loot = {
-            enabled = true,           -- Enable custom loot window
-            lootUnderMouse = false,   -- Position loot window at cursor
-            lootUnderMouseOffsetX = 0, -- Cursor anchor X offset (pixels)
-            lootUnderMouseOffsetY = 0, -- Cursor anchor Y offset (pixels)
-            showTransmogMarker = true, -- Show marker on uncollected appearances
-            position = { point = "TOP", relPoint = "TOP", x = 289.166, y = -165.667 },
-        },
-
-        -- Loot Roll Frame Settings
-        lootRoll = {
-            enabled = true,           -- Enable custom roll frames
-            growDirection = "DOWN",   -- Roll frame stacking direction (UP/DOWN)
-            spacing = 4,              -- Spacing between roll frames
-            position = { point = "TOP", relPoint = "TOP", x = -11.667, y = -166 },
-        },
-
-        -- Loot History (Results) Settings
-        lootResults = {
-            enabled = true,           -- Skin GroupLootHistoryFrame
-        },
-
-        -- Keybind Overrides (stored per character/spec in db.char.keybindOverrides[specID])
-        keybindOverridesEnabledCDM = true,
-        keybindOverridesEnabledTrackers = true,
-
-        -- FPS Settings Backup (stores user's CVars before applying Quazii's settings)
-        fpsBackup = nil,
-
-        -- QUI New Cooldown Display Manager (NCDM)
-        -- Per-row configuration for Essential and Utility viewers
-        ncdm = {
-            engine = "owned",  -- CDM engine: "classic" (Blizzard hooks) or "owned" (addon-owned frames)
-            customEntriesSpecSpecific = false, -- If true, custom entries are stored separately per spec (within each profile)
-            essential = {
-                enabled = true,
-                pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
-                desaturateOnCooldown = true,
-                rangeIndicator = true,
-                rangeColor = {0.8, 0.1, 0.1, 1},
-                usabilityIndicator = true,
-                clickableIcons = false,
-                layoutDirection = "HORIZONTAL",
-                row1 = {
-                    iconCount = 8,      -- How many icons in row 1 (0 = disabled)
-                    iconSize = 39,      -- Icon size in pixels (width)
-                    borderSize = 1,     -- Border thickness around icon (0 to 5)
-                    borderColorTable = {0, 0, 0, 1}, -- Border color (RGBA)
-                    aspectRatioCrop = 1.0,  -- 1.0 = square, higher = flatter
-                    zoom = 0,           -- Icon texture zoom (0 to 0.2)
-                    padding = 2,        -- Spacing between icons (-20 to 20)
-                    xOffset = 0,        -- Horizontal offset for this row
-                    yOffset = 0,        -- Vertical offset for this row (-50 to 50)
-                    durationSize = 16,  -- Duration text font size (8 to 24)
-                    durationOffsetX = 0, -- Duration text X offset
-                    durationOffsetY = 0, -- Duration text Y offset
-                    stackSize = 12,     -- Stack count text font size (8 to 24)
-                    stackOffsetX = 0,   -- Stack text X offset
-                    stackOffsetY = 2,   -- Stack text Y offset
-                    durationTextColor = {1, 1, 1, 1}, -- Duration text color (white default)
-                    durationAnchor = "CENTER",        -- Duration text anchor point
-                    stackTextColor = {1, 1, 1, 1},    -- Stack text color (white default)
-                    stackAnchor = "BOTTOMRIGHT",      -- Stack text anchor point
-                },
-                row2 = {
-                    iconCount = 8,
-                    iconSize = 39,
-                    borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
-                    aspectRatioCrop = 1.0,
-                    zoom = 0,
-                    padding = 2,
-                    xOffset = 0,
-                    yOffset = 3,
-                    durationSize = 16,
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    stackSize = 12,
-                    stackOffsetX = 0,
-                    stackOffsetY = 2,
-                    durationTextColor = {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    stackTextColor = {1, 1, 1, 1},
-                    stackAnchor = "BOTTOMRIGHT",
-                },
-                row3 = {
-                    iconCount = 8,      -- 0 = row disabled by default
-                    iconSize = 39,
-                    borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
-                    aspectRatioCrop = 1.0,
-                    zoom = 0,
-                    padding = 2,
-                    xOffset = 0,
-                    yOffset = 0,
-                    durationSize = 16,
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    stackSize = 12,
-                    stackOffsetX = 0,
-                    stackOffsetY = 2,
-                    durationTextColor = {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    stackTextColor = {1, 1, 1, 1},
-                    stackAnchor = "BOTTOMRIGHT",
-                },
-                rangeColor = {0.8, 0.1, 0.1}, -- Range indicator tint color
-            },
-            utility = {
-                enabled = true,
-                pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
-                desaturateOnCooldown = true,
-                rangeIndicator = true,
-                rangeColor = {0.8, 0.1, 0.1, 1},
-                usabilityIndicator = true,
-                clickableIcons = false,
-                layoutDirection = "HORIZONTAL",
-                row1 = {
-                    iconCount = 6,
-                    iconSize = 30,
-                    borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
-                    aspectRatioCrop = 1.0,
-                    zoom = 0,
-                    padding = 2,
-                    xOffset = 0,
-                    yOffset = 0,
-                    durationSize = 14,
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    stackSize = 14,
-                    stackOffsetX = 0,
-                    stackOffsetY = 0,
-                    durationTextColor = {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    stackTextColor = {1, 1, 1, 1},
-                    stackAnchor = "BOTTOMRIGHT",
-                },
-                row2 = {
-                    iconCount = 0,
-                    iconSize = 30,
-                    borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
-                    aspectRatioCrop = 1.0,
-                    zoom = 0,
-                    padding = 2,
-                    xOffset = 0,
-                    yOffset = 8,
-                    durationSize = 14,
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    stackSize = 14,
-                    stackOffsetX = 0,
-                    stackOffsetY = 0,
-                    durationTextColor = {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    stackTextColor = {1, 1, 1, 1},
-                    stackAnchor = "BOTTOMRIGHT",
-                },
-                row3 = {
-                    iconCount = 0,
-                    iconSize = 30,
-                    borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
-                    aspectRatioCrop = 1.0,
-                    zoom = 0,
-                    padding = 2,
-                    xOffset = 0,
-                    yOffset = 4,
-                    durationSize = 14,
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    stackSize = 14,
-                    stackOffsetX = 0,
-                    stackOffsetY = 0,
-                    durationTextColor = {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    stackTextColor = {1, 1, 1, 1},
-                    stackAnchor = "BOTTOMRIGHT",
-                },
-                anchorBelowEssential = false,
-                anchorGap = 0,
-                rangeColor = {0.8, 0.1, 0.1},
-            },
-            buff = {
-                enabled = true,
-                pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
-                iconSize = 32,      -- Icon size in pixels
-                borderSize = 1,     -- Border thickness (0 to 8)
-                shape = "square",   -- DEPRECATED: use aspectRatioCrop instead
-                aspectRatioCrop = 1.0,  -- Aspect ratio (0.5-2.0): <1=taller, 1=square, >1=wider
-                growthDirection = "CENTERED_HORIZONTAL",  -- CENTERED_HORIZONTAL, LEFT, or RIGHT
-                zoom = 0,           -- Icon texture zoom (0 to 0.2)
-                padding = 4,        -- Spacing between icons (-20 to 20)
-                durationSize = 14,  -- Duration text font size (8 to 24)
-                durationOffsetX = 0,
-                durationOffsetY = 8,
-                durationAnchor = "TOP",
-                stackSize = 14,     -- Stack count text font size (8 to 24)
-                stackOffsetX = 0,
-                stackOffsetY = -8,
-                stackAnchor = "BOTTOM",
-                anchorTo = "disabled",
-                anchorPlacement = "center",
-                anchorSpacing = 0,
-                anchorSourcePoint = "CENTER",
-                anchorTargetPoint = "CENTER",
-                anchorOffsetX = 0,
-                anchorOffsetY = 0,
-            },
-            trackedBar = {
-                enabled = true,
-                hideIcon = false,
-                barHeight = 25,
-                barWidth = 215,
-                texture = "Quazii v5",
-                useClassColor = true,
-                barColor = {0.204, 0.827, 0.6, 1},  -- mint accent fallback
-                colorOverrides = {},
-                barOpacity = 1.0,
-                borderSize = 2,
-                bgColor = {0, 0, 0, 1},
-                bgOpacity = 0.5,
-                textSize = 14,
-                spacing = 2,
-                growUp = true,  -- true = grow upward, false = grow downward
-                -- Inactive tracked-buff display behavior
-                inactiveMode = "hide",  -- always, fade, hide
-                inactiveAlpha = 0.3,
-                desaturateInactive = false,
-                reserveSlotWhenInactive = false,
-                autoWidth = false,
-                autoWidthOffset = 0,
-                anchorTo = "disabled",
-                anchorPlacement = "center",
-                anchorSpacing = 0,
-                anchorSourcePoint = "CENTER",
-                anchorTargetPoint = "CENTER",
-                anchorOffsetX = 0,
-                anchorOffsetY = 0,
-                orientation = "horizontal",
-                fillDirection = "up",
-                iconPosition = "top",
-                showTextOnVertical = false,
-                pos = nil,  -- owned container position (seeded from Blizzard viewer on first init)
-            },
-            customBuffs = {
-                enabled = true,
-                spellIDs = { 1254638 },
-            },
-        },
-
-        -- CDM Visibility (essentials, utility, buffs, power bars)
-        cdmVisibility = {
-            showAlways = true,
-            showWhenTargetExists = true,
-            showInCombat = false,
-            showInGroup = false,
-            showInInstance = false,
-            showOnMouseover = false,
-            fadeDuration = 0.2,
-            fadeOutAlpha = 0,
-            hideWhenMounted = false,
-            hideWhenInVehicle = false,
-            hideWhenFlying = false,
-            hideWhenSkyriding = false,
-            dontHideInDungeonsRaids = false,
-        },
-
-        -- Unitframes Visibility (player, target, focus, pet, tot, boss)
-        unitframesVisibility = {
-            showAlways = true,
-            showWhenTargetExists = false,
-            showInCombat = false,
-            showInGroup = false,
-            showInInstance = false,
-            showOnMouseover = false,
-            showWhenHealthBelow100 = false,
-            fadeDuration = 0.2,
-            fadeOutAlpha = 0,
-            alwaysShowCastbars = false,  -- When true, castbars ignore UF visibility
-            hideWhenMounted = false,
-            hideWhenFlying = false,
-            hideWhenSkyriding = false,
-            dontHideInDungeonsRaids = false,
-        },
-
-        -- Custom Trackers Visibility (all custom item/spell bars)
-        customTrackersVisibility = {
-            showAlways = true,
-            showWhenTargetExists = false,
-            showInCombat = false,
-            showInGroup = false,
-            showInInstance = false,
-            showOnMouseover = false,
-            fadeDuration = 0.2,
-            fadeOutAlpha = 0,
-            hideWhenMounted = false,
-            hideWhenFlying = false,
-            hideWhenSkyriding = false,
-            dontHideInDungeonsRaids = false,
-        },
-
-        viewers = {
-            EssentialCooldownViewer = {
-                enabled          = true,
-                iconSize         = 50,
-                aspectRatioCrop  = 1.0,
-                spacing          = -11,
-                zoom             = 0,
-                borderSize       = 1,
-                borderColor      = { 0, 0, 0, 1 },
-                chargeTextAnchor = "BOTTOMRIGHT",
-                countTextSize    = 14,
-                countTextOffsetX = 0,
-                countTextOffsetY = 0,
-                durationTextSize = 14,
-                rowLimit         = 8,
-                -- Row pattern: icons per row (0 = row disabled)
-                row1Icons        = 6,
-                row2Icons        = 6,
-                row3Icons        = 6,
-                useRowPattern    = false,  -- false = use rowLimit, true = use row pattern
-                rowAlignment     = "CENTER", -- LEFT, CENTER, RIGHT
-                -- Keybind display
-                showKeybinds      = false,
-                keybindTextSize   = 12,
-                keybindTextColor  = { 1, 0.82, 0, 1 },  -- Gold/Yellow
-                keybindAnchor     = "TOPLEFT",
-                keybindOffsetX    = 2,
-                keybindOffsetY    = 2,
-                -- Rotation Helper overlay (uses C_AssistedCombat)
-                showRotationHelper = false,
-                rotationHelperColor = { 0, 1, 0.84, 1 },  -- #00FFD6 cyan/mint border
-                rotationHelperThickness = 2,  -- Border thickness in pixels
-            },
-            UtilityCooldownViewer = {
-                enabled          = true,
-                iconSize         = 42,
-                aspectRatioCrop  = 1.0,
-                spacing          = -11,
-                zoom             = 0.08,
-                borderSize       = 1,
-                borderColor      = { 0, 0, 0, 1 },
-                chargeTextAnchor = "BOTTOMRIGHT",
-                countTextSize    = 14,
-                countTextOffsetX = 0,
-                countTextOffsetY = 0,
-                durationTextSize = 14,
-                rowLimit         = 0,
-                -- Row pattern: icons per row (0 = row disabled)
-                row1Icons        = 8,
-                row2Icons        = 8,
-                useRowPattern    = false,  -- false = use rowLimit, true = use row pattern
-                rowAlignment     = "CENTER", -- LEFT, CENTER, RIGHT
-                -- Auto-anchor to Essential
-                anchorToEssential = false,  -- When true, Utility anchors below Essential's last row
-                anchorGap         = 10,     -- Gap between Essential and Utility when anchored
-                -- Keybind display
-                showKeybinds      = false,
-                keybindTextSize   = 12,
-                keybindTextColor  = { 1, 0.82, 0, 1 },  -- Gold/Yellow
-                keybindAnchor     = "TOPLEFT",
-                keybindOffsetX    = 2,
-                keybindOffsetY    = 2,
-                -- Rotation Helper overlay (uses C_AssistedCombat)
-                showRotationHelper = false,
-                rotationHelperColor = { 0, 1, 0.84, 1 },  -- #00FFD6 cyan/mint border
-                rotationHelperThickness = 2,  -- Border thickness in pixels
-            },
-            -- BuffIconCooldownViewer removed - now handled by qui_buffbar.lua
-            -- Settings are at db.profile.ncdm.buff instead
-        },
-
-        -- Rotation Assist Icon (standalone icon showing next recommended ability)
-        rotationAssistIcon = {
-            enabled = false,
-            isLocked = true,
-            iconSize = 56,
-            visibility = "always",  -- "always", "combat", "hostile"
-            frameStrata = "MEDIUM",
-            -- Border
-            showBorder = true,
-            borderThickness = 2,
-            borderColor = { 0, 0, 0, 1 },
-            -- Cooldown
-            cooldownSwipeEnabled = true,
-            -- Keybind
-            showKeybind = true,
-            keybindFont = nil,  -- nil = use general.font
-            keybindSize = 13,
-            keybindColor = { 1, 1, 1, 1 },
-            keybindOutline = true,
-            keybindAnchor = "BOTTOMRIGHT",
-            keybindOffsetX = -2,
-            keybindOffsetY = 2,
-            -- Position (anchored to CENTER of screen)
-            positionX = 0,
-            positionY = -180,
-        },
-
-        powerBar = {
-            enabled           = true,
-            autoAttach        = false,
-            standaloneMode    = false,
-            attachTo          = "EssentialCooldownViewer",
-            height            = 8,
-            borderSize        = 1,
-            offsetY           = -204,      -- Snapped to top of Essential CDM (default position)
-            offsetX           = 0,
-            width             = 326,       -- Matches Essential CDM width
-            useRawPixels      = true,
-            texture           = "Quazii v5",
-            colorMode         = "power",  -- "power" = power type color, "class" = class color
-            usePowerColor     = true,     -- Use power type color (customizable in Power Colors section)
-            useClassColor     = false,    -- Use class color
-            customColor       = { 0.2, 0.6, 1, 1 },  -- Custom power bar color
-            showPercent       = true,
-            showText          = true,
-            textSize          = 16,
-            textX             = 1,
-            textY             = 3,
-            textUseClassColor = false,    -- Use class color for text
-            textCustomColor   = { 1, 1, 1, 1 },  -- Custom text color (white default)
-            bgColor           = { 0.078, 0.078, 0.078, 1 },
-            showTicks         = false,    -- Show tick marks for segmented resources (Holy Power, Chi, etc.)
-            tickThickness     = 2,        -- Thickness of tick marks in pixels
-            tickColor         = { 0, 0, 0, 1 },  -- Color of tick marks (default black)
-            indicators        = {
-                enabled   = false,        -- Show custom breakpoint indicator lines
-                thickness = 2,            -- Indicator line thickness in pixels
-                color     = { 1, 1, 1, 0.9 }, -- Indicator line color
-                perSpec   = {},           -- [specID] = { value1, value2, value3 }
-            },
-            lockedToEssential = false,  -- Auto-resize width when Essential CDM changes
-            lockedToUtility   = false,  -- Auto-resize width when Utility CDM changes
-            snapGap           = 5,      -- Gap when snapped to CDM
-            orientation       = "HORIZONTAL",  -- Bar orientation
-            visibility        = "always",  -- "always", "combat", "hostile"
-        },
-        castBar = {
-            enabled       = true,
-            attachTo      = "EssentialCooldownViewer",
-            height        = 24,
-            offsetX       = 0,
-            offsetY       = -108.5,
-            texture       = "Quazii",
-            color         = { 0.188, 1, 0.988, 1 },
-            useClassColor = false,
-            textSize      = 16,
-            width         = 0,
-            bgColor       = { 0.078, 0.078, 0.067, 0.85 },
-            showTimeText  = true,
-            showIcon      = true,
-        },
-        targetCastBar = {
-            enabled       = true,
-            attachTo      = "QUICore_Target",
-            height        = 18,
-            offsetX       = 0,
-            offsetY       = -32,
-            texture       = "Quazii",
-            color         = { 1.0, 0.0, 0.0, 1.0 },
-            textSize      = 16,
-            width         = 241.2,
-            bgColor       = { 0.1, 0.1, 0.1, 1 },
-            showTimeText  = true,
-            showIcon      = true,
-        },
-        focusCastBar = {
-            enabled       = true,
-            attachTo      = "QUICore_Focus",
-            height        = 18,
-            offsetX       = 0,
-            offsetY       = -32,
-            texture       = "Quazii",
-            color         = { 1.0, 0.0, 0.0, 1.0 },
-            textSize      = 16,
-            width         = 241.2,
-            bgColor       = { 0.1, 0.1, 0.1, 1 },
-            showTimeText  = true,
-            showIcon      = true,
-        },
-        secondaryPowerBar = {
-            enabled       = true,
-            autoAttach    = false,
-            standaloneMode = false,
-            attachTo      = "EssentialCooldownViewer",
-            height        = 8,
-            borderSize    = 1,
-            offsetY       = 0,        -- User adjustment when locked to primary (0 = no offset)
-            offsetX       = 0,
-            width         = 326,      -- Matches Primary bar width
-            useRawPixels  = true,
-            texture       = "Quazii v5",
-            colorMode     = "power",  -- "power" = power type color, "class" = class color
-            usePowerColor = true,     -- Use power type color (customizable in Power Colors section)
-            useClassColor = false,    -- Use class color
-            customColor   = { 1, 0.8, 0.2, 1 },  -- Custom power bar color
-            showPercent   = false,
-            showText      = false,
-            textSize      = 14,
-            textX         = 0,
-            textY         = 2,
-            textUseClassColor = false,    -- Use class color for text
-            textCustomColor   = { 1, 1, 1, 1 },  -- Custom text color (white default)
-            bgColor       = { 0.078, 0.078, 0.078, 0.83 },
-            showTicks     = true,     -- Show tick marks for segmented resources (Holy Power, Chi, etc.)
-            tickThickness = 2,        -- Thickness of tick marks in pixels
-            tickColor     = { 0, 0, 0, 1 },  -- Color of tick marks (default black)
-            indicators    = {
-                enabled   = false,        -- Show custom breakpoint indicator lines
-                thickness = 2,            -- Indicator line thickness in pixels
-                color     = { 1, 1, 1, 0.9 }, -- Indicator line color
-                perSpec   = {},           -- [specID] = { value1, value2, value3 }
-            },
-            lockedToEssential = false,  -- Auto-resize width when Essential CDM changes
-            lockedToUtility   = false,  -- Auto-resize width when Utility CDM changes
-            lockedToPrimary   = true,   -- Position above + match Primary bar width
-            swapToPrimaryPosition = false,  -- Show secondary bar at primary bar's position (supported specs only)
-            hidePrimaryOnSwap = false,      -- Auto-hide primary bar when secondary is swapped to its position
-            swapSpecs = {                   -- Per-spec swap enable (all candidates default on)
-                [102]  = true,  -- Druid: Balance
-                [251]  = true,  -- Death Knight: Frost
-                [66]   = true,  -- Paladin: Protection
-                [70]   = true,  -- Paladin: Retribution
-                [263]  = true,  -- Shaman: Enhancement
-                [265]  = true,  -- Warlock: Affliction
-                [266]  = true,  -- Warlock: Demonology
-                [267]  = true,  -- Warlock: Destruction
-                [1467] = true,  -- Evoker: Devastation
-                [1473] = true,  -- Evoker: Augmentation
-            },
-            hideSpecs = {                   -- Per-spec auto-hide enable (all candidates default on)
-                [102]  = true,  -- Druid: Balance
-                [251]  = true,  -- Death Knight: Frost
-                [66]   = true,  -- Paladin: Protection
-                [70]   = true,  -- Paladin: Retribution
-                [263]  = true,  -- Shaman: Enhancement
-                [265]  = true,  -- Warlock: Affliction
-                [266]  = true,  -- Warlock: Demonology
-                [267]  = true,  -- Warlock: Destruction
-                [1467] = true,  -- Evoker: Devastation
-                [1473] = true,  -- Evoker: Augmentation
-            },
-            snapGap       = 5,        -- Gap when snapped
-            orientation   = "AUTO",   -- Bar orientation
-            visibility    = "always",  -- "always", "combat", "hostile"
-            showFragmentedPowerBarText = false,  -- Show text on fragmented power bars
-        },
-        -- Power Colors (global, used by both Primary and Secondary power bars)
-        powerColors = {
-            -- Core Resources
-            rage = { 1.00, 0.00, 0.00, 1 },
-            energy = { 1.00, 1.00, 0.00, 1 },
-            mana = { 0.00, 0.00, 1.00, 1 },
-            focus = { 1.00, 0.50, 0.25, 1 },
-            runicPower = { 0.00, 0.82, 1.00, 1 },
-            fury = { 0.79, 0.26, 0.99, 1 },
-            insanity = { 0.40, 0.00, 0.80, 1 },
-            maelstrom = { 0.00, 0.50, 1.00, 1 },
-            maelstromWeapon = { 0.00, 0.69, 1.00, 1 },
-            lunarPower = { 0.30, 0.52, 0.90, 1 },
-
-            -- Builder Resources
-            holyPower = { 0.95, 0.90, 0.60, 1 },
-            chi = { 0.00, 1.00, 0.59, 1 },
-            comboPoints = { 1.00, 0.96, 0.41, 1 },
-            soulShards = { 0.58, 0.51, 0.79, 1 },
-            arcaneCharges = { 0.10, 0.10, 0.98, 1 },
-            essence = { 0.20, 0.58, 0.50, 1 },
-
-            -- Specialized Resources
-            stagger = { 0.00, 1.00, 0.59, 1 },
-            staggerLight = { 0.52, 1.00, 0.52, 1 },     -- Green (0-30% of max health)
-            staggerModerate = { 1.00, 0.98, 0.72, 1 },  -- Yellow (30-60% of max health)
-            staggerHeavy = { 1.00, 0.42, 0.42, 1 },     -- Red (60%+ of max health)
-            useStaggerLevelColors = true,               -- Enable dynamic stagger colors
-            soulFragments = { 0.64, 0.19, 0.79, 1 },
-            whirlwind = { 0.90, 0.20, 0.20, 1 },           -- Red (Warrior theme)
-            tipOfTheSpear = { 0.00, 0.80, 0.30, 1 },       -- Green (Hunter/Survival theme)
-            runes = { 0.77, 0.12, 0.23, 1 },
-            bloodRunes = { 0.77, 0.12, 0.23, 1 },
-            frostRunes = { 0.00, 0.82, 1.00, 1 },
-            unholyRunes = { 0.00, 0.80, 0.00, 1 },
-        },
-        -- Reticle (GCD tracker around cursor)
-        reticle = {
-            enabled = false,
-            -- Reticle
-            reticleStyle = "dot",         -- "dot", "cross", "chevron", "diamond"
-            reticleSize = 10,             -- Size in pixels (4-20)
-            -- Ring
-            ringStyle = "standard",       -- "thin", "standard", "thick", "solid"
-            ringSize = 40,                -- Ring diameter (20-80)
-            -- Colors
-            useClassColor = false,        -- Use class color vs custom
-            customColor = {1, 1, 1, 1},   -- White default (#ffffff)
-            -- Visibility
-            inCombatAlpha = 1.0,
-            outCombatAlpha = 1.0,
-            hideOutOfCombat = false,
-            -- Positioning
-            offsetX = 0,
-            offsetY = 0,
-            -- GCD
-            gcdEnabled = true,
-            gcdFadeRing = 0.35,           -- Fade ring during GCD (0-1)
-            gcdReverse = false,           -- Reverse swipe direction
-            -- Behavior
-            hideOnRightClick = false,
-        },
-        -- Screen Center Crosshair
-        crosshair = {
-            enabled = false,         -- Disabled by default
-            onlyInCombat = false,    -- Show all the time when enabled
-            size = 9,                -- Line length (half-length from center)
-            thickness = 3,           -- Line thickness in pixels
-            borderSize = 3,          -- Border thickness around lines
-            offsetX = 0,             -- X offset from screen center
-            offsetY = 0,             -- Y offset from screen center
-            r = 0.796,               -- Crosshair color red
-            g = 1,                   -- Crosshair color green
-            b = 0.780,               -- Crosshair color blue
-            a = 1,                   -- Crosshair alpha
-            borderR = 0,             -- Border color red
-            borderG = 0,             -- Border color green
-            borderB = 0,             -- Border color blue
-            borderA = 1,             -- Border alpha
-            strata = "LOW",          -- Frame strata
-            lineColor = { 0.796, 1, 0.780, 1 },
-            borderColorTable = { 0, 0, 0, 1 },
-            -- Range-based color changes
-            changeColorOnRange = false,           -- Master toggle for range checking
-            enableMeleeRangeCheck = true,         -- Check melee range (5 yards)
-            enableMidRangeCheck = false,          -- Check mid-range (25 yards) for Evokers/Devourers
-            outOfRangeColor = { 1, 0.2, 0.2, 1 },  -- Red color when out of range
-            midRangeColor = { 1, 0.6, 0.2, 1 },   -- Orange color for 25-yard range (when both checks enabled)
-            rangeColorInCombatOnly = false,       -- Only change color in combat
-            hideUntilOutOfRange = false,          -- Only show crosshair when in combat AND out of range
-        },
-
-        -- Target Distance Bracket Display
-        rangeCheck = {
-            enabled = false,
-            combatOnly = false,
-            showOnlyWithTarget = true,
-            updateRate = 0.1, -- seconds
-            shortenText = false,
-            dynamicColor = false,
-            font = "Quazii",
-            fontSize = 22,
-            useClassColor = false,
-            textColor = { 0.2, 0.95, 0.55, 1 },
-            strata = "MEDIUM",
-            offsetX = 0,
-            offsetY = -190,
-        },
-
-        -- Skyriding Vigor Bar
-        skyriding = {
-            enabled = true,
-            width = 250,
-            vigorHeight = 20,
-            secondWindHeight = 20,
-            offsetX = 0,
-            offsetY = 135,
-            locked = false,
-            useClassColorVigor = false,
-            barColor = { 0.2, 0.8, 1.0, 1 },              -- 33CCFF
-            backgroundColor = { 0.102, 0.102, 0.102, 0.353 }, -- 1A1A1A with lower alpha
-            segmentColor = { 0, 0, 0, 1 },                -- 000000
-            rechargeColor = { 0.4, 0.9, 1.0, 1 },         -- 66E6FF
-            borderSize = 1,
-            borderColor = { 0, 0, 0, 1 },
-            barTexture = "Quazii v4",
-            showSegments = true,
-            segmentThickness = 1,
-            showSpeed = true,
-            speedFormat = "PERCENT",
-            speedFontSize = 11,
-            showVigorText = true,
-            vigorTextFormat = "FRACTION",
-            vigorFontSize = 11,
-            secondWindMode = "MINIBAR",
-            secondWindScale = 2.1,
-            useClassColorSecondWind = false,
-            secondWindColor = { 1.0, 0.8, 0.2, 1 },       -- FFCC33
-            secondWindBackgroundColor = { 0.102, 0.102, 0.102, 0.301 }, -- 1A1A1A with lower alpha
-            useThrillOfTheSkiesColor = true,               -- Change bar color when Thrill of the Skies buff is active
-            thrillOfTheSkiesColor = { 1.0, 0.5, 0.0, 1 }, -- FF8000 (orange)
-            visibility = "FLYING_ONLY",
-            fadeDelay = 1,
-            fadeDuration = 0.3,
-        },
-
-        -- Chat Frame Customization
-        chat = {
-            enabled = true,
-            -- Glass visual effect
-            glass = {
-                enabled = true,
-                bgAlpha = 0.25,          -- Background transparency (0-1.0)
-                bgColor = {0, 0, 0},     -- Background color (RGB)
-            },
-            -- Message fade after inactivity (uses native API)
-            fade = {
-                enabled = false,         -- Off by default
-                delay = 15,              -- Seconds before fade starts
-                duration = 0.6,          -- Fade animation duration
-            },
-            -- Font settings
-            font = {
-                forceOutline = false,    -- Force font outline
-            },
-            -- URL detection and copying
-            urls = {
-                enabled = true,
-                color = {0.078, 0.608, 0.992, 1},  -- Clickable URL color (blue)
-            },
-            -- UI cleanup
-            hideButtons = true,          -- Hide social/channel/scroll buttons
-            -- Input box styling
-            editBox = {
-                enabled = true,          -- Apply glass styling to input box
-                bgAlpha = 0.25,          -- Background transparency (0-1.0)
-                bgColor = {0, 0, 0},     -- Background color (RGB)
-                height = 20,             -- Input box height
-                positionTop = false,     -- Position input box above chat tabs
-            },
-            -- Timestamps
-            timestamps = {
-                enabled = false,         -- Off by default
-                format = "24h",          -- "24h" or "12h"
-                color = {0.6, 0.6, 0.6}, -- Gray color
-            },
-            -- Copy button mode: "always", "hover", "hidden", "disabled"
-            copyButtonMode = "always",
-            -- Intro message on login
-            showIntroMessage = true,
-            -- Message history cache for arrow key navigation
-            messageHistory = {
-                enabled = true,
-                maxHistory = 50,  -- Maximum number of messages to store
-            },
-            -- Sound on new message (SharedMedia compatible)
-            newMessageSound = {
-                enabled = false,
-                entries = {                -- Array of {channel, sound} - each channel can have its own sound
-                    { channel = "guild_officer", sound = "None" },
-                },
-            },
-        },
-
-        -- Tooltip Management
-        tooltip = {
-            engine = "classic",                -- "classic" (hook-based)
-            enabled = true,                    -- Master toggle for tooltip module
-            anchorToCursor = true,             -- Follow cursor vs default anchor
-            cursorAnchor = "TOPLEFT",          -- Tooltip point anchored to cursor
-            cursorOffsetX = 16,                -- Cursor anchor X offset (pixels)
-            cursorOffsetY = -16,               -- Cursor anchor Y offset (pixels)
-            hideInCombat = true,               -- Suppress tooltips during combat
-            classColorName = false,            -- Color player names by class
-            fontSize = 12,                     -- Tooltip text font size
-            skinTooltips = true,               -- Apply QUI theme to tooltips
-            bgColor = {0.05, 0.05, 0.05, 1},  -- Custom background color
-            bgOpacity = 0.95,                  -- Background opacity (0-1)
-            showBorder = true,                 -- Toggle border visibility
-            borderThickness = 1,               -- Border thickness (1-10)
-            borderColor = {0.2, 1.0, 0.6, 1}, -- Border color (default = mint accent)
-            borderUseClassColor = false,       -- Use player class color for border
-            borderUseAccentColor = false,      -- Use addon accent color for border
-            showSpellIDs = false,              -- Show spell ID and icon ID on buff/debuff tooltips
-            showPlayerItemLevel = false,       -- Show inspected player item level on player tooltips
-            showTooltipTarget = true,          -- Show target name on unit tooltips when available
-            showPlayerMount = true,            -- Show mounted player's mount on player tooltips (out of combat)
-            showPlayerMythicRating = true,     -- Show player M+ rating on player tooltips (out of combat)
-            colorPlayerItemLevel = true,       -- Color tooltip player item level by configured ilvl brackets
-            itemLevelBrackets = {
-                white = 245,                   -- White bracket starts here (below = grey)
-                green = 255,                   -- Green bracket starts here
-                blue = 265,                    -- Blue bracket starts here
-                purple = 275,                  -- Purple bracket starts here
-                orange = 285,                  -- Orange bracket starts here
-            },
-            hideDelay = 0,                     -- Seconds before tooltip hides after mouse leaves (0 = instant, >0 = fade out)
-            -- Per-Context Visibility (SHOW/HIDE/SHIFT/CTRL/ALT)
-            visibility = {
-                npcs = "SHOW",                 -- NPCs/players in world
-                abilities = "SHOW",            -- Action bar buttons
-                items = "SHOW",                -- Bag/bank items
-                frames = "SHOW",               -- Unit frame mouseover
-                cdm = "SHOW",                  -- CDM views (Essential, Utility, Buff)
-                customTrackers = "SHOW",       -- Custom Items/Spells bars
-            },
-            combatKey = "SHIFT",               -- NONE/SHIFT/CTRL/ALT
-            hideHealthBar = true,              -- Hide the health bar on unit tooltips
-        },
-
-        -- QUI Action Bars - Button Skinning and Fade System
-        actionBars = {
-            enabled = true,
-            -- Global settings (apply to all bars)
-            global = {
-                skinEnabled = true,         -- Apply button skinning
-                iconSize = 36,              -- Base icon size (36x36)
-                iconZoom = 0.05,            -- Icon texture crop (0.05-0.15)
-                showBackdrop = true,        -- Show backdrop behind icons
-                backdropAlpha = 0.8,        -- Backdrop opacity (0-1)
-                showGloss = true,           -- Show gloss/shine overlay
-                glossAlpha = 0.6,           -- Gloss opacity (0-1)
-                showBorders = true,         -- Show button borders
-                showKeybinds = true,        -- Show hotkey text
-                showMacroNames = false,     -- Show macro name text
-                showCounts = true,          -- Show stack/charge count
-                hideEmptyKeybinds = false,  -- Hide placeholder keybinds
-                keybindFontSize = 16,       -- Keybind text size
-                keybindColor = {1, 1, 1, 1},-- Keybind text color
-                keybindAnchor = "TOPRIGHT", -- Keybind text anchor point
-                keybindOffsetX = 0,         -- Keybind text X offset
-                keybindOffsetY = -5,        -- Keybind text Y offset
-                macroNameFontSize = 10,     -- Macro name text size
-                macroNameColor = {1, 1, 1, 1}, -- Macro name text color
-                macroNameAnchor = "BOTTOM", -- Macro name text anchor point
-                macroNameOffsetX = 0,       -- Macro name text X offset
-                macroNameOffsetY = 0,       -- Macro name text Y offset
-                countFontSize = 14,         -- Count text size
-                countColor = {1, 1, 1, 1},  -- Count text color
-                countAnchor = "BOTTOMRIGHT", -- Stack count text anchor point
-                countOffsetX = 0,           -- Stack count text X offset
-                countOffsetY = 0,           -- Stack count text Y offset
-                -- Bar Layout settings
-                barScale = 1.0,             -- Global scale multiplier (0.5 - 2.0)
-                buttonSpacing = nil,        -- Button spacing override (nil = use Blizzard Edit Mode padding)
-                hideEmptySlots = false,     -- Hide buttons with no ability assigned
-                lockButtons = false,        -- Prevent dragging abilities off buttons
-                -- Range indicator settings
-                rangeIndicator = false,     -- Tint out-of-range buttons
-                rangeColor = {0.8, 0.1, 0.1, 1}, -- Red tint color
-                -- Usability indicator settings
-                usabilityIndicator = false,     -- Dim unusable buttons
-                usabilityDesaturate = false,    -- Use desaturation (grey) for unusable
-                usabilityColor = {0.4, 0.4, 0.4, 1},  -- Fallback color if not desaturating
-                manaColor = {0.5, 0.5, 1.0, 1}, -- Out of mana color (blue tint)
-                fastUsabilityUpdates = false, -- 5x faster range/usability checks (50ms vs 250ms)
-                showTooltips = true,        -- Show tooltips when hovering action buttons
-            },
-            -- Mouseover fade settings
-            fade = {
-                enabled = true,             -- Master toggle for mouseover fade
-                fadeInDuration = 0.2,       -- Fade in speed (seconds)
-                fadeOutDuration = 0.3,      -- Fade out speed (seconds)
-                fadeOutAlpha = 0.0,         -- Alpha when faded out (0-1)
-                fadeOutDelay = 0.5,         -- Delay before fading out (seconds)
-                alwaysShowInCombat = false, -- Force full opacity during combat
-                showWhenSpellBookOpen = false, -- Force bars visible while Spellbook is open
-                keepLeaveVehicleVisible = false, -- Keep leave-vehicle button visible when mouseover hide is active
-                disableBelowMaxLevel = false, -- Keep bars visible until character reaches max level
-                linkBars1to8 = false,       -- Link all action bars 1-8 for mouseover
-            },
-            -- Per-bar settings (nil = use global, value = override)
-            -- alwaysShow = true means bar stays visible even when mouseover hide is enabled
-            bars = {
-                bar1 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    hidePageArrow = true,
-                    -- Style overrides (nil = use global)
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                bar2 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                bar3 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                bar4 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                bar5 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                bar6 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                bar7 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                bar8 = {
-                    enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false,
-                    overrideEnabled = false,
-                    iconZoom = 0.05, showBackdrop = nil, backdropAlpha = 0,
-                    showGloss = nil, glossAlpha = 0,
-                    showKeybinds = nil, hideEmptyKeybinds = nil, keybindFontSize = 8,
-                    keybindColor = nil, keybindAnchor = nil, keybindOffsetX = -20, keybindOffsetY = -20,
-                    showMacroNames = nil, macroNameFontSize = 8, macroNameColor = nil,
-                    macroNameAnchor = nil, macroNameOffsetX = -20, macroNameOffsetY = -20,
-                    showCounts = nil, countFontSize = 8, countColor = nil,
-                    countAnchor = nil, countOffsetX = -20, countOffsetY = -20,
-                },
-                -- Pet/Stance/Microbar/Bags/Extra do NOT have style overrides
-                pet = { enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false },
-                stance = { enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false },
-                microbar = { enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false },
-                bags = { enabled = true, fadeEnabled = nil, fadeOutAlpha = nil, alwaysShow = false },
-                -- Extra Action Button (boss encounters, quests)
-                extraActionButton = {
-                    enabled = true,
-                    fadeEnabled = nil,
-                    fadeOutAlpha = nil,
-                    alwaysShow = true,
-                    scale = 1.0,
-                    offsetX = 0,
-                    offsetY = 0,
-                    position = { point = "CENTER", relPoint = "CENTER", x = -120.833, y = -25.833 },
-                    hideArtwork = false,
-                },
-                -- Zone Ability Button (garrison, covenant, zone powers)
-                zoneAbility = {
-                    enabled = true,
-                    fadeEnabled = nil,
-                    fadeOutAlpha = nil,
-                    alwaysShow = true,
-                    scale = 1.0,
-                    offsetX = 0,
-                    offsetY = 0,
-                    position = { point = "CENTER", relPoint = "CENTER", x = 150, y = -27.5 },
-                    hideArtwork = false,
-                },
-            },
-        },
-
-        -- QUI Unit Frames (New Implementation)
-        quiUnitFrames = {
-            enabled = true,
-            -- General settings (applies to all frames)
-            general = {
-                darkMode = false,                         -- Instant dark mode toggle (disabled by default)
-                darkModeHealthColor = { 0.15, 0.15, 0.15, 1 },  -- #262626
-                darkModeBgColor = { 0.25, 0.25, 0.25, 1 },      -- #404040
-                darkModeOpacity = 1.0,                          -- Frame opacity when dark mode enabled (0.1 to 1.0)
-                darkModeHealthOpacity = 1.0,                    -- Health bar opacity when dark mode enabled
-                darkModeBgOpacity = 1.0,                        -- Background opacity when dark mode enabled
-                -- Default unitframe colors (when dark mode is OFF)
-                defaultUseClassColor = true,                    -- Use class color for health bar (default ON)
-                defaultHealthColor = { 0.2, 0.2, 0.2, 1 },      -- Default health bar color (when class color OFF)
-                defaultBgColor = { 0, 0, 0, 1 },                -- Default background color (pure black)
-                defaultOpacity = 1.0,                           -- Default bar opacity
-                defaultHealthOpacity = 1.0,                     -- Health bar opacity when dark mode disabled
-                defaultBgOpacity = 1.0,                         -- Background opacity when dark mode disabled
-                classColorText = false,                   -- LEGACY: Use class color for all unit frame text (kept for migration)
-                -- Master text color overrides (new system - takes precedence over per-unit settings)
-                masterColorNameText = false,              -- Apply class/reaction color to ALL name text
-                masterColorHealthText = false,            -- Apply class/reaction color to ALL health text
-                masterColorPowerText = false,             -- Apply class/reaction color to ALL power text
-                masterColorCastbarText = false,           -- Apply class/reaction color to ALL castbar text (spell + timer)
-                masterColorToTText = false,               -- Apply class/reaction color to ALL inline ToT text
-                font = "Quazii",
-                fontSize = 12,
-                fontOutline = "OUTLINE",                  -- NONE, OUTLINE, THICKOUTLINE
-                showTooltips = true,                      -- Show tooltips on unit frame mouseover
-                smootherAnimation = false,                -- Uncap 60 FPS throttle for smoother castbar animation
-                -- Hostility colors (for NPC unit frames)
-                hostilityColorHostile = { 0.8, 0.2, 0.2, 1 },   -- Red (enemies)
-                hostilityColorNeutral = { 1, 1, 0.2, 1 },       -- Yellow (neutral NPCs)
-                hostilityColorFriendly = { 0.2, 0.8, 0.2, 1 },  -- Green (friendly NPCs)
-            },
-            -- Player frame settings
-            player = {
-                enabled = true,
-                borderSize = 1,                     -- Frame border thickness (0-5)
-                width = 240,
-                height = 40,
-                offsetX = -290,
-                offsetY = -219,
-                -- Anchor to frame (disabled, essential, utility, primary, secondary)
-                anchorTo = "disabled",
-                anchorGap = 10,
-                anchorYOffset = 0,
-                texture = "Quazii v5",
-                useClassColor = true,
-                customHealthColor = { 0.2, 0.6, 0.2, 1 },
-                -- Portrait
-                showPortrait = false,
-                portraitSide = "LEFT",
-                portraitSize = 40,
-                portraitBorderSize = 1,
-                portraitBorderUseClassColor = false,
-                portraitBorderColor = { 0, 0, 0, 1 },
-                portraitGap = 0,
-                -- Name text
-                showName = true,
-                nameTextUseClassColor = false,
-                nameTextColor = { 1, 1, 1, 1 },
-                nameFontSize = 16,
-                nameAnchor = "LEFT",
-                nameOffsetX = 12,
-                nameOffsetY = 0,
-                maxNameLength = 0,              -- 0 = no limit, otherwise truncate to N characters
-                -- Health text
-                showHealth = true,
-                showHealthPercent = true,
-                showHealthAbsolute = true,
-                healthDisplayStyle = "both",    -- "percent", "absolute", "both", "both_reverse"
-                hideHealthPercentSymbol = false,
-                healthDivider = " | ",          -- " | ", " - ", " / "
-                healthFontSize = 16,
-                healthAnchor = "RIGHT",
-                healthOffsetX = -12,
-                healthOffsetY = 0,
-                healthTextUseClassColor = false, -- Independent from name class color
-                healthTextColor = { 1, 1, 1, 1 }, -- Custom health text color
-                -- Power text
-                showPowerText = false,
-                powerTextFormat = "percent",    -- "percent", "current", "both"
-                hidePowerPercentSymbol = false,
-                powerTextUsePowerColor = true,  -- Use power type color (mana blue, rage red, etc.)
-                powerTextUseClassColor = false,
-                powerTextColor = { 1, 1, 1, 1 },
-                powerTextFontSize = 12,
-                powerTextAnchor = "BOTTOMRIGHT",
-                powerTextOffsetX = -9,
-                powerTextOffsetY = 4,
-                -- Power bar
-                showPowerBar = false,
-                powerBarHeight = 4,
-                powerBarBorder = true,
-                powerBarUsePowerColor = true,
-                powerBarColor = { 0, 0.5, 1, 1 },  -- Custom power bar color
-                -- Absorbs
-                absorbs = {
-                    enabled = false,
-                    color = { 1, 1, 1, 1 },
-                    opacity = 0.3,
-                    texture = "QUI Stripes",
-                },
-                -- Heal prediction (incoming heals)
-                healPrediction = {
-                    enabled = false,
-                    color = { 0.2, 1, 0.2 },
-                    opacity = 0.5,
-                },
-                -- Castbar
-                castbar = {
-                    enabled = true,
-                    showIcon = true,
-                    width = 333,
-                    height = 25,
-                    offsetX = 0,
-                    offsetY = -35,
-                    widthAdjustment = 0,
-                    fontSize = 14,
-                    color = {0.404, 1, 0.984, 1},  -- Cyan color from your profile
-                    anchor = "none",
-                    texture = "Quazii v5",
-                    bgColor = {0.149, 0.149, 0.149, 1},
-                    borderSize = 1,
-                    useClassColor = false,
-                    highlightInterruptible = false,
-                    interruptibleColor = {0.2, 0.8, 0.2, 1},
-                    maxLength = 0,
-                },
-                -- Auras (buffs/debuffs)
-                auras = {
-                    showBuffs = false,
-                    showDebuffs = false,
-                    -- Debuff settings
-                    iconSize = 22,
-                    debuffAnchor = "TOPLEFT",
-                    debuffGrow = "RIGHT",
-                    debuffMaxIcons = 4,
-                    debuffOffsetX = 0,
-                    debuffOffsetY = 0,
-                    -- Buff settings
-                    buffIconSize = 22,
-                    buffAnchor = "BOTTOMLEFT",
-                    buffGrow = "RIGHT",
-                    buffMaxIcons = 4,
-                    buffOffsetX = 0,
-                    buffOffsetY = 0,
-                    -- Duration text
-                    iconSpacing = 2,
-                    buffSpacing = 2,
-                    debuffSpacing = 2,
-                    durationColor = {1, 1, 1, 1},
-                    showDuration = false,
-                    durationSize = 12,
-                    durationAnchor = "CENTER",
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    -- Stack text
-                    stackColor = {1, 1, 1, 1},
-                    showStack = true,
-                    stackSize = 10,
-                    stackAnchor = "BOTTOMRIGHT",
-                    stackOffsetX = -1,
-                    stackOffsetY = 1,
-                    -- Buff duration/stack
-                    buffDuration = { show = true, fontSize = 12, anchor = "CENTER", offsetX = 0, offsetY = 0, color = {1, 1, 1, 1} },
-                    buffStack = { show = true, fontSize = 10, anchor = "BOTTOMRIGHT", offsetX = -1, offsetY = 1, color = {1, 1, 1, 1} },
-                    buffShowStack = true,
-                    buffStackSize = 10,
-                    buffStackAnchor = "BOTTOMRIGHT",
-                    buffStackOffsetX = -1,
-                    buffStackOffsetY = 1,
-                    buffStackColor = {1, 1, 1, 1},
-                    -- Debuff duration/stack
-                    debuffDuration = { show = false, fontSize = 10, anchor = "CENTER", offsetX = 0, offsetY = 0, color = {1, 1, 1, 1} },
-                    debuffStack = { show = true, fontSize = 10, anchor = "BOTTOMRIGHT", offsetX = -1, offsetY = 1, color = {1, 1, 1, 1} },
-                    debuffShowStack = true,
-                    debuffStackSize = 10,
-                    debuffStackAnchor = "BOTTOMRIGHT",
-                    debuffStackOffsetX = -1,
-                    debuffStackOffsetY = 1,
-                    debuffStackColor = {1, 1, 1, 1},
-                },
-                -- Status indicators (player only)
-                indicators = {
-                    rested = {
-                        enabled = false,      -- Disabled by default
-                        size = 16,
-                        anchor = "TOPLEFT",
-                        offsetX = -2,
-                        offsetY = 2,
-                    },
-                    combat = {
-                        enabled = false,      -- Disabled by default
-                        size = 16,
-                        anchor = "TOPRIGHT",
-                        offsetX = -2,
-                        offsetY = 2,
-                    },
-                    stance = {
-                        enabled = false,      -- Disabled by default (opt-in)
-                        fontSize = 12,
-                        anchor = "BOTTOM",
-                        offsetX = 0,
-                        offsetY = -2,
-                        useClassColor = true,
-                        customColor = { 1, 1, 1, 1 },
-                        showIcon = false,
-                        iconSize = 14,
-                        iconOffsetX = -2,
-                    },
-                },
-                -- Target marker (raid icons like skull, cross, etc.)
-                targetMarker = {
-                    enabled = false,    -- Disabled by default for player (rarely marked)
-                    size = 20,
-                    anchor = "TOP",
-                    xOffset = 0,
-                    yOffset = 8,
-                },
-                -- Leader/Assistant icon (crown for leader, flag for assistant)
-                leaderIcon = {
-                    enabled = false,
-                    size = 16,
-                    anchor = "TOPLEFT",
-                    xOffset = -8,
-                    yOffset = 8,
-                },
-            },
-            -- Target frame settings
-            target = {
-                enabled = true,
-                borderSize = 1,                     -- Frame border thickness (0-5)
-                width = 240,
-                height = 40,
-                offsetX = 290,
-                offsetY = -219,
-                -- Anchor to frame (disabled, essential, utility, primary, secondary)
-                anchorTo = "disabled",
-                anchorGap = 10,
-                anchorYOffset = 0,
-                texture = "Quazii v5 Inverse",
-                invertHealthDirection = false,   -- false = default right-to-left depletion, true = left-to-right
-                useClassColor = true,
-                useHostilityColor = true,  -- Use red/yellow/green based on unit hostility
-                customHealthColor = { 0.2, 0.6, 0.2, 1 },
-                -- Portrait
-                showPortrait = false,
-                portraitSide = "RIGHT",
-                portraitSize = 40,
-                portraitBorderSize = 1,
-                portraitBorderUseClassColor = false,
-                portraitBorderColor = { 0, 0, 0, 1 },
-                portraitGap = 0,
-                -- Name text
-                showName = true,
-                nameTextUseClassColor = false,
-                nameTextColor = { 1, 1, 1, 1 },
-                nameFontSize = 16,
-                nameAnchor = "RIGHT",
-                nameOffsetX = -9,
-                nameOffsetY = 0,
-                maxNameLength = 10,              -- 0 = no limit, otherwise truncate to N characters
-                -- Inline Target of Target (shows ">> ToT Name" after target name)
-                showInlineToT = false,
-                totSeparator = " >> ",
-                totUseClassColor = true,
-                totDividerUseClassColor = false,    -- Color divider by class/reaction
-                totDividerColor = {1, 1, 1, 1},     -- Custom divider color (white default)
-                totNameCharLimit = 0,               -- 0 = no limit, otherwise limit ToT name length
-                -- Health text
-                showHealth = true,
-                showHealthPercent = true,
-                showHealthAbsolute = true,
-                healthDisplayStyle = "both",    -- "percent", "absolute", "both", "both_reverse"
-                hideHealthPercentSymbol = false,
-                healthDivider = " | ",          -- " | ", " - ", " / "
-                healthFontSize = 16,
-                healthAnchor = "LEFT",
-                healthOffsetX = 9,
-                healthOffsetY = 0,
-                healthTextUseClassColor = false, -- Independent from name class color
-                healthTextColor = { 1, 1, 1, 1 }, -- Custom health text color
-                -- Power text
-                showPowerText = false,
-                powerTextFormat = "percent",    -- "percent", "current", "both"
-                hidePowerPercentSymbol = false,
-                powerTextUsePowerColor = false,  -- Use power type color (mana blue, rage red, etc.)
-                powerTextUseClassColor = false,
-                powerTextColor = { 1, 1, 1, 1 },
-                powerTextFontSize = 14,
-                powerTextAnchor = "BOTTOMRIGHT",
-                powerTextOffsetX = -2,
-                powerTextOffsetY = 2,
-                -- Power bar
-                showPowerBar = false,
-                powerBarHeight = 4,
-                powerBarBorder = true,
-                powerBarUsePowerColor = true,
-                powerBarColor = { 0, 0.5, 1, 1 },  -- Custom power bar color
-                -- Absorbs
-                absorbs = {
-                    enabled = true,
-                    color = { 1, 1, 1, 1 },
-                    opacity = 0.3,
-                    texture = "QUI Stripes",
-                },
-                -- Heal prediction (incoming heals)
-                healPrediction = {
-                    enabled = false,
-                    color = { 0.2, 1, 0.2 },
-                    opacity = 0.5,
-                },
-                -- Castbar
-                castbar = {
-                    enabled = true,
-                    showIcon = true,
-                    width = 245,
-                    height = 25,
-                    offsetX = 0,
-                    offsetY = 0,
-                    widthAdjustment = 0,
-                    fontSize = 14,
-                    color = {0.2, 0.6, 1, 1},
-                    notInterruptibleColor = {0.7, 0.2, 0.2, 1},
-                    anchor = "unitframe",
-                    texture = "Quazii v5",
-                    bgColor = {0.149, 0.149, 0.149, 1},
-                    borderSize = 1,
-                    highlightInterruptible = true,
-                    interruptibleColor = {0.2, 0.8, 0.2, 1},
-                    maxLength = 12,
-                },
-                -- Auras (buffs/debuffs)
-                auras = {
-                    showBuffs = false,
-                    showDebuffs = false,
-                    -- Debuff settings
-                    iconSize = 26,
-                    debuffAnchor = "TOPLEFT",
-                    debuffGrow = "RIGHT",
-                    debuffMaxIcons = 4,
-                    debuffOffsetX = 0,
-                    debuffOffsetY = 0,
-                    -- Buff settings
-                    buffIconSize = 18,
-                    buffAnchor = "BOTTOMLEFT",
-                    buffGrow = "RIGHT",
-                    buffMaxIcons = 4,
-                    buffOffsetX = 0,
-                    buffOffsetY = 0,
-                    -- Duration text
-                    iconSpacing = 2,
-                    buffSpacing = 2,
-                    debuffSpacing = 2,
-                    durationColor = {1, 1, 1, 1},
-                    showDuration = false,
-                    durationSize = 12,
-                    durationAnchor = "CENTER",
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    -- Stack text
-                    stackColor = {1, 1, 1, 1},
-                    showStack = true,
-                    stackSize = 10,
-                    stackAnchor = "BOTTOMRIGHT",
-                    stackOffsetX = -1,
-                    stackOffsetY = 1,
-                    -- Buff duration/stack
-                    buffDuration = { show = true, fontSize = 12, anchor = "CENTER", offsetX = 0, offsetY = 0, color = {1, 1, 1, 1} },
-                    buffStack = { show = true, fontSize = 10, anchor = "BOTTOMRIGHT", offsetX = -1, offsetY = 1, color = {1, 1, 1, 1} },
-                    buffShowStack = true,
-                    buffStackSize = 10,
-                    buffStackAnchor = "BOTTOMRIGHT",
-                    buffStackOffsetX = -1,
-                    buffStackOffsetY = 1,
-                    buffStackColor = {1, 1, 1, 1},
-                    -- Debuff duration/stack
-                    debuffDuration = { show = false, fontSize = 10, anchor = "CENTER", offsetX = 0, offsetY = 0, color = {1, 1, 1, 1} },
-                    debuffStack = { show = true, fontSize = 10, anchor = "BOTTOMRIGHT", offsetX = -1, offsetY = 1, color = {1, 1, 1, 1} },
-                    debuffShowStack = true,
-                    debuffStackSize = 10,
-                    debuffStackAnchor = "BOTTOMRIGHT",
-                    debuffStackOffsetX = -1,
-                    debuffStackOffsetY = 1,
-                    debuffStackColor = {1, 1, 1, 1},
-                },
-                -- Target marker (raid icons like skull, cross, etc.)
-                targetMarker = {
-                    enabled = false,
-                    size = 20,
-                    anchor = "TOP",
-                    xOffset = 0,
-                    yOffset = 8,
-                },
-                -- Leader/Assistant icon (crown for leader, flag for assistant)
-                leaderIcon = {
-                    enabled = false,
-                    size = 16,
-                    anchor = "TOPLEFT",
-                    xOffset = -8,
-                    yOffset = 8,
-                },
-                -- Classification icon (elite/rare/boss indicator)
-                classificationIcon = {
-                    enabled = false,
-                    size = 16,
-                    anchor = "LEFT",
-                    xOffset = -8,
-                    yOffset = 0,
-                },
-            },
-            -- Target of Target
-            targettarget = {
-                enabled = false,
-                borderSize = 1,                     -- Frame border thickness (0-5)
-                width = 160,
-                height = 30,
-                offsetX = 496,
-                offsetY = -214,
-                texture = "Quazii",
-                useClassColor = true,
-                useHostilityColor = true,  -- Use red/yellow/green based on unit hostility
-                customHealthColor = { 0.2, 0.6, 0.2, 1 },
-                -- Name text
-                showName = true,
-                nameTextUseClassColor = false,
-                nameTextColor = { 1, 1, 1, 1 },
-                nameFontSize = 14,
-                nameAnchor = "LEFT",
-                nameOffsetX = 4,
-                nameOffsetY = 0,
-                maxNameLength = 0,
-                -- Health text
-                showHealth = true,
-                showHealthPercent = true,
-                showHealthAbsolute = false,
-                healthDisplayStyle = "percent",
-                hideHealthPercentSymbol = false,
-                healthDivider = " | ",
-                healthFontSize = 14,
-                healthAnchor = "RIGHT",
-                healthOffsetX = -4,
-                healthOffsetY = 0,
-                healthTextUseClassColor = false,
-                healthTextColor = { 1, 1, 1, 1 },
-                -- Power text
-                showPowerText = false,
-                powerTextFormat = "percent",
-                hidePowerPercentSymbol = false,
-                powerTextUsePowerColor = true,
-                powerTextUseClassColor = false,
-                powerTextColor = { 1, 1, 1, 1 },
-                powerTextFontSize = 10,
-                powerTextAnchor = "BOTTOMRIGHT",
-                powerTextOffsetX = -4,
-                powerTextOffsetY = 2,
-                -- Power bar
-                showPowerBar = false,
-                powerBarHeight = 3,
-                powerBarBorder = true,
-                powerBarUsePowerColor = true,
-                powerBarColor = { 0, 0.5, 1, 1 },  -- Custom power bar color
-                -- Absorbs
-                absorbs = {
-                    enabled = true,
-                    color = { 1, 1, 1, 1 },
-                    opacity = 0.7,
-                    texture = "QUI Stripes",
-                },
-                -- Castbar
-                castbar = {
-                    enabled = false,
-                    showIcon = true,
-                    width = 50,
-                    height = 12,
-                    offsetX = 0,
-                    offsetY = -20,
-                    widthAdjustment = 0,
-                    fontSize = 10,
-                    color = {1, 0.7, 0, 1},
-                },
-                -- Auras (buffs/debuffs)
-                auras = {
-                    showBuffs = false,
-                    showDebuffs = false,
-                    -- Debuff settings
-                    iconSize = 22,
-                    debuffAnchor = "TOPLEFT",
-                    debuffGrow = "RIGHT",
-                    debuffMaxIcons = 4,
-                    debuffOffsetX = 0,
-                    debuffOffsetY = 0,
-                    -- Buff settings
-                    buffIconSize = 22,
-                    buffAnchor = "BOTTOMLEFT",
-                    buffGrow = "RIGHT",
-                    buffMaxIcons = 4,
-                    buffOffsetX = 0,
-                    buffOffsetY = 0,
-                },
-                -- Target marker (raid icons like skull, cross, etc.)
-                targetMarker = {
-                    enabled = false,    -- Disabled by default for ToT (small frame)
-                    size = 16,
-                    anchor = "TOP",
-                    xOffset = 0,
-                    yOffset = 6,
-                },
-            },
-            -- Pet frame
-            pet = {
-                enabled = true,
-                borderSize = 1,                     -- Frame border thickness (0-5)
-                width = 140,
-                height = 25,
-                offsetX = -340,
-                offsetY = -254,
-                texture = "Quazii",
-                useClassColor = true,
-                useHostilityColor = true,
-                customHealthColor = { 0.2, 0.6, 0.2, 1 },
-                -- Name text
-                showName = true,
-                nameTextUseClassColor = false,
-                nameTextColor = { 1, 1, 1, 1 },
-                nameFontSize = 10,
-                nameAnchor = "LEFT",
-                nameOffsetX = 4,
-                nameOffsetY = 0,
-                maxNameLength = 0,
-                -- Health text
-                showHealth = true,
-                showHealthPercent = true,
-                showHealthAbsolute = false,
-                healthDisplayStyle = "percent",
-                hideHealthPercentSymbol = false,
-                healthDivider = " | ",
-                healthFontSize = 10,
-                healthAnchor = "RIGHT",
-                healthOffsetX = -4,
-                healthOffsetY = 0,
-                healthTextUseClassColor = false,
-                healthTextColor = { 1, 1, 1, 1 },
-                -- Power text
-                showPowerText = false,
-                powerTextFormat = "percent",
-                hidePowerPercentSymbol = false,
-                powerTextUsePowerColor = true,
-                powerTextUseClassColor = false,
-                powerTextColor = { 1, 1, 1, 1 },
-                powerTextFontSize = 10,
-                powerTextAnchor = "BOTTOMRIGHT",
-                powerTextOffsetX = -4,
-                powerTextOffsetY = 2,
-                -- Power bar
-                showPowerBar = true,
-                powerBarHeight = 3,
-                powerBarBorder = true,
-                powerBarUsePowerColor = true,
-                powerBarColor = { 0, 0.5, 1, 1 },  -- Custom power bar color
-                -- Absorbs
-                absorbs = {
-                    enabled = true,
-                    color = { 1, 1, 1 },
-                    opacity = 0.7,
-                    texture = "QUI Stripes",
-                },
-                -- Auras (buffs/debuffs)
-                auras = {
-                    showBuffs = false,
-                    showDebuffs = false,
-                    -- Debuff settings
-                    iconSize = 22,
-                    debuffAnchor = "TOPLEFT",
-                    debuffGrow = "RIGHT",
-                    debuffMaxIcons = 4,
-                    debuffOffsetX = 0,
-                    debuffOffsetY = 0,
-                    -- Buff settings
-                    buffIconSize = 22,
-                    buffAnchor = "BOTTOMLEFT",
-                    buffGrow = "RIGHT",
-                    buffMaxIcons = 4,
-                    buffOffsetX = 0,
-                    buffOffsetY = 0,
-                },
-                -- Target marker (raid icons like skull, cross, etc.)
-                targetMarker = {
-                    enabled = false,    -- Disabled by default for pet (rarely marked)
-                    size = 16,
-                    anchor = "TOP",
-                    xOffset = 0,
-                    yOffset = 6,
-                },
-                -- Castbar (opt-in for vehicle/RP casts)
-                castbar = {
-                    enabled = false,  -- Disabled by default (opt-in feature)
-                    showIcon = true,
-                    width = 140,
-                    height = 15,
-                    offsetX = 0,
-                    offsetY = -20,
-                    widthAdjustment = 0,
-                    fontSize = 10,
-                    color = {0.404, 1, 0.984, 1},
-                },
-            },
-            -- Focus frame
-            focus = {
-                enabled = false,
-                borderSize = 1,                     -- Frame border thickness (0-5)
-                width = 160,
-                height = 30,
-                offsetX = -496,
-                offsetY = -214,
-                texture = "Quazii v5",
-                useClassColor = true,
-                useHostilityColor = true,  -- Use red/yellow/green based on unit hostility
-                customHealthColor = { 0.2, 0.6, 0.2, 1 },
-                -- Portrait
-                showPortrait = false,
-                portraitSide = "RIGHT",
-                portraitSize = 30,
-                portraitBorderSize = 1,
-                portraitBorderUseClassColor = false,
-                portraitBorderColor = { 0, 0, 0, 1 },
-                portraitGap = 0,
-                -- Name text
-                showName = true,
-                nameTextUseClassColor = false,
-                nameTextColor = { 1, 1, 1, 1 },
-                nameFontSize = 14,
-                nameAnchor = "LEFT",
-                nameOffsetX = 4,
-                nameOffsetY = 0,
-                maxNameLength = 0,
-                -- Health text
-                showHealth = true,
-                showHealthPercent = true,
-                showHealthAbsolute = true,
-                healthDisplayStyle = "percent",
-                hideHealthPercentSymbol = false,
-                healthDivider = " | ",
-                healthFontSize = 14,
-                healthAnchor = "RIGHT",
-                healthOffsetX = -4,
-                healthOffsetY = 0,
-                healthTextUseClassColor = false,
-                healthTextColor = { 1, 1, 1, 1 },
-                -- Power text
-                showPowerText = false,
-                powerTextFormat = "percent",
-                hidePowerPercentSymbol = false,
-                powerTextUsePowerColor = true,
-                powerTextUseClassColor = false,
-                powerTextColor = { 1, 1, 1, 1 },
-                powerTextFontSize = 10,
-                powerTextAnchor = "BOTTOMRIGHT",
-                powerTextOffsetX = -4,
-                powerTextOffsetY = 2,
-                -- Power bar
-                showPowerBar = true,
-                powerBarHeight = 3,
-                powerBarBorder = true,
-                powerBarUsePowerColor = true,
-                powerBarColor = { 0, 0.5, 1, 1 },  -- Custom power bar color
-                -- Absorbs
-                absorbs = {
-                    enabled = true,
-                    color = { 1, 1, 1, 1 },
-                    opacity = 0.7,
-                    texture = "QUI Stripes",
-                },
-                -- Castbar
-                castbar = {
-                    enabled = true,
-                    showIcon = false,
-                    width = 160,
-                    height = 20,
-                    offsetX = 0,
-                    offsetY = 0,
-                    widthAdjustment = 0,
-                    fontSize = 14,
-                    color = {0.2, 0.6, 1, 1},
-                    notInterruptibleColor = {0.7, 0.2, 0.2, 1},
-                    anchor = "unitframe",
-                },
-                -- Auras (buffs/debuffs)
-                auras = {
-                    showBuffs = false,
-                    showDebuffs = false,
-                    -- Debuff settings
-                    iconSize = 20,
-                    debuffAnchor = "TOPLEFT",
-                    debuffGrow = "RIGHT",
-                    debuffMaxIcons = 16,
-                    debuffOffsetX = 0,
-                    debuffOffsetY = 2,
-                    -- Buff settings
-                    buffIconSize = 20,
-                    buffAnchor = "BOTTOMLEFT",
-                    buffGrow = "RIGHT",
-                    buffMaxIcons = 16,
-                    buffOffsetX = 0,
-                    buffOffsetY = -2,
-                },
-                -- Target marker (raid icons like skull, cross, etc.)
-                targetMarker = {
-                    enabled = false,
-                    size = 18,
-                    anchor = "TOP",
-                    xOffset = 0,
-                    yOffset = 6,
-                },
-                -- Leader/Assistant icon (crown for leader, flag for assistant)
-                leaderIcon = {
-                    enabled = false,
-                    size = 16,
-                    anchor = "TOPLEFT",
-                    xOffset = -8,
-                    yOffset = 8,
-                },
-                -- Classification icon (elite/rare/boss indicator)
-                classificationIcon = {
-                    enabled = false,
-                    size = 16,
-                    anchor = "LEFT",
-                    xOffset = -8,
-                    yOffset = 0,
-                },
-            },
-            -- Boss frames
-            boss = {
-                enabled = true,
-                borderSize = 1,                     -- Frame border thickness (0-5)
-                width = 162,
-                height = 36,
-                offsetX = 974,
-                offsetY = 106,
-                spacing = 35,           -- Vertical spacing between boss frames
-                texture = "Quazii v5",
-                useClassColor = true,
-                useHostilityColor = true,
-                customHealthColor = { 0.6, 0.2, 0.2, 1 },
-                -- Name text
-                showName = true,
-                nameTextUseClassColor = false,
-                nameTextColor = { 1, 1, 1, 1 },
-                nameFontSize = 11,
-                nameAnchor = "LEFT",
-                nameOffsetX = 4,
-                nameOffsetY = 0,
-                maxNameLength = 0,
-                -- Health text
-                showHealth = true,
-                healthDisplayStyle = "both",
-                hideHealthPercentSymbol = false,
-                healthDivider = " | ",
-                healthFontSize = 11,
-                healthAnchor = "RIGHT",
-                healthOffsetX = -4,
-                healthOffsetY = 0,
-                healthTextUseClassColor = false,
-                healthTextColor = { 1, 1, 1, 1 },
-                -- Power text
-                showPowerText = false,
-                powerTextFormat = "percent",
-                hidePowerPercentSymbol = false,
-                powerTextUsePowerColor = true,
-                powerTextUseClassColor = false,
-                powerTextColor = { 1, 1, 1, 1 },
-                powerTextFontSize = 10,
-                powerTextAnchor = "BOTTOMRIGHT",
-                powerTextOffsetX = -4,
-                powerTextOffsetY = 2,
-                -- Power bar
-                showPowerBar = true,
-                powerBarHeight = 3,
-                powerBarBorder = true,
-                powerBarUsePowerColor = true,
-                powerBarColor = { 0, 0.5, 1, 1 },  -- Custom power bar color
-                -- Absorbs
-                absorbs = {
-                    enabled = true,
-                    color = { 1, 1, 1 },
-                    opacity = 0.7,
-                    texture = "QUI Stripes",
-                },
-                -- Castbar
-                castbar = {
-                    enabled = true,
-                    showIcon = true,
-                    width = 162,
-                    height = 16,
-                    offsetX = 0,
-                    offsetY = 0,
-                    widthAdjustment = 0,
-                    fontSize = 11,
-                    color = {1, 0.7, 0, 1},
-                    anchor = "unitframe",
-                },
-                -- Auras (buffs/debuffs)
-                auras = {
-                    showBuffs = false,
-                    showDebuffs = false,
-                    -- Debuff settings
-                    iconSize = 22,
-                    debuffAnchor = "TOPLEFT",
-                    debuffGrow = "RIGHT",
-                    debuffMaxIcons = 4,
-                    debuffOffsetX = 0,
-                    debuffOffsetY = 0,
-                    -- Buff settings
-                    buffIconSize = 22,
-                    buffAnchor = "BOTTOMLEFT",
-                    buffGrow = "RIGHT",
-                    buffMaxIcons = 4,
-                    buffOffsetX = 0,
-                    buffOffsetY = 0,
-                },
-                -- Target marker (raid icons like skull, cross, etc.)
-                targetMarker = {
-                    enabled = false,
-                    size = 20,
-                    anchor = "TOP",
-                    xOffset = 0,
-                    yOffset = 8,
-                },
-                -- Classification icon (elite/rare/boss indicator)
-                classificationIcon = {
-                    enabled = false,
-                    size = 16,
-                    anchor = "LEFT",
-                    xOffset = -8,
-                    yOffset = 0,
-                },
-            },
-        },
-
-        -- QUI Group Frames (party/raid)
-        quiGroupFrames = {
-            enabled = false,          -- Disabled by default (opt-in feature)
-
-            -- Position (shared)
-            unifiedPosition = true,   -- true = party & raid share one position; false = separate movers
-            position = { offsetX = -400, offsetY = 0 },
-            raidPosition = { offsetX = -400, offsetY = 0 },  -- only used when unifiedPosition = false
-
-            -- Self-first (shared) — shows player in a separate header above party/raid
-            selfFirst = false,
-
-            -------------------------------------------------------------------
-            -- Party visual settings
-            -------------------------------------------------------------------
-            party = {
-                general = {
-                    useClassColor = true,
-                    texture = "Quazii v5",
-                    borderSize = 1,
-                    font = "Quazii",
-                    fontSize = 12,
-                    fontOutline = "OUTLINE",
-                    showTooltips = true,
-                    darkMode = false,
-                    darkModeHealthColor = { 0.15, 0.15, 0.15, 1 },
-                    darkModeBgColor = { 0.25, 0.25, 0.25, 1 },
-                    darkModeHealthOpacity = 1.0,
-                    darkModeBgOpacity = 1.0,
-                    defaultBgColor = { 0, 0, 0, 1 },
-                    defaultHealthOpacity = 1.0,
-                    defaultBgOpacity = 1.0,
-                },
-                layout = {
-                    growDirection = "DOWN",
-                    spacing = 2,
-                    showPlayer = true,
-                    showSolo = false,
-                    sortMethod = "INDEX",
-                    sortByRole = true,
-                    groupBy = "GROUP",
-                },
-                health = {
-                    showHealthText = true,
-                    healthDisplayStyle = "percent",
-                    healthFontSize = 12,
-                    healthAnchor = "RIGHT",
-                    healthJustify = "RIGHT",
-                    healthOffsetX = -4,
-                    healthOffsetY = 0,
-                    healthTextColor = { 1, 1, 1, 1 },
-                    healthFillDirection = "HORIZONTAL",
-                },
-                power = {
-                    showPowerBar = true,
-                    powerBarHeight = 4,
-                    powerBarUsePowerColor = true,
-                    powerBarColor = { 0.2, 0.4, 0.8, 1 },
-                    powerBarOnlyHealers = false,
-                    powerBarOnlyTanks = false,
-                },
-                name = {
-                    showName = true,
-                    nameFontSize = 12,
-                    nameAnchor = "LEFT",
-                    nameJustify = "LEFT",
-                    nameOffsetX = 4,
-                    nameOffsetY = 0,
-                    maxNameLength = 10,
-                    nameTextUseClassColor = false,
-                    nameTextColor = { 1, 1, 1, 1 },
-                },
-                absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.3 },
-                healPrediction = { enabled = true, color = { 0.2, 1, 0.2 }, opacity = 0.5 },
-                indicators = {
-                    showRoleIcon = true, roleIconSize = 12, roleIconAnchor = "TOPLEFT", roleIconOffsetX = 2, roleIconOffsetY = -2,
-                    showRoleTank = true, showRoleHealer = true, showRoleDPS = true,
-                    showReadyCheck = true, readyCheckSize = 16, readyCheckAnchor = "CENTER", readyCheckOffsetX = 0, readyCheckOffsetY = 0,
-                    showResurrection = true, resurrectionSize = 16, resurrectionAnchor = "CENTER", resurrectionOffsetX = 0, resurrectionOffsetY = 0,
-                    showSummonPending = true, summonSize = 20, summonAnchor = "CENTER", summonOffsetX = 16, summonOffsetY = 0,
-                    showLeaderIcon = true, leaderSize = 12, leaderAnchor = "TOP", leaderOffsetX = 0, leaderOffsetY = 6,
-                    showTargetMarker = true, targetMarkerSize = 14, targetMarkerAnchor = "TOPRIGHT", targetMarkerOffsetX = -2, targetMarkerOffsetY = -2,
-                    showThreatBorder = true, threatBorderSize = 3, threatColor = { 1, 0, 0, 0.8 }, threatFillOpacity = 0.15,
-                    showPhaseIcon = true, phaseSize = 16, phaseAnchor = "BOTTOMLEFT", phaseOffsetX = 2, phaseOffsetY = 2,
-                },
-                healer = {
-                    dispelOverlay = {
-                        enabled = true, opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
-                        colors = {
-                            Magic   = { 0.2, 0.6, 1.0, 1 },
-                            Curse   = { 0.6, 0.0, 1.0, 1 },
-                            Disease = { 0.6, 0.4, 0.0, 1 },
-                            Poison  = { 0.0, 0.6, 0.0, 1 },
-                        },
-                    },
-                    targetHighlight = { enabled = true, color = { 1, 1, 1, 0.6 }, fillOpacity = 0.12 },
-                    defensiveIndicator = { enabled = false, iconSize = 16, maxIcons = 3, spacing = 2, growDirection = "RIGHT", position = "CENTER", offsetX = 0, offsetY = 0 },
-                },
-                classPower = { enabled = false, height = 4, spacing = 1 },
-                range = { enabled = true, outOfRangeAlpha = 0.4 },
-                auras = {
-                    showDebuffs = true, maxDebuffs = 3, debuffIconSize = 16,
-                    debuffAnchor = "BOTTOMRIGHT", debuffGrowDirection = "LEFT",
-                    debuffSpacing = 2, debuffOffsetX = -2, debuffOffsetY = -18,
-                    showBuffs = false, maxBuffs = 0, buffIconSize = 14,
-                    buffAnchor = "TOPLEFT", buffGrowDirection = "RIGHT",
-                    buffSpacing = 2, buffOffsetX = 2, buffOffsetY = 16,
-                    showDurationColor = true,
-                    showExpiringPulse = true,
-                    filterMode = "off",
-                    buffFilterOnlyMine = false,
-                    buffHidePermanent = false,
-                    buffDeduplicateDefensives = true,
-                    buffClassifications = { raid = false, cancelable = false, important = false },
-                    debuffClassifications = { raid = true, crowdControl = true, important = true },
-                    buffWhitelist = {},
-                    buffBlacklist = {},
-                    debuffWhitelist = {},
-                    debuffBlacklist = {},
-                },
-                privateAuras = {
-                    enabled = true,
-                    maxPerFrame = 2,
-                    iconSize = 20,
-                    growDirection = "RIGHT",
-                    spacing = 2,
-                    anchor = "RIGHT",
-                    anchorOffsetX = -2,
-                    anchorOffsetY = 0,
-                    showCountdown = true,
-                    showCountdownNumbers = true,
-                },
-                auraIndicators = {
-                    enabled = false,
-                    iconSize = 14,
-                    anchor = "TOPLEFT",
-                    anchorOffsetX = 0,
-                    anchorOffsetY = 0,
-                    growDirection = "RIGHT",
-                    spacing = 2,
-                    maxIndicators = 5,
-                    trackedSpells = {},
-                },
-                castbar = { enabled = false, height = 8, showIcon = false, showText = false },
-                portrait = { showPortrait = false, portraitSide = "LEFT", portraitSize = 30 },
-                pets = {
-                    enabled = false,
-                    width = 100, height = 20,
-                    showPowerBar = false,
-                    showAuras = false,
-                    anchorTo = "BOTTOM",
-                    anchorGap = 2,
-                },
-                dimensions = {
-                    partyWidth = 200, partyHeight = 40,
-                },
-            },
-
-            -------------------------------------------------------------------
-            -- Raid visual settings
-            -------------------------------------------------------------------
-            raid = {
-                general = {
-                    useClassColor = true,
-                    texture = "Quazii v5",
-                    borderSize = 1,
-                    font = "Quazii",
-                    fontSize = 12,
-                    fontOutline = "OUTLINE",
-                    showTooltips = true,
-                    darkMode = false,
-                    darkModeHealthColor = { 0.15, 0.15, 0.15, 1 },
-                    darkModeBgColor = { 0.25, 0.25, 0.25, 1 },
-                    darkModeHealthOpacity = 1.0,
-                    darkModeBgOpacity = 1.0,
-                    defaultBgColor = { 0, 0, 0, 1 },
-                    defaultHealthOpacity = 1.0,
-                    defaultBgOpacity = 1.0,
-                },
-                layout = {
-                    growDirection = "DOWN",
-                    groupGrowDirection = "RIGHT",
-                    spacing = 2,
-                    groupSpacing = 10,
-                    sortMethod = "INDEX",
-                    sortByRole = true,
-                    groupBy = "GROUP",
-                    unitsPerFlat = 5,
-                },
-                health = {
-                    showHealthText = true,
-                    healthDisplayStyle = "percent",
-                    healthFontSize = 12,
-                    healthAnchor = "RIGHT",
-                    healthJustify = "RIGHT",
-                    healthOffsetX = -4,
-                    healthOffsetY = 0,
-                    healthTextColor = { 1, 1, 1, 1 },
-                    healthFillDirection = "HORIZONTAL",
-                },
-                power = {
-                    showPowerBar = true,
-                    powerBarHeight = 4,
-                    powerBarUsePowerColor = true,
-                    powerBarColor = { 0.2, 0.4, 0.8, 1 },
-                    powerBarOnlyHealers = false,
-                    powerBarOnlyTanks = false,
-                },
-                name = {
-                    showName = true,
-                    nameFontSize = 12,
-                    nameAnchor = "LEFT",
-                    nameJustify = "LEFT",
-                    nameOffsetX = 4,
-                    nameOffsetY = 0,
-                    maxNameLength = 10,
-                    nameTextUseClassColor = false,
-                    nameTextColor = { 1, 1, 1, 1 },
-                },
-                absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.3 },
-                healPrediction = { enabled = true, color = { 0.2, 1, 0.2 }, opacity = 0.5 },
-                indicators = {
-                    showRoleIcon = true, roleIconSize = 12, roleIconAnchor = "TOPLEFT", roleIconOffsetX = 2, roleIconOffsetY = -2,
-                    showRoleTank = true, showRoleHealer = true, showRoleDPS = true,
-                    showReadyCheck = true, readyCheckSize = 16, readyCheckAnchor = "CENTER", readyCheckOffsetX = 0, readyCheckOffsetY = 0,
-                    showResurrection = true, resurrectionSize = 16, resurrectionAnchor = "CENTER", resurrectionOffsetX = 0, resurrectionOffsetY = 0,
-                    showSummonPending = true, summonSize = 20, summonAnchor = "CENTER", summonOffsetX = 16, summonOffsetY = 0,
-                    showLeaderIcon = true, leaderSize = 12, leaderAnchor = "TOP", leaderOffsetX = 0, leaderOffsetY = 6,
-                    showTargetMarker = true, targetMarkerSize = 14, targetMarkerAnchor = "TOPRIGHT", targetMarkerOffsetX = -2, targetMarkerOffsetY = -2,
-                    showThreatBorder = true, threatBorderSize = 3, threatColor = { 1, 0, 0, 0.8 }, threatFillOpacity = 0.15,
-                    showPhaseIcon = true, phaseSize = 16, phaseAnchor = "BOTTOMLEFT", phaseOffsetX = 2, phaseOffsetY = 2,
-                },
-                healer = {
-                    dispelOverlay = {
-                        enabled = true, opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
-                        colors = {
-                            Magic   = { 0.2, 0.6, 1.0, 1 },
-                            Curse   = { 0.6, 0.0, 1.0, 1 },
-                            Disease = { 0.6, 0.4, 0.0, 1 },
-                            Poison  = { 0.0, 0.6, 0.0, 1 },
-                        },
-                    },
-                    targetHighlight = { enabled = true, color = { 1, 1, 1, 0.6 }, fillOpacity = 0.12 },
-                    defensiveIndicator = { enabled = false, iconSize = 16, maxIcons = 3, spacing = 2, growDirection = "RIGHT", position = "CENTER", offsetX = 0, offsetY = 0 },
-                },
-                classPower = { enabled = false, height = 4, spacing = 1 },
-                range = { enabled = true, outOfRangeAlpha = 0.4 },
-                auras = {
-                    showDebuffs = true, maxDebuffs = 3, debuffIconSize = 16,
-                    debuffAnchor = "BOTTOMRIGHT", debuffGrowDirection = "LEFT",
-                    debuffSpacing = 2, debuffOffsetX = -2, debuffOffsetY = -18,
-                    showBuffs = false, maxBuffs = 0, buffIconSize = 14,
-                    buffAnchor = "TOPLEFT", buffGrowDirection = "RIGHT",
-                    buffSpacing = 2, buffOffsetX = 2, buffOffsetY = 16,
-                    showDurationColor = true,
-                    showExpiringPulse = true,
-                    filterMode = "off",
-                    buffFilterOnlyMine = false,
-                    buffHidePermanent = false,
-                    buffDeduplicateDefensives = true,
-                    buffClassifications = { raid = false, cancelable = false, important = false },
-                    debuffClassifications = { raid = true, crowdControl = true, important = true },
-                    buffWhitelist = {},
-                    buffBlacklist = {},
-                    debuffWhitelist = {},
-                    debuffBlacklist = {},
-                },
-                privateAuras = {
-                    enabled = true,
-                    maxPerFrame = 2,
-                    iconSize = 20,
-                    growDirection = "RIGHT",
-                    spacing = 2,
-                    anchor = "RIGHT",
-                    anchorOffsetX = -2,
-                    anchorOffsetY = 0,
-                    showCountdown = true,
-                    showCountdownNumbers = true,
-                },
-                auraIndicators = {
-                    enabled = false,
-                    iconSize = 14,
-                    anchor = "TOPLEFT",
-                    anchorOffsetX = 0,
-                    anchorOffsetY = 0,
-                    growDirection = "RIGHT",
-                    spacing = 2,
-                    maxIndicators = 5,
-                    trackedSpells = {},
-                },
-                castbar = { enabled = false, height = 8, showIcon = false, showText = false },
-                portrait = { showPortrait = false, portraitSide = "LEFT", portraitSize = 30 },
-                pets = {
-                    enabled = false,
-                    width = 100, height = 20,
-                    showPowerBar = false,
-                    showAuras = false,
-                    anchorTo = "BOTTOM",
-                    anchorGap = 2,
-                },
-                dimensions = {
-                    smallRaidWidth = 180, smallRaidHeight = 36,
-                    mediumRaidWidth = 160, mediumRaidHeight = 30,
-                    largeRaidWidth = 140, largeRaidHeight = 24,
-                },
-                spotlight = {
-                    enabled = false,
-                    byRole = {},
-                    byName = {},
-                    position = { offsetX = -400, offsetY = 200 },
-                    growDirection = "DOWN",
-                    spacing = 2,
-                    useMainFrameStyle = true,
-                },
-            },
-
-            -- Click-casting (shared)
-            clickCast = {
-                enabled = false,
-                bindings = {},
-                perSpec = true,
-                smartRes = true,
-                showTooltip = true,
-                unitFrames = {
-                    player = false,
-                    target = false,
-                    targettarget = false,
-                    focus = false,
-                    pet = false,
-                },
-            },
-
-            -- Test/preview mode (shared)
-            testMode = {
-                partyCount = 5,
-                raidCount = 25,
-            },
-        },
-
-        unitFrames = {
-            enabled = true,
-            General = {
-                Font = "Quazii",
-                FontFlag = "OUTLINE",
-                FontShadows = {
-                    Color = {0, 0, 0, 0},
-                    OffsetX = 0,
-                    OffsetY = 0
-                },
-                ForegroundTexture = "Quazii_v5",
-                BackgroundTexture = "Solid",
-                -- Dark Mode: overrides class colors on unit frame health bars (not resource bars)
-                DarkMode = {
-                    Enabled = false,
-                    ForegroundColor = {0.15, 0.15, 0.15, 1},  -- Very dark for health bar
-                    BackgroundColor = {0.25, 0.25, 0.25, 1},  -- Slightly lighter for background
-                    UseSolidTexture = true,  -- Force solid texture when dark mode is enabled
-                },
-                CustomColors = {
-                    Reaction = {
-                        [1] = {204/255, 64/255, 64/255},    -- Hated
-                        [2] = {204/255, 64/255, 64/255},    -- Hostile
-                        [3] = {204/255, 128/255, 64/255},   -- Unfriendly
-                        [4] = {255/255, 234/255, 126/255},   -- Neutral
-                        [5] = {64/255, 204/255, 64/255},    -- Friendly
-                        [6] = {64/255, 204/255, 64/255},    -- Honored
-                        [7] = {64/255, 204/255, 64/255},    -- Revered
-                        [8] = {64/255, 204/255, 64/255},    -- Exalted
-                    },
-                    Power = {
-                        [0] = {0, 0.50, 1},            -- Mana
-                        [1] = {1, 0, 0},            -- Rage
-                        [2] = {1, 0.5, 0.25},       -- Focus
-                        [3] = {1, 1, 0},            -- Energy
-                        [6] = {0, 0.82, 1},         -- Runic Power
-                        [8] = {0.3, 0.52, 0.9},     -- Lunar Power
-                        [11] = {0, 0.5, 1},         -- Maelstrom
-                        [13] = {0.4, 0, 0.8},       -- Insanity
-                        [17] = {0.79, 0.26, 0.99},  -- Fury
-                        [18] = {1, 0.61, 0}         -- Pain
-                    },
-                },
-            },
-            player = {
-                Enabled = true,
-                Frame = {
-                    Width = 244,
-                    Height = 42,
-                    AnchorFrom = "CENTER",
-                    AnchorTo = "CENTER",
-                    Texture = "Quazii",
-                    ClassColor = true,
-                    ReactionColor = false,
-                    FGColor = {26/255, 26/255, 26/255, 1.0},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                PowerBar = {
-                    Enabled = true,
-                    Height = 2,
-                    ColorByType = true,
-                    ColorBackgroundByType = false,
-                    FGColor = {8/255, 8/255, 8/255, 0.8},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                Tags = {
-                    Name = {
-                        Enabled = true,
-                        AnchorFrom = "LEFT",
-                        AnchorTo = "LEFT",
-                        OffsetX = 3,
-                        OffsetY = 0,
-                        FontSize = 14,
-                        Color = {1, 1, 1, 1},
-                        ColorByStatus = false,
-                    },
-                    Health = {
-                        Enabled = true,
-                        AnchorFrom = "RIGHT",
-                        AnchorTo = "RIGHT",
-                        OffsetX = -3,
-                        OffsetY = 0,
-                        FontSize = 14,
-                        Color = {1, 1, 1, 1},
-                        DisplayPercent = true,
-                    },
-                    Power = {
-                        Enabled = false,
-                        AnchorFrom = "BOTTOMRIGHT",
-                        AnchorTo = "BOTTOMRIGHT",
-                        OffsetX = -4,
-                        OffsetY = 4,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                    },
-                },
-                Absorb = {
-                    Enabled = true,
-                    Color = {0, 1, 0.96, 0.2},  -- #00FFF5 (cyan) with 20% opacity
-                },
-            },
-            target = {
-                Enabled = true,
-                Frame = {
-                    Width = 244,
-                    Height = 42,
-                    AnchorFrom = "CENTER",
-                    AnchorTo = "CENTER",
-                    Texture = "Quazii",
-                    ClassColor = true,
-                    ReactionColor = true,
-                    FGColor = {26/255, 26/255, 26/255, 1.0},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                PowerBar = {
-                    Enabled = true,
-                    Height = 2,
-                    ColorByType = true,
-                    ColorBackgroundByType = false,
-                    FGColor = {8/255, 8/255, 8/255, 0.8},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                Tags = {
-                    Name = {
-                        Enabled = true,
-                        AnchorFrom = "LEFT",
-                        AnchorTo = "LEFT",
-                        OffsetX = 3,
-                        OffsetY = 0,
-                        FontSize = 14,
-                        Color = {1, 1, 1, 1},
-                        ColorByStatus = false,
-                    },
-                    Health = {
-                        Enabled = true,
-                        AnchorFrom = "RIGHT",
-                        AnchorTo = "RIGHT",
-                        OffsetX = -3,
-                        OffsetY = 0,
-                        FontSize = 14,
-                        Color = {1, 1, 1, 1},
-                        DisplayPercent = true,
-                    },
-                    Power = {
-                        Enabled = false,
-                        AnchorFrom = "BOTTOMRIGHT",
-                        AnchorTo = "BOTTOMRIGHT",
-                        OffsetX = -4,
-                        OffsetY = 4,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                    },
-                },
-                Auras = {
-                    Width = 0,  -- 0 = use frame width
-                    Height = 18,
-                    Scale = 2.5,
-                    Alpha = 1,
-                    RowLimit = 0,  -- 0 = unlimited
-                    -- Border settings (applies to both buffs and debuffs)
-                    BorderSize = 1,
-                    BorderColor = {0, 0, 0, 1},  -- Black border
-                    -- Debuff settings
-                    ShowDebuffs = true,
-                    DebuffOffsetX = 0,
-                    DebuffOffsetY = 2,
-                    -- Buff settings
-                    ShowBuffs = true,
-                    BuffOffsetX = 0,
-                    BuffOffsetY = 40,
-                },
-                Absorb = {
-                    Enabled = true,
-                    Color = {0, 1, 0.96, 0.2},  -- #00FFF5 (cyan) with 20% opacity
-                },
-            },
-            targettarget = {
-                Enabled = true,
-                Frame = {
-                    Width = 122,
-                    Height = 21,
-                    XPosition = 183.1,
-                    YPosition = -10,
-                    AnchorFrom = "CENTER",
-                    AnchorParent = "QUICore_Target",
-                    AnchorTo = "CENTER",
-                    Texture = "Quazii",
-                    ClassColor = true,
-                    ReactionColor = true,
-                    FGColor = {26/255, 26/255, 26/255, 1.0},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                Tags = {
-                    Name = {
-                        Enabled = true,
-                        AnchorFrom = "CENTER",
-                        AnchorTo = "CENTER",
-                        OffsetX = 0,
-                        OffsetY = 0,
-                        FontSize = 14,
-                        Color = {1, 1, 1, 1},
-                        ColorByStatus = false,
-                    },
-                    Health = {
-                        Enabled = false,
-                        AnchorFrom = "RIGHT",
-                        AnchorTo = "RIGHT",
-                        OffsetX = -3,
-                        OffsetY = 0,
-                        FontSize = 14,
-                        Color = {1, 1, 1, 1},
-                        DisplayPercent = true,
-                    },
-                },
-            },
-            pet = {
-                Enabled = true,
-                Frame = {
-                    Width = 244,
-                    Height = 21,
-                    AnchorFrom = "CENTER",
-                    AnchorTo = "CENTER",
-                    Texture = "Quazii",
-                    ClassColor = true,
-                    ReactionColor = false,
-                    FGColor = {26/255, 26/255, 26/255, 1.0},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                Tags = {
-                    Name = {
-                        Enabled = true,
-                        AnchorFrom = "CENTER",
-                        AnchorTo = "CENTER",
-                        OffsetX = 0,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                        ColorByStatus = false,
-                    },
-                    Health = {
-                        Enabled = false,
-                        AnchorFrom = "RIGHT",
-                        AnchorTo = "RIGHT",
-                        OffsetX = -3,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                        DisplayPercent = true,
-                    },
-                    Power = {
-                        Enabled = false,
-                        AnchorFrom = "BOTTOMRIGHT",
-                        AnchorTo = "BOTTOMRIGHT",
-                        OffsetX = -4,
-                        OffsetY = 4,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                    },
-                },
-            },
-            focus = {
-                Enabled = true,
-                Frame = {
-                    Width = 122,
-                    Height = 21,
-                    AnchorFrom = "CENTER",
-                    AnchorTo = "CENTER",
-                    Texture = "Quazii",
-                    ClassColor = true,
-                    ReactionColor = true,
-                    FGColor = {26/255, 26/255, 26/255, 1.0},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                PowerBar = {
-                    Enabled = true,
-                    Height = 2,
-                    ColorByType = true,
-                    ColorBackgroundByType = true,
-                    FGColor = {8/255, 8/255, 8/255, 0.8},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                Tags = {
-                    Name = {
-                        Enabled = true,
-                        AnchorFrom = "CENTER",
-                        AnchorTo = "CENTER",
-                        OffsetX = 0,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                        ColorByStatus = false,
-                    },
-                    Health = {
-                        Enabled = false,
-                        AnchorFrom = "RIGHT",
-                        AnchorTo = "RIGHT",
-                        OffsetX = -3,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                        DisplayPercent = true,
-                    },
-                    Power = {
-                        Enabled = false,
-                        AnchorFrom = "BOTTOMRIGHT",
-                        AnchorTo = "BOTTOMRIGHT",
-                        OffsetX = -4,
-                        OffsetY = 4,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                    },
-                },
-            },
-            focus = {
-                Enabled = true,
-                Frame = {
-                    Width = 122,
-                    Height = 21,
-                    AnchorFrom = "CENTER",
-                    AnchorTo = "CENTER",
-                    ClassColor = true,
-                    ReactionColor = true,
-                    FGColor = {26/255, 26/255, 26/255, 1.0},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                PowerBar = {
-                    Enabled = true,
-                    Height = 2,
-                    ColorByType = true,
-                    ColorBackgroundByType = true,
-                    FGColor = {8/255, 8/255, 8/255, 0.8},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                Tags = {
-                    Name = {
-                        Enabled = true,
-                        AnchorFrom = "CENTER",
-                        AnchorTo = "CENTER",
-                        OffsetX = 0,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                        ColorByStatus = false,
-                    },
-                    Health = {
-                        Enabled = false,
-                        AnchorFrom = "RIGHT",
-                        AnchorTo = "RIGHT",
-                        OffsetX = -3,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                        DisplayPercent = true,
-                    },
-                    Power = {
-                        Enabled = false,
-                        AnchorFrom = "BOTTOMRIGHT",
-                        AnchorTo = "BOTTOMRIGHT",
-                        OffsetX = -4,
-                        OffsetY = 4,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                    },
-                },
-            },
-            boss = {
-                Enabled = true,
-                Frame = {
-                    Width = 200,
-                    Height = 36,
-                    XPosition = 350,
-                    YPosition = 0,
-                    AnchorFrom = "LEFT",
-                    AnchorParent = "QUICore_Target",
-                    AnchorTo = "RIGHT",
-                    Texture = "Quazii",
-                    ClassColor = true,
-                    ReactionColor = true,
-                    FGColor = {26/255, 26/255, 26/255, 1.0},
-                    BGColor = {45/255, 45/255, 45/255, 1.0},
-                },
-                Tags = {
-                    Name = {
-                        Enabled = true,
-                        AnchorFrom = "LEFT",
-                        AnchorTo = "LEFT",
-                        OffsetX = 4,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                        ColorByClass = false,
-                        ColorByStatus = true,
-                    },
-                    Health = {
-                        Enabled = true,
-                        AnchorFrom = "RIGHT",
-                        AnchorTo = "RIGHT",
-                        OffsetX = -4,
-                        OffsetY = 0,
-                        FontSize = 12,
-                        Color = {1, 1, 1, 1},
-                    },
-                },
-            },
-        },
-        -- Config Panel Scale, Width, and Alpha (for the settings UI, not the in-game HUD)
-        configPanelScale = 1.0,
-        configPanelWidth = 750,
-        configPanelAlpha = 0.97,
-
-        -- Addon Accent Color (drives options panel theme + default fallback for skinned elements)
-        addonAccentColor = {0.204, 0.827, 0.6, 1},  -- #34D399 Mint
-
-        -- Combat Text Indicator
-        combatText = {
-            enabled = true,
-            displayTime = 0.8,    -- Time text is visible before fade starts (seconds)
-            fadeTime = 0.3,       -- Fade animation duration (seconds)
-            fontSize = 14,        -- Text size
-            xOffset = 0,          -- Horizontal offset from screen center
-            yOffset = 0,          -- Vertical offset from screen center (positive = above)
-            enterCombatColor = {1, 0.98, 0.2, 1},      -- +Combat text color (#FFFA33 yellow)
-            leaveCombatColor = {1, 0.98, 0.2, 1},      -- -Combat text color (#FFFA33 yellow)
-        },
-
-        -- Battle Res Counter (displays brez charges and timer)
-        brzCounter = {
-            enabled = true,
-            width = 50,
-            height = 50,
-            fontSize = 14,
-            timerFontSize = 12,
-            xOffset = 500,
-            yOffset = -50,
-            showBackdrop = true,
-            backdropColor = { 0, 0, 0, 0.6 },
-            textColor = { 1, 1, 1, 1 },
-            timerColor = { 1, 1, 1, 1 },
-            noChargesColor = { 1, 0.3, 0.3, 1 },
-            hasChargesColor = { 0.3, 1, 0.3, 1 },
-            useClassColorText = false,
-            borderSize = 1,
-            hideBorder = false,
-            borderColor = { 0, 0, 0, 1 },
-            useClassColorBorder = false,
-            useAccentColorBorder = false,
-            borderTexture = "None",
-            useCustomFont = false,
-            font = nil,
-        },
-
-        -- Combat Timer (displays elapsed combat time)
-        combatTimer = {
-            enabled = false,       -- Opt-in feature (disabled by default)
-            xOffset = 0,           -- Horizontal offset from screen center
-            yOffset = -150,        -- Vertical offset (below center by default)
-            width = 80,            -- Frame width
-            height = 30,           -- Frame height
-            fontSize = 16,         -- Font size for timer text
-            useCustomFont = false, -- If false, use global addon font
-            font = "Quazii",       -- Font name (from LibSharedMedia)
-            useClassColorText = false,  -- If true, use player class color for text
-            textColor = {1, 1, 1, 1},  -- White text
-            -- Backdrop settings
-            showBackdrop = true,
-            backdropColor = {0, 0, 0, 0.6},  -- Semi-transparent black
-            -- Border settings
-            borderSize = 1,
-            borderTexture = "None", -- Border texture from LibSharedMedia (or "None" for solid)
-            useClassColorBorder = false,  -- If true, use player class color
-            useAccentColorBorder = false,  -- If true, use addon accent color
-            borderColor = {0, 0, 0, 1},  -- Black border
-            hideBorder = false,  -- If true, hide border completely (overrides other border settings)
-            onlyShowInEncounters = false,  -- If true, only show during boss encounters (not general combat)
-        },
-
-        -- XP Tracker
-        xpTracker = {
-            enabled = false,
-            width = 300,
-            height = 90,
-            barHeight = 20,
-            headerFontSize = 12,
-            headerLineHeight = 18,
-            fontSize = 11,
-            lineHeight = 14,
-            offsetX = 0,
-            offsetY = 150,
-            locked = true,
-            hideTextUntilHover = false,
-            detailsGrowDirection = "auto",
-            barTexture = "Solid",
-            showBarText = true,
-            showRested = true,
-            barColor = {0.2, 0.5, 1.0, 1},
-            restedColor = {1.0, 0.7, 0.1, 0.5},
-            backdropColor = {0.05, 0.05, 0.07, 0.85},
-            borderColor = {0, 0, 0, 1},
-        },
-
-        -- Cooldown Manager Effects
-        cooldownSwipe = {
-            showBuffSwipe = false,      -- Buff/aura duration swipe (Essential/Utility)
-            showBuffIconSwipe = false,  -- BuffIcon viewer swipe (opt-in)
-            showGCDSwipe = false,       -- GCD swipe (~1.5s)
-            showCooldownSwipe = false,  -- Actual spell cooldown swipe
-
-            showActionSwipe = true,     -- Action bar cooldown swipe
-            showNcdmSwipe = true,       -- NCDM cooldown swipe
-            showCustomTrackerSwipe = true, -- Custom tracker cooldown swipe
-            migratedToV2 = true,        -- Migration marker from old hideEssential/hideUtility
-        },
-        cooldownEffects = {
-            hideEssential = true,
-            hideUtility = true,
-        },
-        cooldownManager = {
-            -- hideSwipe removed - now handled by cooldownSwipe
-        },
-        
-        -- Custom Glow Settings (for Essential/Utility cooldown viewers)
-        customGlow = {
-            -- Essential Cooldowns
-            essentialEnabled = true,
-            essentialGlowType = "Pixel Glow",  -- "Pixel Glow", "Autocast Shine", "Button Glow"
-            essentialColor = {0.95, 0.95, 0.32, 1},  -- Default yellow/gold
-            essentialLines = 14,       -- Number of lines for Pixel Glow / spots for Autocast Shine
-            essentialFrequency = 0.25, -- Animation speed
-            essentialLength = nil,     -- nil = auto-calculate based on icon size
-            essentialThickness = 2,    -- Line thickness for Pixel Glow
-            essentialScale = 1,        -- Scale for Autocast Shine
-            essentialXOffset = 0,
-            essentialYOffset = 0,
-
-            -- Utility Cooldowns
-            utilityEnabled = true,
-            utilityGlowType = "Pixel Glow",
-            utilityColor = {0.95, 0.95, 0.32, 1},
-            utilityLines = 14,
-            utilityFrequency = 0.25,
-            utilityLength = nil,
-            utilityThickness = 2,
-            utilityScale = 1,
-            utilityXOffset = 0,
-            utilityYOffset = 0,
-        },
-        
-        -- Buff/Debuff Visuals
-        buffBorders = {
-            enableBuffs = true,
-            enableDebuffs = true,
-            borderSize = 2,
-            fontSize = 12,
-            fontOutline = true,
-        },
-        
-        -- QUI Autohides
-        uiHider = {
-            hideObjectiveTrackerAlways = false,  -- Hide Objective Tracker always
-            hideObjectiveTrackerInstanceTypes = {
-                mythicPlus = false,
-                mythicDungeon = false,
-                normalDungeon = false,
-                heroicDungeon = false,
-                followerDungeon = false,
-                raid = false,
-                pvp = false,
-                arena = false,
-            },
-            hideMinimapBorder = true,
-            hideTimeManager = true,
-            hideGameTime = true,
-            hideMinimapTracking = true,
-            hideRaidFrameManager = true,
-            hideMinimapZoneText = true,
-            hideBuffCollapseButton = true,
-            hideFriendlyPlayerNameplates = true,
-            hideFriendlyNPCNameplates = true,
-            hideTalkingHead = true,
-            muteTalkingHead = false,
-            hideErrorMessages = false,
-            hideInfoMessages = false,
-            hideMinimapZoomButtons = true,
-            hideWorldMapBlackout = true,
-            hideTalkingHeadFrame = true,
-            hideXPAtMaxLevel = false,
-            hideExperienceBar = false,
-            hideReputationBar = false,
-            hideMainActionBarArt = false,
-        },
-        
-        -- Minimap Settings
-        minimap = {
-            enabled = true,  -- Enabled by default for clean minimap experience
-            
-            -- Shape and Size
-            shape = "SQUARE",  -- SQUARE or ROUND
-            size = 160,
-            scale = 1.0,  -- Scale multiplier for minimap frame
-            borderSize = 2,
-            borderColor = {0, 0, 0, 1},  -- Black border
-            useClassColorBorder = false,
-            useAccentColorBorder = false,
-            buttonRadius = 2,  -- LibDBIcon button radius for square minimap
-            
-            -- Position
-            lock = false,  -- Unlocked by default so users can position it
-            position = { point = "TOPLEFT", relPoint = "BOTTOMLEFT", x = 790, y = 285 },
-            
-            -- Features
-            autoZoom = false,  -- Auto zoom out after 10 seconds
-            hideAddonButtons = true,  -- Show addon buttons on hover only
-            buttonDrawer = {
-                enabled = false,        -- Off by default (opt-in feature)
-                anchor = "RIGHT",       -- Which side of minimap: LEFT, RIGHT, TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT, TOP, BOTTOM
-                offsetX = 0,            -- Horizontal offset from anchor position
-                offsetY = 0,            -- Vertical offset from anchor position
-                toggleOffsetX = 0,      -- Horizontal offset for the toggle button
-                toggleOffsetY = 0,      -- Vertical offset for the toggle button
-                openOnMouseover = true, -- Open drawer when hovering the toggle button
-                autoHideToggle = false, -- Auto-hide the toggle button (show on minimap hover)
-                hiddenButtons = {},     -- Table of button names hidden from the drawer (e.g., { ["LibDBIcon10_Details"] = true })
-                autoHideDelay = 1.5,    -- Seconds after mouse leave before hiding (0 = no auto-hide)
-                buttonSize = 28,        -- Size of collected buttons in pixels
-                buttonSpacing = 2,      -- Gap between buttons in pixels
-                padding = 6,            -- Inner frame padding around the icon grid
-                columns = 1,            -- Number of columns in grid layout (1 = vertical strip)
-                growthDirection = "RIGHT", -- Primary growth direction: RIGHT, LEFT, UP, DOWN
-                centerGrowth = false,      -- Expand around center axis instead of from one edge
-                bgColor = {0.03, 0.03, 0.03, 1}, -- Drawer background color (alpha controlled by bgOpacity)
-                bgOpacity = 98,            -- Drawer background opacity (0-100)
-                borderSize = 1,            -- Drawer border thickness multiplier (0 hides border)
-                borderColor = {0.2, 0.8, 0.6, 1}, -- Drawer border color
-            },
-            middleClickMenuEnabled = true,  -- Middle click minimap opens quick menu
-            hideMicroMenu = false,  -- Hide Blizzard micro menu (Character/Spellbook/etc.)
-            hideBagBar = false,  -- Hide Blizzard bag bar
-            
-            -- Button Visibility
-            showZoomButtons = false,
-            showMail = false,
-            showCraftingOrder = true,
-            showAddonCompartment = false,
-            showDifficulty = false,
-            showMissions = false,
-            showCalendar = true,
-            showTracking = false,
-
-            -- Dungeon Eye (LFG Queue Status Button) - repositions to minimap when in queue
-            dungeonEye = {
-                enabled = true,
-                corner = "BOTTOMLEFT",
-                scale = 0.6,
-                offsetX = 0,
-                offsetY = 0,
-            },
-
-            -- Clock (anchored top-left) - disabled by default, user can enable
-            showClock = false,
-            clockConfig = {
-                offsetX = 0,
-                offsetY = 0,
-                align = "LEFT",
-                font = "Quazii",
-                fontSize = 12,
-                monochrome = false,
-                outline = "OUTLINE",
-                color = {1, 1, 1, 1},
-                useClassColor = false,
-                timeFormat = "local",  -- "local" or "server"
-            },
-            
-            -- Coordinates (anchored top-right)
-            showCoords = false,
-            coordPrecision = "%d,%d",  -- %d,%d = normal, %.1f,%.1f = high, %.2f,%.2f = very high
-            coordUpdateInterval = 1,  -- Update every 1 second
-            coordsConfig = {
-                offsetX = 0,
-                offsetY = 0,
-                align = "RIGHT",
-                font = "Quazii",
-                fontSize = 12,
-                monochrome = false,
-                outline = "OUTLINE",
-                color = {1, 1, 1, 1},
-                useClassColor = false,
-            },
-            
-            -- Zone Text (anchored top-center)
-            showZoneText = true,
-            zoneTextConfig = {
-                offsetX = 0,
-                offsetY = 0,
-                align = "CENTER",
-                font = "Quazii",
-                fontSize = 12,
-                allCaps = false,
-                monochrome = false,
-                outline = "OUTLINE",
-                useClassColor = false,
-                colorNormal = {1, 0.82, 0, 1},      -- Gold
-                colorSanctuary = {0.41, 0.8, 0.94, 1},  -- Light blue
-                colorArena = {1.0, 0.1, 0.1, 1},    -- Red
-                colorFriendly = {0.1, 1.0, 0.1, 1}, -- Green
-                colorHostile = {1.0, 0.1, 0.1, 1},  -- Red
-                colorContested = {1.0, 0.7, 0.0, 1}, -- Orange
-            },
-        },
-        
-        -- Minimap Button (LibDBIcon) - separate from minimap module
-        minimapButton = {
-            hide = false,
-            minimapPos = 180,  -- 9 o'clock position (left side)
-        },
-        
-        -- Datatext Panel (fixed below minimap - slot-based architecture)
-        datatext = {
-            enabled = true,
-            slots = {"fps", "durability", "time"},  -- 3 configurable datatext slots
-
-            -- Per-slot configuration (shortLabel, noLabel, xOffset, yOffset)
-            slot1 = { shortLabel = false, noLabel = false, xOffset = -1, yOffset = 0 },
-            slot2 = { shortLabel = false, noLabel = false, xOffset = 6, yOffset = 0 },
-            slot3 = { shortLabel = true, noLabel = false, xOffset = 3, yOffset = 0 },
-
-            forceSingleLine = true,  -- If true, ignores wrapping and forces single line
-            
-            -- Panel Settings (width auto-matches minimap)
-            height = 22,
-            offsetY = 0,  -- Y offset from minimap bottom
-            bgOpacity = 60,  -- 0-100
-            borderSize = 2,  -- Border thickness (0-8, 0=hidden)
-            borderColor = {0, 0, 0, 1},  -- Black border (#90)
-
-            -- Font Settings
-            font = "Quazii",
-            fontSize = 13,
-            fontOutline = "OUTLINE",  -- "OUTLINE" = Thin
-
-            -- Color Settings
-            useClassColor = false,
-            valueColor = {0.1, 1.0, 0.1, 1},  -- #1AFF1A green
-            
-            -- Separator
-            separator = "  ",
-            
-            -- Legacy Composite Mode Toggles
-            showFPS = true,
-            showLatency = false,
-            showDurability = true,
-            showGold = false,
-            showTime = true,
-            showCoords = false,
-            showFriends = false,
-            showGuild = false,
-            showLootSpec = false,
-            
-            -- Time Settings (for Time datatext or legacy mode)
-            timeFormat = "local",  -- "local" or "server"
-            use24Hour = true,
-            useLocalTime = true,  -- For datatext registry
-            lockoutCacheMinutes = 5,  -- minutes between lockout data refresh (min 1)
-
-            -- Social datatext settings
-            showTotal = true,  -- Show total count (friends/guild)
-            showGuildName = false,  -- Show guild name in text
-
-            -- Player Spec datatext settings
-            specDisplayMode = "full",  -- "icon" = icon only, "loadout" = icon + loadout, "full" = icon + spec/loadout
-
-            -- System datatext settings (combined FPS + Latency)
-            system = {
-                latencyType = "home",      -- "home" or "world" latency on main display
-                showLatency = true,        -- Show Home/World latency in tooltip
-                showProtocols = true,      -- Show IPv4/IPv6 protocols in tooltip
-                showBandwidth = true,      -- Show bandwidth/download % when downloading
-                showAddonMemory = true,    -- Show addon memory usage in tooltip
-                addonCount = 10,           -- Number of addons to show (sorted by memory)
-                showFpsStats = true,       -- Show FPS avg/low/high when Shift held
-            },
-
-            -- Volume datatext settings
-            volume = {
-                volumeStep = 5,            -- Volume change per scroll (1-20)
-                controlType = "master",    -- Which volume to control: "master", "music", "sfx", "ambience", "dialog"
-                showIcon = false,          -- Show speaker icon instead of "Vol:" label
-            },
-
-            -- Currencies datatext settings
-            currencyOrder = {},  -- Ordered currency IDs selected by user (up to 6)
-            currencyEnabled = {}, -- Per-currency toggle map (id -> true/false)
-        },
-        
-        -- Additional Datapanels (user-created, independent of minimap)
-        quiDatatexts = {
-            panels = {},  -- Array of panel configurations
-        },
-
-        -- Custom Tracker Bars (consumables, trinkets, custom spells)
-        customTrackers = {
-            bars = {
-                {
-                    id = "default_tracker_1",
-                    name = "Trinket & Pot",
-                    enabled = false,
-                    locked = false,
-                    -- Position (offset from screen center, use snap buttons to align to player)
-                    offsetX = -406,
-                    offsetY = -152,
-                    -- Layout
-                    growDirection = "RIGHT",
-                    iconSize = 28,
-                    spacing = 4,
-                    borderSize = 2,
-                    aspectRatioCrop = 1.0,
-                    zoom = 0,
-                    -- Duration text
-                    durationSize = 13,
-                    durationColor = {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    hideDurationText = false,
-                    -- Stack text
-                    stackSize = 9,
-                    stackColor = {1, 1, 1, 1},
-                    stackAnchor = "BOTTOMRIGHT",
-                    stackOffsetX = 3,
-                    stackOffsetY = -1,
-                    hideStackText = false,
-                    showItemCharges = true,  -- Show item charges (e.g., Healthstone 3 charges) instead of item count
-                    -- Background
-                    bgOpacity = 0,
-                    bgColor = {0, 0, 0, 1},
-                    hideGCD = true,
-                    hideNonUsable = false,
-                    showOnlyOnCooldown = false,
-                    showOnlyWhenActive = false,
-                    showOnlyWhenOffCooldown = false,
-                    showOnlyInCombat = false,
-                    -- Click behavior
-                    clickableIcons = false,  -- Allow clicking icons to use items/cast spells
-                    -- Active state (buff/cast/channel display)
-                    showActiveState = true,
-                    activeGlowEnabled = true,
-                    activeGlowType = "Pixel Glow",
-                    activeGlowColor = {1, 0.85, 0.3, 1},
-                    -- Pre-populated with Algari Healing Potion
-                    entries = {
-                        { type = "item", id = 224022 },
-                    },
-                },
-            },
-            -- Global keybind settings for custom trackers
-            keybinds = {
-                showKeybinds = false,
-                keybindTextSize = 12,
-                keybindTextColor = { 1, 0.82, 0, 1 },  -- Gold
-                keybindOffsetX = 2,
-                keybindOffsetY = -2,
-            },
-            -- CDM buff tracking (trinket proc detection)
-            cdmBuffTracking = {
-                trinketData = {},
-                learnedBuffs = {},
-            },
-        },
-
-        -- Shaman Totem Bar (active totem display)
-        totemBar = {
-            enabled = false,
-            locked = false,
-            offsetX = 0,
-            offsetY = -200,
-            growDirection = "RIGHT",
-            iconSize = 36,
-            spacing = 4,
-            borderSize = 2,
-            zoom = 0,
-            durationSize = 13,
-            durationColor = {1, 1, 1, 1},
-            durationAnchor = "CENTER",
-            durationOffsetX = 0,
-            durationOffsetY = 0,
-            hideDurationText = false,
-            showSwipe = true,
-            swipeColor = {0, 0, 0, 0.6},
-        },
-
-        -- DandersFrames Integration: Anchor DF containers to QUI elements
-        dandersFrames = {
-            party = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-            raid = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-            pinned1 = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-            pinned2 = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-        },
-
-        -- AbilityTimeline Integration: Anchor timeline and big icon frames to QUI elements
-        abilityTimeline = {
-            timeline = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-            bigIcon = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-        },
-
-        -- BigWigs Integration: Anchor BigWigs normal/emphasized bars to QUI elements
-        bigWigs = {
-            backupPositions = {},
-            normal = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-            emphasized = {
-                enabled = false,
-                anchorTo = "disabled",
-                sourcePoint = "TOP",
-                targetPoint = "BOTTOM",
-                offsetX = 0,
-                offsetY = -5,
-            },
-        },
-
-        -- HUD Layering: Control frame level ordering for HUD elements
-        -- Higher values appear above lower values (range 0-10)
-        hudLayering = {
-            -- CDM viewers (default 5 - middle)
-            essential = 5,
-            utility = 5,
-            buffIcon = 5,
-            buffBar = 5,
-            -- Power bars (higher defaults so text visible above CDM)
-            primaryPowerBar = 7,
-            secondaryPowerBar = 6,
-            -- Unit frames (lower defaults, background elements)
-            playerFrame = 4,
-            playerIndicators = 6,  -- Above player frame for visibility
-            targetFrame = 4,
-            totFrame = 3,
-            petFrame = 3,
-            focusFrame = 4,
-            bossFrames = 4,
-            -- Castbars (middle)
-            playerCastbar = 5,
-            targetCastbar = 5,
-            -- Custom trackers
-            customBars = 5,
-            -- Totem bar
-            totemBar = 5,
-            -- Group frames (party/raid)
-            groupFrames = 4,
-            groupPetFrames = 3,
-        },
-        frameAnchoring = {},
-    },
-    -- Account-wide storage (shared across all characters)
-    global = {
-        -- Gold tracking per character (realm-name = copper)
-        goldData = {},
-        -- Spell Scanner: cross-character spell/item duration mappings
-        spellScanner = {
-            spells = {},   -- [castSpellID] = { buffSpellID, duration, icon, name, scannedAt }
-            items = {},    -- [itemID] = { useSpellID, buffSpellID, duration, icon, name, scannedAt }
-            autoScan = false,  -- Auto-scan setting (off by default)
-        },
-    },
-    char = {
-        keybindOverrides = {},  -- [specID] = { [spellID] = keybindText, [-itemID] = keybindText }
-    },
-}
+local defaults = ns.defaults
 
 function QUICore:OnInitialize()
-    -- Migrate old QuaziiUIDB to QUIDB if needed
-    if QuaziiUIDB and not QUIDB then
-        QUIDB = QuaziiUIDB
-    end
-
     self.db = LibStub("AceDB-3.0"):New("QUIDB", defaults, true)
     QUI.db = self.db  -- Make database accessible to other QUI modules
-
-    -- Wire up the Helpers reference now that QUICore and db are ready.
-    -- Clears any stale cached profile from an earlier call.
-    if ns.Helpers and ns.Helpers.InitQUICore then
-        ns.Helpers.InitQUICore()
-    end
 
     -- Migrate visibility settings to SHOW logic
     -- Old hideWhenX → new showX (semantic conversion)
@@ -3811,7 +114,7 @@ function QUICore:OnInitialize()
     -- Castbar preview is a transient options-state and should never persist
     -- across reload/login. Clear it early before frame modules initialize.
     if profile and profile.quiUnitFrames then
-        for _, unitKey in ipairs({"player", "target", "focus"}) do
+        for _, unitKey in ipairs({"player", "target", "focus", "pet", "targettarget"}) do
             local unitDB = profile.quiUnitFrames[unitKey]
             if unitDB and unitDB.castbar then
                 unitDB.castbar.previewMode = false
@@ -3825,13 +128,9 @@ function QUICore:OnInitialize()
         end
     end
 
-    -- Migrate legacy skin accent color into addonAccentColor
-    if profile.general and profile.general.skinCustomColor and not profile.general.addonAccentColor then
-        if type(profile.general.skinCustomColor) == "table" then
-            profile.general.addonAccentColor = { unpack(profile.general.skinCustomColor) }
-        else
-            profile.general.addonAccentColor = profile.general.skinCustomColor
-        end
+    -- Migrate skinUseClassColor → themePreset
+    if profile.general and profile.general.skinUseClassColor and not profile.general.themePreset then
+        profile.general.themePreset = "Class Colored"
     end
 
     -- One-time migration: enable work order (crafting order) minimap indicator
@@ -3865,25 +164,6 @@ function QUICore:OnInitialize()
         visTable.hideOutOfCombat = nil
         visTable.hideWhenNotInGroup = nil
         visTable.hideWhenNotInInstance = nil
-    end
-
-    -- Migrate from old classHud table (pre-split)
-    if profile.classHud then
-        if not profile.cdmVisibility then
-            profile.cdmVisibility = {}
-        end
-        if not profile.unitframesVisibility then
-            profile.unitframesVisibility = {}
-        end
-        -- Copy hideOutOfCombat → showInCombat for both
-        if profile.classHud.hideOutOfCombat then
-            profile.cdmVisibility.showInCombat = true
-            profile.unitframesVisibility.showInCombat = true
-        end
-        -- Preserve fade duration
-        profile.cdmVisibility.fadeDuration = profile.cdmVisibility.fadeDuration or profile.classHud.fadeDuration or 0.2
-        profile.unitframesVisibility.fadeDuration = profile.unitframesVisibility.fadeDuration or profile.classHud.fadeDuration or 0.2
-        profile.classHud = nil
     end
 
     -- Migrate recently-added hideWhenX keys to showX (if user reloaded after first implementation)
@@ -3956,8 +236,6 @@ function QUICore:OnInitialize()
                 for k, v in pairs(src) do copy[k] = deepCopyDims(v) end
                 return copy
             end
-            if not gf.party then gf.party = {} end
-            if not gf.raid then gf.raid = {} end
             if not gf.party.dimensions then gf.party.dimensions = deepCopyDims(gf.dimensions) end
             if not gf.raid.dimensions then gf.raid.dimensions = deepCopyDims(gf.dimensions) end
             gf.dimensions = nil
@@ -3968,30 +246,382 @@ function QUICore:OnInitialize()
             if not gf.raid.spotlight then gf.raid.spotlight = gf.spotlight end
             gf.spotlight = nil
         end
-
-        -- Backfill missing dimension keys so runtime scaling never falls back to
-        -- mixed implicit defaults after older migrations or copy operations.
-        if not gf.party then gf.party = {} end
-        if not gf.raid then gf.raid = {} end
-        if type(gf.party.dimensions) ~= "table" then gf.party.dimensions = {} end
-        if type(gf.raid.dimensions) ~= "table" then gf.raid.dimensions = {} end
-
-        local partyDims = gf.party.dimensions
-        if partyDims.partyWidth == nil then partyDims.partyWidth = 200 end
-        if partyDims.partyHeight == nil then partyDims.partyHeight = 40 end
-
-        local raidDims = gf.raid.dimensions
-        if raidDims.smallRaidWidth == nil then raidDims.smallRaidWidth = 180 end
-        if raidDims.smallRaidHeight == nil then raidDims.smallRaidHeight = 36 end
-        if raidDims.mediumRaidWidth == nil then raidDims.mediumRaidWidth = 160 end
-        if raidDims.mediumRaidHeight == nil then raidDims.mediumRaidHeight = 30 end
-        if raidDims.largeRaidWidth == nil then raidDims.largeRaidWidth = 140 end
-        if raidDims.largeRaidHeight == nil then raidDims.largeRaidHeight = 24 end
     end
 
-    -- Migrate tooltip engine: "owned" engine removed, force to "classic"
-    if profile.tooltip and profile.tooltip.engine == "owned" then
-        profile.tooltip.engine = "classic"
+    -- Migrate unifiedPosition → always separate party/raid positions
+    if gf and gf.unifiedPosition ~= nil then
+        if gf.unifiedPosition and gf.position then
+            -- User had unified mode: copy shared position to raidPosition
+            if not gf.raidPosition then
+                gf.raidPosition = { offsetX = gf.position.offsetX, offsetY = gf.position.offsetY }
+            end
+        end
+        gf.unifiedPosition = nil
+    end
+
+    -- Migrate tooltip engine: normalize legacy engine names to "default"
+    if profile.tooltip and profile.tooltip.engine and profile.tooltip.engine ~= "default" then
+        profile.tooltip.engine = "default"
+    end
+
+    -- Migrate CDM engine: classic engine removed, force to "owned"
+    if profile.ncdm and profile.ncdm.engine and profile.ncdm.engine ~= "owned" then
+        profile.ncdm.engine = "owned"
+    end
+
+    -- Migrate action bar engine: classic engine removed, force to "owned"
+    if profile.actionBars and profile.actionBars.engine == "classic" then
+        profile.actionBars.engine = "owned"
+    end
+
+    -- Migrate minimap hideMicroMenu/hideBagBar → actionBars.bars.microbar/bags.enabled
+    if profile.minimap then
+        local mm = profile.minimap
+        if mm.hideMicroMenu ~= nil then
+            if not profile.actionBars then profile.actionBars = {} end
+            if not profile.actionBars.bars then profile.actionBars.bars = {} end
+            if not profile.actionBars.bars.microbar then profile.actionBars.bars.microbar = {} end
+            if mm.hideMicroMenu then
+                profile.actionBars.bars.microbar.enabled = false
+            end
+            mm.hideMicroMenu = nil
+        end
+        if mm.hideBagBar ~= nil then
+            if not profile.actionBars then profile.actionBars = {} end
+            if not profile.actionBars.bars then profile.actionBars.bars = {} end
+            if not profile.actionBars.bars.bags then profile.actionBars.bars.bags = {} end
+            if mm.hideBagBar then
+                profile.actionBars.bars.bags.enabled = false
+            end
+            mm.hideBagBar = nil
+        end
+    end
+
+    ---------------------------------------------------------------------------
+    -- Anchoring unification migration: remove enabled field, migrate inline
+    -- offsets to frameAnchoring as the single source of truth.
+    ---------------------------------------------------------------------------
+    if not profile._anchoringMigrationVersion then
+        if not profile.frameAnchoring then
+            profile.frameAnchoring = {}
+        end
+        local fa = profile.frameAnchoring
+
+        -- 2a: Remove enabled field from existing entries
+        for key, settings in pairs(fa) do
+            if type(settings) == "table" and settings.enabled ~= nil then
+                if settings.enabled == false then
+                    -- User never configured this — delete the entry
+                    fa[key] = nil
+                else
+                    -- Was enabled — remove the field (now implicit)
+                    settings.enabled = nil
+                end
+            end
+        end
+
+        -- 2b: Migrate inline offsets → frameAnchoring (only if not already set)
+        local function MigrateInlineOffsets(sourceTable, targetKey)
+            if not sourceTable then return end
+            local ox = sourceTable.offsetX
+            local oy = sourceTable.offsetY
+            if ox == nil and oy == nil then return end
+            if fa[targetKey] then return end  -- Already has anchoring config
+            fa[targetKey] = {
+                parent = "screen",
+                point = "CENTER",
+                relative = "CENTER",
+                offsetX = ox or 0,
+                offsetY = oy or 0,
+                sizeStable = true,
+            }
+        end
+
+        -- Unit frames
+        local uf = profile.quiUnitFrames
+        if uf then
+            MigrateInlineOffsets(uf.player, "playerFrame")
+            MigrateInlineOffsets(uf.target, "targetFrame")
+            MigrateInlineOffsets(uf.targettarget, "totFrame")
+            MigrateInlineOffsets(uf.focus, "focusFrame")
+            MigrateInlineOffsets(uf.pet, "petFrame")
+            MigrateInlineOffsets(uf.boss, "bossFrames")
+        end
+
+        -- Action bar special buttons
+        local bars = profile.actionBars and profile.actionBars.bars
+        if bars then
+            MigrateInlineOffsets(bars.extraActionButton, "extraActionButton")
+            MigrateInlineOffsets(bars.zoneAbility, "zoneAbility")
+        end
+
+        -- Other modules
+        MigrateInlineOffsets(profile.totemBar, "totemBar")
+        MigrateInlineOffsets(profile.xpTracker, "xpTracker")
+        MigrateInlineOffsets(profile.skyriding, "skyriding")
+        MigrateInlineOffsets(profile.crosshair, "crosshair")
+
+        -- Group frames
+        local gf = profile.quiGroupFrames
+        if gf then
+            local pos = gf.position
+            if pos and (pos.offsetX or pos.offsetY) and not fa.partyFrames then
+                fa.partyFrames = {
+                    parent = "screen",
+                    point = "CENTER",
+                    relative = "CENTER",
+                    offsetX = pos.offsetX or 0,
+                    offsetY = pos.offsetY or 0,
+                    sizeStable = true,
+                }
+            end
+            local raidPos = gf.raidPosition
+            if raidPos and (raidPos.offsetX or raidPos.offsetY) and not fa.raidFrames then
+                fa.raidFrames = {
+                    parent = "screen",
+                    point = "CENTER",
+                    relative = "CENTER",
+                    offsetX = raidPos.offsetX or 0,
+                    offsetY = raidPos.offsetY or 0,
+                    sizeStable = true,
+                }
+            end
+        end
+
+        -- 2c: Migrate castbar anchor modes → frameAnchoring
+        if uf then
+            local castbarMigrations = {
+                { unitKey = "player", targetKey = "playerCastbar", parentFrameKey = "playerFrame" },
+                { unitKey = "target", targetKey = "targetCastbar", parentFrameKey = "targetFrame" },
+                { unitKey = "focus",  targetKey = "focusCastbar",  parentFrameKey = "focusFrame" },
+            }
+            for _, cm in ipairs(castbarMigrations) do
+                local unitSettings = uf[cm.unitKey]
+                local castDB = unitSettings and unitSettings.castbar
+                if castDB and not fa[cm.targetKey] then
+                    local anchor = castDB.anchor or "none"
+                    local parent, ox, oy
+                    if anchor == "none" then
+                        parent = "screen"
+                        ox = castDB.freeOffsetX or castDB.offsetX or 0
+                        oy = castDB.freeOffsetY or castDB.offsetY or 0
+                    elseif anchor == "unitframe" then
+                        parent = cm.parentFrameKey
+                        ox = castDB.lockedOffsetX or castDB.offsetX or 0
+                        oy = castDB.lockedOffsetY or castDB.offsetY or 0
+                    elseif anchor == "essential" then
+                        parent = "cdmEssential"
+                        ox = castDB.lockedOffsetX or castDB.offsetX or 0
+                        oy = castDB.lockedOffsetY or castDB.offsetY or 0
+                    elseif anchor == "utility" then
+                        parent = "cdmUtility"
+                        ox = castDB.lockedOffsetX or castDB.offsetX or 0
+                        oy = castDB.lockedOffsetY or castDB.offsetY or 0
+                    else
+                        parent = "screen"
+                        ox = castDB.offsetX or 0
+                        oy = castDB.offsetY or 0
+                    end
+
+                    local entry = {
+                        parent = parent,
+                        point = "CENTER",
+                        relative = "CENTER",
+                        offsetX = ox,
+                        offsetY = oy,
+                        sizeStable = true,
+                    }
+                    -- Migrate width adjustment
+                    if castDB.widthAdjustment and castDB.widthAdjustment ~= 0 then
+                        entry.widthAdjust = castDB.widthAdjustment
+                    end
+                    -- Auto-width when locked to a parent
+                    if anchor ~= "none" then
+                        entry.autoWidth = true
+                    end
+                    fa[cm.targetKey] = entry
+                end
+            end
+        end
+
+        -- 2d: Leave inline fields intact for backup (don't delete)
+
+        profile._anchoringMigrationVersion = 1
+    end
+
+    -- Migration v2: module-specific position formats → frameAnchoring
+    if (profile._anchoringMigrationVersion or 0) < 2 then
+        if not profile.frameAnchoring then profile.frameAnchoring = {} end
+        local fa = profile.frameAnchoring
+
+        -- M+ Timer: position = { point, relPoint, x, y }
+        local mpt = profile.mplusTimer and profile.mplusTimer.position
+        if mpt and not fa.mplusTimer then
+            fa.mplusTimer = {
+                point = mpt.point or "TOPRIGHT",
+                relative = mpt.relPoint or "TOPRIGHT",
+                offsetX = mpt.x or -100,
+                offsetY = mpt.y or -200,
+                sizeStable = true,
+            }
+        end
+
+        -- Tooltip: anchorPosition = { point, relPoint, x, y }
+        local tp = profile.tooltip and profile.tooltip.anchorPosition
+        if tp and not fa.tooltipAnchor then
+            fa.tooltipAnchor = {
+                point = tp.point or "BOTTOMRIGHT",
+                relative = tp.relPoint or "BOTTOMRIGHT",
+                offsetX = tp.x or -200,
+                offsetY = tp.y or 100,
+                sizeStable = true,
+            }
+        end
+
+        -- Modules using offsetX/offsetY not covered in v1
+        local function MigrateOffsets(sourceTable, targetKey)
+            if not sourceTable then return end
+            local ox = sourceTable.offsetX or sourceTable.xOffset
+            local oy = sourceTable.offsetY or sourceTable.yOffset
+            if ox == nil and oy == nil then return end
+            if fa[targetKey] then return end
+            fa[targetKey] = {
+                point = "CENTER",
+                relative = "CENTER",
+                offsetX = ox or 0,
+                offsetY = oy or 0,
+                sizeStable = true,
+            }
+        end
+
+        MigrateOffsets(profile.brzCounter, "brezCounter")
+        MigrateOffsets(profile.combatTimer, "combatTimer")
+        MigrateOffsets(profile.rangeCheck, "rangeCheck")
+        MigrateOffsets(profile.actionTracker, "actionTracker")
+        MigrateOffsets(profile.focusCastAlert, "focusCastAlert")
+        MigrateOffsets(profile.petCombatWarning, "petWarning")
+        MigrateOffsets(profile.raidBuffs, "missingRaidBuffs")
+
+        profile._anchoringMigrationVersion = 2
+    end
+
+    -- Migration v3: remaining module position formats → frameAnchoring
+    if (profile._anchoringMigrationVersion or 0) < 3 then
+        if not profile.frameAnchoring then profile.frameAnchoring = {} end
+        local fa = profile.frameAnchoring
+
+        -- Helper: migrate { point, relPoint/relativePoint, x, y } → frameAnchoring entry
+        local function MigratePos(source, faKey, defaults)
+            if not source then return end
+            if fa[faKey] then return end
+            fa[faKey] = {
+                point = source.point or defaults.point,
+                relative = source.relPoint or source.relativePoint or defaults.relative,
+                offsetX = source.x or defaults.offsetX,
+                offsetY = source.y or defaults.offsetY,
+                sizeStable = true,
+            }
+        end
+
+        -- ReadyCheck: general.readyCheckPosition
+        local gen = profile.general
+        if gen then
+            MigratePos(gen.readyCheckPosition, "readyCheck",
+                { point = "CENTER", relative = "CENTER", offsetX = 0, offsetY = -10 })
+        end
+
+        -- Power Bar Alt: profile.powerBarAltPosition (top-level in profile)
+        MigratePos(profile.powerBarAltPosition, "powerBarAlt",
+            { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -100 })
+
+        -- Loot frame: profile.loot.position
+        local lootDB = profile.loot
+        if lootDB then
+            MigratePos(lootDB.position, "lootFrame",
+                { point = "CENTER", relative = "CENTER", offsetX = 0, offsetY = 100 })
+        end
+
+        -- Loot roll anchor: profile.lootRoll.position
+        local rollDB = profile.lootRoll
+        if rollDB then
+            MigratePos(rollDB.position, "lootRollAnchor",
+                { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -200 })
+        end
+
+        -- Consumable Check: general.consumableFreePosition
+        if gen then
+            local cfp = gen.consumableFreePosition
+            if cfp and not fa.consumables then
+                fa.consumables = {
+                    point = cfp.point or "CENTER",
+                    relative = cfp.relativePoint or cfp.relPoint or "CENTER",
+                    offsetX = cfp.x or 0,
+                    offsetY = cfp.y or 100,
+                    sizeStable = true,
+                }
+            end
+        end
+
+        -- Alert holders: profile.alerts.*Position
+        local alertDB = profile.alerts
+        if alertDB then
+            MigratePos(alertDB.alertPosition, "alertAnchor",
+                { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -20 })
+            MigratePos(alertDB.toastPosition, "toastAnchor",
+                { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -150 })
+            MigratePos(alertDB.bnetToastPosition, "bnetToastAnchor",
+                { point = "TOPRIGHT", relative = "TOPRIGHT", offsetX = -200, offsetY = -80 })
+        end
+
+        -- Action bars: actionBars.bars[barKey].ownedPosition
+        local barsDB = profile.actionBars and profile.actionBars.bars
+        if barsDB then
+            -- Layout mode keys differ from DB keys for some bars
+            local barKeyMap = {
+                pet = "petBar", stance = "stanceBar",
+                microbar = "microMenu", bags = "bagBar",
+            }
+            for dbKey, barData in pairs(barsDB) do
+                if type(barData) == "table" and barData.ownedPosition then
+                    local faKey = barKeyMap[dbKey] or dbKey
+                    MigratePos(barData.ownedPosition, faKey,
+                        { point = "CENTER", relative = "CENTER", offsetX = 0, offsetY = 0 })
+                end
+            end
+        end
+
+        profile._anchoringMigrationVersion = 3
+    end
+
+    -- Phase G CDM Overhaul: Migrate top-level ncdm container keys into
+    -- unified ncdm.containers table.  Existing data is copied (not moved)
+    -- so the old paths stay for backward compatibility during the transition.
+    if profile.ncdm and not profile.ncdm._containersMigrated then
+        if not profile.ncdm.containers then
+            profile.ncdm.containers = {}
+        end
+        local CONTAINER_NAMES = {
+            essential  = "Essential",
+            utility    = "Utility",
+            buff       = "Buff Icons",
+            trackedBar = "Buff Bars",
+        }
+        local CONTAINER_TYPES = {
+            essential  = "cooldown",
+            utility    = "cooldown",
+            buff       = "aura",
+            trackedBar = "auraBar",
+        }
+        for _, key in ipairs({"essential", "utility", "buff", "trackedBar"}) do
+            if profile.ncdm[key] then
+                -- Force-overwrite the AceDB-populated defaults with real user data
+                profile.ncdm.containers[key] = CopyTable(profile.ncdm[key])
+                profile.ncdm.containers[key].builtIn = true
+                profile.ncdm.containers[key].containerType = CONTAINER_TYPES[key]
+                profile.ncdm.containers[key].name = CONTAINER_NAMES[key]
+            end
+        end
+        profile.ncdm._containersMigrated = true
     end
 
     -- Initialize preserved scale - will be properly set in OnEnable after UI scale is applied
@@ -4002,12 +632,6 @@ function QUICore:OnInitialize()
 
     -- Track current profile to detect same-profile "switches" during M+ entry
     self._lastKnownProfile = self.db:GetCurrentProfile()
-
-    -- Track CDM engine so profile switches to a different engine trigger reload
-    self._lastKnownEngine = self.db.profile.ncdm and self.db.profile.ncdm.engine or "owned"
-
-    -- Track tooltip engine so profile switches to a different engine trigger reload
-    self._lastKnownTooltipEngine = self.db.profile.tooltip and self.db.profile.tooltip.engine or "classic"
 
     self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
     self.db.RegisterCallback(self, "OnProfileCopied",  "OnProfileChanged")
@@ -4020,41 +644,33 @@ function QUICore:OnInitialize()
 
 
     -- Note: Main /qui command is handled by init.lua
-    self:RegisterChatCommand("quicorerefresh", "ForceRefreshBuffIcons")
+    -- (quicorerefresh slash command removed — classic viewer skinning deleted)
 
     -- Defer minimap button creation to reduce load-time CPU
     C_Timer.After(0.1, function()
         self:CreateMinimapButton()
     end)
 
-    for _, callback in ipairs(self._postInitializeCallbacks or {}) do
-        local ok, err = pcall(callback, self)
-        if not ok and geterrorhandler then
-            geterrorhandler()(err)
+    -- Apply theme accent color to GUI.Colors early so modules outside the
+    -- options panel (layout mode, skinning, etc.) see the correct color.
+    local GUI = QUI.GUI
+    if GUI and GUI.ApplyAccentColor and GUI.ResolveThemePreset then
+        local general = profile and profile.general
+        local preset = general and general.themePreset
+        if preset then
+            local r, g, b = GUI:ResolveThemePreset(preset)
+            GUI:ApplyAccentColor(r, g, b)
+        elseif general and general.addonAccentColor then
+            local ac = general.addonAccentColor
+            if ac[1] and ac[2] and ac[3] then
+                GUI:ApplyAccentColor(ac[1], ac[2], ac[3])
+            end
         end
     end
+
 end
 
 function QUICore:OnProfileChanged(event, db, profileKey)
-
-    -- Debug: profile change tracking (uses QUI.DEBUG_MODE runtime flag from /qui debug)
-    local _profileDebug = QUI and QUI.DEBUG_MODE
-    local _profileChangeStart = debugprofilestop and debugprofilestop() or 0
-    local function ProfileDebug(msg)
-        if _profileDebug then
-            local elapsed = debugprofilestop and (debugprofilestop() - _profileChangeStart) or 0
-            print(format("|cFF30D1FFQUI Profile Debug|r [+%.0fms] %s", elapsed, msg))
-        end
-    end
-    ProfileDebug(format("OnProfileChanged: event=%s profile=%s spec=%s combat=%s",
-        tostring(event), tostring(profileKey),
-        tostring(GetSpecialization()), tostring(InCombatLockdown())))
-
-    -- Invalidate cached profile reference FIRST — AceDB already swapped db.profile
-    -- so any code reading settings must see the new profile, not the stale cache.
-    if ns.Helpers and ns.Helpers.InvalidateProfileCache then
-        ns.Helpers.InvalidateProfileCache()
-    end
 
     -- AGGRESSIVE M+ PROTECTION: If we're in a challenge mode dungeon, defer EVERYTHING
     -- WoW's protected state during M+ transitions can't be reliably detected by InCombatLockdown()
@@ -4067,37 +683,18 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         inChallengeMode = (C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive())
             or (C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID() ~= nil)
     end
-    if inChallengeMode then
-        ProfileDebug("SKIPPED: in challenge mode dungeon")
-        return
-    end
+    if inChallengeMode then return end
 
     -- Skip if "switching" to the same profile (happens during M+ entry false events)
     -- LibDualSpec triggers profile switch even when already on correct profile
     local currentProfile = self.db:GetCurrentProfile()
     if profileKey == self._lastKnownProfile and profileKey == currentProfile then
-        ProfileDebug(format("SKIPPED: same profile (%s)", tostring(profileKey)))
         return  -- No actual change happening - skip all UI modifications
     end
-    ProfileDebug(format("Profile switching: %s -> %s", tostring(self._lastKnownProfile), tostring(profileKey)))
     self._lastKnownProfile = profileKey
 
     -- Update spec tracking (kept for reference)
     self._lastKnownSpec = GetSpecialization() or 0
-
-    -- Check if CDM engine changed — requires reload since engines can't hot-swap
-    local newEngine = self.db.profile.ncdm and self.db.profile.ncdm.engine or "owned"
-    if newEngine ~= self._lastKnownEngine then
-        self._lastKnownEngine = newEngine
-        self:SafeReload()
-        return
-    end
-
-    -- Tooltip engine change detection (legacy — only "classic" engine remains)
-    local newTooltipEngine = self.db.profile.tooltip and self.db.profile.tooltip.engine or "classic"
-    if newTooltipEngine ~= self._lastKnownTooltipEngine then
-        self._lastKnownTooltipEngine = newTooltipEngine
-    end
 
     -- Wipe the font registry so stale FontStrings from the old profile's frames
     -- are released. Modules will re-register via ApplyFont when they rebuild.
@@ -4228,7 +825,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     -- previewMode is a transient UI state (options panel toggle) that should not
     -- persist across profile changes, but it lives in the DB and gets copied along.
     if self.db.profile.quiUnitFrames then
-        for _, unitKey in ipairs({"player", "target", "focus"}) do
+        for _, unitKey in ipairs({"player", "target", "focus", "pet", "targettarget"}) do
             local unitDB = self.db.profile.quiUnitFrames[unitKey]
             if unitDB and unitDB.castbar then
                 unitDB.castbar.previewMode = false
@@ -4248,96 +845,25 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         _G.QUI_RefreshSpecProfilesTab()
     end
 
-    -- Consolidated profile-change refresh: single 0.2s delay for all module refreshes
-    -- instead of 7 separate cascading timers (0.2, 0.3, 0.4, 0.45, 0.47, 0.5)
-    -- Each call is pcall-wrapped so one module error cannot prevent the rest from refreshing.
+    -- Module refreshes via registry: 0.2s delay for gameplay modules,
+    -- 0.5s for skinning (avoids stacking too much work at once).
+    -- Priority ordering within the registry ensures correct refresh sequence
+    -- (cooldowns → frames → qol → combat → trackers → anchoring).
     C_Timer.After(0.2, function()
-        ProfileDebug("0.2s refresh timer fired — starting module refreshes")
-        local function SafeCall(fn)
-            if fn then
-                local ok, err = pcall(fn)
-                if not ok then
-                    print("|cFFFF6666QUI:|r Profile refresh error: " .. tostring(err))
-                end
+        if ns.Registry then
+            -- Refresh all non-skinning modules in priority order
+            for _, group in ipairs({"cooldowns", "frames", "castbars", "qol", "combat", "trackers", "data", "chat", "character", "utility", "ui", "anchoring"}) do
+                ns.Registry:RefreshAll(group)
             end
         end
-
-        -- Cooldowns first (CDM containers must exist before anchoring runs)
-        SafeCall(_G.QUI_RefreshNCDM)
-        SafeCall(_G.QUI_RefreshCDMVisibility)
-        SafeCall(_G.QUI_RefreshCooldownSwipe)
-
-        -- Frames
-        SafeCall(_G.QUI_RefreshUnitFrames)
-        SafeCall(_G.QUI_RefreshGroupFrames)
-        SafeCall(_G.QUI_RefreshActionBars)
-        SafeCall(_G.QUI_RefreshBuffBar)
-        SafeCall(_G.QUI_RefreshBuffBorders)
-        SafeCall(_G.QUI_RefreshRaidBuffs)
-        SafeCall(_G.QUI_RefreshTotemBar)
-        SafeCall(_G.QUI_RefreshUIHider)
-
-        -- QoL modules
-        SafeCall(_G.QUI_RefreshReticle)
-        SafeCall(_G.QUI_RefreshCrosshair)
-        SafeCall(_G.QUI_RefreshXPTracker)
-        SafeCall(_G.QUI_RefreshSkyriding)
-        SafeCall(_G.QUI_RefreshFocusCastAlert)
-        SafeCall(_G.QUI_RefreshPetWarning)
-        SafeCall(_G.QUI_RefreshRangeCheck)
-
-        -- Combat
-        SafeCall(_G.QUI_RefreshCombatText)
-
-        -- Trackers
-        SafeCall(_G.QUI_RefreshCustomTrackers)
-
-        -- Data & Chat
-        SafeCall(_G.QUI_RefreshDatapanels)
-        SafeCall(_G.QUI_RefreshChat)
-
-        -- Character
-        SafeCall(_G.QUI_RefreshCharacterPane)
-
-        -- Keybinds
-        SafeCall(_G.QUI_RefreshKeybinds)
-
-        -- Dungeon
-        SafeCall(_G.QUI_RefreshKeyTracker)
-        SafeCall(_G.QUI_RefreshBrezCounter)
-
-        -- Anchoring LAST (all modules have restored positions above)
-        SafeCall(_G.QUI_ApplyAllFrameAnchors)
-
-        ProfileDebug("0.2s refresh complete — showing notification")
         self:ShowProfileChangeNotification()
     end)
 
     -- Skinning refreshes: slightly later to avoid stacking too much work at 0.2s
-    -- pcall-wrapped like the 0.2s block above.
     C_Timer.After(0.5, function()
-        ProfileDebug("0.5s skinning refresh timer fired")
-        local function SafeCall(fn)
-            if fn then
-                local ok, err = pcall(fn)
-                if not ok then
-                    print("|cFFFF6666QUI:|r Profile skin refresh error: " .. tostring(err))
-                end
-            end
+        if ns.Registry then
+            ns.Registry:RefreshAll("skinning")
         end
-        SafeCall(_G.QUI_RefreshCharacterFrameColors)
-        SafeCall(_G.QUI_RefreshInspectColors)
-        SafeCall(_G.QUI_RefreshInstanceFramesColors)
-        SafeCall(_G.QUI_RefreshOverrideActionBarColors)
-        SafeCall(_G.QUI_RefreshGameMenuColors)
-        SafeCall(_G.QUI_RefreshGameMenuFontSize)
-        SafeCall(_G.QUI_RefreshReadyCheckColors)
-        SafeCall(_G.QUI_RefreshKeystoneColors)
-        SafeCall(_G.QUI_RefreshAlertColors)
-        SafeCall(_G.QUI_RefreshLootColors)
-        SafeCall(_G.QUI_RefreshMPlusTimerColors)
-        SafeCall(_G.QUI_RefreshObjectiveTracker)
-        SafeCall(_G.QUI_RefreshPowerBarAltColors)
     end)
 
     -- Safety re-position pass: Blizzard's Edit Mode system re-applies per-spec
@@ -4345,8 +871,6 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     -- QUI's frame positions set at 0.2s. Re-apply both anchoring overrides AND
     -- unit frame positions to catch any Blizzard layout passes that fired late.
     C_Timer.After(1.0, function()
-        ProfileDebug(format("1.0s safety pass — combat=%s editMode=%s",
-            tostring(InCombatLockdown()), tostring(ns.Helpers.IsEditModeActive())))
         if not InCombatLockdown() then
             local ApplyAnchors = _G.QUI_ApplyAllFrameAnchors
             if ApplyAnchors then pcall(ApplyAnchors, true) end
@@ -4354,9 +878,6 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             if RefreshUnitFrames then pcall(RefreshUnitFrames) end
             local RefreshGroupFrames = _G.QUI_RefreshGroupFrames
             if RefreshGroupFrames then pcall(RefreshGroupFrames) end
-            ProfileDebug("1.0s safety pass complete")
-        else
-            ProfileDebug("1.0s safety pass SKIPPED (combat)")
         end
     end)
 end
@@ -4366,422 +887,54 @@ function QUICore:ShowProfileChangeNotification()
     -- The popup was causing an ApplyAllFrameAnchors feedback loop by entering
     -- Edit Mode during the profile transition.
     local profileName = self.db and self.db:GetCurrentProfile() or "Unknown"
-    print(format("|cff34D399QUI:|r Profile switched to |cFFFFD700%s|r. Use |cFFFFD700/editmode|r to adjust frame positions.", profileName))
+    print(format("|cff60A5FAQUI:|r Profile switched to |cFFFFD700%s|r. Use |cFFFFD700/editmode|r to adjust frame positions.", profileName))
 end
 
 -- ============================================================================
--- EDIT MODE SELECTION MANAGER
--- Tracks which element is currently selected for nudge arrows
--- ============================================================================
-
-QUICore.EditModeSelection = {
-    selectedType = nil,  -- "unitframe", "powerbar", "cdm"
-    selectedKey = nil,   -- "player", "primary", "EssentialCooldownViewer", etc.
-}
-
--- Select an element and show its nudge arrows (hides arrows on previous selection)
-function QUICore:SelectEditModeElement(elementType, elementKey)
-    -- Skip if already selected
-    if self.EditModeSelection.selectedType == elementType and self.EditModeSelection.selectedKey == elementKey then
-        return
-    end
-
-    -- Hide arrows on previously selected element
-    self:HideCurrentSelectionArrows()
-
-    -- Update selection
-    self.EditModeSelection.selectedType = elementType
-    self.EditModeSelection.selectedKey = elementKey
-
-    -- Show arrows on newly selected element
-    self:ShowSelectionArrows(elementType, elementKey)
-end
-
--- Clear selection (called when exiting Edit Mode)
-function QUICore:ClearEditModeSelection()
-    self:HideCurrentSelectionArrows()
-    self.EditModeSelection.selectedType = nil
-    self.EditModeSelection.selectedKey = nil
-end
-
--- Hide nudge arrows on the currently selected element
-function QUICore:HideCurrentSelectionArrows()
-    local sel = self.EditModeSelection
-    if not sel.selectedType then return end
-
-    if sel.selectedType == "unitframe" then
-        -- Unit frames store their overlay on the frame itself
-        if ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames then
-            local frame = ns.QUI_UnitFrames.frames[sel.selectedKey]
-            if frame and frame.editOverlay then
-                self:HideNudgeButtons(frame.editOverlay)
-            end
-        end
-    elseif sel.selectedType == "powerbar" then
-        local bar = (sel.selectedKey == "primary") and self.powerBar or self.secondaryPowerBar
-        if bar and bar.editOverlay then
-            self:HideNudgeButtons(bar.editOverlay)
-        end
-    elseif sel.selectedType == "cdm" then
-        if self.cdmOverlays and self.cdmOverlays[sel.selectedKey] then
-            self:HideNudgeButtons(self.cdmOverlays[sel.selectedKey])
-        end
-    elseif sel.selectedType == "blizzard" then
-        if self.blizzardOverlays and self.blizzardOverlays[sel.selectedKey] then
-            self:HideNudgeButtons(self.blizzardOverlays[sel.selectedKey])
-        end
-    elseif sel.selectedType == "minimap" then
-        if self.minimapOverlay then
-            self:HideNudgeButtons(self.minimapOverlay)
-        end
-    elseif sel.selectedType == "castbar" then
-        -- Castbars store their overlay on the castbar frame itself
-        if ns.QUI_Castbar and ns.QUI_Castbar.castbars then
-            local castbar = ns.QUI_Castbar.castbars[sel.selectedKey]
-            if castbar and castbar.editOverlay then
-                self:HideNudgeButtons(castbar.editOverlay)
-            end
-        end
-    elseif sel.selectedType == "groupframes" then
-        -- Group frame mover manages its own nudge button visibility
-    end
-end
-
--- Show nudge arrows on the specified element
-function QUICore:ShowSelectionArrows(elementType, elementKey)
-    -- Resolve the actual frame so we can check if it's locked
-    local resolvedFrame
-    if elementType == "unitframe" then
-        resolvedFrame = ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames[elementKey]
-    elseif elementType == "powerbar" then
-        resolvedFrame = (elementKey == "primary") and self.powerBar or self.secondaryPowerBar
-    elseif elementType == "cdm" then
-        resolvedFrame = ResolveCDMViewerByName(elementKey)
-    elseif elementType == "blizzard" then
-        resolvedFrame = _G[elementKey]
-    elseif elementType == "minimap" then
-        resolvedFrame = _G["Minimap"]
-    elseif elementType == "castbar" then
-        resolvedFrame = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars[elementKey]
-    end
-
-    -- Don't show nudge arrows on locked frames
-    if resolvedFrame and _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(resolvedFrame) then
-        return
-    end
-
-    if elementType == "unitframe" then
-        if ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames then
-            local frame = ns.QUI_UnitFrames.frames[elementKey]
-            if frame and frame.editOverlay then
-                self:ShowNudgeButtons(frame.editOverlay)
-            end
-        end
-    elseif elementType == "powerbar" then
-        local bar = (elementKey == "primary") and self.powerBar or self.secondaryPowerBar
-        if bar and bar.editOverlay then
-            self:ShowNudgeButtons(bar.editOverlay)
-        end
-    elseif elementType == "cdm" then
-        if self.cdmOverlays and self.cdmOverlays[elementKey] then
-            self:ShowNudgeButtons(self.cdmOverlays[elementKey])
-        end
-    elseif elementType == "blizzard" then
-        if self.blizzardOverlays and self.blizzardOverlays[elementKey] then
-            self:ShowNudgeButtons(self.blizzardOverlays[elementKey])
-        end
-    elseif elementType == "minimap" then
-        if self.minimapOverlay then
-            self:ShowNudgeButtons(self.minimapOverlay)
-            -- Update info text with current position
-            local settings = self.db and self.db.profile and self.db.profile.minimap
-            if settings and settings.position and self.minimapOverlay.infoText then
-                self.minimapOverlay.infoText:SetText(string.format("Minimap  X:%d Y:%d",
-                    math.floor(settings.position[3] or 0),
-                    math.floor(settings.position[4] or 0)))
-            end
-        end
-    elseif elementType == "castbar" then
-        if ns.QUI_Castbar and ns.QUI_Castbar.castbars then
-            local castbar = ns.QUI_Castbar.castbars[elementKey]
-            if castbar and castbar.editOverlay then
-                -- Only show nudge buttons if not anchored
-                if not castbar.editOverlay._isAnchored then
-                    self:ShowNudgeButtons(castbar.editOverlay)
-                end
-            end
-        end
-    elseif elementType == "groupframes" then
-        -- Group frame mover manages its own nudge button visibility
-    end
-end
-
--- Helper to show nudge buttons on an overlay
-function QUICore:ShowNudgeButtons(overlay)
-    if not overlay then return end
-    if overlay.nudgeUp then overlay.nudgeUp:Show() end
-    if overlay.nudgeDown then overlay.nudgeDown:Show() end
-    if overlay.nudgeLeft then overlay.nudgeLeft:Show() end
-    if overlay.nudgeRight then overlay.nudgeRight:Show() end
-    if overlay.infoText then overlay.infoText:Show() end
-end
-
--- Helper to hide nudge buttons on an overlay
-function QUICore:HideNudgeButtons(overlay)
-    if not overlay then return end
-    if overlay.nudgeUp then overlay.nudgeUp:Hide() end
-    if overlay.nudgeDown then overlay.nudgeDown:Hide() end
-    if overlay.nudgeLeft then overlay.nudgeLeft:Hide() end
-    if overlay.nudgeRight then overlay.nudgeRight:Hide() end
-    if overlay.infoText then overlay.infoText:Hide() end
-end
-
--- ============================================================================
--- ARROW KEY NUDGING
--- When an element is selected in Edit Mode, arrow keys nudge its position
--- ============================================================================
-
-local EditModeKeyHandler = CreateFrame("Frame", "QUIEditModeKeyHandler", UIParent)
-EditModeKeyHandler:EnableKeyboard(false)
-EditModeKeyHandler:SetPropagateKeyboardInput(true)
-
-local function SetKeyPropagationSafe(frame, propagate)
-    if InCombatLockdown() then return end
-    frame:SetPropagateKeyboardInput(propagate)
-end
-
--- Nudge the currently selected element by deltaX, deltaY
-function QUICore:NudgeSelectedElement(deltaX, deltaY)
-    local sel = self.EditModeSelection
-    if not sel or not sel.selectedType or not sel.selectedKey then return false end
-    if InCombatLockdown() then return false end
-
-    local shift = IsShiftKeyDown()
-    local step = shift and 10 or 1
-    local dx = deltaX * step
-    local dy = deltaY * step
-
-    if sel.selectedType == "unitframe" then
-        if ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames then
-            local frame = ns.QUI_UnitFrames.frames[sel.selectedKey]
-            local settingsKey = sel.selectedKey
-            if settingsKey and settingsKey:match("^boss%d+$") then
-                settingsKey = "boss"
-            end
-            -- Unit frames database is stored at quiUnitFrames
-            local ufdb = self.db and self.db.profile and self.db.profile.quiUnitFrames
-            local settings = ufdb and ufdb[settingsKey]
-
-            -- Block nudging for anchored frames
-            local isAnchored = settings and settings.anchorTo and settings.anchorTo ~= "disabled"
-            if isAnchored and (settingsKey == "player" or settingsKey == "target") then
-                return false
-            end
-
-            if settings and frame then
-                settings.offsetX = (settings.offsetX or 0) + dx
-                settings.offsetY = (settings.offsetY or 0) + dy
-                frame:ClearAllPoints()
-                frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX, settings.offsetY)
-                -- Update info text
-                if frame.editOverlay and frame.editOverlay.infoText then
-                    frame.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d",
-                        sel.selectedKey, settings.offsetX, settings.offsetY))
-                end
-                -- Notify options panel
-                if ns.QUI_UnitFrames and ns.QUI_UnitFrames.NotifyPositionChanged then
-                    ns.QUI_UnitFrames:NotifyPositionChanged(settingsKey, settings.offsetX, settings.offsetY)
-                end
-                -- Update anchored frames to follow nudged element
-                if _G.QUI_UpdateAnchoredFrames then
-                    _G.QUI_UpdateAnchoredFrames()
-                end
-                return true
-            end
-        end
-    elseif sel.selectedType == "powerbar" then
-        local cfg = (sel.selectedKey == "primary") and self.db.profile.powerBar or self.db.profile.secondaryPowerBar
-        local bar = (sel.selectedKey == "primary") and self.powerBar or self.secondaryPowerBar
-        if cfg and bar then
-            cfg.offsetX = (cfg.offsetX or 0) + dx
-            cfg.offsetY = (cfg.offsetY or 0) + dy
-            cfg.autoAttach = false
-            cfg.useRawPixels = true
-            bar:ClearAllPoints()
-            bar:SetPoint("CENTER", UIParent, "CENTER", cfg.offsetX, cfg.offsetY)
-            -- Update info text
-            if bar.editOverlay and bar.editOverlay.infoText then
-                local label = (sel.selectedKey == "primary") and "Primary" or "Secondary"
-                bar.editOverlay.infoText:SetText(string.format("%s  X:%d Y:%d", label, cfg.offsetX, cfg.offsetY))
-            end
-            -- Notify options panel
-            self:NotifyPowerBarPositionChanged(sel.selectedKey, cfg.offsetX, cfg.offsetY)
-            -- Update anchored frames to follow nudged element
-            if _G.QUI_UpdateAnchoredFrames then
-                _G.QUI_UpdateAnchoredFrames()
-            end
-            return true
-        end
-    elseif sel.selectedType == "castbar" then
-        if ns.QUI_Castbar and ns.QUI_Castbar.castbars then
-            local castbar = ns.QUI_Castbar.castbars[sel.selectedKey]
-            -- Castbar settings are stored within unit frame settings at quiUnitFrames
-            local ufdb = self.db and self.db.profile and self.db.profile.quiUnitFrames
-            local settings = ufdb and ufdb[sel.selectedKey]
-            local castSettings = settings and settings.castbar
-            -- Only nudge if not anchored
-            if castSettings and castSettings.anchor == "none" and castbar then
-                castSettings.offsetX = (castSettings.offsetX or 0) + dx
-                castSettings.offsetY = (castSettings.offsetY or 0) + dy
-                castSettings.freeOffsetX = castSettings.offsetX
-                castSettings.freeOffsetY = castSettings.offsetY
-                castbar:ClearAllPoints()
-                castbar:SetPoint("CENTER", UIParent, "CENTER", castSettings.offsetX, castSettings.offsetY)
-                -- Update info text
-                if castbar.editOverlay and castbar.editOverlay.infoText then
-                    local displayName = sel.selectedKey == "player" and "Player" or
-                                        sel.selectedKey == "target" and "Target" or
-                                        sel.selectedKey == "focus" and "Focus" or "Castbar"
-                    castbar.editOverlay.infoText:SetText(string.format("%s Castbar  X:%d Y:%d",
-                        displayName, castSettings.offsetX, castSettings.offsetY))
-                end
-                -- Update anchored frames to follow nudged element
-                if _G.QUI_UpdateAnchoredFrames then
-                    _G.QUI_UpdateAnchoredFrames()
-                end
-                return true
-            end
-        end
-    elseif sel.selectedType == "groupframes" then
-        local gfem = ns.QUI_GroupFrameEditMode
-        if gfem then
-            -- Route to the correct mover based on which was selected
-            local nudgeKey = sel.selectedKey or "party"
-            gfem:NudgeHeader(nudgeKey, dx, dy)
-            return true
-        end
-    end
-    return false
-end
-
-EditModeKeyHandler:SetScript("OnKeyDown", function(self, key)
-    if InCombatLockdown() then
-        return
-    end
-
-    if not QUICore.EditModeSelection or not QUICore.EditModeSelection.selectedType then
-        SetKeyPropagationSafe(self, true)
-        return
-    end
-
-    local handled = false
-    if key == "UP" then
-        handled = QUICore:NudgeSelectedElement(0, 1)
-    elseif key == "DOWN" then
-        handled = QUICore:NudgeSelectedElement(0, -1)
-    elseif key == "LEFT" then
-        handled = QUICore:NudgeSelectedElement(-1, 0)
-    elseif key == "RIGHT" then
-        handled = QUICore:NudgeSelectedElement(1, 0)
-    end
-
-    if handled then
-        SetKeyPropagationSafe(self, false)
-    else
-        SetKeyPropagationSafe(self, true)
-    end
-end)
-
-EditModeKeyHandler:SetScript("OnKeyUp", function(self, key)
-    SetKeyPropagationSafe(self, true)
-end)
-
-local function IsAnyEditModeActive()
-    local blizzardActive = false
-    if EditModeManagerFrame then
-        if type(EditModeManagerFrame.IsEditModeActive) == "function" then
-            blizzardActive = EditModeManagerFrame:IsEditModeActive()
-        else
-            blizzardActive = not not EditModeManagerFrame.editModeActive
-        end
-    end
-
-    local unitFrameEditActive = ns
-        and ns.QUI_UnitFrames
-        and ns.QUI_UnitFrames.editModeActive
-
-    local groupFrameEditActive = ns
-        and ns.QUI_GroupFrameEditMode
-        and ns.QUI_GroupFrameEditMode:IsEditMode()
-
-    return blizzardActive or unitFrameEditActive or groupFrameEditActive
-end
-
--- Enable/disable keyboard handling based on edit mode state
-function QUICore:UpdateEditModeKeyHandler()
-    if InCombatLockdown() then
-        EditModeKeyHandler:EnableKeyboard(false)
-        return
-    end
-
-    -- If edit mode is not actually active anymore, clear stale selection state.
-    if self.EditModeSelection and self.EditModeSelection.selectedType and not IsAnyEditModeActive() then
-        self:ClearEditModeSelection()
-        return
-    end
-
-    -- Enable keyboard whenever edit mode is active (not just on selection).
-    -- Individual frames no longer call EnableKeyboard — this is the sole handler.
-    -- Arrow keys only nudge when something is selected (OnKeyDown propagates otherwise).
-    if IsAnyEditModeActive() then
-        EditModeKeyHandler:EnableKeyboard(true)
-    else
-        EditModeKeyHandler:EnableKeyboard(false)
-    end
-end
-
-local EditModeKeyHandlerCombatWatcher = CreateFrame("Frame")
-EditModeKeyHandlerCombatWatcher:RegisterEvent("PLAYER_REGEN_DISABLED")
-EditModeKeyHandlerCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
-EditModeKeyHandlerCombatWatcher:SetScript("OnEvent", function()
-    QUICore:UpdateEditModeKeyHandler()
-end)
-
--- Hook into selection changes to enable/disable key handler
-local origSelectEditModeElement = QUICore.SelectEditModeElement
-function QUICore:SelectEditModeElement(elementType, elementKey)
-    origSelectEditModeElement(self, elementType, elementKey)
-    self:UpdateEditModeKeyHandler()
-end
-
-local origClearEditModeSelection = QUICore.ClearEditModeSelection
-function QUICore:ClearEditModeSelection()
-    origClearEditModeSelection(self)
-    self:UpdateEditModeKeyHandler()
-end
-
--- ============================================================================
--- EDIT MODE CALLBACK REGISTRY
--- Modules call RegisterEditModeEnter/Exit to receive notifications when
--- Edit Mode is toggled, dispatched from the hooksecurefunc hooks below.
+-- UNLOCK MODE / EDIT MODE CALLBACK REGISTRY
+-- Modules call RegisterEditModeEnter/Exit to register callbacks.
+-- These now forward to QUI_LayoutMode (layoutmode.lua) and fire when
+-- Layout Mode opens/closes rather than Blizzard Edit Mode.
 -- ============================================================================
 
 QUICore._editModeEnterCallbacks = {}
 QUICore._editModeExitCallbacks = {}
-QUICore._postInitializeCallbacks = QUICore._postInitializeCallbacks or {}
 QUICore._postEnableCallbacks = QUICore._postEnableCallbacks or {}
 
 function QUICore:RegisterEditModeEnter(callback)
-    table.insert(self._editModeEnterCallbacks, callback)
+    -- Forward to Layout Mode if available, otherwise queue for later bridging
+    local um = ns.QUI_LayoutMode
+    if um then
+        um:RegisterEnterCallback(callback)
+    else
+        table.insert(self._editModeEnterCallbacks, callback)
+    end
 end
 
 function QUICore:RegisterEditModeExit(callback)
-    table.insert(self._editModeExitCallbacks, callback)
+    local um = ns.QUI_LayoutMode
+    if um then
+        um:RegisterExitCallback(callback)
+    else
+        table.insert(self._editModeExitCallbacks, callback)
+    end
 end
 
-function QUICore:RegisterPostInitialize(callback)
-    if type(callback) == "function" then
-        table.insert(self._postInitializeCallbacks, callback)
+function QUICore:RegisterLayoutModeEnter(callback)
+    local um = ns.QUI_LayoutMode
+    if um then
+        um:RegisterEnterCallback(callback)
+    else
+        table.insert(self._editModeEnterCallbacks, callback)
+    end
+end
+
+function QUICore:RegisterLayoutModeExit(callback)
+    local um = ns.QUI_LayoutMode
+    if um then
+        um:RegisterExitCallback(callback)
+    else
+        table.insert(self._editModeExitCallbacks, callback)
     end
 end
 
@@ -4845,14 +998,13 @@ function QUICore:OnEnable()
     end
 
     -- IMMEDIATE: Apply frame anchoring synchronously during ADDON_LOADED
-    -- safe window. Containers anchored to other frames need positioning
-    -- now before InCombatLockdown() starts returning true.
+    -- safe window. Uses raw-point mode (size-stable CENTER conversion is
+    -- deferred to later timers when UIParent dimensions have settled).
     ApplyFrameOverrides()
 
     -- DEFERRED 0.1s: Hook setup (spreads work across frames)
     C_Timer.After(0.1, function()
         if not InCombatLockdown() then
-            self:HookViewers()
             self:HookEditMode()
         end
     end)
@@ -4876,11 +1028,8 @@ function QUICore:OnEnable()
         end
     end)
 
-    -- DEFERRED 1.0s: First viewer reskin + UI hider + buff borders
+    -- DEFERRED 1.0s: UI hider + buff borders
     C_Timer.After(1.0, function()
-        if not InCombatLockdown() then
-            self:ForceReskinAllViewers()
-        end
         -- Cache _G function lookups at point of use
         local RefreshUIHider = _G.QUI_RefreshUIHider
         local RefreshBuffBorders = _G.QUI_RefreshBuffBorders
@@ -4898,7 +1047,6 @@ function QUICore:OnEnable()
     -- DEFERRED 2.0s: Safety retry for late-loading frames
     C_Timer.After(2.0, function()
         if not InCombatLockdown() then
-            self:ForceReskinAllViewers()
             ApplyFrameOverrides()
         end
     end)
@@ -4947,15 +1095,15 @@ function QUICore:CreateMinimapButton()
             if button == "LeftButton" then
                 self:OpenConfig()
             elseif button == "RightButton" then
-                -- Right click could toggle something or show a menu
-                -- For now, just open config
-                self:OpenConfig()
+                if _G.QUI_ToggleLayoutMode then
+                    _G.QUI_ToggleLayoutMode()
+                end
             end
         end,
         OnTooltipShow = function(tooltip)
             tooltip:SetText("|cFF30D1FFQUI|r")
             tooltip:AddLine("Left-click to open configuration", 1, 1, 1)
-            tooltip:AddLine("Right-click to open configuration", 1, 1, 1)
+            tooltip:AddLine("Right-click to toggle Edit Mode", 1, 1, 1)
         end,
     })
     
@@ -4963,53 +1111,7 @@ function QUICore:CreateMinimapButton()
     LibDBIcon:Register(ADDON_NAME, dataObj, self.db.profile.minimapButton)
 end
 
--- Viewer skinning, layout, and icon processing functions are in core/viewer_skinning.lua
-
--- Weak-keyed table to track which CDM viewers have been hooked (avoids tainting Blizzard frames)
-local hookedViewers = ns.Helpers.CreateStateTable()
-
-function QUICore:HookViewers()
-    local GetFrame = _G.QUI_GetCDMViewerFrame
-    for _, name in ipairs(self.viewers) do
-        local viewer = GetFrame and GetFrame(name)
-        if viewer and not hookedViewers[viewer] then
-            hookedViewers[viewer] = true
-
-            viewer:HookScript("OnShow", function(f)
-                self:ApplyViewerSkin(f)
-            end)
-
-            viewer:HookScript("OnSizeChanged", function(f)
-                self:ApplyViewerLayout(f)
-            end)
-
-            -- Reduced update rate - layout operations don't need high frequency
-            -- 1 FPS fallback polling (primary updates via events/hooks)
-            local updateInterval = 1.0
-            local cdmElapsed = 0
-
-            viewer:HookScript("OnUpdate", function(f, elapsed)
-                cdmElapsed = cdmElapsed + elapsed
-                if cdmElapsed > updateInterval then
-                    cdmElapsed = 0
-                    if f:IsShown() then
-                        self:RescanViewer(f)
-                        -- Only process pending if there actually are pending items
-                        if not InCombatLockdown() then
-                            if self.__cdmPendingIcons then
-                            self:ProcessPendingIcons()
-                            end
-                        end
-                    end
-                end
-            end)
-
-            self:ApplyViewerSkin(viewer)
-        end
-    end
-end
-
--- Hook Edit Mode to force re-skinning when it opens/closes
+-- Hook Edit Mode to suppress Blizzard selection overlays on QUI-managed frames
 function QUICore:HookEditMode()
     if self.__editModeHooked then return end
     self.__editModeHooked = true
@@ -5019,16 +1121,69 @@ function QUICore:HookEditMode()
         -- Track whether we've already hooked BossTargetFrameContainer.GetScaledSelectionSides
         local _bossContainerScaledSidesHooked = false
 
-        -- Hook when Edit Mode is entered
+        -- Blizzard Edit Mode movers to suppress for frames QUI replaces.
+        -- Hook HighlightSystem/SelectSystem on each so the blue selection overlay never appears.
+        local _editModeSuppressionInstalled = false
+        local _editModeSuppressedFrameNames = {
+            -- Unit frames
+            "PlayerFrame", "PetFrame", "PartyFrame",
+            "BossTargetFrameContainer",
+            -- Aura frames
+            "BuffFrame", "DebuffFrame",
+            -- Action bars
+            "StanceBar", "MicroMenuContainer", "BagsBar",
+            "PetActionBar", "ExtraAbilityContainer",
+            -- Cooldown viewers
+            "EssentialCooldownViewer", "UtilityCooldownViewer",
+            "BuffIconCooldownViewer", "BuffBarCooldownViewer",
+            -- Objective tracker
+            "ObjectiveTrackerFrame",
+            -- Cast bar
+            "PlayerCastingBarFrame",
+            -- Tooltip
+            "GameTooltipDefaultContainer",
+        }
+
+        local function InstallEditModeSuppression()
+            if _editModeSuppressionInstalled then return end
+            _editModeSuppressionInstalled = true
+            for _, name in ipairs(_editModeSuppressedFrameNames) do
+                local frame = _G[name]
+                if frame and frame.HighlightSystem then
+                    hooksecurefunc(frame, "HighlightSystem", function(f)
+                        if f.ClearHighlight then f:ClearHighlight() end
+                    end)
+                    if frame.SelectSystem then
+                        hooksecurefunc(frame, "SelectSystem", function(f)
+                            if f.ClearHighlight then f:ClearHighlight() end
+                        end)
+                    end
+                end
+            end
+        end
+
+        -- Install on PLAYER_ENTERING_WORLD (all frames exist by then)
+        local suppressFrame = CreateFrame("Frame")
+        suppressFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        suppressFrame:SetScript("OnEvent", function(f)
+            f:UnregisterAllEvents()
+            InstallEditModeSuppression()
+        end)
+
+        -- Hook when Edit Mode is entered (minimal — no callback dispatch)
         hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-            -- Dispatch registered enter callbacks
+            -- Ensure hooks are installed (fallback if PEW hasn't fired yet)
+            InstallEditModeSuppression()
+            -- Deferred force-clear: Blizzard's ShowSystemSelections iterates frames
+            -- via secureexecuterange after EnterEditMode, so clear on next frame
             C_Timer.After(0, function()
-                for _, cb in ipairs(self._editModeEnterCallbacks) do
-                    pcall(cb)
+                for _, name in ipairs(_editModeSuppressedFrameNames) do
+                    local frame = _G[name]
+                    if frame and frame.ClearHighlight then
+                        pcall(frame.ClearHighlight, frame)
+                    end
                 end
             end)
-
-            _ScheduleReskin(self, 0.1)
 
             -- TAINT NOTE: Direct method replacement on secure frame. Required to prevent nil crash
             -- when GetRect() returns nil during Edit Mode. Edit Mode is combat-exclusive, so this
@@ -5049,127 +1204,34 @@ function QUICore:HookEditMode()
             end
         end)
         
-        -- Hook when Edit Mode is exited
-        local _exitCallbacksFired = false
-        local function FireExitCallbacks()
-            if _exitCallbacksFired then return end
-            _exitCallbacksFired = true
-            for _, cb in ipairs(self._editModeExitCallbacks) do
-                pcall(cb)
-            end
-        end
-
+        -- Hook when Edit Mode is exited (minimal — no callback dispatch)
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-            _exitCallbacksFired = false
-            -- Dispatch registered exit callbacks
-            C_Timer.After(0, FireExitCallbacks)
-
-            C_Timer.After(0.1, function()
-                if not _reskinPending then
-                    _reskinPending = true
-                    if not InCombatLockdown() then
-                        self:ForceReskinAllViewers()
+            -- Hide power bar edit overlays that persist after edit mode exits
+            C_Timer.After(0.15, function()
+                for _, barName in ipairs({"QUIPrimaryPowerBar", "QUISecondaryPowerBar"}) do
+                    local bar = _G[barName]
+                    if bar and bar.editOverlay and bar.editOverlay:IsShown() then
+                        bar.editOverlay:Hide()
                     end
-                    _reskinPending = false
-                end
-
-                -- Hide power bar edit overlays that persist after edit mode exits
-                C_Timer.After(0.15, function()
-                    for _, barName in ipairs({"QUIPrimaryPowerBar", "QUISecondaryPowerBar"}) do
-                        local bar = _G[barName]
-                        if bar and bar.editOverlay and bar.editOverlay:IsShown() then
-                            bar.editOverlay:Hide()
-                        end
-                    end
-                end)
-            end)
-        end)
-
-        -- Safety net: OnUpdate watcher detects Edit Mode has closed even if
-        -- the hooksecurefunc hook didn't fire (e.g. ExitEditMode errored out
-        -- due to taint in CompactUnitFrame_UpdateHealthColor or similar).
-        -- Performance: only runs while Edit Mode is active, stops once exit is detected.
-        local editModeExitWatcher = CreateFrame("Frame", nil, UIParent)
-        local _editWatcherElapsed = 0
-        editModeExitWatcher:Hide()  -- start hidden (inactive)
-
-        local function StartEditModeWatcher()
-            _editWatcherElapsed = 0
-            editModeExitWatcher:SetScript("OnUpdate", function(self, delta)
-                _editWatcherElapsed = _editWatcherElapsed + (delta or 0)
-                if _editWatcherElapsed < 0.5 then return end
-                _editWatcherElapsed = 0
-                if not EditModeManagerFrame:IsShown() then
-                    -- Edit Mode closed — stop watcher and fire exit callbacks
-                    self:SetScript("OnUpdate", nil)
-                    self:Hide()
-                    C_Timer.After(0, FireExitCallbacks)
                 end
             end)
-            editModeExitWatcher:Show()
-        end
-
-        -- Start watcher when entering Edit Mode
-        hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-            _exitCallbacksFired = false
-            StartEditModeWatcher()
         end)
     end
             
-    -- Also hook combat end to retry any failed skinning
+    -- Hook combat end to reapply frame anchoring overrides deferred during combat
     local combatEndFrame = CreateFrame("Frame")
     combatEndFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    combatEndFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     combatEndFrame:SetScript("OnEvent", function(frame, event)
         if event == "PLAYER_REGEN_ENABLED" then
-            -- Reapply frame anchoring overrides deferred during combat
             C_Timer.After(0.3, function()
                 local ApplyAllFrameAnchors = _G.QUI_ApplyAllFrameAnchors
                 if ApplyAllFrameAnchors then
                     ApplyAllFrameAnchors()
                 end
             end)
-            -- Small delay to let things settle after combat
-            C_Timer.After(0.2, function()
-                -- Cache _G function lookup outside the loop
-                local GetSkinIconState = _G.QUI_GetSkinIconState
-                -- Check if any icons need re-skinning
-                local needsReskin = false
-                local GetFrame_reskin = _G.QUI_GetCDMViewerFrame
-                for _, viewerName in ipairs(self.viewers) do
-                    local viewer = GetFrame_reskin and GetFrame_reskin(viewerName)
-                    if viewer then
-                        local container = viewer.viewerFrame or viewer
-                        -- Capture all children in one GetChildren() call, reusing scratch table
-                        wipe(_childrenScratch)
-                        local numKids = 0
-                        if container:GetNumChildren() > 0 then
-                            numKids = _PackChildrenIntoScratch(container:GetChildren())
-                        end
-                        for ci = 1, numKids do
-                            local child = _childrenScratch[ci]
-                            local childSkinState = GetSkinIconState and GetSkinIconState(child)
-                            if childSkinState and childSkinState.skinFailed then
-                                needsReskin = true
-                                break
-                            end
-                        end
-                    end
-                    if needsReskin then break end
-                end
-
-                if needsReskin and not _reskinPending then
-                    _reskinPending = true
-                    self:ForceReskinAllViewers()
-                    _reskinPending = false
-                end
-            end)
-        elseif event == "PLAYER_ENTERING_WORLD" then
-            -- Re-skin after zone changes/loading screens (coalesced to avoid overlap with combat-end)
-            _ScheduleReskin(self, 1)
-            end
-        end)
-    end
+        end
+    end)
+end
 
 -- Patch Blizzard EncounterWarnings to avoid secret value compare errors in Edit Mode
 function QUICore:SetupEncounterWarningsSecretValuePatch()
@@ -5280,48 +1342,37 @@ function QUICore:SetupEncounterWarningsSecretValuePatch()
     self.__encounterWarningsPatchFrame = patchFrame
 end
 
--- DEPRECATED: ProcessPendingBackdrops is dead code. The old backdrop pending system
--- (frame.__cdmBackdropPending / frame.__cdmBackdropSettings) was replaced by
--- SafeSetBackdrop which uses a local _pendingBackdrops table. self.__cdmPendingBackdrops
--- is never populated, so this function was never reached. Removed to eliminate
--- potential taint from writing __cdm* properties to Blizzard frames.
-        
-function QUI:GetGlobalFont()
-    local LSM = LibStub("LibSharedMedia-3.0")
-    local fontName = "Quazii"  -- Default fallback
-
-    -- Read font from user settings
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-        fontName = QUICore.db.profile.general.font or fontName
-    end
-
-    return LSM:Fetch("font", fontName) or [[Interface\AddOns\QUI\assets\Quazii.ttf]]
-end
-
-function QUI:GetGlobalTexture()
-    local LSM = LibStub("LibSharedMedia-3.0")
-    -- For now, return Quazii texture. Will be configurable in General Tab (Feature #3)
-    local textureName = "Quazii"
-    return LSM:Fetch("statusbar", textureName) or "Interface\\AddOns\\QUI\\assets\\Quazii"
-end
-
 function QUI:GetAddonAccentColor()
     local db = QUI.db and QUI.db.profile
     if not db then
-        return 0.204, 0.827, 0.6, 1  -- Fallback to mint
+        return 0.376, 0.647, 0.980, 1  -- Fallback to sky blue
+    end
+    -- Resolve via theme preset if available
+    local preset = db.general and db.general.themePreset
+    if preset and QUI.GUI and QUI.GUI.ResolveThemePreset then
+        local r, g, b = QUI.GUI:ResolveThemePreset(preset)
+        return r, g, b, 1
     end
     local c = (db.general and db.general.addonAccentColor)
         or db.addonAccentColor
-        or {0.204, 0.827, 0.6, 1}
+        or {0.376, 0.647, 0.980, 1}
     return c[1], c[2], c[3], c[4] or 1
 end
 
 function QUI:GetSkinColor()
     local db = QUI.db and QUI.db.profile
     if not db then
-        return 0.2, 1.0, 0.6, 1  -- Fallback to mint
+        return 0.376, 0.647, 0.980, 1  -- Fallback to sky blue
     end
 
+    -- Resolve via theme preset if available
+    local preset = db.general and db.general.themePreset
+    if preset and QUI.GUI and QUI.GUI.ResolveThemePreset then
+        local r, g, b = QUI.GUI:ResolveThemePreset(preset)
+        return r, g, b, 1
+    end
+
+    -- Legacy fallback
     if db.general and db.general.skinUseClassColor then
         local _, class = UnitClass("player")
         local color = RAID_CLASS_COLORS[class]
@@ -5332,7 +1383,7 @@ function QUI:GetSkinColor()
 
     local c = (db.general and db.general.addonAccentColor)
         or db.addonAccentColor
-        or {0.204, 0.827, 0.6, 1}
+        or {0.376, 0.647, 0.980, 1}
     return c[1], c[2], c[3], c[4] or 1
 end
 
@@ -5351,13 +1402,6 @@ end
 -- SafeSetFont, ApplyGlobalFont, and font system are in core/font_system.lua
 
 function QUICore:RefreshAll()
-    local GetFrame = _G.QUI_GetCDMViewerFrame
-    for _, name in ipairs(self.viewers) do
-        local viewer = GetFrame and GetFrame(name)
-        if viewer and viewer:IsShown() then
-            self:ApplyViewerSkin(viewer)
-        end
-    end
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
     -- Also refresh Blizzard UI fonts when global font changes

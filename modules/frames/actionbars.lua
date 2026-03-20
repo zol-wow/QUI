@@ -1,12 +1,30 @@
 --[[
-    QUI Action Bars - Button Skinning and Fade System
-    Hooks Blizzard action buttons for visual customization
+    QUI Action Bars - Native Engine
+    Creates native ActionBarButtonTemplate buttons (bar 1) or reparents
+    Blizzard's existing buttons (bars 2-8) into QUI-owned containers.
+    Buttons get native icon, cooldown, count, drag/pickup, and keybind
+    behavior. QUI handles skinning, layout, fade, and empty slot hiding.
 ]]
 
 local ADDON_NAME, ns = ...
-local LSM = LibStub("LibSharedMedia-3.0")
+local Helpers = ns.Helpers
+local GetCore = Helpers.GetCore
+local LSM = ns.LSM
 
-local GetCore = ns.Helpers.GetCore
+-- Upvalue caching for hot-path performance
+local type = type
+local pairs = pairs
+local ipairs = ipairs
+local pcall = pcall
+local tostring = tostring
+local C_Timer = C_Timer
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+
+-- ADDON_LOADED safe window flag: during a combat /reload, InCombatLockdown()
+-- returns true but protected calls are still allowed. This flag lets
+-- initialization sub-functions bypass their combat guards.
+local inInitSafeWindow = false
 
 ---------------------------------------------------------------------------
 -- MIDNIGHT (12.0+) DETECTION
@@ -90,27 +108,177 @@ local BINDING_COMMANDS = {
     stance = "SHAPESHIFTBUTTON",     -- SHAPESHIFTBUTTON1-10
 }
 
+-- Explicit micro button names (stable list, not dependent on GetChildren order)
+local MICRO_BUTTON_NAMES = {
+    "CharacterMicroButton", "ProfessionMicroButton", "PlayerSpellsMicroButton",
+    "AchievementMicroButton", "QuestLogMicroButton", "HousingMicroButton",
+    "GuildMicroButton", "LFDMicroButton", "CollectionsMicroButton",
+    "EJMicroButton", "StoreMicroButton", "MainMenuMicroButton",
+}
+
+-- Standard action bar keys (bars 1-8, not pet/stance)
+local STANDARD_BAR_KEYS = {"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8"}
+
+-- All managed bar keys (includes pet/stance/microbar/bags which are reparented into owned containers)
+local ALL_MANAGED_BAR_KEYS = {"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8", "pet", "stance", "microbar", "bags"}
+
+-- Bars that receive action bar skinning (icon crop, backdrop, gloss, keybind text, etc.)
+-- Micro menu and bag bar buttons are NOT action buttons and should not be skinned.
+local SKINNABLE_BAR_KEYS = {
+    bar1 = true, bar2 = true, bar3 = true, bar4 = true,
+    bar5 = true, bar6 = true, bar7 = true, bar8 = true,
+    pet = true, stance = true,
+}
+
 ---------------------------------------------------------------------------
 -- MODULE STATE
 ---------------------------------------------------------------------------
 
-local ActionBars = {
+local ActionBarsOwned = {
     initialized = false,
-    skinnedButtons = {},        -- Track which buttons have been skinned
-    fadeState = {},             -- Per-bar fade state tracking
-    fadeFrame = nil,            -- OnUpdate frame for smooth fading
-    levelSuppressionActive = nil, -- Cached state for below-max-level suppression
-    initialWorldRefreshQueued = false, -- One delayed pass to catch late-created bars (stance/pet)
-    visualRefreshQueued = false,
-    reactiveSkinRefreshQueued = false,
+    containers = {},       -- barKey → container frame
+    nativeButtons = {},    -- barKey → { button, ... } (native ActionBarButtonTemplate or reparented Blizzard)
+    cachedLayouts = {},    -- barKey → { numCols, numRows, isVertical, numIcons }
+    editModeActive = false,
+    editOverlays = {},     -- barKey → overlay frame
+    pendingExtraButtonRefresh = false,
+    pendingExtraButtonInit = false,
+    skinnedButtons = {},    -- button → true (tracking for re-skin on updates)
 }
+ns.ActionBarsOwned = ActionBarsOwned
+
+-- Backward compat alias for any code referencing mirrorButtons
+ActionBarsOwned.mirrorButtons = ActionBarsOwned.nativeButtons
+
+local hiddenBarParent = CreateFrame("Frame")
+hiddenBarParent:Hide()
+
+---------------------------------------------------------------------------
+-- SECURE LAYOUT HANDLER
+---------------------------------------------------------------------------
+-- A single SecureHandlerAttributeTemplate whose restricted snippet executes
+-- SetScale/SetPoint/Show/Hide on secure action buttons, bypassing combat
+-- lockdown entirely. Normal Lua encodes layout data as attributes; the
+-- restricted environment reads them and applies the layout.
+---------------------------------------------------------------------------
+
+local layoutHandler = CreateFrame("Frame", "QUI_ActionBarLayoutHandler", UIParent, "SecureHandlerAttributeTemplate")
+
+layoutHandler:SetAttribute("_onattributechanged", [=[
+    if name ~= "do-layout" then return end
+    local barKey = self:GetAttribute("layout-target")
+    if not barKey then return end
+
+    local prefix = "bl-" .. barKey
+    local count  = self:GetAttribute(prefix .. "-count") or 0
+    local anchor = self:GetAttribute(prefix .. "-anchor") or "TOPLEFT"
+    local scale  = tonumber(self:GetAttribute(prefix .. "-scale")) or 1
+    local cw     = tonumber(self:GetAttribute(prefix .. "-cw"))
+    local ch     = tonumber(self:GetAttribute(prefix .. "-ch"))
+    local barRef = self:GetFrameRef("bar-" .. barKey)
+    if not barRef then return end
+
+    if cw and ch then
+        barRef:SetScale(1)
+        barRef:SetWidth(cw)
+        barRef:SetHeight(ch)
+    end
+
+    for i = 1, count do
+        local btnRef = self:GetFrameRef("btn-" .. barKey .. "-" .. i)
+        if btnRef then
+            local data = self:GetAttribute(prefix .. "-" .. i)
+            if data then
+                local x, y, show = strsplit("|", data)
+                btnRef:SetScale(scale)
+                btnRef:ClearAllPoints()
+                btnRef:SetPoint(anchor, barRef, anchor, tonumber(x) or 0, tonumber(y) or 0)
+                if show == "1" then
+                    btnRef:Show()
+                else
+                    btnRef:Hide()
+                end
+            end
+        end
+    end
+]=])
+
+-- Encode layout data as attributes and trigger the secure snippet.
+local function SecureLayoutBar(barKey, buttons, numVisible, anchor, btnScale, positions, groupWidth, groupHeight)
+    local prefix = "bl-" .. barKey
+    layoutHandler:SetAttribute(prefix .. "-count", #buttons)
+    layoutHandler:SetAttribute(prefix .. "-anchor", anchor)
+    layoutHandler:SetAttribute(prefix .. "-scale", btnScale)
+    layoutHandler:SetAttribute(prefix .. "-cw", groupWidth)
+    layoutHandler:SetAttribute(prefix .. "-ch", groupHeight)
+
+    for i = 1, #buttons do
+        if i <= numVisible then
+            local pos = positions[i]
+            layoutHandler:SetAttribute(prefix .. "-" .. i, pos.x .. "|" .. pos.y .. "|1")
+        else
+            layoutHandler:SetAttribute(prefix .. "-" .. i, "0|0|0")
+        end
+    end
+
+    layoutHandler:SetAttribute("layout-target", barKey)
+    layoutHandler:SetAttribute("do-layout", GetTime())
+end
+
+-- Forward declarations for functions defined later but needed by BuildBar / event handlers
+local SkinButton, UpdateButtonText, UpdateEmptySlotVisibility, UpdateKeybindText
+local FadeHideTextures, FadeShowTextures
+local ApplyAllBarSpacing
 
 -- Store QUI state outside secure Blizzard frame tables.
 -- Writing custom keys directly on action buttons can taint secret values.
-local frameState, GetFrameState = ns.Helpers.CreateStateTable()
+-- UNIFIED: both LibKeyBound patch and keybind registration use this single table.
+local frameState, GetFrameState = Helpers.CreateStateTable()
 
 ---------------------------------------------------------------------------
--- HELPER FUNCTIONS
+-- DB ACCESSORS
+---------------------------------------------------------------------------
+
+local GetDB = Helpers.CreateDBGetter("actionBars")
+
+local function GetGlobalSettings()
+    local db = GetDB()
+    return db and db.global
+end
+
+local function GetBarSettings(barKey)
+    local db = GetDB()
+    return db and db.bars and db.bars[barKey]
+end
+
+local function GetFadeSettings()
+    local db = GetDB()
+    return db and db.fade
+end
+
+-- Effective settings (global merged with per-bar overrides)
+local function GetEffectiveSettings(barKey)
+    local global = GetGlobalSettings()
+    if not global then return nil end
+
+    local barSettings = GetBarSettings(barKey)
+    if not barSettings then
+        return global
+    end
+
+    local effective = {}
+    for key, value in pairs(global) do
+        effective[key] = value
+    end
+    for key, value in pairs(barSettings) do
+        effective[key] = value
+    end
+
+    return effective
+end
+
+---------------------------------------------------------------------------
+-- HELPERS
 ---------------------------------------------------------------------------
 
 -- Safe wrapper for HasAction which may return secret values in Midnight
@@ -129,23 +297,34 @@ local function SafeHasAction(action)
     end
 end
 
--- DB accessor using shared helpers
-local Helpers = ns.Helpers
-local GetDB = Helpers.CreateDBGetter("actionBars")
-
-local function GetGlobalSettings()
-    local db = GetDB()
-    return db and db.global
+local function SafeIsActionInRange(action)
+    if IS_MIDNIGHT then
+        local ok, result = pcall(function()
+            local inRange = IsActionInRange(action)
+            if inRange == false then return false end
+            if inRange == true then return true end
+            return nil
+        end)
+        if not ok then return nil end
+        return result
+    else
+        return IsActionInRange(action)
+    end
 end
 
-local function GetBarSettings(barKey)
-    local db = GetDB()
-    return db and db.bars and db.bars[barKey]
-end
-
-local function GetFadeSettings()
-    local db = GetDB()
-    return db and db.fade
+local function SafeIsUsableAction(action)
+    if IS_MIDNIGHT then
+        local ok, isUsable, notEnoughMana = pcall(function()
+            local usable, noMana = IsUsableAction(action)
+            local boolUsable = usable and true or false
+            local boolNoMana = noMana and true or false
+            return boolUsable, boolNoMana
+        end)
+        if not ok then return true, false end
+        return isUsable, notEnoughMana
+    else
+        return IsUsableAction(action)
+    end
 end
 
 local function IsPlayerBelowMaxLevel()
@@ -306,10 +485,10 @@ end
 
 local function UpdateLevelSuppressionState()
     local suppress = ShouldSuppressMouseoverHideForLevel()
-    if ActionBars.levelSuppressionActive == suppress then
+    if ActionBarsOwned.levelSuppressionActive == suppress then
         return false
     end
-    ActionBars.levelSuppressionActive = suppress
+    ActionBarsOwned.levelSuppressionActive = suppress
     return true
 end
 
@@ -333,6 +512,7 @@ local function GetBarKeyFromButton(button)
     if not name then return nil end
 
     if name:match("^ActionButton%d+$") then return "bar1" end
+    if name:match("^QUI_Bar1Button%d+$") then return "bar1" end
     if name:match("^MultiBarBottomLeftButton%d+$") then return "bar2" end
     if name:match("^MultiBarBottomRightButton%d+$") then return "bar3" end
     if name:match("^MultiBarRightButton%d+$") then return "bar4" end
@@ -352,130 +532,74 @@ local function GetButtonIndex(button)
     return tonumber(name:match("%d+$"))
 end
 
--- Resolve a button's icon texture object.
--- Stance buttons are inconsistent across clients:
--- - some expose button.icon/button.Icon,
--- - some use a named region (<ButtonName>Icon),
--- - some use NormalTexture as the icon.
-local function GetButtonIconTexture(button)
-    if not button then return nil, false end
-
-    local isStance = GetBarKeyFromButton(button) == "stance"
-    local buttonName = button.GetName and button:GetName()
-    local namedIcon = buttonName and _G[buttonName .. "Icon"] or nil
-    local icon = button.icon or button.Icon
-
-    local function HasTexture(texture)
-        if not texture or not texture.GetTexture then return false end
-        return texture:GetTexture() ~= nil
+local function GetBarFrame(barKey)
+    local frameName = BAR_FRAMES[barKey]
+    local frame = frameName and _G[frameName]
+    if not frame and barKey == "bar1" then
+        frame = _G["MainMenuBar"]
     end
-
-    local chosenTexture, usesNormalTexture = nil, false
-
-    if isStance then
-        -- Prefer the texture object that actually has an assigned texture.
-        if HasTexture(icon) then
-            chosenTexture, usesNormalTexture = icon, false
-        elseif HasTexture(namedIcon) then
-            chosenTexture, usesNormalTexture = namedIcon, false
-        else
-            local normalTex = button:GetNormalTexture() or button.NormalTexture
-            if HasTexture(normalTex) then
-                chosenTexture, usesNormalTexture = normalTex, true
-            elseif icon then
-                chosenTexture, usesNormalTexture = icon, false
-            elseif namedIcon then
-                chosenTexture, usesNormalTexture = namedIcon, false
-            elseif normalTex then
-                chosenTexture, usesNormalTexture = normalTex, true
-            end
-        end
-
-        return chosenTexture, usesNormalTexture
-    end
-
-    if icon then
-        return icon, false
-    end
-    if namedIcon then
-        return namedIcon, false
-    end
-
-    return nil, false
+    return frame
 end
 
--- Register a button's binding command so LibKeyBound can bind keys to it.
--- On pre-Midnight clients the methods are injected directly onto the button.
--- On Midnight (12.0+) mutating secure action buttons spreads taint, so we
--- store the data in our external frameState table and patch the LibKeyBound
--- Binder to consult it instead (see PatchLibKeyBoundForMidnight below).
-local function AddKeybindMethods(button, barKey)
-    if not button then return end
-
-    local state = GetFrameState(button)
-    if state.keybindMethods then return end
-
-    local bindingPrefix = BINDING_COMMANDS[barKey]
-    if not bindingPrefix then return end
-
-    local buttonIndex = GetButtonIndex(button)
-    if not buttonIndex then return end
-
-    local bindingCommand = bindingPrefix .. buttonIndex
-    state.bindingCommand = bindingCommand
-    state.keybindMethods = true
-
-    -- On Midnight we skip method injection; the patched Binder handles it.
-    if IS_MIDNIGHT then return end
-
-    -- Required method: Returns current keybind text
-    function button:GetHotkey()
-        local command = GetFrameState(self).bindingCommand
-        local key = command and GetBindingKey(command)
-        if key then
-            local LibKeyBound = LibStub("LibKeyBound-1.0", true)
-            return LibKeyBound and LibKeyBound:ToShortKey(key) or key
-        end
-        return nil
+local function GetBarButtons(barKey)
+    -- If the native engine has built this bar, return our managed buttons
+    -- instead of looking up Blizzard globals (which may be hidden/reparented).
+    local native = ActionBarsOwned.nativeButtons[barKey]
+    if native and #native > 0 then
+        return native
     end
 
-    -- Required method: Binds a key to this button
-    function button:SetKey(key)
-        if InCombatLockdown() then return end
-        local command = GetFrameState(self).bindingCommand
-        if command then
-            SetBinding(key, command)
-        end
-    end
+    local buttons = {}
 
-    -- Optional method: Returns all bindings as comma-separated string
-    function button:GetBindings()
-        local command = GetFrameState(self).bindingCommand
-        if not command then return nil end
-        local keys = {}
-        for i = 1, select("#", GetBindingKey(command)) do
-            local key = select(i, GetBindingKey(command))
-            if key then
-                table.insert(keys, key)
+    -- Special handling for non-standard bars
+    if barKey == "microbar" then
+        for _, name in ipairs(MICRO_BUTTON_NAMES) do
+            local btn = _G[name]
+            if btn then
+                table.insert(buttons, btn)
             end
         end
-        return #keys > 0 and table.concat(keys, ", ") or nil
+        return buttons
+    elseif barKey == "bags" then
+        if MainMenuBarBackpackButton then
+            table.insert(buttons, MainMenuBarBackpackButton)
+        end
+        for i = 0, 3 do
+            local slot = _G["CharacterBag" .. i .. "Slot"]
+            if slot then table.insert(buttons, slot) end
+        end
+        if CharacterReagentBag0Slot then
+            table.insert(buttons, CharacterReagentBag0Slot)
+        end
+        return buttons
+    elseif barKey == "extraActionButton" then
+        if ExtraActionBarFrame and ExtraActionBarFrame.button then
+            table.insert(buttons, ExtraActionBarFrame.button)
+        end
+        return buttons
+    elseif barKey == "zoneAbility" then
+        if ZoneAbilityFrame and ZoneAbilityFrame.SpellButtonContainer then
+            for button in ZoneAbilityFrame.SpellButtonContainer:EnumerateActive() do
+                table.insert(buttons, button)
+            end
+        end
+        return buttons
     end
 
-    -- Optional method: Clears all bindings from this button
-    function button:ClearBindings()
-        if InCombatLockdown() then return end
-        local command = GetFrameState(self).bindingCommand
-        if not command then return end
-        while GetBindingKey(command) do
-            SetBinding(GetBindingKey(command), nil)
+    -- Standard bars with numbered buttons
+    local pattern = BUTTON_PATTERNS[barKey]
+    local count = BUTTON_COUNTS[barKey] or 12
+    if not pattern then return buttons end
+
+    for i = 1, count do
+        local buttonName = string.format(pattern, i)
+        local button = _G[buttonName]
+        if button then
+            table.insert(buttons, button)
         end
     end
 
-    -- Optional method: Returns display name for what we're binding
-    function button:GetActionName()
-        return GetFrameState(self).bindingCommand
-    end
+    return buttons
 end
 
 ---------------------------------------------------------------------------
@@ -483,6 +607,7 @@ end
 -- On Midnight (12.0+) we cannot inject methods onto secure action buttons
 -- without spreading taint. Instead we override LibKeyBound's Binder methods
 -- to consult our external frameState table for binding commands.
+-- UNIFIED: keybind registration writes to this same frameState.
 ---------------------------------------------------------------------------
 
 local libKeyBoundPatched = false
@@ -672,94 +797,805 @@ local function PatchLibKeyBoundForMidnight()
     end
 end
 
--- Get effective settings for a bar (merges global with per-bar overrides)
-local function GetEffectiveSettings(barKey)
-    local global = GetGlobalSettings()
-    if not global then return nil end
+-- Register keybind command for LibKeyBound quickbind support.
+-- Sets bindingCommand in frameState so the patched Binder can find it.
+local function AddKeybindMethods(button, barKey)
+    local prefix = BINDING_COMMANDS[barKey]
+    if not prefix then return end
+    local index = GetButtonIndex(button)
+    if not index then return end
+    local state = GetFrameState(button)
+    state.bindingCommand = prefix .. index
+    state.keybindMethods = true
+end
 
-    local barSettings = GetBarSettings(barKey)
+-- Check if the cursor is holding a placeable action (for drag preview)
+local function CursorHasPlaceableAction()
+    local infoType = GetCursorInfo()
+    return infoType == "spell" or infoType == "item" or infoType == "macro"
+        or infoType == "petaction" or infoType == "mount" or infoType == "flyout"
+end
 
-    -- If overrides are disabled or bar doesn't support overrides, use global
-    if not barSettings or not barSettings.overrideEnabled then
-        return global
+---------------------------------------------------------------------------
+-- CONTAINER FACTORY
+---------------------------------------------------------------------------
+
+local function CreateBarContainer(barKey)
+    local containerName = "QUI_ActionBar_" .. barKey
+    local container = CreateFrame("Frame", containerName, UIParent, "SecureHandlerStateTemplate")
+    container:SetSize(1, 1)
+    container:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    container:Show()
+    container:SetClampedToScreen(true)
+    return container
+end
+
+---------------------------------------------------------------------------
+-- LAYOUT ENGINE
+---------------------------------------------------------------------------
+
+-- Read layout settings from ownedLayout DB (fully independent of Blizzard Edit Mode)
+local function GetOwnedLayout(barKey)
+    local barDB = GetBarSettings(barKey)
+    local layout = barDB and barDB.ownedLayout
+    if not layout then
+        return "horizontal", 12, 12, false, false, nil, nil, nil
     end
+    return
+        layout.orientation or "horizontal",
+        layout.columns or 12,
+        layout.iconCount or 12,
+        layout.growUp or false,
+        layout.growLeft or false,
+        layout.buttonSize,
+        layout.buttonSpacing,
+        layout.buttonHeight
+end
 
-    -- Merge: global as base, bar-specific overrides non-nil values
-    local effective = {}
-    for key, value in pairs(global) do
-        effective[key] = value
-    end
+local function LayoutNativeButtons(barKey)
+    local container = ActionBarsOwned.containers[barKey]
+    local buttons = ActionBarsOwned.nativeButtons[barKey]
+    if not container or not buttons or #buttons == 0 then return end
 
-    -- Override with bar-specific values (only if not nil)
-    local overrideKeys = {
-        "iconZoom", "showBackdrop", "backdropAlpha", "showGloss", "glossAlpha", "showBorders",
-        "showKeybinds", "hideEmptyKeybinds", "keybindFontSize", "keybindColor",
-        "keybindAnchor", "keybindOffsetX", "keybindOffsetY",
-        "showMacroNames", "macroNameFontSize", "macroNameColor",
-        "macroNameAnchor", "macroNameOffsetX", "macroNameOffsetY",
-        "showCounts", "countFontSize", "countColor",
-        "countAnchor", "countOffsetX", "countOffsetY",
-    }
+    local orientation, columns, iconCount, growUp, growLeft, sizeOverride, spacingOverride, heightOverride = GetOwnedLayout(barKey)
+    local isVertical = (orientation == "vertical")
 
-    for _, key in ipairs(overrideKeys) do
-        if barSettings[key] ~= nil then
-            effective[key] = barSettings[key]
+    local numVisible = math.min(iconCount, #buttons)
+    if numVisible == 0 then return end
+
+    -- Desired visual button size from settings
+    local desiredSize
+    if sizeOverride and sizeOverride > 0 then
+        desiredSize = sizeOverride
+    else
+        local settings = GetGlobalSettings()
+        local iconSize = settings and settings.iconSize
+        if iconSize and iconSize > 0 then
+            desiredSize = iconSize
+        else
+            desiredSize = 36
         end
     end
 
-    return effective
+    -- Buttons stay at their native frame size (45x45 for action bars, 30x30
+    -- for pet/stance). Per-button SetScale handles visual resize so Blizzard
+    -- overlays (proc glows, rotation assist) work at their expected dimensions.
+    -- Container stays at scale 1.0 so anchoring, positioning, and Layout Mode
+    -- all work correctly.
+    -- Cache naturalSize outside combat — GetWidth() returns secret values in combat.
+    if not ActionBarsOwned.cachedNaturalSize then
+        ActionBarsOwned.cachedNaturalSize = {}
+    end
+    local naturalSize
+    if not InCombatLockdown() then
+        naturalSize = math.floor((buttons[1]:GetWidth() or 45) + 0.5)
+        if naturalSize < 10 then naturalSize = 45 end
+        ActionBarsOwned.cachedNaturalSize[barKey] = naturalSize
+    else
+        naturalSize = ActionBarsOwned.cachedNaturalSize[barKey] or 45
+    end
+
+    local spacing
+    if spacingOverride then
+        spacing = spacingOverride
+    else
+        local settings = GetGlobalSettings()
+        spacing = settings and settings.buttonSpacing or 2
+    end
+
+    -- Pixel-snap desiredSize and spacing to the container's physical pixel grid.
+    -- Without this, fractional physical-pixel button widths cause WoW's renderer
+    -- to round each button's edges independently, producing uneven gaps (e.g., a
+    -- visible 1-2px gap between buttons 7 and 8 but not other pairs).
+    -- Snapping at the source ensures step, btnScale, and all derived positions
+    -- are inherently pixel-aligned — no per-button corrections needed.
+    local Core = GetCore()
+    local px = Core and Core.GetPixelSize and Core:GetPixelSize(container) or nil
+    if px and px > 0 then
+        desiredSize = math.floor(desiredSize / px + 0.5) * px
+        spacing = math.floor(spacing / px + 0.5) * px
+    end
+
+    -- Rectangular button support: when buttonHeight is set (e.g. microbar 32×40),
+    -- use separate width/height for container sizing and y-step calculations.
+    -- btnScale stays width-based (WoW only supports a single SetScale value).
+    local desiredHeight = desiredSize
+    if heightOverride and heightOverride > 0 then
+        desiredHeight = heightOverride
+        if px and px > 0 then
+            desiredHeight = math.floor(desiredHeight / px + 0.5) * px
+        end
+    end
+
+    local btnScale = desiredSize / naturalSize
+
+    local numCols, numRows
+    if isVertical then
+        local buttonsPerCol = math.max(1, columns)
+        numRows = buttonsPerCol
+        numCols = math.ceil(numVisible / buttonsPerCol)
+    else
+        numCols = math.max(1, columns)
+        numRows = math.ceil(numVisible / numCols)
+    end
+
+    -- Determine the anchor point ONCE for this layout pass
+    local anchor
+    if growUp then
+        anchor = growLeft and "BOTTOMRIGHT" or "BOTTOMLEFT"
+    else
+        anchor = growLeft and "TOPRIGHT" or "TOPLEFT"
+    end
+
+    -- Container size = visual grid size (scale 1.0, matches screen pixels)
+    local groupWidth = numCols * desiredSize + math.max(0, numCols - 1) * spacing
+    local groupHeight = numRows * desiredHeight + math.max(0, numRows - 1) * spacing
+
+    -- Compute absolute offsets from the container anchor for each button.
+    -- WoW multiplies SetPoint offsets by the child's scale, so divide by
+    -- btnScale to get correct screen positions.
+    local xStep = (desiredSize + spacing) / btnScale
+    local yStep = (desiredHeight + spacing) / btnScale
+    local xDir = growLeft and -1 or 1
+    local yDir = growUp and 1 or -1
+
+    if SKINNABLE_BAR_KEYS[barKey] then
+        -- SECURE PATH: Encode positions as attributes, let the restricted
+        -- snippet call SetScale/SetPoint/Show/Hide on secure buttons — this
+        -- bypasses combat lockdown entirely (no pcall, no ADDON_ACTION_BLOCKED).
+        local positions = {}
+        for i = 1, numVisible do
+            local idx = i - 1
+            local col, row
+            if isVertical then
+                col = math.floor(idx / numRows)
+                row = idx % numRows
+            else
+                col = idx % numCols
+                row = math.floor(idx / numCols)
+            end
+            positions[i] = {
+                x = col * xStep * xDir,
+                y = row * yStep * yDir,
+            }
+        end
+
+        SecureLayoutBar(barKey, buttons, numVisible, anchor, btnScale, positions, groupWidth, groupHeight)
+    else
+        -- NON-SECURE PATH: microbar, bags — direct Lua calls (not protected).
+        for i, btn in ipairs(buttons) do
+            if i <= numVisible then
+                btn:SetScale(btnScale)
+                btn:ClearAllPoints()
+                local idx = i - 1
+                local col, row
+                if isVertical then
+                    col = math.floor(idx / numRows)
+                    row = idx % numRows
+                else
+                    col = idx % numCols
+                    row = math.floor(idx / numCols)
+                end
+                btn:SetPoint(anchor, container, anchor, col * xStep * xDir, row * yStep * yDir)
+                btn:Show()
+            else
+                btn:Hide()
+            end
+        end
+        container:SetScale(1)
+        container:SetSize(groupWidth, groupHeight)
+    end
+
+    -- HelpMicroButton / StoreMicroButton slot sharing: overlay Help on Store's
+    -- position so they share the same grid slot (only one is visible at a time).
+    if barKey == "microbar" then
+        local helpBtn = _G.HelpMicroButton
+        local storeBtn = _G.StoreMicroButton
+        if helpBtn and storeBtn then
+            helpBtn:ClearAllPoints()
+            helpBtn:SetAllPoints(storeBtn)
+            if storeBtn:IsShown() then
+                helpBtn:Hide()
+            else
+                helpBtn:Show()
+            end
+        end
+    end
+
+    -- Suppress Blizzard's dirty flag so its Layout() doesn't override our
+    -- positioning on the next frame. SetPoint/SetSize calls above mark the
+    -- container dirty; clearing it prevents the built-in OnUpdate from
+    -- re-running Blizzard's default layout and stomping our grid.
+    if container.MarkClean then
+        container:MarkClean()
+    end
+
+    ActionBarsOwned.cachedLayouts[barKey] = {
+        numCols = numCols,
+        numRows = numRows,
+        isVertical = isVertical,
+        numIcons = numVisible,
+        btnWidth = desiredSize,
+        btnHeight = desiredHeight,
+    }
 end
 
--- Get buttons for a specific bar
-local function GetBarButtons(barKey)
-    local buttons = {}
+---------------------------------------------------------------------------
+-- CONTAINER POSITIONING
+---------------------------------------------------------------------------
 
-    -- Special handling for non-standard bars
-    if barKey == "microbar" then
-        -- MicroMenu contains the micro buttons (Character, Spellbook, etc.)
-        if MicroMenu then
-            for _, child in ipairs({MicroMenu:GetChildren()}) do
-                if child.IsObjectType and child:IsObjectType("Button") then
-                    table.insert(buttons, child)
+-- Legacy position helpers removed — frameAnchoring system handles positioning.
+-- SaveContainerPosition / RestoreContainerPosition kept as no-ops for any
+-- remaining callers; the edit overlay drag and bar init now rely on frameAnchoring.
+local function SaveContainerPosition(barKey) end
+
+local function RestoreContainerPosition(barKey)
+    local container = ActionBarsOwned.containers[barKey]
+    if not container then return false end
+
+    -- Fallback: copy Blizzard frame's position when no frameAnchoring override exists
+    if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(barKey) then
+        return true
+    end
+
+    local barFrame = GetBarFrame(barKey)
+    if barFrame then
+        local ok, point, relativeTo, relPoint, x, y = pcall(barFrame.GetPoint, barFrame, 1)
+        if ok and point then
+            container:ClearAllPoints()
+            local rawCx, rawCy = barFrame:GetCenter()
+            local rawSx, rawSy = UIParent:GetCenter()
+            local cx = Helpers.SafeToNumber(rawCx)
+            local cy = Helpers.SafeToNumber(rawCy)
+            local sx = Helpers.SafeToNumber(rawSx)
+            local sy = Helpers.SafeToNumber(rawSy)
+            if cx and cx ~= 0 and cy and cy ~= 0 and sx and sy then
+                container:SetPoint("CENTER", UIParent, "CENTER", cx - sx, cy - sy)
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+---------------------------------------------------------------------------
+-- FADE SYSTEM
+---------------------------------------------------------------------------
+
+local fadeState = {}
+
+local function GetOwnedBarFadeState(barKey)
+    if not fadeState[barKey] then
+        fadeState[barKey] = {
+            isFading = false,
+            currentAlpha = 1,
+            targetAlpha = 1,
+            fadeStart = 0,
+            fadeStartAlpha = 1,
+            fadeDuration = 0.3,
+            isMouseOver = false,
+            delayTimer = nil,
+            leaveCheckTimer = nil,
+        }
+    end
+    return fadeState[barKey]
+end
+
+local IsInEditMode = Helpers.IsEditModeShown
+
+local function SetOwnedBarAlpha(barKey, alpha)
+    local container = ActionBarsOwned.containers[barKey]
+    if not container then return end
+
+    local buttons = ActionBarsOwned.nativeButtons[barKey]
+
+    container:SetAlpha(alpha)
+
+    if buttons then
+        for _, btn in ipairs(buttons) do
+            local state = GetFrameState(btn)
+            local hidden = alpha <= 0 or state.hiddenEmpty
+            if hidden then
+                FadeHideTextures(state, btn)
+            elseif state.fadeHidden then
+                FadeShowTextures(state, btn)
+            end
+        end
+    end
+
+    GetOwnedBarFadeState(barKey).currentAlpha = alpha
+end
+
+local fadeFrame = nil
+local fadeFrameUpdate = nil
+
+local function StartOwnedBarFade(barKey, targetAlpha)
+    if targetAlpha < 1 and IsInEditMode() then return end
+    if targetAlpha < 1 and ShouldForceShowForSpellBook() then return end
+
+    local state = GetOwnedBarFadeState(barKey)
+    local fadeSettings = GetFadeSettings()
+
+    local duration = targetAlpha > state.currentAlpha
+        and (fadeSettings and fadeSettings.fadeInDuration or 0.2)
+        or (fadeSettings and fadeSettings.fadeOutDuration or 0.3)
+
+    if math.abs(state.currentAlpha - targetAlpha) < 0.01 then
+        state.isFading = false
+        return
+    end
+
+    state.isFading = true
+    state.targetAlpha = targetAlpha
+    state.fadeStart = GetTime()
+    state.fadeStartAlpha = state.currentAlpha
+    state.fadeDuration = duration
+
+    if not fadeFrame then
+        fadeFrame = CreateFrame("Frame")
+        fadeFrameUpdate = function(self, elapsed)
+            local now = GetTime()
+            local anyFading = false
+
+            for bKey, bState in pairs(fadeState) do
+                if bState.isFading then
+                    anyFading = true
+                    local elapsedTime = now - bState.fadeStart
+                    local progress = math.min(elapsedTime / bState.fadeDuration, 1)
+                    local easedProgress = progress * (2 - progress)
+                    local a = bState.fadeStartAlpha + (bState.targetAlpha - bState.fadeStartAlpha) * easedProgress
+                    SetOwnedBarAlpha(bKey, a)
+
+                    if progress >= 1 then
+                        bState.isFading = false
+                        SetOwnedBarAlpha(bKey, bState.targetAlpha)
+                    end
+                end
+            end
+
+            if not anyFading then
+                self:SetScript("OnUpdate", nil)
+                self:Hide()
+            end
+        end
+    end
+    fadeFrame:SetScript("OnUpdate", fadeFrameUpdate)
+    fadeFrame:Show()
+end
+
+local function CancelOwnedBarFadeTimers(state)
+    if not state then return end
+    if state.delayTimer then
+        state.delayTimer:Cancel()
+        state.delayTimer = nil
+    end
+    if state.leaveCheckTimer then
+        state.leaveCheckTimer:Cancel()
+        state.leaveCheckTimer = nil
+    end
+end
+
+local function IsLinkedBar(barKey)
+    for _, key in ipairs(STANDARD_BAR_KEYS) do
+        if key == barKey then return true end
+    end
+    return false
+end
+
+local function IsMouseOverOwnedBar(barKey)
+    local container = ActionBarsOwned.containers[barKey]
+    if container and container:IsMouseOver() then return true end
+
+    local buttons = ActionBarsOwned.nativeButtons[barKey]
+    if buttons then
+        for _, btn in ipairs(buttons) do
+            if btn:IsMouseOver() then return true end
+        end
+    end
+    return false
+end
+
+local function IsMouseOverAnyLinkedOwnedBar()
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        if IsMouseOverOwnedBar(barKey) then return true end
+    end
+    return false
+end
+
+function ActionBarsOwned:OnBarMouseEnter(barKey)
+    local state = GetOwnedBarFadeState(barKey)
+    local fadeSettings = GetFadeSettings()
+    local barSettings = GetBarSettings(barKey)
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForSpellBook() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+
+    if barSettings and barSettings.alwaysShow then return end
+
+    local fadeEnabled = barSettings and barSettings.fadeEnabled
+    if fadeEnabled == nil then
+        fadeEnabled = fadeSettings and fadeSettings.enabled
+    end
+    if not fadeEnabled then return end
+
+    state.isMouseOver = true
+
+    if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
+        for _, linkedKey in ipairs(STANDARD_BAR_KEYS) do
+            if linkedKey ~= barKey then
+                local linkedState = GetOwnedBarFadeState(linkedKey)
+                CancelOwnedBarFadeTimers(linkedState)
+                StartOwnedBarFade(linkedKey, 1)
+            end
+        end
+    end
+
+    CancelOwnedBarFadeTimers(state)
+    StartOwnedBarFade(barKey, 1)
+end
+
+function ActionBarsOwned:OnBarMouseLeave(barKey)
+    if IsInEditMode() then return end
+
+    local state = GetOwnedBarFadeState(barKey)
+    local fadeSettings = GetFadeSettings()
+    local barSettings = GetBarSettings(barKey)
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForSpellBook() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+
+    if barSettings and barSettings.alwaysShow then return end
+
+    local isMainBar = barKey and barKey:match("^bar%d$")
+    if isMainBar and InCombatLockdown() and fadeSettings and fadeSettings.alwaysShowInCombat then
+        return
+    end
+
+    local fadeEnabled = barSettings and barSettings.fadeEnabled
+    if fadeEnabled == nil then
+        fadeEnabled = fadeSettings and fadeSettings.enabled
+    end
+    if not fadeEnabled then return end
+
+    if state.leaveCheckTimer then
+        state.leaveCheckTimer:Cancel()
+    end
+
+    state.leaveCheckTimer = C_Timer.NewTimer(0.066, function()
+        state.leaveCheckTimer = nil
+
+        if IsMouseOverOwnedBar(barKey) then return end
+
+        if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
+            if IsMouseOverAnyLinkedOwnedBar() then return end
+            for _, linkedKey in ipairs(STANDARD_BAR_KEYS) do
+                local linkedBarSettings = GetBarSettings(linkedKey)
+                if not (linkedBarSettings and linkedBarSettings.alwaysShow) then
+                    local linkedState = GetOwnedBarFadeState(linkedKey)
+                    linkedState.isMouseOver = false
+                    local linkedFadeOutAlpha = linkedBarSettings and linkedBarSettings.fadeOutAlpha
+                    if linkedFadeOutAlpha == nil then
+                        linkedFadeOutAlpha = fadeSettings and fadeSettings.fadeOutAlpha or 0
+                    end
+                    local delay = fadeSettings and fadeSettings.fadeOutDelay or 0.5
+                    CancelOwnedBarFadeTimers(linkedState)
+                    linkedState.delayTimer = C_Timer.NewTimer(delay, function()
+                        linkedState.delayTimer = nil
+                        if not IsMouseOverAnyLinkedOwnedBar() then
+                            StartOwnedBarFade(linkedKey, linkedFadeOutAlpha)
+                        end
+                    end)
+                end
+            end
+            return
+        end
+
+        state.isMouseOver = false
+
+        local fadeOutAlpha = barSettings and barSettings.fadeOutAlpha
+        if fadeOutAlpha == nil then
+            fadeOutAlpha = fadeSettings and fadeSettings.fadeOutAlpha or 0
+        end
+        local delay = fadeSettings and fadeSettings.fadeOutDelay or 0.5
+
+        if state.delayTimer then
+            state.delayTimer:Cancel()
+        end
+        state.delayTimer = C_Timer.NewTimer(delay, function()
+            if state.isMouseOver then
+                state.delayTimer = nil
+                return
+            end
+            if ShouldForceShowForSpellBook() then
+                SetOwnedBarAlpha(barKey, 1)
+                state.delayTimer = nil
+                return
+            end
+            local freshBarSettings = GetBarSettings(barKey)
+            local freshFadeSettings = GetFadeSettings()
+            local freshFadeOutAlpha = freshBarSettings and freshBarSettings.fadeOutAlpha
+            if freshFadeOutAlpha == nil then
+                freshFadeOutAlpha = freshFadeSettings and freshFadeSettings.fadeOutAlpha or 0
+            end
+            StartOwnedBarFade(barKey, freshFadeOutAlpha)
+            state.delayTimer = nil
+        end)
+    end)
+end
+
+local function SetupOwnedBarMouseover(barKey)
+    if IsInEditMode() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+
+    local barSettings = GetBarSettings(barKey)
+    local fadeSettings = GetFadeSettings()
+
+    if ShouldSuppressMouseoverHideForLevel() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForSpellBook() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+
+    if barSettings and barSettings.alwaysShow then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+
+    local fadeEnabled = barSettings and barSettings.fadeEnabled
+    if fadeEnabled == nil then
+        fadeEnabled = fadeSettings and fadeSettings.enabled
+    end
+    if not fadeEnabled then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+
+    local fadeOutAlpha = barSettings and barSettings.fadeOutAlpha
+    if fadeOutAlpha == nil then
+        fadeOutAlpha = fadeSettings and fadeSettings.fadeOutAlpha or 0
+    end
+
+    local state = GetOwnedBarFadeState(barKey)
+    state.isFading = false
+    CancelOwnedBarFadeTimers(state)
+
+    if not IsMouseOverOwnedBar(barKey) then
+        SetOwnedBarAlpha(barKey, fadeOutAlpha)
+    end
+end
+
+---------------------------------------------------------------------------
+-- USABILITY POLLING
+---------------------------------------------------------------------------
+
+-- (Mirror usability polling and keybind methods removed — handled natively)
+
+---------------------------------------------------------------------------
+-- EDIT MODE INTEGRATION
+---------------------------------------------------------------------------
+
+local function CreateEditOverlay(container, barKey)
+    local overlay = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    overlay:SetAllPoints(container)
+    local core = GetCore()
+    local px = (core and core.GetPixelSize and core:GetPixelSize(overlay)) or 1
+    local edge2 = 2 * px
+    overlay:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = edge2,
+    })
+    overlay:SetBackdropColor(0.2, 0.8, 0.6, 0.3)
+    overlay:SetBackdropBorderColor(0.376, 0.647, 0.980, 1)
+    overlay:EnableMouse(true)
+    overlay:SetMovable(true)
+    overlay:RegisterForDrag("LeftButton")
+    overlay:SetFrameStrata("HIGH")
+    overlay:Hide()
+
+    local text = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("CENTER")
+    local displayName = barKey:gsub("bar", "Bar ")
+    text:SetText(displayName)
+    overlay.label = text
+
+    overlay:SetScript("OnDragStart", function()
+        container:StartMoving()
+    end)
+
+    overlay:SetScript("OnDragStop", function()
+        container:StopMovingOrSizing()
+        SaveContainerPosition(barKey)
+    end)
+
+    return overlay
+end
+
+local function OnEditModeEnter()
+    ActionBarsOwned.editModeActive = true
+
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        local container = ActionBarsOwned.containers[barKey]
+        if container then
+            container:SetMovable(true)
+
+            local state = GetOwnedBarFadeState(barKey)
+            state.isFading = false
+            CancelOwnedBarFadeTimers(state)
+            SetOwnedBarAlpha(barKey, 1)
+
+            if not ActionBarsOwned.editOverlays[barKey] then
+                ActionBarsOwned.editOverlays[barKey] = CreateEditOverlay(container, barKey)
+            end
+            ActionBarsOwned.editOverlays[barKey]:Show()
+        end
+    end
+end
+
+local function OnEditModeExit()
+    ActionBarsOwned.editModeActive = false
+
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        if ActionBarsOwned.editOverlays[barKey] then
+            ActionBarsOwned.editOverlays[barKey]:Hide()
+        end
+
+        SaveContainerPosition(barKey)
+        LayoutNativeButtons(barKey)
+        SetupOwnedBarMouseover(barKey)
+    end
+end
+
+---------------------------------------------------------------------------
+-- OVERRIDE BINDING APPLICATION
+---------------------------------------------------------------------------
+
+local function IsVehicleBarActive()
+    return (HasVehicleActionBar and HasVehicleActionBar())
+        or (HasOverrideActionBar and HasOverrideActionBar())
+        or (UnitInVehicle and UnitInVehicle("player"))
+end
+
+-- Apply override bindings for a bar. All bars need this because reparenting
+-- + SetID(0) disconnects buttons from Blizzard's native binding lookup.
+local function ApplyBarOverrideBindings(barKey)
+    if InCombatLockdown() and not inInitSafeWindow then
+        ActionBarsOwned.pendingBindings = true
+        return
+    end
+
+    local container = ActionBarsOwned.containers[barKey]
+    if not container then return end
+
+    -- Clear existing override bindings on this bar's container
+    ClearOverrideBindings(container)
+
+    -- Vehicle guard: bar1 keybinds should pass through to Blizzard's
+    -- vehicle/override bar natively when one is active.
+    if barKey == "bar1" and IsVehicleBarActive() then
+        return
+    end
+
+    local buttons = ActionBarsOwned.nativeButtons[barKey]
+    local prefix = BINDING_COMMANDS[barKey]
+    if not buttons or not prefix then return end
+
+    for i, btn in ipairs(buttons) do
+        local command = prefix .. i
+        for ki = 1, select("#", GetBindingKey(command)) do
+            local key = select(ki, GetBindingKey(command))
+            if key then
+                local existing = GetBindingAction(key, true)
+                if not existing or existing == "" or existing == command then
+                    SetOverrideBindingClick(container, false, key, btn:GetName(), "LeftButton")
                 end
             end
         end
-        return buttons
-    elseif barKey == "bags" then
-        -- Bag slots: backpack + 4 bag slots + reagent bag
-        if MainMenuBarBackpackButton then
-            table.insert(buttons, MainMenuBarBackpackButton)
-        end
-        for i = 0, 3 do
-            local slot = _G["CharacterBag" .. i .. "Slot"]
-            if slot then table.insert(buttons, slot) end
-        end
-        if CharacterReagentBag0Slot then
-            table.insert(buttons, CharacterReagentBag0Slot)
-        end
-        return buttons
-    elseif barKey == "extraActionButton" then
-        -- Extra Action Button (boss encounters, quests)
-        if ExtraActionBarFrame and ExtraActionBarFrame.button then
-            table.insert(buttons, ExtraActionBarFrame.button)
-        end
-        return buttons
-    elseif barKey == "zoneAbility" then
-        -- Zone Ability buttons (garrison, covenant, zone powers)
-        if ZoneAbilityFrame and ZoneAbilityFrame.SpellButtonContainer then
-            for button in ZoneAbilityFrame.SpellButtonContainer:EnumerateActive() do
-                table.insert(buttons, button)
-            end
-        end
-        return buttons
     end
+end
 
-    -- Standard bars with numbered buttons
+-- Apply override bindings for all managed bars (including pet/stance)
+local function ApplyAllOverrideBindings()
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        ApplyBarOverrideBindings(barKey)
+    end
+end
+
+-- Compat aliases
+local ApplyBar1OverrideBindings = function() ApplyBarOverrideBindings("bar1") end
+
+---------------------------------------------------------------------------
+-- BAR 1 PAGING STATE DRIVER
+---------------------------------------------------------------------------
+
+local function BuildPagingCondition()
+    local parts = {}
+    -- Override bar (boss encounters, scenarios)
+    if GetOverrideBarIndex then
+        table.insert(parts, "[overridebar] " .. GetOverrideBarIndex())
+    end
+    -- Vehicle / possess
+    if GetVehicleBarIndex then
+        table.insert(parts, "[vehicleui][possessbar] " .. GetVehicleBarIndex())
+    end
+    -- Dragonriding (bonusbar:5)
+    table.insert(parts, "[bonusbar:5] 11")
+    -- Class-specific bonus bars (Druid forms, Rogue stealth, etc.)
+    for i = 4, 1, -1 do
+        table.insert(parts, "[bonusbar:" .. i .. "] " .. (6 + i))
+    end
+    -- Manual page switching
+    for i = 6, 2, -1 do
+        table.insert(parts, "[bar:" .. i .. "] " .. i)
+    end
+    -- Default page
+    table.insert(parts, "1")
+    return table.concat(parts, "; ")
+end
+
+local bar1PagingInitialized = false
+
+local function SetupBar1Paging(container)
+    if bar1PagingInitialized then return end
+    bar1PagingInitialized = true
+
+    container:SetAttribute("_onstate-page", [[
+        local page = tonumber(newstate) or 1
+        local offset = (page - 1) * 12
+        control:ChildUpdate("offset", offset)
+    ]])
+    RegisterStateDriver(container, "page", BuildPagingCondition())
+end
+
+---------------------------------------------------------------------------
+-- BAR BUILD (native engine)
+---------------------------------------------------------------------------
+
+-- Get the ORIGINAL Blizzard buttons by name (bypassing nativeButtons cache).
+-- Used during BuildBar to find buttons that need hiding.
+local function GetOriginalBlizzButtons(barKey)
+    local buttons = {}
     local pattern = BUTTON_PATTERNS[barKey]
     local count = BUTTON_COUNTS[barKey] or 12
-
     if not pattern then return buttons end
-
     for i = 1, count do
         local buttonName = string.format(pattern, i)
         local button = _G[buttonName]
@@ -767,19 +1603,894 @@ local function GetBarButtons(barKey)
             table.insert(buttons, button)
         end
     end
-
     return buttons
 end
--- Get the bar container frame
-local function GetBarFrame(barKey)
-    local frameName = BAR_FRAMES[barKey]
-    local frame = frameName and _G[frameName]
-    -- Fallback: MainMenuBar (pre-Midnight name for bar1)
-    if not frame and barKey == "bar1" then
-        frame = _G["MainMenuBar"]
+
+local function BuildBar(barKey)
+    local barFrame = GetBarFrame(barKey)
+
+    if not ActionBarsOwned.containers[barKey] then
+        ActionBarsOwned.containers[barKey] = CreateBarContainer(barKey)
     end
-    return frame
+    local container = ActionBarsOwned.containers[barKey]
+
+    local settings = GetEffectiveSettings(barKey)
+    local buttons = {}
+
+    if barKey == "bar1" then
+        -- BAR 1: Create new ActionBarButtonTemplate buttons with paging
+        -- Hide Blizzard's bar frame and original buttons
+        if barFrame then
+            barFrame:UnregisterAllEvents()
+            barFrame:SetParent(hiddenBarParent)
+            barFrame:Hide()
+        end
+        local origButtons = GetOriginalBlizzButtons(barKey)
+        for _, blizzBtn in ipairs(origButtons) do
+            blizzBtn:SetParent(hiddenBarParent)
+            blizzBtn:UnregisterAllEvents()
+        end
+
+        -- Rescue the leave-vehicle button from the hidden Blizzard bar hierarchy.
+        -- MainMenuBarVehicleLeaveButton is a child of MainActionBar; reparenting
+        -- the bar to hiddenBarParent makes it invisible. Reparent to UIParent so
+        -- Blizzard's visibility driver can still show/hide it normally.
+        local leaveBtn = _G.MainMenuBarVehicleLeaveButton
+        if leaveBtn then
+            leaveBtn:SetParent(UIParent)
+        end
+
+        -- Create or reuse QUI bar1 buttons
+        for i = 1, 12 do
+            local btnName = "QUI_Bar1Button" .. i
+            local btn = _G[btnName]
+            if not btn then
+                btn = CreateFrame("CheckButton", btnName, container, "ActionBarButtonTemplate")
+                btn:SetAttribute("index", i)
+                btn:SetAttribute("action", i)
+                btn:SetAttribute("_childupdate-offset", [[
+                    local index = self:GetAttribute("index")
+                    local newAction = index + (message or 0)
+                    if self:GetAttribute("action") ~= newAction then
+                        self:SetAttribute("action", newAction)
+                    end
+                ]])
+                if btn.RegisterForClicks then
+                    btn:RegisterForClicks("AnyDown", "AnyUp")
+                end
+            else
+                btn:SetParent(container)
+            end
+            btn:Show()
+            -- Force the template to update its visuals (icon, cooldown, count, etc.)
+            if ActionButton_Update then
+                ActionButton_Update(btn)
+            elseif btn.Update then
+                btn:Update()
+            end
+            buttons[i] = btn
+        end
+
+        -- Register paging state driver
+        SetupBar1Paging(container)
+    elseif barKey == "pet" or barKey == "stance" then
+        -- PET/STANCE: Reparent Blizzard buttons into QUI container.
+        -- These use their frame ID for slot lookup (not the action attribute),
+        -- so we must preserve SetID and NOT set an action attribute.
+        if barFrame then
+            barFrame:UnregisterAllEvents()
+            barFrame:SetParent(hiddenBarParent)
+            barFrame:Hide()
+        end
+
+        local origButtons = GetOriginalBlizzButtons(barKey)
+        if #origButtons == 0 then return end
+
+        for i, blizzBtn in ipairs(origButtons) do
+            blizzBtn:SetParent(container)
+            -- Preserve original ID — pet/stance buttons use GetID() for slot lookup
+            blizzBtn:Show()
+            buttons[i] = blizzBtn
+        end
+    elseif barKey == "microbar" then
+        -- MICRO MENU: Reparent individual micro buttons into QUI container.
+        -- Fully silence the Blizzard container so its Layout() never fires
+        -- during combat (which would propagate taint through our hooks).
+        if barFrame then
+            -- Purge Edit Mode's isShownExternal before reparenting to avoid
+            -- tainting the Edit Mode system. Writing enough nil keys pushes
+            -- the tainted entry off the secure-variable tracking list.
+            if barFrame.system then
+                barFrame.isShownExternal = nil
+                local c = 42
+                repeat
+                    if barFrame[c] == nil then
+                        barFrame[c] = nil
+                    end
+                    c = c + 1
+                until issecurevariable(barFrame, "isShownExternal")
+            end
+            barFrame:UnregisterAllEvents()
+            barFrame:SetParent(hiddenBarParent)
+            -- Use the original C-side Hide to avoid Edit Mode's Lua override
+            -- which can propagate taint on managed frames.
+            if barFrame.HideBase then
+                barFrame:HideBase()
+            else
+                barFrame:Hide()
+            end
+        end
+
+        -- Suppress Blizzard's MicroMenu.Layout during reparenting — partially
+        -- reparented children have nil positions, which crashes GetEdgeButton.
+        local origLayout = MicroMenu and MicroMenu.Layout
+        if MicroMenu then MicroMenu.Layout = function() end end
+
+        -- Use explicit button list instead of fragile GetChildren enumeration
+        ActionBarsOwned._microAnchors = {}
+        for i, name in ipairs(MICRO_BUTTON_NAMES) do
+            local btn = _G[name]
+            if btn then
+                -- Save original anchor for clean restoration during yield
+                ActionBarsOwned._microAnchors[i] = { btn:GetPoint() }
+                btn:SetParent(container)
+                btn:Show()
+                buttons[#buttons + 1] = btn
+            end
+        end
+
+        -- HelpMicroButton shares StoreMicroButton's slot — reparent it into
+        -- our container so Blizzard's Layout doesn't crash on orphaned children,
+        -- but don't add it to the buttons array (LayoutNativeButtons handles it).
+        local helpBtn = _G.HelpMicroButton
+        if helpBtn then
+            helpBtn:SetParent(container)
+        end
+
+        -- Restore MicroMenu.Layout now that all children are reparented
+        if MicroMenu and origLayout then MicroMenu.Layout = origLayout end
+
+        -- Apply clickthrough setting
+        local barDB = GetBarSettings("microbar")
+        if barDB and barDB.clickthrough then
+            for _, btn in ipairs(buttons) do
+                btn:EnableMouse(false)
+            end
+        end
+
+        -- Hook Blizzard's layout to reclaim buttons if it tries to reparent them
+        if not ActionBarsOwned._microLayoutHooked then
+            ActionBarsOwned._microLayoutHooked = true
+
+            -- Shared reclaim function: reparent stray buttons and reapply layout.
+            -- During combat, defers via C_Timer.After(0) to break the taint
+            -- chain from hooked Blizzard execution paths, then coalesces
+            -- multiple hook fires into a single layout per frame.
+            -- Reparenting (SetParent) is protected during combat,
+            -- so that is deferred to PLAYER_REGEN_ENABLED, but SetPoint/SetScale
+            -- on micro buttons works fine from untainted addon code.
+            local microCombatLayoutPending = false
+            local function ReclaimMicroButtons()
+                if not ActionBarsOwned.initialized then return end
+                -- Skip reclaim when Blizzard legitimately owns the buttons
+                -- (vehicle, override bar, pet battle). The _microOwnedByUI
+                -- flag is set by the MicroMenu:SetParent hook.
+                if ActionBarsOwned._microOwnedByUI then return end
+
+                -- Clear Blizzard's cached grid settings so its next Layout()
+                -- doesn't reuse stale button positions from before QUI reclaimed.
+                if MicroMenu then
+                    MicroMenu.oldGridSettings = nil
+                end
+
+                local btns = ActionBarsOwned.nativeButtons["microbar"]
+                local cont = ActionBarsOwned.containers["microbar"]
+                if not btns or not cont then return end
+
+                -- Check if any buttons need reparenting (protected during combat)
+                local needsReparent = false
+                for _, btn in ipairs(btns) do
+                    if btn:GetParent() ~= cont then
+                        needsReparent = true
+                        break
+                    end
+                end
+
+                if needsReparent and InCombatLockdown() then
+                    -- SetParent is protected — defer reparenting to combat end
+                    if not ActionBarsOwned._microDeferPending then
+                        ActionBarsOwned._microDeferPending = true
+                        ns.Addon:RegisterEvent("PLAYER_REGEN_ENABLED", function()
+                            ns.Addon:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                            ActionBarsOwned._microDeferPending = false
+                            ReclaimMicroButtons()
+                        end)
+                    end
+                    return
+                end
+
+                if needsReparent then
+                    for _, btn in ipairs(btns) do
+                        if btn:GetParent() ~= cont then
+                            btn:SetParent(cont)
+                        end
+                    end
+                    -- Reclaim HelpMicroButton as well (shares Store's slot)
+                    local helpBtn = _G.HelpMicroButton
+                    if helpBtn and helpBtn:GetParent() ~= cont then
+                        helpBtn:SetParent(cont)
+                    end
+                    -- Re-apply clickthrough after reparenting
+                    local microDB = GetBarSettings("microbar")
+                    local ct = microDB and microDB.clickthrough
+                    for _, btn in ipairs(btns) do
+                        btn:EnableMouse(not ct)
+                    end
+                end
+
+                -- SetScale on the microbar container is protected during combat.
+                -- Defer layout to combat end via a dedicated frame event handler
+                -- (not ns.Addon:RegisterEvent, which would conflict with the
+                -- reparent defer above).
+                if InCombatLockdown() then
+                    if not microCombatLayoutPending then
+                        microCombatLayoutPending = true
+                        local f = ActionBarsOwned._microLayoutFrame
+                        if not f then
+                            f = CreateFrame("Frame")
+                            ActionBarsOwned._microLayoutFrame = f
+                        end
+                        f:RegisterEvent("PLAYER_REGEN_ENABLED")
+                        f:SetScript("OnEvent", function(self)
+                            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                            microCombatLayoutPending = false
+                            if not ActionBarsOwned._microOwnedByUI then
+                                LayoutNativeButtons("microbar")
+                            end
+                        end)
+                    end
+                else
+                    LayoutNativeButtons("microbar")
+                end
+            end
+
+            -- Yield micro buttons back to Blizzard when MicroMenu is
+            -- reparented away from UIParent (vehicle, override, pet battle).
+            -- Reclaim when it returns to UIParent.
+            local function YieldMicroButtons()
+                ActionBarsOwned._microOwnedByUI = true
+                local btns = ActionBarsOwned.nativeButtons["microbar"]
+                if btns and MicroMenu then
+                    local savedAnchors = ActionBarsOwned._microAnchors
+                    for i, btn in ipairs(btns) do
+                        btn:SetParent(MicroMenu)
+                        btn:EnableMouse(true)
+                        -- Restore original anchor if saved
+                        if savedAnchors and savedAnchors[i] then
+                            btn:ClearAllPoints()
+                            btn:SetPoint(unpack(savedAnchors[i]))
+                        end
+                    end
+                    -- Return HelpMicroButton to MicroMenu as well
+                    local helpBtn = _G.HelpMicroButton
+                    if helpBtn then
+                        helpBtn:SetParent(MicroMenu)
+                    end
+                end
+            end
+
+            local function ReclaimOrYield()
+                if MicroMenu and MicroMenu:GetParent() ~= UIParent then
+                    YieldMicroButtons()
+                else
+                    ActionBarsOwned._microOwnedByUI = false
+                    ReclaimMicroButtons()
+                end
+            end
+
+            -- Hook MicroMenu:SetParent — primary ownership detection.
+            -- Fires when Blizzard reparents the frame for vehicle/override/
+            -- pet battle transitions.
+            if MicroMenu then
+                hooksecurefunc(MicroMenu, "SetParent", function(_, parent)
+                    if not ActionBarsOwned.initialized then return end
+                    if parent == UIParent then
+                        ActionBarsOwned._microOwnedByUI = false
+                        ReclaimMicroButtons()
+                    else
+                        YieldMicroButtons()
+                    end
+                end)
+            end
+
+            -- Hook MicroMenuContainer AND MicroMenu Layout — both can fire
+            -- when Blizzard re-layouts buttons (Edit Mode changes, grid
+            -- recalculation, etc.). MicroMenu.Layout repositions individual
+            -- buttons; MicroMenuContainer.Layout repositions the container.
+            if MicroMenuContainer and MicroMenuContainer.Layout then
+                hooksecurefunc(MicroMenuContainer, "Layout", ReclaimMicroButtons)
+            end
+            if MicroMenu and MicroMenu.Layout and MicroMenu ~= MicroMenuContainer then
+                hooksecurefunc(MicroMenu, "Layout", ReclaimMicroButtons)
+            end
+
+            -- Hook UpdateMicroButtons — fires on many events (talent changes,
+            -- guild updates, store state, etc.) and repositions buttons
+            if UpdateMicroButtons then
+                hooksecurefunc("UpdateMicroButtons", ReclaimMicroButtons)
+            end
+
+            -- Hook UpdateMicroButtonsParent — fires when Blizzard explicitly
+            -- reparents micro buttons (vehicle, override bar, pet battle)
+            if UpdateMicroButtonsParent then
+                hooksecurefunc("UpdateMicroButtonsParent", ReclaimOrYield)
+            end
+
+            -- Hook ActionBarController_UpdateAll — fires on bar state changes
+            -- (vehicle exit, stance changes) that can trigger button reparenting
+            if ActionBarController_UpdateAll then
+                hooksecurefunc("ActionBarController_UpdateAll", ReclaimMicroButtons)
+            end
+
+            -- Reclaim micro buttons when pet battle ends — no other hook
+            -- reliably fires for this transition.
+            if C_PetBattles then
+                local petBattleFrame = CreateFrame("Frame")
+                petBattleFrame:RegisterEvent("PET_BATTLE_CLOSE")
+                petBattleFrame:SetScript("OnEvent", function()
+                    if not ActionBarsOwned.initialized then return end
+                    ActionBarsOwned._microOwnedByUI = false
+                    -- Restore MicroMenu parent so the SetParent hook also fires
+                    if MicroMenu and MicroMenu:GetParent() ~= UIParent then
+                        MicroMenu:SetParent(UIParent)
+                    else
+                        ReclaimMicroButtons()
+                    end
+                end)
+            end
+        end
+    elseif barKey == "bags" then
+        -- BAG BAR: Reparent bag slot buttons into QUI container.
+        -- Fully silence the Blizzard container so its Layout() never fires
+        -- during combat (which would propagate taint through our hooks).
+        if barFrame then
+            if barFrame.system then
+                barFrame.isShownExternal = nil
+                local c = 42
+                repeat
+                    if barFrame[c] == nil then
+                        barFrame[c] = nil
+                    end
+                    c = c + 1
+                until issecurevariable(barFrame, "isShownExternal")
+            end
+            barFrame:UnregisterAllEvents()
+            barFrame:SetParent(hiddenBarParent)
+            if barFrame.HideBase then
+                barFrame:HideBase()
+            else
+                barFrame:Hide()
+            end
+        end
+
+        local bagButtons = GetBarButtons("bags")
+        local noopFunc = function() end
+        for i, btn in ipairs(bagButtons) do
+            btn:SetParent(container)
+            btn:Show()
+            -- Prevent Blizzard's expand/collapse animation from firing on
+            -- reparented bag buttons.
+            if btn.SetBarExpanded then
+                btn.SetBarExpanded = noopFunc
+            end
+            buttons[i] = btn
+        end
+
+        -- Prevent BagsBar from responding to expand/collapse state changes
+        -- which would trigger unnecessary Layout calls.
+        if BagsBar and EventRegistry and EventRegistry.UnregisterCallback then
+            pcall(EventRegistry.UnregisterCallback, EventRegistry, "MainMenuBarManager.OnExpandChanged", BagsBar)
+        end
+
+        -- Hook Blizzard's layout to reclaim buttons if it tries to reparent them
+        if not ActionBarsOwned._bagsLayoutHooked then
+            ActionBarsOwned._bagsLayoutHooked = true
+            local bagsBar = BagsBar
+            if bagsBar and bagsBar.Layout then
+                hooksecurefunc(bagsBar, "Layout", function()
+                    if not ActionBarsOwned.initialized then return end
+                    if not ActionBarsOwned.nativeButtons["bags"] then return end
+                    if InCombatLockdown() then
+                        ActionBarsOwned.pendingBagsReclaim = true
+                        return
+                    end
+                    C_Timer.After(0, function()
+                        if InCombatLockdown() then
+                            ActionBarsOwned.pendingBagsReclaim = true
+                            return
+                        end
+                        local btns = ActionBarsOwned.nativeButtons["bags"]
+                        local cont = ActionBarsOwned.containers["bags"]
+                        if btns and cont then
+                            for _, btn in ipairs(btns) do
+                                if btn:GetParent() ~= cont then
+                                    btn:SetParent(cont)
+                                end
+                            end
+                            LayoutNativeButtons("bags")
+                        end
+                    end)
+                end)
+            end
+        end
+    else
+        -- BARS 2-8: Reparent Blizzard's existing buttons into QUI container.
+        -- Hide the bar frame but do NOT unregister its events or wipe its
+        -- actionButtons table — the native keybind system needs these intact.
+        if barFrame then
+            barFrame:SetParent(hiddenBarParent)
+            barFrame:Hide()
+        end
+
+        local origButtons = GetOriginalBlizzButtons(barKey)
+        if #origButtons == 0 then return end
+
+        -- Action slot offsets: each bar maps to a fixed range of action slots.
+        -- Reparenting disconnects buttons from the bar's internal slot management,
+        -- so we must set the action attribute explicitly.
+        local BAR_ACTION_OFFSETS = {
+            bar2 = 60,   -- slots 61-72
+            bar3 = 48,   -- slots 49-60
+            bar4 = 24,   -- slots 25-36
+            bar5 = 36,   -- slots 37-48
+            bar6 = 144,  -- slots 145-156
+            bar7 = 156,  -- slots 157-168
+            bar8 = 168,  -- slots 169-180
+        }
+        local offset = BAR_ACTION_OFFSETS[barKey] or 0
+
+        for i, blizzBtn in ipairs(origButtons) do
+            blizzBtn:SetParent(container)
+            blizzBtn:SetID(0)
+            blizzBtn.Bar = nil
+            -- Set the correct action slot for this button
+            blizzBtn:SetAttribute("action", offset + i)
+            blizzBtn:Show()
+            buttons[i] = blizzBtn
+        end
+    end
+
+    ActionBarsOwned.nativeButtons[barKey] = buttons
+
+    -- Register frame refs for the secure layout handler (must be outside combat).
+    if SKINNABLE_BAR_KEYS[barKey] then
+        layoutHandler:SetFrameRef("bar-" .. barKey, container)
+        for i, btn in ipairs(buttons) do
+            layoutHandler:SetFrameRef("btn-" .. barKey .. "-" .. i, btn)
+        end
+    end
+
+    -- Micro/bag buttons are not action buttons — skip skinning, keybinds, and override bindings
+    if SKINNABLE_BAR_KEYS[barKey] then
+        -- Defer skinning slightly so ActionBarButtonTemplate has time to
+        -- populate icons and visuals from the action attribute.
+        local capturedSettings = settings
+        C_Timer.After(0, function()
+            if not capturedSettings then return end
+            local btns = ActionBarsOwned.nativeButtons[barKey]
+            if not btns then return end
+            for _, btn in ipairs(btns) do
+                -- Reset skin key to force full re-skin
+                local st = GetFrameState(btn)
+                st.skinKey = nil
+                SkinButton(btn, capturedSettings)
+                UpdateButtonText(btn, capturedSettings)
+                UpdateEmptySlotVisibility(btn, capturedSettings)
+            end
+        end)
+
+        -- Register keybind methods for LibKeyBound
+        local prefix = BINDING_COMMANDS[barKey]
+        if prefix then
+            for i, btn in ipairs(buttons) do
+                local state = GetFrameState(btn)
+                state.bindingCommand = prefix .. i
+                state.keybindMethods = true
+            end
+        end
+    end
+
+    LayoutNativeButtons(barKey)
+    RestoreContainerPosition(barKey)
+    SetupOwnedBarMouseover(barKey)
+
+    -- Action bars need override bindings (reparenting disconnects native bindings)
+    if SKINNABLE_BAR_KEYS[barKey] then
+        ApplyBarOverrideBindings(barKey)
+    end
 end
+
+---------------------------------------------------------------------------
+-- PET/STANCE BAR HELPERS
+---------------------------------------------------------------------------
+
+-- Forward declarations (defined here, referenced in event handler and Initialize)
+local UpdatePetBarVisibility, UpdateStanceBarLayout
+
+-- Update pet bar container visibility based on whether the player has an active pet bar.
+-- PetActionBar events are unregistered (we took ownership), so we drive visibility ourselves.
+UpdatePetBarVisibility = function()
+    local container = ActionBarsOwned.containers["pet"]
+    if not container then return end
+
+    local barDB = GetBarSettings("pet")
+    if barDB and barDB.enabled == false then
+        container:Hide()
+        -- Notify anchoring system so dependents (e.g. stance bar) can re-anchor
+        if _G.QUI_UpdateFramesAnchoredTo then _G.QUI_UpdateFramesAnchoredTo("petBar") end
+        return
+    end
+
+    -- HasPetUI() returns true when the player has a controllable pet with a bar
+    local wasShown = container:IsShown()
+    local hasPet = HasPetUI and HasPetUI()
+    if hasPet then
+        container:Show()
+        -- Manually trigger button updates since PetActionBar events are unregistered
+        if PetActionBar and PetActionBar.Update then
+            pcall(PetActionBar.Update, PetActionBar)
+        end
+        LayoutNativeButtons("pet")
+    else
+        container:Hide()
+    end
+    -- Notify anchoring system when visibility changed so dependents re-anchor
+    local isShown = container:IsShown()
+    if wasShown ~= isShown and _G.QUI_UpdateFramesAnchoredTo then
+        _G.QUI_UpdateFramesAnchoredTo("petBar")
+    end
+end
+
+-- Update stance bar layout: show only the buttons matching GetNumShapeshiftForms().
+UpdateStanceBarLayout = function()
+    local container = ActionBarsOwned.containers["stance"]
+    if not container then return end
+
+    local barDB = GetBarSettings("stance")
+    if barDB and barDB.enabled == false then
+        container:Hide()
+        if _G.QUI_UpdateFramesAnchoredTo then _G.QUI_UpdateFramesAnchoredTo("stanceBar") end
+        return
+    end
+
+    local wasShown = container:IsShown()
+    local numForms = GetNumShapeshiftForms and GetNumShapeshiftForms() or 0
+    local buttons = ActionBarsOwned.nativeButtons["stance"]
+    if not buttons then return end
+
+    if numForms == 0 then
+        container:Hide()
+        if wasShown and _G.QUI_UpdateFramesAnchoredTo then
+            _G.QUI_UpdateFramesAnchoredTo("stanceBar")
+        end
+        return
+    end
+
+    container:Show()
+
+    -- Clamp ownedLayout.iconCount to actual form count for layout
+    local layout = barDB and barDB.ownedLayout
+    if layout then
+        -- Temporarily clamp iconCount for the layout pass
+        local savedIconCount = layout.iconCount
+        layout.iconCount = math.min(layout.iconCount or 10, numForms)
+        LayoutNativeButtons("stance")
+        layout.iconCount = savedIconCount
+    else
+        LayoutNativeButtons("stance")
+    end
+
+    -- Notify anchoring system when visibility changed
+    if not wasShown and _G.QUI_UpdateFramesAnchoredTo then
+        _G.QUI_UpdateFramesAnchoredTo("stanceBar")
+    end
+end
+
+---------------------------------------------------------------------------
+-- EVENT HANDLING
+---------------------------------------------------------------------------
+
+local ownedEventFrame = CreateFrame("Frame")
+
+-- Refresh empty slot visibility and skinning for all native buttons
+local function RefreshAllNativeVisuals()
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        local buttons = ActionBarsOwned.nativeButtons[barKey]
+        local settings = GetEffectiveSettings(barKey)
+        if buttons and settings and SKINNABLE_BAR_KEYS[barKey] then
+            for _, btn in ipairs(buttons) do
+                SkinButton(btn, settings)
+                UpdateButtonText(btn, settings)
+                UpdateEmptySlotVisibility(btn, settings)
+            end
+        end
+    end
+end
+
+-- Refresh keybind text on all native buttons
+local function RefreshNativeKeybinds()
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        local buttons = ActionBarsOwned.nativeButtons[barKey]
+        local settings = GetEffectiveSettings(barKey)
+        if buttons and settings then
+            for _, btn in ipairs(buttons) do
+                UpdateKeybindText(btn, settings)
+            end
+        end
+    end
+    -- Refresh all override bindings
+    ApplyAllOverrideBindings()
+end
+
+-- Forward declaration for extra button functions used in event handler
+local InitializeExtraButtons
+local RefreshExtraButtons
+local ApplyPageArrowVisibility
+
+local function OnOwnedEvent(self, event, ...)
+    if not ActionBarsOwned.initialized then return end
+
+    if event == "ACTIONBAR_SLOT_CHANGED" then
+        -- Native buttons auto-update icons/cooldowns; just refresh empty slot visibility
+        if InCombatLockdown() then
+            ActionBarsOwned.pendingSlotUpdate = true
+            return
+        end
+        C_Timer.After(0.1, function()
+            for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+                local buttons = ActionBarsOwned.nativeButtons[barKey]
+                local settings = GetEffectiveSettings(barKey)
+                if buttons and settings then
+                    for _, btn in ipairs(buttons) do
+                        UpdateEmptySlotVisibility(btn, settings)
+                    end
+                end
+            end
+        end)
+
+    elseif event == "ACTIONBAR_PAGE_CHANGED"
+        or event == "UPDATE_BONUS_ACTIONBAR"
+        or event == "UPDATE_SHAPESHIFT_FORM"
+        or event == "UPDATE_SHAPESHIFT_FORMS"
+        or event == "UPDATE_STEALTH" then
+        -- Paging is handled by state driver; refresh empty slots and bar1 bindings
+        C_Timer.After(0.05, function()
+            local buttons = ActionBarsOwned.nativeButtons["bar1"]
+            local settings = GetEffectiveSettings("bar1")
+            if buttons and settings then
+                for _, btn in ipairs(buttons) do
+                    UpdateEmptySlotVisibility(btn, settings)
+                end
+            end
+            -- Stance bar may need re-layout when shapeshift forms change
+            if not InCombatLockdown() then
+                UpdateStanceBarLayout()
+            end
+        end)
+        ApplyBar1OverrideBindings()
+
+    elseif event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
+        local unit = ...
+        if unit == "player" then
+            ApplyBar1OverrideBindings()
+            -- Blizzard may reclaim micro buttons during vehicle transitions
+            if event == "UNIT_EXITED_VEHICLE" then
+                C_Timer.After(0.2, function()
+                    if not ActionBarsOwned.initialized then return end
+                    if InCombatLockdown() then
+                        ActionBarsOwned.pendingMicroReclaim = true
+                        ActionBarsOwned.pendingBagsReclaim = true
+                        return
+                    end
+                    local microBtns = ActionBarsOwned.nativeButtons["microbar"]
+                    local microCont = ActionBarsOwned.containers["microbar"]
+                    if microBtns and microCont then
+                        for _, btn in ipairs(microBtns) do
+                            if btn:GetParent() ~= microCont then
+                                btn:SetParent(microCont)
+                            end
+                        end
+                        LayoutNativeButtons("microbar")
+                    end
+                    local bagBtns = ActionBarsOwned.nativeButtons["bags"]
+                    local bagCont = ActionBarsOwned.containers["bags"]
+                    if bagBtns and bagCont then
+                        for _, btn in ipairs(bagBtns) do
+                            if btn:GetParent() ~= bagCont then
+                                btn:SetParent(bagCont)
+                            end
+                        end
+                        LayoutNativeButtons("bags")
+                    end
+                end)
+            end
+        end
+
+    elseif event == "UPDATE_BINDINGS" then
+        C_Timer.After(0.1, RefreshNativeKeybinds)
+
+    elseif event == "CURSOR_CHANGED" then
+        local settings = GetGlobalSettings()
+        if settings and settings.hideEmptySlots then
+            local shouldPreview = CursorHasPlaceableAction()
+            if shouldPreview ~= (ActionBarsOwned.dragPreviewActive or false) then
+                ActionBarsOwned.dragPreviewActive = shouldPreview or nil
+                for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+                    local buttons = ActionBarsOwned.nativeButtons[barKey]
+                    if buttons then
+                        local effSettings = GetEffectiveSettings(barKey)
+                        if effSettings then
+                            for _, btn in ipairs(buttons) do
+                                UpdateEmptySlotVisibility(btn, effSettings)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if ActionBarsOwned.pendingSlotUpdate then
+            ActionBarsOwned.pendingSlotUpdate = false
+            C_Timer.After(0.1, function()
+                for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+                    local btns = ActionBarsOwned.nativeButtons[barKey]
+                    local s = GetEffectiveSettings(barKey)
+                    if btns and s then
+                        for _, btn in ipairs(btns) do
+                            UpdateEmptySlotVisibility(btn, s)
+                        end
+                    end
+                end
+            end)
+        end
+        if ActionBarsOwned.pendingExtraButtonInit then
+            ActionBarsOwned.pendingExtraButtonInit = false
+            InitializeExtraButtons()
+        end
+        if ActionBarsOwned.pendingExtraButtonRefresh then
+            ActionBarsOwned.pendingExtraButtonRefresh = false
+            RefreshExtraButtons()
+        end
+        if ActionBarsOwned.pendingRefresh then
+            ActionBarsOwned.pendingRefresh = false
+            ActionBarsOwned:Refresh()
+        end
+        if ActionBarsOwned.pendingBindings then
+            ActionBarsOwned.pendingBindings = false
+            ApplyAllOverrideBindings()
+        end
+        if ActionBarsOwned.pendingPetUpdate then
+            ActionBarsOwned.pendingPetUpdate = false
+            UpdatePetBarVisibility()
+        end
+        if ActionBarsOwned.pendingMicroReclaim then
+            ActionBarsOwned.pendingMicroReclaim = false
+            local btns = ActionBarsOwned.nativeButtons["microbar"]
+            local cont = ActionBarsOwned.containers["microbar"]
+            if btns and cont then
+                for _, btn in ipairs(btns) do
+                    btn:SetParent(cont)
+                end
+                LayoutNativeButtons("microbar")
+            end
+        end
+        if ActionBarsOwned.pendingBagsReclaim then
+            ActionBarsOwned.pendingBagsReclaim = false
+            local btns = ActionBarsOwned.nativeButtons["bags"]
+            local cont = ActionBarsOwned.containers["bags"]
+            if btns and cont then
+                for _, btn in ipairs(btns) do
+                    btn:SetParent(cont)
+                end
+                LayoutNativeButtons("bags")
+            end
+        end
+        if ActionBarsOwned.pendingSpacing then
+            ActionBarsOwned.pendingSpacing = false
+            ApplyAllBarSpacing()
+        end
+
+    elseif event == "PET_BAR_UPDATE" or event == "PET_BAR_UPDATE_COOLDOWN" then
+        -- Pet abilities changed or cooldowns updated — refresh button visuals
+        if PetActionBar and PetActionBar.Update then
+            pcall(PetActionBar.Update, PetActionBar)
+        end
+        if not InCombatLockdown() then
+            UpdatePetBarVisibility()
+        end
+
+    elseif event == "PET_UI_UPDATE" or event == "UNIT_PET" then
+        local unit = ...
+        if event == "UNIT_PET" and unit ~= "player" then return end
+        -- Pet summoned/dismissed/swapped — update container visibility
+        C_Timer.After(0.1, function()
+            if not ActionBarsOwned.initialized then return end
+            if InCombatLockdown() then
+                ActionBarsOwned.pendingPetUpdate = true
+                return
+            end
+            UpdatePetBarVisibility()
+        end)
+
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        local isLogin, isReload = ...
+        if isReload then
+            if not InCombatLockdown() then
+                -- Second spacing pass during combat /reload safe window.
+                ApplyAllBarSpacing()
+            end
+            -- Safety net: Blizzard's Layout() may fire after safe window
+            -- closes. Mark pending so PLAYER_REGEN_ENABLED reapplies.
+            ActionBarsOwned.pendingSpacing = true
+        end
+        C_Timer.After(0.2, function()
+            for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+                LayoutNativeButtons(barKey)
+                RestoreContainerPosition(barKey)
+            end
+            RefreshAllNativeVisuals()
+            UpdatePetBarVisibility()
+            UpdateStanceBarLayout()
+        end)
+        local db = GetDB()
+        if db and db.bars and db.bars.bar1 then
+            C_Timer.After(0.1, function()
+                ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
+            end)
+            C_Timer.After(0.6, function()
+                ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
+            end)
+        end
+
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        local fadeSettings = GetFadeSettings()
+        if fadeSettings and fadeSettings.enabled and fadeSettings.alwaysShowInCombat then
+            for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+                local state = GetOwnedBarFadeState(barKey)
+                CancelOwnedBarFadeTimers(state)
+                StartOwnedBarFade(barKey, 1)
+            end
+        end
+
+    elseif event == "PLAYER_LEVEL_UP" then
+        if UpdateLevelSuppressionState() then
+            if type(_G.QUI_RefreshActionBars) == "function" then
+                _G.QUI_RefreshActionBars()
+            end
+        end
+    end
+end
+
+ownedEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+ownedEventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+ownedEventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
+ownedEventFrame:RegisterEvent("UPDATE_STEALTH")
+ownedEventFrame:RegisterEvent("UPDATE_BINDINGS")
+ownedEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+ownedEventFrame:RegisterEvent("CURSOR_CHANGED")
+ownedEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+ownedEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+ownedEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+ownedEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
+ownedEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+ownedEventFrame:SetScript("OnEvent", OnOwnedEvent)
+
+-- Don't process events until Initialize is called
+ownedEventFrame:Hide()
+ownedEventFrame:UnregisterAllEvents()
 
 ---------------------------------------------------------------------------
 -- EXTRA BUTTON CUSTOMIZATION (Extra Action Button & Zone Ability)
@@ -800,7 +2511,6 @@ local pageArrowRetryAttempts = 0
 local PAGE_ARROW_RETRY_MAX_ATTEMPTS = 15
 local PAGE_ARROW_RETRY_DELAY = 0.2
 
--- Get settings for a specific extra button type
 local function GetExtraButtonDB(buttonType)
     local core = GetCore()
     if not core or not core.db or not core.db.profile then return nil end
@@ -808,20 +2518,17 @@ local function GetExtraButtonDB(buttonType)
         and core.db.profile.actionBars.bars[buttonType]
 end
 
--- Create a nudge button for extra button movers
 local function CreateExtraButtonNudgeButton(parent, direction, holder, buttonType)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
     btn:SetFrameStrata("HIGH")
     btn:SetFrameLevel(100)
 
-    -- Background
     local bg = btn:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture("Interface\\Buttons\\WHITE8x8")
     bg:SetVertexColor(0.1, 0.1, 0.1, 0.7)
 
-    -- Chevron lines
     local line1 = btn:CreateTexture(nil, "ARTWORK")
     line1:SetColorTexture(1, 1, 1, 0.9)
     line1:SetSize(7, 2)
@@ -868,7 +2575,6 @@ local function CreateExtraButtonNudgeButton(parent, direction, holder, buttonTyp
         elseif direction == "LEFT" then dx = -1
         elseif direction == "RIGHT" then dx = 1
         end
-        -- Move the holder
         if holder.AdjustPointsOffset then
             holder:AdjustPointsOffset(dx, dy)
         else
@@ -878,7 +2584,6 @@ local function CreateExtraButtonNudgeButton(parent, direction, holder, buttonTyp
                 holder:SetPoint(point, relativeTo, relativePoint, (xOfs or 0) + dx, (yOfs or 0) + dy)
             end
         end
-        -- Save position
         local core = GetCore()
         if core and core.SnapFramePosition then
             local point, _, relPoint, x, y = core:SnapFramePosition(holder)
@@ -892,23 +2597,19 @@ local function CreateExtraButtonNudgeButton(parent, direction, holder, buttonTyp
     return btn
 end
 
--- Create holder frame and mover overlay for an extra button type
 local function CreateExtraButtonHolder(buttonType, displayName)
     local settings = GetExtraButtonDB(buttonType)
     if not settings then return nil, nil end
 
-    -- Create holder frame
     local holder = CreateFrame("Frame", "QUI_" .. buttonType .. "Holder", UIParent)
     holder:SetSize(64, 64)
     holder:SetMovable(true)
     holder:SetClampedToScreen(true)
 
-    -- Load saved position or default to center-bottom
     local pos = settings.position
     if pos and pos.point then
         holder:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
     else
-        -- Default positions: Extra Action left of center, Zone Ability right of center
         if buttonType == "extraActionButton" then
             holder:SetPoint("CENTER", UIParent, "CENTER", -100, -200)
         else
@@ -916,7 +2617,6 @@ local function CreateExtraButtonHolder(buttonType, displayName)
         end
     end
 
-    -- Create mover overlay (visible only when toggled)
     local mover = CreateFrame("Frame", "QUI_" .. buttonType .. "Mover", holder, "BackdropTemplate")
     mover:SetAllPoints(holder)
     local core = GetCore()
@@ -927,34 +2627,28 @@ local function CreateExtraButtonHolder(buttonType, displayName)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = edge2,
     })
-    mover:SetBackdropColor(0.2, 0.8, 0.6, 0.5)  -- QUI mint color
-    mover:SetBackdropBorderColor(0.2, 1.0, 0.6, 1)
+    mover:SetBackdropColor(0.2, 0.8, 0.6, 0.5)
+    mover:SetBackdropBorderColor(0.376, 0.647, 0.980, 1)
     mover:EnableMouse(true)
     mover:SetMovable(true)
     mover:RegisterForDrag("LeftButton")
     mover:SetFrameStrata("HIGH")
     mover:Hide()
 
-    -- Label text
     local text = mover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     text:SetPoint("CENTER")
     text:SetText(displayName)
     mover.text = text
 
-    -- Nudge buttons
     local nudgeUp = CreateExtraButtonNudgeButton(mover, "UP", holder, buttonType)
     nudgeUp:SetPoint("BOTTOM", mover, "TOP", 0, 4)
-
     local nudgeDown = CreateExtraButtonNudgeButton(mover, "DOWN", holder, buttonType)
     nudgeDown:SetPoint("TOP", mover, "BOTTOM", 0, -4)
-
     local nudgeLeft = CreateExtraButtonNudgeButton(mover, "LEFT", holder, buttonType)
     nudgeLeft:SetPoint("RIGHT", mover, "LEFT", -4, 0)
-
     local nudgeRight = CreateExtraButtonNudgeButton(mover, "RIGHT", holder, buttonType)
     nudgeRight:SetPoint("LEFT", mover, "RIGHT", 4, 0)
 
-    -- Drag handlers
     mover:SetScript("OnDragStart", function(self)
         holder:StartMoving()
     end)
@@ -973,13 +2667,12 @@ local function CreateExtraButtonHolder(buttonType, displayName)
     return holder, mover
 end
 
--- Original parents for managed frames (saved before reparenting)
 local extraButtonOriginalParents = {}
 
--- Apply settings (scale, position, artwork) to an extra button frame
+
 local function ApplyExtraButtonSettings(buttonType)
     if InCombatLockdown() then
-        ActionBars.pendingExtraButtonRefresh = true
+        ActionBarsOwned.pendingExtraButtonRefresh = true
         return
     end
 
@@ -999,11 +2692,9 @@ local function ApplyExtraButtonSettings(buttonType)
 
     if not blizzFrame or not holder then return end
 
-    -- Apply scale
     local scale = settings.scale or 1.0
     blizzFrame:SetScale(scale)
 
-    -- Apply offsets (relative to holder position)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
 
@@ -1027,13 +2718,10 @@ local function ApplyExtraButtonSettings(buttonType)
     blizzFrame:SetPoint("CENTER", holder, "CENTER", offsetX, offsetY)
     hookingSetPoint = false
 
-    -- Update holder size to match scaled frame (SafeToNumber guards against
-    -- secret values that GetWidth/GetHeight can return during combat lockdown)
     local width = Helpers.SafeToNumber(blizzFrame:GetWidth(), 64) * scale
     local height = Helpers.SafeToNumber(blizzFrame:GetHeight(), 64) * scale
     holder:SetSize(math.max(width, 64), math.max(height, 64))
 
-    -- Hide artwork if enabled
     if settings.hideArtwork then
         if buttonType == "extraActionButton" and blizzFrame.button and blizzFrame.button.style then
             blizzFrame.button.style:SetAlpha(0)
@@ -1042,7 +2730,6 @@ local function ApplyExtraButtonSettings(buttonType)
             blizzFrame.Style:SetAlpha(0)
         end
     else
-        -- Restore artwork
         if buttonType == "extraActionButton" and blizzFrame.button and blizzFrame.button.style then
             blizzFrame.button.style:SetAlpha(1)
         end
@@ -1051,18 +2738,13 @@ local function ApplyExtraButtonSettings(buttonType)
         end
     end
 
-    -- Reset frame alpha if fade is not enabled (fixes toggling fade off without reload)
     if not settings.fadeEnabled then
         blizzFrame:SetAlpha(1)
     end
 end
 
--- Flag to prevent recursive SetPoint hooks
 local pendingExtraButtonReanchor = {}
 
--- Re-anchor extra buttons outside Blizzard's SetPoint call chain.
--- Directly mutating anchors inside managed-frame SetPoint hooks can taint
--- UIParent managed frame containers and trigger ADDON_ACTION_BLOCKED in combat.
 local function QueueExtraButtonReanchor(buttonType)
     if pendingExtraButtonReanchor[buttonType] then return end
     pendingExtraButtonReanchor[buttonType] = true
@@ -1071,7 +2753,7 @@ local function QueueExtraButtonReanchor(buttonType)
         pendingExtraButtonReanchor[buttonType] = false
 
         if InCombatLockdown() then
-            ActionBars.pendingExtraButtonRefresh = true
+            ActionBarsOwned.pendingExtraButtonRefresh = true
             return
         end
 
@@ -1121,7 +2803,7 @@ local function HookExtraButtonPositioning()
         if not blizzFrame then return end
         hooksecurefunc(blizzFrame, "SetParent", function(self, newParent)
             if hookingSetParent then return end
-            if newParent == holder then return end  -- already ours
+            if newParent == holder then return end
             C_Timer.After(0, function()
                 if hookingSetParent or InCombatLockdown() then return end
                 local settings = GetExtraButtonDB(buttonType)
@@ -1138,7 +2820,6 @@ local function HookExtraButtonPositioning()
     HookSetParentForType(ZoneAbilityFrame, "zoneAbility", zoneAbilityHolder)
 end
 
--- Show/hide mover overlays
 local function ShowExtraButtonMovers()
     extraButtonMoversVisible = true
     if extraActionMover then extraActionMover:Show() end
@@ -1159,18 +2840,16 @@ local function ToggleExtraButtonMovers()
     end
 end
 
--- Initialize extra button holders
-local function InitializeExtraButtons()
-    if InCombatLockdown() then
-        ActionBars.pendingExtraButtonInit = true
+-- Assign to upvalue for forward declaration in event handler
+InitializeExtraButtons = function()
+    if InCombatLockdown() and not inInitSafeWindow then
+        ActionBarsOwned.pendingExtraButtonInit = true
         return
     end
 
-    -- Create holder frames
     extraActionHolder, extraActionMover = CreateExtraButtonHolder("extraActionButton", "Extra Action Button")
     zoneAbilityHolder, zoneAbilityMover = CreateExtraButtonHolder("zoneAbility", "Zone Ability")
 
-    -- Apply settings with delay to ensure Blizzard frames exist
     C_Timer.After(0.5, function()
         ApplyExtraButtonSettings("extraActionButton")
         ApplyExtraButtonSettings("zoneAbility")
@@ -1178,41 +2857,39 @@ local function InitializeExtraButtons()
     end)
 end
 
--- Refresh extra button settings (called from options)
-local function RefreshExtraButtons()
+-- Assign to upvalue for forward declaration in event handler
+RefreshExtraButtons = function()
     if InCombatLockdown() then
-        ActionBars.pendingExtraButtonRefresh = true
+        ActionBarsOwned.pendingExtraButtonRefresh = true
         return
     end
     ApplyExtraButtonSettings("extraActionButton")
     ApplyExtraButtonSettings("zoneAbility")
 end
 
--- Expose global functions for options panel
 _G.QUI_ToggleExtraButtonMovers = ToggleExtraButtonMovers
 _G.QUI_RefreshExtraButtons = RefreshExtraButtons
-
--- Strip WoW color codes from text
-local function StripColorCodes(text)
-    if not text then return "" end
-    return text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-end
-
--- Check if keybind text is valid (not empty or placeholder)
-local function IsValidKeybindText(text)
-    if not text or text == "" then return false end
-
-    local stripped = StripColorCodes(text)
-    if stripped == "" then return false end
-    if stripped == RANGE_INDICATOR then return false end
-    if stripped == "[]" then return false end
-
-    return true
-end
 
 ---------------------------------------------------------------------------
 -- BUTTON SKINNING
 ---------------------------------------------------------------------------
+
+-- Get the icon texture from a button, handling stance/pet buttons
+-- that use NormalTexture as the icon source.
+-- Returns: icon texture, iconUsesNormalTexture (bool)
+local function GetButtonIconTexture(button)
+    -- Standard action buttons use .icon or .Icon
+    local icon = button.icon or button.Icon
+    if icon then return icon, false end
+
+    -- Stance/pet buttons may use NormalTexture as the icon
+    local normalTex = button:GetNormalTexture()
+    if normalTex then
+        return normalTex, true
+    end
+
+    return nil, false
+end
 
 -- Remove Blizzard's default textures and masks
 local function StripBlizzardArtwork(button)
@@ -1245,6 +2922,15 @@ local function StripBlizzardArtwork(button)
         end
     end
 
+    -- Neutralize IconMask to prevent Blizzard's UpdateButtonArt from
+    -- re-adding it during combat transitions and bar paging.
+    if button.IconMask then
+        button.IconMask:Hide()
+        button.IconMask:SetTexture(nil)
+        button.IconMask:ClearAllPoints()
+        button.IconMask:SetSize(0.001, 0.001)
+    end
+
     -- Hide FloatingBG if present
     if button.FloatingBG then
         button.FloatingBG:SetAlpha(0)
@@ -1259,6 +2945,63 @@ local function StripBlizzardArtwork(button)
     if button.SlotArt then
         button.SlotArt:SetAlpha(0)
     end
+
+    -- Replace Blizzard's highlight, pushed, checked, and flash textures
+    -- with QUI versions that are properly sized via SetAllPoints.
+    local function ReplaceTexture(tex, texturePath)
+        if not tex then return end
+        tex:SetAtlas(nil)
+        tex:SetTexture(texturePath)
+        tex:SetTexCoord(0, 1, 0, 1)
+        tex:ClearAllPoints()
+        tex:SetAllPoints(button)
+        tex:SetAlpha(1)
+    end
+
+    local highlight = button:GetHighlightTexture()
+    if highlight then ReplaceTexture(highlight, TEXTURES.highlight) end
+    if button.HighlightTexture and button.HighlightTexture ~= highlight then
+        ReplaceTexture(button.HighlightTexture, TEXTURES.highlight)
+    end
+
+    local pushed = button:GetPushedTexture()
+    if pushed then ReplaceTexture(pushed, TEXTURES.pushed) end
+    if button.PushedTexture and button.PushedTexture ~= pushed then
+        ReplaceTexture(button.PushedTexture, TEXTURES.pushed)
+    end
+
+    local checked = button.GetCheckedTexture and button:GetCheckedTexture()
+    if checked then ReplaceTexture(checked, TEXTURES.checked) end
+    if button.CheckedTexture and button.CheckedTexture ~= checked then
+        ReplaceTexture(button.CheckedTexture, TEXTURES.checked)
+    end
+
+    -- Replace flash texture
+    if button.Flash then
+        ReplaceTexture(button.Flash, TEXTURES.flash)
+    end
+
+    -- Hide border/shadow decorations
+    if button.Border then button.Border:SetAlpha(0) end
+    if button.BorderShadow then button.BorderShadow:SetAlpha(0) end
+
+    -- SpellHighlightTexture: anchor to button so it matches our size
+    if button.SpellHighlightTexture then
+        button.SpellHighlightTexture:ClearAllPoints()
+        button.SpellHighlightTexture:SetAllPoints(button)
+    end
+
+    -- Cooldown: anchor to button so it fills correctly
+    local cd = button.cooldown or button.Cooldown
+    if cd then
+        cd:ClearAllPoints()
+        cd:SetAllPoints(button)
+    end
+
+    -- No overlay scaling needed — buttons stay at their natural 45x45 size
+    -- and the container's SetScale handles visual resize. Blizzard overlays
+    -- (SpellActivationAlert, proc glows, rotation assist) work naturally
+    -- because the button dimensions match what overlays expect.
 end
 
 ---------------------------------------------------------------------------
@@ -1270,22 +3013,32 @@ local FadeShowEffects
 local SkinSpellFlyoutButtons
 
 -- Apply QUI skin to a single button
-local function SkinButton(button, settings)
+SkinButton = function(button, settings)
     if not button or not settings or not settings.skinEnabled then return end
     local state = GetFrameState(button)
 
     -- Skip if already skinned with same settings
-    local settingsKey = string.format("%d_%.2f_%s_%.2f_%s_%.2f_%s",
+    local settingsKey = string.format("%d_%.2f_%s_%.2f_%s_%.2f_%s_%s",
         settings.iconSize or 36,
         settings.iconZoom or 0.07,
         tostring(settings.showBackdrop),
         settings.backdropAlpha or 0.8,
         tostring(settings.showGloss),
         settings.glossAlpha or 0.6,
-        tostring(settings.showBorders)
+        tostring(settings.showBorders),
+        tostring(settings.showFlash)
     )
     if state.skinKey == settingsKey then return end
     state.skinKey = settingsKey
+
+    -- Save original Blizzard pushed texture before stripping (for restore)
+    if not state.origPushedTex then
+        local p = button:GetPushedTexture()
+        if p then
+            state.origPushedTex = p:GetTexture()
+            state.origPushedAtlas = p:GetAtlas()
+        end
+    end
 
     -- Strip Blizzard artwork first
     StripBlizzardArtwork(button)
@@ -1363,6 +3116,42 @@ local function SkinButton(button, settings)
         state.gloss:Hide()
     end
 
+    -- Button-press pushed texture (the visual on keydown/click).
+    -- showFlash: "qui" = QUI texture, "blizzard" = original, "off"/false = hidden
+    -- Backwards compat: true → "qui", false → "off"
+    local flashMode = settings.showFlash
+    if flashMode == true then flashMode = "qui"
+    elseif flashMode == false then flashMode = "off"
+    end
+
+    local function ApplyPushedMode(tex)
+        if not tex then return end
+        if flashMode == "off" then
+            tex:SetAtlas(nil)
+            tex:SetTexture(nil)
+        elseif flashMode == "blizzard" then
+            if state.origPushedAtlas then
+                tex:SetTexture(nil)
+                tex:SetAtlas(state.origPushedAtlas)
+            elseif state.origPushedTex then
+                tex:SetAtlas(nil)
+                tex:SetTexture(state.origPushedTex)
+                tex:SetTexCoord(0, 1, 0, 1)
+            end
+            tex:ClearAllPoints()
+            tex:SetAllPoints(button)
+        else -- "qui" (default)
+            tex:SetAtlas(nil)
+            tex:SetTexture(TEXTURES.pushed)
+            tex:SetTexCoord(0, 1, 0, 1)
+        end
+    end
+
+    ApplyPushedMode(button:GetPushedTexture())
+    if button.PushedTexture and button.PushedTexture ~= button:GetPushedTexture() then
+        ApplyPushedMode(button.PushedTexture)
+    end
+
     -- Fix Cooldown frame positioning
     local cooldown = button.cooldown or button.Cooldown
     if cooldown then
@@ -1380,7 +3169,7 @@ local function SkinButton(button, settings)
         FadeHideEffects(button, state)
     end
 
-    ActionBars.skinnedButtons[button] = true
+    ActionBarsOwned.skinnedButtons[button] = true
 end
 
 ---------------------------------------------------------------------------
@@ -1389,7 +3178,7 @@ end
 
 -- Update keybind/hotkey text visibility and styling
 -- Directly modifies Blizzard's HotKey element with abbreviated text
-local function UpdateKeybindText(button, settings)
+UpdateKeybindText = function(button, settings)
     local hotkey = button.HotKey or button.hotKey
     if not hotkey then return end
 
@@ -1411,6 +3200,11 @@ local function UpdateKeybindText(button, settings)
         -- Map button frame names to WoW binding names
         num = buttonName:match("^ActionButton(%d+)$")
         if num then bindingName = "ACTIONBUTTON" .. num end
+
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar1Button(%d+)$")
+            if num then bindingName = "ACTIONBUTTON" .. num end
+        end
 
         if not bindingName then
             num = buttonName:match("^MultiBarBottomRightButton(%d+)$")
@@ -1561,7 +3355,7 @@ local function UpdateCountText(button, settings)
 end
 
 -- Update all text elements on a button
-local function UpdateButtonText(button, settings)
+UpdateButtonText = function(button, settings)
     UpdateKeybindText(button, settings)
     UpdateMacroText(button, settings)
     UpdateCountText(button, settings)
@@ -1688,7 +3482,7 @@ FadeShowEffects = function(button, state)
 end
 
 -- Hide QUI textures on a button, saving which were visible for later restore.
-local function FadeHideTextures(state, button)
+FadeHideTextures = function(state, button)
     if state.fadeHidden then return end
     state.fadeHidden = true
     if state.tintOverlay and state.tintOverlay:IsShown() then
@@ -1707,7 +3501,7 @@ local function FadeHideTextures(state, button)
 end
 
 -- Restore QUI textures that were hidden by FadeHideTextures.
-local function FadeShowTextures(state, button)
+FadeShowTextures = function(state, button)
     if not state.fadeHidden then return end
     state.fadeHidden = nil
     if state._fhTint and state.tintOverlay then state.tintOverlay:Show() end
@@ -1723,29 +3517,18 @@ end
 -- BAR LAYOUT FEATURES
 ---------------------------------------------------------------------------
 
--- Apply global scale to all action bar container frames
--- NOTE: Disabled - action bar scaling should be done via Edit Mode for consistency
-local function ApplyBarScale()
-    -- No-op: Users should scale action bars via Edit Mode
-end
 
 -- Drag preview: show hidden empty slots at low alpha while cursor holds a placeable action
 local DRAG_PREVIEW_ALPHA = 0.3
 
-local function CursorHasPlaceableAction()
-    local infoType = GetCursorInfo()
-    return infoType == "spell" or infoType == "item" or infoType == "macro"
-        or infoType == "petaction" or infoType == "mount" or infoType == "flyout"
-end
-
 -- Update empty slot visibility for a single button
-local function UpdateEmptySlotVisibility(button, settings)
+UpdateEmptySlotVisibility = function(button, settings)
     if not settings then return end
     local state = GetFrameState(button)
 
     -- Get the bar's current fade alpha (respects mouseover hide)
     local barKey = GetBarKeyFromButton(button)
-    local fadeState = barKey and ActionBars.fadeState and ActionBars.fadeState[barKey]
+    local fadeState = barKey and ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
     local targetAlpha = fadeState and fadeState.currentAlpha or 1
 
     -- Stance/pet buttons are not standard action slots and can report action
@@ -1782,7 +3565,7 @@ local function UpdateEmptySlotVisibility(button, settings)
             end
         else
             -- Show at preview alpha while dragging a placeable action
-            if ActionBars.dragPreviewActive then
+            if ActionBarsOwned.dragPreviewActive then
                 button:SetAlpha(DRAG_PREVIEW_ALPHA * targetAlpha)
             else
                 button:SetAlpha(0)
@@ -1795,25 +3578,6 @@ local function UpdateEmptySlotVisibility(button, settings)
     end
 end
 
--- One-time migration: if QUI lockButtons was true, apply it to Blizzard CVar
--- This preserves existing user settings after the fix that stops QUI from overwriting Blizzard's setting
-local function MigrateLockSetting()
-    local settings = GetGlobalSettings()
-    if not settings then return end
-
-    -- Only migrate once, and only if the user had lockButtons enabled
-    if settings.lockButtons and not settings._lockMigrated then
-        SetCVar('lockActionBars', '1')
-        settings._lockMigrated = true
-    end
-end
-
--- Apply button lock - syncs LOCK_ACTIONBAR global from Blizzard's CVar
--- NOTE: No longer overwrites Blizzard's CVar - QUI options panel now syncs directly with it
-local function ApplyButtonLock()
-    local locked = GetCVar('lockActionBars') == '1'
-    LOCK_ACTIONBAR = locked and '1' or '0'
-end
 
 -- Usability indicator state tracking
 local usabilityCheckFrame = nil
@@ -1827,43 +3591,6 @@ local function GetUpdateInterval()
         return RANGE_CHECK_INTERVAL_FAST
     end
     return RANGE_CHECK_INTERVAL_NORMAL
-end
-
--- Safe wrapper for APIs that may return secret values in Midnight
-local function SafeIsActionInRange(action)
-    if IS_MIDNIGHT then
-        -- In Midnight, IsActionInRange can return secret values
-        -- Use pcall to safely check the result
-        local ok, result = pcall(function()
-            local inRange = IsActionInRange(action)
-            -- Try to compare - this will fail if inRange is a secret value
-            if inRange == false then return false end
-            if inRange == true then return true end
-            return nil  -- No range check needed
-        end)
-        if not ok then return nil end  -- Secret value, treat as in range
-        return result
-    else
-        return IsActionInRange(action)
-    end
-end
-
-local function SafeIsUsableAction(action)
-    if IS_MIDNIGHT then
-        -- In Midnight, IsUsableAction can return secret values
-        -- We must convert to actual booleans INSIDE pcall before returning
-        local ok, isUsable, notEnoughMana = pcall(function()
-            local usable, noMana = IsUsableAction(action)
-            -- Convert to actual booleans - if secret, comparison fails and pcall catches it
-            local boolUsable = usable and true or false
-            local boolNoMana = noMana and true or false
-            return boolUsable, boolNoMana
-        end)
-        if not ok then return true, false end  -- Secret value detected, treat as usable
-        return isUsable, notEnoughMana
-    else
-        return IsUsableAction(action)
-    end
 end
 
 -- Get or create a QUI-owned tint overlay for range/usability coloring.
@@ -1975,7 +3702,7 @@ local function UpdateAllButtonUsability()
     for i = 1, 8 do
         local barKey = "bar" .. i
         -- Skip bars that are fully faded out
-        local fadeState = ActionBars.fadeState and ActionBars.fadeState[barKey]
+        local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
         if not fadeState or fadeState.currentAlpha > 0 then
             local buttons = GetBarButtons(barKey)
             for _, button in ipairs(buttons) do
@@ -2048,10 +3775,12 @@ local function UpdateUsabilityPolling()
 
     -- Range requires slow polling (no "player moved" event exists)
     -- Only poll when range indicator is enabled, at 250ms (was 100ms)
+    -- Cache interval to avoid per-frame DB lookup
     if rangeEnabled then
+        local cachedInterval = GetUpdateInterval()
         usabilityCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = self.elapsed + elapsed
-            if self.elapsed < GetUpdateInterval() then return end
+            if self.elapsed < cachedInterval then return end
             self.elapsed = 0
             UpdateAllButtonUsability()
         end)
@@ -2138,7 +3867,7 @@ end
 -- Supports both horizontal and vertical bar orientations via Edit Mode API.
 local function ApplyButtonSpacing(barKey)
     if InCombatLockdown() then
-        ActionBars.pendingSpacing = true
+        ActionBarsOwned.pendingSpacing = true
         return
     end
 
@@ -2146,11 +3875,14 @@ local function ApplyButtonSpacing(barKey)
     if not settings or settings.buttonSpacing == nil then return end
 
     local spacing = settings.buttonSpacing
-    -- Only apply spacing to standard action bars (1-8).
+    -- Only apply spacing to standard action bars (1-8) that DON'T use the
+    -- owned layout system. Owned bars use LayoutNativeButtons instead.
     -- Pet/stance bars have variable visible button counts per class
     -- and resizing their bar frames breaks the frame anchoring chain
     -- (size-stable CENTER anchoring shifts visual content on resize).
     if barKey == "pet" or barKey == "stance" then return end
+    local ownedLayout = ActionBarsOwned.containers and ActionBarsOwned.containers[barKey]
+    if ownedLayout then return end
 
     local allButtons = GetBarButtons(barKey)
     if #allButtons < 2 then return end
@@ -2344,72 +4076,16 @@ local function ApplyButtonSpacing(barKey)
     end
 end
 
--- Restore buttons and containers back to Blizzard's default layout.
--- Invalidates the LayoutFrame so Blizzard can recalculate container positions
--- (e.g., after column/row changes in Edit Mode).
-local function RestoreButtonsToContainers()
-    if InCombatLockdown() then return end
-
-    local settings = GetGlobalSettings()
-    if not settings or settings.buttonSpacing == nil then return end
-
-    for barKey, _ in pairs(BUTTON_PATTERNS) do
-        local barFrame = GetBarFrame(barKey)
-        local buttons = GetBarButtons(barKey)
-        for _, button in ipairs(buttons) do
-            -- Restore button to fill its container
-            button:ClearAllPoints()
-            button:SetAllPoints(button:GetParent())
-        end
-
-        -- Invalidate the LayoutFrame so Blizzard recalculates container positions.
-        -- The containers are children of a LayoutFrame inside the bar frame.
-        -- NOTE: Do NOT clear container anchor points before MarkDirty — doing so
-        -- triggers a Blizzard scale-computation bug where the bar frame size is
-        -- computed using 1/scale instead of scale, inflating bars by ~scale² factor.
-        -- MarkDirty overrides container anchors internally.
-        if barFrame and #buttons > 0 then
-            local layoutParent = buttons[1]:GetParent():GetParent()
-            if layoutParent and layoutParent.MarkDirty then
-                layoutParent:MarkDirty()
-            elseif layoutParent and layoutParent.Layout then
-                layoutParent:Layout()
-            end
-        end
-    end
-end
-
 -- Apply spacing override to all standard bars.
-local function ApplyAllBarSpacing()
+ApplyAllBarSpacing = function()
     if InCombatLockdown() then
-        ActionBars.pendingSpacing = true
+        ActionBarsOwned.pendingSpacing = true
         return
     end
 
     for barKey, _ in pairs(BUTTON_PATTERNS) do
         ApplyButtonSpacing(barKey)
     end
-end
-
--- Apply all bar layout settings
-local function ApplyBarLayoutSettings()
-    ApplyBarScale()
-    ApplyButtonLock()
-    UpdateUsabilityPolling()
-
-    -- Apply empty slot visibility to all action buttons
-    local settings = GetGlobalSettings()
-    if settings then
-        for barKey, _ in pairs(BUTTON_PATTERNS) do
-            local buttons = GetBarButtons(barKey)
-            for _, button in ipairs(buttons) do
-                UpdateEmptySlotVisibility(button, settings)
-            end
-        end
-    end
-
-    -- Apply button spacing override (after scale + visibility so positions are final)
-    ApplyAllBarSpacing()
 end
 
 ---------------------------------------------------------------------------
@@ -2421,8 +4097,8 @@ local IsInEditMode = ns.Helpers.IsEditModeShown
 
 -- Get or create fade state for a bar
 local function GetBarFadeState(barKey)
-    if not ActionBars.fadeState[barKey] then
-        ActionBars.fadeState[barKey] = {
+    if not ActionBarsOwned.fadeState[barKey] then
+        ActionBarsOwned.fadeState[barKey] = {
             isFading = false,
             currentAlpha = 1,
             targetAlpha = 1,
@@ -2434,7 +4110,7 @@ local function GetBarFadeState(barKey)
             detector = nil,
         }
     end
-    return ActionBars.fadeState[barKey]
+    return ActionBarsOwned.fadeState[barKey]
 end
 
 -- Apply alpha to all buttons in a bar
@@ -2451,7 +4127,7 @@ local function SetBarAlpha(barKey, alpha)
         local state = GetFrameState(button)
         -- Respect hide empty slots setting - keep empty buttons hidden
         if hideEmptyEnabled and state.hiddenEmpty then
-            button:SetAlpha(ActionBars.dragPreviewActive and (DRAG_PREVIEW_ALPHA * alpha) or 0)
+            button:SetAlpha(ActionBarsOwned.dragPreviewActive and (DRAG_PREVIEW_ALPHA * alpha) or 0)
         else
             button:SetAlpha(alpha)
         end
@@ -2506,13 +4182,13 @@ local function StartBarFade(barKey, targetAlpha)
     state.fadeDuration = duration
 
     -- Create fade frame if needed
-    if not ActionBars.fadeFrame then
-        ActionBars.fadeFrame = CreateFrame("Frame")
-        ActionBars.fadeFrame:SetScript("OnUpdate", function(self, elapsed)
+    if not ActionBarsOwned.fadeFrame then
+        ActionBarsOwned.fadeFrame = CreateFrame("Frame")
+        ActionBarsOwned.fadeFrame:SetScript("OnUpdate", function(self, elapsed)
             local now = GetTime()
             local anyFading = false
 
-            for bKey, bState in pairs(ActionBars.fadeState) do
+            for bKey, bState in pairs(ActionBarsOwned.fadeState) do
                 if bState.isFading then
                     anyFading = true
                     local elapsedTime = now - bState.fadeStart
@@ -2538,10 +4214,10 @@ local function StartBarFade(barKey, targetAlpha)
                 self:Hide()
             end
         end)
-        ActionBars.fadeFrameUpdate = ActionBars.fadeFrame:GetScript("OnUpdate")
+        ActionBarsOwned.fadeFrameUpdate = ActionBarsOwned.fadeFrame:GetScript("OnUpdate")
     end
-    ActionBars.fadeFrame:SetScript("OnUpdate", ActionBars.fadeFrameUpdate)
-    ActionBars.fadeFrame:Show()
+    ActionBarsOwned.fadeFrame:SetScript("OnUpdate", ActionBarsOwned.fadeFrameUpdate)
+    ActionBarsOwned.fadeFrame:Show()
 end
 
 -- Check if mouse is over bar area or any of its buttons
@@ -2568,13 +4244,6 @@ end
 
 -- Bars that participate in linked mouseover behavior
 local LINKED_BAR_KEYS = {"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8"}
-
-local function IsLinkedBar(barKey)
-    for _, key in ipairs(LINKED_BAR_KEYS) do
-        if key == barKey then return true end
-    end
-    return false
-end
 
 local function IsMouseOverAnyLinkedBar()
     for _, barKey in ipairs(LINKED_BAR_KEYS) do
@@ -2931,13 +4600,8 @@ local function SetupBarMouseover(barKey)
     end
 end
 
-local SPELLBOOK_UI_ADDONS = {
-    Blizzard_PlayerSpells = true,
-    Blizzard_SpellBook = true,
-}
-
 local function RefreshBarsForSpellBookVisibility()
-    if not ActionBars.initialized then return end
+    if not ActionBarsOwned.initialized then return end
 
     local forceShow = ShouldForceShowForSpellBook()
     for barKey, _ in pairs(BAR_FRAMES) do
@@ -2968,23 +4632,6 @@ local function HookSpellBookVisibilityFrame(frame)
     end)
 end
 
-local function HookSpellBookVisibilityFrames()
-    HookSpellBookVisibilityFrame(_G.SpellBookFrame)
-
-    local playerSpellsFrame = _G.PlayerSpellsFrame
-    HookSpellBookVisibilityFrame(playerSpellsFrame)
-    if playerSpellsFrame and playerSpellsFrame.SpellBookFrame then
-        HookSpellBookVisibilityFrame(playerSpellsFrame.SpellBookFrame)
-    end
-end
-
-local function HandleSpellBookAddonLoaded(addonName)
-    if not SPELLBOOK_UI_ADDONS[addonName] then return end
-    C_Timer.After(0, function()
-        HookSpellBookVisibilityFrames()
-        RefreshBarsForSpellBookVisibility()
-    end)
-end
 
 ---------------------------------------------------------------------------
 -- COMBAT VISIBILITY HANDLER
@@ -3035,82 +4682,6 @@ end)
 -- BAR PROCESSING
 ---------------------------------------------------------------------------
 
--- Skin all buttons for a specific bar
-local function SkinBar(barKey)
-    local db = GetDB()
-    if not db or not db.enabled then return end
-
-    local barSettings = GetBarSettings(barKey)
-    if not barSettings or not barSettings.enabled then return end
-
-    -- Use effective settings (global merged with per-bar overrides)
-    local effectiveSettings = GetEffectiveSettings(barKey)
-    if not effectiveSettings then return end
-
-    local buttons = GetBarButtons(barKey)
-
-    for _, button in ipairs(buttons) do
-        SkinButton(button, effectiveSettings)
-        UpdateButtonText(button, effectiveSettings)
-
-        -- Register binding command for LibKeyBound quickbind support.
-        -- On pre-Midnight this injects methods directly; on Midnight the patched
-        -- Binder reads from our external frameState instead.
-        AddKeybindMethods(button, barKey)
-
-        -- Hook OnEnter to register with LibKeyBound when in keybind mode.
-        -- HookScript is safe on secure frames (unlike SetScript) because it
-        -- appends to the handler chain without replacing the secure handler.
-        local state = GetFrameState(button)
-        if not state.onEnterHooked then
-            state.onEnterHooked = true
-            button:HookScript("OnEnter", function(self)
-                local LibKeyBound = LibStub("LibKeyBound-1.0", true)
-                if LibKeyBound and LibKeyBound:IsShown() then
-                    LibKeyBound:Set(self)
-                end
-            end)
-        end
-
-        -- Spell flyout popup buttons are created on click; defer one frame so
-        -- they exist before we apply QUI skinning.
-        if not state.flyoutSkinHooked then
-            state.flyoutSkinHooked = true
-            button:HookScript("OnClick", function()
-                C_Timer.After(0, function()
-                    if SkinSpellFlyoutButtons then
-                        SkinSpellFlyoutButtons()
-                    end
-                end)
-            end)
-        end
-
-        -- Keep cooldown swipes/proc glows from rendering on hidden buttons.
-        -- This also covers pet/stance visibility toggles where Blizzard hides
-        -- the button frame entirely (no alpha transition through SetBarAlpha).
-        if not state.visibilityEffectsHooked then
-            state.visibilityEffectsHooked = true
-            button:HookScript("OnHide", function(self)
-                local st = GetFrameState(self)
-                FadeHideTextures(st, self)
-            end)
-            button:HookScript("OnShow", function(self)
-                local st = GetFrameState(self)
-                local key = GetBarKeyFromButton(self)
-                local fadeState = key and ActionBars.fadeState and ActionBars.fadeState[key]
-                local hideEmptyEnabled = GetGlobalSettings() and GetGlobalSettings().hideEmptySlots
-                local shouldStayHidden = (fadeState and fadeState.currentAlpha and fadeState.currentAlpha <= 0)
-                    or (hideEmptyEnabled and st.hiddenEmpty)
-
-                if shouldStayHidden then
-                    FadeHideTextures(st, self)
-                else
-                    FadeShowTextures(st, self)
-                end
-            end)
-        end
-    end
-end
 
 local spellFlyoutSkinHooked = false
 
@@ -3176,7 +4747,9 @@ local function GetSpellFlyoutSourceButtonSize(flyout)
         return nil, nil
     end
 
-    local width, height = sourceButton:GetSize()
+    local rawW, rawH = sourceButton:GetSize()
+    local width = Helpers.SafeToNumber(rawW)
+    local height = Helpers.SafeToNumber(rawH)
     if not width or not height or width <= 0 or height <= 0 then
         return nil, nil
     end
@@ -3269,24 +4842,6 @@ local function HookSpellFlyoutSkinning()
     end)
 end
 
--- Skin all enabled bars
-local function SkinAllBars()
-    local db = GetDB()
-    if not db or not db.enabled then return end
-
-    -- Iterate over all bars (including non-standard ones like microbar, bags, etc.)
-    for barKey, _ in pairs(BAR_FRAMES) do
-        -- Only skin bars that have button patterns (standard action bars)
-        if BUTTON_PATTERNS[barKey] then
-            SkinBar(barKey)
-        end
-        -- Setup mouseover fade for ALL bars
-        SetupBarMouseover(barKey)
-    end
-
-    SkinSpellFlyoutButtons()
-end
-
 ---------------------------------------------------------------------------
 -- PAGE ARROW VISIBILITY
 ---------------------------------------------------------------------------
@@ -3316,8 +4871,6 @@ local function CollectPageArrowFrames()
 
     return frames
 end
-
-local ApplyPageArrowVisibility
 
 local function SchedulePageArrowVisibilityRetry()
     if pageArrowRetryTimer or pageArrowRetryAttempts >= PAGE_ARROW_RETRY_MAX_ATTEMPTS then return end
@@ -3372,373 +4925,200 @@ end
 _G.QUI_ApplyPageArrowVisibility = ApplyPageArrowVisibility
 
 ---------------------------------------------------------------------------
--- INITIALIZATION
+-- PUBLIC API
 ---------------------------------------------------------------------------
 
--- Refresh all action bar styling (called from options)
-function ActionBars:Refresh()
-    if not ActionBars.initialized then return end
+function ActionBarsOwned:Initialize()
+    if self.initialized then return end
+    self.initialized = true
 
-    -- Clear skinned cache to force re-skin
-    for button, _ in pairs(ActionBars.skinnedButtons) do
-        GetFrameState(button).skinKey = nil
-    end
-
-    SkinAllBars()
-    HookSpellFlyoutSkinning()
-    ApplyBarLayoutSettings()
-    RefreshBarsForSpellBookVisibility()
-
-    -- Apply page arrow visibility
-    local db = GetDB()
-    if db and db.bars and db.bars.bar1 then
-        ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
-    end
-end
-
--- Initialize the module
-function ActionBars:Initialize()
-    if ActionBars.initialized then return end
-
-    local db = GetDB()
-    if not db or not db.enabled then
-        return
-    end
-
-    ActionBars.initialized = true
-    ActionBars.levelSuppressionActive = ShouldSuppressMouseoverHideForLevel()
-
-    -- One-time migration for lock setting (preserves user setting after CVar sync fix)
-    MigrateLockSetting()
-
-    -- Patch LibKeyBound Binder methods to work without method injection on Midnight
+    -- Patch LibKeyBound Binder methods to work with unified frameState
     PatchLibKeyBoundForMidnight()
 
-    -- Hook tooltip suppression for action buttons
-    -- NOTE: Synchronous — deferring causes tooltip flash before hide.
+    -- Re-register events
+    ownedEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+    ownedEventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+    ownedEventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+    ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+    ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
+    ownedEventFrame:RegisterEvent("UPDATE_STEALTH")
+    ownedEventFrame:RegisterEvent("UPDATE_BINDINGS")
+    ownedEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    ownedEventFrame:RegisterEvent("CURSOR_CHANGED")
+    ownedEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ownedEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    ownedEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+    ownedEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
+    ownedEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+        ownedEventFrame:Show()
+
+    -- Force all action bars enabled so owned buttons function correctly
+    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_1", "1")
+    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_2", "1")
+    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_3", "1")
+    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_4", "1")
+
+    -- Build all managed bars (1-8 + pet/stance)
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        BuildBar(barKey)
+    end
+
+    -- Register pet/stance-specific events
+    ownedEventFrame:RegisterEvent("PET_BAR_UPDATE")
+    ownedEventFrame:RegisterEvent("PET_BAR_UPDATE_COOLDOWN")
+    ownedEventFrame:RegisterEvent("PET_UI_UPDATE")
+    ownedEventFrame:RegisterEvent("UNIT_PET")
+
+    -- Update pet bar visibility based on current pet state
+    C_Timer.After(0.1, function()
+        if not ActionBarsOwned.initialized then return end
+        UpdatePetBarVisibility()
+        UpdateStanceBarLayout()
+    end)
+
+    -- Note: Do NOT wipe barFrame.actionButtons or replace MultiActionButton*
+    -- handlers. The native keybind system needs these intact for bars 2-8.
+
+    -- No overlay scaling hooks needed — buttons stay at their natural 45x45
+    -- size and the container's SetScale handles visual resize. Blizzard overlays
+    -- work naturally because button dimensions match what they expect.
+
+    -- Hook ActionButton_Update to re-apply skinning after Blizzard resets artwork.
+    -- This fires when paging changes, action slots update, etc.
+    if ActionButton_Update then
+        hooksecurefunc("ActionButton_Update", function(button)
+            if not ActionBarsOwned.skinnedButtons[button] then return end
+            local bk = GetBarKeyFromButton(button)
+            if not bk then return end
+            local s = GetEffectiveSettings(bk)
+            if s then
+                local st = GetFrameState(button)
+                st.skinKey = nil  -- Force re-skin
+                SkinButton(button, s)
+                UpdateButtonText(button, s)
+                UpdateEmptySlotVisibility(button, s)
+            end
+        end)
+    end
+
+    -- Setup usability polling
+    UpdateUsabilityPolling()
+
+    -- Register Edit Mode callbacks
+    local core = GetCore()
+    if core and core.RegisterEditModeEnter then
+        core:RegisterEditModeEnter(OnEditModeEnter)
+        core:RegisterEditModeExit(OnEditModeExit)
+    end
+
+    -- Hook tooltip suppression for QUI action bar buttons
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
         local global = GetGlobalSettings()
         if not global or global.showTooltips ~= false then return end
-        local name = parent and parent.GetName and parent:GetName()
-        if name and (name:match("^ActionButton") or name:match("^MultiBar") or name:match("^PetActionButton")
-            or name:match("^StanceButton") or name:match("^OverrideActionBar") or name:match("^ExtraActionButton")) then
-            tooltip:Hide()
-            tooltip:SetOwner(UIParent, "ANCHOR_NONE")
-            tooltip:ClearLines()
-        end
-    end)
-
-    -- Initial skin pass
-    SkinAllBars()
-    HookSpellFlyoutSkinning()
-
-    -- Apply bar layout settings (scale, lock, range indicator, empty slots)
-    ApplyBarLayoutSettings()
-
-    -- Hook Blizzard's Layout() on each bar frame to reapply QUI button
-    -- spacing after Blizzard's Edit Mode recalculates container positions.
-    -- Without this, Edit Mode layout overwrites QUI spacing on reload.
-    local _layoutHookGuard = false
-    for barKey, _ in pairs(BUTTON_PATTERNS) do
-        if barKey ~= "pet" and barKey ~= "stance" then
-            local barFrame = GetBarFrame(barKey)
-            if barFrame and barFrame.Layout then
-                hooksecurefunc(barFrame, "Layout", function()
-                    if _layoutHookGuard or not ActionBars.initialized or InCombatLockdown() then return end
-                    _layoutHookGuard = true
-                    ApplyButtonSpacing(barKey)
-                    _layoutHookGuard = false
-                end)
-            end
-        end
-    end
-
-    -- Keep bars visible while Spellbook UI is open (optional setting).
-    HookSpellBookVisibilityFrames()
-    RefreshBarsForSpellBookVisibility()
-
-    -- Apply page arrow visibility
-    if db.bars and db.bars.bar1 then
-        ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
-    end
-
-    -- Initialize extra button holders (Extra Action Button & Zone Ability)
-    InitializeExtraButtons()
-
-    -- Debounced button update system (prevents rapid-fire during combat)
-    local pendingButtonUpdates = {}
-    local buttonUpdatePending = false
-
-    local function ProcessPendingButtonUpdates()
-        buttonUpdatePending = false
-        for button, updateType in pairs(pendingButtonUpdates) do
-            local barKey = GetBarKeyFromButton(button)
-            local settings = barKey and GetEffectiveSettings(barKey) or GetGlobalSettings()
-            if settings then
-                if updateType == "hotkey" or updateType == "both" then
-                    UpdateKeybindText(button, settings)
-                end
-                if updateType == "action" or updateType == "both" then
-                    UpdateButtonText(button, settings)
-                    UpdateEmptySlotVisibility(button, settings)
-                end
-            end
-        end
-        wipe(pendingButtonUpdates)
-    end
-
-    local function ScheduleButtonUpdate(button, updateType)
-        local existing = pendingButtonUpdates[button]
-        if existing and existing ~= updateType then
-            pendingButtonUpdates[button] = "both"
-        else
-            pendingButtonUpdates[button] = updateType
-        end
-        if not buttonUpdatePending then
-            buttonUpdatePending = true
-            C_Timer.After(0.05, ProcessPendingButtonUpdates)
-        end
-    end
-
-    -- NOTE: Direct hooks on ActionButton_Update and ActionButton_UpdateHotkeys have been
-    -- removed as they cause taint in Midnight (12.0+). These hooks run during Blizzard's
-    -- update cycle and can cause SetAttribute() calls to be blocked.
-    -- Instead, we rely purely on event-driven updates (ACTIONBAR_SLOT_CHANGED,
-    -- UPDATE_BINDINGS) which are already handled in the event frame below.
-end
-
----------------------------------------------------------------------------
--- EVENT HANDLING
----------------------------------------------------------------------------
-
-local function RefreshAllButtonVisuals()
-    for barKey, _ in pairs(BUTTON_PATTERNS) do
-        local effectiveSettings = GetEffectiveSettings(barKey)
-        if effectiveSettings then
-            local buttons = GetBarButtons(barKey)
-            for _, button in ipairs(buttons) do
-                UpdateButtonText(button, effectiveSettings)
-                UpdateEmptySlotVisibility(button, effectiveSettings)
-            end
-        end
-    end
-end
-
-local function QueueAllButtonVisualRefresh(delay)
-    if ActionBars.visualRefreshQueued then return end
-    ActionBars.visualRefreshQueued = true
-    C_Timer.After(delay or VISUAL_REFRESH_DELAY, function()
-        ActionBars.visualRefreshQueued = nil
-        RefreshAllButtonVisuals()
-    end)
-end
-
--- Reapply full skin for bars whose button textures are frequently reset by Blizzard
--- during form/pet/page changes.
-local function RefreshReactiveBarSkin(barKey)
-    local effectiveSettings = GetEffectiveSettings(barKey)
-    if not effectiveSettings then return end
-
-    local buttons = GetBarButtons(barKey)
-    if not buttons or #buttons == 0 then return end
-
-    for _, button in ipairs(buttons) do
-        local state = GetFrameState(button)
-        state.skinKey = nil
-        SkinButton(button, effectiveSettings)
-        UpdateButtonText(button, effectiveSettings)
-        UpdateEmptySlotVisibility(button, effectiveSettings)
-    end
-end
-
-local function QueueReactiveBarSkinRefresh(delay)
-    -- Stance/pet buttons can have their textures reset by Blizzard during
-    -- form/page transitions, so queue a dedicated reskin pass for those bars.
-    if ActionBars.reactiveSkinRefreshQueued then return end
-    ActionBars.reactiveSkinRefreshQueued = true
-    C_Timer.After(delay or VISUAL_REFRESH_DELAY, function()
-        ActionBars.reactiveSkinRefreshQueued = nil
-        RefreshReactiveBarSkin("stance")
-        RefreshReactiveBarSkin("pet")
-    end)
-end
-
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
-eventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
-eventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
-eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
-eventFrame:RegisterEvent("UPDATE_STEALTH")
-eventFrame:RegisterEvent("UPDATE_BINDINGS")
-eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:RegisterEvent("CURSOR_CHANGED")
-eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
-eventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
-eventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
-eventFrame:RegisterEvent("ADDON_LOADED")
-
-eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        local addonName = ...
-        if addonName == ADDON_NAME then
-            ActionBars:Initialize()
-        end
-        HandleSpellBookAddonLoaded(addonName)
-        if addonName == "Blizzard_ActionBar" then
-            HookSpellFlyoutSkinning()
-            C_Timer.After(0, SkinSpellFlyoutButtons)
-            local db = GetDB()
-            if db and db.bars and db.bars.bar1 then
-                C_Timer.After(0, function()
-                    ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
-                end)
-            end
-        end
-
-    elseif event == "ACTIONBAR_SLOT_CHANGED" then
-        -- Defer slot-change processing during combat to avoid taint
-        if InCombatLockdown() then
-            ActionBars.pendingSlotUpdate = true
-            return
-        end
-        -- Re-apply text styling and empty slot visibility when actions change
-        QueueAllButtonVisualRefresh(0.1)
-
-    elseif event == "ACTIONBAR_PAGE_CHANGED"
-        or event == "UPDATE_BONUS_ACTIONBAR"
-        or event == "UPDATE_SHAPESHIFT_FORM"
-        or event == "UPDATE_SHAPESHIFT_FORMS"
-        or event == "UPDATE_STEALTH" then
-        -- Paging/form changes can happen in combat (e.g. druid shapeshifts).
-        -- Refresh QUI-managed visuals immediately so displayed buttons match
-        -- the active page even while combat lockdown defers slot updates.
-        QueueAllButtonVisualRefresh(0.05)
-        QueueReactiveBarSkinRefresh(0.05)
-
-    elseif event == "CURSOR_CHANGED" then
-        -- Show/hide drag preview on hidden empty slots
-        local settings = GetGlobalSettings()
-        if settings and settings.hideEmptySlots then
-            local shouldPreview = CursorHasPlaceableAction()
-            if shouldPreview ~= (ActionBars.dragPreviewActive or false) then
-                ActionBars.dragPreviewActive = shouldPreview or nil
-                for barKey, _ in pairs(BUTTON_PATTERNS) do
-                    local effectiveSettings = GetEffectiveSettings(barKey)
-                    if effectiveSettings then
-                        local buttons = GetBarButtons(barKey)
-                        for _, button in ipairs(buttons) do
-                            local state = GetFrameState(button)
-                            if state.hiddenEmpty then
-                                local fadeState = ActionBars.fadeState and ActionBars.fadeState[barKey]
-                                local targetAlpha = fadeState and fadeState.currentAlpha or 1
-                                button:SetAlpha(shouldPreview and (DRAG_PREVIEW_ALPHA * targetAlpha) or 0)
+        if parent and parent.GetName then
+            local name = parent:GetName()
+            -- Check if button belongs to a QUI-managed action bar
+            if name and (name:match("^QUI_Bar1Button") or GetBarKeyFromButton(parent)) then
+                -- Verify it's actually one of our managed buttons
+                local barKey = GetBarKeyFromButton(parent)
+                if barKey then
+                    local buttons = ActionBarsOwned.nativeButtons[barKey]
+                    if buttons then
+                        for _, btn in ipairs(buttons) do
+                            if btn == parent then
+                                tooltip:Hide()
+                                tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+                                tooltip:ClearLines()
+                                return
                             end
                         end
                     end
                 end
             end
         end
+    end)
 
-    elseif event == "UPDATE_BINDINGS" then
-        -- Re-apply keybind styling when bindings change
-        C_Timer.After(0.1, function()
-            for barKey, _ in pairs(BUTTON_PATTERNS) do
-                local effectiveSettings = GetEffectiveSettings(barKey)
-                if effectiveSettings then
-                    local buttons = GetBarButtons(barKey)
-                    for _, button in ipairs(buttons) do
-                        UpdateKeybindText(button, effectiveSettings)
-                    end
-                end
+    -- Hook Spellbook visibility for fade system
+    local function RefreshFadeForSpellBook()
+        if not ActionBarsOwned.initialized then return end
+        for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+            local state = GetOwnedBarFadeState(barKey)
+            state.isFading = false
+            CancelOwnedBarFadeTimers(state)
+            if ShouldForceShowForSpellBook() then
+                SetOwnedBarAlpha(barKey, 1)
+            else
+                SetupOwnedBarMouseover(barKey)
             end
-        end)
-
-    elseif event == "PLAYER_LEVEL_UP" then
-        if UpdateLevelSuppressionState() then
-            if type(_G.QUI_RefreshActionBars) == "function" then
-                _G.QUI_RefreshActionBars()
-            end
-        end
-
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        local isLogin, isReload = ...
-        if (isLogin or isReload) and not ActionBars.initialWorldRefreshQueued then
-            -- Initialization now runs at ADDON_LOADED. Some Blizzard bar buttons
-            -- (especially stance/pet variants) can be created slightly later, so
-            -- schedule one delayed full refresh to ensure they get skinned.
-            ActionBars.initialWorldRefreshQueued = true
-            C_Timer.After(WORLD_INITIAL_REFRESH_DELAY, function()
-                if type(_G.QUI_RefreshActionBars) == "function" then
-                    _G.QUI_RefreshActionBars()
-                end
-            end)
-        end
-        if isReload then
-            if not InCombatLockdown() then
-                -- Second spacing pass during combat /reload safe window.
-                ApplyAllBarSpacing()
-            end
-            -- Safety net: Blizzard's Layout() may fire after safe window
-            -- closes. Mark pending so PLAYER_REGEN_ENABLED reapplies.
-            ActionBars.pendingSpacing = true
-        end
-        if UpdateLevelSuppressionState() then
-            if type(_G.QUI_RefreshActionBars) == "function" then
-                _G.QUI_RefreshActionBars()
-            end
-        end
-        local db = GetDB()
-        if db and db.bars and db.bars.bar1 then
-            C_Timer.After(0.1, function()
-                ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
-            end)
-            C_Timer.After(0.6, function()
-                ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
-            end)
-        end
-
-    elseif event == "UPDATE_VEHICLE_ACTIONBAR" then
-        C_Timer.After(0.05, function()
-            SetupBarMouseover("bar1")
-        end)
-
-    elseif event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
-        local unit = ...
-        if unit ~= "player" then return end
-        C_Timer.After(0.05, function()
-            SetupBarMouseover("bar1")
-        end)
-
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Process any pending refresh operations
-        if ActionBars.pendingRefresh then
-            ActionBars.pendingRefresh = false
-            ActionBars:Refresh()
-        end
-        -- Process pending extra button operations
-        if ActionBars.pendingExtraButtonInit then
-            ActionBars.pendingExtraButtonInit = false
-            InitializeExtraButtons()
-        end
-        if ActionBars.pendingExtraButtonRefresh then
-            ActionBars.pendingExtraButtonRefresh = false
-            RefreshExtraButtons()
-        end
-        -- Re-apply button spacing that was deferred during combat
-        if ActionBars.pendingSpacing then
-            ActionBars.pendingSpacing = false
-            ApplyAllBarSpacing()
-        end
-        -- Process slot changes deferred from combat
-        if ActionBars.pendingSlotUpdate then
-            ActionBars.pendingSlotUpdate = false
-            QueueAllButtonVisualRefresh(0.1)
         end
     end
-end)
+
+    local function HookSpellBookFrame(frame)
+        if not frame then return end
+        frame:HookScript("OnShow", function()
+            C_Timer.After(0, RefreshFadeForSpellBook)
+        end)
+        frame:HookScript("OnHide", function()
+            C_Timer.After(0, RefreshFadeForSpellBook)
+        end)
+    end
+
+    HookSpellBookFrame(_G.SpellBookFrame)
+    local psf = _G.PlayerSpellsFrame
+    HookSpellBookFrame(psf)
+    if psf and psf.SpellBookFrame then
+        HookSpellBookFrame(psf.SpellBookFrame)
+    end
+
+    -- Initialize extra buttons
+    inInitSafeWindow = true
+    InitializeExtraButtons()
+    inInitSafeWindow = false
+
+    -- Apply page arrow visibility
+    local db = GetDB()
+    if db and db.bars and db.bars.bar1 then
+        ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
+    end
+
+    -- Hide bars that are disabled in DB
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        local barDB = GetBarSettings(barKey)
+        if barDB and barDB.enabled == false then
+            local container = self.containers[barKey]
+            if container then container:Hide() end
+        end
+    end
+end
+
+function ActionBarsOwned:Refresh()
+    if not self.initialized then return end
+
+    if InCombatLockdown() then
+        self.pendingRefresh = true
+        return
+    end
+
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        BuildBar(barKey)
+    end
+
+    -- Hide bars that are disabled in DB
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        local barDB = GetBarSettings(barKey)
+        if barDB and barDB.enabled == false then
+            local container = self.containers[barKey]
+            if container then container:Hide() end
+        end
+    end
+
+    -- Refresh pet/stance conditional visibility
+    UpdatePetBarVisibility()
+    UpdateStanceBarLayout()
+
+    UpdateUsabilityPolling()
+end
+
 
 ---------------------------------------------------------------------------
 -- GLOBAL REFRESH FUNCTION
@@ -3746,65 +5126,461 @@ end)
 
 _G.QUI_RefreshActionBars = function()
     if InCombatLockdown() then
-        ActionBars.pendingRefresh = true
+        ActionBarsOwned.pendingRefresh = true
         return
     end
-    ActionBars:Refresh()
+    ActionBarsOwned:Refresh()
 end
 
 ---------------------------------------------------------------------------
--- EDIT MODE INTEGRATION
--- Suspend mouseover fade and show extra button movers during Edit Mode
+-- INITIALIZATION
 ---------------------------------------------------------------------------
 
--- Use central Edit Mode dispatcher to avoid taint from multiple hooksecurefunc
--- callbacks on EnterEditMode/ExitEditMode.
-do
-    local core = GetCore()
-    if core and core.RegisterEditModeEnter then
-        core:RegisterEditModeEnter(function()
-            -- Restore Blizzard's default layout so Edit Mode can properly manage
-            -- button counts and bar sizing.  QUI's spacing override will be
-            -- re-applied when Edit Mode exits.
-            RestoreButtonsToContainers()
-
-            -- Force all bars to full opacity and cancel pending fades
-            for barKey, state in pairs(ActionBars.fadeState) do
-                state.isFading = false
-                if state.delayTimer then
-                    state.delayTimer:Cancel()
-                    state.delayTimer = nil
-                end
-                if state.leaveCheckTimer then
-                    state.leaveCheckTimer:Cancel()
-                    state.leaveCheckTimer = nil
-                end
-                SetBarAlpha(barKey, 1)
-            end
-
-            -- Show extra button movers when QUI extra button feature is enabled
-            local extraSettings = GetExtraButtonDB("extraActionButton")
-            local zoneSettings = GetExtraButtonDB("zoneAbility")
-            if (extraSettings and extraSettings.enabled) or (zoneSettings and zoneSettings.enabled) then
-                ShowExtraButtonMovers()
-            end
-
-        end)
-
-        core:RegisterEditModeExit(function()
-            HideExtraButtonMovers()
-
-            -- Resume mouseover fade for all bars
-            for barKey, _ in pairs(BAR_FRAMES) do
-                SetupBarMouseover(barKey)
-            end
-
-            -- Re-apply button spacing after Blizzard re-layouts buttons on Edit Mode exit
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:SetScript("OnEvent", function(self, event, addonName)
+    if addonName == ADDON_NAME then
+        local db = GetDB()
+        if not db or not db.enabled then return end
+        ActionBarsOwned:Initialize()
+    elseif addonName == "Blizzard_ActionBar" then
+        HookSpellFlyoutSkinning()
+        C_Timer.After(0, SkinSpellFlyoutButtons)
+        local db = GetDB()
+        if db and db.bars and db.bars.bar1 then
             C_Timer.After(0, function()
-                ApplyAllBarSpacing()
+                ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
             end)
-        end)
+        end
     end
+end)
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE ELEMENT REGISTRATION
+---------------------------------------------------------------------------
+do
+    local function RegisterLayoutModeElements()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+
+        local BAR_ELEMENTS = {
+            { key = "bar1", label = "Action Bar 1", order = 1 },
+            { key = "bar2", label = "Action Bar 2", order = 2 },
+            { key = "bar3", label = "Action Bar 3", order = 3 },
+            { key = "bar4", label = "Action Bar 4", order = 4 },
+            { key = "bar5", label = "Action Bar 5", order = 5 },
+            { key = "bar6", label = "Action Bar 6", order = 6 },
+            { key = "bar7", label = "Action Bar 7", order = 7 },
+            { key = "bar8", label = "Action Bar 8", order = 8 },
+            { key = "petBar",    label = "Pet Bar",     order = 9 },
+            { key = "stanceBar", label = "Stance Bar",  order = 10 },
+            { key = "microMenu", label = "Micro Menu",  order = 11 },
+            { key = "bagBar",    label = "Bag Bar",     order = 12 },
+        }
+
+        local DB_KEY_MAP = {
+            petBar = "pet", stanceBar = "stance",
+            microMenu = "microbar", bagBar = "bags",
+        }
+
+        -- Leave Vehicle button — standalone proxy mover (not part of the bar loop)
+        um:RegisterElement({
+            key = "leaveVehicle",
+            label = "Leave Vehicle",
+            group = "Action Bars",
+            order = 13,
+            getFrame = function()
+                return _G.MainMenuBarVehicleLeaveButton
+            end,
+        })
+
+        for _, info in ipairs(BAR_ELEMENTS) do
+            local dbKey = DB_KEY_MAP[info.key] or info.key
+            um:RegisterElement({
+                key = info.key,
+                label = info.label,
+                group = "Action Bars",
+                order = info.order,
+                isOwned = true,
+                isEnabled = function()
+                    local barDB = GetBarSettings(dbKey)
+                    return barDB and barDB.enabled ~= false
+                end,
+                setEnabled = function(val)
+                    local barDB = GetBarSettings(dbKey)
+                    if barDB then barDB.enabled = val end
+                    local containerKey = DB_KEY_MAP[info.key] or info.key
+                    local container = ActionBarsOwned.containers and ActionBarsOwned.containers[containerKey]
+                    if container then
+                        if val then
+                            container:Show()
+                        else
+                            container:Hide()
+                        end
+                    end
+                end,
+                getFrame = function()
+                    local containerKey = DB_KEY_MAP[info.key] or info.key
+                    local owned = ActionBarsOwned.containers and ActionBarsOwned.containers[containerKey]
+                    if owned then return owned end
+                    local BLIZZARD_FRAMES = {
+                        bar1 = "MainActionBar", bar2 = "MultiBarBottomLeft",
+                        bar3 = "MultiBarBottomRight", bar4 = "MultiBarRight",
+                        bar5 = "MultiBarLeft", bar6 = "MultiBar5",
+                        bar7 = "MultiBar6", bar8 = "MultiBar7",
+                        petBar = "PetActionBar", stanceBar = "StanceBar",
+                        microMenu = "MicroMenuContainer", bagBar = "BagsBar",
+                    }
+                    return _G[BLIZZARD_FRAMES[info.key]]
+                end,
+            })
+        end
+    end
+
+    C_Timer.After(2, RegisterLayoutModeElements)
+end
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE SETTINGS PROVIDER
+---------------------------------------------------------------------------
+do
+    local function RegisterSettingsProviders()
+        local settingsPanel = ns.QUI_LayoutMode_Settings
+        if not settingsPanel then return end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return end
+
+        local C = GUI.Colors or {}
+        local U = ns.QUI_LayoutMode_Utils
+        local P = U.PlaceRow
+        local ACCENT_R, ACCENT_G, ACCENT_B = 0.376, 0.647, 0.980
+        local PADDING = 0
+        local FORM_ROW = U and U.FORM_ROW or 32
+
+        local function RefreshActionBars()
+            for _, bk in ipairs(ALL_MANAGED_BAR_KEYS) do
+                local buttons = ActionBarsOwned.nativeButtons[bk]
+                local settings = GetEffectiveSettings(bk)
+                if buttons and settings then
+                    if SKINNABLE_BAR_KEYS[bk] then
+                        for _, btn in ipairs(buttons) do
+                            local st = GetFrameState(btn)
+                            st.skinKey = nil
+                            SkinButton(btn, settings)
+                            UpdateButtonText(btn, settings)
+                            UpdateEmptySlotVisibility(btn, settings)
+                        end
+                    end
+                    pcall(LayoutNativeButtons, bk)
+                end
+            end
+        end
+
+        local anchorOptions = {
+            {value = "TOPLEFT", text = "Top Left"},
+            {value = "TOP", text = "Top"},
+            {value = "TOPRIGHT", text = "Top Right"},
+            {value = "LEFT", text = "Left"},
+            {value = "CENTER", text = "Center"},
+            {value = "RIGHT", text = "Right"},
+            {value = "BOTTOMLEFT", text = "Bottom Left"},
+            {value = "BOTTOM", text = "Bottom"},
+            {value = "BOTTOMRIGHT", text = "Bottom Right"},
+        }
+
+        local orientationOptions = {
+            {value = "horizontal", text = "Horizontal"},
+            {value = "vertical", text = "Vertical"},
+        }
+
+        local LAYOUT_BARS = {
+            bar1 = true, bar2 = true, bar3 = true, bar4 = true,
+            bar5 = true, bar6 = true, bar7 = true, bar8 = true,
+            pet = true, stance = true, microbar = true, bags = true,
+        }
+
+        local SETTINGS_DB_KEY_MAP = {
+            petBar = "pet", stanceBar = "stance",
+            microMenu = "microbar", bagBar = "bags",
+        }
+
+        local copyKeys = {
+            "iconZoom", "showBackdrop", "backdropAlpha", "showGloss", "glossAlpha", "showBorders",
+            "showKeybinds", "hideEmptyKeybinds", "keybindFontSize", "keybindColor",
+            "keybindAnchor", "keybindOffsetX", "keybindOffsetY",
+            "showMacroNames", "macroNameFontSize", "macroNameColor",
+            "macroNameAnchor", "macroNameOffsetX", "macroNameOffsetY",
+            "showCounts", "countFontSize", "countColor",
+            "countAnchor", "countOffsetX", "countOffsetY",
+        }
+
+        local copyBarOptions = {
+            {value = "bar1", text = "Bar 1"}, {value = "bar2", text = "Bar 2"},
+            {value = "bar3", text = "Bar 3"}, {value = "bar4", text = "Bar 4"},
+            {value = "bar5", text = "Bar 5"}, {value = "bar6", text = "Bar 6"},
+            {value = "bar7", text = "Bar 7"}, {value = "bar8", text = "Bar 8"},
+        }
+
+        local function CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
+            return U.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
+        end
+
+        local function BuildBarSettings(content, barKey, width)
+            local db = GetDB()
+            if not db or not db.bars then return 80 end
+
+            local dbKey = SETTINGS_DB_KEY_MAP[barKey] or barKey
+            local barDB = db.bars[dbKey]
+            if not barDB then return 80 end
+
+            local global = db.global
+            local hasLayout = LAYOUT_BARS[dbKey]
+            local layout = barDB.ownedLayout
+
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            -- SECTION: Layout
+            if hasLayout and layout then
+                local isMicroBag = (dbKey == "microbar" or dbKey == "bags")
+                local maxButtons = BUTTON_COUNTS[dbKey] or (dbKey == "microbar" and 12 or (dbKey == "bags" and 6 or 12))
+                local extraRows = isMicroBag and 1 or 2
+                if barKey == "bar1" then extraRows = extraRows + 1 end
+                local numRows = 7 + extraRows
+                local descHeight = isMicroBag and 0 or 16
+                CreateCollapsible(content, "Layout", numRows * FORM_ROW + descHeight + 8, function(body)
+                    local sy = -4
+
+                    if barKey == "bar1" then
+                        sy = P(GUI:CreateFormCheckbox(body,
+                            "Hide Default Paging Arrow", "hidePageArrow", barDB,
+                            function(val)
+                                if _G.QUI_ApplyPageArrowVisibility then
+                                    _G.QUI_ApplyPageArrowVisibility(val)
+                                end
+                            end), body, sy)
+                    end
+
+                    if not isMicroBag then
+                    local applyAllBtn = CreateFrame("Button", nil, body)
+                    applyAllBtn:SetSize(200, 22)
+                    applyAllBtn:SetPoint("TOPLEFT", 0, sy)
+
+                    local applyBg = applyAllBtn:CreateTexture(nil, "BACKGROUND")
+                    applyBg:SetAllPoints()
+                    applyBg:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.25)
+
+                    local applyText = applyAllBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    applyText:SetPoint("CENTER")
+                    applyText:SetText("Apply To All Bars")
+                    applyText:SetTextColor(1, 1, 1, 1)
+
+                    applyAllBtn:SetScript("OnClick", function()
+                        for i = 1, 8 do
+                            local otherKey = "bar" .. i
+                            if otherKey ~= barKey then
+                                local otherDbKey = SETTINGS_DB_KEY_MAP[otherKey] or otherKey
+                                local otherDB = db.bars[otherDbKey]
+                                if otherDB then
+                                    for _, key in ipairs(copyKeys) do
+                                        otherDB[key] = barDB[key]
+                                    end
+                                end
+                            end
+                        end
+                        RefreshActionBars()
+                    end)
+                    applyAllBtn:SetScript("OnEnter", function()
+                        applyBg:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.4)
+                    end)
+                    applyAllBtn:SetScript("OnLeave", function()
+                        applyBg:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.25)
+                    end)
+                    sy = sy - FORM_ROW
+
+                    local filteredCopyOptions = {}
+                    for _, opt in ipairs(copyBarOptions) do
+                        if opt.value ~= barKey then
+                            table.insert(filteredCopyOptions, opt)
+                        end
+                    end
+
+                    sy = P(GUI:CreateFormDropdown(body, "Copy Settings From", filteredCopyOptions, nil, nil,
+                        function(sourceKey)
+                            local sourceDbKey = SETTINGS_DB_KEY_MAP[sourceKey] or sourceKey
+                            local sourceDB = db.bars[sourceDbKey]
+                            if not sourceDB then return end
+                            for _, key in ipairs(copyKeys) do
+                                barDB[key] = sourceDB[key]
+                            end
+                            RefreshActionBars()
+                        end), body, sy)
+
+                    local copyDesc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    copyDesc:SetPoint("TOPLEFT", 2, sy + 4)
+                    copyDesc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+                    copyDesc:SetTextColor(0.5, 0.5, 0.5, 1)
+                    copyDesc:SetText("Copies visual, keybind, macro, and count settings. Layout is per-bar.")
+                    copyDesc:SetJustifyH("LEFT")
+                    sy = sy - 16
+                    end -- isMicroBag guard
+
+                    if isMicroBag then
+                        sy = P(GUI:CreateFormCheckbox(body, "Clickthrough",
+                            "clickthrough", barDB, function(val)
+                                local btns = ActionBarsOwned.nativeButtons[dbKey]
+                                if btns then
+                                    for _, btn in ipairs(btns) do
+                                        btn:EnableMouse(not val)
+                                    end
+                                end
+                            end), body, sy)
+                    end
+
+                    sy = P(GUI:CreateFormDropdown(body, "Orientation",
+                        orientationOptions, "orientation", layout, RefreshActionBars), body, sy)
+
+                    sy = P(GUI:CreateFormSlider(body, "Buttons Per Row",
+                        1, maxButtons, 1, "columns", layout, RefreshActionBars), body, sy)
+
+                    sy = P(GUI:CreateFormSlider(body, "Visible Buttons",
+                        1, maxButtons, 1, "iconCount", layout, RefreshActionBars), body, sy)
+
+                    sy = P(GUI:CreateFormSlider(body, "Button Size",
+                        20, 64, 1, "buttonSize", layout, RefreshActionBars), body, sy)
+
+                    sy = P(GUI:CreateFormSlider(body, "Button Spacing",
+                        -10, 10, 1, "buttonSpacing", layout, RefreshActionBars), body, sy)
+
+                    sy = P(GUI:CreateFormCheckbox(body, "Grow Upward",
+                        "growUp", layout, RefreshActionBars), body, sy)
+
+                    P(GUI:CreateFormCheckbox(body, "Grow Left",
+                        "growLeft", layout, RefreshActionBars), body, sy)
+                end, sections, relayout)
+            end
+
+            -- SECTION: Visual (action bars only — micro/bag buttons are not skinned)
+            if SKINNABLE_BAR_KEYS[dbKey] then
+            CreateCollapsible(content, "Visual", 7 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormSlider(body, "Icon Crop",
+                    0.05, 0.15, 0.01, "iconZoom", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormCheckbox(body, "Show Backdrop",
+                    "showBackdrop", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Backdrop Opacity",
+                    0, 1, 0.05, "backdropAlpha", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormCheckbox(body, "Show Gloss",
+                    "showGloss", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Gloss Opacity",
+                    0, 1, 0.05, "glossAlpha", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormCheckbox(body, "Show Borders",
+                    "showBorders", barDB, RefreshActionBars), body, sy)
+
+                local pressedOptions = {
+                    {value = "off", text = "Off"},
+                    {value = "blizzard", text = "Blizzard Default"},
+                    {value = "qui", text = "QUI"},
+                }
+                P(GUI:CreateFormDropdown(body, "Pressed Effect",
+                    pressedOptions, "showFlash", barDB, RefreshActionBars), body, sy)
+            end, sections, relayout)
+
+            -- SECTION: Keybind Text
+            CreateCollapsible(content, "Keybind Text", 7 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Keybinds",
+                    "showKeybinds", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormCheckbox(body, "Hide Empty Keybinds",
+                    "hideEmptyKeybinds", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                    8, 18, 1, "keybindFontSize", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                    anchorOptions, "keybindAnchor", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                    -20, 20, 1, "keybindOffsetX", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                    -20, 20, 1, "keybindOffsetY", barDB, RefreshActionBars), body, sy)
+
+                P(GUI:CreateFormColorPicker(body, "Color",
+                    "keybindColor", barDB, RefreshActionBars), body, sy)
+            end, sections, relayout)
+
+            -- SECTION: Macro Names
+            CreateCollapsible(content, "Macro Names", 6 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Macro Names",
+                    "showMacroNames", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                    8, 18, 1, "macroNameFontSize", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                    anchorOptions, "macroNameAnchor", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                    -20, 20, 1, "macroNameOffsetX", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                    -20, 20, 1, "macroNameOffsetY", barDB, RefreshActionBars), body, sy)
+
+                P(GUI:CreateFormColorPicker(body, "Color",
+                    "macroNameColor", barDB, RefreshActionBars), body, sy)
+            end, sections, relayout)
+
+            -- SECTION: Stack Count
+            CreateCollapsible(content, "Stack Count", 6 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Counts",
+                    "showCounts", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                    8, 20, 1, "countFontSize", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                    anchorOptions, "countAnchor", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                    -20, 20, 1, "countOffsetX", barDB, RefreshActionBars), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                    -20, 20, 1, "countOffsetY", barDB, RefreshActionBars), body, sy)
+
+                P(GUI:CreateFormColorPicker(body, "Color",
+                    "countColor", barDB, RefreshActionBars), body, sy)
+            end, sections, relayout)
+            end -- SKINNABLE_BAR_KEYS guard
+
+            -- Position / Anchoring
+            U.BuildPositionCollapsible(content, barKey, nil, sections, relayout)
+
+            -- Initial layout
+            relayout()
+            return content:GetHeight()
+        end
+
+        local ALL_BAR_KEYS = {
+            "bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8",
+            "stanceBar", "petBar", "microMenu", "bagBar",
+        }
+
+        settingsPanel:RegisterProvider(ALL_BAR_KEYS, {
+            build = BuildBarSettings,
+        })
+    end
+
+    C_Timer.After(3, RegisterSettingsProviders)
 end
 
 ---------------------------------------------------------------------------
@@ -3813,5 +5589,14 @@ end
 
 local core = GetCore()
 if core then
-    core.ActionBars = ActionBars
+    core.ActionBars = ActionBarsOwned
+end
+
+if ns.Registry then
+    ns.Registry:Register("actionbars", {
+        refresh = _G.QUI_RefreshActionBars,
+        priority = 20,
+        group = "frames",
+        importCategories = { "actionBars" },
+    })
 end

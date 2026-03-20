@@ -28,6 +28,7 @@ QUI ships with several ready-made import strings that configure QUI and compatib
 | Preset | Description |
 |--------|-------------|
 | QUI Edit Mode Base | Blizzard Edit Mode layout for optimal QUI frame positioning |
+| Quazii Edit Mode | Quazii's original Blizzard Edit Mode layout |
 | Quazii Profile | Quazii's recommended QUI settings (the classic look) |
 | Quazii Dark Mode | Dark variant of Quazii's profile |
 | Quazii Details! | Details! damage meter profile matching QUI aesthetics |

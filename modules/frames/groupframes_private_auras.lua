@@ -26,7 +26,7 @@ local AddPrivateAuraAnchor = C_UnitAuras.AddPrivateAuraAnchor
 local RemovePrivateAuraAnchor = C_UnitAuras.RemovePrivateAuraAnchor
 
 -- Weak-keyed state: frameState[frame] = { containers={}, anchorIDs={}, unit="" }
-local frameState = setmetatable({}, { __mode = "k" })
+local frameState = Helpers.CreateStateTable()
 
 -- Container pool
 local containerPool = {}

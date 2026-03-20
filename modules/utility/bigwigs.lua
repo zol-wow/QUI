@@ -116,9 +116,6 @@ local function EnsureProxy(key, anchorFrame)
     return proxy
 end
 
-function QUI_BigWigs:GetProxyFrame(key)
-    return proxies[key]
-end
 
 local function QueueRetry()
     if retryTimer then

@@ -6,13 +6,7 @@ local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 
--- Safe pixel size helper (guards against QUICore being nil during early init)
-local function SafeGetPixelSize(frame)
-    if QUICore and QUICore.GetPixelSize then
-        return QUICore:GetPixelSize(frame)
-    end
-    return 1
-end
+local SafeGetPixelSize = SkinBase.GetPixelSize
 
 -- Module reference
 local Alerts = {}
@@ -60,7 +54,7 @@ end
 -- Re-entry guard: SetAlpha(1) re-triggers the hooksecurefunc that calls
 -- ForceAlpha, which would schedule another redundant timer without this.
 local _forceAlphaActive = {}
-local _forceAlphaCallbacks = setmetatable({}, { __mode = "k" })
+local _forceAlphaCallbacks = Helpers.CreateStateTable()
 
 local function ForceAlpha(frame)
     if _forceAlphaActive[frame] then return end
@@ -1006,13 +1000,8 @@ local function CreateAlertMover()
     if not alertHolder then
         alertHolder = CreateFrame("Frame", "QUI_AlertFrameHolder", UIParent)
         alertHolder:SetSize(180, 20)
-        -- Load saved position or use default
-        local pos = db.alertPosition
-        if pos and pos.point then
-            alertHolder:SetPoint(pos.point, UIParent, pos.relPoint or "TOP", pos.x or 0, pos.y or -20)
-        else
-            alertHolder:SetPoint("TOP", UIParent, "TOP", 0, -20)
-        end
+        -- Default position; ApplyAllFrameAnchors overrides from frameAnchoring DB
+        alertHolder:SetPoint("TOP", UIParent, "TOP", 0, -20)
         alertHolder:SetMovable(true)
         alertHolder:SetClampedToScreen(true)
 
@@ -1046,12 +1035,6 @@ local function CreateAlertMover()
 
         alertMover:SetScript("OnDragStop", function(self)
             alertHolder:StopMovingOrSizing()
-            -- Save position to database (snapped to pixel grid)
-            local point, _, relPoint, x, y = QUICore:SnapFramePosition(alertHolder)
-            if point then
-                local alertDB = GetAlertSettings()
-                alertDB.alertPosition = { point = point, relPoint = relPoint, x = x, y = y }
-            end
         end)
     end
 
@@ -1099,23 +1082,48 @@ end
 
 local toastHolder = nil
 local toastMover = nil
+local eventToastHooked = false
+
+local function AnchorEventToastToHolder()
+    if EventToastManagerFrame and toastHolder then
+        EventToastManagerFrame:ClearAllPoints()
+        EventToastManagerFrame:SetPoint("TOP", toastHolder, "TOP")
+    end
+end
+
+local function HookEventToastFrame()
+    if eventToastHooked then return end
+    if not EventToastManagerFrame then return false end
+
+    -- Hook SetPoint directly — catches ALL repositioning regardless of code path
+    local redirecting = false
+    hooksecurefunc(EventToastManagerFrame, "SetPoint", function()
+        if redirecting or not toastHolder then return end
+        -- TAINT SAFETY: Defer to break taint chain from secure context
+        C_Timer.After(0, function()
+            if not toastHolder then return end
+            redirecting = true
+            AnchorEventToastToHolder()
+            redirecting = false
+        end)
+    end)
+
+    eventToastHooked = true
+    AnchorEventToastToHolder()
+    return true
+end
 
 local function CreateEventToastMover()
     local db = GetAlertSettings()
     if not db.enabled then return end
-    if not EventToastManagerFrame then return end
 
-    -- Create holder frame
+    -- Always create the holder frame so frameAnchoring can position it,
+    -- even if EventToastManagerFrame doesn't exist yet
     if not toastHolder then
         toastHolder = CreateFrame("Frame", "QUI_EventToastHolder", UIParent)
         toastHolder:SetSize(300, 20)
-        -- Load saved position or use default
-        local pos = db.toastPosition
-        if pos and pos.point then
-            toastHolder:SetPoint(pos.point, UIParent, pos.relPoint or "TOP", pos.x or 0, pos.y or -150)
-        else
-            toastHolder:SetPoint("TOP", UIParent, "TOP", 0, -150)
-        end
+        -- Default position; ApplyAllFrameAnchors overrides from frameAnchoring DB
+        toastHolder:SetPoint("TOP", UIParent, "TOP", 0, -150)
         toastHolder:SetMovable(true)
         toastHolder:SetClampedToScreen(true)
 
@@ -1149,30 +1157,21 @@ local function CreateEventToastMover()
 
         toastMover:SetScript("OnDragStop", function(self)
             toastHolder:StopMovingOrSizing()
-            -- Save position to database (snapped to pixel grid)
-            local point, _, relPoint, x, y = QUICore:SnapFramePosition(toastHolder)
-            if point then
-                local alertDB = GetAlertSettings()
-                alertDB.toastPosition = { point = point, relPoint = relPoint, x = x, y = y }
-            end
-            -- Reposition toast frame
-            EventToastManagerFrame:ClearAllPoints()
-            EventToastManagerFrame:SetPoint("TOP", toastHolder, "TOP")
+            AnchorEventToastToHolder()
         end)
     end
 
-    -- Hook EventToastManagerFrame:UpdateAnchor instead of SetPoint (avoids recursion)
-    -- TAINT SAFETY: Defer to break taint chain from secure context.
-    hooksecurefunc(EventToastManagerFrame, "UpdateAnchor", function(self)
-        C_Timer.After(0, function()
-            self:ClearAllPoints()
-            self:SetPoint("TOP", toastHolder, "TOP")
+    -- Try to hook EventToastManagerFrame now; if it doesn't exist yet, retry periodically
+    if not HookEventToastFrame() then
+        local retries = 0
+        local ticker
+        ticker = C_Timer.NewTicker(0.5, function()
+            retries = retries + 1
+            if HookEventToastFrame() or retries >= 20 then
+                ticker:Cancel()
+            end
         end)
-    end)
-
-    -- Initial positioning
-    EventToastManagerFrame:ClearAllPoints()
-    EventToastManagerFrame:SetPoint("TOP", toastHolder, "TOP")
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1183,22 +1182,48 @@ local bnetToastHolder = nil
 local bnetToastMover = nil
 local bnetToastHooked = false
 
+local function AnchorBNetToastToHolder()
+    if BNToastFrame and bnetToastHolder then
+        BNToastFrame:ClearAllPoints()
+        BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
+    end
+end
+
+local function HookBNetToastFrame()
+    if bnetToastHooked then return end
+    if not BNToastFrame then return false end
+
+    -- Hook SetPoint directly — this catches ALL repositioning regardless of which
+    -- Blizzard function triggers it (UpdateAnchor, AlertFrame, or direct calls).
+    -- Use a guard flag to prevent infinite recursion from our own SetPoint calls.
+    local redirecting = false
+    hooksecurefunc(BNToastFrame, "SetPoint", function()
+        if redirecting or not bnetToastHolder then return end
+        -- TAINT SAFETY: Defer to break taint chain from secure context
+        C_Timer.After(0, function()
+            if not bnetToastHolder then return end
+            redirecting = true
+            AnchorBNetToastToHolder()
+            redirecting = false
+        end)
+    end)
+
+    bnetToastHooked = true
+    AnchorBNetToastToHolder()
+    return true
+end
+
 local function CreateBNetToastMover()
     local db = GetAlertSettings()
     if not db.enabled then return end
-    if not BNToastFrame then return end
 
+    -- Always create the holder frame so frameAnchoring can position it,
+    -- even if BNToastFrame doesn't exist yet
     if not bnetToastHolder then
         bnetToastHolder = CreateFrame("Frame", "QUI_BNetToastHolder", UIParent)
         bnetToastHolder:SetSize(300, 50)
-
-        local pos = db.bnetToastPosition
-        if pos and pos.point then
-            bnetToastHolder:SetPoint(pos.point, UIParent, pos.relPoint or "TOPRIGHT", pos.x or -200, pos.y or -80)
-        else
-            -- Default: let Blizzard handle positioning until user moves it
-            bnetToastHolder:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -200, -80)
-        end
+        -- Default position; ApplyAllFrameAnchors overrides from frameAnchoring DB
+        bnetToastHolder:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -200, -80)
         bnetToastHolder:SetMovable(true)
         bnetToastHolder:SetClampedToScreen(true)
 
@@ -1232,50 +1257,20 @@ local function CreateBNetToastMover()
 
         bnetToastMover:SetScript("OnDragStop", function(self)
             bnetToastHolder:StopMovingOrSizing()
-            local point, _, relPoint, x, y = QUICore:SnapFramePosition(bnetToastHolder)
-            if point then
-                local alertDB = GetAlertSettings()
-                alertDB.bnetToastPosition = { point = point, relPoint = relPoint, x = x, y = y }
-            end
-            -- Reposition BNet toast frame to follow holder
-            if BNToastFrame then
-                BNToastFrame:ClearAllPoints()
-                BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
-            end
+            AnchorBNetToastToHolder()
         end)
     end
 
-    -- Hook BNToastFrame anchor updates to redirect positioning when user has set a custom position
-    -- Try global function first (legacy), then frame method (12.0+)
-    if not bnetToastHooked then
-        -- TAINT SAFETY: Defer to break taint chain from secure context.
-        local function BNetAnchorOverride()
-            C_Timer.After(0, function()
-                local alertDB = GetAlertSettings()
-                if alertDB and alertDB.bnetToastPosition then
-                    if BNToastFrame then
-                        BNToastFrame:ClearAllPoints()
-                        BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
-                    end
-                end
-            end)
-        end
-
-        if type(BNToastFrame_UpdateAnchor) == "function" then
-            hooksecurefunc("BNToastFrame_UpdateAnchor", BNetAnchorOverride)
-            bnetToastHooked = true
-        elseif BNToastFrame.UpdateAnchor then
-            hooksecurefunc(BNToastFrame, "UpdateAnchor", BNetAnchorOverride)
-            bnetToastHooked = true
-        end
-    end
-
-    -- Apply initial positioning if user has a saved position
-    if db.bnetToastPosition then
-        if BNToastFrame then
-            BNToastFrame:ClearAllPoints()
-            BNToastFrame:SetPoint("TOP", bnetToastHolder, "TOP")
-        end
+    -- Try to hook BNToastFrame now; if it doesn't exist yet, retry periodically
+    if not HookBNetToastFrame() then
+        local retries = 0
+        local ticker
+        ticker = C_Timer.NewTicker(0.5, function()
+            retries = retries + 1
+            if HookBNetToastFrame() or retries >= 20 then
+                ticker:Cancel()
+            end
+        end)
     end
 end
 
@@ -1373,6 +1368,15 @@ end
 
 -- Expose refresh function globally
 _G.QUI_RefreshAlertColors = RefreshAlertColors
+
+if ns.Registry then
+    ns.Registry:Register("skinAlerts", {
+        refresh = _G.QUI_RefreshAlertColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- MAIN INITIALIZATION

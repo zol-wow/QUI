@@ -12,8 +12,7 @@ local C = GUI.Colors
 -- Reference to main options file for helper functions
 local mainOptions = ns.QUI_Options or {}
 local QUICore = ns.Addon
-
-local function SafeGetPixelSize(frame)
+local SafeGetPixelSize = (ns.QUI_Options or {}).SafeGetPixelSize or function(frame)
     local core = ns.Addon
     return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
 end
@@ -224,110 +223,7 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         positioningLabel:SetJustifyH("LEFT")
         y = y - 20
 
-        -- Anchor selection dropdown
-        local anchorOptions = {
-            {value = "none", text = "None"}
-        }
-        table.insert(anchorOptions, {value = "unitframe", text = "Unit Frame"})
-        if unitKey == "player" then
-            table.insert(anchorOptions, {value = "essential", text = "Essential Cooldowns"})
-            table.insert(anchorOptions, {value = "utility", text = "Utility Cooldowns"})
-        end
-        
-        -- Initialize anchor if not set
-        if not castDB.anchor then
-            castDB.anchor = "none"
-        end
-        
-        -- Create slider references first (needed for UpdateCastbarSliders)
-        local castWidthSlider, castWidthAdjSlider, castHeightSlider, castOffsetXSlider, castOffsetYSlider, anchorDropdown
-        
-        -- Helper to update all sliders and anchor label (defined early so it can be used in callbacks)
-        local function UpdateCastbarSliders()
-            if castWidthSlider and castWidthSlider.SetValue then
-                castWidthSlider.SetValue(castDB.width or 250)
-            end
-            if castHeightSlider and castHeightSlider.SetValue then
-                castHeightSlider.SetValue(castDB.height or 16)
-            end
-            if castOffsetXSlider and castOffsetXSlider.SetValue then
-                castOffsetXSlider.SetValue(castDB.offsetX or 0)
-            end
-            if castOffsetYSlider and castOffsetYSlider.SetValue then
-                castOffsetYSlider.SetValue(castDB.offsetY or 0)
-            end
-
-            -- Update dropdown selection
-            if anchorDropdown and anchorDropdown.SetValue then
-                anchorDropdown.SetValue(castDB.anchor or "none", true)
-            end
-            
-            -- Disable width slider when auto-resize anchor is set (width controlled by anchors)
-            -- Only enable width slider when anchor is "none" (manual positioning)
-            if castWidthSlider then
-                if castDB.anchor == "none" then
-                    castWidthSlider:SetEnabled(true)
-                else
-                    castWidthSlider:SetEnabled(false)
-                end
-            end
-
-            -- Width Adjustment slider is the opposite: enabled when locked to a frame
-            if castWidthAdjSlider then
-                local isLocked = (castDB.anchor == "essential" or castDB.anchor == "utility" or castDB.anchor == "unitframe")
-                castWidthAdjSlider:SetEnabled(isLocked)
-            end
-            
-            -- Enable X/Y offset sliders for all anchor modes
-            -- "none" mode: offset from screen center (absolute positioning)
-            -- locked modes: offset from anchor (relative positioning)
-            if castOffsetXSlider and castOffsetYSlider then
-                castOffsetXSlider:SetEnabled(true)
-                castOffsetYSlider:SetEnabled(true)
-            end
-        end
-        
-        -- Track previous anchor to swap offsets when mode changes
-        local prevAnchor = castDB.anchor or "none"
-
-        anchorDropdown = GUI:CreateFormDropdown(tabContent, "Autoresize + Lock To", anchorOptions, "anchor", castDB, function()
-            -- Clear all lock flags when anchor changes
-            castDB.lockedToFrame = false
-            castDB.lockedToEssential = false
-            castDB.lockedToUtility = false
-            -- Clear width to allow anchors to control sizing (only for essential/utility)
-            if castDB.anchor == "essential" or castDB.anchor == "utility" then
-                castDB.width = 0
-            end
-
-            -- Swap offsets between free (none) and locked modes
-            local wasNone = (prevAnchor == "none")
-            local isNone = (castDB.anchor == "none")
-
-            if wasNone and not isNone then
-                -- Switching FROM none TO locked: save free offsets, load locked offsets
-                castDB.freeOffsetX = castDB.offsetX or 0
-                castDB.freeOffsetY = castDB.offsetY or 0
-                castDB.offsetX = castDB.lockedOffsetX or 0
-                castDB.offsetY = castDB.lockedOffsetY or -25
-            elseif not wasNone and isNone then
-                -- Switching FROM locked TO none: save locked offsets, load free offsets
-                castDB.lockedOffsetX = castDB.offsetX or 0
-                castDB.lockedOffsetY = castDB.offsetY or 0
-                castDB.offsetX = castDB.freeOffsetX or 0
-                castDB.offsetY = castDB.freeOffsetY or 0
-            end
-            -- If locked→locked (e.g. essential→utility), keep current offsets
-
-            -- Update previous anchor for next change
-            prevAnchor = castDB.anchor
-
-            UpdateCastbarSliders()
-            RefreshUnit()
-        end)
-        anchorDropdown:SetPoint("TOPLEFT", PAD, y)
-        anchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+        -- Castbar positioning moved to Edit Mode.
 
         -- Castbar preview row (form style)
         local castPreviewContainer = CreateFrame("Frame", nil, tabContent)
@@ -384,66 +280,6 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         end)
         y = y - FORM_ROW
 
-        -- Quick Snap buttons row (one-time snap)
-        local snapContainer = CreateFrame("Frame", nil, tabContent)
-        snapContainer:SetHeight(FORM_ROW)
-        snapContainer:SetPoint("TOPLEFT", PAD, y)
-        snapContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-
-        local snapLabel = snapContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        snapLabel:SetPoint("LEFT", 0, 0)
-        snapLabel:SetText("Quick Snap")
-        snapLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-        -- Snap to Frame button
-        local snapFrameBtn = CreateFrame("Button", nil, snapContainer, "BackdropTemplate")
-        snapFrameBtn:SetSize(100, 24)
-        snapFrameBtn:SetPoint("LEFT", snapContainer, "LEFT", 180, 0)
-        local pxSnapFrame = SafeGetPixelSize(snapFrameBtn)
-        snapFrameBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxSnapFrame})
-        snapFrameBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-        snapFrameBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
-        local snapFrameBtnText = snapFrameBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        snapFrameBtnText:SetPoint("CENTER")
-        snapFrameBtnText:SetText("To Frame")
-        snapFrameBtnText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-        snapFrameBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
-        snapFrameBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end)
-
-        local snapEssentialBtn, snapUtilityBtn
-        if unitKey == "player" then
-            -- Snap to Essential button
-            snapEssentialBtn = CreateFrame("Button", nil, snapContainer, "BackdropTemplate")
-            snapEssentialBtn:SetSize(100, 24)
-            snapEssentialBtn:SetPoint("LEFT", snapFrameBtn, "RIGHT", 8, 0)
-            local pxSnapEss = SafeGetPixelSize(snapEssentialBtn)
-            snapEssentialBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxSnapEss})
-            snapEssentialBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-            snapEssentialBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
-            local snapEssentialBtnText = snapEssentialBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            snapEssentialBtnText:SetPoint("CENTER")
-            snapEssentialBtnText:SetText("To Essentials")
-            snapEssentialBtnText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-            snapEssentialBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
-            snapEssentialBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end)
-
-            -- Snap to Utility button
-            snapUtilityBtn = CreateFrame("Button", nil, snapContainer, "BackdropTemplate")
-            snapUtilityBtn:SetSize(100, 24)
-            snapUtilityBtn:SetPoint("LEFT", snapEssentialBtn, "RIGHT", 8, 0)
-            local pxSnapUtil = SafeGetPixelSize(snapUtilityBtn)
-            snapUtilityBtn:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = pxSnapUtil})
-            snapUtilityBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-            snapUtilityBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
-            local snapUtilityBtnText = snapUtilityBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            snapUtilityBtnText:SetPoint("CENTER")
-            snapUtilityBtnText:SetText("To Utility")
-            snapUtilityBtnText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-            snapUtilityBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
-            snapUtilityBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end)
-        end
-        y = y - FORM_ROW
-
         -- Copy Settings From dropdown
         local castbarCopyOptions = {}
         local castbarUnits = {
@@ -469,13 +305,7 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         -- Helper to copy castbar settings from one unit to another
         local function CopyCastbarSettings(sourceDB, targetDB, sourceUnitKey, targetUnitKey)
             if not sourceDB or not targetDB then return end
-            -- Note: maxLength is intentionally excluded — different units have different
-            -- space constraints (e.g., target defaults to 12, player defaults to 0).
-            -- Copying maxLength between units causes unexpected spell name truncation.
-            -- Note: "anchor" is intentionally excluded — it is unit-context-specific
-            -- (e.g., player defaults to "none", target defaults to "unitframe").
-            -- Copying it between units causes the castbar to attach to the wrong parent.
-            local keys = {"width", "height", "offsetX", "offsetY", "fontSize", "borderSize", "texture", "showIcon", "enabled", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "channelFillForward", "empoweredStageColors", "empoweredFillColors"}
+            local keys = {"width", "height", "fontSize", "borderSize", "texture", "showIcon", "enabled", "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY", "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText", "useClassColor", "channelFillForward", "empoweredStageColors", "empoweredFillColors"}
             local includesUnsupportedTickUnit = (sourceUnitKey == "boss") or (targetUnitKey == "boss")
                 or (sourceUnitKey == "pet") or (targetUnitKey == "pet")
             if not includesUnsupportedTickUnit then
@@ -558,66 +388,12 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         castCopyDropdown:SetPoint("RIGHT", castCopyApplyBtn, "LEFT", -8, 0)
         y = y - FORM_ROW
 
-        -- Quick Snap button click handlers (one-time snap, no lock)
-        snapFrameBtn:SetScript("OnClick", function()
-            castDB.anchor = "unitframe"
-            castDB.offsetX = 0
-            castDB.offsetY = 0
-            castDB.width = unitDB.width or 250
-
-            UpdateCastbarSliders()
-            RefreshUnit()
-        end)
-
-        if snapEssentialBtn then
-            snapEssentialBtn:SetScript("OnClick", function()
-                local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
-                if viewer and viewer:IsShown() then
-                    castDB.anchor = "essential"
-                    castDB.offsetX = 0
-                    castDB.offsetY = 0
-                    castDB.width = 0  -- Clear width to allow dual anchors to control sizing
-
-                    UpdateCastbarSliders()
-                    RefreshUnit()
-                else
-                    print("|cFF56D1FFQUI:|r Essential Cooldowns viewer not visible.")
-                end
-            end)
-        end
-
-        if snapUtilityBtn then
-            snapUtilityBtn:SetScript("OnClick", function()
-                local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
-                if viewer and viewer:IsShown() then
-                    castDB.anchor = "utility"
-                    castDB.offsetX = 0
-                    castDB.offsetY = 0
-                    castDB.width = 0  -- Clear width to allow dual anchors to control sizing
-
-                    UpdateCastbarSliders()
-                    RefreshUnit()
-                else
-                    print("|cFF56D1FFQUI:|r Utility Cooldowns viewer not visible.")
-                end
-            end)
-        end
-
-        castWidthSlider = GUI:CreateFormSlider(tabContent, "Width", 50, 2000, 1, "width", castDB, RefreshUnit)
+        local castWidthSlider = GUI:CreateFormSlider(tabContent, "Width", 50, 2000, 1, "width", castDB, RefreshUnit)
         castWidthSlider:SetPoint("TOPLEFT", PAD, y)
         castWidthSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        -- Width Adjustment On Lock: fine-tune width when locked to anchor (enabled only when locked)
-        castWidthAdjSlider = GUI:CreateFormSlider(tabContent, "Width Adjustment On Lock", -500, 500, 1, "widthAdjustment", castDB, RefreshUnit)
-        castWidthAdjSlider:SetPoint("TOPLEFT", PAD, y)
-        castWidthAdjSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-        -- Set initial enabled state (will be updated by UpdateCastbarSliders)
-        local isLocked = (castDB.anchor == "essential" or castDB.anchor == "utility" or castDB.anchor == "unitframe")
-        castWidthAdjSlider:SetEnabled(isLocked)
-
-        castHeightSlider = GUI:CreateFormSlider(tabContent, "Bar Height", 4, 60, 1, "height", castDB, RefreshUnit)
+        local castHeightSlider = GUI:CreateFormSlider(tabContent, "Bar Height", 4, 60, 1, "height", castDB, RefreshUnit)
         castHeightSlider:SetPoint("TOPLEFT", PAD, y)
         castHeightSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -625,16 +401,6 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
         local iconSizeSlider = GUI:CreateFormSlider(tabContent, "Icon Size", 8, 80, 1, "iconSize", castDB, RefreshUnit)
         iconSizeSlider:SetPoint("TOPLEFT", PAD, y)
         iconSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        castOffsetXSlider = GUI:CreateFormSlider(tabContent, "X Offset", -3000, 3000, 1, "offsetX", castDB, RefreshUnit)
-        castOffsetXSlider:SetPoint("TOPLEFT", PAD, y)
-        castOffsetXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        castOffsetYSlider = GUI:CreateFormSlider(tabContent, "Y Offset", -3000, 3000, 1, "offsetY", castDB, RefreshUnit)
-        castOffsetYSlider:SetPoint("TOPLEFT", PAD, y)
-        castOffsetYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
         -- Channel fill direction toggle
@@ -947,9 +713,6 @@ local function BuildCastbarOptions(tabContent, unitKey, y, PAD, FORM_ROW, Refres
 
             y = y - FORM_ROW
         end
-
-        -- Initialize UI state
-        UpdateCastbarSliders()
 
     end
     

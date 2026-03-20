@@ -57,6 +57,10 @@ The quest and objective tracker can be skinned with customizable height, font si
 
 The vehicle/override action bar that appears during certain encounters and quests can be skinned to match your action bar style.
 
+### Auction House
+
+The Auction House frame can be skinned with QUI's dark theme for visual consistency.
+
 ### Instance Frames
 
 The PVE finder, Dungeon finder, and PVP frames can be skinned for visual consistency when queuing for content.

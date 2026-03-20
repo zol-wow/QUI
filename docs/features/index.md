@@ -11,13 +11,13 @@ QUI provides a comprehensive set of UI modules that can be individually enabled 
 
 ## Feature Areas
 
-- [Cooldown Manager]({% link features/cooldown-manager.md %}) -- QUI's flagship feature. Displays ability cooldowns as configurable icon rows near your character with glow effects, swipe overlays, range indicators, and full per-bar customization.
+- [Cooldown Manager]({% link features/cooldown-manager.md %}) -- QUI's flagship feature. Displays ability cooldowns as configurable icon containers near your character with glow effects, swipe overlays, range indicators, Composer for per-spell customization, and flexible container types (cooldown, aura, aura bar).
 
 - [Unit Frames]({% link features/unit-frames.md %}) -- Replaces Blizzard's unit frames for Player, Target, Focus, Pet, Boss, and more. Includes castbars, auras, absorb shields, heal prediction, portraits, and extensive color and layout options.
 
-- [Group Frames]({% link features/group-frames.md %}) -- Opt-in replacement for Blizzard party and raid frames. Auto-scaling layouts, click-casting, dispel overlays, custom aura indicators, spotlight pinning, and healer-focused features.
+- [Group Frames]({% link features/group-frames.md %}) -- Opt-in replacement for Blizzard party and raid frames. Separate party/raid profiles, auto-scaling layouts, click-casting with scroll wheel and ping support, Composer, dispel overlays, custom aura indicators, spotlight pinning, and healer-focused features.
 
-- [Action Bars]({% link features/action-bars.md %}) -- Skins and enhances all 8 standard action bars plus pet, stance, and special bars. Mouseover fade, per-bar style overrides, range and usability indicators, and button spacing controls.
+- [Action Bars]({% link features/action-bars.md %}) -- Native action bar engine enhancing all 8 standard action bars plus pet, stance, and special bars. Mouseover fade, per-bar style overrides, range and usability indicators, and button spacing controls.
 
 - [Chat]({% link features/chat.md %}) -- Enhances the default chat window with a glass effect, clickable URLs, message fade, timestamps, copy button, and edit box styling.
 
@@ -41,7 +41,7 @@ QUI provides a comprehensive set of UI modules that can be individually enabled 
 
 - [HUD Visibility]({% link features/hud-visibility.md %}) -- Visibility rule system for CDM, Unit Frames, and Custom Trackers. Show/hide based on combat, target, group, mounting, flying, and more.
 
-- [Frame Layout]({% link features/frame-layout.md %}) -- Anchoring system for positioning QUI frames relative to each other, HUD layering priorities, and DandersFrames/BigWigs integration.
+- [Frame Layout]({% link features/frame-layout.md %}) -- Layout Mode with edge-docked toolbar for positioning frames, anchoring system for relative positioning, HUD layering priorities, and DandersFrames/BigWigs/AbilityTimeline integration.
 
 - [Keybinds & Integrations]({% link features/keybinds-integrations.md %}) -- LibKeyBound keybind mode, keybind display on CDM and action bars, and third-party addon integrations (DandersFrames, BigWigs, Plater, LibDualSpec).
 

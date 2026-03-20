@@ -24,19 +24,7 @@ local DEFAULT_SETTINGS = {
 local FALLBACK_FONT_PATH = "Fonts\\FRIZQT__.TTF"
 local FALLBACK_FONT_OUTLINE = "OUTLINE"
 
-local function SafeToString(value, fallback)
-    if Helpers and Helpers.SafeToString then
-        return Helpers.SafeToString(value, fallback or "")
-    end
-    if type(value) == "string" then
-        return value
-    end
-    local ok, text = pcall(tostring, value)
-    if ok and type(text) == "string" then
-        return text
-    end
-    return fallback or ""
-end
+local SafeToString = Helpers.SafeToString
 
 -- Class interrupt spells with base cooldown durations (in seconds).
 -- Used for internal CD tracking via UNIT_SPELLCAST_SUCCEEDED instead of
@@ -104,15 +92,7 @@ local function GetSettings()
     end
 
     local settings = general.focusCastAlert
-    for key, value in pairs(DEFAULT_SETTINGS) do
-        if settings[key] == nil then
-            if type(value) == "table" then
-                settings[key] = CopyColor(value)
-            else
-                settings[key] = value
-            end
-        end
-    end
+    Helpers.EnsureDefaults(settings, DEFAULT_SETTINGS)
 
     if type(settings.textColor) ~= "table" then
         settings.textColor = CopyColor(DEFAULT_SETTINGS.textColor)
@@ -138,7 +118,7 @@ local function PositionAlertFrame()
     end
 
     -- Skip if anchoring system has overridden this frame
-    if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(state.frame) then return end
+    if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("focusCastAlert") then return end
 
     local settings = GetSettings()
     local offsetX = (settings and settings.offsetX) or DEFAULT_SETTINGS.offsetX
@@ -621,3 +601,12 @@ end)
 
 _G.QUI_RefreshFocusCastAlert = RefreshFocusCastAlert
 _G.QUI_ToggleFocusCastAlertPreview = TogglePreview
+
+if ns.Registry then
+    ns.Registry:Register("focusCastAlert", {
+        refresh = _G.QUI_RefreshFocusCastAlert,
+        priority = 30,
+        group = "qol",
+        importCategories = { "qol" },
+    })
+end

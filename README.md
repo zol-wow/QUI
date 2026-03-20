@@ -30,11 +30,18 @@ Since then I added a few features and fixes important to me, and I will continue
 
 ### Features (Inherited + Improvements)
 
-- Clean, modern UI layout
+- Clean, modern UI layout with Layout Mode for visual frame positioning
 - Strong performance focus (Mythic+, Raiding)
 - Pixel-perfect scaling
-- Customizable bars, frames, cooldowns, etc.
-- Ongoing fixes for Midnight patch compatibility
+- Cooldown Manager with flexible container system (cooldown, aura, aura bar) and Composer
+- Custom unit frames (Player, Target, Focus, Boss, Pet, ToT) with castbars and heal prediction
+- Group frames (party/raid) with click-casting, dispel overlays, and separate party/raid profiles
+- Native action bar engine with mouseover fade, per-bar overrides, and button spacing
+- Skinning system for Blizzard frames (game menu, loot, tooltips, objective tracker, and more)
+- Minimap customization with button drawer, clock, coordinates, and data panels
+- Dungeon features: custom M+ timer, party keystones, battle res counter, combat timer
+- Quality of life: auto-sell junk, auto-repair, consumable checks, popup blocking, and more
+- Ongoing fixes for Midnight (12.0+) patch compatibility
 
 ### Installation
 

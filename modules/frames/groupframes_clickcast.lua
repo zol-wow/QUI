@@ -19,9 +19,9 @@ local QUI_GFCC = {}
 ns.QUI_GroupFrameClickCast = QUI_GFCC
 
 -- Track registered frames
-local registeredFrames = setmetatable({}, { __mode = "k" })
-local hookedFrames = setmetatable({}, { __mode = "k" }) -- Tracks frames with OnEnter/OnLeave hooks (permanent)
-local secureWrappedFrames = setmetatable({}, { __mode = "k" }) -- Tracks frames with secure WrapScript (permanent)
+local registeredFrames = Helpers.CreateStateTable()
+local hookedFrames = Helpers.CreateStateTable() -- Tracks frames with OnEnter/OnLeave hooks (permanent)
+local secureWrappedFrames = Helpers.CreateStateTable() -- Tracks frames with secure WrapScript (permanent)
 local activeBindings = {} -- Resolved mouse bindings for current spec
 local keyboardBindings = {} -- Resolved keyboard bindings for current spec
 local isEnabled = false
@@ -561,9 +561,6 @@ function QUI_GFCC:RegisterFrame(frame)
     SetupFrameClickCast(frame)
 end
 
-function QUI_GFCC:UnregisterFrame(frame)
-    ClearFrameClickCast(frame)
-end
 
 function QUI_GFCC:RegisterAllFrames()
     if not isEnabled then return end
@@ -641,13 +638,6 @@ function QUI_GFCC:IsEnabled()
     return isEnabled
 end
 
-function QUI_GFCC:GetActiveBindings()
-    return activeBindings
-end
-
-function QUI_GFCC:GetKeyboardBindings()
-    return keyboardBindings
-end
 
 function QUI_GFCC:GetEditableBindings()
     local db = GetDB()

@@ -1,6 +1,12 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
-    <Script file="nudge.lua"/>
+    <Script file="layoutmode.lua"/>
+    <Script file="layoutmode_ui.lua"/>
+    <Script file="layoutmode_settings.lua"/>
+    <Script file="layoutmode_utils.lua"/>
+    <Script file="layoutmode_providers.lua"/>
+    <Script file="layoutmode_providers_groupframes.lua"/>
+    <Script file="layoutmode_composer.lua"/>
     <Script file="keybinds.lua"/>
     <Script file="anchoring.lua"/>
     <Script file="bigwigs.lua"/>

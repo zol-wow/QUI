@@ -17,7 +17,7 @@ The minimap module goes well beyond simple border skinning. It lets you choose b
 
 The minimap module is enabled by default. To configure it:
 
-- Open `/qui` and navigate to the **UI** tab, then select **Minimap**.
+- Enter Layout Mode with `/qui layout` and access Minimap settings through the toolbar or drawer. Minimap settings have been moved to Layout Mode from the main options panel.
 
 ## Key Features
 
@@ -32,7 +32,7 @@ The minimap module is enabled by default. To configure it:
 ### Button Management
 
 - **Hide addon buttons** -- Cleans up the minimap border by hiding addon buttons, with an option to show them on mouseover.
-- **Button drawer** -- Collects addon minimap buttons into an organized drawer panel that expands on demand. Configurable anchor point, button size, spacing, column count, and auto-hide delay after mouse leaves.
+- **Button drawer** -- Collects addon minimap buttons into an organized drawer panel that expands on demand. Configurable anchor point, button size, spacing, column count, auto-hide delay after mouse leaves, and option to open on mouseover. Supports a configurable toggle button size and a second icon option for the drawer toggle.
 
 ### Blizzard Element Visibility
 
@@ -71,7 +71,9 @@ The LFG queue status eye can be repositioned to a minimap corner for a cleaner l
 ### Other Controls
 
 - **Auto zoom out** -- Automatically zooms the minimap back out after 10 seconds when you zoom in.
-- **Middle click menu** -- Access a quick menu via middle-clicking the minimap.
+- **Middle click menu** -- Access a quick menu via middle-clicking the minimap. Middle-click overlay prevents ping taint.
+- **Crafting order indicator** -- Shows a notification indicator on the minimap when crafting orders are available.
+- **Custom data panels** -- Configurable data panels that can be locked in place. Includes system memory stats datatext and currency ordering options.
 - **Hide micro menu** -- Remove the micro menu bar from the UI.
 - **Hide bag bar** -- Remove the bag bar from the UI.
 

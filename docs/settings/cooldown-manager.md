@@ -7,7 +7,7 @@ nav_order: 2
 
 # Cooldown Manager Settings
 
-The **Cooldown Manager** (CDM) tab configures the core HUD system that displays your abilities, buffs, and tracked resources. Settings are stored under `QUI.db.profile.ncdm` for bar configuration, with visibility, glow, and swipe settings at the profile root level.
+The **Cooldown Manager** (CDM) configures the core HUD system that displays your abilities, buffs, and tracked resources. CDM settings are accessed through **Layout Mode** (`/qui layout`) or the `/cdm` shortcut -- they have been moved out of the main options panel. Settings are stored under `QUI.db.profile.ncdm` for container configuration, with visibility, glow, and swipe settings at the profile root level.
 
 ---
 

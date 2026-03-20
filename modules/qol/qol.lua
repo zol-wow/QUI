@@ -6,9 +6,7 @@ addonName = addonName or "QUI"
 -- QOL AUTOMATION FEATURES
 ---------------------------------------------------------------------------
 
-local function GetSettings()
-    return Helpers.GetModuleDB("general")
-end
+local GetSettings = Helpers.CreateDBGetter("general")
 
 local qolFrame = CreateFrame("Frame")
 
@@ -290,6 +288,15 @@ local function RefreshPopupBlocker()
 end
 
 _G.QUI_RefreshPopupBlocker = RefreshPopupBlocker
+
+if ns.Registry then
+    ns.Registry:Register("popupBlocker", {
+        refresh = _G.QUI_RefreshPopupBlocker,
+        priority = 30,
+        group = "qol",
+        importCategories = { "qol" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- MERCHANT: SELL JUNK + AUTO REPAIR
@@ -688,6 +695,36 @@ local function SetupAuctionHouseFilter()
 end
 
 ---------------------------------------------------------------------------
+-- CRAFTING ORDERS EXPANSION FILTER
+---------------------------------------------------------------------------
+
+local coHooked = false
+
+local function SetupCraftingOrderFilter()
+    if coHooked then return end
+    local frame = ProfessionsCustomerOrdersFrame
+    if not frame then return end
+
+    local browseOrders = frame.BrowseOrders
+    if not browseOrders or not browseOrders.SearchBar then return end
+
+    coHooked = true
+
+    local filterDropdown = browseOrders.SearchBar.FilterDropdown
+    if not filterDropdown then return end
+
+    local function applyFilter()
+        local settings = GetSettings()
+        if not settings or not settings.craftingOrderExpansionFilter then return end
+        if not filterDropdown.filters then return end
+        filterDropdown.filters[Enum.AuctionHouseFilter.CurrentExpansionOnly] = true
+    end
+
+    browseOrders:HookScript("OnShow", function() C_Timer.After(0, applyFilter) end)
+    C_Timer.After(0, applyFilter)
+end
+
+---------------------------------------------------------------------------
 -- EVENT REGISTRATION
 ---------------------------------------------------------------------------
 
@@ -742,6 +779,9 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
         if loadedAddon == addonName then
             C_Timer.After(0, RefreshPopupBlocker)
             return
+        end
+        if loadedAddon == "Blizzard_ProfessionsCustomerOrders" then
+            C_Timer.After(0.1, SetupCraftingOrderFilter)
         end
         if type(loadedAddon) == "string" and string.find(loadedAddon, "Blizzard_", 1, true) == 1 then
             C_Timer.After(0, RefreshPopupBlocker)

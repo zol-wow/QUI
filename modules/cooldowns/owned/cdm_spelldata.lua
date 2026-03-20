@@ -48,6 +48,121 @@ local initialized = false
 local lastSpellFingerprints = { essential = "", utility = "", buff = "" }
 local buffChildrenHooked = false  -- one-time hook for buff viewer aura events
 
+-- DurationObject cache: Blizzard child → captured DurationObject/start/duration.
+-- Populated by hooks on viewer children's Cooldown frames (SetCooldownFromDurationObject,
+-- SetCooldown, Clear).  Consumed by cdm_icons.lua UpdateIconCooldown via entry._blizzChild.
+-- Weak-keyed so recycled Blizzard frames don't leak.
+local _durObjCache = Helpers.CreateStateTable()   -- [blizzChild] = durObj
+local _rawStartCache = Helpers.CreateStateTable()  -- [blizzChild] = startTime
+local _rawDurCache = Helpers.CreateStateTable()    -- [blizzChild] = duration
+local _spellIDToChild = {}  -- [spellID] = { child1, child2, ... } (built OOC during scan)
+
+--- Check if a Blizzard viewer child matches a given spell ID.
+--- Tries cooldownInfo.overrideSpellID, cooldownInfo.spellID (may be secret),
+--- and cooldownID (numeric, typically not secret).
+local function ChildMatchesSpellID(child, spellID)
+    local ci = child.cooldownInfo
+    if ci then
+        local sid = ci.overrideSpellID or ci.spellID
+        local safeSid = Helpers.SafeValue(sid, nil)
+        if safeSid and safeSid == spellID then return true end
+    end
+    -- cooldownID is a direct property, not behind cooldownInfo — often readable
+    local cdID = child.cooldownID
+    if cdID and cdID == spellID then return true end
+    return false
+end
+
+--- Look up cached DurationObject by spell ID.
+--- Uses the OOC-built _spellIDToChild map. Prefers children with a
+--- DurationObject (aura viewers) over those with only raw start/dur
+--- (cooldown viewers), so aura bars get aura duration, not recharge CD.
+--- Returns durObj, rawStart, rawDur (any or all may be nil).
+function CDMSpellData:GetCachedDurObj(spellID)
+    if not spellID then return nil, nil, nil end
+
+    local children = _spellIDToChild[spellID]
+    if children then
+        -- First pass: prefer children with a DurationObject (aura duration)
+        for _, child in ipairs(children) do
+            local durObj = _durObjCache[child]
+            if durObj then
+                return durObj, _rawStartCache[child], _rawDurCache[child]
+            end
+        end
+        -- Second pass: fall back to raw start/dur (cooldown)
+        for _, child in ipairs(children) do
+            local start = _rawStartCache[child]
+            if start then
+                return nil, start, _rawDurCache[child]
+            end
+        end
+    end
+
+    -- Slow path: iterate caches (handles unmapped children)
+    for ch, durObj in pairs(_durObjCache) do
+        if ChildMatchesSpellID(ch, spellID) then
+            return durObj, _rawStartCache[ch], _rawDurCache[ch]
+        end
+    end
+    for ch, start in pairs(_rawStartCache) do
+        if ChildMatchesSpellID(ch, spellID) then
+            return nil, start, _rawDurCache[ch]
+        end
+    end
+    return nil, nil, nil
+end
+
+--- Look up cached DurationObject by spell ID, restricted to buff viewer
+--- children only.  Cooldown viewer children have spell cooldown timers
+--- (30-45s) which would overwrite aura duration (5-10s) on buff icons/bars.
+--- @param spellID number
+--- @return table|nil durObj, number|nil rawStart, number|nil rawDur
+function CDMSpellData:GetCachedAuraDurObj(spellID)
+    if not spellID then return nil, nil, nil end
+    local buffViewer = _G["BuffIconCooldownViewer"]
+    local buffBarViewer = _G["BuffBarCooldownViewer"]
+    if not buffViewer and not buffBarViewer then return nil, nil, nil end
+
+    local function isBuffChild(ch)
+        local vf = ch.viewerFrame
+        return vf and (vf == buffViewer or vf == buffBarViewer)
+    end
+
+    local children = _spellIDToChild[spellID]
+    if children then
+        for _, child in ipairs(children) do
+            if isBuffChild(child) then
+                local durObj = _durObjCache[child]
+                if durObj then
+                    return durObj, _rawStartCache[child], _rawDurCache[child]
+                end
+            end
+        end
+        for _, child in ipairs(children) do
+            if isBuffChild(child) then
+                local start = _rawStartCache[child]
+                if start then
+                    return nil, start, _rawDurCache[child]
+                end
+            end
+        end
+    end
+
+    -- Slow path: iterate caches filtered to buff children
+    for ch, durObj in pairs(_durObjCache) do
+        if isBuffChild(ch) and ChildMatchesSpellID(ch, spellID) then
+            return durObj, _rawStartCache[ch], _rawDurCache[ch]
+        end
+    end
+    for ch, start in pairs(_rawStartCache) do
+        if isBuffChild(ch) and ChildMatchesSpellID(ch, spellID) then
+            return nil, start, _rawDurCache[ch]
+        end
+    end
+    return nil, nil, nil
+end
+
 -- Fingerprint a spell list by ordered spellIDs so reordering is detected.
 local function ComputeSpellFingerprint(list)
     if type(list) ~= "table" or #list == 0 then return "" end
@@ -61,7 +176,7 @@ end
 -- TAINT SAFETY: Track hook state in a weak-keyed table instead of writing
 -- _quiBuffHooked directly to Blizzard frames. Direct property writes taint
 -- the frame, causing isActive to become a "secret boolean tainted by QUI".
-local hookedBuffChildren = setmetatable({}, { __mode = "k" })
+local hookedBuffChildren = Helpers.CreateStateTable()
 
 -- BUG-012 (revised): The previous approach replaced viewer.RefreshTotemData
 -- with an addon function to pcall-suppress secret value errors.  But writing
@@ -208,8 +323,7 @@ end
 
 ---------------------------------------------------------------------------
 -- SCAN: Extract spell data from hidden Blizzard CDM icons
--- All three viewer types: read shown children for spell lists with
--- _blizzChild references. Buff children are reparented by cdm_containers.
+-- All three viewer types: read shown children for spell lists.
 ---------------------------------------------------------------------------
 local function ScanCooldownViewer(viewerType)
     local viewerName = VIEWER_NAMES[viewerType]
@@ -284,6 +398,64 @@ local function ScanCooldownViewer(viewerType)
                             viewerType = viewerType,
                             _blizzChild = child,
                         }
+                        -- Map spell IDs → Blizzard children for combat hook lookups.
+                        -- Map by info struct IDs, corrected IDs, and aura-specific IDs
+                        -- so tracked spells can find their Blizzard child in combat.
+                        local mappedIDs = { [spellID] = true }
+                        if not _spellIDToChild[spellID] then _spellIDToChild[spellID] = {} end
+                        _spellIDToChild[spellID][#_spellIDToChild[spellID] + 1] = child
+                        if overrideSpellID and overrideSpellID ~= spellID then
+                            mappedIDs[overrideSpellID] = true
+                            if not _spellIDToChild[overrideSpellID] then _spellIDToChild[overrideSpellID] = {} end
+                            _spellIDToChild[overrideSpellID][#_spellIDToChild[overrideSpellID] + 1] = child
+                        end
+                        -- Also map by corrected aura ID (from _cdIDToCorrectSID)
+                        -- and GetAuraSpellID — these are the IDs tracked spells use.
+                        -- Note: _cdIDToCorrectSID may not exist yet on first scan (forward-declared).
+                        local cdID = child.cooldownID or (child.cooldownInfo and child.cooldownInfo.cooldownID)
+                        if cdID and _cdIDToCorrectSID and _cdIDToCorrectSID[cdID] and not mappedIDs[_cdIDToCorrectSID[cdID]] then
+                            local correctSid = _cdIDToCorrectSID[cdID]
+                            mappedIDs[correctSid] = true
+                            if not _spellIDToChild[correctSid] then _spellIDToChild[correctSid] = {} end
+                            _spellIDToChild[correctSid][#_spellIDToChild[correctSid] + 1] = child
+                        end
+                        if child.GetAuraSpellID then
+                            local aok, auraSid = pcall(child.GetAuraSpellID, child)
+                            if aok and auraSid then
+                                local safeAuraSid = Helpers.SafeValue(auraSid, nil)
+                                if safeAuraSid and safeAuraSid > 0 and not mappedIDs[safeAuraSid] then
+                                    mappedIDs[safeAuraSid] = true
+                                    if not _spellIDToChild[safeAuraSid] then _spellIDToChild[safeAuraSid] = {} end
+                                    _spellIDToChild[safeAuraSid][#_spellIDToChild[safeAuraSid] + 1] = child
+                                end
+                            end
+                        end
+                        if child.GetSpellID then
+                            local sok, frameSid = pcall(child.GetSpellID, child)
+                            if sok and frameSid then
+                                local safeFrameSid = Helpers.SafeValue(frameSid, nil)
+                                if safeFrameSid and safeFrameSid > 0 and not mappedIDs[safeFrameSid] then
+                                    mappedIDs[safeFrameSid] = true
+                                    if not _spellIDToChild[safeFrameSid] then _spellIDToChild[safeFrameSid] = {} end
+                                    _spellIDToChild[safeFrameSid][#_spellIDToChild[safeFrameSid] + 1] = child
+                                end
+                            end
+                        end
+                        -- Also map by linkedSpellIDs from cooldown info (e.g. Reaper's Mark
+                        -- ability ID 434765 linked to debuff ID 439843 via cdID 51696).
+                        if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+                            local iok, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                            if iok and info and info.linkedSpellIDs then
+                                for _, lsid in ipairs(info.linkedSpellIDs) do
+                                    local safeLsid = Helpers.SafeValue(lsid, nil)
+                                    if safeLsid and safeLsid > 0 and not mappedIDs[safeLsid] then
+                                        mappedIDs[safeLsid] = true
+                                        if not _spellIDToChild[safeLsid] then _spellIDToChild[safeLsid] = {} end
+                                        _spellIDToChild[safeLsid][#_spellIDToChild[safeLsid] + 1] = child
+                                    end
+                                end
+                            end
+                        end
                     end
                 end
             end
@@ -297,34 +469,6 @@ local function ScanCooldownViewer(viewerType)
     spellLists[viewerType] = list
 end
 
----------------------------------------------------------------------------
--- BUFF VIEWER: Legacy scan (no longer used — buff now routes through
--- ScanCooldownViewer like essential/utility). Kept for reference only.
----------------------------------------------------------------------------
-local function ScanBuffViewer()
-    local viewerName = VIEWER_NAMES["buff"]
-    local viewer = _G[viewerName]
-    if not viewer then return end
-
-    -- Count shown children for change detection
-    local container = viewer.viewerFrame or viewer
-    local sel = viewer.Selection
-    local numChildren = container:GetNumChildren()
-    local shownCount = 0
-
-    for i = 1, numChildren do
-        local child = select(i, container:GetChildren())
-        if child and child ~= sel then
-            local hasIcon = child.Icon or child.icon
-            if hasIcon and child:IsShown() and child.layoutIndex then
-                shownCount = shownCount + 1
-            end
-        end
-    end
-
-    -- Store count for change detection (used by ScanAll)
-    spellLists["buff"] = shownCount
-end
 
 ---------------------------------------------------------------------------
 -- HOOK BUFF VIEWER CHILDREN: Aura events trigger rescan + reparent
@@ -347,6 +491,80 @@ local function OnBuffAuraEvent()
     end)
 end
 
+--- Hook a single viewer child to capture DurationObjects.
+--- Hooks .Cooldown (icon viewers) and .Bar StatusBar (bar viewer).
+--- Called for children of ALL viewer types (essential, utility, buff, trackedBar).
+local function HookChildCooldown(child)
+    if not child then return end
+    local hookState = hookedBuffChildren[child]
+    if not hookState then
+        hookState = {}
+        hookedBuffChildren[child] = hookState
+    end
+    if hookState.cooldown then return end  -- already hooked
+    hookState.cooldown = true
+
+    -- Hook .Cooldown (CooldownFrame) — used by icon viewers
+    local cd = child.Cooldown
+    if cd then
+        if cd.SetCooldownFromDurationObject then
+            hooksecurefunc(cd, "SetCooldownFromDurationObject", function(_, durObj)
+                _durObjCache[child] = durObj
+            end)
+        end
+        if cd.SetCooldown then
+            hooksecurefunc(cd, "SetCooldown", function(_, start, dur)
+                _rawStartCache[child] = start
+                _rawDurCache[child] = dur
+            end)
+        end
+        if cd.Clear then
+            hooksecurefunc(cd, "Clear", function()
+                _durObjCache[child] = nil
+                _rawStartCache[child] = nil
+                _rawDurCache[child] = nil
+            end)
+        end
+    end
+
+    -- Hook .Bar (StatusBar) — used by BuffBarCooldownViewer children.
+    -- Blizzard may call SetTimerDuration on the StatusBar for aura-driven bars.
+    local bar = child.Bar
+    if bar then
+        if bar.SetTimerDuration then
+            hooksecurefunc(bar, "SetTimerDuration", function(_, durObj)
+                _durObjCache[child] = durObj
+            end)
+        end
+        if bar.SetMinMaxValues then
+            hooksecurefunc(bar, "SetMinMaxValues", function(_, minVal, maxVal)
+                -- maxVal is the duration — store as raw dur for fallback
+                _rawDurCache[child] = maxVal
+            end)
+        end
+        if bar.SetValue then
+            hooksecurefunc(bar, "SetValue", function(_, val)
+                _rawStartCache[child] = val  -- remaining value, not start time
+            end)
+        end
+    end
+end
+
+--- Hook Cooldown frames on ALL children of a given viewer type.
+local function HookViewerChildCooldowns(viewerType)
+    local viewer = _G[VIEWER_NAMES[viewerType]]
+    if not viewer then return end
+    local container = viewer.viewerFrame or viewer
+    local sel = viewer.Selection
+    local okc, children = pcall(function() return { container:GetChildren() } end)
+    if not okc or not children then return end
+    for _, child in ipairs(children) do
+        if child and child ~= sel then
+            HookChildCooldown(child)
+        end
+    end
+end
+
 local function HookBuffViewerChildren()
     if buffChildrenHooked then return end
 
@@ -359,7 +577,7 @@ local function HookBuffViewerChildren()
     for i = 1, numChildren do
         local child = select(i, container:GetChildren())
         if child and child ~= viewer.Selection then
-            -- Hook aura lifecycle methods (like CMC does)
+            -- Hook aura lifecycle methods
             -- TAINT SAFETY: Track hook state in hookedBuffChildren (weak-keyed)
             -- instead of writing _quiBuffHooked to the Blizzard frame directly.
             local hookState = hookedBuffChildren[child]
@@ -379,6 +597,8 @@ local function HookBuffViewerChildren()
                 hooksecurefunc(child, "OnUnitAuraRemovedEvent", OnBuffAuraEvent)
                 hookState.removed = true
             end
+            -- Also hook Cooldown frame for DurationObject capture
+            HookChildCooldown(child)
         end
     end
 
@@ -391,6 +611,8 @@ local function ScanViewer(viewerType)
     if viewerType == "buff" and not buffChildrenHooked then
         HookBuffViewerChildren()
     end
+    -- Hook Cooldown frames on all viewer children for DurationObject capture
+    HookViewerChildCooldowns(viewerType)
 end
 
 local function ScanAll()
@@ -401,6 +623,8 @@ local function ScanAll()
     ScanViewer("essential")
     ScanViewer("utility")
     ScanViewer("buff")
+    -- Hook trackedBar viewer children for DurationObject capture
+    HookViewerChildCooldowns("trackedBar")
 
     -- Check if spell lists changed (count OR order) via fingerprint comparison
     local changed = false
@@ -470,17 +694,1432 @@ local function UpdateCooldownViewerCVar()
 end
 
 ---------------------------------------------------------------------------
+-- OWNED SPELL LIST: Snapshot + Build from DB
+-- Phase A CDM Overhaul: own spell lists directly instead of mirroring
+---------------------------------------------------------------------------
+
+-- DB access for owned spell data
+local function GetNcdmDB()
+    local QUICore = ns.Addon
+    return QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
+end
+
+local function GetContainerDB(containerKey)
+    local ncdm = GetNcdmDB()
+    if not ncdm then return nil end
+    -- Built-in containers live at ncdm[key] (user's saved data).
+    -- Custom containers only exist in ncdm.containers[key].
+    if ncdm[containerKey] then
+        return ncdm[containerKey]
+    end
+    if ncdm.containers and ncdm.containers[containerKey] then
+        return ncdm.containers[containerKey]
+    end
+    return nil
+end
+
+-- Normalize legacy entries: convert raw spellID numbers to entry objects
+local function NormalizeOwnedEntry(entry)
+    if type(entry) == "number" then
+        return { type = "spell", id = entry }
+    end
+    if type(entry) == "table" and entry.id then
+        if not entry.type then
+            entry.type = "spell"
+        end
+        return entry
+    end
+    return nil
+end
+
+-- Normalize the entire ownedSpells array in-place
+local function NormalizeOwnedSpells(ownedSpells)
+    if type(ownedSpells) ~= "table" then return ownedSpells end
+    for i, entry in ipairs(ownedSpells) do
+        ownedSpells[i] = NormalizeOwnedEntry(entry)
+    end
+    return ownedSpells
+end
+
+-- Check if a spell is currently known/learned by the player
+-- Cache WoW globals before defining the local function
+local WoW_IsSpellKnown = IsSpellKnown
+local WoW_IsPlayerSpell = IsPlayerSpell
+local function IsSpellKnownByPlayer(spellID)
+    if not spellID then return false end
+    -- IsSpellKnown covers class/spec spells
+    if WoW_IsSpellKnown and WoW_IsSpellKnown(spellID) then return true end
+    -- IsPlayerSpell covers talent-granted spells
+    if WoW_IsPlayerSpell and WoW_IsPlayerSpell(spellID) then return true end
+    -- C_Spell.IsSpellUsable covers conditional availability
+    if C_Spell and C_Spell.IsSpellUsable then
+        local ok, usable = pcall(C_Spell.IsSpellUsable, spellID)
+        if ok and usable then return true end
+    end
+    return false
+end
+
+-- SpellID correction maps (populated by reconciliation, used by ResolveOwnedEntry).
+-- Must be declared here before ResolveOwnedEntry which references them.
+local _cdIDToCorrectSID = {}
+local _spellToCooldownID = {}
+-- Maps ability spell ID → aura spell ID for buff categories (2, 3).
+-- Built during RebuildSpellToCooldownID by probing GetPlayerAuraBySpellID
+-- on each ID variant to find the one that returns aura data.
+local _abilityToAuraSpellID = {}
+
+-- Forward declarations for functions defined in reconciliation section
+local RebuildCdIDToCorrectSID
+local RebuildSpellToCooldownID
+local ResolveInfoSpellID
+local ResolveChildSpellID
+
+-- Resolve a single owned entry to a spell data table compatible with
+-- the existing icon/bar building pipeline.
+local function ResolveOwnedEntry(entry, containerKey, index)
+    if not entry or not entry.id then return nil end
+
+    local resolved = {
+        spellID = nil,
+        overrideSpellID = nil,
+        name = "",
+        isAura = false,
+        hasCharges = false,
+        layoutIndex = index or 9999,
+        viewerType = containerKey,
+        _isOwnedEntry = true,
+        _ownedEntry = entry,
+        -- Forward entry type info for custom-like cooldown resolution
+        type = entry.type,
+        id = entry.id,
+    }
+
+    if entry.type == "spell" then
+        resolved.spellID = entry.id
+
+        -- For aura containers, apply the correction map to get the actual aura
+        -- spellID. The CDM info struct often returns the ability ID (e.g. Death Strike)
+        -- instead of the tracked aura ID (e.g. Coagulating Blood).
+        local db = GetContainerDB(containerKey)
+        local isAuraContainer = db and (db.containerType == "aura" or db.containerType == "auraBar")
+        -- Built-in buff and trackedBar are aura containers even without
+        -- an explicit containerType (they predate the Composer).
+        if not isAuraContainer and (containerKey == "buff" or containerKey == "trackedBar") then
+            isAuraContainer = true
+        end
+        local displayID = entry.id
+
+        if isAuraContainer then
+            -- Try correction: entry.id → cooldownID → corrected aura spellID
+            local cdID = _spellToCooldownID[entry.id]
+            if cdID and _cdIDToCorrectSID[cdID] then
+                displayID = _cdIDToCorrectSID[cdID]
+                resolved.spellID = displayID
+            end
+            -- Try ability→aura mapping (built from buff categories 2/3
+            -- by probing GetPlayerAuraBySpellID on each ID variant)
+            if displayID == entry.id and _abilityToAuraSpellID[entry.id] then
+                displayID = _abilityToAuraSpellID[entry.id]
+                resolved.spellID = displayID
+            end
+            resolved.isAura = true
+        end
+
+        -- Check for override spell (e.g., talent replacements)
+        if C_Spell and C_Spell.GetOverrideSpell then
+            local ok, overrideID = pcall(C_Spell.GetOverrideSpell, displayID)
+            if ok and overrideID and overrideID ~= displayID then
+                resolved.overrideSpellID = overrideID
+            else
+                resolved.overrideSpellID = displayID
+            end
+        else
+            resolved.overrideSpellID = displayID
+        end
+        -- Get spell name
+        if C_Spell and C_Spell.GetSpellInfo then
+            local ok, info = pcall(C_Spell.GetSpellInfo, resolved.overrideSpellID or displayID)
+            if ok and info then
+                resolved.name = info.name or ""
+            end
+        end
+        -- Check for multi-charge spells
+        if C_Spell and C_Spell.GetSpellCharges then
+            local ok, ci = pcall(C_Spell.GetSpellCharges, resolved.overrideSpellID or displayID)
+            if ok and ci then
+                local maxC = Helpers.SafeToNumber(ci.maxCharges, 0)
+                if maxC and maxC > 1 then
+                    resolved.hasCharges = true
+                end
+            end
+        end
+
+    elseif entry.type == "item" then
+        resolved.spellID = entry.id  -- item ID stored as spellID for keying
+        resolved.overrideSpellID = entry.id
+        local ok, itemName = pcall(C_Item.GetItemNameByID, entry.id)
+        if ok and itemName then
+            resolved.name = itemName
+        end
+
+    elseif entry.type == "slot" then
+        resolved.id = entry.id
+        local itemID = GetInventoryItemID("player", entry.id)
+        if itemID then
+            resolved.spellID = itemID
+            resolved.overrideSpellID = itemID
+            local ok, itemName = pcall(C_Item.GetItemNameByID, itemID)
+            if ok and itemName then
+                resolved.name = itemName
+            end
+        end
+
+    elseif entry.type == "macro" then
+        resolved.macroName = entry.macroName
+        resolved.name = entry.macroName or ""
+        -- Resolve current spell for texture (updates dynamically via update ticker)
+        local macroIndex = entry.macroName and GetMacroIndexByName(entry.macroName)
+        if macroIndex and macroIndex > 0 then
+            local macroSpellID = GetMacroSpell(macroIndex)
+            if macroSpellID then
+                resolved.spellID = macroSpellID
+                resolved.overrideSpellID = macroSpellID
+            else
+                local itemName, itemLink = GetMacroItem(macroIndex)
+                if itemLink then
+                    local itemID = C_Item.GetItemInfoInstant(itemLink)
+                    if itemID then
+                        resolved.spellID = itemID
+                        resolved.overrideSpellID = itemID
+                    end
+                end
+            end
+        end
+    end
+
+    -- Attach Blizzard viewer child reference for aura lookups.
+    -- Priority: buff viewer child with auraInstanceID > any buff viewer child
+    -- > any child with auraInstanceID > any child with Cooldown.
+    -- Search all ID variants since the child may be indexed under a different ID.
+    local buffViewer = _G["BuffIconCooldownViewer"]
+    local buffBarViewer = _G["BuffBarCooldownViewer"]
+    local searchIDs = {}
+    if resolved.overrideSpellID then searchIDs[#searchIDs+1] = resolved.overrideSpellID end
+    if resolved.spellID and resolved.spellID ~= resolved.overrideSpellID then searchIDs[#searchIDs+1] = resolved.spellID end
+    if resolved.id and resolved.id ~= resolved.spellID and resolved.id ~= resolved.overrideSpellID then searchIDs[#searchIDs+1] = resolved.id end
+
+    local bestChild, bestScore = nil, 0
+    for _, searchSid in ipairs(searchIDs) do
+        local candidates = _spellIDToChild[searchSid]
+        if candidates then
+            for _, ch in ipairs(candidates) do
+                local score = 0
+                local vf = ch.viewerFrame
+                local isBuff = vf and (vf == buffViewer or vf == buffBarViewer)
+                local hasAura = (ch.auraInstanceID ~= nil)
+                if isBuff and hasAura then score = 4
+                elseif isBuff then score = 3
+                elseif hasAura then score = 2
+                elseif ch.Cooldown then score = 1 end
+                if score > bestScore then
+                    bestChild = ch
+                    bestScore = score
+                end
+            end
+        end
+    end
+    resolved._blizzChild = bestChild
+
+    return resolved
+end
+
+-- SnapshotBlizzardCDM: One-time capture of Blizzard viewer spells into ownedSpells
+function CDMSpellData:SnapshotBlizzardCDM(containerKey)
+    if InCombatLockdown() then
+        return false
+    end
+
+    -- Custom containers have no Blizzard viewer — skip snapshot
+    if not VIEWER_NAMES[containerKey] then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db then
+        return false
+    end
+
+    -- Only snapshot if ownedSpells == nil (first time)
+    if db.ownedSpells ~= nil then
+        return false
+    end
+
+    -- Use existing scan to get the current spell list
+    local scanList = spellLists[containerKey]
+    if not scanList or type(scanList) ~= "table" or #scanList == 0 then
+        -- Try a fresh scan first
+        if containerKey == "trackedBar" then
+            -- TrackedBar uses BuffBarCooldownViewer — scan its children
+            local viewer = _G["BuffBarCooldownViewer"]
+            if not viewer then return false end
+            -- Collect spellIDs from bar children (dedup)
+            local owned = {}
+            local seenBarIDs = {}
+            local sel = viewer.Selection
+            local okc, children = pcall(function() return { viewer:GetChildren() } end)
+            if okc and children then
+                for _, child in ipairs(children) do
+                    if child and child ~= sel and child.Bar then
+                        local cdInfo = child.cooldownInfo
+                        if cdInfo then
+                            local sid = Helpers.SafeValue(cdInfo.overrideSpellID, nil) or Helpers.SafeValue(cdInfo.spellID, nil)
+                            if sid and not seenBarIDs[sid] then
+                                seenBarIDs[sid] = true
+                                owned[#owned + 1] = { type = "spell", id = sid }
+                                -- Map spell ID → child for combat hook lookups
+                                if not _spellIDToChild[sid] then _spellIDToChild[sid] = {} end
+                                _spellIDToChild[sid][#_spellIDToChild[sid] + 1] = child
+                                local altSid = Helpers.SafeValue(cdInfo.spellID, nil)
+                                if altSid and altSid ~= sid then
+                                    if not _spellIDToChild[altSid] then _spellIDToChild[altSid] = {} end
+                                    _spellIDToChild[altSid][#_spellIDToChild[altSid] + 1] = child
+                                end
+                            end
+                        end
+                        -- Hook Cooldown frame for DurationObject capture
+                        HookChildCooldown(child)
+                    end
+                end
+            end
+            if #owned > 0 then
+                db.ownedSpells = owned
+                local ncdm = GetNcdmDB()
+                if ncdm then
+                    ncdm._snapshotVersion = (ncdm._snapshotVersion or 0) + 1
+                end
+                return true
+            end
+            return false
+        end
+
+        -- Essential/utility/buff: use existing scanned lists
+        ScanViewer(containerKey)
+        scanList = spellLists[containerKey]
+        if not scanList or type(scanList) ~= "table" or #scanList == 0 then
+            return false
+        end
+    end
+
+    -- Convert scan results to owned entry format (dedup by spellID).
+    -- For buff/aura containers, use ResolveChildSpellID to get the correct
+    -- aura spellID (e.g. Coagulating Blood instead of Death Strike).
+    local isAuraContainer = (containerKey == "buff" or containerKey == "trackedBar")
+    local owned = {}
+    local seenIDs = {}
+    for _, entry in ipairs(scanList) do
+        local sid = entry.spellID
+        -- For aura containers, prefer the frame-resolved aura spellID
+        if isAuraContainer and entry._blizzChild then
+            local correctedSID = ResolveChildSpellID(entry._blizzChild)
+            if correctedSID then
+                sid = correctedSID
+            end
+        end
+        if sid and not seenIDs[sid] then
+            seenIDs[sid] = true
+            owned[#owned + 1] = { type = "spell", id = sid }
+        end
+    end
+
+    db.ownedSpells = owned
+    local ncdm = GetNcdmDB()
+    if ncdm then
+        ncdm._snapshotVersion = (ncdm._snapshotVersion or 0) + 1
+    end
+    return true
+end
+
+-- BuildSpellListFromOwned: Build runtime spell list from owned data
+function CDMSpellData:BuildSpellListFromOwned(containerKey)
+    local db = GetContainerDB(containerKey)
+    if not db or type(db.ownedSpells) ~= "table" then return {} end
+
+    -- Ensure correction maps are built for accurate aura spellID resolution
+    if not next(_cdIDToCorrectSID) then
+        RebuildCdIDToCorrectSID()
+    end
+    if not next(_spellToCooldownID) then
+        RebuildSpellToCooldownID()
+    end
+
+    local ownedSpells = NormalizeOwnedSpells(db.ownedSpells)
+    local removedSpells = db.removedSpells or {}
+
+    -- Resolve entries, preserving row assignment from ownedSpells
+    local result = {}
+    for i, entry in ipairs(ownedSpells) do
+        if entry and entry.id then
+            -- Skip removed spells
+            local isRemoved = false
+            if entry.type == "spell" and removedSpells[entry.id] then
+                isRemoved = true
+            end
+
+            if not isRemoved then
+                local resolved = ResolveOwnedEntry(entry, containerKey, i)
+                if resolved then
+                    resolved._assignedRow = entry.row  -- carry row assignment
+                    result[#result + 1] = resolved
+                end
+            end
+        end
+    end
+
+    -- Sort by assigned row: entries with row assignment come first (grouped by row),
+    -- then unassigned entries in original order. Within a row, original order is preserved.
+    local hasAnyRow = false
+    for _, r in ipairs(result) do
+        if r._assignedRow then hasAnyRow = true; break end
+    end
+    if hasAnyRow then
+        -- Stable sort: preserve relative order within same row
+        for idx, r in ipairs(result) do r._sortIdx = idx end
+        table.sort(result, function(a, b)
+            local ar = a._assignedRow or 0
+            local br = b._assignedRow or 0
+            if ar ~= br then return ar < br end
+            return a._sortIdx < b._sortIdx
+        end)
+    end
+
+    return result
+end
+
+---------------------------------------------------------------------------
+-- DORMANT SPELL CHECKING
+-- Checks ownedSpells against currently known spells and updates dormantSpells.
+-- Called on talent/spec changes. Dormant spells are skipped during display
+-- but preserved in ownedSpells for when the player respecs back.
+---------------------------------------------------------------------------
+-- CheckDormantSpells: Three-phase talent-aware reconciliation.
+-- Phase 1: Move unlearned spells from ownedSpells → dormantSpells, saving slot index.
+-- Phase 2: Re-insert returning dormant spells at their saved position.
+-- Phase 3: Clean obsolete dormant entries for spells removed from game.
+-- dormantSpells is a map: { [spellID] = originalSlotIndex }
+function CDMSpellData:CheckDormantSpells(containerKey)
+    local db = GetContainerDB(containerKey)
+    if not db or type(db.ownedSpells) ~= "table" then
+        return
+    end
+
+    local ownedSpells = NormalizeOwnedSpells(db.ownedSpells)
+
+    -- Migrate legacy dormantSpells from array to map format
+    if type(db.dormantSpells) ~= "table" then
+        db.dormantSpells = {}
+    else
+        -- If it's an array (ipairs-style), convert to map
+        local first = db.dormantSpells[1]
+        if type(first) == "number" then
+            local migrated = {}
+            for _, sid in ipairs(db.dormantSpells) do
+                if type(sid) == "number" then
+                    migrated[sid] = 9999  -- no saved position from legacy data
+                end
+            end
+            db.dormantSpells = migrated
+        end
+    end
+
+    -- Phase 1: Move unlearned spells to dormant, saving their slot index
+    local toRemove = {}  -- indices to remove (descending order)
+    for i, entry in ipairs(ownedSpells) do
+        if entry and entry.id and entry.type == "spell" then
+            if not IsSpellKnownByPlayer(entry.id) then
+                db.dormantSpells[entry.id] = i  -- save slot position
+                toRemove[#toRemove + 1] = i
+            end
+        end
+    end
+    -- Remove from ownedSpells in reverse order to preserve indices
+    if #toRemove > 0 then
+        for _, idx in ipairs(toRemove) do
+            local entry = db.ownedSpells[idx]
+            if entry then
+            end
+        end
+    end
+    for j = #toRemove, 1, -1 do
+        table.remove(db.ownedSpells, toRemove[j])
+    end
+
+    -- Phase 2: Re-insert returning dormant spells at saved positions
+    local returning = {}
+    for sid, savedSlot in pairs(db.dormantSpells) do
+        if IsSpellKnownByPlayer(sid) then
+            returning[#returning + 1] = { id = sid, slot = savedSlot }
+        end
+    end
+    -- Sort by saved slot (lowest first) so insertions maintain order
+    table.sort(returning, function(a, b) return a.slot < b.slot end)
+    if #returning > 0 then
+    end
+    for _, info in ipairs(returning) do
+        db.dormantSpells[info.id] = nil  -- remove from dormant
+        local insertAt = math.min(info.slot, #db.ownedSpells + 1)
+        table.insert(db.ownedSpells, insertAt, { type = "spell", id = info.id })
+    end
+
+    -- Phase 3: Clean obsolete dormant spells no longer in the CDM system
+    if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet then
+        local allCDMSpells = {}
+        for cat = 0, 3 do
+            local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+            if ok and ids then
+                for _, cdID in ipairs(ids) do
+                    if C_CooldownViewer.GetCooldownViewerCooldownInfo then
+                        local okI, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                        if okI and info then
+                            local sid = Helpers.SafeValue(info.spellID, nil)
+                            if sid then allCDMSpells[sid] = true end
+                            local ov = Helpers.SafeValue(info.overrideSpellID, nil)
+                            if ov then allCDMSpells[ov] = true end
+                        end
+                    end
+                end
+            end
+        end
+        -- Also include spellbook spells as "still existing"
+        if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
+            local okT, numTabs = pcall(C_SpellBook.GetNumSpellBookSkillLines)
+            if okT and numTabs then
+                for tab = 1, numTabs do
+                    local okL, sli = pcall(C_SpellBook.GetSpellBookSkillLineInfo, tab)
+                    if okL and sli then
+                        local offset = sli.itemIndexOffset or 0
+                        for i = 1, (sli.numSpellBookItems or 0) do
+                            local okI, ii = pcall(C_SpellBook.GetSpellBookItemInfo, offset + i, Enum.SpellBookSpellBank.Player)
+                            if okI and ii and ii.spellID then allCDMSpells[ii.spellID] = true end
+                        end
+                    end
+                end
+            end
+        end
+        local obsoleteCount = 0
+        for sid in pairs(db.dormantSpells) do
+            if not allCDMSpells[sid] then
+                db.dormantSpells[sid] = nil  -- spell removed from game
+                obsoleteCount = obsoleteCount + 1
+            end
+        end
+        if obsoleteCount > 0 then
+        end
+    end
+
+    -- Summary
+    local finalOwned = type(db.ownedSpells) == "table" and #db.ownedSpells or 0
+    local finalDormant = 0
+    if type(db.dormantSpells) == "table" then
+        for _ in pairs(db.dormantSpells) do finalDormant = finalDormant + 1 end
+    end
+end
+
+-- CheckAllDormantSpells: Run dormant check on all container keys
+function CDMSpellData:CheckAllDormantSpells()
+    local containerKeys = { "essential", "utility", "buff", "trackedBar" }
+    for _, key in ipairs(containerKeys) do
+        self:CheckDormantSpells(key)
+    end
+end
+
+---------------------------------------------------------------------------
+-- EXTRA SPELL TABLES (racials, health items)
+---------------------------------------------------------------------------
+local RACE_RACIALS = {
+    Scourge            = { 7744 },
+    Tauren             = { 20549 },
+    Orc                = { 20572, 33697, 33702 },
+    BloodElf           = { 202719, 50613, 25046, 69179, 80483, 155145, 129597, 232633, 28730 },
+    Dwarf              = { 20594 },
+    Troll              = { 26297 },
+    Draenei            = { 28880 },
+    NightElf           = { 58984 },
+    Human              = { 59752 },
+    DarkIronDwarf      = { 265221 },
+    Gnome              = { 20589 },
+    HighmountainTauren = { 69041 },
+    Worgen             = { 68992 },
+    Goblin             = { 69070 },
+    Pandaren           = { 107079 },
+    MagharOrc          = { 274738 },
+    LightforgedDraenei = { 255647 },
+    VoidElf            = { 256948 },
+    Nightborne         = { 260364 },
+    KulTiran           = { 287712 },
+    ZandalariTroll     = { 291944 },
+    Vulpera            = { 312411 },
+    Mechagnome         = { 312924 },
+    Dracthyr           = { 357214, { 368970, class = "EVOKER" } },
+    EarthenDwarf       = { 436344 },
+    Haranir            = { 1287685 },
+}
+
+local HEALTH_ITEMS = {
+    { itemID = 241304, spellID = 1234768, altItemID = 241305 },
+    { itemID = 241308, spellID = 1236616, altItemID = 241309 },
+    { itemID = 5512,   spellID = 6262 },
+    { itemID = 224464, spellID = 452930, class = "WARLOCK" },
+}
+
+-- Map container key → array of CooldownViewerCategory enum values to scan.
+-- Cooldown bars scan both Essential (0) + Utility (1).
+-- Buff bars scan both TrackedBuff (2) + TrackedBar (3).
+local CDM_BAR_CATEGORIES = {
+    essential  = { 0, 1 },
+    utility    = { 0, 1 },
+    buff       = { 2, 3 },
+    trackedBar = { 2, 3 },
+}
+
+-- Forward declaration: defined in MUTATION HELPERS section below
+local FireChangeCallback
+
+---------------------------------------------------------------------------
+-- SPELLID RESOLUTION
+-- Blizzard's CDM info struct can return wrong spellIDs (especially for
+-- buff bars where it returns spec aura ID instead of actual tracked buff).
+-- Two-layer resolution: info struct → frame methods → persistent correction map.
+---------------------------------------------------------------------------
+
+-- Resolve spellID from CDM info struct.
+-- Priority: overrideSpellID → first linkedSpellID → spellID
+ResolveInfoSpellID = function(info)
+    if not info then return nil end
+    local ov = Helpers.SafeValue(info.overrideSpellID, nil)
+    if ov and ov > 0 then return ov end
+    local linked = info.linkedSpellIDs
+    if linked then
+        for i = 1, #linked do
+            local lsid = Helpers.SafeValue(linked[i], nil)
+            if lsid and lsid > 0 then return lsid end
+        end
+    end
+    local sid = Helpers.SafeValue(info.spellID, nil)
+    if sid and sid > 0 then return sid end
+    return nil
+end
+
+-- Resolve spellID from a viewer child frame (out-of-combat only).
+-- Frame methods are more accurate but can return secret values in combat.
+ResolveChildSpellID = function(child)
+    if not child then return nil end
+    -- Prefer aura spellID (most accurate for buff viewers)
+    if child.GetAuraSpellID then
+        local ok, auraID = pcall(child.GetAuraSpellID, child)
+        if ok and auraID then
+            local cmpOk, gt = pcall(function() return auraID > 0 end)
+            if cmpOk and gt then return auraID end
+        end
+    end
+    -- Then try the frame's own spellID
+    if child.GetSpellID then
+        local ok, fid = pcall(child.GetSpellID, child)
+        if ok and fid then
+            local cmpOk, gt = pcall(function() return fid > 0 end)
+            if cmpOk and gt then return fid end
+        end
+    end
+    -- Fall back to cooldownInfo struct
+    local cdID = child.cooldownID or (child.cooldownInfo and child.cooldownInfo.cooldownID)
+    if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local ok, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+        if ok then return ResolveInfoSpellID(info) end
+    end
+    return nil
+end
+
+-- Build persistent correction map from buff viewer children.
+-- Called out of combat — compares info struct spellID vs frame-resolved spellID.
+RebuildCdIDToCorrectSID = function()
+    if not C_CooldownViewer or not C_CooldownViewer.GetCooldownViewerCooldownInfo then return end
+    -- Only scan buff viewers where misidentification is common
+    for _, vName in ipairs({ VIEWER_NAMES.buff, VIEWER_NAMES.trackedBar }) do
+        local vf = _G[vName]
+        if vf then
+            local numChildren = vf:GetNumChildren()
+            for ci = 1, numChildren do
+                local ch = select(ci, vf:GetChildren())
+                if ch then
+                    local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
+                    if cdID and not _cdIDToCorrectSID[cdID] then
+                        local correctSid = ResolveChildSpellID(ch)
+                        if correctSid and correctSid > 0 then
+                            local ok, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                            if ok and info then
+                                local infoSid = ResolveInfoSpellID(info)
+                                if infoSid and correctSid ~= infoSid then
+                                    _cdIDToCorrectSID[cdID] = correctSid
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Build global spellID → cooldownID lookup across all 4 CDM categories.
+-- Maps base, override, and linked spellIDs. Rebuilt on spec change.
+RebuildSpellToCooldownID = function()
+    wipe(_spellToCooldownID)
+    wipe(_abilityToAuraSpellID)
+    if not C_CooldownViewer or not C_CooldownViewer.GetCooldownViewerCategorySet then return end
+    for cat = 0, 3 do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+        if ok and ids then
+            local isBuffCat = (cat == 2 or cat == 3)
+            for _, cdID in ipairs(ids) do
+                local okI, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                if okI and info then
+                    local sid = Helpers.SafeValue(info.spellID, nil)
+                    if sid and sid > 0 then
+                        _spellToCooldownID[sid] = cdID
+                    end
+                    local ov = Helpers.SafeValue(info.overrideSpellID, nil)
+                    if ov and ov > 0 then
+                        _spellToCooldownID[ov] = cdID
+                    end
+                    if info.linkedSpellIDs then
+                        for _, lsid in ipairs(info.linkedSpellIDs) do
+                            local lv = Helpers.SafeValue(lsid, nil)
+                            if lv and lv > 0 then
+                                _spellToCooldownID[lv] = cdID
+                            end
+                        end
+                    end
+
+                    -- For buff categories (2=buff icon, 3=buff bar), map the
+                    -- base spellID to the aura spell ID.  The info struct's
+                    -- overrideSpellID or linkedSpellIDs contain the actual aura
+                    -- spell ID that GetPlayerAuraBySpellID accepts in combat.
+                    -- Priority: overrideSpellID > first linkedSpellID > spellID.
+                    if isBuffCat then
+                        -- For buff categories, linkedSpellIDs contains the BUFF
+                        -- spell ID (what GetPlayerAuraBySpellID accepts).
+                        -- The base/override is the ABILITY spell ID.
+                        local auraID
+                        if info.linkedSpellIDs then
+                            for _, lsid in ipairs(info.linkedSpellIDs) do
+                                local lv = Helpers.SafeValue(lsid, nil)
+                                if lv and lv > 0 then auraID = lv; break end
+                            end
+                        end
+                        if not auraID then auraID = ov or sid end
+
+                        if auraID then
+                            if sid and sid ~= auraID then
+                                _abilityToAuraSpellID[sid] = auraID
+                            end
+                            if info.linkedSpellIDs then
+                                for _, lsid in ipairs(info.linkedSpellIDs) do
+                                    local lv = Helpers.SafeValue(lsid, nil)
+                                    if lv and lv > 0 and lv ~= auraID then
+                                        _abilityToAuraSpellID[lv] = auraID
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Also map correct spellIDs from the persistent correction map
+    for cdID, correctSid in pairs(_cdIDToCorrectSID) do
+        _spellToCooldownID[correctSid] = cdID
+    end
+end
+
+---------------------------------------------------------------------------
+-- DYNAMIC SPELL RECONCILIATION
+-- Two-pass approach: preserve existing tracked spells (maintain user ordering),
+-- then append newly discovered spells at the end.
+---------------------------------------------------------------------------
+
+
+-- globalTracked: set of "type:id" keys across ALL containers. Built once in
+-- ReconcileAllContainers and passed in. Prevents the same spell from being
+-- auto-added to multiple containers (e.g. essential AND utility both scan
+-- categories {0,1}, so without this a spell would appear in both).
+-- Updated in-place as new spells are added so subsequent containers see them.
+function CDMSpellData:ReconcileOwnedSpells(containerKey, globalTracked)
+    if InCombatLockdown() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db then return false end
+    -- Only reconcile containers that have been snapshotted
+    if db.ownedSpells == nil then return false end
+
+    local isCooldown = true
+    if db.containerType == "aura" or db.containerType == "auraBar" then
+        isCooldown = false
+    end
+
+    -- Build set of existing tracked entries in THIS container (for within-container dedup)
+    local keptSet = {}
+    for _, entry in ipairs(db.ownedSpells) do
+        local norm = NormalizeOwnedEntry(entry)
+        if norm and norm.id then
+            keptSet[norm.type .. ":" .. norm.id] = true
+        end
+    end
+
+    local added = false
+
+    -- Reconciliation does NOT auto-add spells to a curated list.
+    -- Once ownedSpells has been snapshotted, only the user adds/removes
+    -- entries via the Composer. Reconciliation only handles:
+    --   - Dormant spell management (CheckDormantSpells, called before this)
+    --   - Correction map rebuild for accurate aura display
+    RebuildCdIDToCorrectSID()
+
+    return false
+end
+
+function CDMSpellData:ReconcileAllContainers()
+    if InCombatLockdown() then
+        return
+    end
+
+    -- Rebuild spellID maps before reconciliation
+    RebuildSpellToCooldownID()
+
+    local containerKeys = { "essential", "utility", "buff", "trackedBar" }
+    if ns.CDMContainers and ns.CDMContainers.GetAllContainerKeys then
+        containerKeys = ns.CDMContainers:GetAllContainerKeys()
+    end
+
+    -- Build global tracked set: union of all containers' ownedSpells + removedSpells + dormantSpells.
+    -- Passed to each ReconcileOwnedSpells and updated in-place as new spells are added,
+    -- so a spell added to essential won't also be auto-added to utility.
+    local globalTracked = {}
+    for _, key in ipairs(containerKeys) do
+        local db = GetContainerDB(key)
+        if db then
+            if type(db.ownedSpells) == "table" then
+                for _, entry in ipairs(db.ownedSpells) do
+                    local norm = NormalizeOwnedEntry(entry)
+                    if norm and norm.id then
+                        globalTracked[norm.type .. ":" .. norm.id] = true
+                    end
+                end
+            end
+            if type(db.removedSpells) == "table" then
+                for sid, _ in pairs(db.removedSpells) do
+                    if type(sid) == "number" then
+                        globalTracked["spell:" .. sid] = true
+                    end
+                end
+            end
+            if type(db.dormantSpells) == "table" then
+                -- dormantSpells is a map: { [spellID] = savedSlotIndex }
+                for sid, _ in pairs(db.dormantSpells) do
+                    if type(sid) == "number" then
+                        globalTracked["spell:" .. sid] = true
+                    end
+                end
+            end
+        end
+    end
+
+    local anyAdded = false
+    for _, key in ipairs(containerKeys) do
+        local added = self:ReconcileOwnedSpells(key, globalTracked)
+        if added then anyAdded = true end
+    end
+
+    if anyAdded then
+        FireChangeCallback()
+    end
+end
+
+---------------------------------------------------------------------------
+-- LEARNED COOLDOWNS CACHE: Invalidated on SPELLS_CHANGED
+---------------------------------------------------------------------------
+local learnedCooldownsCache = nil
+local learnedCooldownsCacheDirty = true
+
+local function InvalidateLearnedCooldownsCache()
+    learnedCooldownsCache = nil
+    learnedCooldownsCacheDirty = true
+end
+
+---------------------------------------------------------------------------
+-- MUTATION HELPERS
+---------------------------------------------------------------------------
+
+-- Combat guard: returns true if in combat (mutation refused)
+local function CombatGuard()
+    return InCombatLockdown()
+end
+
+-- Fire the change callback after any mutation
+FireChangeCallback = function()
+    if _G.QUI_OnSpellDataChanged then
+        _G.QUI_OnSpellDataChanged()
+    end
+end
+
+-- Validate an entry has required fields
+local function ValidateEntry(entry)
+    if type(entry) ~= "table" then return false end
+    if not entry.type then return false end
+    if entry.type == "macro" then
+        return entry.macroName and type(entry.macroName) == "string"
+    end
+    return entry.id and type(entry.id) == "number"
+end
+
+---------------------------------------------------------------------------
+-- MUTATION API
+---------------------------------------------------------------------------
+
+function CDMSpellData:AddEntry(containerKey, entry)
+    if CombatGuard() then return false end
+    if not ValidateEntry(entry) then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db then return false end
+
+    if db.ownedSpells == nil then
+        db.ownedSpells = {}
+    end
+
+    -- Layer 4: Within-container dedup — prevent adding duplicates
+    for _, existing in ipairs(db.ownedSpells) do
+        local norm = NormalizeOwnedEntry(existing)
+        if norm and norm.type == entry.type and norm.id == entry.id then
+            return false  -- already exists
+        end
+    end
+
+    db.ownedSpells[#db.ownedSpells + 1] = entry
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:RemoveEntry(containerKey, index)
+    if CombatGuard() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db or type(db.ownedSpells) ~= "table" then return false end
+    if index < 1 or index > #db.ownedSpells then return false end
+
+    local entry = db.ownedSpells[index]
+    table.remove(db.ownedSpells, index)
+
+    -- Track removed entry so re-snapshot won't re-add it
+    if entry and entry.id then
+        if not db.removedSpells then
+            db.removedSpells = {}
+        end
+        db.removedSpells[entry.id] = true
+    end
+
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:ReorderEntry(containerKey, fromIndex, toIndex)
+    if CombatGuard() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db or type(db.ownedSpells) ~= "table" then return false end
+
+    local len = #db.ownedSpells
+    if fromIndex < 1 or fromIndex > len then return false end
+    if toIndex < 1 then return false end
+    if fromIndex == toIndex then return true end
+
+    local entry = table.remove(db.ownedSpells, fromIndex)
+    local insertAt = math.min(toIndex, #db.ownedSpells + 1)
+    table.insert(db.ownedSpells, insertAt, entry)
+
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:MoveEntryBetweenContainers(fromKey, toKey, index)
+    if CombatGuard() then return false end
+
+    local fromDB = GetContainerDB(fromKey)
+    local toDB = GetContainerDB(toKey)
+    if not fromDB or type(fromDB.ownedSpells) ~= "table" then return false end
+    if not toDB then return false end
+    if index < 1 or index > #fromDB.ownedSpells then return false end
+
+    local entry = table.remove(fromDB.ownedSpells, index)
+
+    if toDB.ownedSpells == nil then
+        toDB.ownedSpells = {}
+    end
+    toDB.ownedSpells[#toDB.ownedSpells + 1] = entry
+
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:RestoreRemovedEntry(containerKey, spellID)
+    if CombatGuard() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db then return false end
+
+    -- Remove from removedSpells
+    if db.removedSpells then
+        db.removedSpells[spellID] = nil
+    end
+
+    -- Add back to ownedSpells
+    if db.ownedSpells == nil then
+        db.ownedSpells = {}
+    end
+    db.ownedSpells[#db.ownedSpells + 1] = { type = "spell", id = spellID }
+
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:ResnapshotFromBlizzard(containerKey)
+    if CombatGuard() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db then return false end
+
+    -- Reset owned data to allow fresh snapshot
+    db.ownedSpells = nil
+    db.removedSpells = {}
+
+    -- Re-snapshot from Blizzard viewers
+    self:SnapshotBlizzardCDM(containerKey)
+
+    FireChangeCallback()
+    return true
+end
+
+-- Convenience wrappers
+function CDMSpellData:AddSpell(containerKey, spellID)
+    return self:AddEntry(containerKey, { type = "spell", id = spellID })
+end
+
+function CDMSpellData:AddItem(containerKey, itemID)
+    return self:AddEntry(containerKey, { type = "item", id = itemID })
+end
+
+function CDMSpellData:AddTrinketSlot(containerKey, slotID)
+    return self:AddEntry(containerKey, { type = "slot", id = slotID })
+end
+
+
+function CDMSpellData:SetEntryRow(containerKey, index, rowNum)
+    if CombatGuard() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db or type(db.ownedSpells) ~= "table" then return false end
+    if index < 1 or index > #db.ownedSpells then return false end
+
+    local entry = db.ownedSpells[index]
+    if not entry then return false end
+
+    entry.row = rowNum
+    FireChangeCallback()
+    return true
+end
+
+---------------------------------------------------------------------------
+-- PER-SPELL OVERRIDE API
+---------------------------------------------------------------------------
+
+function CDMSpellData:SetSpellOverride(containerKey, spellID, key, value)
+    if CombatGuard() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db then return false end
+
+    if not db.spellOverrides then
+        db.spellOverrides = {}
+    end
+    if not db.spellOverrides[spellID] then
+        db.spellOverrides[spellID] = {}
+    end
+
+    db.spellOverrides[spellID][key] = value
+
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:ClearSpellOverride(containerKey, spellID, key)
+    if CombatGuard() then return false end
+
+    local db = GetContainerDB(containerKey)
+    if not db or not db.spellOverrides or not db.spellOverrides[spellID] then
+        return false
+    end
+
+    db.spellOverrides[spellID][key] = nil
+
+    -- Clean up empty override table
+    if next(db.spellOverrides[spellID]) == nil then
+        db.spellOverrides[spellID] = nil
+    end
+
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:GetSpellOverride(containerKey, spellID)
+    local db = GetContainerDB(containerKey)
+    if not db or not db.spellOverrides then return nil end
+    return db.spellOverrides[spellID]
+end
+
+---------------------------------------------------------------------------
+-- ENUMERATION API
+---------------------------------------------------------------------------
+
+function CDMSpellData:GetAvailableSpells(containerKey)
+    local db = GetContainerDB(containerKey)
+
+    -- Build a set of already-owned spell IDs for fast lookup
+    local ownedSet = {}
+    if db and type(db.ownedSpells) == "table" then
+        for _, entry in ipairs(db.ownedSpells) do
+            local normalized = NormalizeOwnedEntry(entry)
+            if normalized and normalized.type == "spell" and normalized.id then
+                ownedSet[normalized.id] = true
+                -- Also mark override spells as owned
+                if C_Spell and C_Spell.GetOverrideSpell then
+                    local okO, oid = pcall(C_Spell.GetOverrideSpell, normalized.id)
+                    if okO and oid and oid ~= normalized.id then
+                        ownedSet[oid] = true
+                    end
+                end
+            end
+        end
+    end
+
+    local available = {}
+    local seen = {}
+
+    -- Resolve container type: built-in containers may store containerType in
+    -- ncdm.containers[key] (migration target) rather than ncdm[key] (user data).
+    local containerType = db and db.containerType
+    if not containerType then
+        local ncdm = GetNcdmDB()
+        if ncdm and ncdm.containers and ncdm.containers[containerKey] then
+            containerType = ncdm.containers[containerKey].containerType
+        end
+    end
+    local isAuraContainer = (containerType == "aura" or containerType == "auraBar")
+
+    -- Query Blizzard CDM API with proper category parameters.
+    -- Scan multiple categories per container (e.g. cooldown bars scan Essential + Utility).
+    if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
+       and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local categories = CDM_BAR_CATEGORIES[containerKey] or { 0, 1, 2, 3 }
+
+        for _, category in ipairs(categories) do
+            local ok, cooldownIDs = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, category)
+            if ok and cooldownIDs then
+                for _, cdID in ipairs(cooldownIDs) do
+                    local okInfo, cdInfo = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                    if okInfo and cdInfo then
+                        -- Use correction map if available, otherwise resolve from info.
+                        -- For aura containers, prefer overrideTooltipSpellID when present —
+                        -- it points to the actual tracked aura (e.g. Blood Plague 55078)
+                        -- instead of the casting ability (e.g. Blood Boil 50842).
+                        local sid = _cdIDToCorrectSID[cdID]
+                        if not sid and isAuraContainer then
+                            local tooltipSid = Helpers.SafeValue(cdInfo.overrideTooltipSpellID, nil)
+                            if tooltipSid and tooltipSid > 0 then
+                                sid = tooltipSid
+                            end
+                        end
+                        if not sid then
+                            sid = ResolveInfoSpellID(cdInfo)
+                        end
+                        if sid and not seen[sid] then
+                            seen[sid] = true
+
+                            if not ownedSet[sid] then
+                                local name, icon
+                                if C_Spell and C_Spell.GetSpellInfo then
+                                    local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                                    if okI and spellInfo then
+                                        name = spellInfo.name
+                                        icon = spellInfo.iconID
+                                    end
+                                end
+
+                                available[#available + 1] = {
+                                    spellID = sid,
+                                    name = name or "",
+                                    icon = icon or 0,
+                                    isKnown = cdInfo.isKnown,
+                                }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Also include spells from the scanned viewer data (fallback).
+    -- For aura containers, apply correction map to resolve raw spellIDs
+    -- (e.g. Death Strike 49998 → Coagulating Blood 463730).
+    local scanList = spellLists[containerKey]
+    if scanList and type(scanList) == "table" then
+        for _, entry in ipairs(scanList) do
+            local sid = entry.spellID
+            if sid then
+                -- Apply correction map for aura containers
+                if isAuraContainer then
+                    local cdID = _spellToCooldownID[sid]
+                    if cdID and _cdIDToCorrectSID[cdID] then
+                        sid = _cdIDToCorrectSID[cdID]
+                    end
+                end
+                if not ownedSet[sid] and not seen[sid] then
+                    seen[sid] = true
+                    local name, icon = entry.name or "", 0
+                    if C_Spell and C_Spell.GetSpellInfo then
+                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                        if okI and spellInfo then
+                            name = spellInfo.name or name
+                            icon = spellInfo.iconID or 0
+                        end
+                    end
+                    available[#available + 1] = {
+                        spellID = sid,
+                        name = name,
+                        icon = icon,
+                    }
+                end
+            end
+        end
+    end
+
+    return available
+end
+
+function CDMSpellData:GetAllLearnedCooldowns()
+    -- Return cached results if valid
+    if learnedCooldownsCache and not learnedCooldownsCacheDirty then
+        return learnedCooldownsCache
+    end
+
+    local result = {}
+    local seen = {}
+
+    -- Iterate spell book using C_SpellBook APIs
+    if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
+        local okTabs, numTabs = pcall(C_SpellBook.GetNumSpellBookSkillLines)
+        if okTabs and numTabs then
+            for tab = 1, numTabs do
+                local okLine, skillLineInfo = pcall(C_SpellBook.GetSpellBookSkillLineInfo, tab)
+                if okLine and skillLineInfo then
+                    local offset = skillLineInfo.itemIndexOffset or 0
+                    local numEntries = skillLineInfo.numSpellBookItems or 0
+                    for i = 1, numEntries do
+                        local slotIndex = offset + i
+                        local okItem, itemInfo = pcall(C_SpellBook.GetSpellBookItemInfo, slotIndex, Enum.SpellBookSpellBank.Player)
+                        if okItem and itemInfo and itemInfo.spellID then
+                            local sid = itemInfo.spellID
+                            if not seen[sid] then
+                                -- Check base cooldown (ms) — not current cooldown state
+                                local baseCDms = 0
+                                if C_Spell and C_Spell.GetSpellBaseCooldown then
+                                    local okCD, ms = pcall(C_Spell.GetSpellBaseCooldown, sid)
+                                    if okCD and ms then
+                                        baseCDms = Helpers.SafeToNumber(ms, 0) or 0
+                                    end
+                                end
+
+                                -- Also count charged spells as having a cooldown
+                                if baseCDms <= 1500 and C_Spell and C_Spell.GetSpellCharges then
+                                    local okCh, ci = pcall(C_Spell.GetSpellCharges, sid)
+                                    if okCh and ci then
+                                        local maxC = Helpers.SafeToNumber(ci.maxCharges, 0) or 0
+                                        if maxC > 1 then baseCDms = 2000 end
+                                    end
+                                end
+
+                                -- Only include spells with meaningful cooldowns (> 1500ms / 1.5s GCD)
+                                if baseCDms > 1500 then
+                                    seen[sid] = true
+                                    local name, icon
+                                    if C_Spell and C_Spell.GetSpellInfo then
+                                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                                        if okI and spellInfo then
+                                            name = spellInfo.name
+                                            icon = spellInfo.iconID
+                                        end
+                                    end
+                                    result[#result + 1] = {
+                                        spellID = sid,
+                                        name = name or "",
+                                        icon = icon or 0,
+                                        cooldown = baseCDms / 1000,
+                                    }
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    learnedCooldownsCache = result
+    learnedCooldownsCacheDirty = false
+    return result
+end
+
+function CDMSpellData:GetActiveAuras(filter)
+    local result = {}
+
+    if not C_UnitAuras then return result end
+
+    -- Get aura instance IDs for the player with the given filter
+    if C_UnitAuras.GetUnitAuraInstanceIDs then
+        local filterObj = { filter = filter or "HELPFUL" }
+        local ok, instanceIDs = pcall(C_UnitAuras.GetUnitAuraInstanceIDs, "player", filterObj)
+        if ok and instanceIDs then
+            for _, instanceID in ipairs(instanceIDs) do
+                if C_UnitAuras.GetAuraDataByAuraInstanceID then
+                    local okA, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceID)
+                    if okA and auraData then
+                        local sid = Helpers.SafeValue(auraData.spellId, nil)
+                        local name = Helpers.SafeValue(auraData.name, nil)
+                        local icon = Helpers.SafeValue(auraData.icon, nil)
+                        local duration = Helpers.SafeToNumber(auraData.duration, 0) or 0
+                        if sid then
+                            result[#result + 1] = {
+                                spellID = sid,
+                                name = name or "",
+                                icon = icon or 0,
+                                duration = duration,
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return result
+end
+
+function CDMSpellData:GetUsableItems()
+    local result = {}
+
+    -- Scan equipped trinkets (slots 13 and 14)
+    for _, slotID in ipairs({ 13, 14 }) do
+        local itemID = GetInventoryItemID("player", slotID)
+        if itemID then
+            local name, icon
+            local okN, itemName = pcall(C_Item.GetItemNameByID, itemID)
+            if okN then name = itemName end
+            local okI, itemIcon = pcall(C_Item.GetItemIconByID, itemID)
+            if okI then icon = itemIcon end
+
+            -- Check if trinket has an on-use spell
+            local hasSpell = false
+            if C_Item and C_Item.GetItemSpell then
+                local okS, spellName = pcall(C_Item.GetItemSpell, itemID)
+                if okS and spellName then
+                    hasSpell = true
+                end
+            end
+
+            if hasSpell then
+                result[#result + 1] = {
+                    type = "slot",
+                    id = slotID,
+                    itemID = itemID,
+                    name = name or "",
+                    icon = icon or 0,
+                    slotID = slotID,
+                }
+            end
+        end
+    end
+
+    -- Scan bags for items with on-use spells
+    if C_Container and C_Container.GetContainerNumSlots then
+        for bag = 0, 4 do
+            local okN, numSlots = pcall(C_Container.GetContainerNumSlots, bag)
+            if okN and numSlots then
+                for slot = 1, numSlots do
+                    local okC, containerInfo = pcall(C_Container.GetContainerItemInfo, bag, slot)
+                    if okC and containerInfo and containerInfo.itemID then
+                        local itemID = containerInfo.itemID
+                        -- Check for on-use spell
+                        if C_Item and C_Item.GetItemSpell then
+                            local okS, spellName = pcall(C_Item.GetItemSpell, itemID)
+                            if okS and spellName then
+                                local name = containerInfo.itemName or ""
+                                local icon = containerInfo.iconFileID or 0
+                                result[#result + 1] = {
+                                    type = "item",
+                                    id = itemID,
+                                    itemID = itemID,
+                                    name = name,
+                                    icon = icon,
+                                    slotID = nil,
+                                }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return result
+end
+
+
+---------------------------------------------------------------------------
 -- PUBLIC API
 ---------------------------------------------------------------------------
+
+-- GetSpellList: Routing function — owned path if snapshotted, scan fallback
 function CDMSpellData:GetSpellList(viewerType)
-    return spellLists[viewerType] or {}
+    local db = GetContainerDB(viewerType)
+    local hasOwned = db and db.ownedSpells ~= nil
+    if hasOwned then
+        -- Owned path: build from DB
+        local result = self:BuildSpellListFromOwned(viewerType)
+        return result
+    end
+    -- Fallback: existing scan-based approach (backward compat)
+    -- Custom containers with no ownedSpells yet return empty
+    if not VIEWER_NAMES[viewerType] then
+        return {}
+    end
+    local list = spellLists[viewerType] or {}
+    return list
 end
 
 function CDMSpellData:ForceScan()
     -- Scan all three viewers synchronously but do NOT fire QUI_OnSpellDataChanged.
     -- This prevents a feedback loop: RefreshAll → ForceScan → changed → callback → RefreshAll.
     -- Update fingerprints so the periodic ScanAll ticker won't re-detect the same change.
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        return
+    end
     ScanViewer("essential")
     ScanViewer("utility")
     ScanViewer("buff")
@@ -489,30 +2128,15 @@ function CDMSpellData:ForceScan()
     end
 end
 
-function CDMSpellData:IsViewerHidden()
-    return viewersHidden
-end
-
-function CDMSpellData:HideViewers()
-    HideBlizzardViewers()
-end
-
-function CDMSpellData:ShowViewers()
-    ShowBlizzardViewers()
-end
 
 function CDMSpellData:UpdateCVar()
     UpdateCooldownViewerCVar()
 end
 
-function CDMSpellData:GetBlizzardViewer(viewerType)
-    local name = VIEWER_NAMES[viewerType]
-    return name and _G[name] or nil
+function CDMSpellData:InvalidateLearnedCache()
+    InvalidateLearnedCooldownsCache()
 end
 
-function CDMSpellData:GetBlizzardViewerName(viewerType)
-    return VIEWER_NAMES[viewerType]
-end
 
 ---------------------------------------------------------------------------
 -- EDIT MODE INTEGRATION
@@ -565,6 +2189,8 @@ function CDMSpellData:Initialize()
         RegisterEditModeCallbacks()
         HookBlizzardSettings()
         initialized = true
+        -- Initial reconciliation after scan data is available
+        CDMSpellData:ReconcileAllContainers()
         -- Start periodic scan (out of combat only, 0.5s interval)
         if not scanTimer then
             scanTimer = C_Timer.NewTicker(0.5, function()
@@ -575,17 +2201,47 @@ function CDMSpellData:Initialize()
         end
     end)
     -- Register runtime events
+    local _spellsChangedToken = 0
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
     eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("SPELLS_CHANGED")
+    eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
     eventFrame:SetScript("OnEvent", function(self, event, arg)
         if event == "SPELL_UPDATE_COOLDOWN" then
             if not InCombatLockdown() then
                 ScanAll()
             end
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-            C_Timer.After(0.5, function() ScanAll() end)
+            -- Spec change is coordinated by cdm_containers.lua which calls
+            -- CheckAllDormantSpells / ReconcileAllContainers at the right time
+            -- (after loading the new spec profile). Only invalidate the
+            -- learned cooldowns cache here so stale data is not returned.
+            InvalidateLearnedCooldownsCache()
+        elseif event == "SPELLS_CHANGED" then
+            -- Talent/spell changes: update dormant spell lists and invalidate cache.
+            -- Cache invalidation is immediate so stale data is never returned.
+            InvalidateLearnedCooldownsCache()
+            -- Debounce dormant/reconcile — SPELLS_CHANGED fires multiple times
+            -- during talent swaps; collapse into a single deferred rebuild.
+            _spellsChangedToken = _spellsChangedToken + 1
+            local token = _spellsChangedToken
+            C_Timer.After(0.3, function()
+                if token ~= _spellsChangedToken then
+                    return
+                end
+                if not InCombatLockdown() then
+                    CDMSpellData:CheckAllDormantSpells()
+                    CDMSpellData:ReconcileAllContainers()
+                else
+                end
+            end)
+        elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+            -- Trinket changes: reconcile to pick up new trinket slots
+            if not InCombatLockdown() then
+                CDMSpellData:ReconcileAllContainers()
+            end
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- Hide viewers immediately to prevent flash of unstyled icons
             HideBlizzardViewers()
@@ -613,4 +2269,11 @@ end
 ---------------------------------------------------------------------------
 -- NAMESPACE EXPORT
 ---------------------------------------------------------------------------
+-- Expose DurationObject caches for cdm_icons.lua / cdm_bars.lua
+CDMSpellData._durObjCache = _durObjCache
+CDMSpellData._rawStartCache = _rawStartCache
+CDMSpellData._rawDurCache = _rawDurCache
+CDMSpellData._spellIDToChild = _spellIDToChild
+CDMSpellData._abilityToAuraSpellID = _abilityToAuraSpellID
+
 ns.CDMSpellData = CDMSpellData

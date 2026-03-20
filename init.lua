@@ -1,17 +1,7 @@
 -- Keybinding display names (must be global before Bindings.xml loads)
 BINDING_NAME_QUI_TOGGLE_OPTIONS = "Open QUI Options"
-BINDING_HEADER_QUI_PING_HEADER  = "Ping"
-BINDING_NAME_QUI_PING           = "Ping (Contextual)"
-BINDING_NAME_QUI_PING_ASSIST    = "Ping: Assist"
-BINDING_NAME_QUI_PING_ATTACK    = "Ping: Attack"
-BINDING_NAME_QUI_PING_WARNING   = "Ping: Warning"
-BINDING_NAME_QUI_PING_ONMYWAY   = "Ping: On My Way"
-
 ---@type table|AceAddon
 QUI = LibStub("AceAddon-3.0"):NewAddon("QUI", "AceConsole-3.0", "AceEvent-3.0")
-
----@type table
-QUI.DF = _G["DetailsFramework"]
 QUI.DEBUG_MODE = false
 QUI.pullAliasOwned = false
 
@@ -24,6 +14,23 @@ local PULL_COMMAND_OWNERS = {
 
 -- Version info
 QUI.versionString = C_AddOns.GetAddOnMetadata("QUI", "Version") or "2.00"
+
+-- Deferred importstring loading: importstring files register loaders
+-- instead of eagerly constructing large tables at login. Data is built
+-- on first access (when the user opens the Import tab).
+QUI._importLoaders = {}
+QUI.imports = setmetatable({}, {
+    __index = function(self, key)
+        local loader = QUI._importLoaders[key]
+        if loader then
+            local data = loader()
+            rawset(self, key, data)
+            QUI._importLoaders[key] = nil -- free the loader closure
+            return data
+        end
+        return nil
+    end,
+})
 
 ---@type table
 QUI.defaults = {
@@ -75,7 +82,7 @@ SlashCmdList["QUIKB"] = function()
         -- Fallback to Blizzard's Quick Keybind Mode (no mousewheel support)
         ShowUIPanel(QuickKeybindFrame)
     else
-        print("|cff34D399QUI:|r Quick Keybind Mode not available.")
+        print("|cff60A5FAQUI:|r Quick Keybind Mode not available.")
     end
 end
 
@@ -85,7 +92,7 @@ SlashCmdList["QUI_CDM"] = function()
     if CooldownViewerSettings then
         CooldownViewerSettings:SetShown(not CooldownViewerSettings:IsShown())
     else
-        print("|cff34D399QUI:|r Cooldown Settings not available. Enable CDM first.")
+        print("|cff60A5FAQUI:|r Cooldown Settings not available. Enable CDM first.")
     end
 end
 
@@ -93,26 +100,23 @@ function QUI:SlashCommandOpen(input)
     if input and input == "debug" then
         self.db.char.debug.reload = true
         QUI:SafeReload()
-    elseif input and input == "editmode" then
-        -- Toggle Unit Frames Edit Mode
-        if _G.QUI_ToggleUnitFrameEditMode then
-            _G.QUI_ToggleUnitFrameEditMode()
+    elseif input and (input == "layout" or input == "unlock" or input == "editmode") then
+        -- Toggle Layout Mode (with backward compat aliases)
+        if _G.QUI_ToggleLayoutMode then
+            _G.QUI_ToggleLayoutMode()
         else
-            print("|cFF56D1FFQUI:|r Unit Frames module not loaded.")
+            print("|cff60A5FAQUI:|r Layout Mode not loaded yet.")
         end
         return
-    elseif input and input:find("^grouptest") then
-        -- Toggle Group Frames test/preview mode
-        local GFEditMode = ns.QUI_GroupFrameEditMode
-        if GFEditMode then
-            local args = input:match("^grouptest%s*(.*)$") or ""
-            GFEditMode:HandleSlashCommand(args)
+    elseif input and input == "perf" then
+        if _G.QUI_TogglePerfMonitor then
+            _G.QUI_TogglePerfMonitor()
         else
-            print("|cFF56D1FFQUI:|r Group Frames module not loaded.")
+            print("|cff60A5FAQUI:|r Performance Monitor not loaded yet.")
         end
         return
     end
-    
+
     -- Default: Open custom GUI
     if self.GUI then
         self.GUI:Toggle()
@@ -164,10 +168,10 @@ function QUI:OnEnable()
         if self.db.profile.chat.showIntroMessage ~= false then
             print("|cFF30D1FFQUI|r loaded. |cFFFFFF00/qui|r to setup.")
             print("|cFF30D1FFQUI REMINDER:|r")
-            print("|cFF34D3991.|r ENABLE |cFFFFFF00Cooldown Manager|r in Options > Gameplay Enhancement")
-            print("|cFF34D3992.|r Action Bars & Menu Bar |cFFFFFF00HIDDEN|r on mouseover |cFFFFFF00by default|r. Go to |cFFFFFF00'Actionbars'|r tab in |cFFFFFF00/qui|r to unhide.")
-            print("|cFF34D3993.|r Use |cFFFFFF00100% Icon Size|r on CDM Essential & Utility bars via |cFFFFFF00Edit Mode|r for best results.")
-            print("|cFF34D3994.|r Position your |cFFFFFF00CDM bars|r in |cFFFFFF00Edit Mode|r and click |cFFFFFF00Save|r before exiting.")
+            print("|cff60A5FA1.|r ENABLE |cFFFFFF00Cooldown Manager|r in Options > Gameplay Enhancement")
+            print("|cff60A5FA2.|r Action Bars & Menu Bar |cFFFFFF00HIDDEN|r on mouseover |cFFFFFF00by default|r. Go to |cFFFFFF00'Actionbars'|r tab in |cFFFFFF00/qui|r to unhide.")
+            print("|cff60A5FA3.|r Use |cFFFFFF00100% Icon Size|r on CDM Essential & Utility bars for best results.")
+            print("|cff60A5FA4.|r Use |cFFFFFF00/qui layout|r to position frames, then click |cFFFFFF00Save|r.")
         end
     end
 end

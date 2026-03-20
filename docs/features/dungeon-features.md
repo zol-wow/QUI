@@ -34,6 +34,7 @@ A redesigned Mythic Plus timer with a cleaner layout than Blizzard's default.
 - **Forces bar** -- A progress bar for enemy forces percentage with multiple display modes and text format options.
 - **Font customization** -- Control font face and size for timer text.
 - **Dungeon name truncation** -- Set a maximum character length for the dungeon name to keep the timer compact.
+- **Multiple customization options** -- Extensive configuration for timer layout, colors, and display modes.
 
 ### Party Keystones
 

@@ -96,13 +96,7 @@ local function CopyColor(color, fallback)
     }
 end
 
-local function Clamp(value, minValue, maxValue)
-    local n = tonumber(value)
-    if not n then return minValue end
-    if n < minValue then return minValue end
-    if n > maxValue then return maxValue end
-    return n
-end
+local Clamp = Helpers.Clamp
 
 local function GetSpellNameAndIcon(spellID)
     if C_Spell and C_Spell.GetSpellInfo then
@@ -131,15 +125,7 @@ local function GetSettings()
     end
 
     local settings = general.actionTracker
-    for key, defaultValue in pairs(DEFAULT_SETTINGS) do
-        if settings[key] == nil then
-            if type(defaultValue) == "table" then
-                settings[key] = CopyColor(defaultValue, defaultValue)
-            else
-                settings[key] = defaultValue
-            end
-        end
-    end
+    Helpers.EnsureDefaults(settings, DEFAULT_SETTINGS)
 
     settings.maxEntries = math.floor(Clamp(settings.maxEntries, 1, 10))
     settings.iconSize = math.floor(Clamp(settings.iconSize, 16, 64))
@@ -672,13 +658,13 @@ local function CreateTrackerFrame()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
         if state.preview ~= true then return end
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
+        if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("actionTracker") then return end
         self:StartMoving()
     end)
     frame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         if state.preview ~= true then return end
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
+        if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("actionTracker") then return end
 
         local settings = GetSettings()
         if not settings then return end
@@ -711,7 +697,7 @@ end
 local function UpdatePreviewDragState()
     if not state.frame then return end
     local canDrag = state.preview == true
-        and not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(state.frame))
+        and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("actionTracker"))
 
     state.frame:EnableMouse(canDrag)
     if not canDrag then
@@ -740,7 +726,7 @@ local function RefreshAppearance()
         height = (CONTAINER_PADDING * 2) + settings.iconSize + ((settings.maxEntries - 1) * step)
     end
 
-    local isOverridden = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(state.frame)
+    local isOverridden = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("actionTracker")
     if not isOverridden then
         state.frame:ClearAllPoints()
         state.frame:SetPoint("CENTER", UIParent, "CENTER", settings.xOffset or 0, settings.yOffset or 0)
@@ -1098,7 +1084,7 @@ RefreshActionTracker = function()
     end
     RefreshAppearance()
     -- Preserve anchor override position when changing tracker options.
-    if state.frame and _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(state.frame) and _G.QUI_ApplyFrameAnchor then
+    if state.frame and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("actionTracker") and _G.QUI_ApplyFrameAnchor then
         _G.QUI_ApplyFrameAnchor("actionTracker")
     end
     RefreshVisibility()

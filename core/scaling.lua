@@ -102,26 +102,6 @@ function QUICore:PixelRound(value, frame)
     return Round(value / px) * px
 end
 
---- Floor a virtual-coordinate value down to the nearest pixel boundary.
---- @param value number The value in virtual coordinates
---- @param frame? Frame The frame context (defaults to UIParent)
---- @return number The value floored to the nearest pixel boundary
-function QUICore:PixelFloor(value, frame)
-    if value == 0 then return 0 end
-    local px = self:GetPixelSize(frame)
-    return floor(value / px) * px
-end
-
---- Ceil a virtual-coordinate value up to the nearest pixel boundary.
---- @param value number The value in virtual coordinates
---- @param frame? Frame The frame context (defaults to UIParent)
---- @return number The value ceiled to the nearest pixel boundary
-function QUICore:PixelCeil(value, frame)
-    if value == 0 then return 0 end
-    local px = self:GetPixelSize(frame)
-    return ceil(value / px) * px
-end
-
 --------------------------------------------------------------------------------
 -- Scaling (Legacy + Frame-Aware)
 --------------------------------------------------------------------------------
@@ -135,35 +115,6 @@ end
 function QUICore:Scale(x, frame)
     if x == 0 then return 0 end
     return self:Pixels(x, frame)
-end
-
---- Set pixel-perfect size on a frame using UIParent's scale.
---- For frame-aware sizing, use SetPixelPerfectSize instead.
---- @param frame Frame The frame to size
---- @param width number Width in physical pixels
---- @param height number Height in physical pixels
-function QUICore:SetSize(frame, width, height)
-    if not frame then return end
-    local px = self:GetPixelSize()
-    frame:SetSize(Round(width) * px, Round(height) * px)
-end
-
---- Set pixel-perfect width on a frame using UIParent's scale.
---- @param frame Frame The frame to size
---- @param width number Width in physical pixels
-function QUICore:SetWidth(frame, width)
-    if not frame then return end
-    local px = self:GetPixelSize()
-    frame:SetWidth(Round(width) * px)
-end
-
---- Set pixel-perfect height on a frame using UIParent's scale.
---- @param frame Frame The frame to size
---- @param height number Height in physical pixels
-function QUICore:SetHeight(frame, height)
-    if not frame then return end
-    local px = self:GetPixelSize()
-    frame:SetHeight(Round(height) * px)
 end
 
 --------------------------------------------------------------------------------
@@ -189,15 +140,6 @@ function QUICore:SetPixelPerfectSize(frame, widthPixels, heightPixels)
     elseif heightPixels then
         frame:SetHeight(Round(heightPixels) * px)
     end
-end
-
---- Set frame width to exactly widthPixels physical screen pixels.
---- @param frame Frame The frame to size
---- @param widthPixels number Desired width in physical pixels
-function QUICore:SetPixelPerfectWidth(frame, widthPixels)
-    if not frame then return end
-    local px = self:GetPixelSize(frame)
-    frame:SetWidth(Round(widthPixels) * px)
 end
 
 --- Set frame height to exactly heightPixels physical screen pixels.
@@ -245,15 +187,15 @@ end
 --- @param offsetY? number Y offset in virtual coordinates (will be snapped)
 function QUICore:SetSnappedPoint(frame, point, relativeTo, relativePoint, offsetX, offsetY)
     if not frame then return end
-    -- If frame has an active anchoring override, reapply the override position
-    -- (modules call ClearAllPoints before SetSnappedPoint, so the override was just cleared)
+    -- If frame is owned by the layout system, reapply its position
+    -- (modules call ClearAllPoints before SetSnappedPoint, so the position was just cleared)
     local anchoring = ns.QUI_Anchoring
-    if anchoring and anchoring.overriddenFrames and anchoring.overriddenFrames[frame] then
-        local overrideKey = anchoring.overriddenFrames[frame]
-        if overrideKey and QUICore.db and QUICore.db.profile then
+    if anchoring and anchoring.layoutOwnedFrames and anchoring.layoutOwnedFrames[frame] then
+        local layoutKey = anchoring.layoutOwnedFrames[frame]
+        if layoutKey and QUICore.db and QUICore.db.profile then
             local anchoringDB = QUICore.db.profile.frameAnchoring
-            if anchoringDB and anchoringDB[overrideKey] then
-                anchoring:ApplyFrameAnchor(overrideKey, anchoringDB[overrideKey])
+            if anchoringDB and anchoringDB[layoutKey] then
+                anchoring:ApplyFrameAnchor(layoutKey, anchoringDB[layoutKey])
             end
         end
         return
@@ -492,3 +434,20 @@ function QUICore:InitializePixelPerfect()
     cachedPhysicalHeight = self.physicalHeight
     self:RegisterEvent('UI_SCALE_CHANGED', 'PixelScaleChanged')
 end
+
+--------------------------------------------------------------------------------
+-- Panel Pixel-Perfect Context
+-- Provides pixel math relative to the options panel's effective scale rather
+-- than UIParent's. Ensures crisp 1px borders on widgets that live inside a
+-- scaled panel frame.
+--------------------------------------------------------------------------------
+
+local panelFrame = nil
+
+--- Set the options panel frame for panel-context pixel math.
+--- Call this from GUI:CreateMainFrame() and on panel scale change.
+--- @param frame Frame The options panel main frame
+function QUICore:SetPanelFrame(frame)
+    panelFrame = frame
+end
+

@@ -175,17 +175,15 @@ function QUI_UF:HideBlizzardCastbars()
     -- NOTE: As of 12.0.x beta, CastingBarFrame can be a forbidden/restricted frame.
     -- All interactions are wrapped in pcall to prevent errors from blocking initialization.
     if PlayerCastingBarFrame then
-        local ok, err = pcall(function()
+        pcall(function()
             PlayerCastingBarFrame:SetAlpha(0)
             PlayerCastingBarFrame:SetScale(0.0001)
             PlayerCastingBarFrame:SetPoint("BOTTOMLEFT", UIParent, "TOPLEFT", -10000, 10000)
             PlayerCastingBarFrame:UnregisterAllEvents()
         end)
-        if not ok then QUI:DebugPrint("Could not hide PlayerCastingBarFrame: " .. tostring(err)) end
-        local ok2, err2 = pcall(function()
+        pcall(function()
             PlayerCastingBarFrame:SetUnit(nil)
         end)
-        if not ok2 then QUI:DebugPrint("Could not detach PlayerCastingBarFrame unit: " .. tostring(err2)) end
         -- TAINT SAFETY: Do NOT use hooksecurefunc on PlayerCastingBarFrame (secure frame).
         -- Even deferred callbacks taint the secure execution context.
         -- Use an OnUpdate watcher to re-hide if Blizzard shows it again.
@@ -208,12 +206,11 @@ function QUI_UF:HideBlizzardCastbars()
     end
     -- Hide pet castbar only when QUI pet frame is enabled.
     if db.enabled and db.pet and db.pet.enabled and PetCastingBarFrame then
-        local ok, err = pcall(function()
+        pcall(function()
             PetCastingBarFrame:SetAlpha(0)
             PetCastingBarFrame:SetScale(0.0001)
             PetCastingBarFrame:UnregisterAllEvents()
         end)
-        if not ok then QUI:DebugPrint("Could not hide PetCastingBarFrame: " .. tostring(err)) end
     end
 end
 
@@ -240,9 +237,40 @@ function QUI_UF:HideBlizzardFrames()
         KillBlizzardFrame(TargetFrameToT)
     end
 
-    -- Hide Pet frame
-    if db.pet and db.pet.enabled then
+    -- Hide Pet frame. Nil all four heal prediction bar references so
+    -- UnitFrameHealPredictionBars_Update hits its early return:
+    --   if (not myHealPredictionBar and not otherHealPredictionBar
+    --       and not healAbsorbBar and not totalAbsorbBar) then return end
+    -- Blizzard's managed frame system can re-initialize PetFrame after our
+    -- kill, so a persistent watcher keeps these nil.
+    if db.pet and db.pet.enabled and PetFrame then
+        if PetFrame.healthbar then
+            PetFrame.healthbar:UnregisterAllEvents()
+            PetFrame.healthbar:SetScript("OnUpdate", nil)
+        end
+        if PetFrame.manabar then
+            PetFrame.manabar:UnregisterAllEvents()
+            PetFrame.manabar:SetScript("OnUpdate", nil)
+        end
+        PetFrame.myHealPredictionBar = nil
+        PetFrame.otherHealPredictionBar = nil
+        PetFrame.healAbsorbBar = nil
+        PetFrame.totalAbsorbBar = nil
         KillBlizzardFrame(PetFrame)
+        -- Persistent watcher: re-nil heal prediction refs if Blizzard restores them
+        if not _blizzFrameGuards.petHealPredKill then
+            _blizzFrameGuards.petHealPredKill = true
+            local watcher = CreateFrame("Frame", nil, UIParent)
+            watcher:SetScript("OnUpdate", function()
+                if PetFrame.myHealPredictionBar or PetFrame.otherHealPredictionBar
+                    or PetFrame.healAbsorbBar or PetFrame.totalAbsorbBar then
+                    PetFrame.myHealPredictionBar = nil
+                    PetFrame.otherHealPredictionBar = nil
+                    PetFrame.healAbsorbBar = nil
+                    PetFrame.totalAbsorbBar = nil
+                end
+            end)
+        end
     end
 
     -- Hide Focus frame visuals (always hide Blizzard focus frame when QUI unit frames are enabled)
@@ -286,48 +314,4 @@ end
 -- causing "secret number tainted by QUI" errors when Edit Mode reads them.
 -- NOTE: Use SetAlpha(0) instead of Hide(). Hidden frames return nil from
 -- GetRect(), crashing GetScaledSelectionSides() in Blizzard's magnetic snap loop.
-function QUI_UF:HideBlizzardSelectionFrames()
-    local function HideSelection(parent, unitKey)
-        if not parent or not parent.Selection then return end
 
-        local db = GetDB()
-        if not db or not db[unitKey] or not db[unitKey].enabled then return end
-
-        -- Defer to break taint chain from Edit Mode secure context.
-        -- SetAlpha(0) keeps the frame "shown" so GetRect() returns valid bounds,
-        -- avoiding crashes in Blizzard's magnetic snap system.
-        C_Timer.After(0, function()
-            if parent.Selection then
-                parent.Selection:SetAlpha(0)
-            end
-        end)
-
-        -- Use OnUpdate watcher to persistently keep alpha 0 instead of HookScript
-        -- (HookScript on Selection fires addon code in the secure frame context)
-        local selKey = tostring(parent) .. "_selection"
-        if not _blizzFrameGuards[selKey] then
-            _blizzFrameGuards[selKey] = true
-            local selWatcher = CreateFrame("Frame", nil, UIParent)
-            selWatcher:SetScript("OnUpdate", function()
-                local sel = parent.Selection
-                if sel and sel:GetAlpha() > 0 then
-                    local curDb = GetDB()
-                    if curDb and curDb[unitKey] and curDb[unitKey].enabled then
-                        C_Timer.After(0, function()
-                            if sel then
-                                sel:SetAlpha(0)
-                            end
-                        end)
-                    end
-                end
-            end)
-        end
-    end
-
-    HideSelection(PlayerFrame, "player")
-    HideSelection(TargetFrame, "target")
-    HideSelection(FocusFrame, "focus")
-    HideSelection(PetFrame, "pet")
-    HideSelection(TargetFrameToT, "targettarget")
-    -- Boss frames use Blizzard's boss frames which are separate
-end

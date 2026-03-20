@@ -19,14 +19,15 @@ Tracker bars can be positioned freely on screen, or snapped and locked to existi
 
 Custom Trackers are configured per-character. To create and manage trackers:
 
-- Open `/qui` and navigate to the **Trackers > Custom Trackers** tab.
+- Open `/qui` and navigate to the **Custom CDM Bars** tab.
 - Click **Add Tracker** and enter a spell ID or item ID.
 
-Visibility rules for all tracker bars are managed in the **Custom Trackers Visibility** tab under **UI > HUD Visibility**.
+Visibility rules for all tracker bars are managed in the HUD Visibility settings. Tracker bars can also be added to the anchoring system for relative positioning with other QUI elements.
 
 ## Key Features
 
 - **User-defined spell and item tracking** -- Track any spell or item by entering its ID. Each tracker bar displays the icon, cooldown progress, and duration as a status bar.
+- **Equipment slot tracking** -- Track equipment slot cooldowns (trinkets, on-use items) by slot rather than spell ID, automatically updating when you swap gear.
 - **Dynamic layout** -- Automatically arranges tracker icons in a row or column with configurable growth direction and spacing.
 - **Clickable icons** -- Icons function as clickable buttons, letting you use the tracked ability directly from the tracker bar.
 - **Snap and lock to frames** -- Anchor tracker bars to Blizzard's default player or target unit frames, or to other QUI elements, without requiring QUI unit frames to be active.

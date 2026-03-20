@@ -11,7 +11,7 @@ QUI's tooltip module reskins and enhances the default World of Warcraft tooltips
 
 ## Overview
 
-The tooltip module replaces the default Blizzard tooltip appearance with QUI's themed style -- a dark background, mint accent border, and consistent fonts. Beyond visual changes, it adds practical features like class-colored player names, spell ID display for addon developers, and granular control over when and where tooltips appear. Each tooltip context (NPCs, abilities, items, frames, CDM icons, custom trackers) can be independently configured to always show, always hide, or require a modifier key.
+The tooltip module uses Blizzard hooks (not a custom tooltip engine) to restyle tooltips with QUI's themed style -- a dark background, accent border, and consistent fonts. Beyond visual changes, it adds practical features like class-colored player names, spell ID and icon ID display, spec and item level information on player tooltips, and granular control over when and where tooltips appear. Each tooltip context (NPCs, abilities, items, frames, CDM icons, custom trackers) can be independently configured to always show, always hide, or require a modifier key.
 
 ## How to Enable
 
@@ -21,11 +21,12 @@ The tooltip module is enabled by default. To configure it:
 
 ## Key Features
 
-- **QUI-themed appearance** -- Dark background with mint accent border, replacing the default Blizzard tooltip style.
-- **Cursor anchoring** -- Attach tooltips to your cursor with configurable X/Y offset, or keep the default Blizzard anchor position.
+- **QUI-themed appearance** -- Dark background with accent border, replacing the default Blizzard tooltip style.
+- **Cursor anchoring** -- Attach tooltips to your cursor with configurable X/Y offset (with additional offset options for cursor-anchored tooltips), or keep the default Blizzard anchor position. Cursor anchoring is automatically disabled in combat to avoid taint.
 - **Combat hiding** -- Automatically hides tooltips during combat to reduce clutter (enabled by default).
 - **Combat modifier key** -- When combat hiding is active, hold a modifier key (SHIFT by default) to force tooltips to appear in combat.
 - **Class-colored player names** -- Player names in tooltips are colored by their class for quick identification.
+- **Spec and item level display** -- Shows the player's specialization and item level in tooltips when inspecting other players.
 - **Per-context visibility** -- Each tooltip context can be set to SHOW, HIDE, or require a modifier (SHIFT, CTRL, ALT):
   - NPCs
   - Abilities
@@ -33,10 +34,12 @@ The tooltip module is enabled by default. To configure it:
   - Unit frames
   - CDM icons
   - Custom trackers
-- **Spell ID display** -- Shows the spell ID on ability tooltips, useful for debugging and addon development.
+- **Spell ID and Icon ID display** -- Shows spell IDs and icon IDs on ability tooltips, useful for debugging and addon development.
 - **Health bar toggle** -- Option to hide the health bar on unit tooltips for a cleaner look.
 - **Border customization** -- Choose between class color or accent color for the tooltip border, with adjustable thickness (1-10px).
+- **Font size** -- Configurable font size for tooltip text.
 - **Background opacity** -- Slider to control tooltip background transparency.
+- **Loot window X/Y offset** -- Configurable offset for the loot window position relative to the mouse cursor.
 
 ## Important Settings
 

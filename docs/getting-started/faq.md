@@ -16,13 +16,18 @@ QUI (QuaziiUI Community Edition) is a comprehensive UI replacement addon for Wor
 It depends on the type of frame:
 
 - **Blizzard default frames** (action bars, minimap, chat, etc.) are moved through Blizzard's built-in **Edit Mode**. Press `Escape` > `Edit Mode` to enter it.
-- **QUI-specific frames** (unit frames, data panels, CDM bars, etc.) are moved through `/qui` > **Anchoring & Layout**. Some frames also support drag-and-drop positioning when edit mode is active via `/qui editmode`.
+- **QUI-specific frames** (unit frames, CDM bars, group frames, data panels, etc.) are moved through **Layout Mode**. Type `/qui layout` to enter it. Drag the frame handles to reposition, then click **Save**.
+- Some frame positions can also be fine-tuned via **Frame Positioning** in the `/qui` options panel.
 
 ## What is CDM?
 
 CDM stands for **Cooldown Manager**. It displays your ability cooldowns as icon bars on screen, giving you clear visibility of when your abilities are ready. CDM tracks cooldowns, charges, and procs for your class and spec.
 
-To configure CDM, open `/qui` and go to the **CDM** tab, or type `/cdm` to go there directly. CDM is disabled by default and must be enabled manually.
+To configure CDM, use `/qui layout` to enter Layout Mode and access CDM settings through the toolbar, or type `/cdm` to open CDM settings directly. CDM is enabled by default with the "owned" engine.
+
+## What is Layout Mode?
+
+Layout Mode (`/qui layout`) is QUI's primary frame positioning tool. It provides an edge-docked slide-out toolbar with settings panels and a drawer with collapsible groups. CDM, Group Frames, and Minimap settings are accessed through Layout Mode rather than the main options panel.
 
 ## How do I set up keybinds?
 
@@ -45,7 +50,7 @@ When reporting a bug, include the QUI version (shown in `/qui`), any error messa
 
 ## Why are my action bars hidden?
 
-QUI enables **mouseover fade** on action bars by default. Your action bars are still there -- they become visible when you move your mouse over them.
+QUI enables **mouseover fade** on action bars by default. Your action bars are still there -- they fade to invisible and become visible when you move your mouse over them.
 
 To disable this behavior:
 
@@ -60,10 +65,12 @@ QUI Group Frames are **opt-in** and disabled by default. The addon does not over
 
 To enable QUI Group Frames:
 
-1. Open `/qui`.
-2. Go to the **Group Frames** tab.
+1. Enter Layout Mode with `/qui layout`.
+2. Access the Group Frames settings through the Layout Mode toolbar or drawer.
 3. Enable QUI Group Frames.
 4. Reload the UI with `/rl`.
+
+Group frames have separate profiles for party and raid, with their own sizing, sorting, and indicator options.
 
 ## Why can I not click things in combat?
 
@@ -80,4 +87,13 @@ QUI provides global font, texture, and outline settings that apply across the en
 3. Adjust the **font**, **texture**, and **outline** settings to your preference.
 4. Changes apply across all QUI elements that use the global settings.
 
-Individual modules may also have their own font or texture overrides available in their respective tabs.
+Individual modules may also have their own font or texture overrides available in their respective settings.
+
+## What is the difference between the CDM engines?
+
+QUI ships with two CDM engines:
+
+- **Owned** (default) -- Addon-created frames managed entirely by QUI. This is the active, maintained engine with all features (containers, Composer, per-spell settings, aura bars, etc.).
+- **Classic** -- A legacy engine that hooks into Blizzard frames. It exists for backward compatibility but is no longer actively developed.
+
+If you experience issues with cooldown tracking, make sure your engine is set to "owned."
