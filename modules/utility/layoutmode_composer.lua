@@ -2017,6 +2017,30 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         childRefs.roleIcon = roleIcon
     end
 
+    -- Helper: create a single indicator icon preview
+    local function CreateIndicatorPip(showKey, sizeKey, anchorKey, offXKey, offYKey, atlas, refKey, texCoord)
+        if not indDB[showKey] then return end
+        local pipSize = (indDB[sizeKey] or 12) * PREVIEW_SCALE
+        local pipAnchor = indDB[anchorKey] or "TOPLEFT"
+        local pipOffX = (indDB[offXKey] or 0) * PREVIEW_SCALE
+        local pipOffY = (indDB[offYKey] or 0) * PREVIEW_SCALE
+        local pip = textFrame:CreateTexture(nil, "OVERLAY")
+        pip:SetSize(pipSize, pipSize)
+        pip:SetPoint(pipAnchor, textFrame, pipAnchor, pipOffX, pipOffY)
+        if atlas then
+            pip:SetAtlas(atlas)
+        end
+        if texCoord then pip:SetTexCoord(unpack(texCoord)) end
+        childRefs[refKey] = pip
+    end
+
+    CreateIndicatorPip("showReadyCheck", "readyCheckSize", "readyCheckAnchor", "readyCheckOffsetX", "readyCheckOffsetY", "readycheck-ready", "readyCheck")
+    CreateIndicatorPip("showResurrection", "resurrectionSize", "resurrectionAnchor", "resurrectionOffsetX", "resurrectionOffsetY", "Raid-Icon-Rez", "resurrection")
+    CreateIndicatorPip("showSummonPending", "summonSize", "summonAnchor", "summonOffsetX", "summonOffsetY", "Raid-Icon-SummonPending", "summon")
+    CreateIndicatorPip("showLeaderIcon", "leaderSize", "leaderAnchor", "leaderOffsetX", "leaderOffsetY", "groupfinder-icon-leader", "leader")
+    CreateIndicatorPip("showTargetMarker", "targetMarkerSize", "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY", "UI-RaidTargetingIcon_6", "targetMarker")
+    CreateIndicatorPip("showPhaseIcon", "phaseSize", "phaseAnchor", "phaseOffsetX", "phaseOffsetY", "nameplates-icon-flag-horde", "phase")
+
     -- Buff icons
     local auraDB = db.auras or {}
     local previewBottomPad = powerH + borderSize
@@ -2170,6 +2194,58 @@ local function CreateDesignerPreview(container, previewType, childRefs)
             paOffY = paOffY + previewBottomPad
         end
         CreateIconStrip(frame, { FAKE_PRIVATE_AURA_ICON }, paMax, paSize, paAnchor, paGrow, paSpacing, paOffX, paOffY, "privateAuraContainer")
+    end
+
+    -- Healer: dispel overlay preview (colored border)
+    local dispelDB = healerDB.dispelOverlay or {}
+    if dispelDB.enabled then
+        local dispelBorder = (dispelDB.borderSize or 2) * PREVIEW_SCALE
+        local dispelAlpha = dispelDB.opacity or 0.8
+        local dispelFill = dispelDB.fillOpacity or 0
+        local magicColor = (dispelDB.colors and dispelDB.colors.Magic) or {0.2, 0.6, 1.0, 1}
+        local dispelOverlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        dispelOverlay:SetAllPoints(frame)
+        dispelOverlay:SetFrameLevel(frame:GetFrameLevel() + 6)
+        local QUICore2 = ns.Addon
+        local px2 = QUICore2 and QUICore2.GetPixelSize and QUICore2:GetPixelSize(dispelOverlay) or 1
+        dispelOverlay:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = dispelBorder * px2,
+        })
+        dispelOverlay:SetBackdropBorderColor(magicColor[1], magicColor[2], magicColor[3], dispelAlpha)
+        dispelOverlay:SetBackdropColor(magicColor[1], magicColor[2], magicColor[3], dispelFill)
+        childRefs.dispelOverlay = dispelOverlay
+    end
+
+    -- Healer: target highlight preview (tinted fill)
+    local targetHL = healerDB.targetHighlight or {}
+    if targetHL.enabled then
+        local hlFill = targetHL.fillOpacity or 0.15
+        local hlColor = targetHL.color or {1, 1, 1, 1}
+        local hlOverlay = frame:CreateTexture(nil, "ARTWORK", nil, 7)
+        hlOverlay:SetAllPoints(frame)
+        hlOverlay:SetColorTexture(hlColor[1] or 1, hlColor[2] or 1, hlColor[3] or 1, hlFill)
+        childRefs.targetHighlight = hlOverlay
+    end
+
+    -- Indicators: threat border preview
+    if indDB.showThreatBorder then
+        local threatBorder = (indDB.threatBorderSize or 2) * PREVIEW_SCALE
+        local threatColor = indDB.threatColor or {1, 0, 0, 1}
+        local threatFill = indDB.threatFillOpacity or 0
+        local threatOverlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        threatOverlay:SetAllPoints(frame)
+        threatOverlay:SetFrameLevel(frame:GetFrameLevel() + 5)
+        local px3 = QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(threatOverlay) or 1
+        threatOverlay:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = threatBorder * px3,
+        })
+        threatOverlay:SetBackdropBorderColor(threatColor[1] or 1, threatColor[2] or 0, threatColor[3] or 0, threatColor[4] or 1)
+        threatOverlay:SetBackdropColor(threatColor[1] or 1, threatColor[2] or 0, threatColor[3] or 0, threatFill)
+        childRefs.threatOverlay = threatOverlay
     end
 
     -- Pinned aura indicators (fake preview, individually anchored)
@@ -2456,6 +2532,12 @@ local function BuildComposerContent(contentArea, contextMode)
         if childRefs.defensiveContainer then MakeOverlay("defensive", childRefs.defensiveContainer, "fill", elemFLvl) end
         if childRefs.auraIndicatorContainer then MakeOverlay("auraIndicators", childRefs.auraIndicatorContainer, "fill", elemFLvl) end
         if childRefs.privateAuraContainer then MakeOverlay("privateAuras", childRefs.privateAuraContainer, "fill", elemFLvl) end
+        if childRefs.readyCheck then MakeOverlay("readyCheck", childRefs.readyCheck, "fill", elemFLvl) end
+        if childRefs.resurrection then MakeOverlay("resurrection", childRefs.resurrection, "fill", elemFLvl) end
+        if childRefs.summon then MakeOverlay("summon", childRefs.summon, "fill", elemFLvl) end
+        if childRefs.leader then MakeOverlay("leader", childRefs.leader, "fill", elemFLvl) end
+        if childRefs.targetMarker then MakeOverlay("targetMarker", childRefs.targetMarker, "fill", elemFLvl) end
+        if childRefs.phase then MakeOverlay("phase", childRefs.phase, "fill", elemFLvl) end
 
         -- Re-highlight selected element
         if state.selectedElement then SetOverlayHighlights(state.selectedElement, true) end

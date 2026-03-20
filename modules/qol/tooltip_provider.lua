@@ -83,7 +83,12 @@ local function IsOPieFrame(frame)
         if frame == UIParent then
             break
         end
-        frame = frame.GetParent and frame:GetParent() or nil
+        if frame.GetParent then
+            local ok, parent = pcall(frame.GetParent, frame)
+            frame = ok and parent or nil
+        else
+            frame = nil
+        end
         depth = depth + 1
     end
     return false
