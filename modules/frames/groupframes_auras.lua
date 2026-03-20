@@ -803,23 +803,29 @@ local function UpdateFrameAuras(frame)
         local hidePermanent = auraSettings.buffHidePermanent
         local dedup = auraSettings.buffDeduplicateDefensives ~= false
 
-        -- Build dedup set from defensives + aura indicators (reuse per frame)
+        -- Build dedup set from defensives + aura indicators + pinned auras (reuse per frame)
         local dedupSet
         if dedup then
             local defIDs = frame._defensiveAuraIDs
             local indIDs = frame._indicatorAuraIDs
+            local pinIDs = frame._pinnedAuraIDs
             local hasDef = defIDs and next(defIDs)
             local hasInd = indIDs and next(indIDs)
-            if hasDef and hasInd then
+            local hasPin = pinIDs and next(pinIDs)
+            local sourceCount = (hasDef and 1 or 0) + (hasInd and 1 or 0) + (hasPin and 1 or 0)
+            if sourceCount > 1 then
                 if not frame._buffDedupSet then frame._buffDedupSet = {} end
                 wipe(frame._buffDedupSet)
-                for id in pairs(defIDs) do frame._buffDedupSet[id] = true end
-                for id in pairs(indIDs) do frame._buffDedupSet[id] = true end
+                if hasDef then for id in pairs(defIDs) do frame._buffDedupSet[id] = true end end
+                if hasInd then for id in pairs(indIDs) do frame._buffDedupSet[id] = true end end
+                if hasPin then for id in pairs(pinIDs) do frame._buffDedupSet[id] = true end end
                 dedupSet = frame._buffDedupSet
             elseif hasDef then
                 dedupSet = defIDs
             elseif hasInd then
                 dedupSet = indIDs
+            elseif hasPin then
+                dedupSet = pinIDs
             end
         end
 
@@ -987,6 +993,9 @@ local function FlushPendingAuras()
             -- Aura indicators (tracked spells) before buffs for dedup
             local GFI = ns.QUI_GroupFrameIndicators
             if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
+            -- Pinned auras (per-spec edge strips) before buffs for dedup
+            local GFP = ns.QUI_GroupFramePinnedAuras
+            if GFP and GFP.RefreshFrame then GFP:RefreshFrame(frame) end
             -- Buff/debuff icons last — can deduplicate against defensives + indicators
             UpdateFrameAuras(frame)
         end

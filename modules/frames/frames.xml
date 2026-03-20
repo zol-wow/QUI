@@ -10,6 +10,7 @@
     <Script file="groupframes.lua"/>
     <Script file="groupframes_auras.lua"/>
     <Script file="groupframes_indicators.lua"/>
+    <Script file="groupframes_pinned_auras.lua"/>
     <Script file="groupframes_private_auras.lua"/>
     <Script file="groupframes_clickcast.lua"/>
     <Script file="groupframes_blizzard.lua"/>

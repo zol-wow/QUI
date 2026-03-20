@@ -185,7 +185,7 @@ local VISUAL_DB_KEYS = {
     general = true, layout = true, health = true, power = true, name = true,
     absorbs = true, healPrediction = true, indicators = true,
     healer = true, classPower = true, range = true, auras = true,
-    privateAuras = true, auraIndicators = true, castbar = true,
+    privateAuras = true, auraIndicators = true, pinnedAuras = true, castbar = true,
     portrait = true, pets = true, dimensions = true, spotlight = true,
 }
 
@@ -346,6 +346,9 @@ end
 ---------------------------------------------------------------------------
 local FAKE_BUFF_ICONS = { 136034, 135940, 136081, 135932, 136063, 135987, 136070, 135864 }
 local FAKE_DEBUFF_ICONS = { 136207, 136130, 135813, 136118, 135959, 136066, 136133, 135835 }
+local FAKE_DEFENSIVE_ICONS = { 135936, 135919, 135874 }  -- Shield Wall, Divine Shield, Ice Block
+local FAKE_AURA_IND_ICONS = { 135928, 136051, 136085, 135907 }  -- Renew, Rejuv, PoM, Riptide
+local FAKE_PRIVATE_AURA_ICON = 136116  -- generic aura
 local FAKE_CLASS = "PALADIN"
 local FAKE_NAME = "Healena"
 local FAKE_HP_PCT = 65
@@ -362,6 +365,10 @@ local function CreateDynamicLayout(content, onRelayout)
     end
     function L:Header(widget) self:Row(widget, widget.gap, nil, true) end
     function L:Finish()
+        local hasCondRows = false
+        for _, row in ipairs(rows) do
+            if row.condFn then hasCondRows = true; break end
+        end
         local function Relayout()
             local ly = -10
             for _, row in ipairs(rows) do
@@ -384,6 +391,12 @@ local function CreateDynamicLayout(content, onRelayout)
             if row.widget.track and not row.condFn then
                 row.widget.track:HookScript("OnClick", Relayout)
             end
+        end
+        -- Register relayout on the content frame so onChange can re-evaluate
+        -- conditional row visibility without depending solely on HookScript
+        if hasCondRows then
+            if not content._relayouts then content._relayouts = {} end
+            content._relayouts[#content._relayouts + 1] = Relayout
         end
         Relayout()
         return Relayout
@@ -1102,18 +1115,591 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
 end
 
 ---------------------------------------------------------------------------
+-- PINNED AURAS SETTINGS (per-spec individually anchored indicators)
+---------------------------------------------------------------------------
+local PINNED_DISPLAY_OPTIONS = {
+    { value = "icon", text = "Icon" },
+    { value = "square", text = "Colored Square" },
+}
+
+local PINNED_ANCHOR_SHORT = {
+    TOPLEFT = "TL", TOP = "T", TOPRIGHT = "TR",
+    LEFT = "L", CENTER = "C", RIGHT = "R",
+    BOTTOMLEFT = "BL", BOTTOM = "B", BOTTOMRIGHT = "BR",
+}
+
+-- Rotation order for auto-assigning anchors to new pinned aura slots
+local PINNED_ANCHOR_ROTATION = {
+    "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT",
+    "TOP", "BOTTOM", "LEFT", "RIGHT", "CENTER",
+}
+
+local function NextPinnedAnchor(slots)
+    -- Count how many slots use each anchor
+    local used = {}
+    for _, s in ipairs(slots) do
+        local a = s.anchor or "TOPLEFT"
+        used[a] = (used[a] or 0) + 1
+    end
+    -- Pick the first anchor with the fewest slots
+    local bestAnchor, bestCount = PINNED_ANCHOR_ROTATION[1], math.huge
+    for _, a in ipairs(PINNED_ANCHOR_ROTATION) do
+        local c = used[a] or 0
+        if c < bestCount then
+            bestAnchor, bestCount = a, c
+            if c == 0 then break end
+        end
+    end
+    return bestAnchor
+end
+
+local function ShowPinnedSlotMenu(anchorFrame, slot, onChanged)
+    if _G.QUI_PinnedSlotMenu then _G.QUI_PinnedSlotMenu:Hide() end
+
+    local items = {}
+    -- Section: Anchor Position
+    items[#items + 1] = { label = "Anchor Position", isTitle = true }
+    for _, opt in ipairs(NINE_POINT_OPTIONS) do
+        local isSelected = (slot.anchor or "TOPLEFT") == opt.value
+        items[#items + 1] = {
+            label = opt.text,
+            isSelected = isSelected,
+            action = function() slot.anchor = opt.value; if onChanged then onChanged() end end,
+        }
+    end
+    -- Divider
+    items[#items + 1] = { isDivider = true }
+    -- Section: Display Type
+    items[#items + 1] = { label = "Display Type", isTitle = true }
+    for _, opt in ipairs(PINNED_DISPLAY_OPTIONS) do
+        local isSelected = (slot.displayType or "icon") == opt.value
+        items[#items + 1] = {
+            label = opt.text,
+            isSelected = isSelected,
+            action = function()
+                slot.displayType = opt.value
+                if opt.value == "square" and not slot.color then slot.color = {0.2, 0.8, 0.2, 1} end
+                if onChanged then onChanged() end
+            end,
+        }
+    end
+    -- Color picker (only when square type)
+    if (slot.displayType or "icon") == "square" then
+        items[#items + 1] = { isDivider = true }
+        items[#items + 1] = { isColorPicker = true }
+    end
+
+    local itemHeight = 20
+    local titleHeight = 20
+    local dividerHeight = 8
+    local menuWidth = 150
+    local colorPickerHeight = 28
+    local totalH = 4
+    for _, item in ipairs(items) do
+        if item.isDivider then totalH = totalH + dividerHeight
+        elseif item.isTitle then totalH = totalH + titleHeight
+        elseif item.isColorPicker then totalH = totalH + colorPickerHeight
+        else totalH = totalH + itemHeight end
+    end
+
+    local accentR, accentG, accentB = 0.204, 0.827, 0.6
+    if C and C.accent then accentR, accentG, accentB = C.accent[1], C.accent[2], C.accent[3] end
+
+    local menu = CreateFrame("Frame", "QUI_PinnedSlotMenu", UIParent, "BackdropTemplate")
+    menu:SetSize(menuWidth, totalH)
+    menu:SetFrameStrata("TOOLTIP")
+    menu:SetFrameLevel(300)
+    menu:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    menu:SetBackdropColor(0.08, 0.08, 0.1, 0.98)
+    menu:SetBackdropBorderColor(accentR * 0.5, accentG * 0.5, accentB * 0.5, 0.8)
+    menu:EnableMouse(true)
+    menu:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
+    menu:SetClampedToScreen(true)
+
+    local y = -2
+    for _, item in ipairs(items) do
+        if item.isDivider then
+            local div = menu:CreateTexture(nil, "ARTWORK")
+            div:SetHeight(1)
+            div:SetPoint("TOPLEFT", 6, y - 3)
+            div:SetPoint("RIGHT", menu, "RIGHT", -6, 0)
+            div:SetColorTexture(0.3, 0.3, 0.3, 0.5)
+            y = y - dividerHeight
+        elseif item.isTitle then
+            local label = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetPoint("TOPLEFT", 8, y)
+            label:SetText(item.label)
+            label:SetTextColor(accentR, accentG, accentB, 1)
+            y = y - titleHeight
+        elseif item.isColorPicker then
+            local colorRow = CreateFrame("Button", nil, menu)
+            colorRow:SetSize(menuWidth - 4, colorPickerHeight)
+            colorRow:SetPoint("TOPLEFT", 2, y)
+
+            local colorLabel = colorRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            colorLabel:SetPoint("LEFT", 12, 0)
+            colorLabel:SetText("Color")
+            colorLabel:SetTextColor(0.8, 0.8, 0.8, 1)
+
+            local swatch = colorRow:CreateTexture(nil, "ARTWORK")
+            swatch:SetSize(16, 16)
+            swatch:SetPoint("RIGHT", -8, 0)
+            local sc = slot.color or {0.2, 0.8, 0.2, 1}
+            swatch:SetColorTexture(sc[1] or 0.5, sc[2] or 0.5, sc[3] or 0.5, sc[4] or 1)
+
+            colorRow:SetScript("OnClick", function()
+                menu:Hide()
+                local prev = { sc[1], sc[2], sc[3], sc[4] }
+                local function SetColor(r, g, b, a)
+                    if not slot.color then slot.color = {} end
+                    slot.color[1] = r; slot.color[2] = g; slot.color[3] = b; slot.color[4] = a or 1
+                    if onChanged then onChanged() end
+                end
+                local info = {}
+                info.r, info.g, info.b = sc[1] or 0.2, sc[2] or 0.8, sc[3] or 0.2
+                info.opacity = 1 - (sc[4] or 1)
+                info.hasOpacity = true
+                info.swatchFunc = function()
+                    local r, g, b = ColorPickerFrame:GetColorRGB()
+                    local rawAlpha = 0
+                    if ColorPickerFrame.GetColorAlpha then
+                        rawAlpha = ColorPickerFrame:GetColorAlpha() or 0
+                    elseif OpacitySliderFrame then
+                        rawAlpha = OpacitySliderFrame:GetValue() or 0
+                    end
+                    local a = 1 - rawAlpha
+                    SetColor(r, g, b, a)
+                end
+                info.cancelFunc = function()
+                    SetColor(prev[1], prev[2], prev[3], prev[4])
+                end
+                info.opacityFunc = info.swatchFunc
+                ColorPickerFrame:SetupColorPickerAndShow(info)
+            end)
+            colorRow:SetScript("OnEnter", function() colorLabel:SetTextColor(1, 1, 1, 1) end)
+            colorRow:SetScript("OnLeave", function() colorLabel:SetTextColor(0.8, 0.8, 0.8, 1) end)
+            y = y - colorPickerHeight
+        else
+            local btn = CreateFrame("Button", nil, menu)
+            btn:SetSize(menuWidth - 4, itemHeight)
+            btn:SetPoint("TOPLEFT", 2, y)
+            local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetPoint("LEFT", 12, 0)
+            label:SetText(item.label)
+            local r, g, b = 0.8, 0.8, 0.8
+            if item.isSelected then r, g, b = accentR, accentG, accentB end
+            label:SetTextColor(r, g, b, 1)
+            if item.isSelected then
+                local check = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                check:SetPoint("RIGHT", -8, 0)
+                check:SetText("*")
+                check:SetTextColor(accentR, accentG, accentB, 1)
+            end
+            btn:SetScript("OnClick", function()
+                menu:Hide()
+                if item.action then item.action() end
+            end)
+            btn:SetScript("OnEnter", function()
+                label:SetTextColor(1, 1, 1, 1)
+            end)
+            btn:SetScript("OnLeave", function()
+                label:SetTextColor(r, g, b, 1)
+            end)
+            y = y - itemHeight
+        end
+    end
+
+    menu:SetScript("OnUpdate", function(self)
+        if not MouseIsOver(self) and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) then
+            self:Hide()
+        end
+    end)
+
+    menu:Show()
+end
+
+local function BuildPinnedAurasSettings(content, gfdb, onChange)
+    local pa = gfdb.pinnedAuras; if not pa then gfdb.pinnedAuras = {} pa = gfdb.pinnedAuras end
+    if not pa.specSlots then pa.specSlots = {} end
+    local sections = {}
+    local function relayout() RelayoutComposerSections(content, sections) end
+
+    -- Global settings section
+    CreateComposerCollapsible(content, "Pinned Auras", function(body, updateH)
+        local cond = function() return pa.enabled end
+        local L = CreateDynamicLayout(body, updateH)
+        local desc = GUI:CreateLabel(body, "Per-spec aura indicators anchored to positions on group frames. Each spell gets its own anchor point.", 11, C and C.textMuted); desc:SetJustifyH("LEFT")
+        L:Row(desc, 36)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Pinned Auras", "enabled", pa, onChange), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Slot Size", 4, 20, 1, "slotSize", pa, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Edge Inset", 0, 10, 1, "edgeInset", pa, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Cooldown Swipe", "showSwipe", pa, onChange), FORM_ROW, cond)
+        L:Finish()
+    end, sections, relayout)
+
+    -- Spell slots section with flat list + per-slot anchor
+    CreateComposerCollapsible(content, "Spell Slots", function(body, updateH)
+        local specID = GetPlayerSpecID()
+        if not specID then
+            local noSpec = GUI:CreateLabel(body, "No specialization detected. Choose a spec to configure pinned auras.", 11, C and C.textMuted)
+            noSpec:SetJustifyH("LEFT")
+            noSpec:SetPoint("TOPLEFT", PAD, -6)
+            noSpec:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
+            body:SetHeight(30)
+            return
+        end
+
+        if not pa.specSlots[specID] then
+            pa.specSlots[specID] = {}
+        end
+        local slots = pa.specSlots[specID]
+
+        -- Spec label
+        local specLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        specLabel:SetPoint("TOPLEFT", PAD, -6)
+        local _, specName = GetSpecializationInfoByID(specID)
+        specLabel:SetText("|cFF34D399" .. (specName or ("Spec " .. specID)) .. "|r")
+
+        -- Spell list area
+        local LIST_TOP = -24
+        local spellListArea = CreateFrame("Frame", nil, body)
+        spellListArea:SetPoint("TOPLEFT", PAD, LIST_TOP)
+        spellListArea:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
+        spellListArea:SetHeight(1)
+
+        -- Persistent "Add Spells:" header
+        local addSectionHeader = spellListArea:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        addSectionHeader:SetJustifyH("LEFT")
+
+        -- Persistent manual input row
+        local inputRow = CreateFrame("Frame", nil, spellListArea)
+        inputRow:SetHeight(24)
+
+        local inputBox = CreateFrame("EditBox", nil, inputRow, "BackdropTemplate")
+        inputBox:SetSize(80, 20)
+        inputBox:SetPoint("LEFT", 4, 0)
+        inputBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        inputBox:SetBackdropColor(0.06, 0.06, 0.08, 1)
+        inputBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+        inputBox:SetFontObject("GameFontNormalSmall")
+        inputBox:SetAutoFocus(false)
+        inputBox:SetMaxLetters(10)
+        inputBox:SetTextInsets(4, 4, 0, 0)
+        inputBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+        local inputLabel = inputRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
+        inputLabel:SetText("Spell ID")
+        inputLabel:SetTextColor(0.5, 0.5, 0.5)
+
+        local addManualBtn = CreateFrame("Button", nil, inputRow, "BackdropTemplate")
+        addManualBtn:SetSize(40, 20)
+        addManualBtn:SetPoint("RIGHT", inputRow, "RIGHT", -2, 0)
+        addManualBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        addManualBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+        addManualBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        local addManualText = addManualBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        addManualText:SetPoint("CENTER")
+        addManualText:SetText("Add")
+
+        -- Row pool for assigned spell rows
+        local spellRowPool = {}
+        local suggestRowPool = {}
+        local activeSpellRows = {}
+        local activeSuggestRows = {}
+
+        local function AcquireSpellRow(parent)
+            local row = table.remove(spellRowPool)
+            if row then
+                row:SetParent(parent)
+                row:ClearAllPoints()
+                row:Show()
+                return row
+            end
+            row = CreateFrame("Button", nil, parent)
+            row:SetHeight(28)
+            row:RegisterForClicks("AnyUp")
+
+            row._spellIcon = row:CreateTexture(nil, "ARTWORK")
+            row._spellIcon:SetSize(16, 16)
+            row._spellIcon:SetPoint("LEFT", 4, 0)
+            row._spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+            row._nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row._nameText:SetPoint("LEFT", row._spellIcon, "RIGHT", 4, 0)
+            row._nameText:SetJustifyH("LEFT")
+
+            -- Anchor button (clickable, shows current anchor abbreviation)
+            row._anchorBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
+            row._anchorBtn:SetSize(24, 16)
+            row._anchorBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            row._anchorBtn:SetBackdropColor(0.1, 0.1, 0.12, 1)
+            row._anchorBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+            row._anchorBtnText = row._anchorBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            row._anchorBtnText:SetPoint("CENTER")
+            row._anchorBtnText:SetTextColor(0.7, 0.85, 1, 1)
+
+            row._removeBtn = CreateFrame("Button", nil, row)
+            row._removeBtn:SetSize(18, 18)
+            row._removeBtn:SetPoint("RIGHT", -2, 0)
+            row._removeBtnText = row._removeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row._removeBtnText:SetPoint("CENTER")
+            row._removeBtnText:SetText("\195\151")
+            row._removeBtnText:SetTextColor(0.8, 0.3, 0.3)
+            row._removeBtn:SetScript("OnEnter", function() row._removeBtnText:SetTextColor(1, 0.4, 0.4) end)
+            row._removeBtn:SetScript("OnLeave", function() row._removeBtnText:SetTextColor(0.8, 0.3, 0.3) end)
+
+            row._anchorBtn:SetPoint("RIGHT", row._removeBtn, "LEFT", -2, 0)
+            row._nameText:SetPoint("RIGHT", row._anchorBtn, "LEFT", -4, 0)
+
+            row:EnableMouse(true)
+            row:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                local dt = self._displayType or "icon"
+                GameTooltip:SetText(self._spellName or "Spell")
+                GameTooltip:AddLine("Right-click to configure", 0.7, 0.7, 0.7)
+                GameTooltip:Show()
+            end)
+            row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            return row
+        end
+
+        local function ReleaseSpellRow(row)
+            row:Hide()
+            row:ClearAllPoints()
+            row._removeBtn:SetScript("OnClick", nil)
+            row._anchorBtn:SetScript("OnClick", nil)
+            row:SetScript("OnClick", nil)
+            row._spellName = nil
+            if row._spellIcon then row._spellIcon:SetVertexColor(1, 1, 1) end
+            table.insert(spellRowPool, row)
+        end
+
+        local function AcquireSuggestRow(parent)
+            local row = table.remove(suggestRowPool)
+            if row then
+                row:SetParent(parent)
+                row:ClearAllPoints()
+                row:Show()
+                return row
+            end
+            row = CreateFrame("Frame", nil, parent)
+            row:SetHeight(22)
+
+            row._sIcon = row:CreateTexture(nil, "ARTWORK")
+            row._sIcon:SetSize(14, 14)
+            row._sIcon:SetPoint("LEFT", 4, 0)
+            row._sIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+            row._sName = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row._sName:SetPoint("LEFT", row._sIcon, "RIGHT", 4, 0)
+            row._sName:SetJustifyH("LEFT")
+
+            row._addBtn = CreateFrame("Button", nil, row)
+            row._addBtn:SetSize(18, 18)
+            row._addBtn:SetPoint("RIGHT", -2, 0)
+            row._addBtnText = row._addBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row._addBtnText:SetPoint("CENTER")
+            row._addBtnText:SetText("+")
+            row._addBtnText:SetTextColor(0.3, 0.8, 0.3)
+            row._addBtn:SetScript("OnEnter", function() row._addBtnText:SetTextColor(0.4, 1, 0.4) end)
+            row._addBtn:SetScript("OnLeave", function() row._addBtnText:SetTextColor(0.3, 0.8, 0.3) end)
+            row._sName:SetPoint("RIGHT", row._addBtn, "LEFT", -4, 0)
+
+            return row
+        end
+
+        local function ReleaseSuggestRow(row)
+            row:Hide()
+            row:ClearAllPoints()
+            row._addBtn:SetScript("OnClick", nil)
+            table.insert(suggestRowPool, row)
+        end
+
+        local function RebuildSpellList()
+            -- Release all active rows back to pool
+            for _, row in ipairs(activeSpellRows) do ReleaseSpellRow(row) end
+            wipe(activeSpellRows)
+            for _, row in ipairs(activeSuggestRows) do ReleaseSuggestRow(row) end
+            wipe(activeSuggestRows)
+
+            local y = 0
+
+            -- Assigned spell rows
+            for idx, slot in ipairs(slots) do
+                local row = AcquireSpellRow(spellListArea)
+                row:SetPoint("TOPLEFT", 0, y)
+                row:SetPoint("RIGHT", spellListArea, "RIGHT", 0, 0)
+
+                -- Populate icon
+                local tex
+                if C_Spell and C_Spell.GetSpellTexture then
+                    local ok, t = pcall(C_Spell.GetSpellTexture, slot.spellID)
+                    if ok and t then tex = t end
+                end
+                row._spellIcon:SetTexture(tex or 134400)
+
+                -- Populate name
+                local spellName2 = GetSpellName(slot.spellID) or ("Spell " .. slot.spellID)
+                row._nameText:SetText(spellName2)
+                row._spellName = spellName2
+
+                -- Color spell icon based on display type
+                if slot.displayType == "square" then
+                    local color = slot.color or {0.2, 0.8, 0.2, 1}
+                    row._spellIcon:SetVertexColor(color[1] or 0.5, color[2] or 0.5, color[3] or 0.5)
+                else
+                    row._spellIcon:SetVertexColor(1, 1, 1)
+                end
+
+                -- Anchor button text
+                local anchor = slot.anchor or "TOPLEFT"
+                row._anchorBtnText:SetText(PINNED_ANCHOR_SHORT[anchor] or "TL")
+
+                -- Shared menu builder for this slot
+                local capturedIdx = idx
+                local function ShowSlotMenu(anchorFrame)
+                    ShowPinnedSlotMenu(anchorFrame, slot, function()
+                        RebuildSpellList()
+                        if onChange then onChange() end
+                    end)
+                end
+
+                -- Left-click anchor button opens menu
+                row._anchorBtn:RegisterForClicks("AnyUp")
+                row._anchorBtn:SetScript("OnClick", function(self) ShowSlotMenu(self) end)
+                row._anchorBtn:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                    GameTooltip:SetText("Position: " .. (anchor or "TOPLEFT"))
+                    local dt = (slot.displayType or "icon") == "square" and "Colored Square" or "Icon"
+                    GameTooltip:AddLine("Display: " .. dt, 0.7, 0.7, 0.7)
+                    GameTooltip:Show()
+                end)
+                row._anchorBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+                -- Right-click anywhere on row opens same menu
+                row:SetScript("OnClick", function(self, button)
+                    if button == "RightButton" then ShowSlotMenu(self) end
+                end)
+
+                -- Remove button
+                row._removeBtn:SetScript("OnClick", function()
+                    table.remove(slots, capturedIdx)
+                    RebuildSpellList()
+                    if onChange then onChange() end
+                end)
+
+                activeSpellRows[#activeSpellRows + 1] = row
+                y = y - 28
+            end
+
+            -- "Add Spells:" header
+            y = y - 6
+            addSectionHeader:ClearAllPoints()
+            addSectionHeader:SetPoint("TOPLEFT", 0, y)
+            addSectionHeader:SetText("|cFFAAAAAAAAdd Spells:|r")
+            addSectionHeader:Show()
+            y = y - 16
+
+            -- Build set of already-assigned spellIDs
+            local assignedSet = {}
+            for _, s in ipairs(slots) do
+                if s.spellID then assignedSet[s.spellID] = true end
+            end
+
+            -- Gather preset spells for current spec
+            local presetSpells = {}
+            if SPEC_TO_PRESET[specID] then
+                for _, spell in ipairs(SPEC_TO_PRESET[specID].spells) do
+                    if not assignedSet[spell.id] then
+                        presetSpells[#presetSpells + 1] = spell
+                    end
+                end
+            end
+            if COMMON_DEFENSIVES_PRESET then
+                for _, spell in ipairs(COMMON_DEFENSIVES_PRESET.spells) do
+                    if not assignedSet[spell.id] then
+                        presetSpells[#presetSpells + 1] = spell
+                    end
+                end
+            end
+
+            for _, spell in ipairs(presetSpells) do
+                local row = AcquireSuggestRow(spellListArea)
+                row:SetPoint("TOPLEFT", 0, y)
+                row:SetPoint("RIGHT", spellListArea, "RIGHT", 0, 0)
+
+                local sTex
+                if C_Spell and C_Spell.GetSpellTexture then
+                    local ok, t = pcall(C_Spell.GetSpellTexture, spell.id)
+                    if ok and t then sTex = t end
+                end
+                row._sIcon:SetTexture(sTex or 134400)
+                row._sName:SetText(spell.name or GetSpellName(spell.id) or ("Spell " .. spell.id))
+
+                local spellId = spell.id
+                row._addBtn:SetScript("OnClick", function()
+                    slots[#slots + 1] = { spellID = spellId, displayType = "icon", anchor = NextPinnedAnchor(slots) }
+                    RebuildSpellList()
+                    if onChange then onChange() end
+                end)
+
+                activeSuggestRows[#activeSuggestRows + 1] = row
+                y = y - 22
+            end
+
+            -- Reposition manual input row
+            y = y - 8
+            inputRow:ClearAllPoints()
+            inputRow:SetPoint("TOPLEFT", 0, y)
+            inputRow:SetPoint("RIGHT", spellListArea, "RIGHT", 0, 0)
+            inputRow:Show()
+            y = y - 28
+
+            -- Wire manual add button
+            addManualBtn:SetScript("OnClick", function()
+                local text = inputBox:GetText()
+                local id = tonumber(text)
+                if id and id > 0 then
+                    slots[#slots + 1] = { spellID = id, displayType = "icon", anchor = NextPinnedAnchor(slots) }
+                    inputBox:SetText("")
+                    inputBox:ClearFocus()
+                    RebuildSpellList()
+                    if onChange then onChange() end
+                end
+            end)
+            inputBox:SetScript("OnEnterPressed", function(self)
+                addManualBtn:GetScript("OnClick")(addManualBtn)
+            end)
+
+            spellListArea:SetHeight(math.max(1, math.abs(y)))
+            body:SetHeight(math.abs(LIST_TOP) + math.abs(y) + 10)
+            updateH()
+        end
+
+        RebuildSpellList()
+    end, sections, relayout)
+
+    relayout()
+end
+
+---------------------------------------------------------------------------
 -- ELEMENT TABLES
 ---------------------------------------------------------------------------
 local COMPOSER_ELEMENT_KEYS = {
     "health", "power", "name", "buffs", "debuffs",
-    "indicators", "healer", "defensive", "auraIndicators", "privateAuras",
+    "indicators", "healer", "defensive", "auraIndicators", "pinnedAuras", "privateAuras",
 }
 
 local ELEMENT_LABELS = {
     health = "Health", power = "Power", name = "Name",
     buffs = "Buffs", debuffs = "Debuffs", indicators = "Indicators",
     healer = "Healer", defensive = "Defensive",
-    auraIndicators = "Aura Ind.", privateAuras = "Priv. Auras",
+    auraIndicators = "Aura Ind.", pinnedAuras = "Pinned", privateAuras = "Priv. Auras",
 }
 
 local ELEMENT_BUILDERS = {
@@ -1121,7 +1707,8 @@ local ELEMENT_BUILDERS = {
     name = BuildNameSettings, buffs = BuildBuffsSettings,
     debuffs = BuildDebuffsSettings, indicators = BuildIndicatorsSettings,
     healer = BuildHealerSettings, defensive = BuildDefensiveSettings,
-    auraIndicators = BuildAuraIndicatorsSettings, privateAuras = BuildPrivateAurasSettings,
+    auraIndicators = BuildAuraIndicatorsSettings, pinnedAuras = BuildPinnedAurasSettings,
+    privateAuras = BuildPrivateAurasSettings,
 }
 
 ---------------------------------------------------------------------------
@@ -1490,6 +2077,157 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         end
     end
 
+    -- Helper: create a row of fake icons for an element preview
+    local function CreateIconStrip(parentFrame, icons, count, size, anchor, grow, spacing, offX, offY, refKey)
+        if count <= 0 then return end
+        local totalW, totalH = size, size
+        if grow == "LEFT" or grow == "RIGHT" or grow == "CENTER" then
+            totalW = count * size + math.max(count - 1, 0) * spacing
+        elseif grow == "UP" or grow == "DOWN" then
+            totalH = count * size + math.max(count - 1, 0) * spacing
+        end
+        local container = CreateFrame("Frame", nil, parentFrame)
+        container:SetFrameLevel(parentFrame:GetFrameLevel() + 8)
+        container:SetSize(totalW, totalH)
+        container:SetPoint(anchor, parentFrame, anchor, offX, offY)
+        for i = 1, count do
+            local icon = container:CreateTexture(nil, "OVERLAY")
+            icon:SetSize(size, size)
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            icon:SetTexture(icons[((i - 1) % #icons) + 1])
+            if grow == "LEFT" then
+                local pos = (i - 1) * (size + spacing)
+                if i == 1 then icon:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+                else icon:SetPoint("RIGHT", container, "RIGHT", -pos, 0) end
+            elseif grow == "RIGHT" then
+                local pos = (i - 1) * (size + spacing)
+                if i == 1 then icon:SetPoint("LEFT", container, "LEFT", 0, 0)
+                else icon:SetPoint("LEFT", container, "LEFT", pos, 0) end
+            elseif grow == "UP" then
+                local pos = (i - 1) * (size + spacing)
+                if i == 1 then icon:SetPoint("BOTTOM", container, "BOTTOM", 0, 0)
+                else icon:SetPoint("BOTTOM", container, "BOTTOM", 0, pos) end
+            elseif grow == "DOWN" then
+                local pos = (i - 1) * (size + spacing)
+                if i == 1 then icon:SetPoint("TOP", container, "TOP", 0, 0)
+                else icon:SetPoint("TOP", container, "TOP", 0, -pos) end
+            else -- CENTER or default
+                local pos = (i - 1) * (size + spacing)
+                if i == 1 then icon:SetPoint("LEFT", container, "LEFT", 0, 0)
+                else icon:SetPoint("LEFT", container, "LEFT", pos, 0) end
+            end
+        end
+        if refKey then childRefs[refKey] = container end
+        return container
+    end
+
+    -- Defensive indicator preview
+    local healerDB = db.healer or {}
+    local defDB = healerDB.defensiveIndicator or {}
+    if defDB.enabled then
+        local defSize = (defDB.iconSize or 16) * PREVIEW_SCALE
+        local defMax = defDB.maxIcons or 3
+        local defCount = math.min(defMax, #FAKE_DEFENSIVE_ICONS)
+        local defAnchor = defDB.position or "TOP"
+        local defGrow = defDB.growDirection or "RIGHT"
+        local defSpacing = (defDB.spacing or 2) * PREVIEW_SCALE
+        local defOffX = (defDB.offsetX or 0) * PREVIEW_SCALE
+        local defOffY = (defDB.offsetY or 0) * PREVIEW_SCALE
+        if defAnchor == "BOTTOMLEFT" or defAnchor == "BOTTOM" or defAnchor == "BOTTOMRIGHT" then
+            defOffY = defOffY + previewBottomPad
+        end
+        CreateIconStrip(frame, FAKE_DEFENSIVE_ICONS, defCount, defSize, defAnchor, defGrow, defSpacing, defOffX, defOffY, "defensiveContainer")
+    end
+
+    -- Aura indicator preview
+    local aiDB = db.auraIndicators or {}
+    if aiDB.enabled then
+        local aiSize = (aiDB.iconSize or 14) * PREVIEW_SCALE
+        local aiMax = aiDB.maxIndicators or 3
+        local aiCount = math.min(aiMax, #FAKE_AURA_IND_ICONS)
+        local aiAnchor = aiDB.anchor or "CENTER"
+        local aiGrow = aiDB.growDirection or "RIGHT"
+        local aiSpacing = (aiDB.spacing or 2) * PREVIEW_SCALE
+        local aiOffX = (aiDB.anchorOffsetX or 0) * PREVIEW_SCALE
+        local aiOffY = (aiDB.anchorOffsetY or 0) * PREVIEW_SCALE
+        if aiAnchor == "BOTTOMLEFT" or aiAnchor == "BOTTOM" or aiAnchor == "BOTTOMRIGHT" then
+            aiOffY = aiOffY + previewBottomPad
+        end
+        CreateIconStrip(frame, FAKE_AURA_IND_ICONS, aiCount, aiSize, aiAnchor, aiGrow, aiSpacing, aiOffX, aiOffY, "auraIndicatorContainer")
+    end
+
+    -- Private aura preview
+    local paDB = db.privateAuras or {}
+    if paDB.enabled then
+        local paSize = (paDB.iconSize or 20) * PREVIEW_SCALE
+        local paMax = paDB.maxPerFrame or 1
+        local paAnchor = paDB.anchor or "CENTER"
+        local paGrow = paDB.growDirection or "RIGHT"
+        local paSpacing = (paDB.spacing or 2) * PREVIEW_SCALE
+        local paOffX = (paDB.anchorOffsetX or 0) * PREVIEW_SCALE
+        local paOffY = (paDB.anchorOffsetY or 0) * PREVIEW_SCALE
+        if paAnchor == "BOTTOMLEFT" or paAnchor == "BOTTOM" or paAnchor == "BOTTOMRIGHT" then
+            paOffY = paOffY + previewBottomPad
+        end
+        CreateIconStrip(frame, { FAKE_PRIVATE_AURA_ICON }, paMax, paSize, paAnchor, paGrow, paSpacing, paOffX, paOffY, "privateAuraContainer")
+    end
+
+    -- Pinned aura indicators (fake preview, individually anchored)
+    -- Always show in preview when slots exist, even if disabled, so user can see placement while configuring
+    local pinnedDB = db.pinnedAuras or {}
+    do
+        local pinnedSpecID = GetPlayerSpecID()
+        local pinnedSlots = pinnedSpecID and pinnedDB.specSlots and pinnedDB.specSlots[pinnedSpecID]
+        if pinnedSlots and #pinnedSlots > 0 then
+            local pSlotSize = (pinnedDB.slotSize or 8) * PREVIEW_SCALE
+            local pInset = (pinnedDB.edgeInset or 2) * PREVIEW_SCALE
+            local PINNED_INSET_DIR = {
+                TOPLEFT     = { 1,  -1 },
+                TOP         = { 0,  -1 },
+                TOPRIGHT    = { -1, -1 },
+                LEFT        = { 1,   0 },
+                CENTER      = { 0,   0 },
+                RIGHT       = { -1,  0 },
+                BOTTOMLEFT  = { 1,   1 },
+                BOTTOM      = { 0,   1 },
+                BOTTOMRIGHT = { -1,  1 },
+            }
+
+            local pinnedLayer = CreateFrame("Frame", nil, frame)
+            pinnedLayer:SetAllPoints()
+            pinnedLayer:SetFrameLevel(frame:GetFrameLevel() + 8)
+
+            for i, slot in ipairs(pinnedSlots) do
+                local anchor = slot.anchor or "TOPLEFT"
+                local displayType = slot.displayType or "icon"
+
+                local pip = pinnedLayer:CreateTexture(nil, "OVERLAY")
+                pip:SetSize(pSlotSize, pSlotSize)
+
+                local insetDir = PINNED_INSET_DIR[anchor] or {0, 0}
+                local offX = insetDir[1] * pInset + (slot.offsetX or 0) * PREVIEW_SCALE
+                local offY = insetDir[2] * pInset + (slot.offsetY or 0) * PREVIEW_SCALE
+                if anchor == "BOTTOMLEFT" or anchor == "BOTTOM" or anchor == "BOTTOMRIGHT" then
+                    offY = offY + previewBottomPad
+                end
+                pip:SetPoint(anchor, frame, anchor, offX, offY)
+
+                if displayType == "square" then
+                    local color = slot.color or {0.5, 0.5, 0.5, 1}
+                    pip:SetColorTexture(color[1] or 0.5, color[2] or 0.5, color[3] or 0.5, color[4] or 1)
+                else
+                    local spellTex
+                    if slot.spellID and C_Spell and C_Spell.GetSpellTexture then
+                        local ok, t = pcall(C_Spell.GetSpellTexture, slot.spellID)
+                        if ok and t then spellTex = t end
+                    end
+                    pip:SetTexture(spellTex or 134400)
+                    pip:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                end
+            end
+        end
+    end
+
     return wrapper
 end
 
@@ -1578,15 +2316,29 @@ local function BuildComposerContent(contentArea, contextMode)
     end
 
     local function RebuildPreviewImmediate()
-        -- Clean up previous
-        for _, overlay in pairs(state.hitOverlays) do overlay:Hide(); overlay:SetParent(nil) end
+        -- Stash previous children for cleanup only after successful rebuild
+        local prevOverlays = {}
+        for k, v in pairs(state.hitOverlays) do prevOverlays[k] = v end
+        local prevChildren = {previewContainer:GetChildren()}
+        local prevHeight = previewContainer:GetHeight()
+
         wipe(state.hitOverlays)
-        for _, child in pairs({previewContainer:GetChildren()}) do child:Hide(); child:SetParent(nil) end
         wipe(state.childRefs)
 
         local childRefs = state.childRefs
-        local preview = CreateDesignerPreview(previewContainer, contextMode, childRefs)
-        if not preview then return end
+        local ok, preview = pcall(CreateDesignerPreview, previewContainer, contextMode, childRefs)
+        if not ok or not preview then
+            -- Restore previous state on failure
+            for k, v in pairs(prevOverlays) do state.hitOverlays[k] = v end
+            previewContainer:SetHeight(prevHeight)
+            return
+        end
+
+        -- Success — clean up previous
+        for _, overlay in pairs(prevOverlays) do overlay:Hide(); overlay:SetParent(nil) end
+        for _, child in pairs(prevChildren) do
+            if child ~= preview then child:Hide(); child:SetParent(nil) end
+        end
         previewContainer:SetHeight(preview:GetHeight())
 
         local frame = childRefs.frame
@@ -1701,6 +2453,9 @@ local function BuildComposerContent(contentArea, contextMode)
         if childRefs.buffContainer then MakeOverlay("buffs", childRefs.buffContainer, "fill", elemFLvl) end
         if childRefs.debuffContainer then MakeOverlay("debuffs", childRefs.debuffContainer, "fill", elemFLvl) end
         if childRefs.roleIcon then MakeOverlay("role", childRefs.roleIcon, "fill", elemFLvl) end
+        if childRefs.defensiveContainer then MakeOverlay("defensive", childRefs.defensiveContainer, "fill", elemFLvl) end
+        if childRefs.auraIndicatorContainer then MakeOverlay("auraIndicators", childRefs.auraIndicatorContainer, "fill", elemFLvl) end
+        if childRefs.privateAuraContainer then MakeOverlay("privateAuras", childRefs.privateAuraContainer, "fill", elemFLvl) end
 
         -- Re-highlight selected element
         if state.selectedElement then SetOverlayHighlights(state.selectedElement, true) end
@@ -1720,9 +2475,24 @@ local function BuildComposerContent(contentArea, contextMode)
     local function onChangeHandler()
         RefreshGF()
         RebuildPreview()
-        local editMode = ns.QUI_GroupFrameEditMode
-        if editMode and (editMode.IsTestMode and editMode:IsTestMode() or editMode.IsEditMode and editMode:IsEditMode()) then
-            if editMode.RefreshTestMode then editMode:RefreshTestMode() end
+        -- RefreshGF() calls QUI_RefreshGroupFrames which already triggers
+        -- RefreshTestMode internally — don't call it again here to avoid
+        -- a double rebuild that destroys and recreates test frames (causes flash).
+
+        -- Re-evaluate conditional row visibility on the active panel.
+        -- The HookScript on toggle tracks should handle this, but as a safety
+        -- net we run all registered relayout functions for the active panel's
+        -- collapsible bodies so that show/hide state stays in sync after any
+        -- setting change (toggles, sliders, dropdowns, etc.).
+        local activeKey = state.selectedElement
+        local activePanel = activeKey and state.settingsPanels[activeKey]
+        if activePanel then
+            for _, section in ipairs({activePanel:GetChildren()}) do
+                local body = section._body
+                if body and body._relayouts then
+                    for _, fn in ipairs(body._relayouts) do fn() end
+                end
+            end
         end
     end
 
