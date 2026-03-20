@@ -301,7 +301,7 @@ function Helpers.GetNCDMCustomEntries(trackerKey)
         return nil
     end
 
-    local core = Helpers.GetQUICore()
+    local core = Helpers.GetCore()
     if not (core and core.db and core.db.char and core.db.profile) then
         return nil
     end
@@ -378,7 +378,7 @@ function Helpers.SeedNCDMCustomEntriesForCurrentSpec(trackerKey)
         return false
     end
 
-    local core = Helpers.GetQUICore()
+    local core = Helpers.GetCore()
     if not (core and core.db and core.db.char and core.db.profile) then
         return false
     end
