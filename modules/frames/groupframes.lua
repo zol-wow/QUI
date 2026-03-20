@@ -16,13 +16,6 @@ local issecretvalue = _G.issecretvalue
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
 local GetCore = Helpers.GetCore
-local floor = math.floor
-
--- Pixel-snap with pre-computed pixel size (avoids per-call GetEffectiveScale in loops)
-local function snapPx(value, px)
-    if value == 0 then return 0 end
-    return floor(value / px + 0.5) * px
-end
 
 -- Upvalue caching for hot-path performance
 local type = type
@@ -169,7 +162,6 @@ end
 
 -- Pending combat-deferred operations
 local pendingResize = false
-local pendingResizeForce = false
 local pendingRefreshSettings = false
 local pendingVisibilityUpdate = false
 local pendingRegisterClicks = false
@@ -1378,7 +1370,7 @@ local function UpdateDefensiveIndicator(frame)
     -- CENTER: calculate centering offset based on visible count
     local centerOffX = 0
     if growDir == "CENTER" then
-        local visibleCount = math.min(#foundAuras, maxIcons, #frame.defensiveIcons)
+        local visibleCount = math.min(#foundAuras, #frame.defensiveIcons)
         local totalSpan = visibleCount * iconSize + math.max(visibleCount - 1, 0) * spacing
         centerOffX = -totalSpan / 2
     end
@@ -2306,153 +2298,6 @@ local function UpdateAnchorFrames()
     end
 end
 
-local function EnsureAnchorFrame(key)
-    local root = QUI_GF.anchorFrames[key]
-    if root then return root end
-
-    local name = key == "raid" and "QUI_RaidFramesRoot" or "QUI_PartyFramesRoot"
-    root = CreateFrame("Frame", name, UIParent)
-    root:EnableMouse(false)
-    root:Hide()
-
-    QUI_GF.anchorFrames[key] = root
-    return root
-end
-
-local function GetAnchorPosition(key, db)
-    if key == "raid" and db and db.unifiedPosition == false then
-        local pos = db.raidPosition
-        return pos and pos.offsetX or -400, pos and pos.offsetY or 0
-    end
-
-    local pos = db and db.position
-    return pos and pos.offsetX or -400, pos and pos.offsetY or 0
-end
-
-local function GetHeaderLeadEdge(isRaid)
-    local layout = GetLayoutSettings(isRaid)
-    local grow = layout and layout.growDirection or "DOWN"
-    local groupBy = isRaid and (layout and layout.groupBy or "GROUP") or "GROUP"
-    local leadEdge = "LEFT"
-
-    if grow == "LEFT" then
-        leadEdge = "RIGHT"
-    elseif isRaid and (grow == "DOWN" or grow == "UP") and groupBy ~= "NONE" and
-        (layout and layout.groupGrowDirection) == "LEFT" then
-        leadEdge = "RIGHT"
-    end
-
-    return grow, leadEdge
-end
-
-local function AnchorHeaderToRoot(root, header, grow, leadEdge, attachTo, gap, isSelfHeader)
-    if not (root and header) then return end
-
-    header:SetParent(root)
-    header:ClearAllPoints()
-
-    if attachTo then
-        if grow == "UP" then
-            header:SetPoint("BOTTOM" .. leadEdge, attachTo, "TOP" .. leadEdge, 0, gap or 0)
-        elseif grow == "LEFT" then
-            if isSelfHeader then
-                header:SetPoint("TOPRIGHT", attachTo, "TOPLEFT", -(gap or 0), 0)
-            else
-                header:SetPoint("TOPRIGHT", attachTo, "TOPLEFT", -(gap or 0), 0)
-            end
-        elseif grow == "RIGHT" then
-            if isSelfHeader then
-                header:SetPoint("TOPLEFT", attachTo, "TOPRIGHT", gap or 0, 0)
-            else
-                header:SetPoint("TOPLEFT", attachTo, "TOPRIGHT", gap or 0, 0)
-            end
-        else
-            header:SetPoint("TOP" .. leadEdge, attachTo, "BOTTOM" .. leadEdge, 0, -(gap or 0))
-        end
-        return
-    end
-
-    if grow == "UP" then
-        header:SetPoint("BOTTOM" .. leadEdge, root, "BOTTOM" .. leadEdge, 0, 0)
-    elseif grow == "LEFT" then
-        header:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
-    elseif grow == "RIGHT" then
-        header:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
-    else
-        header:SetPoint("TOP" .. leadEdge, root, "TOP" .. leadEdge, 0, 0)
-    end
-end
-
-local function UpdateAnchorRoot(key, mainHeader, selfHeader, isRaid)
-    local root = EnsureAnchorFrame(key)
-    local grow, leadEdge = GetHeaderLeadEdge(isRaid)
-    local rootGrow = grow
-
-    local mainVisible = mainHeader and mainHeader:IsShown()
-    local selfVisible = selfHeader and selfHeader:IsShown()
-    local gap = (isRaid and selfVisible) and 0 or 4
-
-    -- Horizontal raid growth plus a dedicated self header can look like an
-    -- extra detached column. Stack self above main in this case.
-    if isRaid and selfVisible and (grow == "LEFT" or grow == "RIGHT") then
-        rootGrow = "DOWN"
-    end
-
-    if not mainVisible and not selfVisible then
-        root:Hide()
-        return
-    end
-
-    local mainW = mainVisible and Helpers.SafeValue(mainHeader:GetWidth(), 1) or 0
-    local mainH = mainVisible and Helpers.SafeValue(mainHeader:GetHeight(), 1) or 0
-    local selfW = selfVisible and Helpers.SafeValue(selfHeader:GetWidth(), 1) or 0
-    local selfH = selfVisible and Helpers.SafeValue(selfHeader:GetHeight(), 1) or 0
-
-    local totalW, totalH
-    if rootGrow == "LEFT" or rootGrow == "RIGHT" then
-        totalW = math.max(1, mainW + (mainVisible and selfVisible and gap or 0) + selfW)
-        totalH = math.max(1, math.max(mainH, selfH))
-    else
-        totalW = math.max(1, math.max(mainW, selfW))
-        totalH = math.max(1, mainH + (mainVisible and selfVisible and gap or 0) + selfH)
-    end
-
-    root:SetSize(totalW, totalH)
-
-    if selfVisible then
-        AnchorHeaderToRoot(root, selfHeader, rootGrow, leadEdge, nil, 0, true)
-    end
-
-    if mainVisible then
-        AnchorHeaderToRoot(root, mainHeader, rootGrow, leadEdge, selfVisible and selfHeader or nil, selfVisible and gap or 0, false)
-    end
-
-    root:Show()
-end
-
-local function UpdateAnchorFrames()
-    local db = GetSettings()
-    if not db then return end
-
-    local partyRoot = EnsureAnchorFrame("party")
-    local raidRoot = EnsureAnchorFrame("raid")
-    local partyX, partyY = GetAnchorPosition("party", db)
-    local raidX, raidY = GetAnchorPosition("raid", db)
-
-    if partyRoot:GetNumPoints() == 0 then
-        partyRoot:SetPoint("CENTER", UIParent, "CENTER", partyX, partyY)
-    end
-    if raidRoot:GetNumPoints() == 0 then
-        raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidX, raidY)
-    end
-
-    local selfHdr = QUI_GF.headers.self
-    local selfOnRaid = selfHdr and selfHdr:IsShown() and IsInRaid()
-
-    UpdateAnchorRoot("party", QUI_GF.headers.party, selfOnRaid and nil or selfHdr, false)
-    UpdateAnchorRoot("raid", QUI_GF.headers.raid, selfOnRaid and selfHdr or nil, true)
-end
-
 ---------------------------------------------------------------------------
 -- HEADER: Configure secure header attributes
 ---------------------------------------------------------------------------
@@ -2544,90 +2389,14 @@ local function ConfigurePartyHeader(header)
     header:SetAttribute("_initialAttribute-unit-height", h)
 end
 
-local function BuildRaidNameListForSelfFirst(layout)
-    if not IsInRaid() then return nil end
-    local sortMethod = layout and layout.sortMethod or "INDEX"
-    local useRolePriority = layout and (layout.groupBy == "ROLE" or layout.sortByRole)
-    local entries = {}
-    local playerEntry = nil
-    local count = GetNumGroupMembers() or 0
-    for i = 1, count do
-        local unit = "raid" .. i
-        if UnitExists(unit) then
-            local fullName = GetUnitName(unit, true)
-            if fullName and fullName ~= "" then
-                local shortName = GetUnitName(unit, false) or fullName
-                local role = UnitGroupRolesAssigned(unit) or "NONE"
-                local entry = {
-                    name = fullName,
-                    sortName = string.lower(shortName),
-                    sortNameFull = string.lower(fullName),
-                    roleOrder = ROLE_SORT_ORDER[role] or ROLE_SORT_ORDER.NONE,
-                    index = i,
-                }
-                if UnitIsUnit(unit, "player") then
-                    playerEntry = entry
-                else
-                    entries[#entries + 1] = entry
-                end
-            end
-        end
-    end
-
-    table.sort(entries, function(a, b)
-        if useRolePriority and a.roleOrder ~= b.roleOrder then
-            return a.roleOrder < b.roleOrder
-        end
-        if sortMethod == "NAME" then
-            if a.sortName ~= b.sortName then
-                return a.sortName < b.sortName
-            end
-            if a.sortNameFull ~= b.sortNameFull then
-                return a.sortNameFull < b.sortNameFull
-            end
-        end
-        return a.index < b.index
-    end)
-
-    local names = {}
-    if playerEntry then
-        names[#names + 1] = playerEntry.name
-    end
-    for i = 1, #entries do
-        names[#names + 1] = entries[i].name
-    end
-    if #names == 0 then return nil end
-    return table.concat(names, ",")
-end
-
 local function ConfigureRaidHeader(header)
     local layout = GetLayoutSettings(true)
     if not layout then return end
-    local db = GetSettings()
-    local selfFirst = db and db.selfFirst
-    local raidSelfFirst = selfFirst and IsInRaid()
 
     header:SetAttribute("showRaid", true)
     header:SetAttribute("showParty", false)
-    header:SetAttribute("showPlayer", raidSelfFirst and true or false)
+    header:SetAttribute("showPlayer", false)
     header:SetAttribute("showSolo", false)
-
-    -- Keep self-first inside a single raid grid by switching to NAMELIST mode.
-    -- ASSIGNEDROLE/NAME sorting can reorder units away from an explicit
-    -- "player first" intent, while NAMELIST preserves the order we generate.
-    local activeNameList = nil
-    if raidSelfFirst then
-        activeNameList = BuildRaidNameListForSelfFirst(layout)
-        header:SetAttribute("groupBy", nil)
-        header:SetAttribute("groupingOrder", nil)
-        header:SetAttribute("groupFilter", nil)
-        header:SetAttribute("nameList", activeNameList or "")
-        header:SetAttribute("strictFiltering", activeNameList and true or false)
-        header:SetAttribute("sortMethod", "NAMELIST")
-    else
-        header:SetAttribute("nameList", nil)
-        header:SetAttribute("strictFiltering", false)
-    end
 
     local mode = GetGroupMode()
     local w, h = GetFrameDimensions(mode)
@@ -2684,32 +2453,28 @@ local function ConfigureRaidHeader(header)
     end
 
     -- Group filtering
-    if not raidSelfFirst then
-        if groupBy == "NONE" then
-            header:SetAttribute("groupFilter", nil)
-            header:SetAttribute("groupingOrder", nil)
-            header:SetAttribute("groupBy", nil)
-        elseif groupBy == "GROUP" then
-            header:SetAttribute("groupingOrder", "1,2,3,4,5,6,7,8")
-            header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
-            header:SetAttribute("groupBy", "GROUP")
-        elseif groupBy == "ROLE" then
-            header:SetAttribute("groupFilter", nil)
-            header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
-            header:SetAttribute("groupBy", "ASSIGNEDROLE")
-        elseif groupBy == "CLASS" then
-            header:SetAttribute("groupFilter", nil)
-            header:SetAttribute("groupingOrder", "WARRIOR,DEATHKNIGHT,PALADIN,MONK,PRIEST,SHAMAN,DRUID,ROGUE,MAGE,WARLOCK,HUNTER,DEMONHUNTER,EVOKER")
-            header:SetAttribute("groupBy", "CLASS")
-        end
+    if groupBy == "NONE" then
+        header:SetAttribute("groupBy", nil)
+        header:SetAttribute("groupFilter", nil)
+        header:SetAttribute("groupingOrder", nil)
+    elseif groupBy == "GROUP" then
+        header:SetAttribute("groupBy", "GROUP")
+        header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
+        header:SetAttribute("groupingOrder", "1,2,3,4,5,6,7,8")
+    elseif groupBy == "ROLE" then
+        header:SetAttribute("groupBy", "ASSIGNEDROLE")
+        header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
+    elseif groupBy == "CLASS" then
+        header:SetAttribute("groupBy", "CLASS")
+        header:SetAttribute("groupingOrder", "WARRIOR,DEATHKNIGHT,PALADIN,MONK,PRIEST,SHAMAN,DRUID,ROGUE,MAGE,WARLOCK,HUNTER,DEMONHUNTER,EVOKER")
+    end
 
-        -- Sorting
-        if layout.sortByRole and groupBy ~= "ROLE" then
-            -- Role sort within groups
-            header:SetAttribute("sortMethod", "NAME")
-        else
-            header:SetAttribute("sortMethod", layout.sortMethod or "INDEX")
-        end
+    -- Sorting
+    if layout.sortByRole and groupBy ~= "ROLE" then
+        -- Role sort within groups
+        header:SetAttribute("sortMethod", "NAME")
+    else
+        header:SetAttribute("sortMethod", layout.sortMethod or "INDEX")
     end
 
     -- Frame size via initial config
@@ -3141,15 +2906,9 @@ local function UpdateHeaderSizes()
     -- Self header uses party dimensions; root layout handles ordering.
     local selfHdr = QUI_GF.headers.self
     if selfHdr then
-        local sw, sh
-        if IsInRaid() then
-            local mode = GetGroupMode()
-            sw, sh = GetFrameDimensions(mode)
-        else
-            local partyDims = db.party and db.party.dimensions
-            sw = partyDims and partyDims.partyWidth or 200
-            sh = partyDims and partyDims.partyHeight or 40
-        end
+        local partyDims = db.party and db.party.dimensions
+        local sw = partyDims and partyDims.partyWidth or 200
+        local sh = partyDims and partyDims.partyHeight or 40
         selfHdr:SetAttribute("_initialAttribute-unit-width", sw)
         selfHdr:SetAttribute("_initialAttribute-unit-height", sh)
         selfHdr:SetSize(sw, sh)
@@ -3262,12 +3021,6 @@ local function UpdateHeaderVisibility()
         selfHeader:SetAttribute("showSolo", selfFirst and true or false)
     end
 
-    if QUI_GF.headers.party then ConfigurePartyHeader(QUI_GF.headers.party) end
-    if QUI_GF.headers.raid then ConfigureRaidHeader(QUI_GF.headers.raid) end
-    if selfHeader then
-        selfHeader:SetAttribute("showSolo", selfFirst and true or false)
-    end
-
     if IsInRaid() then
         if QUI_GF.headers.party then QUI_GF.headers.party:Hide() end
         if multiHeader then
@@ -3278,7 +3031,7 @@ local function UpdateHeaderVisibility()
         end
         -- Self header in raid: show above raid frames when selfFirst is on
         if selfHeader then
-            selfHeader:Hide()
+            if selfFirst then selfHeader:Show() else selfHeader:Hide() end
         end
     elseif IsInGroup() then
         if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
@@ -3332,26 +3085,38 @@ end
 ---------------------------------------------------------------------------
 local lastMode = nil
 
--- Resize/layout unit buttons and bars (allowed in combat). Header initial dimensions
--- must still be updated out of combat via SetAttribute.
-local function ApplyChildFrameLayout(w, h)
-    for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = QUI_GF.headers[headerKey]
-        if header then
-            local headerPx = (QUICore.GetPixelSize and QUICore:GetPixelSize(header)) or 1
-            local i = 1
-            while true do
-                local child = header:GetAttribute("child" .. i)
-                if not child then break end
-                child:SetSize(w, h)
-                if child.healthBar and child.powerBar then
-                    local general = GetGeneralSettings(child._isRaid)
-                    local borderPx = general and general.borderSize or 1
-                    local borderSize = borderPx > 0 and (borderPx * headerPx) or 0
-                    local powerSettings = GetPowerSettings(child._isRaid)
-                    local powerHeight = powerSettings and powerSettings.showPowerBar ~= false and
-                        snapPx(powerSettings.powerBarHeight or 4, headerPx) or 0
-                    local sepH = powerHeight > 0 and headerPx or 0
+local function UpdateFrameScaling(forceUpdate)
+    local mode = GetGroupMode()
+    if not forceUpdate and mode == lastMode then return end
+    lastMode = mode
+
+    if InCombatLockdown() and not inInitSafeWindow then
+        pendingResize = true
+        return
+    end
+
+    local w, h = GetFrameDimensions(mode)
+
+    -- Resize a single header and all its children
+    local function ScaleHeader(header)
+        if not header then return end
+        header:SetAttribute("_initialAttribute-unit-width", w)
+        header:SetAttribute("_initialAttribute-unit-height", h)
+
+        local i = 1
+        while true do
+            local child = header:GetAttribute("child" .. i)
+            if not child then break end
+            child:SetSize(w, h)
+            if child.healthBar and child.powerBar then
+                local general = GetGeneralSettings(child._isRaid)
+                local borderPx = general and general.borderSize or 1
+                local borderSize = borderPx > 0 and (QUICore.Pixels and QUICore:Pixels(borderPx, child) or borderPx) or 0
+                local powerSettings = GetPowerSettings(child._isRaid)
+                local powerHeight = powerSettings and powerSettings.showPowerBar ~= false and
+                    (QUICore.PixelRound and QUICore:PixelRound(powerSettings.powerBarHeight or 4, child) or 4) or 0
+                local px = QUICore.GetPixelSize and QUICore:GetPixelSize(child) or 1
+                local sepH = powerHeight > 0 and px or 0
 
                 child.healthBar:ClearAllPoints()
                 child.healthBar:SetPoint("TOPLEFT", child, "TOPLEFT", borderSize, -borderSize)
@@ -3382,34 +3147,7 @@ local function ApplyChildFrameLayout(w, h)
     for g = 1, 8 do
         ScaleHeader(QUI_GF.raidGroupHeaders[g])
     end
-end
 
-local function UpdateFrameScaling(forceUpdate)
-    forceUpdate = forceUpdate and true or false
-    local mode = GetGroupMode()
-    local w, h = GetFrameDimensions(mode)
-
-    if InCombatLockdown() then
-        pendingResize = true
-        pendingResizeForce = pendingResizeForce or forceUpdate
-        ApplyChildFrameLayout(w, h)
-        return
-    end
-
-    if not forceUpdate and mode == lastMode then return end
-    lastMode = mode
-
-    w, h = GetFrameDimensions(mode)
-
-    for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = QUI_GF.headers[headerKey]
-        if header then
-            header:SetAttribute("_initialAttribute-unit-width", w)
-            header:SetAttribute("_initialAttribute-unit-height", h)
-        end
-    end
-
-    ApplyChildFrameLayout(w, h)
     UpdateHeaderSizes()
 end
 
@@ -3419,12 +3157,15 @@ end
 local rangeCheckTicker = nil
 
 -- Spec → friendly spell ID for range checking (validated with IsPlayerSpell).
--- Death Knight: no friendly spell — Death Coil returns nil on player targets; use UnitInRange / hostile spell.
+-- Spec-based gives better coverage than class-based: every healer/caster spec
+-- has a friendly spell that returns true/false (not nil) on alive targets.
 local SPEC_RANGE_SPELLS = {
-    -- Death Knight
-    [250] = nil,
-    [251] = nil,
-    [252] = nil,
+    -- Death Knight: no reliable friendly spell (Death Coil only heals undead allies,
+    -- returns nil on non-undead targets causing inconsistent range results).
+    -- Falls through to UnitInRange() which handles all target types consistently.
+    [250] = nil,    -- Blood
+    [251] = nil,    -- Frost
+    [252] = nil,    -- Unholy
     -- Demon Hunter
     [577] = nil,    -- Havoc: no friendly spell
     [581] = nil,    -- Vengeance: no friendly spell
@@ -3475,23 +3216,6 @@ local SPEC_RANGE_SPELLS = {
     [73]  = nil,    -- Protection
 }
 
--- Hostile spell per spec (UnitCanAttack) — same role as DandersFrames/Grid2
-local SPEC_HOSTILE_RANGE_SPELLS = {
-    [250] = 47541, [251] = 47541, [252] = 47541,
-    [577] = 185123, [581] = 185123,
-    [102] = 8921, [103] = 8921, [104] = 8921, [105] = 8921,
-    [1467] = 361469, [1468] = 361469, [1473] = 361469,
-    [253] = 193455, [254] = 19434, [255] = 259491,
-    [62] = 30451, [63] = 133, [64] = 116,
-    [268] = 115546, [269] = 115546, [270] = 115546,
-    [65] = 62124, [66] = 62124, [70] = 62124,
-    [256] = 585, [257] = 585, [258] = 585,
-    [259] = 36554, [260] = 185763, [261] = 36554,
-    [262] = 188196, [263] = 188196, [264] = 188196,
-    [265] = 686, [266] = 686, [267] = 29722,
-    [71] = 355, [72] = 355, [73] = 355,
-}
-
 -- Class fallback: used if spec not detected or spec spell not known
 local CLASS_RANGE_SPELLS = {
     PRIEST      = { 2061, 17 },          -- Flash Heal, Power Word: Shield
@@ -3509,27 +3233,11 @@ local CLASS_RANGE_SPELLS = {
     HUNTER      = {},
 }
 
-local CLASS_HOSTILE_RANGE_SPELLS = {
-    DEATHKNIGHT = 47541,
-    DEMONHUNTER = 185123,
-    DRUID       = 8921,
-    EVOKER      = 361469,
-    HUNTER      = 75,
-    MAGE        = 116,
-    MONK        = 115546,
-    PALADIN     = 62124,
-    PRIEST      = 585,
-    ROGUE       = 36554,
-    SHAMAN      = 188196,
-    WARLOCK     = 686,
-    WARRIOR     = 355,
-}
-
--- Class → single rez spell ID for dead-target range checking (Druid: Rebirth resolved in ResolveRangeSpells).
+-- Class → single rez spell ID for dead-target range checking.
 local RES_SPELLS = {
     PRIEST      = 2006,   -- Resurrection
     PALADIN     = 7328,   -- Redemption
-    DRUID       = 50769,  -- Revive (fallback if Rebirth not known)
+    DRUID       = 50769,  -- Revive
     SHAMAN      = 2008,   -- Ancestral Spirit
     MONK        = 115178, -- Resuscitate
     EVOKER      = 361227, -- Return
@@ -3538,7 +3246,6 @@ local RES_SPELLS = {
 
 local playerClass = nil
 local rangeSpell = nil   -- Resolved friendly spell ID for living targets
-local hostileRangeSpell = nil -- Resolved hostile spell for UnitCanAttack targets
 local resSpell = nil     -- Resolved rez spell ID for dead targets
 local rangeCache = {}    -- unit → boolean (change detection, avoids redundant SetAlpha)
 
@@ -3574,33 +3281,11 @@ local function ResolveRangeSpells()
         end
     end
 
-    hostileRangeSpell = nil
-    if specID and SPEC_HOSTILE_RANGE_SPELLS[specID] then
-        local hid = SPEC_HOSTILE_RANGE_SPELLS[specID]
-        if hid and IsPlayerSpell(hid) then
-            hostileRangeSpell = hid
-        end
-    end
-    if not hostileRangeSpell then
-        local hid = CLASS_HOSTILE_RANGE_SPELLS[playerClass]
-        if hid and IsPlayerSpell(hid) then
-            hostileRangeSpell = hid
-        end
-    end
-
-    -- Resolve rez spell (Druid: Rebirth for combat-consistent corpse range)
+    -- Resolve rez spell
     resSpell = nil
-    if playerClass == "DRUID" then
-        if IsPlayerSpell(20484) then
-            resSpell = 20484
-        elseif IsPlayerSpell(50769) then
-            resSpell = 50769
-        end
-    else
-        local rezID = RES_SPELLS[playerClass]
-        if rezID and IsPlayerSpell(rezID) then
-            resSpell = rezID
-        end
+    local rezID = RES_SPELLS[playerClass]
+    if rezID and IsPlayerSpell(rezID) then
+        resSpell = rezID
     end
 end
 
@@ -3622,56 +3307,50 @@ local function CheckUnitRange(unit)
     local isDead = UnitIsDeadOrGhost(unit)
     if IsSecretValue(isDead) then isDead = false end
 
-    local friendlyReturnedNil = false
-
-    -- Hostile units (UnitCanAttack): branch before friendly spells — matches DandersFrames;
-    -- also correct for edge cases with cross-faction party members.
-    if UnitCanAttack("player", unit) then
-        if hostileRangeSpell then
-            local inRangeH = C_Spell.IsSpellInRange(hostileRangeSpell, unit)
-            if inRangeH ~= nil then
-                return inRangeH
-            end
-        end
-        return true
-    end
-
+    -- Primary: friendly spell range check
+    -- IsSpellInRange returns true/false/nil (normal booleans, not secret values).
+    -- nil means "spell not applicable to target" (e.g. NPC, wrong unit type) —
+    -- fall through to UnitInRange rather than treating as out-of-range.
     if rangeSpell and not isDead then
         local result = C_Spell.IsSpellInRange(rangeSpell, unit)
         if result == true then
             return true
         elseif result == false then
+            -- OR with CheckInteractDistance out of combat for leniency
+            -- (avoids false OOR from spec/talent edge cases)
             if not InCombatLockdown() and CheckInteractDistance(unit, 4) then
                 return true
             end
             return false
-        else
-            friendlyReturnedNil = true
         end
+        -- result == nil: spell not applicable, fall through to UnitInRange
     end
 
+    -- Dead target: rez spell range check
     if isDead and resSpell then
         local result = C_Spell.IsSpellInRange(resSpell, unit)
         if result ~= nil then return result end
     end
 
+    -- Out of combat: interact distance (~28 yards)
     if not InCombatLockdown() then
         return CheckInteractDistance(unit, 4) and true or false
     end
 
-    -- In combat: UnitInRange before treating friendly spell nil as OOR (Grid2 / DandersFrames order)
+    -- In-combat fallback: UnitInRange (~38-40 yd, works for all unit types).
+    -- Used for classes with no friendly spell (DK/DH/Hunter/Warrior) AND when
+    -- the friendly spell returned nil (spell not applicable to this target type,
+    -- e.g. NPC party members). Returns secret booleans in Midnight+ — propagate
+    -- them downstream; SetAlphaFromBoolean handles them natively (C-side).
     if UnitInRange then
         local inRange = UnitInRange(unit)
         if issecretvalue and issecretvalue(inRange) then
-            return inRange
+            return inRange  -- Secret boolean, handled by SetAlphaFromBoolean downstream
         end
         if inRange ~= nil then return inRange end
     end
 
-    if rangeSpell and friendlyReturnedNil and connected and not isDead then
-        return false
-    end
-
+    -- No method available — assume in range
     return true
 end
 
@@ -3726,7 +3405,7 @@ local function StartRangeCheck()
     if (not partyRange or partyRange.enabled == false) and (not raidRange or raidRange.enabled == false) then return end
 
     -- Ensure spells are resolved before starting
-    if not rangeSpell and not resSpell and not hostileRangeSpell then
+    if not rangeSpell and not resSpell then
         ResolveRangeSpells()
     end
 
@@ -3830,7 +3509,6 @@ local function OnEvent(self, event, arg1, ...)
             UpdatePhaseIcon(frame)
 
         elseif event == "INCOMING_RESURRECT_CHANGED" then
-            wipe(rangeCache)
             UpdateResurrection(frame)
 
         elseif event == "INCOMING_SUMMON_CHANGED" then
@@ -3938,10 +3616,8 @@ local function OnEvent(self, event, arg1, ...)
             -- SecureGroupHeaders is protected.
             QUI_GF:RefreshSettings()
         elseif pendingResize then
-            local forceResize = pendingResizeForce
             pendingResize = false
-            pendingResizeForce = false
-            UpdateFrameScaling(forceResize)
+            UpdateFrameScaling()
         end
         if pendingVisibilityUpdate then
             pendingVisibilityUpdate = false
@@ -4209,7 +3885,6 @@ function QUI_GF:Initialize()
     -- InCombatLockdown() returns true during a combat /reload.
     inInitSafeWindow = true
 
-
     -- Create headers
     CreateHeaders()
 
@@ -4277,10 +3952,6 @@ function QUI_GF:Disable()
         proxy:Hide()
     end
 
-    for _, proxy in pairs(self.anchorFrames) do
-        proxy:Hide()
-    end
-
     if ns.QUI_GroupFramePrivateAuras and ns.QUI_GroupFramePrivateAuras.CleanupAll then
         ns.QUI_GroupFramePrivateAuras:CleanupAll()
     end
@@ -4321,21 +3992,6 @@ end)
 ---------------------------------------------------------------------------
 -- PUBLIC API (for other modules)
 ---------------------------------------------------------------------------
-
-function QUI_GF:GetAnchorFrame(frameType)
-    if self.editMode or self.testMode then
-        return nil
-    end
-    local frame = self.anchorFrames and self.anchorFrames[frameType]
-    if frame and frame:IsShown() then
-        return frame
-    end
-    return nil
-end
-
-function QUI_GF:UpdateAnchorFrames()
-    UpdateAnchorFrames()
-end
 
 function QUI_GF:GetAnchorFrame(frameType)
     if self.editMode or self.testMode then
