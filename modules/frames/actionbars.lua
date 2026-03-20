@@ -2092,10 +2092,25 @@ local function BuildBar(barKey)
         -- Register keybind methods for LibKeyBound
         local prefix = BINDING_COMMANDS[barKey]
         if prefix then
+            local LKB = LibStub("LibKeyBound-1.0", true)
             for i, btn in ipairs(buttons) do
                 local state = GetFrameState(btn)
                 state.bindingCommand = prefix .. i
                 state.keybindMethods = true
+                -- Hook OnEnter so LibKeyBound detects hover.
+                -- No OnLeave hook needed — the binder frame handles its own OnLeave.
+                -- Guard against re-entry: if the binder is already targeting this
+                -- button, skip Set() to avoid a show/hide flicker loop.
+                if LKB then
+                    btn:HookScript("OnEnter", function(self)
+                        if LKB:IsShown() then
+                            local bf = LKB.frame
+                            if not bf or bf.button ~= self then
+                                LKB:Set(self)
+                            end
+                        end
+                    end)
+                end
             end
         end
     end
