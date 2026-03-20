@@ -995,8 +995,9 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
             local barColorDB = { barColor = existingColor or (containerDB.barColor and {unpack(containerDB.barColor)}) or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
 
             local barColorEnabled = existingColor ~= nil
-            local barColorCheck = GUI:CreateFormCheckbox(overridePanel, "Bar Color Override", nil, nil, function()
-                barColorEnabled = not barColorEnabled
+            local barColorToggleDB = { barColorOverride = barColorEnabled }
+            local barColorCheck = GUI:CreateFormCheckbox(overridePanel, "Bar Color Override", "barColorOverride", barColorToggleDB, function()
+                barColorEnabled = barColorToggleDB.barColorOverride
                 if barColorEnabled then
                     containerDB.colorOverrides[spellID] = barColorDB.barColor
                 else
@@ -1004,7 +1005,6 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
                 end
                 OnOverrideChange()
             end)
-            barColorCheck.CheckBox:SetChecked(barColorEnabled)
             PlaceWidget(barColorCheck)
 
             local barColorPicker = GUI:CreateFormColorPicker(overridePanel, "Bar Color", "barColor", barColorDB, function()
