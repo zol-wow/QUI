@@ -2207,8 +2207,12 @@ local function BuildPrivateAurasSettings(content, gfdb, onChange)
     L:Row(GUI:CreateFormDropdown(content, "Anchor", NINE_POINT_OPTIONS, "anchor", pa, onChange), DROP_ROW, cond)
     L:Row(GUI:CreateFormSlider(content, "X Offset", -100, 100, 1, "anchorOffsetX", pa, onChange), SLIDER_HEIGHT, cond)
     L:Row(GUI:CreateFormSlider(content, "Y Offset", -100, 100, 1, "anchorOffsetY", pa, onChange), SLIDER_HEIGHT, cond)
+    L:Row(GUI:CreateFormSlider(content, "Border Scale", -100, 10, 0.5, "borderScale", pa, onChange), SLIDER_HEIGHT, cond)
     L:Row(GUI:CreateFormCheckbox(content, "Show Countdown", "showCountdown", pa, onChange), FORM_ROW, cond)
     L:Row(GUI:CreateFormCheckbox(content, "Show Countdown Numbers", "showCountdownNumbers", pa, onChange), FORM_ROW, cond)
+    L:Row(GUI:CreateFormSlider(content, "Text Scale", 0.5, 5, 0.5, "textScale", pa, onChange), SLIDER_HEIGHT, cond)
+    L:Row(GUI:CreateFormSlider(content, "Text X Offset", -20, 20, 1, "textOffsetX", pa, onChange), SLIDER_HEIGHT, cond)
+    L:Row(GUI:CreateFormSlider(content, "Text Y Offset", -20, 20, 1, "textOffsetY", pa, onChange), SLIDER_HEIGHT, cond)
     L:Finish()
 end
 

@@ -3,6 +3,11 @@
     Displays private (boss debuff) auras on group frames using
     C_UnitAuras.AddPrivateAuraAnchor. These auras are hidden from addon
     APIs and can only be rendered by the client into addon-provided frames.
+
+    Dual-anchor system: each aura slot registers two anchors with the same
+    auraIndex — the main anchor shows the icon/cooldown, and a second
+    scaled anchor renders the application count (stacks) and optionally
+    repositioned countdown numbers.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -25,7 +30,12 @@ ns.QUI_GroupFramePrivateAuras = QUI_GFPA
 local AddPrivateAuraAnchor = C_UnitAuras.AddPrivateAuraAnchor
 local RemovePrivateAuraAnchor = C_UnitAuras.RemovePrivateAuraAnchor
 
--- Weak-keyed state: frameState[frame] = { containers={}, anchorIDs={}, unit="" }
+-- Weak-keyed state per frame:
+--   containers    = { [i] = frame }       main icon containers
+--   scaleFrames   = { [i] = frame }       tiny scaled parents for text anchor
+--   anchorIDs     = { [i] = id }          main anchor IDs
+--   textAnchorIDs = { [i] = id }          text (stack/countdown) anchor IDs
+--   unit          = string
 local frameState = Helpers.CreateStateTable()
 
 -- Container pool
@@ -93,6 +103,103 @@ local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCou
     return step, 0 -- fallback to RIGHT
 end
 
+--- Register both anchors (main + text) for a single aura slot.
+--- @param unit string unit token
+--- @param auraIndex number slot index
+--- @param container frame main icon container
+--- @param scaleFrame frame tiny scaled parent for text anchor
+--- @param settings table privateAuras settings
+--- @return number|nil mainAnchorID, number|nil textAnchorID
+local function RegisterDualAnchor(unit, auraIndex, container, scaleFrame, settings)
+    local iconSize = settings.iconSize or 20
+    local borderScale = settings.borderScale or 1
+    local showCountdown = settings.showCountdown ~= false
+    local textScale = settings.textScale or 2
+    local textOffsetX = settings.textOffsetX or 0
+    local textOffsetY = settings.textOffsetY or 0
+
+    -- Disable countdown numbers on main anchor when text scale != 1,
+    -- because the second anchor will render them at the scaled size instead.
+    local mainShowNumbers = (textScale == 1) and (settings.showCountdownNumbers ~= false)
+
+    -- Main anchor: icon + cooldown spiral
+    local ok1, mainID = pcall(AddPrivateAuraAnchor, {
+        unitToken = unit,
+        auraIndex = auraIndex,
+        parent = container,
+        showCountdownFrame = showCountdown,
+        showCountdownNumbers = mainShowNumbers,
+        iconInfo = {
+            iconWidth = iconSize,
+            iconHeight = iconSize,
+            borderScale = borderScale,
+            iconAnchor = {
+                point = "CENTER",
+                relativeTo = container,
+                relativePoint = "CENTER",
+                offsetX = 0,
+                offsetY = 0,
+            },
+        },
+    })
+
+    local mainAnchorID = (ok1 and mainID) or nil
+
+    -- Text anchor: stacks + countdown numbers at custom scale
+    -- Only register when textScale != 1, otherwise main anchor handles everything
+    local textAnchorID = nil
+    if textScale ~= 1 and mainAnchorID then
+        -- Configure scale frame
+        scaleFrame:SetSize(0.001, 0.001)
+        scaleFrame:SetScale(textScale)
+        scaleFrame:SetFrameStrata("DIALOG")
+        scaleFrame:ClearAllPoints()
+        scaleFrame:SetPoint("CENTER", container, "CENTER", 0, 0)
+        scaleFrame:Show()
+
+        -- Offset compensation: divide by textScale so the text lands
+        -- at the intended pixel offset relative to the main icon
+        local anchorOffX = textOffsetX / textScale
+        local anchorOffY = textOffsetY / textScale
+
+        local ok2, textID = pcall(AddPrivateAuraAnchor, {
+            unitToken = unit,
+            auraIndex = auraIndex,
+            parent = scaleFrame,
+            showCountdownFrame = showCountdown,
+            showCountdownNumbers = settings.showCountdownNumbers ~= false,
+            iconInfo = {
+                iconWidth = 0.001,
+                iconHeight = 0.001,
+                borderScale = -100,
+                iconAnchor = {
+                    point = "BOTTOMRIGHT",
+                    relativeTo = container,
+                    relativePoint = "BOTTOMRIGHT",
+                    offsetX = anchorOffX,
+                    offsetY = anchorOffY,
+                },
+            },
+        })
+
+        textAnchorID = (ok2 and textID) or nil
+    end
+
+    return mainAnchorID, textAnchorID
+end
+
+--- Remove all anchors (main + text) from a state table
+local function RemoveAllAnchors(state)
+    for i, anchorID in ipairs(state.anchorIDs) do
+        pcall(RemovePrivateAuraAnchor, anchorID)
+        state.anchorIDs[i] = nil
+    end
+    for i, anchorID in ipairs(state.textAnchorIDs) do
+        pcall(RemovePrivateAuraAnchor, anchorID)
+        state.textAnchorIDs[i] = nil
+    end
+end
+
 ---------------------------------------------------------------------------
 -- CORE: Setup private auras on a single frame
 ---------------------------------------------------------------------------
@@ -105,7 +212,7 @@ local function SetupPrivateAuras(frame)
 
     local state = frameState[frame]
     if not state then
-        state = { containers = {}, anchorIDs = {}, unit = "" }
+        state = { containers = {}, scaleFrames = {}, anchorIDs = {}, textAnchorIDs = {}, unit = "" }
         frameState[frame] = state
     end
 
@@ -113,10 +220,7 @@ local function SetupPrivateAuras(frame)
     if state.unit == unit and #state.anchorIDs > 0 then return end
 
     -- Clear any stale anchors first
-    for i, anchorID in ipairs(state.anchorIDs) do
-        pcall(RemovePrivateAuraAnchor, anchorID)
-        state.anchorIDs[i] = nil
-    end
+    RemoveAllAnchors(state)
 
     local maxSlots = settings.maxPerFrame or 2
     local iconSize = settings.iconSize or 20
@@ -126,13 +230,11 @@ local function SetupPrivateAuras(frame)
     local offsetX = settings.anchorOffsetX or -2
     local offsetY = settings.anchorOffsetY or 0
     if anchor:find("BOTTOM") then offsetY = offsetY + (frame._bottomPad or 0) end
-    local showCountdown = settings.showCountdown ~= false
-    local showNumbers = settings.showCountdownNumbers ~= false
 
     state.unit = unit
 
     for i = 1, maxSlots do
-        -- Acquire or reuse container
+        -- Acquire or reuse main container
         local container = state.containers[i]
         if not container then
             container = AcquireContainer(frame)
@@ -150,29 +252,17 @@ local function SetupPrivateAuras(frame)
         local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction, maxSlots)
         container:SetPoint(anchor, frame, anchor, offsetX + slotOffX, offsetY + slotOffY)
 
-        -- Register private aura anchor
-        local success, anchorID = pcall(AddPrivateAuraAnchor, {
-            unitToken = unit,
-            auraIndex = i,
-            parent = container,
-            showCountdownFrame = showCountdown,
-            showCountdownNumbers = showNumbers,
-            iconInfo = {
-                iconWidth = iconSize,
-                iconHeight = iconSize,
-                iconAnchor = {
-                    point = "CENTER",
-                    relativeTo = container,
-                    relativePoint = "CENTER",
-                    offsetX = 0,
-                    offsetY = 0,
-                },
-            },
-        })
-
-        if success and anchorID then
-            state.anchorIDs[i] = anchorID
+        -- Acquire or reuse scale frame for text anchor
+        local scaleFrame = state.scaleFrames[i]
+        if not scaleFrame then
+            scaleFrame = CreateFrame("Frame", nil, frame)
+            state.scaleFrames[i] = scaleFrame
         end
+
+        -- Register dual anchors
+        local mainID, textID = RegisterDualAnchor(unit, i, container, scaleFrame, settings)
+        state.anchorIDs[i] = mainID
+        state.textAnchorIDs[i] = textID
     end
 end
 
@@ -183,13 +273,16 @@ local function ClearPrivateAuras(frame)
     local state = frameState[frame]
     if not state then return end
 
-    -- Remove anchors
-    for i, anchorID in ipairs(state.anchorIDs) do
-        pcall(RemovePrivateAuraAnchor, anchorID)
-        state.anchorIDs[i] = nil
+    -- Remove all anchors
+    RemoveAllAnchors(state)
+
+    -- Hide scale frames (reused on next setup)
+    for i, scaleFrame in ipairs(state.scaleFrames) do
+        scaleFrame:Hide()
+        scaleFrame:ClearAllPoints()
     end
 
-    -- Release containers back to pool
+    -- Release main containers back to pool
     for i, container in ipairs(state.containers) do
         ReleaseContainer(container)
         state.containers[i] = nil
@@ -221,45 +314,26 @@ local function ReanchorPrivateAuras(frame)
     -- Same unit — nothing to do
     if state.unit == unit and #state.anchorIDs > 0 then return end
 
-    -- Remove old anchors (keep containers)
-    for i, anchorID in ipairs(state.anchorIDs) do
-        pcall(RemovePrivateAuraAnchor, anchorID)
-        state.anchorIDs[i] = nil
-    end
+    -- Remove old anchors (keep containers and scale frames)
+    RemoveAllAnchors(state)
 
     state.unit = unit
 
     local maxSlots = settings.maxPerFrame or 2
-    local iconSize = settings.iconSize or 20
-    local showCountdown = settings.showCountdown ~= false
-    local showNumbers = settings.showCountdownNumbers ~= false
 
     for i = 1, maxSlots do
         local container = state.containers[i]
-        if not container then break end -- shouldn't happen, but be safe
+        if not container then break end
 
-        local success, anchorID = pcall(AddPrivateAuraAnchor, {
-            unitToken = unit,
-            auraIndex = i,
-            parent = container,
-            showCountdownFrame = showCountdown,
-            showCountdownNumbers = showNumbers,
-            iconInfo = {
-                iconWidth = iconSize,
-                iconHeight = iconSize,
-                iconAnchor = {
-                    point = "CENTER",
-                    relativeTo = container,
-                    relativePoint = "CENTER",
-                    offsetX = 0,
-                    offsetY = 0,
-                },
-            },
-        })
-
-        if success and anchorID then
-            state.anchorIDs[i] = anchorID
+        local scaleFrame = state.scaleFrames[i]
+        if not scaleFrame then
+            scaleFrame = CreateFrame("Frame", nil, frame)
+            state.scaleFrames[i] = scaleFrame
         end
+
+        local mainID, textID = RegisterDualAnchor(unit, i, container, scaleFrame, settings)
+        state.anchorIDs[i] = mainID
+        state.textAnchorIDs[i] = textID
     end
 end
 

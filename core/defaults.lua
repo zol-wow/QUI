@@ -2517,6 +2517,10 @@ local defaults = {
                     anchorOffsetY = 0,
                     showCountdown = true,
                     showCountdownNumbers = true,
+                    borderScale = 1,
+                    textScale = 2,
+                    textOffsetX = 0,
+                    textOffsetY = 0,
                 },
                 auraIndicators = {
                     enabled = false,
@@ -2668,6 +2672,10 @@ local defaults = {
                     anchorOffsetY = 0,
                     showCountdown = true,
                     showCountdownNumbers = true,
+                    borderScale = 1,
+                    textScale = 2,
+                    textOffsetX = 0,
+                    textOffsetY = 0,
                 },
                 auraIndicators = {
                     enabled = false,

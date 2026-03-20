@@ -4,7 +4,8 @@
     Covers: XP Tracker, Brez Counter, Combat Timer, Rotation Assist Icon,
             Focus Cast Alert, Pet Warning, Buff/Debuff Borders, Minimap,
             Extra Action Button, Zone Ability, Totem Bar, Castbars,
-            Missing Raid Buffs, Tooltip, Skyriding, Party Keystones
+            Missing Raid Buffs, Tooltip, Skyriding, Party Keystones,
+            Prey Tracker
 ]]
 
 local ADDON_NAME, ns = ...
@@ -1014,11 +1015,167 @@ local function RegisterAllProviders()
     end })
 
     ---------------------------------------------------------------------------
+    -- PREY TRACKER
+    ---------------------------------------------------------------------------
+    settingsPanel:RegisterProvider("preyTracker", { build = function(content, key, width)
+        local db = U.GetProfileDB()
+        if not db or not db.preyTracker then return 80 end
+        local pt = db.preyTracker
+        local sections = {}
+        local function relayout() U.StandardRelayout(content, sections) end
+        local function Refresh() if _G.QUI_RefreshPreyTracker then _G.QUI_RefreshPreyTracker() end end
+        local function RefreshPreview()
+            Refresh()
+            if _G.QUI_TogglePreyTrackerPreview then _G.QUI_TogglePreyTrackerPreview(true) end
+        end
+
+        -- General
+        U.CreateCollapsible(content, "General", 3 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormSlider(body, "Bar Width", 100, 500, 1, "width", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Bar Height", 10, 40, 1, "height", pt, RefreshPreview), body, sy)
+            P(GUI:CreateFormSlider(body, "Border Size", 0, 3, 1, "borderSize", pt, RefreshPreview), body, sy)
+        end, sections, relayout)
+
+        -- Bar Appearance
+        local colorModeOptions = {
+            { value = "accent", text = "Accent Color" },
+            { value = "class", text = "Class Color" },
+            { value = "custom", text = "Custom Color" },
+        }
+        local function GetColorMode()
+            if pt.barUseClassColor then return "class"
+            elseif pt.barUseAccentColor then return "accent"
+            else return "custom"
+            end
+        end
+        U.CreateCollapsible(content, "Bar Appearance", 7 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormDropdown(body, "Bar Texture", U.GetTextureList(), "texture", pt, RefreshPreview), body, sy)
+
+            local colorModeDropdown = GUI:CreateFormDropdown(body, "Bar Color Mode", colorModeOptions, nil, nil, function() end)
+            colorModeDropdown:SetPoint("TOPLEFT", 0, sy)
+            colorModeDropdown:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            local dropdownBtn
+            for _, child in ipairs({ colorModeDropdown:GetChildren() }) do
+                if child.GetObjectType and child:GetObjectType() == "Button" then
+                    dropdownBtn = child
+                    break
+                end
+            end
+            if dropdownBtn then
+                local currentMode = GetColorMode()
+                for _, opt in ipairs(colorModeOptions) do
+                    if opt.value == currentMode then
+                        local btnText = dropdownBtn:GetFontString()
+                        if btnText then btnText:SetText(opt.text) end
+                        break
+                    end
+                end
+                dropdownBtn:SetScript("OnClick", function(self)
+                    local menuItems = {}
+                    for _, opt in ipairs(colorModeOptions) do
+                        table.insert(menuItems, {
+                            text = opt.text,
+                            checked = (opt.value == GetColorMode()),
+                            func = function()
+                                pt.barUseClassColor = (opt.value == "class")
+                                pt.barUseAccentColor = (opt.value == "accent")
+                                local btnText2 = self:GetFontString()
+                                if btnText2 then btnText2:SetText(opt.text) end
+                                RefreshPreview()
+                            end,
+                        })
+                    end
+                    if GUI.ShowDropdownMenu then GUI:ShowDropdownMenu(self, menuItems) end
+                end)
+            end
+            sy = sy - FORM_ROW
+
+            sy = P(GUI:CreateFormColorPicker(body, "Custom Bar Color", "barColor", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Override Background Color", "barBgOverride", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormColorPicker(body, "Background Color", "barBackgroundColor", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Override Border Color", "borderOverride", pt, RefreshPreview), body, sy)
+            P(GUI:CreateFormColorPicker(body, "Border Color", "borderColor", pt, RefreshPreview), body, sy)
+        end, sections, relayout)
+
+        -- Text & Display
+        local textFormatOptions = {
+            { value = "stage_pct", text = "Stage 3 — 67%" },
+            { value = "pct_only", text = "67%" },
+            { value = "stage_only", text = "Stage 3" },
+            { value = "name_pct", text = "Prey Name — 67%" },
+        }
+        local tickStyleOptions = {
+            { value = "thirds", text = "Thirds (33% / 66%)" },
+            { value = "quarters", text = "Quarters (25% / 50% / 75%)" },
+        }
+        U.CreateCollapsible(content, "Text & Display", 6 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Show Text", "showText", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormDropdown(body, "Text Format", textFormatOptions, "textFormat", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 18, 1, "textSize", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Tick Marks", "showTickMarks", pt, RefreshPreview), body, sy)
+            sy = P(GUI:CreateFormDropdown(body, "Tick Style", tickStyleOptions, "tickStyle", pt, RefreshPreview), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Show Spark", "showSpark", pt, RefreshPreview), body, sy)
+        end, sections, relayout)
+
+        -- Sounds
+        U.CreateCollapsible(content, "Sounds", 5 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Enable Sounds", "soundEnabled", pt, nil), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Stage 2 Sound", "soundStage2", pt, nil), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Stage 3 Sound", "soundStage3", pt, nil), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Stage 4 Sound", "soundStage4", pt, nil), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Completion Sound", "completionSound", pt, nil), body, sy)
+        end, sections, relayout)
+
+        -- Ambush Alerts
+        U.CreateCollapsible(content, "Ambush Alerts", 4 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Enable Ambush Alerts", "ambushAlertEnabled", pt, nil), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Ambush Sound", "ambushSoundEnabled", pt, nil), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Ambush Glow Effect", "ambushGlowEnabled", pt, nil), body, sy)
+            P(GUI:CreateFormSlider(body, "Glow Duration (sec)", 2, 15, 1, "ambushDuration", pt, nil), body, sy)
+        end, sections, relayout)
+
+        -- Visibility
+        U.CreateCollapsible(content, "Visibility", 4 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Replace Default Prey Indicator", "replaceDefaultIndicator", pt, function()
+                if ns.QUI_PreyTracker and ns.QUI_PreyTracker.ToggleDefaultIndicator then
+                    ns.QUI_PreyTracker.ToggleDefaultIndicator(pt.replaceDefaultIndicator)
+                end
+            end), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Auto-Hide When No Progress", "autoHide", pt, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Hide in Instances", "hideInInstances", pt, Refresh), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Hide Outside Prey Zone", "hideOutsidePreyZone", pt, Refresh), body, sy)
+        end, sections, relayout)
+
+        -- Hunt Scanner
+        U.CreateCollapsible(content, "Hunt Scanner", 1 * FORM_ROW + 8, function(body)
+            local sy = -4
+            P(GUI:CreateFormCheckbox(body, "Enable Hunt Scanner", "huntScannerEnabled", pt, nil), body, sy)
+        end, sections, relayout)
+
+        -- Currency Tracker
+        U.CreateCollapsible(content, "Currency Tracker", 3 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Enable Currency Tooltip", "currencyEnabled", pt, nil), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Session Gains", "currencyShowSession", pt, nil), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Show Weekly Progress", "currencyShowWeekly", pt, nil), body, sy)
+        end, sections, relayout)
+
+        U.BuildPositionCollapsible(content, "preyTracker", nil, sections, relayout)
+        relayout() return content:GetHeight()
+    end })
+
+    ---------------------------------------------------------------------------
     -- POSITION-ONLY PROVIDERS
     ---------------------------------------------------------------------------
     for _, providerKey in ipairs({"rangeCheck", "crosshair",
             "lootFrame", "lootRollAnchor", "alertAnchor",
-            "toastAnchor", "bnetToastAnchor", "powerBarAlt", "consumables", "preyTracker"}) do
+            "toastAnchor", "bnetToastAnchor", "powerBarAlt", "consumables"}) do
         settingsPanel:RegisterProvider(providerKey, { build = function(content, key, width)
             local sections = {}
             local function relayout() U.StandardRelayout(content, sections) end

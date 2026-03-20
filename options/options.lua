@@ -96,7 +96,7 @@ function GUI:InitializeOptions()
     -- Minimap & Datatext settings moved to Layout Mode settings panels
     local skinningTab = GUI:AddTab(frame, "Skinning & Autohide", ns.QUI_AutohidesOptions.CreateAutohidesPage)
     local customTrackersTab = GUI:AddTab(frame, "Custom CDM Bars", ns.QUI_CustomTrackersOptions.CreateCustomTrackersPage)
-    GUI:AddTab(frame, "Prey Tracker", ns.QUI_PreyTrackerOptions.CreatePreyTrackerPage)
+    -- Prey Tracker settings moved to Layout Mode settings panels
     GUI:AddTab(frame, "Frame Levels", ns.QUI_HUDLayeringOptions.CreateHUDLayeringPage)
     GUI:AddTab(frame, "Profiles", ns.QUI_ProfilesOptions.CreateSpecProfilesPage)
     local importExportTab = GUI:AddTab(frame, "Import & Export Strings", ns.QUI_ImportOptions.CreateImportExportPage)
