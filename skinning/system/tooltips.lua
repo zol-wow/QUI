@@ -868,10 +868,36 @@ local function SetupEmbeddedTooltipHooks()
                 -- For embedded context, SharedTooltip_SetBackdropStyle will
                 -- fire with isEmbedded=true in the same frame and strip it.
                 if InCombatLockdown() then
-                    -- During combat, keep skinnedTooltips intact so
-                    -- CombatSafeReapply can refresh the overlay. Full
-                    -- re-skin deferred to next out-of-combat show.
-                    pcall(CombatSafeReapply, self)
+                    if skinnedTooltips[self] then
+                        pcall(CombatSafeReapply, self)
+                    else
+                        -- First standalone show during combat (e.g. delve
+                        -- objective hover). The tooltip was only
+                        -- StripEmbeddedBorder'd at init, never fully
+                        -- skinned, so CombatSafeReapply would bail out.
+                        -- Create the overlay now — all operations target
+                        -- addon-owned frames (always safe in combat).
+                        local ns = self.NineSlice
+                        if ns then
+                            pcall(ns.SetAlpha, ns, 0)
+                            if ns.SetBackdrop then pcall(ns.SetBackdrop, ns, nil) end
+                            local center = ns.Center
+                            if center then
+                                if center.SetTexture then pcall(center.SetTexture, center, nil) end
+                                if center.SetAtlas then pcall(center.SetAtlas, center, nil) end
+                                if center.SetAlpha then pcall(center.SetAlpha, center, 0) end
+                            end
+                        end
+                        local skinFrame = GetOrCreateSkinFrame(self)
+                        SyncOverlayLevel(skinFrame, self)
+                        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
+                        local thickness = GetEffectiveBorderThickness()
+                        local px = ns and SkinBase.GetPixelSize(ns, 1) or 1
+                        local edge = math.max((thickness or 1), 2) * px
+                        ApplyOverlayBackdrop(skinFrame, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+                        skinFrame:Show()
+                        skinnedTooltips[self] = true
+                    end
                 else
                     skinnedTooltips[self] = nil
                     pcall(SkinTooltip, self)
