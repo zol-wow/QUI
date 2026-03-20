@@ -24,6 +24,8 @@ local PICKER_MIN_WIDTH = 200
 ---------------------------------------------------------------------------
 
 local FOOD_BUFFS = {
+    -- Midnight / current retail generic Well Fed auras
+    [1232324] = true, [285719] = true,
     -- TWW Food (Well Fed buffs)
     [462210] = true, [462212] = true, [462213] = true, [462214] = true,
     [462215] = true, [462216] = true, [462217] = true, [462218] = true,
@@ -59,7 +61,11 @@ local RUNE_BUFFS = {
 }
 
 local FLASK_ITEMS = {
-    241320, 241322, 241324, 241326,  -- Midnight Flasks
+    -- Midnight Flasks (all current item variants)
+    241320, 241321, -- Flask of Thalassian Resistance
+    241322, 241323, -- Flask of the Magisters
+    241324, 241325, -- Flask of the Blood Knights
+    241326, 241327, -- Flask of the Shattered Sun
     212283, 212284, 212285, 212286, 212287, 212288,  -- TWW Flasks
     191318, 191319, 191320, 191321, 191322, 191323, 191324, 191325, 191326, 191327,  -- DF Flasks
 }
@@ -76,6 +82,10 @@ local RUNE_ITEMS = {
 }
 
 local OIL_ITEMS = {
+    -- Midnight Oils
+    243733, 243734, -- Thalassian Phoenix Oil
+    243735, 243736, -- Oil of Dawn
+    243737, 243738, -- Smuggler's Enchanted Edge
     -- TWW Oils
     222502, 222503, 222504,
     222508, 222509, 222510,
