@@ -486,6 +486,7 @@ RefreshIconFrame = function()
                 iconFrame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
             end
         end
+        iconFrame:SetBackdropColor(0, 0, 0, 0)
     else
         if SafeSetBackdrop then
             SafeSetBackdrop(iconFrame, nil)
