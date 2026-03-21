@@ -187,6 +187,7 @@ end
 
 -- Pending combat-deferred operations
 local pendingResize = false
+local pendingResizeForce = false
 local pendingRefreshSettings = false
 local pendingVisibilityUpdate = false
 local pendingRegisterClicks = false
@@ -3178,24 +3179,12 @@ end
 ---------------------------------------------------------------------------
 local lastMode = nil
 
-local function UpdateFrameScaling(forceUpdate)
-    local mode = GetGroupMode()
-    if not forceUpdate and mode == lastMode then return end
-    lastMode = mode
-
-    if InCombatLockdown() and not inInitSafeWindow then
-        pendingResize = true
-        return
-    end
-
-    local w, h = GetFrameDimensions(mode)
-
-    -- Resize a single header and all its children
-    local function ScaleHeader(header)
+-- Resize/layout unit buttons and bars (allowed in combat — only touches
+-- non-secure frame geometry). Header initial-attribute dimensions must still
+-- be updated out of combat via SetAttribute.
+local function ApplyChildFrameLayout(w, h)
+    local function LayoutChildren(header)
         if not header then return end
-        header:SetAttribute("_initialAttribute-unit-width", w)
-        header:SetAttribute("_initialAttribute-unit-height", h)
-
         local i = 1
         while true do
             local child = header:GetAttribute("child" .. i)
@@ -3233,14 +3222,47 @@ local function UpdateFrameScaling(forceUpdate)
         end
     end
 
-    -- Update header attributes (secure context — must be out of combat)
-    ScaleHeader(QUI_GF.headers.party)
-    ScaleHeader(QUI_GF.headers.self)
-    ScaleHeader(QUI_GF.headers.raid)
+    for _, headerKey in ipairs({"party", "raid", "self"}) do
+        LayoutChildren(QUI_GF.headers[headerKey])
+    end
     for g = 1, 8 do
-        ScaleHeader(QUI_GF.raidGroupHeaders[g])
+        LayoutChildren(QUI_GF.raidGroupHeaders[g])
+    end
+end
+
+local function UpdateFrameScaling(forceUpdate)
+    local mode = GetGroupMode()
+    local w, h = GetFrameDimensions(mode)
+
+    if InCombatLockdown() and not inInitSafeWindow then
+        pendingResize = true
+        pendingResizeForce = pendingResizeForce or (forceUpdate and true or false)
+        ApplyChildFrameLayout(w, h)
+        return
     end
 
+    if not forceUpdate and mode == lastMode then return end
+    lastMode = mode
+
+    w, h = GetFrameDimensions(mode)
+
+    -- Update header attributes (secure context — must be out of combat)
+    for _, headerKey in ipairs({"party", "raid", "self"}) do
+        local header = QUI_GF.headers[headerKey]
+        if header then
+            header:SetAttribute("_initialAttribute-unit-width", w)
+            header:SetAttribute("_initialAttribute-unit-height", h)
+        end
+    end
+    for g = 1, 8 do
+        local header = QUI_GF.raidGroupHeaders[g]
+        if header then
+            header:SetAttribute("_initialAttribute-unit-width", w)
+            header:SetAttribute("_initialAttribute-unit-height", h)
+        end
+    end
+
+    ApplyChildFrameLayout(w, h)
     UpdateHeaderSizes()
 end
 
@@ -3250,15 +3272,12 @@ end
 local rangeCheckTicker = nil
 
 -- Spec → friendly spell ID for range checking (validated with IsPlayerSpell).
--- Spec-based gives better coverage than class-based: every healer/caster spec
--- has a friendly spell that returns true/false (not nil) on alive targets.
+-- Death Knight: no friendly spell — Death Coil returns nil on player targets; use UnitInRange / hostile spell.
 local SPEC_RANGE_SPELLS = {
-    -- Death Knight: no reliable friendly spell (Death Coil only heals undead allies,
-    -- returns nil on non-undead targets causing inconsistent range results).
-    -- Falls through to UnitInRange() which handles all target types consistently.
-    [250] = nil,    -- Blood
-    [251] = nil,    -- Frost
-    [252] = nil,    -- Unholy
+    -- Death Knight
+    [250] = nil,
+    [251] = nil,
+    [252] = nil,
     -- Demon Hunter
     [577] = nil,    -- Havoc: no friendly spell
     [581] = nil,    -- Vengeance: no friendly spell
@@ -3309,6 +3328,23 @@ local SPEC_RANGE_SPELLS = {
     [73]  = nil,    -- Protection
 }
 
+-- Hostile spell per spec (UnitCanAttack) — same role as DandersFrames/Grid2
+local SPEC_HOSTILE_RANGE_SPELLS = {
+    [250] = 47541, [251] = 47541, [252] = 47541,
+    [577] = 185123, [581] = 185123,
+    [102] = 8921, [103] = 8921, [104] = 8921, [105] = 8921,
+    [1467] = 361469, [1468] = 361469, [1473] = 361469,
+    [253] = 193455, [254] = 19434, [255] = 259491,
+    [62] = 30451, [63] = 133, [64] = 116,
+    [268] = 115546, [269] = 115546, [270] = 115546,
+    [65] = 62124, [66] = 62124, [70] = 62124,
+    [256] = 585, [257] = 585, [258] = 585,
+    [259] = 36554, [260] = 185763, [261] = 36554,
+    [262] = 188196, [263] = 188196, [264] = 188196,
+    [265] = 686, [266] = 686, [267] = 29722,
+    [71] = 355, [72] = 355, [73] = 355,
+}
+
 -- Class fallback: used if spec not detected or spec spell not known
 local CLASS_RANGE_SPELLS = {
     PRIEST      = { 2061, 17 },          -- Flash Heal, Power Word: Shield
@@ -3326,11 +3362,27 @@ local CLASS_RANGE_SPELLS = {
     HUNTER      = {},
 }
 
--- Class → single rez spell ID for dead-target range checking.
+local CLASS_HOSTILE_RANGE_SPELLS = {
+    DEATHKNIGHT = 47541,
+    DEMONHUNTER = 185123,
+    DRUID       = 8921,
+    EVOKER      = 361469,
+    HUNTER      = 75,
+    MAGE        = 116,
+    MONK        = 115546,
+    PALADIN     = 62124,
+    PRIEST      = 585,
+    ROGUE       = 36554,
+    SHAMAN      = 188196,
+    WARLOCK     = 686,
+    WARRIOR     = 355,
+}
+
+-- Class → single rez spell ID for dead-target range checking (Druid: Rebirth resolved in ResolveRangeSpells).
 local RES_SPELLS = {
     PRIEST      = 2006,   -- Resurrection
     PALADIN     = 7328,   -- Redemption
-    DRUID       = 50769,  -- Revive
+    DRUID       = 50769,  -- Revive (fallback if Rebirth not known)
     SHAMAN      = 2008,   -- Ancestral Spirit
     MONK        = 115178, -- Resuscitate
     EVOKER      = 361227, -- Return
@@ -3339,6 +3391,7 @@ local RES_SPELLS = {
 
 local playerClass = nil
 local rangeSpell = nil   -- Resolved friendly spell ID for living targets
+local hostileRangeSpell = nil -- Resolved hostile spell for UnitCanAttack targets
 local resSpell = nil     -- Resolved rez spell ID for dead targets
 local rangeCache = {}    -- unit → boolean (change detection, avoids redundant SetAlpha)
 local rangeCacheTime = {} -- unit → GetTime() (skip recently event-updated units in ticker)
@@ -3375,11 +3428,33 @@ local function ResolveRangeSpells()
         end
     end
 
-    -- Resolve rez spell
+    hostileRangeSpell = nil
+    if specID and SPEC_HOSTILE_RANGE_SPELLS[specID] then
+        local hid = SPEC_HOSTILE_RANGE_SPELLS[specID]
+        if hid and IsPlayerSpell(hid) then
+            hostileRangeSpell = hid
+        end
+    end
+    if not hostileRangeSpell then
+        local hid = CLASS_HOSTILE_RANGE_SPELLS[playerClass]
+        if hid and IsPlayerSpell(hid) then
+            hostileRangeSpell = hid
+        end
+    end
+
+    -- Resolve rez spell (Druid: Rebirth for combat-consistent corpse range)
     resSpell = nil
-    local rezID = RES_SPELLS[playerClass]
-    if rezID and IsPlayerSpell(rezID) then
-        resSpell = rezID
+    if playerClass == "DRUID" then
+        if IsPlayerSpell(20484) then
+            resSpell = 20484
+        elseif IsPlayerSpell(50769) then
+            resSpell = 50769
+        end
+    else
+        local rezID = RES_SPELLS[playerClass]
+        if rezID and IsPlayerSpell(rezID) then
+            resSpell = rezID
+        end
     end
 end
 
@@ -3401,50 +3476,58 @@ local function CheckUnitRange(unit)
     local isDead = UnitIsDeadOrGhost(unit)
     if IsSecretValue(isDead) then isDead = false end
 
-    -- Primary: friendly spell range check
-    -- IsSpellInRange returns true/false/nil (normal booleans, not secret values).
-    -- nil means "spell not applicable to target" (e.g. NPC, wrong unit type) —
-    -- fall through to UnitInRange rather than treating as out-of-range.
+    local friendlyReturnedNil = false
+
+    -- Hostile units (UnitCanAttack): check hostile spell range first;
+    -- also handles edge cases with cross-faction party members.
+    if UnitCanAttack("player", unit) then
+        if hostileRangeSpell then
+            local inRangeH = C_Spell.IsSpellInRange(hostileRangeSpell, unit)
+            if inRangeH ~= nil then
+                return inRangeH
+            end
+        end
+        return true
+    end
+
     if rangeSpell and not isDead then
         local result = C_Spell.IsSpellInRange(rangeSpell, unit)
         if result == true then
             return true
         elseif result == false then
-            -- OR with CheckInteractDistance out of combat for leniency
-            -- (avoids false OOR from spec/talent edge cases)
             if not InCombatLockdown() and CheckInteractDistance(unit, 4) then
                 return true
             end
             return false
+        else
+            friendlyReturnedNil = true
         end
         -- result == nil: spell not applicable, fall through to UnitInRange
     end
 
-    -- Dead target: rez spell range check
     if isDead and resSpell then
         local result = C_Spell.IsSpellInRange(resSpell, unit)
         if result ~= nil then return result end
     end
 
-    -- Out of combat: interact distance (~28 yards)
     if not InCombatLockdown() then
         return CheckInteractDistance(unit, 4) and true or false
     end
 
-    -- In-combat fallback: UnitInRange (~38-40 yd, works for all unit types).
-    -- Used for classes with no friendly spell (DK/DH/Hunter/Warrior) AND when
-    -- the friendly spell returned nil (spell not applicable to this target type,
-    -- e.g. NPC party members). Returns secret booleans in Midnight+ — propagate
-    -- them downstream; SetAlphaFromBoolean handles them natively (C-side).
+    -- In-combat fallback: UnitInRange (~38-40 yd) before treating friendly nil as OOR.
+    -- Returns secret booleans in Midnight+ — SetAlphaFromBoolean handles them natively.
     if UnitInRange then
         local inRange = UnitInRange(unit)
         if issecretvalue and issecretvalue(inRange) then
-            return inRange  -- Secret boolean, handled by SetAlphaFromBoolean downstream
+            return inRange
         end
         if inRange ~= nil then return inRange end
     end
 
-    -- No method available — assume in range
+    if rangeSpell and friendlyReturnedNil and connected and not isDead then
+        return false
+    end
+
     return true
 end
 
@@ -3503,7 +3586,7 @@ local function StartRangeCheck()
     if (not partyRange or partyRange.enabled == false) and (not raidRange or raidRange.enabled == false) then return end
 
     -- Ensure spells are resolved before starting
-    if not rangeSpell and not resSpell then
+    if not rangeSpell and not resSpell and not hostileRangeSpell then
         ResolveRangeSpells()
     end
 
@@ -3635,6 +3718,7 @@ local function OnEvent(self, event, arg1, ...)
             UpdatePhaseIcon(frame)
 
         elseif event == "INCOMING_RESURRECT_CHANGED" then
+            wipe(rangeCache)
             UpdateResurrection(frame)
 
         elseif event == "INCOMING_SUMMON_CHANGED" then
@@ -3760,7 +3844,9 @@ local function OnEvent(self, event, arg1, ...)
             QUI_GF:RefreshSettings()
         elseif pendingResize then
             pendingResize = false
-            UpdateFrameScaling()
+            local force = pendingResizeForce
+            pendingResizeForce = false
+            UpdateFrameScaling(force)
         end
         if pendingVisibilityUpdate then
             pendingVisibilityUpdate = false
