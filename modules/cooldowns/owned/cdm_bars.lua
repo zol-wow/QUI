@@ -1660,6 +1660,7 @@ end
 ---------------------------------------------------------------------------
 function CDMBars:UpdateOwnedBars()
     local anyChanged = false
+    local anyActive = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._spellID then
             local wasPreviouslyActive = bar._active
@@ -1667,7 +1668,12 @@ function CDMBars:UpdateOwnedBars()
             if bar._active ~= wasPreviouslyActive then
                 anyChanged = true
             end
+            if bar._active then anyActive = true end
         end
+    end
+    -- Ensure the bar timer OnUpdate is running when any bar is active.
+    if anyActive and not barTimerFrame:IsShown() then
+        barTimerFrame:Show()
     end
     -- Re-layout when any bar's active state changed so Show/Hide updates
     if anyChanged and _lastContainer and _lastSettings then
@@ -1692,10 +1698,12 @@ barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
     self._elapsed = 0
 
     local Helpers = ns.Helpers
+    local anyActive = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._active and bar:IsShown() then
             local durObj = bar._durObj
             if durObj and durObj.GetRemainingDuration then
+                anyActive = true
                 local rok, remaining = pcall(durObj.GetRemainingDuration, durObj)
 
                 local isSecret = remaining and Helpers.IsSecretValue(remaining)
@@ -1709,9 +1717,6 @@ barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
                         end
                     end
                     -- Update bar fill ONLY if C-side SetTimerDuration isn't driving it.
-                    -- When _cSideFill is set, Blizzard's C-side animation smoothly
-                    -- handles the StatusBar fill — writing SetValue here would fight
-                    -- the animation and cause visible flickering.
                     if not bar._cSideFill then
                         local total = bar._totalDuration
                         if (not total or total <= 0) and remaining > 1 then
@@ -1726,14 +1731,12 @@ barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
                         end
                     end
                 elseif isSecret then
-                    -- Combat: remaining is secret — pass directly to C-side
-                    -- SetFormattedText which handles secret values natively.
+                    anyActive = true
                     if bar.DurationText then
                         pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
                     end
                 else
                     -- Aura expired: remaining is nil or 0 — duration done.
-                    -- Nil out durObj so next tick skips this block entirely.
                     bar._durObj = nil
                     if bar.DurationText then
                         bar.DurationText:SetText("")
@@ -1744,5 +1747,9 @@ barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
                 end
             end
         end
+    end
+    -- Pause the OnUpdate when no bars need ticking to avoid idle CPU cost.
+    if not anyActive then
+        self:Hide()
     end
 end)
