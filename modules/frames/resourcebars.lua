@@ -165,6 +165,43 @@ end
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 
+local function NormalizeTextAlign(align)
+    if align == "LEFT" or align == "RIGHT" then
+        return align
+    end
+    return "CENTER"
+end
+
+local function GetTextAnchorPointForAlign(align)
+    local normalized = NormalizeTextAlign(align)
+    if normalized == "LEFT" then
+        return "LEFT", normalized
+    elseif normalized == "RIGHT" then
+        return "RIGHT", normalized
+    end
+    return "CENTER", normalized
+end
+
+local function FormatPercentValue(value, cfg)
+    local pctSuffix = (cfg and cfg.hidePercentSymbol) and "" or "%"
+    return string.format("%.0f%s", value or 0, pctSuffix)
+end
+
+local function ApplyPowerBarTextPlacement(bar, cfg)
+    if not (bar and bar.TextValue and bar.TextFrame and QUICore and QUICore.PixelRound) then return end
+    local anchorPoint, normalizedAlign = GetTextAnchorPointForAlign(cfg and cfg.textAlign)
+    local textX = QUICore:PixelRound((cfg and cfg.textX) or 0, bar.TextValue)
+    local textY = QUICore:PixelRound((cfg and cfg.textY) or 0, bar.TextValue)
+    if bar._cachedTextX ~= textX or bar._cachedTextY ~= textY or bar._cachedTextAlign ~= normalizedAlign then
+        bar.TextValue:ClearAllPoints()
+        bar.TextValue:SetPoint(anchorPoint, bar.TextFrame, anchorPoint, textX, textY)
+        bar.TextValue:SetJustifyH(normalizedAlign)
+        bar._cachedTextX = textX
+        bar._cachedTextY = textY
+        bar._cachedTextAlign = normalizedAlign
+    end
+end
+
 
 --TABLES
 
@@ -1167,8 +1204,7 @@ function QUICore:GetPowerBar()
     bar.TextFrame:SetFrameLevel(frameLevel + 2)
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    QUICore:SetSnappedPoint(bar.TextValue, "CENTER", bar.TextFrame, "CENTER", cfg.textX or 0, cfg.textY or 0)
-    bar.TextValue:SetJustifyH("CENTER")
+    ApplyPowerBarTextPlacement(bar, cfg)
     bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:SetText("0")
@@ -1433,7 +1469,7 @@ function QUICore:UpdatePowerBar()
 
     -- Update text
     if valueType == "percent" then
-        bar.TextValue:SetText(string.format("%.0f%%", displayValue))
+        bar.TextValue:SetText(FormatPercentValue(displayValue, cfg))
     else
         bar.TextValue:SetText(tostring(displayValue))
     end
@@ -1453,15 +1489,7 @@ function QUICore:UpdatePowerBar()
         bar.TextValue:SetTextColor(c[1], c[2], c[3], c[4] or 1)
     end
 
-    -- Only reposition text when offset changed (prevents flicker)
-    local textX = QUICore:PixelRound(cfg.textX or 0, bar.TextValue)
-    local textY = QUICore:PixelRound(cfg.textY or 0, bar.TextValue)
-    if bar._cachedTextX ~= textX or bar._cachedTextY ~= textY then
-        bar.TextValue:ClearAllPoints()
-        bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", textX, textY)
-        bar._cachedTextX = textX
-        bar._cachedTextY = textY
-    end
+    ApplyPowerBarTextPlacement(bar, cfg)
 
     -- Show text based on config
     bar.TextFrame:SetShown(cfg.showText ~= false)
@@ -2032,8 +2060,7 @@ function QUICore:GetSecondaryPowerBar()
     bar.TextFrame:SetFrameLevel(frameLevel + 2)
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    QUICore:SetSnappedPoint(bar.TextValue, "CENTER", bar.TextFrame, "CENTER", cfg.textX or 0, cfg.textY or 0)
-    bar.TextValue:SetJustifyH("CENTER")
+    ApplyPowerBarTextPlacement(bar, cfg)
     bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:SetText("0")
@@ -3170,7 +3197,7 @@ function QUICore:UpdateSecondaryPowerBar()
         -- Destruction Warlock: show decimal shards (e.g., 3.4)
         bar.TextValue:SetText(string.format("%.1f", displayValue or 0))
     elseif valueType == "percent" and cfg.showPercent then
-        bar.TextValue:SetText(string.format("%.0f%%", displayValue or 0))
+        bar.TextValue:SetText(FormatPercentValue(displayValue, cfg))
     elseif valueType == "percent" then
         -- Stagger with showPercent off: show raw stagger amount
         local stagger = UnitStagger("player") or 0
@@ -3187,8 +3214,7 @@ end
 
     bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
-    bar.TextValue:ClearAllPoints()
-    QUICore:SetSnappedPoint(bar.TextValue, "CENTER", bar.TextFrame, "CENTER", cfg.textX or 0, cfg.textY or 0)
+    ApplyPowerBarTextPlacement(bar, cfg)
 
     -- Apply text color
     if cfg.textUseClassColor then
@@ -3536,6 +3562,12 @@ do
             {value = "custom", text = "Custom Color"},
         }
 
+        local textAlignOptions = {
+            {value = "LEFT", text = "Left"},
+            {value = "CENTER", text = "Center"},
+            {value = "RIGHT", text = "Right"},
+        }
+
         -----------------------------------------------------------------------
         -- Primary Power Bar settings builder
         -----------------------------------------------------------------------
@@ -3603,13 +3635,19 @@ do
             end, sections, relayout)
 
             -- Text
-            U.CreateCollapsible(content, "Text", 5 * FORM_ROW + 8, function(body)
+            U.CreateCollapsible(content, "Text", 7 * FORM_ROW + 8, function(body)
                 local sy = -4
                 local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", primary, RefreshPowerBars)
                 sy = U.PlaceRow(showTextCheck, body, sy)
 
                 local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", primary, RefreshPowerBars)
                 sy = U.PlaceRow(showPctCheck, body, sy)
+
+                local hidePctSymbolCheck = GUI:CreateFormCheckbox(body, "Hide % Symbol", "hidePercentSymbol", primary, RefreshPowerBars)
+                sy = U.PlaceRow(hidePctSymbolCheck, body, sy)
+
+                local textAlignDD = GUI:CreateFormDropdown(body, "Text Alignment", textAlignOptions, "textAlign", primary, RefreshPowerBars)
+                sy = U.PlaceRow(textAlignDD, body, sy)
 
                 local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", primary, RefreshPowerBars)
                 sy = U.PlaceRow(textSizeSlider, body, sy)
@@ -3727,13 +3765,19 @@ do
             end, sections, relayout)
 
             -- Text
-            U.CreateCollapsible(content, "Text", 5 * FORM_ROW + 8, function(body)
+            U.CreateCollapsible(content, "Text", 7 * FORM_ROW + 8, function(body)
                 local sy = -4
                 local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", secondary, RefreshPowerBars)
                 sy = U.PlaceRow(showTextCheck, body, sy)
 
                 local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", secondary, RefreshPowerBars)
                 sy = U.PlaceRow(showPctCheck, body, sy)
+
+                local hidePctSymbolCheck = GUI:CreateFormCheckbox(body, "Hide % Symbol", "hidePercentSymbol", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(hidePctSymbolCheck, body, sy)
+
+                local textAlignDD = GUI:CreateFormDropdown(body, "Text Alignment", textAlignOptions, "textAlign", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(textAlignDD, body, sy)
 
                 local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", secondary, RefreshPowerBars)
                 sy = U.PlaceRow(textSizeSlider, body, sy)
