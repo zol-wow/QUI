@@ -3069,6 +3069,9 @@ local function UpdateHeaderVisibility()
     UpdateHeaderSizes()
     UpdateAnchorFrames()
 
+    -- End safe period before the deferred callback so combat guards apply
+    initSafePeriod = false
+
     -- Defer decoration + map rebuild to next frame (after header creates children)
     C_Timer.After(0.1, function()
         DecorateHeaderChildren(QUI_GF.headers.party)
@@ -3083,7 +3086,6 @@ local function UpdateHeaderVisibility()
         RebuildUnitFrameMap()
         QUI_GF:RefreshAllFrames()
         UpdateAnchorFrames()
-        initSafePeriod = false
     end)
 end
 

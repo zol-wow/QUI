@@ -1027,47 +1027,33 @@ function QUI_GFEM:ToggleTestMode(previewType)
 end
 
 -- Rebuild test frames with current settings (called when options change).
--- Uses leading-edge + trailing-edge throttle: fires immediately on first
--- call, then suppresses rapid calls (slider drags) for a cooldown period
--- and fires one final rebuild when the cooldown expires.
+-- Uses trailing-edge debounce: rapid calls (slider drags) are coalesced
+-- into a single rebuild 0.15s after the last call, preventing the
+-- destroy/recreate flash that occurs with leading-edge throttles.
 local refreshTimer = nil
-local refreshPending = false
 function QUI_GFEM:RefreshTestMode()
     if not isTestMode then return end
 
+    -- Cancel any pending rebuild and restart the debounce window.
     if refreshTimer then
-        -- Inside cooldown window — just mark that another refresh is needed
-        refreshPending = true
-        return
+        refreshTimer:Cancel()
     end
 
-    -- Leading edge: rebuild all active preview types
-    local activeTypes = {}
-    for tType in pairs(testContainers) do activeTypes[#activeTypes + 1] = tType end
-    if #activeTypes == 0 then activeTypes = { self._lastTestPreviewType or "party" } end
-
-    for _, pt in ipairs(activeTypes) do
-        DestroyTestFrames(pt)
-        self:EnableTestMode(pt)
-    end
-
-    -- Start cooldown to suppress rapid-fire rebuilds (slider drags)
-    refreshTimer = C_Timer.NewTimer(0.2, function()
+    refreshTimer = C_Timer.NewTimer(0.15, function()
         refreshTimer = nil
-        if refreshPending then
-            refreshPending = false
-            if not isTestMode then return end
-            local rebuildTypes = {}
-            for tType in pairs(testContainers) do rebuildTypes[#rebuildTypes + 1] = tType end
-            if #rebuildTypes == 0 then rebuildTypes = { self._lastTestPreviewType or "party" } end
-            for _, pt in ipairs(rebuildTypes) do
-                DestroyTestFrames(pt)
-                self:EnableTestMode(pt)
-                -- Re-sync layout mode handle after trailing-edge rebuild
-                local syncKey = pt == "raid" and "raidFrames" or "partyFrames"
-                if _G.QUI_LayoutModeSyncHandle then
-                    _G.QUI_LayoutModeSyncHandle(syncKey)
-                end
+        if not isTestMode then return end
+
+        local rebuildTypes = {}
+        for tType in pairs(testContainers) do rebuildTypes[#rebuildTypes + 1] = tType end
+        if #rebuildTypes == 0 then rebuildTypes = { self._lastTestPreviewType or "party" } end
+
+        for _, pt in ipairs(rebuildTypes) do
+            DestroyTestFrames(pt)
+            self:EnableTestMode(pt)
+            -- Re-sync layout mode handle after rebuild
+            local syncKey = pt == "raid" and "raidFrames" or "partyFrames"
+            if _G.QUI_LayoutModeSyncHandle then
+                _G.QUI_LayoutModeSyncHandle(syncKey)
             end
         end
     end)

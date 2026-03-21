@@ -24,6 +24,10 @@ local CreateFrame = CreateFrame
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 
+-- Private aura API (WoW 10.1.0+)
+local AddPrivateAuraAnchor = C_UnitAuras and C_UnitAuras.AddPrivateAuraAnchor
+local RemovePrivateAuraAnchor = C_UnitAuras and C_UnitAuras.RemovePrivateAuraAnchor
+
 ---------------------------------------------------------------------------
 -- DEFAULTS
 ---------------------------------------------------------------------------
@@ -105,6 +109,11 @@ local blizzDebuffAlphaHooked = false
 local previewActive = false
 local previewBuffIcons = {}
 local previewDebuffIcons = {}
+
+-- Private aura state (player debuffs hidden from addon APIs)
+local PA_MAX_SLOTS = 3
+local paSlots = {}
+local paAnchorIDs = {}
 
 ---------------------------------------------------------------------------
 -- ICON FACTORY
@@ -630,6 +639,114 @@ local function UpdateAuraIcons(container, activeIcons, sortedList, filter, isBuf
     end
 end
 
+---------------------------------------------------------------------------
+-- PRIVATE AURAS (player debuffs hidden from addon APIs)
+-- These auras are invisible to AuraUtil.ForEachAura and can only be
+-- displayed via C_UnitAuras.AddPrivateAuraAnchor (client-side rendering).
+---------------------------------------------------------------------------
+local function ClearPrivateAuraAnchors()
+    if not RemovePrivateAuraAnchor then return end
+    for i = 1, #paAnchorIDs do
+        local id = paAnchorIDs[i]
+        if id then pcall(RemovePrivateAuraAnchor, id) end
+    end
+    wipe(paAnchorIDs)
+end
+
+local function SetupPrivateAuras()
+    if not AddPrivateAuraAnchor or not debuffContainer then return end
+    ClearPrivateAuraAnchors()
+
+    local settings = GetSettings()
+    local iconSize = DEFAULT_ICON_SIZE
+    if settings then
+        local s = settings.debuffIconSize or 0
+        if s > 0 then iconSize = s end
+    end
+
+    for i = 1, PA_MAX_SLOTS do
+        local slot = paSlots[i]
+        if not slot then
+            slot = CreateFrame("Frame", "QUI_PlayerPrivateAura" .. i, debuffContainer)
+            slot:SetIgnoreParentAlpha(true)
+            paSlots[i] = slot
+        end
+        slot:SetParent(debuffContainer)
+        slot:SetSize(iconSize, iconSize)
+        slot:SetFrameLevel(debuffContainer:GetFrameLevel() + 5)
+        slot:Show()
+
+        local ok, anchorID = pcall(AddPrivateAuraAnchor, {
+            unitToken = "player",
+            auraIndex = i,
+            parent = slot,
+            showCountdownFrame = true,
+            showCountdownNumbers = true,
+            iconInfo = {
+                iconWidth = iconSize,
+                iconHeight = iconSize,
+                borderScale = 1,
+                iconAnchor = {
+                    point = "CENTER",
+                    relativeTo = slot,
+                    relativePoint = "CENTER",
+                    offsetX = 0,
+                    offsetY = 0,
+                },
+            },
+        })
+        paAnchorIDs[i] = ok and anchorID or nil
+    end
+end
+
+local function LayoutPrivateAuraSlots()
+    if not AddPrivateAuraAnchor or #paSlots == 0 then return end
+
+    local settings = GetSettings()
+    if not settings or not settings.enableDebuffs or settings.hideDebuffFrame then
+        for _, slot in ipairs(paSlots) do
+            slot:Hide()
+        end
+        return
+    end
+
+    local iconSize = settings.debuffIconSize or 0
+    if iconSize <= 0 then iconSize = DEFAULT_ICON_SIZE end
+    local iconsPerRow = settings.debuffIconsPerRow or 0
+    if iconsPerRow <= 0 then iconsPerRow = 10 end
+    local spacing = settings.debuffIconSpacing or 0
+    if spacing <= 0 then spacing = 2 end
+    local growLeft = settings.debuffGrowLeft
+    local growUp = settings.debuffGrowUp
+
+    local anchor
+    if growUp then
+        anchor = growLeft and "BOTTOMRIGHT" or "BOTTOMLEFT"
+    else
+        anchor = growLeft and "TOPRIGHT" or "TOPLEFT"
+    end
+
+    local debuffCount = #debuffSortedIcons
+    local step = iconSize + spacing
+
+    for i, slot in ipairs(paSlots) do
+        local idx = debuffCount + i - 1
+        local col = idx % iconsPerRow
+        local row = math.floor(idx / iconsPerRow)
+
+        local xOff = growLeft and -(col * step) or (col * step)
+        local yOff = growUp and (row * step) or -(row * step)
+
+        slot:SetSize(iconSize, iconSize)
+        slot:ClearAllPoints()
+        slot:SetPoint(anchor, debuffContainer, anchor, xOff, yOff)
+        slot:Show()
+    end
+end
+
+---------------------------------------------------------------------------
+-- AURA UPDATE WRAPPERS
+---------------------------------------------------------------------------
 local function UpdateBuffIcons()
     local settings = GetSettings()
     if not settings then return end
@@ -642,6 +759,7 @@ local function UpdateDebuffIcons()
     if not settings then return end
     if previewActive then return end
     UpdateAuraIcons(debuffContainer, debuffActiveIcons, debuffSortedIcons, "HARMFUL", false, settings, "debuff")
+    LayoutPrivateAuraSlots()
 end
 
 ---------------------------------------------------------------------------
@@ -842,6 +960,11 @@ local function ShowPreview()
     debuffContainer._fadeEnabled = false
     debuffContainer:SetAlpha(1)
     debuffContainer:Show()
+
+    -- Hide private aura slots during preview
+    for _, slot in ipairs(paSlots) do
+        slot:Hide()
+    end
 end
 
 local function HidePreview()
@@ -925,6 +1048,9 @@ local function FullRefresh()
     end
     wipe(debuffSortedIcons)
 
+    -- Re-setup private aura anchors with current settings
+    SetupPrivateAuras()
+
     UpdateBuffIcons()
     UpdateDebuffIcons()
 
@@ -957,6 +1083,9 @@ local function Init()
 
     -- Manage Blizzard frames
     ManageBlizzardFrames()
+
+    -- Setup private aura display for player
+    SetupPrivateAuras()
 
     -- Initial scan
     UpdateBuffIcons()

@@ -2184,7 +2184,7 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         CreateIconStrip(frame, FAKE_AURA_IND_ICONS, aiCount, aiSize, aiAnchor, aiGrow, aiSpacing, aiOffX, aiOffY, "auraIndicatorContainer")
     end
 
-    -- Private aura preview
+    -- Private aura preview (with stack & countdown text)
     local paDB = db.privateAuras or {}
     if paDB.enabled then
         local paSize = (paDB.iconSize or 20) * PREVIEW_SCALE
@@ -2197,7 +2197,39 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         if paAnchor == "BOTTOMLEFT" or paAnchor == "BOTTOM" or paAnchor == "BOTTOMRIGHT" then
             paOffY = paOffY + previewBottomPad
         end
-        CreateIconStrip(frame, { FAKE_PRIVATE_AURA_ICON }, paMax, paSize, paAnchor, paGrow, paSpacing, paOffX, paOffY, "privateAuraContainer")
+        local paContainer = CreateIconStrip(frame, { FAKE_PRIVATE_AURA_ICON }, paMax, paSize, paAnchor, paGrow, paSpacing, paOffX, paOffY, "privateAuraContainer")
+
+        -- Overlay stack count and countdown text on each icon
+        if paContainer then
+            local paTextScale = paDB.textScale or 2
+            local paTextOffX = (paDB.textOffsetX or 0) * PREVIEW_SCALE
+            local paTextOffY = (paDB.textOffsetY or 0) * PREVIEW_SCALE
+            local paShowNumbers = paDB.showCountdownNumbers ~= false
+            local baseFontSize = math.max(8, paSize * 0.55)
+            local scaledFontSize = baseFontSize * paTextScale
+
+            -- Walk the icon textures created by CreateIconStrip and attach text
+            local textures = { paContainer:GetRegions() }
+            for idx, tex in ipairs(textures) do
+                if tex:IsObjectType("Texture") then
+                    -- Stack count (bottom-right, like Blizzard default)
+                    local stackText = paContainer:CreateFontString(nil, "OVERLAY")
+                    stackText:SetFont(STANDARD_TEXT_FONT, scaledFontSize, "OUTLINE")
+                    stackText:SetTextColor(1, 1, 1, 1)
+                    stackText:SetText("2")
+                    stackText:SetPoint("BOTTOMRIGHT", tex, "BOTTOMRIGHT", paTextOffX, paTextOffY)
+
+                    -- Countdown number (center)
+                    if paShowNumbers then
+                        local cdText = paContainer:CreateFontString(nil, "OVERLAY")
+                        cdText:SetFont(STANDARD_TEXT_FONT, scaledFontSize, "OUTLINE")
+                        cdText:SetTextColor(1, 0.82, 0, 1)
+                        cdText:SetText(idx == 1 and "5" or "12")
+                        cdText:SetPoint("CENTER", tex, "CENTER", paTextOffX, paTextOffY)
+                    end
+                end
+            end
+        end
     end
 
     -- Healer: dispel overlay preview (colored border)
@@ -2501,13 +2533,25 @@ local function BuildComposerContent(contentArea, contextMode)
                     self._dragDBTbl = nil
                     RebuildPreviewImmediate()
                     RefreshGF()
-                    -- Rebuild settings panel to show updated slider values
-                    if state.settingsPanels[selectKey] then
-                        state.settingsPanels[selectKey]:Hide()
-                        state.settingsPanels[selectKey]:SetParent(nil)
-                        state.settingsPanels[selectKey] = nil
+                    -- Refresh slider visuals in-place so they reflect the
+                    -- new offset values without destroying/recreating the
+                    -- settings panel (which would collapse all sections).
+                    local panel = state.settingsPanels[selectKey]
+                    if panel then
+                        local function RefreshSliders(frame)
+                            for _, child in pairs({frame:GetChildren()}) do
+                                if child.UpdateVisual and child.GetValue then
+                                    child.UpdateVisual(child.GetValue())
+                                end
+                                RefreshSliders(child)
+                            end
+                        end
+                        RefreshSliders(panel)
                     end
-                    if state.selectElement then state.selectElement(selectKey) end
+                    -- Ensure the element is selected (highlights + panel visible)
+                    if not state.selectedElement or state.selectedElement ~= selectKey then
+                        if state.selectElement then state.selectElement(selectKey) end
+                    end
                 end)
                 overlay:SetScript("OnUpdate", function(self)
                     if not self._dragGhost then return end

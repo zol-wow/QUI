@@ -102,6 +102,12 @@ _ctCoalesceFrame:SetScript("OnUpdate", function(self)
     end
 end)
 
+-- Spellcast event throttle: prevents redundant DoUpdate scans from rapid
+-- UNIT_SPELLCAST_* events within the same GCD window.
+local _lastEventUpdate = 0
+local _eventUpdateThrottle = 0.1
+local _eventUpdatePending = false
+
 -- Separate coalescing frame for UNIT_AURA (only updates bars with active state)
 local _ctAuraCoalesceFrame = CreateFrame("Frame")
 _ctAuraCoalesceFrame:Hide()

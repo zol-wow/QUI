@@ -2140,13 +2140,22 @@ UpdatePetBarVisibility = function()
 
     local barDB = GetBarSettings("pet")
     if barDB and barDB.enabled == false then
-        container:Hide()
+        if not InCombatLockdown() or inInitSafeWindow then
+            container:Hide()
+        else
+            ActionBarsOwned.pendingPetUpdate = true
+        end
         -- Notify anchoring system so dependents (e.g. stance bar) can re-anchor
         if _G.QUI_UpdateFramesAnchoredTo then _G.QUI_UpdateFramesAnchoredTo("petBar") end
         return
     end
 
     -- HasPetUI() returns true when the player has a controllable pet with a bar
+    if InCombatLockdown() and not inInitSafeWindow then
+        -- Show/Hide are protected — defer to PLAYER_REGEN_ENABLED
+        ActionBarsOwned.pendingPetUpdate = true
+        return
+    end
     local wasShown = container:IsShown()
     local hasPet = HasPetUI and HasPetUI()
     if hasPet then
@@ -2170,6 +2179,11 @@ end
 UpdateStanceBarLayout = function()
     local container = ActionBarsOwned.containers["stance"]
     if not container then return end
+
+    if InCombatLockdown() and not inInitSafeWindow then
+        ActionBarsOwned.pendingStanceUpdate = true
+        return
+    end
 
     local barDB = GetBarSettings("stance")
     if barDB and barDB.enabled == false then
@@ -2389,6 +2403,10 @@ local function OnOwnedEvent(self, event, ...)
             ActionBarsOwned.pendingPetUpdate = false
             UpdatePetBarVisibility()
         end
+        if ActionBarsOwned.pendingStanceUpdate then
+            ActionBarsOwned.pendingStanceUpdate = false
+            UpdateStanceBarLayout()
+        end
         if ActionBarsOwned.pendingMicroReclaim then
             ActionBarsOwned.pendingMicroReclaim = false
             local btns = ActionBarsOwned.nativeButtons["microbar"]
@@ -2440,16 +2458,33 @@ local function OnOwnedEvent(self, event, ...)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isLogin, isReload = ...
+        -- Safe period: InCombatLockdown() is true during combat reload but
+        -- protected calls are still allowed. Set the flag so all sub-functions
+        -- bypass their combat guards.
+        inInitSafeWindow = true
         if isReload then
-            if not InCombatLockdown() then
-                -- Second spacing pass during combat /reload safe window.
-                ApplyAllBarSpacing()
-            end
+            ApplyAllBarSpacing()
             -- Safety net: Blizzard's Layout() may fire after safe window
             -- closes. Mark pending so PLAYER_REGEN_ENABLED reapplies.
             ActionBarsOwned.pendingSpacing = true
         end
+        -- Do layout immediately during the safe period so the UI is correct
+        for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+            LayoutNativeButtons(barKey)
+            RestoreContainerPosition(barKey)
+        end
+        RefreshAllNativeVisuals()
+        UpdatePetBarVisibility()
+        UpdateStanceBarLayout()
+        inInitSafeWindow = false
+        -- Second pass after Blizzard frames settle; defer if safe period ended
         C_Timer.After(0.2, function()
+            if InCombatLockdown() then
+                ActionBarsOwned.pendingRefresh = true
+                ActionBarsOwned.pendingPetUpdate = true
+                ActionBarsOwned.pendingStanceUpdate = true
+                return
+            end
             for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
                 LayoutNativeButtons(barKey)
                 RestoreContainerPosition(barKey)
@@ -2685,7 +2720,7 @@ end
 local extraButtonOriginalParents = {}
 
 local function ApplyExtraButtonSettings(buttonType)
-    if InCombatLockdown() then
+    if InCombatLockdown() and not inInitSafeWindow then
         ActionBarsOwned.pendingExtraButtonRefresh = true
         return
     end
@@ -2873,7 +2908,7 @@ end
 
 -- Assign to upvalue for forward declaration in event handler
 RefreshExtraButtons = function()
-    if InCombatLockdown() then
+    if InCombatLockdown() and not inInitSafeWindow then
         ActionBarsOwned.pendingExtraButtonRefresh = true
         return
     end
@@ -3880,7 +3915,7 @@ end
 -- Blizzard's layout, then resize the bar frame to exactly fit the group.
 -- Supports both horizontal and vertical bar orientations via Edit Mode API.
 local function ApplyButtonSpacing(barKey)
-    if InCombatLockdown() then
+    if InCombatLockdown() and not inInitSafeWindow then
         ActionBarsOwned.pendingSpacing = true
         return
     end
@@ -4092,7 +4127,7 @@ end
 
 -- Apply spacing override to all standard bars.
 ApplyAllBarSpacing = function()
-    if InCombatLockdown() then
+    if InCombatLockdown() and not inInitSafeWindow then
         ActionBarsOwned.pendingSpacing = true
         return
     end
@@ -4984,11 +5019,8 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("UNIT_PET")
 
     -- Update pet bar visibility based on current pet state
-    C_Timer.After(0.1, function()
-        if not ActionBarsOwned.initialized then return end
-        UpdatePetBarVisibility()
-        UpdateStanceBarLayout()
-    end)
+    UpdatePetBarVisibility()
+    UpdateStanceBarLayout()
 
     -- Note: Do NOT wipe barFrame.actionButtons or replace MultiActionButton*
     -- handlers. The native keybind system needs these intact for bars 2-8.
