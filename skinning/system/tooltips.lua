@@ -866,7 +866,8 @@ local function SetupEmbeddedTooltipHooks()
     if EmbeddedItemTooltip then
         hooksecurefunc(EmbeddedItemTooltip, "Show", function(self)
             if not IsEnabled() then return end
-            local parent = self:GetParent()
+            local ok, parent = pcall(self.GetParent, self)
+            if not ok then parent = nil end
             local parentVisible = parent and parent.IsShown and parent:IsShown()
             if parentVisible and parent.NineSlice and parent ~= UIParent and parent ~= WorldFrame then
                 StripEmbeddedBorder(self)
@@ -1100,6 +1101,12 @@ SafeHookTooltipOnShow = function(tooltip)
     end
 end
 
+local function ClearNineSliceRegion(region)
+    if region.SetTexture then pcall(region.SetTexture, region, nil) end
+    if region.SetAtlas then pcall(region.SetAtlas, region, nil) end
+    pcall(region.Hide, region)
+end
+
 -- Hook Show to ensure skin stays applied (Blizzard resets NineSlice on show)
 HookTooltipOnShow = function(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
@@ -1134,13 +1141,18 @@ HookTooltipOnShow = function(tooltip)
         if ns then
             pcall(ns.SetAlpha, ns, 0)
             if ns.SetBackdrop then pcall(ns.SetBackdrop, ns, nil) end
-            for i = 1, select("#", ns:GetRegions()) do
-                local region = select(i, ns:GetRegions())
-                if region then
-                    if region.SetTexture then pcall(region.SetTexture, region, nil) end
-                    if region.SetAtlas then pcall(region.SetAtlas, region, nil) end
-                    pcall(region.Hide, region)
-                end
+            local ok, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = pcall(ns.GetRegions, ns)
+            if ok then
+                if r1 then ClearNineSliceRegion(r1) end
+                if r2 then ClearNineSliceRegion(r2) end
+                if r3 then ClearNineSliceRegion(r3) end
+                if r4 then ClearNineSliceRegion(r4) end
+                if r5 then ClearNineSliceRegion(r5) end
+                if r6 then ClearNineSliceRegion(r6) end
+                if r7 then ClearNineSliceRegion(r7) end
+                if r8 then ClearNineSliceRegion(r8) end
+                if r9 then ClearNineSliceRegion(r9) end
+                if r10 then ClearNineSliceRegion(r10) end
             end
         end
 

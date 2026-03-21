@@ -166,6 +166,8 @@ local pendingRefreshSettings = false
 local pendingVisibilityUpdate = false
 local pendingRegisterClicks = false
 local pendingGroupReflow = false
+local pendingAnchorUpdate = false
+local initSafePeriod = true
 
 -- Multi-header mode: true when groupBy == "GROUP" (each raid group gets its own header).
 -- The default groupBy is "GROUP" so nil also means multi-header.
@@ -2214,6 +2216,10 @@ local function GetMultiHeaderTotalSize()
 end
 
 local function UpdateAnchorFrames()
+    if not initSafePeriod and InCombatLockdown() then
+        pendingAnchorUpdate = true
+        return
+    end
     local db = GetSettings()
     if not db then return end
 
@@ -3077,6 +3083,7 @@ local function UpdateHeaderVisibility()
         RebuildUnitFrameMap()
         QUI_GF:RefreshAllFrames()
         UpdateAnchorFrames()
+        initSafePeriod = false
     end)
 end
 
@@ -3637,6 +3644,10 @@ local function OnEvent(self, event, arg1, ...)
             else
                 DecorateHeaderChildren(QUI_GF.headers.raid)
             end
+        end
+        if pendingAnchorUpdate then
+            pendingAnchorUpdate = false
+            UpdateAnchorFrames()
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
