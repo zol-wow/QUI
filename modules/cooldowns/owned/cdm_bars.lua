@@ -1221,13 +1221,22 @@ function CDMBars:UpdateOwnedBarAura(bar)
         if C_UnitAuras.GetAuraDuration then
             local childAuraInstID
             local auraUnit = "player"
+            -- Only trust child's auraInstanceID if the child is still shown —
+            -- Blizzard hides children C-side when buffs drop but doesn't nil
+            -- their auraInstanceID field.
             if bar._blizzBar and bar._blizzBar.auraInstanceID then
-                childAuraInstID = Helpers.SafeValue(bar._blizzBar.auraInstanceID, nil)
-                auraUnit = bar._blizzBar.auraDataUnit or "player"
+                local bok, bshown = pcall(bar._blizzBar.IsShown, bar._blizzBar)
+                if bok and bshown then
+                    childAuraInstID = Helpers.SafeValue(bar._blizzBar.auraInstanceID, nil)
+                    auraUnit = bar._blizzBar.auraDataUnit or "player"
+                end
             end
             if not childAuraInstID and bar._blizzIconChild and bar._blizzIconChild.auraInstanceID then
-                childAuraInstID = Helpers.SafeValue(bar._blizzIconChild.auraInstanceID, nil)
-                auraUnit = bar._blizzIconChild.auraDataUnit or "player"
+                local iok, ishown = pcall(bar._blizzIconChild.IsShown, bar._blizzIconChild)
+                if iok and ishown then
+                    childAuraInstID = Helpers.SafeValue(bar._blizzIconChild.auraInstanceID, nil)
+                    auraUnit = bar._blizzIconChild.auraDataUnit or "player"
+                end
             end
             -- Dynamic fallback: scan ALL viewer children for matching spell
             if not childAuraInstID and ns.CDMIcons and ns.CDMIcons.FindActiveAuraChild then
@@ -1266,6 +1275,13 @@ function CDMBars:UpdateOwnedBarAura(bar)
                     or (resolvedID ~= spellID and spellToAura[spellID])
                     or (entry and entry.spellID and spellToAura[entry.spellID])
                     or (entry and entry.id and spellToAura[entry.id])
+                -- Validate cache-sourced instance is still active
+                if auraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
+                    local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", auraInstID)
+                    if vok and not vdata then
+                        auraInstID = nil
+                    end
+                end
                 if auraInstID then
                     local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", auraInstID)
                     if dok and durObj then

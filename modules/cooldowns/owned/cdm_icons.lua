@@ -110,7 +110,10 @@ local function FindActiveAuraChild(id1, id2, id3)
         local ok, children = pcall(function() return { viewer:GetChildren() } end)
         if ok and children then
             for _, ch in ipairs(children) do
-                if ch and ch.auraInstanceID then
+                -- Only consider shown children — Blizzard hides children
+                -- C-side when buffs drop but doesn't nil auraInstanceID.
+                local sok, shown = pcall(ch.IsShown, ch)
+                if ch and ch.auraInstanceID and sok and shown then
                     -- Match by cooldownInfo IDs
                     local ci = ch.cooldownInfo
                     if ci then
@@ -995,6 +998,13 @@ local function UpdateIconCooldown(icon)
             end
             if cType == "aura" or cType == "auraBar" then
                 local auraSpellID = entry.overrideSpellID or entry.spellID or entry.id
+                -- Resolve ability→aura mapping (e.g. Marrowrend→Bone Shield,
+                -- Death and Decay ability→DnD buff).  The entry's spellID may
+                -- be the ability ID rather than the actual buff spell ID.
+                local auraMap = ns.CDMSpellData and ns.CDMSpellData._abilityToAuraSpellID
+                if auraMap and auraMap[auraSpellID] then
+                    auraSpellID = auraMap[auraSpellID]
+                end
                 if auraSpellID then
                     -- Try to get full auraData via spell ID lookups
                     local auraData = LookupAura(auraSpellID, entry)
@@ -1004,8 +1014,18 @@ local function UpdateIconCooldown(icon)
                     -- is the most reliable combat source — maintained by C-side code.
                     local blzChild = entry._blizzChild
                     local childAuraInstID
+                    -- Only trust child's auraInstanceID if the child is still
+                    -- shown — Blizzard hides children C-side when buffs drop
+                    -- but doesn't nil their auraInstanceID field.
                     if blzChild and blzChild.auraInstanceID then
-                        childAuraInstID = SafeValue(blzChild.auraInstanceID, nil)
+                        local cok, cshown = pcall(blzChild.IsShown, blzChild)
+                        if cok and cshown then
+                            childAuraInstID = SafeValue(blzChild.auraInstanceID, nil)
+                        else
+                            -- Child is hidden/stale — clear cached reference
+                            entry._blizzChild = nil
+                            blzChild = nil
+                        end
                     end
                     -- Dynamic fallback: scan ALL viewer children for one with
                     -- auraInstanceID matching our spell IDs.  Handles cases where
@@ -1023,6 +1043,17 @@ local function UpdateIconCooldown(icon)
                         or _spellToAuraInstance[auraSpellID]
                         or (entry.spellID and _spellToAuraInstance[entry.spellID])
                         or (entry.id and _spellToAuraInstance[entry.id])
+
+                    -- Validate cache-sourced auraInstID is still active.
+                    -- GetAuraDataByAuraInstanceID returns nil for expired auras
+                    -- even during combat (secret fields, but non-nil result).
+                    if auraInstID and not auraData and not childAuraInstID then
+                        local auraUnit = (blzChild and blzChild.auraDataUnit) or "player"
+                        local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, auraInstID)
+                        if vok and not vdata then
+                            auraInstID = nil
+                        end
+                    end
 
                     -- Hook cache: DurationObject + raw start/dur from Blizzard viewer child.
                     -- CRITICAL: For aura containers, only trust data from buff viewer
