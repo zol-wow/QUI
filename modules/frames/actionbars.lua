@@ -1719,6 +1719,15 @@ local function BuildBar(barKey)
             barFrame:UnregisterAllEvents()
             barFrame:SetParent(hiddenBarParent)
             barFrame:Hide()
+            -- Neutralize UpdateGridLayout on the hidden bar.  ActionBarController
+            -- still calls StanceBar:Update() → UpdateState() → UpdateGridLayout()
+            -- even after reparenting.  Because addon code tainted the frame by
+            -- calling SetParent/Hide, the layout chain propagates taint through
+            -- EditMode → UIParent_ManageFramePositions →
+            -- UIParentRightManagedFrameContainer:ClearAllPoints() in combat.
+            if barFrame.UpdateGridLayout then
+                barFrame.UpdateGridLayout = function() end
+            end
         end
 
         local origButtons = GetOriginalBlizzButtons(barKey)
