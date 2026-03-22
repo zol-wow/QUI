@@ -49,6 +49,38 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinBase.MarkStyled(button)
 end
 
+-- Style a WowStyle1 dropdown button (different texture structure than standard buttons)
+local function StyleDropdownButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not button or SkinBase.IsStyled(button) then return end
+
+    SkinBase.StripTextures(button)
+
+    local btnBgR = math.min(bgr + 0.07, 1)
+    local btnBgG = math.min(bgg + 0.07, 1)
+    local btnBgB = math.min(bgb + 0.07, 1)
+    SkinBase.CreateBackdrop(button, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+
+    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
+
+    button:HookScript("OnEnter", function(self)
+        local bd = SkinBase.GetBackdrop(self)
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            local r, g, b, a = unpack(sc)
+            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+        end
+    end)
+    button:HookScript("OnLeave", function(self)
+        local bd = SkinBase.GetBackdrop(self)
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            bd:SetBackdropBorderColor(unpack(sc))
+        end
+    end)
+
+    SkinBase.MarkStyled(button)
+end
+
 -- Style tab button
 local function StyleTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not tab or SkinBase.IsStyled(tab) then return end
@@ -346,11 +378,9 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if searchBar.FavoritesSearchButton then
             StyleButton(searchBar.FavoritesSearchButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
-        -- Filter dropdown (don't strip textures — preserves the clear-filter X button)
+        -- Filter dropdown (WowStyle1 dropdown — standard button textures don't apply)
         if searchBar.FilterDropdown then
-            SkinBase.CreateBackdrop(searchBar.FilterDropdown, sr, sg, sb, sa, math.min(bgr + 0.07, 1), math.min(bgg + 0.07, 1), math.min(bgb + 0.07, 1), 1)
-            local bd = SkinBase.GetBackdrop(searchBar.FilterDropdown)
-            if bd then bd:SetFrameLevel(math.max(0, bd:GetFrameLevel() - 1)) end
+            StyleDropdownButton(searchBar.FilterDropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
     end
 
@@ -585,7 +615,7 @@ local function RefreshCraftingOrdersColors()
             UpdateEditBoxColors(searchBar.SearchBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             UpdateButtonColors(searchBar.SearchButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             UpdateButtonColors(searchBar.FavoritesSearchButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-            UpdateDropdownColors(searchBar.FilterDropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            UpdateButtonColors(searchBar.FilterDropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
     end
 
