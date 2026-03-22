@@ -47,13 +47,11 @@ local DEFAULTS = {
     buffIconSize = 0,
     buffGrowLeft = false,
     buffGrowUp = false,
-    buffInvertSwipeDarkening = false,
     debuffIconsPerRow = 0,
     debuffIconSpacing = 0,
     debuffIconSize = 0,
     debuffGrowLeft = false,
     debuffGrowUp = false,
-    debuffInvertSwipeDarkening = false,
     buffBottomPadding = 10,
     debuffBottomPadding = 10,
 }
@@ -140,13 +138,6 @@ local function CreateAuraIcon(parent)
     icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
     icon.Cooldown:SetSwipeColor(0, 0, 0, 0.8)
     icon.Cooldown:SetDrawBling(false)
-    local baseSwipeReverse = false
-    if icon.Cooldown.GetReverse then
-        local ok, reverse = pcall(icon.Cooldown.GetReverse, icon.Cooldown)
-        if ok then
-            baseSwipeReverse = not not reverse
-        end
-    end
 
     -- .TextOverlay (above swipe so text is never behind it)
     icon.TextOverlay = CreateFrame("Frame", nil, icon)
@@ -183,7 +174,6 @@ local function CreateAuraIcon(parent)
     icon._filter = nil
     icon._rawDuration = nil
     icon._rawExpirationTime = nil
-    icon._baseSwipeReverse = baseSwipeReverse
     icon._isQUIAuraIcon = true
 
     -- Tooltip
@@ -592,16 +582,6 @@ local function UpdateAuraIcons(container, activeIcons, sortedList, filter, isBuf
         icon._rawDuration = duration
         icon._rawExpirationTime = expirationTime
 
-        -- Optional inversion so users can choose whether darkening ramps up
-        -- toward expiration or ramps down from full duration.
-        if icon.Cooldown and icon.Cooldown.SetReverse then
-            local invertKey = isBuff and "buffInvertSwipeDarkening" or "debuffInvertSwipeDarkening"
-            local invert = not not settings[invertKey]
-            local baseReverse = not not icon._baseSwipeReverse
-            local targetReverse = invert and (not baseReverse) or baseReverse
-            pcall(icon.Cooldown.SetReverse, icon.Cooldown, targetReverse)
-        end
-
         -- Cooldown swipe: pass secret values directly to C-side API
         if expirationTime and duration then
             pcall(icon.Cooldown.SetCooldownFromExpirationTime, icon.Cooldown, expirationTime, duration)
@@ -671,6 +651,16 @@ local function ClearPrivateAuraAnchors()
         if id then pcall(RemovePrivateAuraAnchor, id) end
     end
     wipe(paAnchorIDs)
+    -- Hide any stale WoW-rendered children left on anchor slots
+    for i = 1, PA_MAX_SLOTS do
+        local slot = paSlots[i]
+        if slot then
+            for j = 1, slot:GetNumChildren() do
+                local child = select(j, slot:GetChildren())
+                if child then child:Hide() end
+            end
+        end
+    end
 end
 
 local function SetupPrivateAuras()
@@ -774,11 +764,27 @@ local function UpdateBuffIcons()
     UpdateAuraIcons(buffContainer, buffActiveIcons, buffSortedIcons, "HELPFUL", true, settings, "buff")
 end
 
+-- Rate-limited private aura anchor re-registration to clean up stale renders.
+-- WoW's AddPrivateAuraAnchor rendering can persist after the aura expires;
+-- re-registering forces the client to re-evaluate active private auras.
+local paLastRefresh = 0
+local PA_REFRESH_CD = 1.0
+
+local function RefreshPrivateAuraAnchors()
+    if not AddPrivateAuraAnchor or not debuffContainer then return end
+    local now = GetTime()
+    if now - paLastRefresh < PA_REFRESH_CD then return end
+    paLastRefresh = now
+    ClearPrivateAuraAnchors()
+    SetupPrivateAuras()
+end
+
 local function UpdateDebuffIcons()
     local settings = GetSettings()
     if not settings then return end
     if previewActive then return end
     UpdateAuraIcons(debuffContainer, debuffActiveIcons, debuffSortedIcons, "HARMFUL", false, settings, "debuff")
+    RefreshPrivateAuraAnchors()
     LayoutPrivateAuraSlots()
 end
 

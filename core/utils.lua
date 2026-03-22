@@ -46,7 +46,7 @@ end
 --- @param fallback any Value to return if secret (default: nil)
 --- @return any The value or fallback
 function Helpers.SafeValue(value, fallback)
-    if Helpers.IsSecretValue(value) then
+    if issecretvalue and issecretvalue(value) then
         return fallback
     end
     return value
@@ -57,7 +57,7 @@ end
 --- @param b any Second value
 --- @return boolean|nil Result of comparison, or nil if can't compare
 function Helpers.SafeCompare(a, b)
-    if Helpers.IsSecretValue(a) or Helpers.IsSecretValue(b) then
+    if issecretvalue and (issecretvalue(a) or issecretvalue(b)) then
         return nil
     end
     return a == b
@@ -68,11 +68,12 @@ end
 --- @param fallback number Value to return if secret or not a number
 --- @return number The number or fallback
 function Helpers.SafeToNumber(value, fallback)
-    if Helpers.IsSecretValue(value) then
+    if issecretvalue and issecretvalue(value) then
         return fallback or 0
     end
-    local ok, num = pcall(tonumber, value)
-    if ok and num then
+    -- No pcall needed: tonumber never errors on non-secret values
+    local num = tonumber(value)
+    if num then
         return num
     end
     return fallback or 0
@@ -84,11 +85,12 @@ end
 --- @return string The string or fallback
 function Helpers.SafeToString(value, fallback)
     fallback = fallback or ""
-    if Helpers.IsSecretValue(value) then
+    if issecretvalue and issecretvalue(value) then
         return fallback
     end
-    local ok, str = pcall(tostring, value)
-    if ok and str then
+    -- No pcall needed: tostring never errors on non-secret values
+    local str = tostring(value)
+    if str then
         return str
     end
     return fallback

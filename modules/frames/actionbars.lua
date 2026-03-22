@@ -3633,7 +3633,9 @@ end
 local usabilityCheckFrame = nil
 -- Range check interval (only used when range indicator is enabled)
 local RANGE_CHECK_INTERVAL_NORMAL = 0.25  -- 250ms = 4 FPS (CPU-friendly)
-local RANGE_CHECK_INTERVAL_FAST = 0.05    -- 50ms = 20 FPS (responsive)
+local RANGE_CHECK_INTERVAL_FAST = 0.1     -- 100ms = 10 FPS (responsive, halved CPU)
+local RANGE_CHECK_INTERVAL_IDLE = 1.0     -- 1s OOC (range matters less)
+local actionBarRangeInCombat = false
 
 local function GetUpdateInterval()
     local settings = GetGlobalSettings()
@@ -3811,8 +3813,19 @@ local function UpdateUsabilityPolling()
         usabilityCheckFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
         usabilityCheckFrame:RegisterEvent("UNIT_POWER_UPDATE")
         usabilityCheckFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+        usabilityCheckFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+        usabilityCheckFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
         usabilityCheckFrame:SetScript("OnEvent", function(self, event, ...)
+            if event == "PLAYER_REGEN_DISABLED" then
+                actionBarRangeInCombat = true
+                self.elapsed = 0  -- reset so combat interval kicks in immediately
+                return
+            elseif event == "PLAYER_REGEN_ENABLED" then
+                actionBarRangeInCombat = false
+                ScheduleUsabilityUpdate()  -- one-shot refresh after combat
+                return
+            end
             ScheduleUsabilityUpdate()
         end)
 
@@ -3827,10 +3840,10 @@ local function UpdateUsabilityPolling()
     -- Only poll when range indicator is enabled, at 250ms (was 100ms)
     -- Cache interval to avoid per-frame DB lookup
     if rangeEnabled then
-        local cachedInterval = GetUpdateInterval()
         usabilityCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = self.elapsed + elapsed
-            if self.elapsed < cachedInterval then return end
+            local interval = actionBarRangeInCombat and GetUpdateInterval() or RANGE_CHECK_INTERVAL_IDLE
+            if self.elapsed < interval then return end
             self.elapsed = 0
             UpdateAllButtonUsability()
         end)

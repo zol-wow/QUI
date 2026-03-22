@@ -37,7 +37,6 @@ local NINE_SLICE_BORDER_PARTS = {
 local tooltipBackdrops = Helpers.CreateStateTable()
 local overlayBackdrops = Helpers.CreateStateTable()
 local tooltipBorders = Helpers.CreateStateTable()
-local overlayColors = Helpers.CreateStateTable()
 
 local function CreateBackdropInfo()
     local insets = { left = 1, right = 1, top = 1, bottom = 1 }
@@ -89,23 +88,6 @@ local function GetTooltipBorder(tooltip)
 
     tooltipBorders[tooltip] = border
     return border
-end
-
-local function RememberOverlayColors(skinFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    local colors = overlayColors[skinFrame]
-    if not colors then
-        colors = {}
-        overlayColors[skinFrame] = colors
-    end
-    colors.sr, colors.sg, colors.sb, colors.sa = sr, sg, sb, sa
-    colors.bgr, colors.bgg, colors.bgb, colors.bga = bgr, bgg, bgb, bga
-end
-
-local function ReapplyOverlayColors(skinFrame)
-    local colors = overlayColors[skinFrame]
-    if not colors then return end
-    pcall(skinFrame.SetBackdropColor, skinFrame, colors.bgr, colors.bgg, colors.bgb, colors.bga)
-    pcall(skinFrame.SetBackdropBorderColor, skinFrame, colors.sr, colors.sg, colors.sb, colors.sa)
 end
 
 -- Snap an edge size to the nearest physical pixel boundary so thin borders
@@ -365,12 +347,10 @@ end
 local skinnedTooltips = Helpers.CreateStateTable()   -- tooltip → true
 local hookedTooltips = Helpers.CreateStateTable()    -- tooltip → true (OnShow hooked)
 local reapplyingTooltip = Helpers.CreateStateTable() -- tooltip → true (reentrancy guard)
-local deferredReapplyQueued = Helpers.CreateStateTable() -- tooltip → true (timer coalescing)
 
 -- Forward declarations (assigned later, used in closures that run at runtime)
 local SafeHookTooltipOnShow
 local HookTooltipOnShow
-local CombatSafeReapply
 
 -- QUI-owned overlay frames for tooltip skinning (weak-keyed to allow GC)
 local skinFrames = Helpers.CreateStateTable()
@@ -418,8 +398,8 @@ end
 local function SyncOverlayLevel(skinFrame, tooltip)
     local ok, level = pcall(tooltip.GetFrameLevel, tooltip)
     if not ok or type(level) ~= "number" then return end
-    -- Passing secret values directly to C APIs is allowed; avoid arithmetic/comparison.
-    pcall(skinFrame.SetFrameLevel, skinFrame, level)
+    if issecretvalue and issecretvalue(level) then return end
+    skinFrame:SetFrameLevel(level)
 end
 
 -- Get or create a QUI-owned BackdropTemplate overlay frame for a tooltip.
@@ -455,15 +435,20 @@ local function GetOrCreateSkinFrame(tooltip)
         if self.OnBackdropSizeChanged then
             self:OnBackdropSizeChanged()
         end
-        -- Re-apply stored colors after piece recreation
+        -- Re-apply stored colors after piece recreation.
+        -- Primary: use BackdropTemplateMixin's backdropColor (set by SetBackdropColor).
+        -- Fallback: use _qui* fields stored by ApplyOverlayBackdrop, which survive
+        -- SetBackdrop(nil) and cover the case where backdropColor was cleared by an
+        -- error between SetBackdrop(info) and SetBackdropColor in ApplyOverlayBackdrop.
         if self.backdropColor then
             self:SetBackdropColor(self.backdropColor:GetRGBA())
+        elseif self._quiBgR then
+            self:SetBackdropColor(self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA)
         end
         if self.backdropBorderColor then
             self:SetBackdropBorderColor(self.backdropBorderColor:GetRGBA())
-            -- Backdrop piece rebuilds can briefly default WHITE8x8 vertex colors.
-            -- Re-apply our last known skin colors after every backdrop resize.
-            ReapplyOverlayColors(self)
+        elseif self._quiBorderR then
+            self:SetBackdropBorderColor(self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA)
         end
     end)
 
@@ -502,23 +487,24 @@ local function ApplyOverlayBackdrop(skinFrame, edgeSize, sr, sg, sb, sa, bgr, bg
     info.insets.right = edgeSize
     info.insets.top = edgeSize
     info.insets.bottom = edgeSize
+    -- Store desired colors independently of BackdropTemplateMixin's backdropColor.
+    -- SetBackdrop(nil) clears backdropColor; if SetBackdropColor errors (caught by
+    -- an outer pcall), backdropColor stays nil and OnSizeChanged can't re-apply.
+    -- These fields survive SetBackdrop(nil) and give OnSizeChanged a fallback.
+    skinFrame._quiBgR = bgr or 0.05
+    skinFrame._quiBgG = bgg or 0.05
+    skinFrame._quiBgB = bgb or 0.05
+    skinFrame._quiBgA = bga or 0.95
+    skinFrame._quiBorderR = sr or 0
+    skinFrame._quiBorderG = sg or 0
+    skinFrame._quiBorderB = sb or 0
+    skinFrame._quiBorderA = sa or 1
     -- Clear first -- SetBackdrop short-circuits when passed the same table
     -- reference, even if the table's contents changed.
     skinFrame:SetBackdrop(nil)
     skinFrame:SetBackdrop(info)
-    skinFrame:SetBackdropColor(bgr, bgg, bgb, bga)
-    skinFrame:SetBackdropBorderColor(sr, sg, sb, sa)
-    RememberOverlayColors(skinFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-end
-
--- Some tooltip templates can re-attach a BackdropTemplate backdrop after skinning.
--- Tint the tooltip's own backdrop too so a default white fallback never persists.
-local function TintTooltipBackdropIfPresent(tooltip, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not tooltip or not tooltip.SetBackdropColor then return end
-    pcall(tooltip.SetBackdropColor, tooltip, bgr, bgg, bgb, bga)
-    if tooltip.SetBackdropBorderColor then
-        pcall(tooltip.SetBackdropBorderColor, tooltip, sr, sg, sb, sa)
-    end
+    skinFrame:SetBackdropColor(skinFrame._quiBgR, skinFrame._quiBgG, skinFrame._quiBgB, skinFrame._quiBgA)
+    skinFrame:SetBackdropBorderColor(skinFrame._quiBorderR, skinFrame._quiBorderG, skinFrame._quiBorderB, skinFrame._quiBorderA)
 end
 
 -- Strip CompareHeader textures on shopping tooltips (TWW 11.2.7+)
@@ -536,21 +522,30 @@ local function StripCompareHeader(tooltip)
             pcall(header.NineSlice.SetBackdrop, header.NineSlice, nil)
         end
     end
-    -- Hide any child textures (border pieces, backgrounds)
-    for _, region in pairs({header:GetRegions()}) do
-        if region.SetTexture then
-            pcall(region.SetTexture, region, nil)
-        end
-        if region.SetAtlas then
-            pcall(region.SetAtlas, region, nil)
-        end
-        if region.SetAlpha then
-            pcall(region.SetAlpha, region, 0)
+    -- Hide any child textures (border pieces, backgrounds).
+    -- Use select() to iterate GetRegions without allocating a table.
+    local numRegions = select("#", header:GetRegions())
+    for i = 1, numRegions do
+        local region = select(i, header:GetRegions())
+        if region then
+            if region.SetTexture then
+                pcall(region.SetTexture, region, nil)
+            end
+            if region.SetAtlas then
+                pcall(region.SetAtlas, region, nil)
+            end
+            if region.SetAlpha then
+                pcall(region.SetAlpha, region, 0)
+            end
         end
     end
 end
 
 -- Full skin application for a tooltip (called outside combat only)
+-- GUARD SAFETY: The body is wrapped in pcall so that reapplyingTooltip is
+-- always cleared even if an inner operation errors (e.g. taint from the
+-- loot roll secure context). Without this, a single error permanently
+-- blocks all future skin attempts for the tooltip → white backdrop.
 local function SkinTooltip(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
@@ -558,160 +553,176 @@ local function SkinTooltip(tooltip)
     if reapplyingTooltip[tooltip] then return end
     reapplyingTooltip[tooltip] = true
 
-    -- Detect embedded tooltips: they live inside another tooltip-like parent
-    -- and should NOT get their own QUI overlay (the parent already has one).
-    -- Creating an overlay here causes a "border within border" flash on first
-    -- show, before StripEmbeddedBorder hides it on the next frame.
-    -- IMPORTANT: Only treat as embedded when the parent tooltip is actually
-    -- visible. EmbeddedItemTooltip is shown standalone by the objective
-    -- tracker (parent GameTooltip is hidden) — it needs its own QUI overlay.
-    local parent = tooltip.GetParent and tooltip:GetParent()
-    local parentVisible = parent and parent.IsShown and parent:IsShown()
-    local isEmbedded = parentVisible
-        and (tooltip.IsEmbedded
-            or (parent.NineSlice and parent ~= UIParent and parent ~= WorldFrame))
-    if isEmbedded then
-        local ns = tooltip.NineSlice
-        if ns then HideNineSlice(ns) end
-        if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
-        -- Mark as skinned so we don't re-process, but no overlay created
-        skinnedTooltips[tooltip] = true
-        reapplyingTooltip[tooltip] = nil
-        return
-    end
-
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-    local thickness = GetEffectiveBorderThickness()
-
-    local ns = tooltip.NineSlice
-    if ns then
-        -- Clear Blizzard's cached layout properties on the NineSlice to prevent
-        -- re-application of default styles during tooltip resize/re-layout.
-        -- TAINT SAFETY: Only clear on the NineSlice sub-frame, NEVER on the
-        -- tooltip frame itself. Writing to tooltip.layoutType/layoutTextureKit
-        -- taints the GameTooltip frame.
-        ns.layoutType = nil
-        ns.layoutTextureKit = nil
-        ns.backdropInfo = nil
-
-        -- Hide Blizzard's NineSlice (no geometry modification -- avoids taint)
-        HideNineSlice(ns)
-
-        -- Clear any backdrop on the tooltip frame itself (some tooltips have both
-        -- NineSlice AND BackdropTemplate, creating a second border layer).
-        if tooltip.SetBackdrop then
-            pcall(tooltip.SetBackdrop, tooltip, nil)
+    pcall(function()
+        -- Detect embedded tooltips: they live inside another tooltip-like parent
+        -- and should NOT get their own QUI overlay (the parent already has one).
+        -- Creating an overlay here causes a "border within border" flash on first
+        -- show, before StripEmbeddedBorder hides it on the next frame.
+        -- IMPORTANT: Only treat as embedded when the parent tooltip is actually
+        -- visible. EmbeddedItemTooltip is shown standalone by the objective
+        -- tracker (parent GameTooltip is hidden) — it needs its own QUI overlay.
+        local parent = tooltip.GetParent and tooltip:GetParent()
+        local parentVisible = parent and parent.IsShown and parent:IsShown()
+        local isEmbedded = parentVisible
+            and (tooltip.IsEmbedded
+                or (parent.NineSlice and parent ~= UIParent and parent ~= WorldFrame))
+        if isEmbedded then
+            local ns = tooltip.NineSlice
+            if ns then HideNineSlice(ns) end
+            if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
+            -- Mark as skinned so we don't re-process, but no overlay created
+            skinnedTooltips[tooltip] = true
+            return
         end
 
-        -- Create QUI-owned overlay with BackdropTemplate
-        local skinFrame = GetOrCreateSkinFrame(tooltip)
-        SyncOverlayLevel(skinFrame, tooltip)
-        local px = SkinBase.GetPixelSize(ns, 1)
-        -- Minimum 2 physical pixels ensures the border survives pixel-grid
-        -- rounding at any tooltip position / effective scale.
-        local edge = math.max((thickness or 1), 2) * px
-        ApplyOverlayBackdrop(skinFrame, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        TintTooltipBackdropIfPresent(tooltip, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        -- Ensure overlay is visible (StripEmbeddedBorder may have hidden it
-        -- if this tooltip was previously shown in an embedded context).
-        skinFrame:Show()
-    elseif tooltip.SetBackdrop then
-        -- Legacy BackdropTemplate path (fallback)
-        local px = SkinBase.GetPixelSize(tooltip, 1)
-        local edge = SnapToPixel(tooltip, thickness * px)
-        ApplyTooltipBackdrop(tooltip, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    else
-        -- No NineSlice and no BackdropTemplate — cannot skin this tooltip
-        reapplyingTooltip[tooltip] = nil
-        return
-    end
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
+        local thickness = GetEffectiveBorderThickness()
 
-    StripCompareHeader(tooltip)
-    skinnedTooltips[tooltip] = true
+        local ns = tooltip.NineSlice
+        if ns then
+            -- Clear Blizzard's cached layout properties on the NineSlice to prevent
+            -- re-application of default styles during tooltip resize/re-layout.
+            -- TAINT SAFETY: Only clear on the NineSlice sub-frame, NEVER on the
+            -- tooltip frame itself. Writing to tooltip.layoutType/layoutTextureKit
+            -- taints the GameTooltip frame.
+            ns.layoutType = nil
+            ns.layoutTextureKit = nil
+            ns.backdropInfo = nil
+
+            -- Hide Blizzard's NineSlice (no geometry modification -- avoids taint)
+            HideNineSlice(ns)
+
+            -- Clear any backdrop on the tooltip frame itself (some tooltips have both
+            -- NineSlice AND BackdropTemplate, creating a second border layer).
+            if tooltip.SetBackdrop then
+                pcall(tooltip.SetBackdrop, tooltip, nil)
+            end
+
+            -- Create QUI-owned overlay with BackdropTemplate
+            local skinFrame = GetOrCreateSkinFrame(tooltip)
+            SyncOverlayLevel(skinFrame, tooltip)
+            local px = SkinBase.GetPixelSize(ns, 1)
+            -- Minimum 2 physical pixels ensures the border survives pixel-grid
+            -- rounding at any tooltip position / effective scale.
+            local edge = math.max((thickness or 1), 2) * px
+            ApplyOverlayBackdrop(skinFrame, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            -- Ensure overlay is visible (StripEmbeddedBorder may have hidden it
+            -- if this tooltip was previously shown in an embedded context).
+            skinFrame:Show()
+        elseif tooltip.SetBackdrop then
+            -- Legacy BackdropTemplate path (fallback)
+            local px = SkinBase.GetPixelSize(tooltip, 1)
+            local edge = SnapToPixel(tooltip, thickness * px)
+            ApplyTooltipBackdrop(tooltip, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        end
+
+        StripCompareHeader(tooltip)
+        skinnedTooltips[tooltip] = true
+    end)
+
     reapplyingTooltip[tooltip] = nil
 end
 
 -- Re-apply skin to an already-skinned tooltip (called on every Show, out of combat)
+-- GUARD SAFETY: Same pcall wrapper as SkinTooltip — ensures reapplyingTooltip is
+-- always cleared even if an inner operation errors.
 local function ReapplySkin(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if reapplyingTooltip[tooltip] then return end
     reapplyingTooltip[tooltip] = true
 
-    -- Embedded tooltips: only strip border, never create overlay.
-    -- Only treat as embedded when the parent tooltip is actually visible —
-    -- standalone contexts (e.g. objective tracker) need their own overlay.
-    local parent = tooltip.GetParent and tooltip:GetParent()
-    local parentVisible = parent and parent.IsShown and parent:IsShown()
-    local isEmbedded = parentVisible
-        and (tooltip.IsEmbedded
-            or (parent.NineSlice and parent ~= UIParent and parent ~= WorldFrame))
-    if isEmbedded then
-        local ns = tooltip.NineSlice
-        if ns then HideNineSlice(ns) end
-        if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
-        reapplyingTooltip[tooltip] = nil
-        return
-    end
-
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-    local thickness = GetEffectiveBorderThickness()
-
-    local ns = tooltip.NineSlice
-    if ns then
-        -- Clear Blizzard's cached layout properties (prevents NineSlice from
-        -- resurfacing after Blizzard re-applies backdrop styles)
-        ns.layoutType = nil
-        ns.layoutTextureKit = nil
-        ns.backdropInfo = nil
-
-        -- Re-hide NineSlice every show (Blizzard may restore styles between displays)
-        HideNineSlice(ns)
-
-        -- Clear any backdrop on the tooltip frame itself (belt-and-suspenders
-        -- with HideNineSlice — prevents doubled borders on tooltips with both
-        -- NineSlice AND BackdropTemplate).
-        if tooltip.SetBackdrop then
-            pcall(tooltip.SetBackdrop, tooltip, nil)
+    pcall(function()
+        -- Embedded tooltips: only strip border, never create overlay.
+        -- Only treat as embedded when the parent tooltip is actually visible —
+        -- standalone contexts (e.g. objective tracker) need their own overlay.
+        local parent = tooltip.GetParent and tooltip:GetParent()
+        local parentVisible = parent and parent.IsShown and parent:IsShown()
+        local isEmbedded = parentVisible
+            and (tooltip.IsEmbedded
+                or (parent.NineSlice and parent ~= UIParent and parent ~= WorldFrame))
+        if isEmbedded then
+            local ns = tooltip.NineSlice
+            if ns then HideNineSlice(ns) end
+            if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
+            return
         end
 
-        -- Update overlay backdrop and colors
-        local skinFrame = GetOrCreateSkinFrame(tooltip)
-        SyncOverlayLevel(skinFrame, tooltip)
-        local px = SkinBase.GetPixelSize(ns, 1)
-        local edge = math.max((thickness or 1), 2) * px
-        ApplyOverlayBackdrop(skinFrame, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        TintTooltipBackdropIfPresent(tooltip, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        skinFrame:Show()
-    elseif tooltip.SetBackdrop then
-        local px = SkinBase.GetPixelSize(tooltip, 1)
-        local edge = SnapToPixel(tooltip, thickness * px)
-        ApplyTooltipBackdrop(tooltip, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    end
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
+        local thickness = GetEffectiveBorderThickness()
 
-    StripCompareHeader(tooltip)
+        local ns = tooltip.NineSlice
+        if ns then
+            -- Clear Blizzard's cached layout properties (prevents NineSlice from
+            -- resurfacing after Blizzard re-applies backdrop styles)
+            ns.layoutType = nil
+            ns.layoutTextureKit = nil
+            ns.backdropInfo = nil
+
+            -- Re-hide NineSlice every show (Blizzard may restore styles between displays)
+            HideNineSlice(ns)
+
+            -- Clear any backdrop on the tooltip frame itself (belt-and-suspenders
+            -- with HideNineSlice — prevents doubled borders on tooltips with both
+            -- NineSlice AND BackdropTemplate).
+            if tooltip.SetBackdrop then
+                pcall(tooltip.SetBackdrop, tooltip, nil)
+            end
+
+            -- Update overlay backdrop and colors
+            local skinFrame = GetOrCreateSkinFrame(tooltip)
+            SyncOverlayLevel(skinFrame, tooltip)
+            local px = SkinBase.GetPixelSize(ns, 1)
+            local edge = math.max((thickness or 1), 2) * px
+            ApplyOverlayBackdrop(skinFrame, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            skinFrame:Show()
+        elseif tooltip.SetBackdrop then
+            local px = SkinBase.GetPixelSize(tooltip, 1)
+            local edge = SnapToPixel(tooltip, thickness * px)
+            ApplyTooltipBackdrop(tooltip, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        end
+
+        StripCompareHeader(tooltip)
+    end)
+
     reapplyingTooltip[tooltip] = nil
 end
 
-local function QueueDeferredReapply(tooltip, delay)
+---------------------------------------------------------------------------
+-- Combat-safe first skin: create overlay for a never-before-skinned tooltip
+-- during combat. All operations target NineSlice (C-side SetAlpha/SetTexture)
+-- or addon-owned overlay frames — never taint-restricted.
+-- Mirrors the pattern used for EmbeddedItemTooltip first-show-in-combat.
+---------------------------------------------------------------------------
+local function CombatSafeFirstSkin(tooltip)
     if not tooltip then return end
-    if deferredReapplyQueued[tooltip] then return end
-    deferredReapplyQueued[tooltip] = true
+    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+    if not IsEnabled() then return end
+    if skinnedTooltips[tooltip] then return end
 
-    C_Timer.After(delay or 0.05, function()
-        deferredReapplyQueued[tooltip] = nil
-        if not tooltip or (tooltip.IsForbidden and tooltip:IsForbidden()) then return end
-        if not IsEnabled() or not tooltip.IsShown or not tooltip:IsShown() then return end
-        if InCombatLockdown() then
-            pcall(CombatSafeReapply, tooltip)
-            return
+    local ns = tooltip.NineSlice
+    if ns then
+        pcall(ns.SetAlpha, ns, 0)
+        if ns.SetBackdrop then pcall(ns.SetBackdrop, ns, nil) end
+        local center = ns.Center
+        if center then
+            if center.SetTexture then pcall(center.SetTexture, center, nil) end
+            if center.SetAtlas then pcall(center.SetAtlas, center, nil) end
+            if center.SetAlpha then pcall(center.SetAlpha, center, 0) end
         end
-        if skinnedTooltips[tooltip] then
-            pcall(ReapplySkin, tooltip)
-        else
-            pcall(SkinTooltip, tooltip)
-        end
-    end)
+    end
+    local skinFrame = GetOrCreateSkinFrame(tooltip)
+    SyncOverlayLevel(skinFrame, tooltip)
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
+    local thickness = GetEffectiveBorderThickness()
+    local px = ns and SkinBase.GetPixelSize(ns, 1) or 1
+    local edge = math.max((thickness or 1), 2) * px
+    ApplyOverlayBackdrop(skinFrame, edge, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    skinFrame:Show()
+    skinnedTooltips[tooltip] = true
+    -- SafeHookTooltipOnShow is a forward declaration, safe to call here
+    -- because this function is only invoked at runtime (never during load).
+    if SafeHookTooltipOnShow then SafeHookTooltipOnShow(tooltip) end
 end
 
 ---------------------------------------------------------------------------
@@ -720,7 +731,7 @@ end
 -- QUI-owned overlay frame (addon frames are never taint-restricted).
 -- No geometry writes to Blizzard frames, no pixel size math needed.
 ---------------------------------------------------------------------------
-CombatSafeReapply = function(tooltip)
+local function CombatSafeReapply(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not IsEnabled() then return end
@@ -751,10 +762,17 @@ CombatSafeReapply = function(tooltip)
     if skinFrame then
         SyncOverlayLevel(skinFrame, tooltip)
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-        skinFrame:SetBackdropColor(bgr, bgg, bgb, bga)
-        skinFrame:SetBackdropBorderColor(sr, sg, sb, sa)
-        RememberOverlayColors(skinFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        TintTooltipBackdropIfPresent(tooltip, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        -- Update resilient color fields for OnSizeChanged fallback
+        skinFrame._quiBgR = bgr or 0.05
+        skinFrame._quiBgG = bgg or 0.05
+        skinFrame._quiBgB = bgb or 0.05
+        skinFrame._quiBgA = bga or 0.95
+        skinFrame._quiBorderR = sr or 0
+        skinFrame._quiBorderG = sg or 0
+        skinFrame._quiBorderB = sb or 0
+        skinFrame._quiBorderA = sa or 1
+        skinFrame:SetBackdropColor(skinFrame._quiBgR, skinFrame._quiBgG, skinFrame._quiBgB, skinFrame._quiBgA)
+        skinFrame:SetBackdropBorderColor(skinFrame._quiBorderR, skinFrame._quiBorderG, skinFrame._quiBorderB, skinFrame._quiBorderA)
         -- Ensure overlay is visible — Show is C-side (taint-safe).
         -- StripEmbeddedBorder hides the overlay when the tooltip is embedded
         -- inside a parent; re-show it when it's standalone again.
@@ -823,7 +841,11 @@ local function SetupEmbeddedTooltipHooks()
             if isEmbedded or tooltip.IsEmbedded then
                 StripEmbeddedBorder(tooltip)
             elseif InCombatLockdown() then
-                pcall(CombatSafeReapply, tooltip)
+                if skinnedTooltips[tooltip] then
+                    pcall(CombatSafeReapply, tooltip)
+                else
+                    pcall(CombatSafeFirstSkin, tooltip)
+                end
             elseif skinnedTooltips[tooltip] then
                 pcall(ReapplySkin, tooltip)
             else
@@ -843,7 +865,11 @@ local function SetupEmbeddedTooltipHooks()
             if not IsEnabled() then return end
             if not tooltip then return end
             if InCombatLockdown() then
-                pcall(CombatSafeReapply, tooltip)
+                if skinnedTooltips[tooltip] then
+                    pcall(CombatSafeReapply, tooltip)
+                else
+                    pcall(CombatSafeFirstSkin, tooltip)
+                end
             elseif skinnedTooltips[tooltip] then
                 pcall(ReapplySkin, tooltip)
             else
@@ -1045,14 +1071,7 @@ local function RefreshAllTooltipColors()
     -- Defer to next tooltip show if in combat — C-side calls (SetTexture, SetFont)
     -- propagate taint through the securecall chain to other addons' tooltip hooks.
     if InCombatLockdown() then return end
-    -- Refresh named tooltips from the static list
-    for _, name in ipairs(tooltipsToSkin) do
-        local tooltip = _G[name]
-        if tooltip and skinnedTooltips[tooltip] then
-            ReapplySkin(tooltip)
-        end
-    end
-    -- Also refresh dynamically skinned tooltips (via TooltipDataProcessor)
+    -- Single pass over all skinned tooltips (covers both static and dynamic)
     for tooltip in pairs(skinnedTooltips) do
         ReapplySkin(tooltip)
     end
@@ -1157,16 +1176,22 @@ HookTooltipOnShow = function(tooltip)
         end
 
         if InCombatLockdown() then
-            pcall(CombatSafeReapply, self)
-            QueueDeferredReapply(self, 0.08)
+            if skinnedTooltips[self] then
+                pcall(CombatSafeReapply, self)
+            else
+                pcall(CombatSafeFirstSkin, self)
+            end
             return
         end
 
         C_Timer.After(0, function()
             if not self:IsShown() then return end
             if InCombatLockdown() then
-                pcall(CombatSafeReapply, self)
-                QueueDeferredReapply(self, 0.08)
+                if skinnedTooltips[self] then
+                    pcall(CombatSafeReapply, self)
+                else
+                    pcall(CombatSafeFirstSkin, self)
+                end
                 return
             end
             pcall(ApplyTooltipFontSizeToFrame, self)
@@ -1175,8 +1200,6 @@ HookTooltipOnShow = function(tooltip)
             else
                 pcall(ReapplySkin, self)
             end
-            -- Late Blizzard style updates can happen after Show; run one more pass.
-            QueueDeferredReapply(self, 0.08)
         end)
     end)
 
@@ -1230,7 +1253,11 @@ local function SetupTooltipPostProcessor()
         if not tooltip or tooltip == EmbeddedItemTooltip then return end
         SafeHookTooltipOnShow(tooltip)
         if InCombatLockdown() then
-            pcall(CombatSafeReapply, tooltip)
+            if skinnedTooltips[tooltip] then
+                pcall(CombatSafeReapply, tooltip)
+            else
+                pcall(CombatSafeFirstSkin, tooltip)
+            end
         else
             DeferFontSizing(tooltip)
             if IsEnabled() and not skinnedTooltips[tooltip] then
@@ -1243,7 +1270,11 @@ local function SetupTooltipPostProcessor()
         if not tooltip or tooltip == EmbeddedItemTooltip then return end
         SafeHookTooltipOnShow(tooltip)
         if InCombatLockdown() then
-            pcall(CombatSafeReapply, tooltip)
+            if skinnedTooltips[tooltip] then
+                pcall(CombatSafeReapply, tooltip)
+            else
+                pcall(CombatSafeFirstSkin, tooltip)
+            end
         else
             DeferFontSizing(tooltip)
             if IsEnabled() and not skinnedTooltips[tooltip] then
@@ -1256,7 +1287,11 @@ local function SetupTooltipPostProcessor()
         if not tooltip or tooltip == EmbeddedItemTooltip then return end
         SafeHookTooltipOnShow(tooltip)
         if InCombatLockdown() then
-            pcall(CombatSafeReapply, tooltip)
+            if skinnedTooltips[tooltip] then
+                pcall(CombatSafeReapply, tooltip)
+            else
+                pcall(CombatSafeFirstSkin, tooltip)
+            end
         else
             DeferFontSizing(tooltip)
             if IsEnabled() and not skinnedTooltips[tooltip] then
@@ -1330,31 +1365,87 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             RebuildTooltipList()
 
             -----------------------------------------------------------------
-            -- GameTooltip visibility watcher (OnShow hook, event-driven).
+            -- GameTooltip visibility watcher (separate OnUpdate frame).
+            --
+            -- TAINT SAFETY: Do NOT use HookScript("OnShow") or
+            -- hooksecurefunc(GameTooltip, "Show") here.  Both modify
+            -- GameTooltip's dispatch tables, permanently tainting the
+            -- frame.  When the world map's secure context later uses
+            -- GameTooltip (secureexecuterange → AreaPoiUtil →
+            -- GameTooltip_AddWidgetSet → RegisterForWidgetSet →
+            -- ProcessWidget), it encounters the tainted frame and
+            -- produces secret-value arithmetic errors in UIWidget
+            -- Setup functions (TextWithState, ItemDisplay, etc.).
+            --
+            -- Instead, a tiny watcher frame polls IsShown() each
+            -- OnUpdate to detect visibility transitions without
+            -- touching GameTooltip's internals.  The 1-frame detection
+            -- delay is imperceptible and the primary skin application
+            -- already happens synchronously via SharedTooltip_
+            -- SetBackdropStyle and TooltipDataProcessor hooks.
             -----------------------------------------------------------------
-            GameTooltip:HookScript("OnShow", function(self)
-                if not IsEnabled() then
-                    return
-                elseif InCombatLockdown() then
-                    -- Combat: re-hide NineSlice + refresh overlay colors only.
-                    pcall(CombatSafeReapply, self)
-                    QueueDeferredReapply(self, 0.08)
-                else
-                    if not skinnedTooltips[self] then
-                        pcall(SkinTooltip, self)
-                    else
-                        pcall(ReapplySkin, self)
+            do
+                local gtWasShown = false
+                local watcher = CreateFrame("Frame")
+                watcher:Hide()  -- Start hidden: no OnUpdate cost when tooltip not shown
+                -- Event-driven activation: only poll during show transitions.
+                -- OnShow fires before data setup, so the watcher's 1-frame delay
+                -- is still needed — but now it only runs while the tooltip is visible.
+                GameTooltip:HookScript("OnShow", function() watcher:Show() end)
+                GameTooltip:HookScript("OnHide", function()
+                    gtWasShown = false
+                    watcher:Hide()
+                end)
+                watcher:SetScript("OnUpdate", function()
+                    local shown = GameTooltip:IsShown()
+                    if shown == gtWasShown then
+                        -- Already processed this transition; stop polling
+                        if shown then watcher:Hide() end
+                        return
                     end
-                    -- Defer font sizing to avoid tainting FontString metrics
-                    -- while Blizzard's tooltip chain is still running.
+                    gtWasShown = shown
+                    if not shown then watcher:Hide() return end
+                    -- GameTooltip just became visible
+                    if not IsEnabled() then return end
+                    if InCombatLockdown() then
+                        pcall(CombatSafeReapply, GameTooltip)
+                        return
+                    end
+                    if not skinnedTooltips[GameTooltip] then
+                        pcall(SkinTooltip, GameTooltip)
+                    else
+                        pcall(ReapplySkin, GameTooltip)
+                    end
                     C_Timer.After(0, function()
-                        if self:IsShown() then
-                            pcall(ApplyTooltipFontSizeToFrame, self)
-                            QueueDeferredReapply(self, 0.08)
+                        if GameTooltip:IsShown() then
+                            pcall(ApplyTooltipFontSizeToFrame, GameTooltip)
+                        end
+                        -- Discover comparison tooltips (ShoppingTooltip1/2).
+                        -- These may be lazily created by C-side code without
+                        -- triggering SharedTooltip_SetBackdropStyle, leaving
+                        -- them unskinned (white background).
+                        for i = 1, 2 do
+                            local st = _G["ShoppingTooltip" .. i]
+                            if st and st:IsShown() then
+                                if not hookedTooltips[st] then
+                                    SafeHookTooltipOnShow(st)
+                                end
+                                if not skinnedTooltips[st] then
+                                    if InCombatLockdown() then
+                                        pcall(CombatSafeFirstSkin, st)
+                                    else
+                                        pcall(SkinTooltip, st)
+                                    end
+                                elseif not InCombatLockdown() then
+                                    pcall(ReapplySkin, st)
+                                else
+                                    pcall(CombatSafeReapply, st)
+                                end
+                            end
                         end
                     end)
-                end
-            end)
+                end)
+            end
 
             -- All tooltip modifications gated by master toggle + skinTooltips
             if not IsEnabled() then

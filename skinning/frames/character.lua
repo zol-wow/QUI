@@ -100,11 +100,26 @@ end
 
 ---------------------------------------------------------------------------
 -- Hide Blizzard decorative elements on CharacterFrame
+-- NineSlice borders are hooked once so Blizzard cannot re-show them.
 ---------------------------------------------------------------------------
+local nineSliceHooked = {}
+
+local function HideNineSlice(ns)
+    if not ns then return end
+    ns:Hide()
+    ns:SetAlpha(0)
+    if not nineSliceHooked[ns] then
+        hooksecurefunc(ns, "Show", function(self) self:Hide(); self:SetAlpha(0) end)
+        nineSliceHooked[ns] = true
+    end
+end
+
 local function HideBlizzardDecorations()
     if CharacterFramePortrait then CharacterFramePortrait:Hide() end
     if CharacterFrame.Background then CharacterFrame.Background:Hide() end
-    if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
+    HideNineSlice(CharacterFrame.NineSlice)
+    HideNineSlice(CharacterFrameInset and CharacterFrameInset.NineSlice)
+    HideNineSlice(CharacterFrameInsetRight and CharacterFrameInsetRight.NineSlice)
     if CharacterFrameBg then CharacterFrameBg:Hide() end
     if CharacterStatsPane then CharacterStatsPane:Hide() end
 end
@@ -314,6 +329,9 @@ local function SetupCharacterFrameSkinning()
 
     -- Create initial background (non-extended for Rep/Currency default)
     CreateOrUpdateBackground()
+
+    -- Immediately hide Blizzard decorations and hook NineSlice Show
+    HideBlizzardDecorations()
 
     -- Hook ScrollBox updates for reputation (debounced to avoid timer spam during rapid scrolling)
     local _repUpdatePending = false

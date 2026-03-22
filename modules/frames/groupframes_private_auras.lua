@@ -198,6 +198,13 @@ local function RemoveAllAnchors(state)
         pcall(RemovePrivateAuraAnchor, anchorID)
         state.textAnchorIDs[i] = nil
     end
+    -- Hide stale WoW-rendered children left on containers
+    for _, container in ipairs(state.containers) do
+        for j = 1, container:GetNumChildren() do
+            local child = select(j, container:GetChildren())
+            if child then child:Hide() end
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -469,8 +476,32 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+-- UNIT_AURA: use centralized dispatcher instead of a duplicate global registration
+-- (eliminates a second handler that fired for every unit in the game)
 
-eventFrame:SetScript("OnEvent", function(self, event)
+-- Rate-limited per-frame refresh to clean up stale private aura renders
+local PA_REFRESH_CD = 1.0
+local paRefreshTimes = setmetatable({}, { __mode = "k" })
+
+-- Subscribe to centralized aura dispatcher for private aura refresh
+if ns.AuraEvents then
+    ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+        local GF = ns.QUI_GroupFrames
+        if not GF or not GF.initialized then return end
+        local frame = GF.unitFrameMap and GF.unitFrameMap[unit]
+        if not frame then return end
+        local state = frameState[frame]
+        if not state or #state.anchorIDs == 0 then return end
+        local now = GetTime()
+        if paRefreshTimes[frame] and now - paRefreshTimes[frame] < PA_REFRESH_CD then return end
+        paRefreshTimes[frame] = now
+        RemoveAllAnchors(state)
+        state.unit = ""
+        SetupPrivateAuras(frame)
+    end)
+end
+
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
 

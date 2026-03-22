@@ -134,101 +134,6 @@ local function CreateBar(parent)
     return bar
 end
 
-local function GetBarDisplayName(frame)
-    if not frame or not frame.GetRegions then return nil end
-    for _, region in ipairs({ frame:GetRegions() }) do
-        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-            local okText, rawText = pcall(region.GetText, region)
-            local text = okText and SafeValue(rawText, nil) or nil
-            if type(text) == "string" and text ~= "" then
-                local justify = region.GetJustifyH and region:GetJustifyH()
-                if justify ~= "RIGHT" then
-                    return text
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local function GetBlizzTrackedBarSpellData(blizzBarChild)
-    if not blizzBarChild then return nil end
-
-    local resolvedSpellID, baseSpellID, overrideSpellID, name
-    local cdInfo = blizzBarChild.cooldownInfo
-    if cdInfo then
-        overrideSpellID = SafeToNumber(cdInfo.overrideSpellID, nil)
-        baseSpellID = SafeToNumber(cdInfo.spellID, nil)
-        name = SafeValue(cdInfo.name, nil)
-        resolvedSpellID = overrideSpellID or baseSpellID
-    end
-
-    local cdID = blizzBarChild.cooldownID
-    if (not resolvedSpellID or not name) and cdID
-        and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
-        local okInfo, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
-        if okInfo and info then
-            overrideSpellID = overrideSpellID or SafeToNumber(info.overrideSpellID, nil)
-            baseSpellID = baseSpellID or SafeToNumber(info.spellID, nil)
-            name = name or SafeValue(info.name, nil)
-            resolvedSpellID = resolvedSpellID or overrideSpellID or baseSpellID
-        end
-    end
-
-    if not name then
-        name = GetBarDisplayName(blizzBarChild) or GetBarDisplayName(blizzBarChild.Bar)
-    end
-
-    if not resolvedSpellID and name and C_Spell and C_Spell.GetSpellInfo then
-        local okSpellInfo, spellInfo = pcall(C_Spell.GetSpellInfo, name)
-        if okSpellInfo and spellInfo and spellInfo.spellID then
-            baseSpellID = baseSpellID or spellInfo.spellID
-            resolvedSpellID = resolvedSpellID or spellInfo.spellID
-        end
-    end
-
-    if not resolvedSpellID and not name and not cdID then
-        return nil
-    end
-
-    return {
-        spellID = resolvedSpellID,
-        baseSpellID = baseSpellID or resolvedSpellID,
-        overrideSpellID = overrideSpellID,
-        name = name,
-        cooldownID = cdID,
-    }
-end
-
-local function GetTrackedBarOverrideColor(settings, spellData)
-    local overrides = settings and settings.colorOverrides
-    if type(overrides) ~= "table" or type(spellData) ~= "table" then
-        return nil
-    end
-
-    local color = spellData.spellID and overrides[spellData.spellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.overrideSpellID and overrides[spellData.overrideSpellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.baseSpellID and overrides[spellData.baseSpellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.cooldownID and overrides[spellData.cooldownID]
-    if type(color) == "table" then
-        return color
-    end
-
-    return nil
-end
-
 ---------------------------------------------------------------------------
 -- Helper functions for color overrides
 ---------------------------------------------------------------------------
@@ -581,9 +486,8 @@ local function ExtractSpellID(blizzBarChild)
         if not frame or not frame.GetRegions then return nil end
         for _, region in ipairs({ frame:GetRegions() }) do
             if region and region:GetObjectType() == "FontString" then
-                local okT, rawText = pcall(region.GetText, region)
-                local text = okT and SafeValue(rawText, nil) or nil
-                if type(text) == "string" and text ~= "" then
+                local okT, text = pcall(region.GetText, region)
+                if okT and type(text) == "string" and text ~= "" then
                     local justify = region:GetJustifyH()
                     if justify ~= "RIGHT" then return text end
                 end
@@ -1683,14 +1587,14 @@ function CDMBars:UpdateOwnedBars()
 end
 
 ---------------------------------------------------------------------------
--- OWNED BAR TIMER: 50ms OnUpdate to update duration text + bar fill.
+-- OWNED BAR TIMER: 100ms OnUpdate to update duration text + bar fill.
 -- Uses DurationObject:GetRemainingDuration() for remaining time and
 -- bar._totalDuration (cached from auraData OOC) for the fill ratio.
 -- MirrorBlizzBar hooks handle fill when a Blizzard bar child exists;
 -- this OnUpdate handles owned bars that have no Blizzard bar child,
 -- or supplements the mirror during combat when hooks may lag.
 ---------------------------------------------------------------------------
-local BAR_TIMER_INTERVAL = 0.05  -- 50ms = ~20 FPS
+local BAR_TIMER_INTERVAL = 0.1  -- 100ms = ~10 FPS (sufficient for duration text)
 
 barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
     self._elapsed = (self._elapsed or 0) + elapsed
@@ -1753,3 +1657,4 @@ barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
         self:Hide()
     end
 end)
+

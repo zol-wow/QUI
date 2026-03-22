@@ -650,6 +650,7 @@ local function ScanAll()
             _G.QUI_OnSpellDataChanged()
         end
     end
+    return changed
 end
 
 ---------------------------------------------------------------------------
@@ -2199,11 +2200,25 @@ function CDMSpellData:Initialize()
         initialized = true
         -- Initial reconciliation after scan data is available
         CDMSpellData:ReconcileAllContainers()
-        -- Start periodic scan (out of combat only, 0.5s interval)
+        -- Start periodic scan (out of combat only, 0.5s base interval).
+        -- Backs off to every 2s after 3s of no changes to reduce idle CPU.
         if not scanTimer then
+            local scanIdleCount = 0
+            local scanSkipCount = 0
             scanTimer = C_Timer.NewTicker(0.5, function()
-                if not InCombatLockdown() then
-                    ScanAll()
+                if InCombatLockdown() then return end
+                -- After 6 idle scans (3s of no changes), relax to every 4th tick (2s effective)
+                if scanIdleCount >= 6 then
+                    scanSkipCount = scanSkipCount + 1
+                    if scanSkipCount < 4 then return end
+                    scanSkipCount = 0
+                end
+                local changed = ScanAll()
+                if changed then
+                    scanIdleCount = 0
+                    scanSkipCount = 0
+                else
+                    scanIdleCount = scanIdleCount + 1
                 end
             end)
         end

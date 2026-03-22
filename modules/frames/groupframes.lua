@@ -49,7 +49,6 @@ QUI_GF.editMode = false
 -- State tables for taint safety (weak-keyed)
 local frameState, GetFrameState = Helpers.CreateStateTable()
 
-local healthThrottle = {}     -- unitToken → last update time
 local powerThrottle = {}      -- unitToken → last update time
 local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
 
@@ -457,9 +456,8 @@ end
 ---------------------------------------------------------------------------
 -- HELPERS: Health bar color
 ---------------------------------------------------------------------------
-local function GetHealthBarColor(unit)
-    local unitFrame = QUI_GF.unitFrameMap[unit]
-    local general = GetGeneralSettings(unitFrame and unitFrame._isRaid)
+local function GetHealthBarColor(unit, isRaid)
+    local general = GetGeneralSettings(isRaid)
     if general and general.darkMode then
         local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
         return c[1], c[2], c[3], c[4] or 1
@@ -481,9 +479,7 @@ end
 ---------------------------------------------------------------------------
 -- HELPERS: Power bar color
 ---------------------------------------------------------------------------
-local function GetPowerBarColor(unit)
-    local unitFrame = QUI_GF.unitFrameMap[unit]
-    local isRaid = unitFrame and unitFrame._isRaid or false
+local function GetPowerBarColor(unit, isRaid)
     local db = GetPowerSettings(isRaid)
     if db and not db.powerBarUsePowerColor then
         local c = db.powerBarColor or { 0.2, 0.4, 0.8, 1 }
@@ -531,7 +527,7 @@ local function UpdateHealth(frame)
         elseif isDeadOrGhost then
             frame.healthBar:SetStatusBarColor(COLOR_DEAD[1], COLOR_DEAD[2], COLOR_DEAD[3], COLOR_DEAD[4])
         else
-            local r, g, b, a = GetHealthBarColor(unit)
+            local r, g, b, a = GetHealthBarColor(unit, frame._isRaid)
             frame.healthBar:SetStatusBarColor(r, g, b, a)
         end
     end
@@ -611,9 +607,7 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Power
 ---------------------------------------------------------------------------
-local function ShouldShowPowerForUnit(unit)
-    local unitFrame = QUI_GF.unitFrameMap[unit]
-    local isRaid = unitFrame and unitFrame._isRaid or false
+local function ShouldShowPowerForUnit(unit, isRaid)
     local ps = GetPowerSettings(isRaid)
     if not ps then return true end
     local onlyHealers = ps.powerBarOnlyHealers
@@ -655,7 +649,7 @@ local function UpdatePower(frame)
     end
 
     -- Role-based filtering
-    if not ShouldShowPowerForUnit(unit) then
+    if not ShouldShowPowerForUnit(unit, frame._isRaid) then
         frame.powerBar:Hide()
         if frame._powerSeparator then frame._powerSeparator:Hide() end
         if frame._powerBg then frame._powerBg:Hide() end
@@ -681,7 +675,7 @@ local function UpdatePower(frame)
     frame.powerBar:SetValue(power)
 
     -- Update color
-    local r, g, b, a = GetPowerBarColor(unit)
+    local r, g, b, a = GetPowerBarColor(unit, frame._isRaid)
     frame.powerBar:SetStatusBarColor(r, g, b, a)
 end
 
@@ -733,8 +727,9 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Absorbs
 ---------------------------------------------------------------------------
-local function UpdateAbsorbs(frame)
-    if not frame or not frame.unit or not frame.absorbBar then return end
+-- Absorbs: optional pre-computed args from fast health path avoid redundant API calls.
+local function UpdateAbsorbs(frame, _unit, _maxHP)
+    if not frame or not frame.absorbBar then return end
     local isRaid = frame._isRaid
     local vdb = GetVisualDB(isRaid)
     if not vdb or not vdb.absorbs or vdb.absorbs.enabled == false then
@@ -742,13 +737,18 @@ local function UpdateAbsorbs(frame)
         return
     end
 
-    local unit = frame.unit
-    if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
-        frame.absorbBar:Hide()
-        return
+    local unit = _unit or frame.unit
+    if not unit then return end
+
+    -- When called standalone (UNIT_ABSORB_AMOUNT_CHANGED), do our own guards.
+    if not _unit then
+        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+            frame.absorbBar:Hide()
+            return
+        end
     end
 
-    local maxHP = UnitHealthMax(unit)
+    local maxHP = _maxHP or UnitHealthMax(unit)
     local absorbAmount = UnitGetTotalAbsorbs(unit)
 
     -- Only hide on nil (API unavailable). Do NOT check for zero — StatusBar
@@ -759,34 +759,44 @@ local function UpdateAbsorbs(frame)
         return
     end
 
+    -- Geometry is set up at frame creation (SetFrameLevel, SetAllPoints,
+    -- SetReverseFill, SetOrientation).  Only redo when orientation changes.
+    if frame._absorbVertical ~= frame._isVerticalFill then
+        frame.absorbBar:SetFrameLevel(frame.healthBar:GetFrameLevel() + 2)
+        frame.absorbBar:ClearAllPoints()
+        frame.absorbBar:SetAllPoints(frame.healthBar)
+        frame.absorbBar:SetReverseFill(true)
+        frame.absorbBar:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
+        frame._absorbVertical = frame._isVerticalFill
+    end
+
     -- C-side SetMinMaxValues/SetValue handle secret values natively — no pcall needed
-    -- Reverse fill from right, clamped to maxHP by StatusBar
-    frame.absorbBar:SetFrameLevel(frame.healthBar:GetFrameLevel() + 2)
-    frame.absorbBar:ClearAllPoints()
-    frame.absorbBar:SetAllPoints(frame.healthBar)
-    frame.absorbBar:SetReverseFill(true)
-    frame.absorbBar:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
     frame.absorbBar:SetMinMaxValues(0, maxHP)
     frame.absorbBar:SetValue(absorbAmount)
 
-    local ac
+    -- Color: avoid table allocation — pass r,g,b directly to C-side
+    local aa = vdb.absorbs.opacity or 0.3
     if vdb.absorbs.useClassColor then
         local _, class = UnitClass(unit)
         local cc = class and RAID_CLASS_COLORS[class]
-        ac = cc and { cc.r, cc.g, cc.b, 1 } or COLOR_WHITE
+        if cc then
+            frame.absorbBar:SetStatusBarColor(cc.r, cc.g, cc.b, aa)
+        else
+            frame.absorbBar:SetStatusBarColor(1, 1, 1, aa)
+        end
     else
-        ac = vdb.absorbs.color or COLOR_WHITE
+        local ac = vdb.absorbs.color or COLOR_WHITE
+        frame.absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], aa)
     end
-    local aa = vdb.absorbs.opacity or 0.3
-    frame.absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], aa)
     frame.absorbBar:Show()
 end
 
 ---------------------------------------------------------------------------
 -- UPDATE: Heal Prediction
 ---------------------------------------------------------------------------
-local function UpdateHealPrediction(frame)
-    if not frame or not frame.unit or not frame.healPredictionBar then return end
+-- HealPrediction: optional pre-computed args from fast health path avoid redundant API calls.
+local function UpdateHealPrediction(frame, _unit, _maxHP)
+    if not frame or not frame.healPredictionBar then return end
     local isRaid = frame._isRaid
     local vdb = GetVisualDB(isRaid)
     if not vdb or not vdb.healPrediction or vdb.healPrediction.enabled == false then
@@ -794,13 +804,18 @@ local function UpdateHealPrediction(frame)
         return
     end
 
-    local unit = frame.unit
-    if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
-        frame.healPredictionBar:Hide()
-        return
+    local unit = _unit or frame.unit
+    if not unit then return end
+
+    -- When called standalone (UNIT_HEAL_PREDICTION), do our own guards.
+    if not _unit then
+        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+            frame.healPredictionBar:Hide()
+            return
+        end
     end
 
-    local maxHP = UnitHealthMax(unit)
+    local maxHP = _maxHP or UnitHealthMax(unit)
     local incomingHeals
 
     -- Use CreateUnitHealPredictionCalculator (11.1+) if available (matches QUI pattern)
@@ -825,34 +840,44 @@ local function UpdateHealPrediction(frame)
         return
     end
 
-    -- Anchor from health fill edge — naturally constrains to remaining space.
-    local healthTexture = frame.healthBar:GetStatusBarTexture()
-
-    frame.healPredictionBar:ClearAllPoints()
-    if frame._isVerticalFill then
-        frame.healPredictionBar:SetPoint("BOTTOMLEFT", healthTexture, "TOPLEFT", 0, 0)
-        frame.healPredictionBar:SetPoint("TOPRIGHT", frame.healthBar, "TOPRIGHT", 0, 0)
-        frame.healPredictionBar:SetOrientation("VERTICAL")
-    else
-        frame.healPredictionBar:SetPoint("TOPLEFT", healthTexture, "TOPRIGHT", 0, 0)
-        frame.healPredictionBar:SetPoint("BOTTOMRIGHT", frame.healthBar, "BOTTOMRIGHT", 0, 0)
-        frame.healPredictionBar:SetOrientation("HORIZONTAL")
+    -- Anchor from health fill edge.  Only redo geometry when orientation changes.
+    if frame._healPredVertical ~= frame._isVerticalFill then
+        local healthTexture = frame.healthBar:GetStatusBarTexture()
+        frame.healPredictionBar:ClearAllPoints()
+        if frame._isVerticalFill then
+            frame.healPredictionBar:SetPoint("BOTTOMLEFT", healthTexture, "TOPLEFT", 0, 0)
+            frame.healPredictionBar:SetPoint("TOPRIGHT", frame.healthBar, "TOPRIGHT", 0, 0)
+            frame.healPredictionBar:SetOrientation("VERTICAL")
+        else
+            frame.healPredictionBar:SetPoint("TOPLEFT", healthTexture, "TOPRIGHT", 0, 0)
+            frame.healPredictionBar:SetPoint("BOTTOMRIGHT", frame.healthBar, "BOTTOMRIGHT", 0, 0)
+            frame.healPredictionBar:SetOrientation("HORIZONTAL")
+        end
+        frame._healPredVertical = frame._isVerticalFill
     end
 
     -- C-side SetMinMaxValues/SetValue handle secret values natively — no pcall needed
     frame.healPredictionBar:SetMinMaxValues(0, maxHP)
     frame.healPredictionBar:SetValue(incomingHeals)
 
-    local pc
+    -- Color: avoid table allocation — pass r,g,b directly to C-side
+    local pa = vdb.healPrediction.opacity or 0.5
     if vdb.healPrediction.useClassColor then
         local _, class = UnitClass(unit)
         local cc = class and RAID_CLASS_COLORS[class]
-        pc = cc and { cc.r, cc.g, cc.b, 1 } or { 0.2, 1, 0.2 }
+        if cc then
+            frame.healPredictionBar:SetStatusBarColor(cc.r, cc.g, cc.b, pa)
+        else
+            frame.healPredictionBar:SetStatusBarColor(0.2, 1, 0.2, pa)
+        end
     else
-        pc = vdb.healPrediction.color or { 0.2, 1, 0.2 }
+        local pc = vdb.healPrediction.color
+        if pc then
+            frame.healPredictionBar:SetStatusBarColor(pc[1], pc[2], pc[3], pa)
+        else
+            frame.healPredictionBar:SetStatusBarColor(0.2, 1, 0.2, pa)
+        end
     end
-    local pa = vdb.healPrediction.opacity or 0.5
-    frame.healPredictionBar:SetStatusBarColor(pc[1], pc[2], pc[3], pa)
     frame.healPredictionBar:Show()
 end
 
@@ -1113,6 +1138,8 @@ local function UpdateTargetHighlight(frame)
         local c = healerSettings.targetHighlight.color or { 1, 1, 1, 0.6 }
         frame.targetHighlight:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.6)
         frame.targetHighlight:Show()
+        -- Keep fast-path cache in sync (used by PLAYER_TARGET_CHANGED O(1) unhighlight)
+        QUI_GF._targetHighlightFrame = frame
     else
         frame.targetHighlight:Hide()
     end
@@ -1123,7 +1150,7 @@ end
 ---------------------------------------------------------------------------
 -- Helper: apply color to all 4 StatusBar borders + fill
 local function SetDispelBorderColor(overlay, r, g, b, a)
-    for _, key in ipairs({"borderTop", "borderBottom", "borderLeft", "borderRight"}) do
+    for _, key in ipairs(DISPEL_BORDER_KEYS) do
         local border = overlay[key]
         if border then
             border:GetStatusBarTexture():SetVertexColor(r, g, b, a)
@@ -1137,7 +1164,7 @@ end
 
 -- Helper: apply a ColorMixin (secret-safe) to all 4 StatusBar borders + fill
 local function SetDispelBorderColorMixin(overlay, color)
-    for _, key in ipairs({"borderTop", "borderBottom", "borderLeft", "borderRight"}) do
+    for _, key in ipairs(DISPEL_BORDER_KEYS) do
         local border = overlay[key]
         if border then
             local tex = border:GetStatusBarTexture()
@@ -1170,56 +1197,62 @@ local function UpdateDispelOverlay(frame)
     local unit = frame.unit
     local overlay = frame.dispelOverlay
 
-    -- WoW 12.0+ secret-safe path: C-side detection + color resolution
-    if C_UnitAuras.GetUnitAuras and C_UnitAuras.GetAuraDispelTypeColor then
-        local opacity = healerSettings.dispelOverlay.opacity or 0.8
-        local curve = GetDispelColorCurve(opacity)
-        if curve then
-            -- C-side filtering: no secret value reads in Lua
-            local ok, dispellables = pcall(C_UnitAuras.GetUnitAuras, unit, "HARMFUL|RAID_PLAYER_DISPELLABLE", 1)
-            if ok and dispellables and dispellables[1] then
-                local auraInstanceID = dispellables[1].auraInstanceID
-                if auraInstanceID then
-                    -- C-side dispel type → color resolution (returns ColorMixin)
-                    local cOk, color = pcall(C_UnitAuras.GetAuraDispelTypeColor, unit, auraInstanceID, curve)
-                    if cOk and color then
-                        SetDispelBorderColorMixin(overlay, color)
-                        overlay:Show()
-                        return
-                    end
-                end
-            end
-            -- No dispellable debuff found (or API returned nil)
-            overlay:Hide()
-            return
-        end
-    end
-
-    -- Fallback: check shared aura cache (avoids redundant slot-scanning)
-    local dispelType = nil
-    local colors = GetDispelColors()
+    -- Check shared aura cache first to avoid redundant C_UnitAuras.GetUnitAuras call.
+    -- The cache was just populated by the aura dispatcher before this function runs.
     local GFA = ns.QUI_GroupFrameAuras
     local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
+    local hasDispellable = false
+    local firstDispellableInstID = nil
+
     if cache and cache.harmful then
         for _, auraData in ipairs(cache.harmful) do
             if auraData.isHarmful and auraData.dispelName then
                 local dType = SafeValue(auraData.dispelName, nil)
-                if dType and colors[dType] then
-                    dispelType = dType
+                if dType then
+                    hasDispellable = true
+                    firstDispellableInstID = auraData.auraInstanceID
                     break
                 end
             end
         end
     end
 
-    if dispelType then
-        local c = colors[dispelType]
-        local fallbackOpacity = healerSettings.dispelOverlay.opacity or 0.8
-        SetDispelBorderColor(overlay, c[1], c[2], c[3], fallbackOpacity)
-        overlay:Show()
-    else
+    if not hasDispellable then
         overlay:Hide()
+        return
     end
+
+    -- WoW 12.0+ secret-safe path: C-side color resolution using cached auraInstanceID
+    if firstDispellableInstID and C_UnitAuras.GetAuraDispelTypeColor then
+        local opacity = healerSettings.dispelOverlay.opacity or 0.8
+        local curve = GetDispelColorCurve(opacity)
+        if curve then
+            local cOk, color = pcall(C_UnitAuras.GetAuraDispelTypeColor, unit, firstDispellableInstID, curve)
+            if cOk and color then
+                SetDispelBorderColorMixin(overlay, color)
+                overlay:Show()
+                return
+            end
+        end
+    end
+
+    -- Fallback: use dispel type from cache directly
+    local colors = GetDispelColors()
+    if cache and cache.harmful then
+        for _, auraData in ipairs(cache.harmful) do
+            if auraData.isHarmful and auraData.dispelName then
+                local dType = SafeValue(auraData.dispelName, nil)
+                if dType and colors[dType] then
+                    local c = colors[dType]
+                    local fallbackOpacity = healerSettings.dispelOverlay.opacity or 0.8
+                    SetDispelBorderColor(overlay, c[1], c[2], c[3], fallbackOpacity)
+                    overlay:Show()
+                    return
+                end
+            end
+        end
+    end
+    overlay:Hide()
 end
 
 ---------------------------------------------------------------------------
@@ -1234,6 +1267,22 @@ local DEFENSIVE_GROWTH_OFFSETS = {
     DOWN   = function(size, spacing) return 0, -(size + spacing) end,
 }
 
+-- Pre-cached dispel border key table (avoids per-call table allocation)
+local DISPEL_BORDER_KEYS = {"borderTop", "borderBottom", "borderLeft", "borderRight"}
+
+-- Pooled scratch tables for defensive indicator (avoids 40+ allocations per
+-- aura event in raids — wipe and reuse instead of creating fresh tables)
+local _scratchFoundAuras = {}
+local _scratchSeen = {}
+
+-- Defensive classification cache: auraInstanceID → true/false
+-- Classification is immutable per auraInstanceID.
+local _defensiveCache = {}
+
+-- Pre-cached filter strings (avoids string concatenation per call)
+local _filterBigDefensive
+local _filterExternalDefensive
+
 local function AuraMatchesDefensiveClassification(unit, auraInstanceID, classification)
     if not unit or not classification or not auraInstanceID or IsSecretValue(auraInstanceID) then
         return false
@@ -1242,11 +1291,30 @@ local function AuraMatchesDefensiveClassification(unit, auraInstanceID, classifi
         return false
     end
 
+    -- Use cached filter strings to avoid per-call string concatenation
+    local filterStr
+    if AuraUtil and AuraUtil.AuraFilters then
+        if classification == AuraUtil.AuraFilters.BigDefensive then
+            if not _filterBigDefensive then
+                _filterBigDefensive = "HELPFUL|" .. classification
+            end
+            filterStr = _filterBigDefensive
+        elseif classification == AuraUtil.AuraFilters.ExternalDefensive then
+            if not _filterExternalDefensive then
+                _filterExternalDefensive = "HELPFUL|" .. classification
+            end
+            filterStr = _filterExternalDefensive
+        end
+    end
+    if not filterStr then
+        filterStr = "HELPFUL|" .. classification
+    end
+
     local ok, filteredOut = pcall(
         C_UnitAuras.IsAuraFilteredOutByInstanceID,
         unit,
         auraInstanceID,
-        "HELPFUL|" .. classification
+        filterStr
     )
     if not ok or IsSecretValue(filteredOut) then
         return false
@@ -1273,13 +1341,22 @@ local function IsVerifiedDefensiveAura(unit, auraData)
         return false
     end
 
+    -- Check cache first
+    local cached = _defensiveCache[auraInstanceID]
+    if cached ~= nil then
+        return cached
+    end
+
     if AuraMatchesDefensiveClassification(unit, auraInstanceID, filters.BigDefensive) then
+        _defensiveCache[auraInstanceID] = true
         return true
     end
     if AuraMatchesDefensiveClassification(unit, auraInstanceID, filters.ExternalDefensive) then
+        _defensiveCache[auraInstanceID] = true
         return true
     end
 
+    _defensiveCache[auraInstanceID] = false
     return false
 end
 
@@ -1303,57 +1380,24 @@ local function UpdateDefensiveIndicator(frame)
     local defSettings = healerSettings.defensiveIndicator
     local maxIcons = defSettings.maxIcons or 3
 
-    -- Collect defensive auras (deduplicated by auraInstanceID)
-    local foundAuras = {}
-    local seen = {}
+    -- Collect defensive auras from the shared cache first (just populated by
+    -- the aura dispatcher). This avoids 2-3 redundant C_UnitAuras.GetUnitAuras
+    -- calls per unit per aura event (~60-100 saved C API calls per raid batch).
+    local foundAuras = _scratchFoundAuras
+    local seen = _scratchSeen
+    wipe(foundAuras)
+    wipe(seen)
 
-    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
-        -- BIG_DEFENSIVE filter
-        if AuraUtil and AuraUtil.AuraFilters and AuraUtil.AuraFilters.BigDefensive then
-            local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit,
-                "HELPFUL|" .. AuraUtil.AuraFilters.BigDefensive, maxIcons)
-            if ok and auras then
-                for _, aura in ipairs(auras) do
-                    if IsVerifiedDefensiveAura(unit, aura)
-                       and aura.auraInstanceID
-                       and not seen[aura.auraInstanceID] then
-                        seen[aura.auraInstanceID] = true
-                        foundAuras[#foundAuras + 1] = aura
-                    end
-                end
-            end
-        end
-        -- EXTERNAL_DEFENSIVE filter
-        if #foundAuras < maxIcons and AuraUtil and AuraUtil.AuraFilters
-           and AuraUtil.AuraFilters.ExternalDefensive then
-            local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit,
-                "HELPFUL|" .. AuraUtil.AuraFilters.ExternalDefensive, maxIcons - #foundAuras)
-            if ok and auras then
-                for _, aura in ipairs(auras) do
-                    if IsVerifiedDefensiveAura(unit, aura)
-                       and aura.auraInstanceID
-                       and not seen[aura.auraInstanceID] then
-                        seen[aura.auraInstanceID] = true
-                        foundAuras[#foundAuras + 1] = aura
-                        if #foundAuras >= maxIcons then break end
-                    end
-                end
-            end
-        end
-        -- Fallback: check shared aura cache for known defensive spell IDs
-        if #foundAuras < maxIcons then
-            local GFA = ns.QUI_GroupFrameAuras
-            local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
-            if cache and cache.helpful then
-                for _, auraData in ipairs(cache.helpful) do
-                    if IsVerifiedDefensiveAura(unit, auraData) then
-                        local instID = auraData.auraInstanceID
-                        if not instID or not seen[instID] then
-                            if instID then seen[instID] = true end
-                            foundAuras[#foundAuras + 1] = auraData
-                            if #foundAuras >= maxIcons then break end
-                        end
-                    end
+    local GFA = ns.QUI_GroupFrameAuras
+    local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
+    if cache and cache.helpful then
+        for _, auraData in ipairs(cache.helpful) do
+            if IsVerifiedDefensiveAura(unit, auraData) then
+                local instID = auraData.auraInstanceID
+                if not instID or not seen[instID] then
+                    if instID then seen[instID] = true end
+                    foundAuras[#foundAuras + 1] = auraData
+                    if #foundAuras >= maxIcons then break end
                 end
             end
         end
@@ -3423,8 +3467,9 @@ local function StartRangeCheck()
         ResolveRangeSpells()
     end
 
-    -- Slow fallback interval — UNIT_IN_RANGE_UPDATE is the primary driver
-    local interval = GetGroupSize() > 25 and 0.75 or 0.5
+    -- Slow fallback interval — UNIT_IN_RANGE_UPDATE is the primary driver.
+    -- Large raids use a longer interval to reduce per-tick work (40+ frames).
+    local interval = GetGroupSize() > 25 and 1.0 or 0.75
     rangeCheckTicker = C_Timer.NewTicker(interval, DoRangeCheck)
 end
 
@@ -3442,36 +3487,64 @@ end
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 
+-- Cached module-enabled flag: refreshed on settings change, avoids
+-- GetSettings() (5-6 table lookups) on every single unit event.
+local _cachedModuleEnabled = false
+local _cachedModuleDB = nil
+
+local function RefreshCachedEnabled()
+    local db = GetSettings()
+    _cachedModuleEnabled = db and db.enabled or false
+    _cachedModuleDB = db
+end
+
+-- Upvalue for fast string prefix check (replaces per-event regex)
+local sub = string.sub
+
 local function OnEvent(self, event, arg1, ...)
     if not QUI_GF.initialized then return end
-    local db = GetSettings()
-    if not db or not db.enabled then return end
 
-    -- Unit-specific events — dispatch via lookup map
-    -- Guard: arg1 is a unit string for unit events, but a boolean for
-    -- PLAYER_ENTERING_WORLD (isInitialLogin) — only index the map with strings.
-    local frame = (type(arg1) == "string") and QUI_GF.unitFrameMap[arg1]
+    -- Fast path: unit events use O(1) map lookup.
+    -- Skip GetSettings() entirely for units not in the map (nameplates,
+    -- boss, arena, target, focus, pet) — saves ~20k table lookups/sec in raids.
+    if type(arg1) == "string" then
+        local frame = QUI_GF.unitFrameMap[arg1]
 
-    -- Self-healing: rebuild map on lookup miss (QUI pattern)
-    -- Handles stale maps from combat zone transitions or delayed header updates
-    if type(arg1) == "string" and not frame and (arg1:match("^party%d") or arg1:match("^raid%d") or arg1 == "player") then
-        local now = GetTime()
-        if not QUI_GF.lastMapRebuild or (now - QUI_GF.lastMapRebuild) > 1.0 then
-            QUI_GF.lastMapRebuild = now
-            RebuildUnitFrameMap()
-            frame = QUI_GF.unitFrameMap[arg1]
+        if not frame then
+            -- Self-healing: rebuild map on miss for party/raid/player units.
+            -- Fast prefix check avoids per-event regex (string.sub vs :match).
+            local p4 = sub(arg1, 1, 4)
+            if p4 == "part" or p4 == "raid" or arg1 == "player" then
+                local now = GetTime()
+                if not QUI_GF.lastMapRebuild or (now - QUI_GF.lastMapRebuild) > 1.0 then
+                    QUI_GF.lastMapRebuild = now
+                    RebuildUnitFrameMap()
+                    frame = QUI_GF.unitFrameMap[arg1]
+                end
+            end
+            if not frame then return end  -- Not a tracked unit, bail early
         end
-    end
 
-    if frame then
+        -- Matched frame — check cached enabled state
+        if not _cachedModuleEnabled then return end
 
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
             -- No throttle — UNIT_HEALTH is already coalesced by the WoW client.
-            -- Throttling drops the final update, leaving the bar stale.
-            -- Process every UNIT_HEALTH without throttling.
+            -- Fast path: share unit/dead/maxHP across all three updates to avoid
+            -- redundant UnitExists, UnitIsDeadOrGhost, UnitHealthMax API calls
+            -- (3→1 of each per event in a 20-person raid).
+            local unit = frame.unit
+            if not unit or not UnitExists(unit) then return end
             UpdateHealth(frame)
-            UpdateAbsorbs(frame)
-            UpdateHealPrediction(frame)
+            local isDead = UnitIsDeadOrGhost(unit)
+            if isDead then
+                if frame.absorbBar then frame.absorbBar:Hide() end
+                if frame.healPredictionBar then frame.healPredictionBar:Hide() end
+            else
+                local maxHP = UnitHealthMax(unit)
+                UpdateAbsorbs(frame, unit, maxHP)
+                UpdateHealPrediction(frame, unit, maxHP)
+            end
 
         elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" then
             local now = GetTime()
@@ -3528,16 +3601,16 @@ local function OnEvent(self, event, arg1, ...)
             UpdateSummonPending(frame)
 
         elseif event == "READY_CHECK_CONFIRM" then
-            -- READY_CHECK_CONFIRM arg1 is a unit token, so it lands here.
-            -- Update ALL frames (not just the confirming unit) to stay consistent.
-            for _, f in pairs(QUI_GF.unitFrameMap) do
-                UpdateReadyCheck(f)
-            end
+            -- READY_CHECK_CONFIRM arg1 is a unit token — dispatch to that frame only.
+            -- GetReadyCheckStatus is per-unit, no cross-frame dependency.
+            UpdateReadyCheck(frame)
         end
         return
-    end
+    end  -- end unit event block (type(arg1) == "string")
 
-    -- Non-unit events — iterate relevant frames
+    -- Non-unit events — check enabled via cached flag
+    if not _cachedModuleEnabled then return end
+
     if event == "GROUP_ROSTER_UPDATE" then
         UpdateHeaderVisibility()
         UpdateFrameScaling(true)
@@ -3568,8 +3641,19 @@ local function OnEvent(self, event, arg1, ...)
         end)
 
     elseif event == "PLAYER_TARGET_CHANGED" then
+        -- O(1) unhighlight + O(N/2) average find-and-highlight with early exit
+        -- (replaces unconditional O(N) UpdateTargetHighlight on all 40 frames)
+        local prev = QUI_GF._targetHighlightFrame
+        if prev and prev.targetHighlight then
+            prev.targetHighlight:Hide()
+        end
+        QUI_GF._targetHighlightFrame = nil
         for _, frame in pairs(QUI_GF.unitFrameMap) do
-            UpdateTargetHighlight(frame)
+            if frame.unit and UnitIsUnit(frame.unit, "target") then
+                UpdateTargetHighlight(frame)
+                QUI_GF._targetHighlightFrame = frame
+                break
+            end
         end
 
     elseif event == "READY_CHECK" or event == "READY_CHECK_CONFIRM" then
@@ -3778,6 +3862,7 @@ end
 ---------------------------------------------------------------------------
 function QUI_GF:RefreshSettings()
     InvalidateCache()
+    RefreshCachedEnabled()
     dispelColorCurve = nil  -- Rebuild with new opacity on next use
 
     if not self.initialized then
@@ -3926,6 +4011,7 @@ function QUI_GF:Initialize()
     StartRangeCheck()
 
     self.initialized = true
+    RefreshCachedEnabled()
 
     -- Initialize click-casting
     local GFCC = ns.QUI_GroupFrameClickCast
@@ -3955,6 +4041,8 @@ end
 -- DISABLE
 ---------------------------------------------------------------------------
 function QUI_GF:Disable()
+    _cachedModuleEnabled = false
+    _cachedModuleDB = nil
     UnregisterEvents()
     StopRangeCheck()
 
