@@ -2978,11 +2978,13 @@ local defaults = {
             buffIconSize = 0,
             buffGrowLeft = false,
             buffGrowUp = false,
+            buffInvertSwipeDarkening = false,
             debuffIconsPerRow = 0,
             debuffIconSpacing = 0,
             debuffIconSize = 0,
             debuffGrowLeft = false,
             debuffGrowUp = false,
+            debuffInvertSwipeDarkening = false,
         },
         
         -- QUI Autohides

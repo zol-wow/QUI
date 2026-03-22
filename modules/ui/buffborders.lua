@@ -47,11 +47,13 @@ local DEFAULTS = {
     buffIconSize = 0,
     buffGrowLeft = false,
     buffGrowUp = false,
+    buffInvertSwipeDarkening = false,
     debuffIconsPerRow = 0,
     debuffIconSpacing = 0,
     debuffIconSize = 0,
     debuffGrowLeft = false,
     debuffGrowUp = false,
+    debuffInvertSwipeDarkening = false,
     buffBottomPadding = 10,
     debuffBottomPadding = 10,
 }
@@ -138,6 +140,13 @@ local function CreateAuraIcon(parent)
     icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
     icon.Cooldown:SetSwipeColor(0, 0, 0, 0.8)
     icon.Cooldown:SetDrawBling(false)
+    local baseSwipeReverse = false
+    if icon.Cooldown.GetReverse then
+        local ok, reverse = pcall(icon.Cooldown.GetReverse, icon.Cooldown)
+        if ok then
+            baseSwipeReverse = not not reverse
+        end
+    end
 
     -- .TextOverlay (above swipe so text is never behind it)
     icon.TextOverlay = CreateFrame("Frame", nil, icon)
@@ -174,6 +183,7 @@ local function CreateAuraIcon(parent)
     icon._filter = nil
     icon._rawDuration = nil
     icon._rawExpirationTime = nil
+    icon._baseSwipeReverse = baseSwipeReverse
     icon._isQUIAuraIcon = true
 
     -- Tooltip
@@ -581,6 +591,16 @@ local function UpdateAuraIcons(container, activeIcons, sortedList, filter, isBuf
         -- Store raw values (may be secret) — C-side functions handle them
         icon._rawDuration = duration
         icon._rawExpirationTime = expirationTime
+
+        -- Optional inversion so users can choose whether darkening ramps up
+        -- toward expiration or ramps down from full duration.
+        if icon.Cooldown and icon.Cooldown.SetReverse then
+            local invertKey = isBuff and "buffInvertSwipeDarkening" or "debuffInvertSwipeDarkening"
+            local invert = not not settings[invertKey]
+            local baseReverse = not not icon._baseSwipeReverse
+            local targetReverse = invert and (not baseReverse) or baseReverse
+            pcall(icon.Cooldown.SetReverse, icon.Cooldown, targetReverse)
+        end
 
         -- Cooldown swipe: pass secret values directly to C-side API
         if expirationTime and duration then
