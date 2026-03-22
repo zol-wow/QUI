@@ -834,8 +834,13 @@ local function ResolveOwnedEntry(entry, containerKey, index)
             resolved.isAura = true
         end
 
-        -- Check for override spell (e.g., talent replacements)
-        if C_Spell and C_Spell.GetOverrideSpell then
+        -- Check for override spell (e.g., talent replacements).
+        -- Skip for aura containers: displayID is already the resolved buff
+        -- spell ID (via _cdIDToCorrectSID / _abilityToAuraSpellID).
+        -- GetOverrideSpell is for ability overrides, not buffs — calling it
+        -- on an aura spell ID returns unrelated spells (e.g. Beacon of Light
+        -- resolving to Blessing of Freedom).
+        if not isAuraContainer and C_Spell and C_Spell.GetOverrideSpell then
             local ok, overrideID = pcall(C_Spell.GetOverrideSpell, displayID)
             if ok and overrideID and overrideID ~= displayID then
                 resolved.overrideSpellID = overrideID

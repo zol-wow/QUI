@@ -858,6 +858,17 @@ local function LayoutNativeButtons(barKey)
     if not container or not buttons or #buttons == 0 then return end
 
     local orientation, columns, iconCount, growUp, growLeft, sizeOverride, spacingOverride, heightOverride = GetOwnedLayout(barKey)
+
+    -- Stance bar: clamp iconCount to actual form count so callers that bypass
+    -- UpdateStanceBarLayout() (settings refresh, edit mode exit, etc.) never
+    -- lay out more buttons than the player's class has stances.
+    if barKey == "stance" and GetNumShapeshiftForms then
+        local numForms = GetNumShapeshiftForms() or 0
+        if numForms > 0 then
+            iconCount = math.min(iconCount, numForms)
+        end
+    end
+
     local isVertical = (orientation == "vertical")
 
     local numVisible = math.min(iconCount, #buttons)

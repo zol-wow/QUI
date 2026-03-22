@@ -1287,9 +1287,11 @@ local function UpdateIconCooldown(icon)
                             icon.StackText:Hide()
                         end
 
-                        -- Update texture from API (for spell overrides)
+                        -- Update texture using the original spell ID the user added.
+                        -- auraSpellID may be a remapped buff ID with a different
+                        -- icon — always show the spell the user recognises.
                         if icon.Icon and entry.type == "spell" then
-                            local texID = GetSpellTexture(auraSpellID)
+                            local texID = GetSpellTexture(entry.id)
                             if texID and texID ~= icon._lastTexture then
                                 icon.Icon:SetTexture(texID)
                                 icon._lastTexture = texID

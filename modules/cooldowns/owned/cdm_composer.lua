@@ -1974,23 +1974,16 @@ RefreshAddList = function()
     local sourceEntries = {}
     local containerType = ResolveContainerType(activeContainer) or "cooldown"
 
-    -- Build owned set for duplicate detection within the same type family
-    local isAuraType = (containerType == "aura" or containerType == "auraBar")
+    -- Build owned set for duplicate detection within the active container only.
+    -- A spell can appear in multiple containers (e.g. buff icon + buff bar).
     local ownedSet = {}
-    local allTabKeys = GetAllTabKeys()
-    for _, cKey in ipairs(allTabKeys) do
-        local cType = ResolveContainerType(cKey) or "cooldown"
-        local cIsAura = (cType == "aura" or cType == "auraBar")
-        if cIsAura == isAuraType then
-            local cDB = GetContainerDB(cKey)
-            if cDB and type(cDB.ownedSpells) == "table" then
-                for _, entry in ipairs(cDB.ownedSpells) do
-                    if type(entry) == "table" and entry.id then
-                        ownedSet[(entry.type or "spell") .. ":" .. entry.id] = true
-                    elseif type(entry) == "number" then
-                        ownedSet["spell:" .. entry] = true
-                    end
-                end
+    local activeDB = GetContainerDB(activeContainer)
+    if activeDB and type(activeDB.ownedSpells) == "table" then
+        for _, entry in ipairs(activeDB.ownedSpells) do
+            if type(entry) == "table" and entry.id then
+                ownedSet[(entry.type or "spell") .. ":" .. entry.id] = true
+            elseif type(entry) == "number" then
+                ownedSet["spell:" .. entry] = true
             end
         end
     end
