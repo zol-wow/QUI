@@ -51,6 +51,38 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinBase.MarkStyled(button)
 end
 
+-- Style a WowStyle1 dropdown button (different texture structure than standard buttons)
+local function StyleDropdownButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not button or SkinBase.IsStyled(button) then return end
+
+    SkinBase.StripTextures(button)
+
+    local btnBgR = math.min(bgr + 0.07, 1)
+    local btnBgG = math.min(bgg + 0.07, 1)
+    local btnBgB = math.min(bgb + 0.07, 1)
+    SkinBase.CreateBackdrop(button, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+
+    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
+
+    button:HookScript("OnEnter", function(self)
+        local bd = SkinBase.GetBackdrop(self)
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            local r, g, b, a = unpack(sc)
+            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+        end
+    end)
+    button:HookScript("OnLeave", function(self)
+        local bd = SkinBase.GetBackdrop(self)
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            bd:SetBackdropBorderColor(unpack(sc))
+        end
+    end)
+
+    SkinBase.MarkStyled(button)
+end
+
 -- Style tab button
 local function StyleTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not tab or SkinBase.IsStyled(tab) then return end
@@ -216,9 +248,9 @@ local function SkinSearchBar(sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if searchBar.SearchBox then
             StyleEditBox(searchBar.SearchBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
-        -- Filter button
+        -- Filter button (WowStyle1 dropdown — standard button textures don't apply)
         if searchBar.FilterButton then
-            StyleButton(searchBar.FilterButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            StyleDropdownButton(searchBar.FilterButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
         -- Search button
         if searchBar.SearchButton then
@@ -515,16 +547,23 @@ local function UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     end
 end
 
--- Style a category list button (left side navigation)
-local function StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not button or SkinBase.IsStyled(button) then return end
-
-    -- Hide default textures but keep SelectedTexture for state detection (hidden visually)
+-- Suppress a category button's default textures (safe to call on every refresh;
+-- the ScrollBox element initializer can restore alphas when recycling buttons)
+local function SuppressCategoryTextures(button)
+    if not button then return end
     SkinBase.StripTextures(button)
     if button.SelectedTexture then button.SelectedTexture:SetAlpha(0) end
     if button.NormalTexture then button.NormalTexture:SetAlpha(0) end
     local highlight = button:GetHighlightTexture()
     if highlight then highlight:SetAlpha(0) end
+end
+
+-- Style a category list button (left side navigation)
+local function StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not button or SkinBase.IsStyled(button) then return end
+
+    -- Hide default textures but keep SelectedTexture for state detection (hidden visually)
+    SuppressCategoryTextures(button)
 
     -- Create subtle backdrop
     SkinBase.CreateBackdrop(button, sr, sg, sb, sa * 0.5, math.min(bgr + 0.05, 1), math.min(bgg + 0.05, 1), math.min(bgb + 0.05, 1), 0.7)
@@ -572,6 +611,7 @@ local function SkinCategoriesList(sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local function RefreshCategoryButtons(self)
         SafeForEachFrame(self, function(button)
             StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            SuppressCategoryTextures(button)
             UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end)
     end
@@ -634,12 +674,12 @@ local function SkinAuctionHouse()
     -- Style tabs
     SkinAuctionHouseTabs(sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
-    -- Skin sub-panels
-    SkinCategoriesList(sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    SkinSearchBar(sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    SkinBrowsePanel(sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    SkinSellPanel(sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    SkinAuctionsPanel(sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    -- Skin sub-panels (pcall each so one failure doesn't block the rest)
+    pcall(SkinCategoriesList, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    pcall(SkinSearchBar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    pcall(SkinBrowsePanel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    pcall(SkinSellPanel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    pcall(SkinAuctionsPanel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     SkinBase.MarkSkinned(AuctionHouseFrame)
 end

@@ -147,48 +147,16 @@ local function BuildSkinningTab(tabContent)
     if general.gameMenuFontSize == nil then general.gameMenuFontSize = 12 end
     if general.gameMenuDim == nil then general.gameMenuDim = true end
 
-    CreateCollapsible("Game Menu", 8 * FORM_ROW + 8, function(body)
+    CreateCollapsible("Game Menu", 4 * FORM_ROW + 8, function(body)
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Skin Game Menu (Req. Reload)", "skinGameMenu", general, ReloadConfirm), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Add QUI Button (Req. Reload)", "addQUIButton", general, ReloadConfirm), body, sy)
         sy = P(GUI:CreateFormSlider(body, "Button Font Size", 8, 18, 1, "gameMenuFontSize", general, function()
             if _G.QUI_RefreshGameMenuFontSize then _G.QUI_RefreshGameMenuFontSize() end
         end), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Dim Background", "gameMenuDim", general, function()
+        P(GUI:CreateFormCheckbox(body, "Dim Background", "gameMenuDim", general, function()
             if _G.QUI_RefreshGameMenuDim then _G.QUI_RefreshGameMenuDim() end
         end), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "gameMenu")
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Keystone Frame
-    ---------------------------------------------------------------------------
-    CreateCollapsible("Keystone Frame", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Keystone Window (Req. Reload)", "skinKeystoneFrame", general, ReloadConfirm), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "keystone")
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Encounter Power Bar
-    ---------------------------------------------------------------------------
-    if general.skinPowerBarAlt == nil then general.skinPowerBarAlt = true end
-
-    CreateCollapsible("Encounter Power Bar", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Encounter Power Bar (Req. Reload)", "skinPowerBarAlt", general, ReloadConfirm), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "powerBarAlt")
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Alert Frames
-    ---------------------------------------------------------------------------
-    if general.skinAlerts == nil then general.skinAlerts = true end
-
-    CreateCollapsible("Alert Frames", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Alert Frames (Req. Reload)", "skinAlerts", general, ReloadConfirm), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "alerts")
     end)
 
     ---------------------------------------------------------------------------
@@ -202,10 +170,9 @@ local function BuildSkinningTab(tabContent)
     if db.loot.showTransmogMarker == nil then db.loot.showTransmogMarker = true end
     local lootDB = db.loot
 
-    CreateCollapsible("Loot Window", 9 * FORM_ROW + 8, function(body)
+    CreateCollapsible("Loot Window", 5 * FORM_ROW + 8, function(body)
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Skin Loot Window (Req. Reload)", "enabled", lootDB, ReloadConfirm), body, sy)
-        sy = AddBorderOverrides(body, sy, lootDB, "")
         sy = P(GUI:CreateFormCheckbox(body, "Loot Under Mouse", "lootUnderMouse", lootDB), body, sy)
         sy = P(GUI:CreateFormSlider(body, "Loot Cursor X Offset", -200, 200, 1, "lootUnderMouseOffsetX", lootDB), body, sy)
         sy = P(GUI:CreateFormSlider(body, "Loot Cursor Y Offset", -200, 200, 1, "lootUnderMouseOffsetY", lootDB), body, sy)
@@ -240,91 +207,33 @@ local function BuildSkinningTab(tabContent)
     end)
 
     ---------------------------------------------------------------------------
-    -- Loot History
+    -- Skin Blizzard Frames (combined toggles)
     ---------------------------------------------------------------------------
+    if general.skinPowerBarAlt == nil then general.skinPowerBarAlt = true end
+    if general.skinAlerts == nil then general.skinAlerts = true end
     if not db.lootResults then db.lootResults = {} end
     if db.lootResults.enabled == nil then db.lootResults.enabled = true end
-
-    CreateCollapsible("Loot History", 1 * FORM_ROW + 8, function(body)
-        local sy = -4
-        P(GUI:CreateFormCheckbox(body, "Skin Loot History (Req. Reload)", "enabled", db.lootResults, ReloadConfirm), body, sy)
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Reputation/Currency
-    ---------------------------------------------------------------------------
     if general.skinCharacterFrame == nil then general.skinCharacterFrame = true end
-
-    CreateCollapsible("Reputation/Currency", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Reputation/Currency (Req. Reload)", "skinCharacterFrame", general, ReloadConfirm), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "characterFrame")
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Inspect Frame
-    ---------------------------------------------------------------------------
     if general.skinInspectFrame == nil then general.skinInspectFrame = true end
-
-    CreateCollapsible("Inspect Frame", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Inspect Frame (Req. Reload)", "skinInspectFrame", general, ReloadConfirm), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "inspectFrame")
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Override Action Bar
-    ---------------------------------------------------------------------------
     if general.skinOverrideActionBar == nil then general.skinOverrideActionBar = false end
-
-    CreateCollapsible("Override Action Bar", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Override Action Bar (Req. Reload)", "skinOverrideActionBar", general, ReloadConfirm), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "overrideActionBar")
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Instance Frames
-    ---------------------------------------------------------------------------
     if general.skinInstanceFrames == nil then general.skinInstanceFrames = false end
-
-    CreateCollapsible("Instance Frames", 1 * FORM_ROW + 8, function(body)
-        local sy = -4
-        P(GUI:CreateFormCheckbox(body, "Skin Instance Frames (Req. Reload)", "skinInstanceFrames", general, ReloadConfirm), body, sy)
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Auction House
-    ---------------------------------------------------------------------------
     if general.skinAuctionHouse == nil then general.skinAuctionHouse = false end
-
-    CreateCollapsible("Auction House", 1 * FORM_ROW + 8, function(body)
-        local sy = -4
-        P(GUI:CreateFormCheckbox(body, "Skin Auction House (Req. Reload)", "skinAuctionHouse", general, ReloadConfirm), body, sy)
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Crafting Orders
-    ---------------------------------------------------------------------------
     if general.skinCraftingOrders == nil then general.skinCraftingOrders = false end
-
-    CreateCollapsible("Crafting Orders", 1 * FORM_ROW + 8, function(body)
-        local sy = -4
-        P(GUI:CreateFormCheckbox(body, "Skin Crafting Orders (Req. Reload)", "skinCraftingOrders", general, ReloadConfirm), body, sy)
-    end)
-
-    ---------------------------------------------------------------------------
-    -- Professions
-    ---------------------------------------------------------------------------
     if general.skinProfessions == nil then general.skinProfessions = false end
 
-    CreateCollapsible("Professions", 1 * FORM_ROW + 8, function(body)
+    CreateCollapsible("Skin Blizzard Frames", 12 * FORM_ROW + 8, function(body)
         local sy = -4
-        P(GUI:CreateFormCheckbox(body, "Skin Professions (Req. Reload)", "skinProfessions", general, ReloadConfirm), body, sy)
-    end)
-
-    CreateCollapsible("Third-Party Cleanup", 1 * FORM_ROW + 8, function(body)
-        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Alert Frames (Req. Reload)", "skinAlerts", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Auction House (Req. Reload)", "skinAuctionHouse", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Crafting Orders (Req. Reload)", "skinCraftingOrders", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Encounter Power Bar (Req. Reload)", "skinPowerBarAlt", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Inspect Frame (Req. Reload)", "skinInspectFrame", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Instance Frames (Req. Reload)", "skinInstanceFrames", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Keystone Window (Req. Reload)", "skinKeystoneFrame", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Loot History (Req. Reload)", "enabled", db.lootResults, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Override Action Bar (Req. Reload)", "skinOverrideActionBar", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Professions (Req. Reload)", "skinProfessions", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Reputation/Currency (Req. Reload)", "skinCharacterFrame", general, ReloadConfirm), body, sy)
         P(GUI:CreateFormCheckbox(body, "Suppress White Backdrops & NineSlice Borders", "skinThirdParty", general, RefreshAllSkinning), body, sy)
     end)
 

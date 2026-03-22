@@ -1597,6 +1597,11 @@ local function RefreshAll(forceSync)
         if ns.CDMIcons and ns.CDMIcons.SyncRangePoll then
             ns.CDMIcons:SyncRangePoll()
         end
+        -- Reapply icon visibility after layout so "active only" display
+        -- mode hides inactive icons that LayoutContainer() showed.
+        if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
+            ns.CDMIcons:UpdateAllCooldowns()
+        end
     else
         refreshTimers[1] = C_Timer.NewTimer(0.01, function()
             refreshTimers[1] = nil
@@ -1645,6 +1650,11 @@ local function RefreshAll(forceSync)
             -- Sync range poll OnUpdate based on current settings
             if ns.CDMIcons and ns.CDMIcons.SyncRangePoll then
                 ns.CDMIcons:SyncRangePoll()
+            end
+            -- Reapply icon visibility after layout so "active only" display
+            -- mode hides inactive icons that LayoutContainer() showed.
+            if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
+                ns.CDMIcons:UpdateAllCooldowns()
             end
         end)
     end
@@ -2023,6 +2033,11 @@ _G.QUI_OnEditModeExitCDM = function()
         UpdateAllLockedBars()
         if _G.QUI_UpdateCDMAnchoredUnitFrames then
             _G.QUI_UpdateCDMAnchoredUnitFrames()
+        end
+        -- Force icon visibility update so "active only" display mode hides
+        -- inactive icons that LayoutContainer() unconditionally showed.
+        if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
+            ns.CDMIcons:UpdateAllCooldowns()
         end
     end)
 end
