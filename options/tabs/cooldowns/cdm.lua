@@ -4400,6 +4400,7 @@ local function CreateCDMSetupPage(parent)
             holyPower = { 0.95, 0.90, 0.60, 1 },
             chi = { 0.00, 1.00, 0.59, 1 },
             comboPoints = { 1.00, 0.96, 0.41, 1 },
+            chargedComboPoints = { 0.00, 0.68, 1.00, 1 },
             soulShards = { 0.58, 0.51, 0.79, 1 },
             arcaneCharges = { 0.10, 0.10, 0.98, 1 },
             essence = { 0.20, 0.58, 0.50, 1 },
@@ -4574,6 +4575,13 @@ local function CreateCDMSetupPage(parent)
         comboPointsColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         comboPointsColor.dbKey = "comboPoints"
         table.insert(powerColorWidgets, comboPointsColor)
+        y = y - FORM_ROW
+
+        local chargedCPColor = GUI:CreateFormColorPicker(tabContent, "Charged Combo Points", "chargedComboPoints", pc, RefreshPowerBars)
+        chargedCPColor:SetPoint("TOPLEFT", PAD, y)
+        chargedCPColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        chargedCPColor.dbKey = "chargedComboPoints"
+        table.insert(powerColorWidgets, chargedCPColor)
         y = y - FORM_ROW
 
         local soulShardsColor = GUI:CreateFormColorPicker(tabContent, "Soul Shards", "soulShards", pc, RefreshPowerBars)
