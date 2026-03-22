@@ -760,11 +760,6 @@ local function IsSpellKnownByPlayer(spellID)
     if WoW_IsSpellKnown and WoW_IsSpellKnown(spellID) then return true end
     -- IsPlayerSpell covers talent-granted spells
     if WoW_IsPlayerSpell and WoW_IsPlayerSpell(spellID) then return true end
-    -- C_Spell.IsSpellUsable covers conditional availability
-    if C_Spell and C_Spell.IsSpellUsable then
-        local ok, usable = pcall(C_Spell.IsSpellUsable, spellID)
-        if ok and usable then return true end
-    end
     return false
 end
 
@@ -1245,6 +1240,9 @@ end
 -- CheckAllDormantSpells: Run dormant check on all container keys
 function CDMSpellData:CheckAllDormantSpells()
     local containerKeys = { "essential", "utility", "buff", "trackedBar" }
+    if ns.CDMContainers and ns.CDMContainers.GetAllContainerKeys then
+        containerKeys = ns.CDMContainers.GetAllContainerKeys()
+    end
     for _, key in ipairs(containerKeys) do
         self:CheckDormantSpells(key)
     end

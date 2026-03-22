@@ -58,6 +58,18 @@ function Utils.GetFontList()
     return list
 end
 
+function Utils.GetSoundList()
+    local sounds = {{value = "None", text = "None"}}
+    if LSM then
+        for _, name in ipairs(LSM:List("sound") or {}) do
+            if name ~= "None" then
+                sounds[#sounds + 1] = {value = name, text = name}
+            end
+        end
+    end
+    return sounds
+end
+
 ---------------------------------------------------------------------------
 -- STANDARD RELAYOUT
 ---------------------------------------------------------------------------

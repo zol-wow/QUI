@@ -1142,6 +1142,8 @@ function QUICore:HookEditMode()
             "PlayerCastingBarFrame",
             -- Tooltip
             "GameTooltipDefaultContainer",
+            -- Chat
+            "ChatFrame1",
         }
 
         local function InstallEditModeSuppression()

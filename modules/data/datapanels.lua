@@ -330,6 +330,30 @@ function Datapanels:DeletePanel(panelID)
     self.activePanels[panelID] = nil
 end
 
+--- Register frame resolvers for all active datapanels so the anchoring
+--- system can locate and reposition them on login/reload.
+function Datapanels:RegisterFrameResolvers()
+    local RegisterResolver = _G.QUI_RegisterFrameResolver
+    if not RegisterResolver then return end
+
+    local db = QUICore.db and QUICore.db.profile and QUICore.db.profile.quiDatatexts
+    if not db or not db.panels then return end
+
+    for i, panelConfig in ipairs(db.panels) do
+        local panelID = panelConfig.id
+        if panelID then
+            local elementKey = "datapanel_" .. panelID
+            local displayName = panelConfig.name or ("Datapanel: " .. panelID)
+            RegisterResolver(elementKey, {
+                resolver = function() return Datapanels.activePanels[panelID] end,
+                displayName = displayName,
+                category = "Display",
+                order = 10 + i,
+            })
+        end
+    end
+end
+
 --- Refresh all panels from saved variables
 function Datapanels:RefreshAll()
     -- Guard: db may not be ready yet on initial login
@@ -348,6 +372,15 @@ function Datapanels:RefreshAll()
         if panelConfig.id then
             self:CreatePanel(panelConfig.id, panelConfig)
         end
+    end
+
+    -- Register frame resolvers so the anchoring system can find and
+    -- reposition datapanels from saved frameAnchoring data on login.
+    self:RegisterFrameResolvers()
+
+    -- Apply saved frame anchors (overrides config.position when present)
+    if _G.QUI_ApplyAllFrameAnchors then
+        _G.QUI_ApplyAllFrameAnchors()
     end
 end
 

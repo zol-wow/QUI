@@ -226,7 +226,7 @@ local function NormalizePercent(value)
 end
 
 local function ExtractProgressPercent(info, tooltip)
-    if not info then return 0 end
+    if not info then return nil end
 
     -- Try direct percentage fields in priority order
     local directFields = {
@@ -256,13 +256,34 @@ local function ExtractProgressPercent(info, tooltip)
         end
     end
 
-    -- Scan all keys for anything containing "percent"
+    -- Scan all keys for anything containing "percent" or current/max pairs
+    local currentValues = {}
+    local maxValues = {}
     for key, value in pairs(info) do
         if type(value) == "number" then
             local keyText = tostring(key):lower()
             if keyText:find("percent", 1, true) then
                 local pct = NormalizePercent(value)
                 if pct then return pct end
+            end
+            if value >= 0 then
+                if keyText:find("current", 1, true) or keyText:find("value", 1, true)
+                    or keyText:find("progress", 1, true) or keyText:find("fulfilled", 1, true)
+                    or keyText:find("completed", 1, true) then
+                    currentValues[#currentValues + 1] = value
+                end
+                if keyText:find("max", 1, true) or keyText:find("total", 1, true)
+                    or keyText:find("required", 1, true) then
+                    maxValues[#maxValues + 1] = value
+                end
+            end
+        end
+    end
+    for _, current in ipairs(currentValues) do
+        for _, maxVal in ipairs(maxValues) do
+            if maxVal > 0 and current <= maxVal then
+                local pct = max(0, min(100, (current / maxVal) * 100))
+                if pct >= 0 and pct <= 100 then return pct end
             end
         end
     end
@@ -277,16 +298,91 @@ local function ExtractProgressPercent(info, tooltip)
         end
     end
 
-    -- Fallback to quest progress bar
-    if State.activeQuestID then
-        local ok, questPct = pcall(GetQuestProgressBarPercent, State.activeQuestID)
-        if ok and questPct then
-            local pct = SafeToNumber(questPct, 0)
-            if pct > 0 then return max(0, min(100, pct)) end
+    return nil
+end
+
+local function ExtractQuestObjectivePercent(questID)
+    if not questID then return nil end
+    if not C_QuestLog or not C_QuestLog.GetQuestObjectives then return nil end
+
+    -- Try quest progress bar first
+    local questBarPct = nil
+    local ok, rawPct = pcall(GetQuestProgressBarPercent, questID)
+    if ok and rawPct then
+        local val = SafeToNumber(rawPct, nil)
+        if val and val > 0 then
+            questBarPct = max(0, min(100, val))
         end
     end
 
-    return 0
+    -- Try quest objectives for granular progress
+    local ok2, objectives = pcall(C_QuestLog.GetQuestObjectives, questID)
+    if not ok2 or type(objectives) ~= "table" or #objectives == 0 then
+        return questBarPct
+    end
+
+    local totalFulfilled = 0
+    local totalRequired = 0
+    local anyNumericObjective = false
+
+    for _, objective in ipairs(objectives) do
+        if type(objective) == "table" then
+            local fulfilled = SafeToNumber(objective.numFulfilled, nil) or SafeToNumber(objective.fulfilled, nil)
+            local required = SafeToNumber(objective.numRequired, nil) or SafeToNumber(objective.required, nil)
+
+            -- Handle boolean finished with no required count
+            if fulfilled and not required and objective.finished ~= nil then
+                required = 1
+                fulfilled = objective.finished and 1 or max(0, fulfilled)
+            end
+
+            if fulfilled and required and required > 0 then
+                anyNumericObjective = true
+                totalFulfilled = totalFulfilled + max(0, fulfilled)
+                totalRequired = totalRequired + max(0, required)
+            else
+                -- Try parsing from text like "5/10" or "45%"
+                local text = objective.text
+                if type(text) == "string" and text ~= "" then
+                    local curText, maxText = text:match("(%d+)%s*/%s*(%d+)")
+                    local curVal = SafeToNumber(curText, nil)
+                    local maxVal = SafeToNumber(maxText, nil)
+                    if curVal and maxVal and maxVal > 0 then
+                        anyNumericObjective = true
+                        totalFulfilled = totalFulfilled + max(0, curVal)
+                        totalRequired = totalRequired + max(0, maxVal)
+                    else
+                        local pctText = text:match("(%d+)%s*%%")
+                        local pctVal = SafeToNumber(pctText, nil)
+                        if pctVal then
+                            return max(0, min(100, pctVal))
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local objectivePct = nil
+    if anyNumericObjective and totalRequired > 0 then
+        objectivePct = max(0, min(100, (totalFulfilled / totalRequired) * 100))
+    end
+
+    -- Return the best of objective % and quest bar %
+    if objectivePct and questBarPct then
+        return max(objectivePct, questBarPct)
+    end
+    return objectivePct or questBarPct
+end
+
+local STAGE_FALLBACK_QUARTERS = { [1] = 25, [2] = 50, [3] = 75, [4] = 100 }
+local STAGE_FALLBACK_THIRDS = { [1] = 0, [2] = 33, [3] = 66, [4] = 100 }
+
+local function GetStageFallbackPercent(stage)
+    local settings = GetSettings()
+    local tickStyle = settings and settings.tickStyle
+    local lookup = (tickStyle == "quarters") and STAGE_FALLBACK_QUARTERS or STAGE_FALLBACK_THIRDS
+    return lookup[stage] or 0
 end
 
 local PREY_PROGRESS_FINAL = 3
@@ -1310,15 +1406,24 @@ local function UpdatePreyState()
             end
 
             -- Try granular percent from widget fields
-            pct = ExtractProgressPercent(widgetInfo, widgetInfo.tooltip)
+            local widgetPct = ExtractProgressPercent(widgetInfo, widgetInfo.tooltip)
 
-            -- If no granular percent, estimate from stage
-            if pct == 0 and newStage > 1 then
-                if widgetInfo.progressState == PREY_PROGRESS_FINAL then
+            if widgetPct then
+                pct = widgetPct
+            else
+                -- Widget had no granular percent — try quest objectives
+                local objectivePct = ExtractQuestObjectivePercent(questID)
+                if objectivePct and objectivePct > 0 then
+                    pct = objectivePct
+                    -- Also derive stage from actual percent if no progressState
+                    if widgetInfo.progressState == nil then
+                        newStage = DetermineStageFromPercent(pct)
+                    end
+                elseif widgetInfo.progressState == PREY_PROGRESS_FINAL then
                     pct = 100
                 else
-                    local STAGE_PCT = { [1] = 0, [2] = 25, [3] = 50, [4] = 75 }
-                    pct = STAGE_PCT[newStage] or 0
+                    -- Stage fallback respecting thirds/quarters setting
+                    pct = GetStageFallbackPercent(newStage)
                 end
             end
 
@@ -1332,10 +1437,10 @@ local function UpdatePreyState()
         elseif questID then
             -- Widget no longer visible (e.g., left prey zone) — clear cached ID
             State.cachedWidgetID = nil
-            -- Fallback: quest progress bar
-            local ok, questPct = pcall(GetQuestProgressBarPercent, questID)
-            if ok and questPct then
-                pct = SafeToNumber(questPct, 0)
+            -- Try quest objectives for granular progress
+            local objectivePct = ExtractQuestObjectivePercent(questID)
+            if objectivePct then
+                pct = objectivePct
             end
             newStage = DetermineStageFromPercent(pct)
         end

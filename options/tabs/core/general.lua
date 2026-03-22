@@ -16,7 +16,7 @@ local function CreateGeneralQoLPage(parent)
         {name = "HUD Visibility", builder = ns.QUI_HUDVisibilityOptions.BuildHUDVisibilityTab},
         {name = "Cursor & Crosshair", builder = ns.QUI_CrosshairOptions.BuildCrosshairTab},
         -- Buff & Debuff settings moved to Layout Mode settings panels
-        {name = "Chat", builder = ns.QUI_ChatOptions.BuildChatTab},
+        -- Chat settings moved to Layout Mode settings panels
         {name = "Character Pane", builder = ns.QUI_CharacterOptions.BuildCharacterPaneTab},
         -- Tooltip, Skyriding, Missing Raid Buffs, Party Keystones moved to Layout Mode settings panels
         -- XP Tracker settings moved to Layout Mode settings panels

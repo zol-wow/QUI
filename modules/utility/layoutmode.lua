@@ -2200,6 +2200,47 @@ do
                 end,
             })
         end
+
+        -- Chat frame — child overlay so the handle matches the Blizzard
+        -- frame exactly (SetAllPoints) and drag moves ChatFrame1 directly.
+        local function ChatDB()
+            local core = Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.chat
+        end
+
+        um:RegisterElement({
+            key = "chatFrame1",
+            label = "Chat Frame",
+            group = "Display",
+            order = 4,
+            isOwned = true,
+            isEnabled = function()
+                local db = ChatDB()
+                return db and db.enabled ~= false
+            end,
+            setEnabled = function(val)
+                local db = ChatDB()
+                if db then db.enabled = val end
+                if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end
+            end,
+            getFrame = function()
+                return _G.ChatFrame1
+            end,
+            -- Extend overlay to cover tab bar above + glass backdrop + editbox below
+            setupOverlay = function(overlay, frame)
+                overlay:ClearAllPoints()
+                overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", -8, 32)
+                overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 8, -32)
+            end,
+            onOpen = function()
+                -- Deferred: CreateChildOverlay sets SetClampedToScreen(true)
+                -- after onOpen fires, so override on next frame.
+                C_Timer.After(0, function()
+                    local f = _G.ChatFrame1
+                    if f then f:SetClampedToScreen(false) end
+                end)
+            end,
+        })
     end
 
     C_Timer.After(2, RegisterDisplayElements)

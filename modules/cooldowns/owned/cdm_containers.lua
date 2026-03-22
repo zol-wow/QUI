@@ -238,43 +238,62 @@ end
 -- Also detects spec/class changes across login sessions (e.g. switching
 -- characters that share the same AceDB profile) and performs a spec
 -- profile save/load so stale spells from another class never display.
+
+-- Cross-session detection extracted so the 1.0s retry can re-run it.
+-- Returns true if a spec mismatch was detected and profiles were swapped.
+local function RunCrossSessionDetection(specID)
+    local db = GetDB()
+    if not db or not specID or specID == 0 then return false end
+
+    local lastSpecID = db._lastSpecID
+    if lastSpecID and lastSpecID ~= specID then
+        -- Save stale ownedSpells under the old spec before overwriting
+        local oldPrevious = _previousSpecID
+        _previousSpecID = lastSpecID
+        SaveCurrentSpecProfile()
+        _previousSpecID = oldPrevious
+
+        -- Invalidate caches — old spec data is stale
+        if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
+        if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
+            ns.CDMSpellData:InvalidateLearnedCache()
+        end
+
+        -- Load the correct spec profile (or fresh snapshot if first time)
+        LoadOrSnapshotSpecProfile(specID)
+    end
+    -- Persist the current spec ID for next session
+    db._lastSpecID = specID
+    return lastSpecID ~= nil and lastSpecID ~= specID
+end
+
 local function InitSpecTracking()
     _previousSpecID = GetCurrentSpecID()
-    -- If GetSpecializationInfo isn't ready yet (returns 0 or nil during early
-    -- load), retry once after a short delay so the first spec swap can save.
-    if not _previousSpecID or _previousSpecID == 0 then
+
+    if _previousSpecID and _previousSpecID ~= 0 then
+        RunCrossSessionDetection(_previousSpecID)
+    else
+        -- GetSpecializationInfo isn't ready yet (returns 0 or nil during early
+        -- load). Retry after a short delay — and re-run cross-session detection
+        -- so character/spec switches across sessions are still caught.
         C_Timer.After(1.0, function()
             if not _previousSpecID or _previousSpecID == 0 then
                 _previousSpecID = GetCurrentSpecID()
             end
-        end)
-    end
-
-    -- Cross-session spec/class detection: compare the DB-persisted spec ID
-    -- with the current spec. When they differ (different character or respec
-    -- while logged out), save the stale data under the old spec and load
-    -- the correct profile for the current spec.
-    local db = GetDB()
-    if db and _previousSpecID and _previousSpecID ~= 0 then
-        local lastSpecID = db._lastSpecID
-        if lastSpecID and lastSpecID ~= _previousSpecID then
-            -- Save stale ownedSpells under the old spec before overwriting
-            local oldPrevious = _previousSpecID
-            _previousSpecID = lastSpecID
-            SaveCurrentSpecProfile()
-            _previousSpecID = oldPrevious
-
-            -- Invalidate caches — old spec data is stale
-            if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
-            if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
-                ns.CDMSpellData:InvalidateLearnedCache()
+            if _previousSpecID and _previousSpecID ~= 0 then
+                local detected = RunCrossSessionDetection(_previousSpecID)
+                if detected then
+                    -- Delayed detection: run dormant cleanup and refresh
+                    if ns.CDMSpellData then
+                        ns.CDMSpellData:CheckAllDormantSpells()
+                        ns.CDMSpellData:ReconcileAllContainers()
+                    end
+                    if ns.CDMContainers and ns.CDMContainers.RefreshAll then
+                        ns.CDMContainers.RefreshAll()
+                    end
+                end
             end
-
-            -- Load the correct spec profile (or fresh snapshot if first time)
-            LoadOrSnapshotSpecProfile(_previousSpecID)
-        end
-        -- Persist the current spec ID for next session
-        db._lastSpecID = _previousSpecID
+        end)
     end
 end
 
@@ -668,11 +687,11 @@ function CDMContainers_API:GetAllContainerKeys()
     local ct = db and db.containers
     if not ct then return BUILTIN_KEYS end
 
+    -- Always include all built-in keys — they live at ncdm[key], not
+    -- in ncdm.containers, so checking ct[key] would exclude them.
     local result = {}
     for _, key in ipairs(BUILTIN_KEYS) do
-        if ct[key] then
-            result[#result + 1] = key
-        end
+        result[#result + 1] = key
     end
     local customKeys = {}
     for key in pairs(ct) do
