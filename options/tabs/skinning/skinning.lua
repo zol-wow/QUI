@@ -144,13 +144,15 @@ local function BuildSkinningTab(tabContent)
     ---------------------------------------------------------------------------
     if general.skinGameMenu == nil then general.skinGameMenu = false end
     if general.addQUIButton == nil then general.addQUIButton = false end
+    if general.addEditModeButton == nil then general.addEditModeButton = true end
     if general.gameMenuFontSize == nil then general.gameMenuFontSize = 12 end
     if general.gameMenuDim == nil then general.gameMenuDim = true end
 
-    CreateCollapsible("Game Menu", 4 * FORM_ROW + 8, function(body)
+    CreateCollapsible("Game Menu", 5 * FORM_ROW + 8, function(body)
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Skin Game Menu (Req. Reload)", "skinGameMenu", general, ReloadConfirm), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Add QUI Button (Req. Reload)", "addQUIButton", general, ReloadConfirm), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Add Edit Mode Button (Req. Reload)", "addEditModeButton", general, ReloadConfirm), body, sy)
         sy = P(GUI:CreateFormSlider(body, "Button Font Size", 8, 18, 1, "gameMenuFontSize", general, function()
             if _G.QUI_RefreshGameMenuFontSize then _G.QUI_RefreshGameMenuFontSize() end
         end), body, sy)

@@ -34,6 +34,7 @@ local buttonOverlays = Helpers.CreateStateTable() -- weak-keyed: overlay info pe
 local overlayContainer = nil   -- UIParent-child container for all overlays
 local menuBackdrop = nil       -- backdrop overlay for GameMenuFrame itself
 local quiStandaloneButton = nil -- standalone QUI button (parented to UIParent)
+local editModeButton = nil      -- standalone Edit Mode button (parented to UIParent)
 
 -- Get game menu font size from settings
 local function GetGameMenuFontSize()
@@ -297,6 +298,11 @@ local function RefreshGameMenuColors()
     if quiStandaloneButton then
         UpdateButtonColors(quiStandaloneButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
+
+    -- Also refresh the Edit Mode button overlay
+    if editModeButton then
+        UpdateButtonColors(editModeButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    end
 end
 
 -- Refresh font size on game menu buttons
@@ -318,6 +324,14 @@ local function RefreshGameMenuFontSize()
     -- Also refresh the QUI standalone button overlay text
     if quiStandaloneButton then
         local info = buttonOverlays[quiStandaloneButton]
+        if info and info.overlayText then
+            info.overlayText:SetFont(fontPath, fontSize, FONT_FLAGS)
+        end
+    end
+
+    -- Also refresh the Edit Mode button overlay text
+    if editModeButton then
+        local info = buttonOverlays[editModeButton]
         if info and info.overlayText then
             info.overlayText:SetFont(fontPath, fontSize, FONT_FLAGS)
         end
@@ -377,11 +391,6 @@ local function PositionStandaloneButton()
             quiStandaloneButton:Hide()
             local info = buttonOverlays[quiStandaloneButton]
             if info and info.overlay then info.overlay:Hide() end
-        end
-        -- Restore backdrop to default (covers GameMenuFrame only)
-        if menuBackdrop then
-            menuBackdrop:ClearAllPoints()
-            menuBackdrop:SetAllPoints(GameMenuFrame)
         end
         return
     end
@@ -447,29 +456,133 @@ local function PositionStandaloneButton()
         end
     end
 
-    -- Extend the menu backdrop to cover the QUI button.
-    -- Deferred by one frame so GetBottom() returns the resolved position.
-    if menuBackdrop then
-        C_Timer.After(0, function()
-            if not quiStandaloneButton or not quiStandaloneButton:IsShown() then
-                if menuBackdrop then
-                    menuBackdrop:ClearAllPoints()
-                    menuBackdrop:SetAllPoints(GameMenuFrame)
-                end
-                return
-            end
-            local gmBottom = GameMenuFrame:GetBottom()
-            local btnBottom = quiStandaloneButton:GetBottom()
-            if gmBottom and btnBottom and btnBottom < gmBottom then
-                local extend = gmBottom - btnBottom + 12 -- 12px padding below button
-                menuBackdrop:ClearAllPoints()
-                menuBackdrop:SetPoint("TOPLEFT", GameMenuFrame, "TOPLEFT")
-                menuBackdrop:SetPoint("TOPRIGHT", GameMenuFrame, "TOPRIGHT")
-                menuBackdrop:SetPoint("BOTTOMLEFT", GameMenuFrame, "BOTTOMLEFT", 0, -extend)
-                menuBackdrop:SetPoint("BOTTOMRIGHT", GameMenuFrame, "BOTTOMRIGHT", 0, -extend)
-            end
-        end)
+end
+
+---------------------------------------------------------------------------
+-- EDIT MODE STANDALONE BUTTON (parented to UIParent, NOT GameMenuFrame)
+---------------------------------------------------------------------------
+local function GetOrCreateEditModeButton()
+    if editModeButton then return editModeButton end
+
+    editModeButton = CreateFrame("Button", "QUIGameMenuEditModeButton", UIParent, "UIPanelButtonTemplate")
+    editModeButton:SetText("QUI Edit Mode")
+    editModeButton:SetSize(160, 30)
+    editModeButton:SetFrameStrata("DIALOG")
+    editModeButton:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
+        HideUIPanel(GameMenuFrame)
+        if _G.QUI_ToggleLayoutMode then
+            _G.QUI_ToggleLayoutMode()
+        end
+    end)
+    editModeButton:Hide()
+
+    return editModeButton
+end
+
+-- Position the Edit Mode button below the QUI button (if visible) or below GameMenuFrame.
+local function PositionEditModeButton()
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
+    if not settings or settings.addEditModeButton == false then
+        if editModeButton then
+            editModeButton:Hide()
+            local info = buttonOverlays[editModeButton]
+            if info and info.overlay then info.overlay:Hide() end
+        end
+        return
     end
+
+    if not GameMenuFrame or not GameMenuFrame.buttonPool then return end
+
+    local btn = GetOrCreateEditModeButton()
+
+    -- Anchor below the QUI button if it's visible, otherwise below GameMenuFrame
+    local anchor = (quiStandaloneButton and quiStandaloneButton:IsShown()) and quiStandaloneButton or GameMenuFrame
+
+    btn:ClearAllPoints()
+    btn:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+
+    -- Match button size to pool buttons
+    local refButton = nil
+    for button in GameMenuFrame.buttonPool:EnumerateActive() do
+        refButton = button
+        break
+    end
+    if refButton then
+        btn:SetWidth(refButton:GetWidth())
+        btn:SetHeight(refButton:GetHeight())
+    end
+    btn:SetFrameLevel(GameMenuFrame:GetFrameLevel() + 10)
+    btn:Show()
+
+    -- Style the Edit Mode button when game menu skinning is enabled
+    local core2 = GetCore()
+    local stg2 = core2 and core2.db and core2.db.profile and core2.db.profile.general
+    if stg2 and stg2.skinGameMenu then
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg2, "gameMenu")
+        StyleButton(btn, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+
+        -- Ensure the text renders above the overlay backdrop
+        local info = buttonOverlays[btn]
+        if info and info.overlay then
+            if not info.overlayText then
+                local ot = info.overlay:CreateFontString(nil, "OVERLAY")
+                ot:SetPoint("CENTER")
+                ot:SetJustifyH("CENTER")
+                ot:SetJustifyV("MIDDLE")
+                info.overlayText = ot
+            end
+            local fp = Helpers.GetGeneralFont()
+            local fs = GetGameMenuFontSize()
+            info.overlayText:SetFont(fp, fs, FONT_FLAGS)
+            info.overlayText:SetText("QUI Edit Mode")
+            info.overlayText:SetTextColor(unpack(COLORS.text))
+            local origText = btn:GetFontString()
+            if origText then origText:SetAlpha(0) end
+        end
+    end
+end
+
+-- Extend the menu backdrop to cover all standalone buttons (QUI + Edit Mode).
+-- Called after both buttons are positioned. Deferred by one frame so
+-- GetBottom() returns the resolved position.
+local function ExtendMenuBackdrop()
+    if not menuBackdrop then return end
+
+    C_Timer.After(0, function()
+        -- Find the lowest visible standalone button
+        local lowestBottom = nil
+        if quiStandaloneButton and quiStandaloneButton:IsShown() then
+            local b = quiStandaloneButton:GetBottom()
+            if b then lowestBottom = b end
+        end
+        if editModeButton and editModeButton:IsShown() then
+            local b = editModeButton:GetBottom()
+            if b and (not lowestBottom or b < lowestBottom) then
+                lowestBottom = b
+            end
+        end
+
+        if not lowestBottom then
+            menuBackdrop:ClearAllPoints()
+            menuBackdrop:SetAllPoints(GameMenuFrame)
+            return
+        end
+
+        local gmBottom = GameMenuFrame:GetBottom()
+        if gmBottom and lowestBottom < gmBottom then
+            local extend = gmBottom - lowestBottom + 12
+            menuBackdrop:ClearAllPoints()
+            menuBackdrop:SetPoint("TOPLEFT", GameMenuFrame, "TOPLEFT")
+            menuBackdrop:SetPoint("TOPRIGHT", GameMenuFrame, "TOPRIGHT")
+            menuBackdrop:SetPoint("BOTTOMLEFT", GameMenuFrame, "BOTTOMLEFT", 0, -extend)
+            menuBackdrop:SetPoint("BOTTOMRIGHT", GameMenuFrame, "BOTTOMRIGHT", 0, -extend)
+        else
+            menuBackdrop:ClearAllPoints()
+            menuBackdrop:SetAllPoints(GameMenuFrame)
+        end
+    end)
 end
 
 ---------------------------------------------------------------------------
@@ -535,6 +648,8 @@ if GameMenuFrame then
             end
 
             PositionStandaloneButton()
+            PositionEditModeButton()
+            ExtendMenuBackdrop()
 
             if skinState.skinned and GameMenuFrame.buttonPool then
                 local count = 0
@@ -565,6 +680,8 @@ if GameMenuFrame then
                     HideBlizzardDecorations()
                 end
                 PositionStandaloneButton()
+                PositionEditModeButton()
+                ExtendMenuBackdrop()
                 if skinState.skinned and GameMenuFrame.buttonPool then
                     local core3 = GetCore()
                     local stg3 = core3 and core3.db and core3.db.profile and core3.db.profile.general
@@ -607,7 +724,11 @@ if GameMenuFrame then
                 quiStandaloneButton:Hide()
             end
 
-            -- Reset backdrop to default size (no QUI button extension)
+            if editModeButton then
+                editModeButton:Hide()
+            end
+
+            -- Reset backdrop to default size (no standalone button extension)
             if menuBackdrop then
                 menuBackdrop:ClearAllPoints()
                 menuBackdrop:SetAllPoints(GameMenuFrame)

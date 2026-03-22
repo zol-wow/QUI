@@ -40,6 +40,7 @@ local defaults = {
             skinGameMenu = false,  -- Skin ESC menu (opt-in)
             allowReloadInCombat = false,  -- Allow /reload during combat (bypass SafeReload)
             addQUIButton = false,  -- Add QUI button to ESC menu (opt-in)
+            addEditModeButton = true,  -- Add QUI Edit Mode button to ESC menu
             gameMenuFontSize = 12,  -- Game menu button font size
             gameMenuDim = true,  -- Dim background when game menu is open
             skinPowerBarAlt = true,  -- Skin encounter/quest power bar (PlayerPowerBarAlt)

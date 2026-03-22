@@ -1020,50 +1020,6 @@ visibilityEventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
 
 local _pendingSetupTimer = nil
 
--- Polling ticker for flying state changes.
--- No WoW event fires when transitioning from mounted-on-ground to airborne,
--- so we poll IsFlying()/IsPlayerSkyriding() briefly after mount-related events.
-local _flyingTicker = nil
-local _lastFlyingState = false
-
-local function StartFlyingStateTicker()
-    if _flyingTicker then return end
-
-    local ticks = 0
-    _lastFlyingState = (Helpers.IsPlayerFlying() or Helpers.IsPlayerSkyriding())
-
-    _flyingTicker = C_Timer.NewTicker(0.5, function()
-        ticks = ticks + 1
-        local isMounted = Helpers.IsPlayerMounted()
-
-        -- Stop polling after dismount or 30s (60 ticks)
-        if not isMounted or ticks > 60 then
-            if _flyingTicker then
-                _flyingTicker:Cancel()
-                _flyingTicker = nil
-            end
-            -- One final update on dismount
-            if not isMounted then
-                _lastFlyingState = false
-                UpdateCDMVisibility()
-                UpdateUnitframesVisibility()
-                UpdateActionBarsVisibility()
-                UpdateChatVisibility()
-            end
-            return
-        end
-
-        local nowFlying = (Helpers.IsPlayerFlying() or Helpers.IsPlayerSkyriding())
-        if nowFlying ~= _lastFlyingState then
-            _lastFlyingState = nowFlying
-            UpdateCDMVisibility()
-            UpdateUnitframesVisibility()
-            UpdateActionBarsVisibility()
-            UpdateChatVisibility()
-        end
-    end)
-end
-
 visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_FLAGS_CHANGED" then
         local unit = ...
@@ -1104,12 +1060,6 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
             UpdateActionBarsVisibility()
             UpdateChatVisibility()
         end)
-    end
-
-    -- Start polling for flying state after mount/shapeshift events
-    if event == "PLAYER_MOUNT_DISPLAY_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM"
-        or event == "PLAYER_IS_GLIDING_CHANGED" then
-        StartFlyingStateTicker()
     end
 
     -- Always try an immediate update too (works for events where frames

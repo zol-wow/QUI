@@ -23,6 +23,7 @@ local tremove = table.remove
 local CreateFrame = CreateFrame
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
+local CancelUnitBuff = CancelUnitBuff
 
 -- Private aura API (WoW 10.1.0+)
 local AddPrivateAuraAnchor = C_UnitAuras and C_UnitAuras.AddPrivateAuraAnchor
@@ -215,6 +216,27 @@ local function CreateAuraIcon(parent)
             local s = GetSettings()
             container:SetAlpha(s and s.fadeOutAlpha or 0)
         end
+    end)
+
+    -- Right-click to cancel buff (out of combat only)
+    icon:SetScript("OnMouseUp", function(self, button)
+        if button ~= "RightButton" then return end
+        if InCombatLockdown() then return end
+        if not self._auraInstanceID or self._auraInstanceID <= 0 then return end
+        if self._filter ~= "HELPFUL" then return end
+        if not AuraUtil or not AuraUtil.ForEachAura then return end
+        if not CancelUnitBuff then return end
+
+        -- Find the buff slot index matching this auraInstanceID at click-time
+        local targetID = self._auraInstanceID
+        local slot = 0
+        AuraUtil.ForEachAura("player", "HELPFUL", nil, function(auraData)
+            slot = slot + 1
+            if auraData and auraData.auraInstanceID == targetID then
+                pcall(CancelUnitBuff, "player", slot, "HELPFUL")
+                return true
+            end
+        end, true)
     end)
 
     icon:Hide()
