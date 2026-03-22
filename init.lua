@@ -115,7 +115,7 @@ function QUI:SlashCommandOpen(input)
         while f do
             local vis = f:IsVisible()
             if not isS(vis) and vis then
-                -- Check for white backdrop color
+                -- Check for white backdrop color (explicit white via GetBackdropColor)
                 if f.GetBackdropColor then
                     local r, g, b = f:GetBackdropColor()
                     if not isS(r) and r and r > 0.9 and g > 0.9 and b > 0.9 then
@@ -127,6 +127,27 @@ function QUI:SlashCommandOpen(input)
                             if p then
                                 print("  parent:", p:GetName() or tostring(p))
                             end
+                        end
+                    end
+                end
+                -- Check for orphaned overlay: has BackdropTemplate + backdrop set,
+                -- but backdropColor is nil — pieces render as default WHITE8x8.
+                -- GetBackdropColor returns 0,0,0,0 when backdropColor is nil,
+                -- so the white-check above misses these.
+                if f.backdropInfo and not f.backdropColor and f.GetBackdropColor then
+                    local h = f:GetHeight()
+                    if not isS(h) and h and h > 10 then
+                        count = count + 1
+                        print("|cffff4400ORPHANED OVERLAY:|r", f:GetName() or tostring(f), ("h=%.0f backdropColor=nil"):format(h))
+                        local p = f:GetParent()
+                        if p then
+                            print("  parent:", p:GetName() or tostring(p))
+                        end
+                        -- If it has _qui color fields, report them
+                        if f._quiBgR then
+                            print("  _qui colors present — attempting recovery")
+                            pcall(f.SetBackdropColor, f, f._quiBgR, f._quiBgG, f._quiBgB, f._quiBgA)
+                            pcall(f.SetBackdropBorderColor, f, f._quiBorderR, f._quiBorderG, f._quiBorderB, f._quiBorderA)
                         end
                     end
                 end
