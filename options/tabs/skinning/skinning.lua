@@ -69,6 +69,9 @@ local function BuildSkinningTab(tabContent)
             if _G.QUI_RefreshPowerBarAltColors then
                 _G.QUI_RefreshPowerBarAltColors()
             end
+            if _G.QUI_RefreshStatusTrackingBarSkin then
+                _G.QUI_RefreshStatusTrackingBarSkin()
+            end
             if _G.QUI_RefreshGameMenuColors then
                 _G.QUI_RefreshGameMenuColors()
             end
@@ -480,6 +483,166 @@ local function BuildSkinningTab(tabContent)
         end)
         powerBarMoverBtn:SetPoint("TOPLEFT", PAD, y)
         y = y - 36
+
+        y = y - 10  -- Extra padding before next section
+
+        -- ═══════════════════════════════════════════════════════════════
+        -- STATUS TRACKING BARS (XP / REPUTATION HUD)
+        -- ═══════════════════════════════════════════════════════════════
+        GUI:SetSearchSection("Status Tracking Bars")
+
+        if general.skinStatusTrackingBars == nil then general.skinStatusTrackingBars = true end
+
+        local stbHeader = GUI:CreateSectionHeader(tabContent, "Status Tracking Bars")
+        stbHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - stbHeader.gap
+
+        local stbDesc = GUI:CreateLabel(tabContent, "Style the bottom HUD bars for experience, watched reputation, honor, and other status tracking—flat fill using your global status bar texture, QUI backdrop, and fonts.", 11, C.textMuted)
+        stbDesc:SetPoint("TOPLEFT", PAD, y)
+        stbDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        stbDesc:SetJustifyH("LEFT")
+        stbDesc:SetWordWrap(true)
+        stbDesc:SetHeight(36)
+        y = y - 44
+
+        local stbCheck = GUI:CreateFormCheckbox(tabContent, "Skin Status Tracking Bars", "skinStatusTrackingBars", general, function()
+            GUI:ShowConfirmation({
+                title = "Reload UI?",
+                message = "Skinning changes require a reload to take effect.",
+                acceptText = "Reload",
+                cancelText = "Later",
+                onAccept = function() QUI:SafeReload() end,
+            })
+        end)
+        stbCheck:SetPoint("TOPLEFT", PAD, y)
+        stbCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local function RefreshStatusTrackingBars()
+            if _G.QUI_RefreshStatusTrackingBarSkin then
+                _G.QUI_RefreshStatusTrackingBarSkin()
+            end
+        end
+
+        if general.statusTrackingBarsBarColorMode == nil then general.statusTrackingBarsBarColorMode = "accent" end
+        if general.statusTrackingBarsBarColor == nil then general.statusTrackingBarsBarColor = { 0.2, 0.5, 1.0, 1.0 } end
+        if general.statusTrackingBarsBarHeight == nil then general.statusTrackingBarsBarHeight = 0 end
+        if general.statusTrackingBarsBarWidthPercent == nil then general.statusTrackingBarsBarWidthPercent = 100 end
+        if general.statusTrackingBarsShowBorder == nil then general.statusTrackingBarsShowBorder = true end
+        if general.statusTrackingBarsBorderThickness == nil then general.statusTrackingBarsBorderThickness = 0 end
+
+        local fillModeDropdown = GUI:CreateFormDropdown(tabContent, "Bar fill color", {
+            { text = "Skin accent", value = "accent" },
+            { text = "Class color", value = "class" },
+            { text = "Custom color", value = "custom" },
+            { text = "Blizzard default", value = "blizzard" },
+        }, "statusTrackingBarsBarColorMode", general, RefreshStatusTrackingBars)
+        fillModeDropdown:SetPoint("TOPLEFT", PAD, y)
+        fillModeDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local barFillColorPicker = GUI:CreateFormColorPicker(tabContent, "Custom bar fill", "statusTrackingBarsBarColor", general, RefreshStatusTrackingBars, {})
+        barFillColorPicker:SetPoint("TOPLEFT", PAD, y)
+        barFillColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local barHeightSlider = GUI:CreateFormSlider(tabContent, "Bar height (0 = default)", 0, 24, 1, "statusTrackingBarsBarHeight", general, RefreshStatusTrackingBars)
+        barHeightSlider:SetPoint("TOPLEFT", PAD, y)
+        barHeightSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local barWidthSlider = GUI:CreateFormSlider(tabContent, "Bar width %", 25, 100, 1, "statusTrackingBarsBarWidthPercent", general, RefreshStatusTrackingBars)
+        barWidthSlider:SetPoint("TOPLEFT", PAD, y)
+        barWidthSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local showBorderCheck = GUI:CreateFormCheckbox(tabContent, "Show bar border", "statusTrackingBarsShowBorder", general, RefreshStatusTrackingBars)
+        showBorderCheck:SetPoint("TOPLEFT", PAD, y)
+        showBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local borderThickSlider = GUI:CreateFormSlider(tabContent, "Border thickness (0 = auto)", 0, 8, 1, "statusTrackingBarsBorderThickness", general, RefreshStatusTrackingBars)
+        borderThickSlider:SetPoint("TOPLEFT", PAD, y)
+        borderThickSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        GUI:SetSearchSection("Status tracking bar text")
+
+        if general.statusTrackingBarsShowBarText == nil then general.statusTrackingBarsShowBarText = true end
+        if general.statusTrackingBarsBarTextAlways == nil then general.statusTrackingBarsBarTextAlways = false end
+        if general.statusTrackingBarsBarTextAnchor == nil then general.statusTrackingBarsBarTextAnchor = "CENTER" end
+        if general.statusTrackingBarsBarTextColor == nil then general.statusTrackingBarsBarTextColor = { 0.95, 0.95, 0.95, 1 } end
+        if general.statusTrackingBarsBarTextFont == nil then general.statusTrackingBarsBarTextFont = "__QUI_GLOBAL__" end
+        if general.statusTrackingBarsBarTextFontSize == nil then general.statusTrackingBarsBarTextFontSize = 11 end
+        if general.statusTrackingBarsBarTextOutline == nil then general.statusTrackingBarsBarTextOutline = "_inherit" end
+        if general.statusTrackingBarsBarTextOffsetX == nil then general.statusTrackingBarsBarTextOffsetX = 0 end
+        if general.statusTrackingBarsBarTextOffsetY == nil then general.statusTrackingBarsBarTextOffsetY = 0 end
+
+        local stbTextShowCheck = GUI:CreateFormCheckbox(tabContent, "Show bar text", "statusTrackingBarsShowBarText", general, RefreshStatusTrackingBars)
+        stbTextShowCheck:SetPoint("TOPLEFT", PAD, y)
+        stbTextShowCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbTextAlwaysCheck = GUI:CreateFormCheckbox(tabContent, "Always show text (ignore game number toggle)", "statusTrackingBarsBarTextAlways", general, RefreshStatusTrackingBars)
+        stbTextAlwaysCheck:SetPoint("TOPLEFT", PAD, y)
+        stbTextAlwaysCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbTextPosDropdown = GUI:CreateFormDropdown(tabContent, "Text position", {
+            { text = "Left", value = "LEFT" },
+            { text = "Center", value = "CENTER" },
+            { text = "Right", value = "RIGHT" },
+        }, "statusTrackingBarsBarTextAnchor", general, RefreshStatusTrackingBars)
+        stbTextPosDropdown:SetPoint("TOPLEFT", PAD, y)
+        stbTextPosDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbTextColorPicker = GUI:CreateFormColorPicker(tabContent, "Text color", "statusTrackingBarsBarTextColor", general, RefreshStatusTrackingBars, {})
+        stbTextColorPicker:SetPoint("TOPLEFT", PAD, y)
+        stbTextColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbFontList = {}
+        local stbLSM = LibStub("LibSharedMedia-3.0", true)
+        if stbLSM then
+            for name in pairs(stbLSM:HashTable("font")) do
+                table.insert(stbFontList, { value = name, text = name })
+            end
+            table.sort(stbFontList, function(a, b) return a.text < b.text end)
+        end
+        table.insert(stbFontList, 1, { value = "__QUI_GLOBAL__", text = "QUI default (global font)" })
+        local stbFontDropdown = GUI:CreateFormDropdown(tabContent, "Text font", stbFontList, "statusTrackingBarsBarTextFont", general, RefreshStatusTrackingBars)
+        stbFontDropdown:SetPoint("TOPLEFT", PAD, y)
+        stbFontDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbFontSizeSlider = GUI:CreateFormSlider(tabContent, "Text font size", 6, 24, 1, "statusTrackingBarsBarTextFontSize", general, RefreshStatusTrackingBars)
+        stbFontSizeSlider:SetPoint("TOPLEFT", PAD, y)
+        stbFontSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbOutlineDropdown = GUI:CreateFormDropdown(tabContent, "Text outline", {
+            { text = "Inherit (global outline)", value = "_inherit" },
+            { text = "None", value = "_none" },
+            { text = "Thin", value = "OUTLINE" },
+            { text = "Thick", value = "THICKOUTLINE" },
+        }, "statusTrackingBarsBarTextOutline", general, RefreshStatusTrackingBars)
+        stbOutlineDropdown:SetPoint("TOPLEFT", PAD, y)
+        stbOutlineDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbTextOffsetXSlider = GUI:CreateFormSlider(tabContent, "Text X offset", -40, 40, 1, "statusTrackingBarsBarTextOffsetX", general, RefreshStatusTrackingBars)
+        stbTextOffsetXSlider:SetPoint("TOPLEFT", PAD, y)
+        stbTextOffsetXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local stbTextOffsetYSlider = GUI:CreateFormSlider(tabContent, "Text Y offset", -40, 40, 1, "statusTrackingBarsBarTextOffsetY", general, RefreshStatusTrackingBars)
+        stbTextOffsetYSlider:SetPoint("TOPLEFT", PAD, y)
+        stbTextOffsetYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        AddModuleBorderOverrideControls("Status Tracking Bars", general, "statusTrackingBars")
+        AddModuleBackgroundOverrideControls("Status Tracking Bars", general, "statusTrackingBars")
 
         y = y - 10  -- Extra padding before next section
 

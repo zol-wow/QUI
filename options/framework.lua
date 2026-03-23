@@ -5767,6 +5767,7 @@ function GUI:CreateMainFrame()
         if _G.QUI_RefreshCharacterFrameColors then _G.QUI_RefreshCharacterFrameColors() end
         if _G.QUI_RefreshInspectColors then _G.QUI_RefreshInspectColors() end
         if _G.QUI_RefreshPowerBarAltColors then _G.QUI_RefreshPowerBarAltColors() end
+        if _G.QUI_RefreshStatusTrackingBarSkin then _G.QUI_RefreshStatusTrackingBarSkin() end
         if _G.QUI_RefreshGameMenuColors then _G.QUI_RefreshGameMenuColors() end
         if _G.QUI_RefreshOverrideActionBarColors then _G.QUI_RefreshOverrideActionBarColors() end
         if _G.QUI_RefreshObjectiveTrackerColors then _G.QUI_RefreshObjectiveTrackerColors() end

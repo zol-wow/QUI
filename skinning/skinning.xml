@@ -6,6 +6,7 @@
     <Script file="notifications/loot.lua"/>
     <Script file="gameplay/mplus_timer.lua"/>
     <Script file="frames/character.lua"/>
+    <Script file="frames/statustracking.lua"/>
     <Script file="frames/inspect.lua"/>
     <Script file="gameplay/powerbaralt.lua"/>
     <Script file="notifications/readycheck.lua"/>
