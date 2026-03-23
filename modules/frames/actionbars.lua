@@ -3773,6 +3773,53 @@ end
 local FadeHideEffects
 local FadeShowEffects
 local SkinSpellFlyoutButtons
+local PROC_ALERT_REGION_KEYS = {
+    "ProcStartFlipbook",
+    "ProcLoopFlipbook",
+}
+
+local function SuppressProcVisualFrame(frame)
+    if not frame then return end
+
+    pcall(function()
+        if frame.Hide then
+            frame:Hide()
+        end
+        if frame.SetAlpha then
+            frame:SetAlpha(0)
+        end
+        if frame.StopAnimating then
+            frame:StopAnimating()
+        end
+    end)
+
+    if frame.Show then
+        Helpers.DeferredHideOnShow(frame, { clearAlpha = true, combatCheck = false })
+    end
+end
+
+local function SuppressButtonProcVisuals(button)
+    if not button then return end
+
+    pcall(function()
+        local alert = button.SpellActivationAlert
+        if alert then
+            SuppressProcVisualFrame(alert)
+
+            for _, regionKey in ipairs(PROC_ALERT_REGION_KEYS) do
+                SuppressProcVisualFrame(alert[regionKey])
+            end
+        end
+    end)
+
+    pcall(function()
+        SuppressProcVisualFrame(button.OverlayGlow)
+    end)
+
+    pcall(function()
+        SuppressProcVisualFrame(button._ButtonGlow)
+    end)
+end
 
 -- Apply QUI skin to a single button
 SkinButton = function(button, settings)
@@ -3811,6 +3858,7 @@ SkinButton = function(button, settings)
 
     -- Strip Blizzard artwork first
     StripBlizzardArtwork(button)
+    SuppressButtonProcVisuals(button)
 
     local iconSize = settings.iconSize or 36
     local zoom = settings.iconZoom or 0.07
@@ -4234,54 +4282,7 @@ FadeHideEffects = function(button, state)
         if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
     end
 
-    local spellActivation = button.SpellActivationAlert
-    if spellActivation then
-        if not state._fhSpellActivationShowHooked and spellActivation.HookScript then
-            state._fhSpellActivationShowHooked = true
-            spellActivation:HookScript("OnShow", function(self)
-                local st = GetFrameState(button)
-                if st and st.fadeHidden then
-                    self:Hide()
-                end
-            end)
-        end
-        if spellActivation:IsShown() then
-            spellActivation:Hide()
-            state._fhSpellActivationAlert = true
-        end
-    end
-    local overlayGlow = button.OverlayGlow
-    if overlayGlow then
-        if not state._fhOverlayGlowShowHooked and overlayGlow.HookScript then
-            state._fhOverlayGlowShowHooked = true
-            overlayGlow:HookScript("OnShow", function(self)
-                local st = GetFrameState(button)
-                if st and st.fadeHidden then
-                    self:Hide()
-                end
-            end)
-        end
-        if overlayGlow:IsShown() then
-            overlayGlow:Hide()
-            state._fhOverlayGlow = true
-        end
-    end
-    local buttonGlow = button._ButtonGlow
-    if buttonGlow then
-        if not state._fhButtonGlowShowHooked and buttonGlow.HookScript then
-            state._fhButtonGlowShowHooked = true
-            buttonGlow:HookScript("OnShow", function(self)
-                local st = GetFrameState(button)
-                if st and st.fadeHidden then
-                    self:Hide()
-                end
-            end)
-        end
-        if buttonGlow:IsShown() then
-            buttonGlow:Hide()
-            state._fhButtonGlow = true
-        end
-    end
+    SuppressButtonProcVisuals(button)
 end
 
 FadeShowEffects = function(button, state)
@@ -4302,19 +4303,7 @@ FadeShowEffects = function(button, state)
     state._fhCooldownFrameShown = nil
     state._fhCooldownSwipe = nil
     state._fhCooldownEdge = nil
-
-    if state._fhSpellActivationAlert and button.SpellActivationAlert then
-        button.SpellActivationAlert:Show()
-    end
-    if state._fhOverlayGlow and button.OverlayGlow then
-        button.OverlayGlow:Show()
-    end
-    if state._fhButtonGlow and button._ButtonGlow then
-        button._ButtonGlow:Show()
-    end
-    state._fhSpellActivationAlert = nil
-    state._fhOverlayGlow = nil
-    state._fhButtonGlow = nil
+    SuppressButtonProcVisuals(button)
 end
 
 -- Hide QUI textures on a button, saving which were visible for later restore.
@@ -5532,6 +5521,83 @@ end)
 -- BAR PROCESSING
 ---------------------------------------------------------------------------
 
+-- Skin all buttons for a specific bar
+local function SkinBar(barKey)
+    local db = GetDB()
+    if not db or not db.enabled then return end
+
+    local barSettings = GetBarSettings(barKey)
+    if not barSettings or not barSettings.enabled then return end
+
+    -- Use effective settings (global merged with per-bar overrides)
+    local effectiveSettings = GetEffectiveSettings(barKey)
+    if not effectiveSettings then return end
+
+    local buttons = GetBarButtons(barKey)
+
+    for _, button in ipairs(buttons) do
+        SkinButton(button, effectiveSettings)
+        UpdateButtonText(button, effectiveSettings)
+
+        -- Register binding command for LibKeyBound quickbind support.
+        -- On pre-Midnight this injects methods directly; on Midnight the patched
+        -- Binder reads from our external frameState instead.
+        AddKeybindMethods(button, barKey)
+
+        -- Hook OnEnter to register with LibKeyBound when in keybind mode.
+        -- HookScript is safe on secure frames (unlike SetScript) because it
+        -- appends to the handler chain without replacing the secure handler.
+        local state = GetFrameState(button)
+        if not state.onEnterHooked then
+            state.onEnterHooked = true
+            button:HookScript("OnEnter", function(self)
+                local LibKeyBound = LibStub("LibKeyBound-1.0", true)
+                if LibKeyBound and LibKeyBound:IsShown() then
+                    LibKeyBound:Set(self)
+                end
+            end)
+        end
+
+        -- Spell flyout popup buttons are created on click; defer one frame so
+        -- they exist before we apply QUI skinning.
+        if not state.flyoutSkinHooked then
+            state.flyoutSkinHooked = true
+            button:HookScript("OnClick", function()
+                C_Timer.After(0, function()
+                    if SkinSpellFlyoutButtons then
+                        SkinSpellFlyoutButtons()
+                    end
+                end)
+            end)
+        end
+
+        -- Keep cooldown swipes/proc glows from rendering on hidden buttons.
+        -- This also covers pet/stance visibility toggles where Blizzard hides
+        -- the button frame entirely (no alpha transition through SetBarAlpha).
+        if not state.visibilityEffectsHooked then
+            state.visibilityEffectsHooked = true
+            button:HookScript("OnHide", function(self)
+                local st = GetFrameState(self)
+                FadeHideTextures(st, self)
+            end)
+            button:HookScript("OnShow", function(self)
+                local st = GetFrameState(self)
+                SuppressButtonProcVisuals(self)
+                local key = GetBarKeyFromButton(self)
+                local fadeState = key and ActionBars.fadeState and ActionBars.fadeState[key]
+                local hideEmptyEnabled = GetGlobalSettings() and GetGlobalSettings().hideEmptySlots
+                local shouldStayHidden = (fadeState and fadeState.currentAlpha and fadeState.currentAlpha <= 0)
+                    or (hideEmptyEnabled and st.hiddenEmpty)
+
+                if shouldStayHidden then
+                    FadeHideTextures(st, self)
+                else
+                    FadeShowTextures(st, self)
+                end
+            end)
+        end
+    end
+end
 
 local spellFlyoutSkinHooked = false
 
@@ -6059,6 +6125,41 @@ function ActionBarsOwned:Refresh()
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         BuildBar(barKey)
     end
+
+    -- One-time migration for lock setting (preserves user setting after CVar sync fix)
+    MigrateLockSetting()
+
+    -- Patch LibKeyBound Binder methods to work without method injection on Midnight
+    PatchLibKeyBoundForMidnight()
+
+    -- Hook tooltip suppression for action buttons
+    -- NOTE: Synchronous — deferring causes tooltip flash before hide.
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        local global = GetGlobalSettings()
+        if not global or global.showTooltips ~= false then return end
+        local name = parent and parent.GetName and parent:GetName()
+        if name and (name:match("^ActionButton") or name:match("^MultiBar") or name:match("^PetActionButton")
+            or name:match("^StanceButton") or name:match("^OverrideActionBar") or name:match("^ExtraActionButton")) then
+            tooltip:Hide()
+            tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+            tooltip:ClearLines()
+        end
+    end)
+
+    -- Initial skin pass
+    SkinAllBars()
+    HookSpellFlyoutSkinning()
+
+    if type(ActionButton_ShowOverlayGlow) == "function" then
+        hooksecurefunc("ActionButton_ShowOverlayGlow", function(button)
+            if ActionBars.skinnedButtons[button] then
+                SuppressButtonProcVisuals(button)
+            end
+        end)
+    end
+
+    -- Apply bar layout settings (scale, lock, range indicator, empty slots)
+    ApplyBarLayoutSettings()
 
     -- Hide bars that are disabled in DB
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
