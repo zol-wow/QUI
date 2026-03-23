@@ -1180,7 +1180,7 @@ local function CreateActionBarsPage(parent)
 end
 
 ---------------------------------------------------------------------------
--- SUB-TAB: Totem Bar (Shaman only)
+-- SUB-TAB: Totem Bar (Blizzard TotemFrame — any class the client uses it for)
 ---------------------------------------------------------------------------
 BuildTotemBarTab = function(tabContent)
     local y = -15
@@ -1192,17 +1192,6 @@ BuildTotemBarTab = function(tabContent)
 
     -- Set search context for widget auto-registration
     GUI:SetSearchContext({tabIndex = 7, tabName = "Action Bars", subTabIndex = 5, subTabName = "Totem Bar"})
-
-    -- Class guard: show notice for non-shamans
-    local _, playerClass = UnitClass("player")
-    if playerClass ~= "SHAMAN" then
-        local notice = GUI:CreateLabel(tabContent, "Totem Bar is only available for Shaman characters.", 12, C.textMuted)
-        notice:SetPoint("TOPLEFT", PAD, y)
-        notice:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        notice:SetJustifyH("LEFT")
-        tabContent:SetHeight(60)
-        return
-    end
 
     if not db then
         local notice = GUI:CreateLabel(tabContent, "Totem Bar settings not available. Try /rl.", 12, C.textMuted)
@@ -1287,7 +1276,7 @@ BuildTotemBarTab = function(tabContent)
     end)
     y = y - FORM_ROW
 
-    local info = GUI:CreateLabel(tabContent, "Shows mock totems for positioning. Drag to reposition.", 11, C.textMuted)
+    local info = GUI:CreateLabel(tabContent, "Right-click a totem to dismiss when allowed. Preview shows mock icons for positioning (drag to reposition).", 11, C.textMuted)
     info:SetPoint("TOPLEFT", PAD, y)
     info:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     info:SetJustifyH("LEFT")

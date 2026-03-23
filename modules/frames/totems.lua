@@ -1,18 +1,13 @@
 --[[
     QUI Totem Bar
-    Shaman-only: hooks into Blizzard's TotemFrame and reskins it
-    Provides custom styling while preserving native right-click dismiss
+    Hooks Blizzard's TotemFrame for any class the game uses it for (Shaman totems,
+    Brewmaster guardians, etc.). If TotemFrame is absent or unused, hooks no-op.
+    Preserves native right-click dismiss. TargetTotem is protected (not usable from addon click scripts).
 ]]
 
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local LSM = LibStub("LibSharedMedia-3.0")
-
----------------------------------------------------------------------------
--- CLASS GUARD: Shaman only
----------------------------------------------------------------------------
-local _, playerClass = UnitClass("player")
-if playerClass ~= "SHAMAN" then return end
 
 ---------------------------------------------------------------------------
 -- MODULE NAMESPACE
@@ -376,7 +371,7 @@ local function HookTotemFrame()
     end
     if TotemBar.hooked then return end
     local tf = TotemFrame
-    if not tf then return end
+    if not tf or not tf.totemPool then return end
 
     TotemBar.hooked = true
 
@@ -739,6 +734,7 @@ end
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
+initFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 initFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
         if QUICore then
@@ -751,6 +747,12 @@ initFrame:SetScript("OnEvent", function(self, event)
     elseif event == "PLAYER_TOTEM_UPDATE" then
         -- TotemFrame can be unavailable during initial startup on some clients.
         -- Retry refresh whenever totem state changes so hook/parenting recovers.
+        local db = GetDB()
+        if db and db.enabled then
+            TotemBar:Refresh()
+        end
+    elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+        -- TotemFrame usage can change with spec (e.g. Brewmaster vs other monks).
         local db = GetDB()
         if db and db.enabled then
             TotemBar:Refresh()
