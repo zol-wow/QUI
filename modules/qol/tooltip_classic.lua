@@ -33,6 +33,55 @@ local cursorFollowHooked = setmetatable({}, {__mode = "k"})
 -- secure context (secureexecuterange) uses GameTooltip for map pins.
 local gtCursorWatcher
 
+-- World quest / map tooltips can register a widget container on GameTooltip.
+-- Re-anchoring or re-showing the tooltip from addon code while that container
+-- is active can re-enter Blizzard's secure widget layout and trigger
+-- LayoutFrame secret-value comparison errors.
+local function HasActiveWidgetContainer(tooltip)
+    if not tooltip or not tooltip.GetChildren then return false end
+
+    local ok, result = pcall(function()
+        for i = 1, select("#", tooltip:GetChildren()) do
+            local child = select(i, tooltip:GetChildren())
+            if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
+                local widgetSetID = child.widgetSetID
+                if widgetSetID ~= nil then
+                    return true
+                end
+
+                local shownWidgetCount = child.shownWidgetCount
+                if shownWidgetCount ~= nil then
+                    if Helpers.IsSecretValue(shownWidgetCount) then
+                        return true
+                    end
+                    shownWidgetCount = tonumber(shownWidgetCount)
+                    if shownWidgetCount and shownWidgetCount > 0 then
+                        return true
+                    end
+                end
+
+                local numWidgetsShowing = child.numWidgetsShowing
+                if numWidgetsShowing ~= nil then
+                    if Helpers.IsSecretValue(numWidgetsShowing) then
+                        return true
+                    end
+                    numWidgetsShowing = tonumber(numWidgetsShowing)
+                    if numWidgetsShowing and numWidgetsShowing > 0 then
+                        return true
+                    end
+                end
+
+                if child.IsShown and child:IsShown() then
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+
+    return ok and result == true
+end
+
 local function EnsureCursorFollowHooks(tooltip)
     if not tooltip or cursorFollowHooked[tooltip] then return end
     cursorFollowHooked[tooltip] = true
@@ -44,6 +93,10 @@ local function EnsureCursorFollowHooks(tooltip)
             gtCursorWatcher:SetScript("OnUpdate", function()
                 if not cursorFollowActive[GameTooltip] then return end
                 if not GameTooltip:IsShown() then
+                    cursorFollowActive[GameTooltip] = nil
+                    return
+                end
+                if HasActiveWidgetContainer(GameTooltip) then
                     cursorFollowActive[GameTooltip] = nil
                     return
                 end
@@ -106,17 +159,21 @@ local DEFAULT_PLAYER_ILVL_BRACKETS = {
 local function RefreshTooltipLayout(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
-    if type(tooltip.UpdateTooltipSize) == "function" then
-        pcall(tooltip.UpdateTooltipSize, tooltip)
-    end
-    -- Re-showing GameTooltip can re-enter widget setup (GameTooltip_AddWidgetSet).
-    -- If another addon tainted the widget container, that path can hard-error on
-    -- secret metric values. Keep our extra lines, but skip only when taint is
-    -- detected and let normal widget tooltips continue to refresh as usual.
+
+    -- Re-layout of GameTooltip is unsafe while Blizzard widget containers are
+    -- active. World quest/map tooltips use this path, and forcing a refresh from
+    -- addon code can trip LayoutFrame secret-value comparisons on clear/hide.
     if tooltip == GameTooltip then
+        if HasActiveWidgetContainer(tooltip) then
+            return
+        end
         if Helpers.HasTaintedWidgetContainer and Helpers.HasTaintedWidgetContainer(tooltip) then
             return
         end
+    end
+
+    if type(tooltip.UpdateTooltipSize) == "function" then
+        pcall(tooltip.UpdateTooltipSize, tooltip)
     end
     pcall(tooltip.Show, tooltip)
 end
@@ -914,6 +971,10 @@ local function SetupTooltipHook()
             -- Blizzard already called SetOwner(parent, "ANCHOR_NONE") inside
             -- GameTooltip_SetDefaultAnchor before this hook fires.
             EnsureCursorFollowHooks(tooltip)
+            if HasActiveWidgetContainer(tooltip) then
+                cursorFollowActive[tooltip] = nil
+                return
+            end
             cursorFollowActive[tooltip] = true
             Provider:PositionTooltipAtCursor(tooltip, settings)
         else
