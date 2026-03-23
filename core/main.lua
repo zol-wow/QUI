@@ -288,6 +288,11 @@ function QUICore:OnInitialize()
         profile.actionBars.engine = "owned"
     end
 
+    -- Force minimap scale to 1.0 (UI option removed; stale values may linger in saved profiles)
+    if profile.minimap and profile.minimap.scale ~= nil and profile.minimap.scale ~= 1.0 then
+        profile.minimap.scale = 1.0
+    end
+
     -- Migrate minimap hideMicroMenu/hideBagBar → actionBars.bars.microbar/bags.enabled
     if profile.minimap then
         local mm = profile.minimap
