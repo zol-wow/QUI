@@ -94,6 +94,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.54.0 - 2026-03-23
+
+### Added
+- added blizzard frame mover feature
+- added general status bar skinning (i.e. reputation bars)
+- added totembars for all classes that can use them (i.e. brewmasters)
+
+### Fixed
+- attempt to fix golden circles appearing around hidden action bars
+- attempt to fix worldquest hovering tooltip taint
 ## v2.53.4 - 2026-03-23
 
 ### Added
