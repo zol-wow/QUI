@@ -30,7 +30,16 @@ local KNOWN_PREFIXES = {}
 for _, prefix in ipairs({
     "QUI", "Quazii", "Blizzard_", "GameTooltip", "ItemRef", "Interface",
     "Minimap", "PlayerFrame", "TargetFrame", "ChatFrame", "Character",
-    "Professions", "AuctionHouse", "LFG", "PVE", "EditMode", "DropDown",
+    "Professions", "AuctionHouse", "LFG", "PVE", "PVP", "EditMode", "DropDown",
+    "Loot", "Group", "Merchant", "Mail", "Gossip", "Quest", "Friends",
+    "World", "Encounter", "Collections", "Spell", "Talent", "Inspect",
+    "Trade", "Addon", "Ready", "Queue", "Flyout", "Objective", "Scenario",
+    "Settings", "Help", "Garrison", "Achievement", "Calendar", "Craft",
+    "Wardrobe", "Azerite", "Scrapping", "Community", "Club", "Cinematic",
+    "NamePlate", "Tooltip", "Recap", "Arena", "Battlefield", "Honor",
+    "Barber", "Generic", "Channel", "Color", "Macro", "KeyBinding",
+    "Movie", "Splash", "Taxi", "Trainer", "Petition", "Guild", "Tabard",
+    "Bank", "Void", "Item", "Socket", "Transmogrify", "Obliterum",
 }) do
     KNOWN_PREFIXES[prefix] = true
 end
@@ -121,9 +130,12 @@ local _blizzFrameCache = setmetatable({}, { __mode = "k" })
 --- already handled by a per-frame skinning module).
 local function ShouldSkipFrame(f)
     if SkinBase.IsSkinned(f) then return true end
-    -- Skip unnamed QUI-managed frames (e.g., objective tracker backdrop)
-    -- that have backup color fields — RecoverQUIBackdrops handles these.
+    -- Skip QUI-managed frames that have backup color fields (set by
+    -- SkinBase.CreateBackdrop, ApplyFullBackdrop, tooltip overlays, etc.)
     if f._quiBgR then return true end
+    -- Skip frames that have a QUI backdrop child (SkinBase.CreateBackdrop
+    -- stores the child in a weak-keyed table keyed by parent frame)
+    if SkinBase.GetBackdrop(f) then return true end
     local cached = _blizzFrameCache[f]
     if cached ~= nil then return cached end
     local result = IsBlizzardOrQUIFrame(f:GetName())

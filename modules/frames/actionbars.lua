@@ -1689,8 +1689,26 @@ local function BuildBar(barKey)
                 btn:SetAttribute("_childupdate-offset", [[
                     local index = self:GetAttribute("index")
                     local newAction = index + (message or 0)
-                    if self:GetAttribute("action") ~= newAction then
-                        self:SetAttribute("action", newAction)
+                    -- Always set action from restricted code so the attribute
+                    -- is untainted.  An addon-side SetAttribute taints the
+                    -- value; Blizzard's Update then propagates that taint
+                    -- through GetActionInfo → IsPressHoldReleaseSpell, causing
+                    -- "attempt to compare a secret number value" in combat.
+                    self:SetAttribute("action", newAction)
+                    -- Pre-set pressAndHoldAction from restricted code so the
+                    -- comparison in Blizzard's ActionButton:Update does not hit
+                    -- the taint barrier when IsPressHoldReleaseSpell returns a
+                    -- secret value during combat.
+                    if IsPressHoldReleaseSpell then
+                        local pressAndHold = false
+                        self:SetAttribute("typerelease", "actionrelease")
+                        local actionType, id, subType = GetActionInfo(newAction)
+                        if actionType == "spell" then
+                            pressAndHold = IsPressHoldReleaseSpell(id)
+                        elseif actionType == "macro" and subType == "spell" then
+                            pressAndHold = IsPressHoldReleaseSpell(id)
+                        end
+                        self:SetAttribute("pressAndHoldAction", pressAndHold)
                     end
                 ]])
                 if btn.RegisterForClicks then

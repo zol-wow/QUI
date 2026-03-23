@@ -60,14 +60,24 @@ function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     local backdrop = frameBackdrops[frame]
     local px = SkinBase.GetPixelSize(backdrop, 1)
+    -- Store backup color fields so third-party frame cleanup recognizes this
+    -- as a QUI-owned frame and skips it during orphan/NineSlice suppression.
+    backdrop._quiBgR = bgr or 0.05
+    backdrop._quiBgG = bgg or 0.05
+    backdrop._quiBgB = bgb or 0.05
+    backdrop._quiBgA = bga or 0.95
+    backdrop._quiBorderR = sr or 0
+    backdrop._quiBorderG = sg or 0
+    backdrop._quiBorderB = sb or 0
+    backdrop._quiBorderA = sa or 1
     backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px },
     })
-    backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    backdrop:SetBackdropColor(backdrop._quiBgR, backdrop._quiBgG, backdrop._quiBgB, backdrop._quiBgA)
+    backdrop:SetBackdropBorderColor(backdrop._quiBorderR, backdrop._quiBorderG, backdrop._quiBorderB, backdrop._quiBorderA)
 end
 
 ---------------------------------------------------------------------------
@@ -79,14 +89,24 @@ end
 function SkinBase.ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not frame then return end
     local px = SkinBase.GetPixelSize(frame, 1)
+    -- Store backup color fields so third-party frame cleanup recognizes this
+    -- as a QUI-owned frame and skips it during orphan/NineSlice suppression.
+    frame._quiBgR = bgr or 0.05
+    frame._quiBgG = bgg or 0.05
+    frame._quiBgB = bgb or 0.05
+    frame._quiBgA = bga or 0.95
+    frame._quiBorderR = sr or 0
+    frame._quiBorderG = sg or 0
+    frame._quiBorderB = sb or 0
+    frame._quiBorderA = sa or 1
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px },
     })
-    frame:SetBackdropColor(bgr or 0.05, bgg or 0.05, bgb or 0.05, bga or 0.95)
-    frame:SetBackdropBorderColor(sr or 0, sg or 0, sb or 0, sa or 1)
+    frame:SetBackdropColor(frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA)
+    frame:SetBackdropBorderColor(frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA)
 end
 
 ---------------------------------------------------------------------------
