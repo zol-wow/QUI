@@ -23,6 +23,7 @@ local function CreateGeneralQoLPage(parent)
         {name = "Missing Raid Buffs", builder = ns.QUI_RaidBuffsOptions.BuildRaidBuffsTab},
         {name = "Party Keystones", builder = ns.QUI_PartyKeystonesOptions.BuildPartyKeystonesTab},
         {name = "XP Tracker", builder = ns.QUI_XPTrackerOptions.BuildXPTrackerTab},
+        {name = "Blizzard Mover", builder = ns.QUI_BlizzardMoverOptions.BuildBlizzardMoverTab},
     })
 
     content:SetHeight(600)

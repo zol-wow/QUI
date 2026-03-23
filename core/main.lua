@@ -3784,6 +3784,16 @@ local defaults = {
             groupPetFrames = 3,
         },
         frameAnchoring = {},
+        -- Blizzard UI panels: modifier-drag reposition (see modules/qol/blizzard_mover.lua)
+        blizzardMover = {
+            enabled = false,
+            requireModifier = true,
+            modifier = "SHIFT",
+            scaleEnabled = false,
+            scaleModifier = "CTRL",
+            positionPersistence = "reset", -- "close" | "lockout" | "reset"
+            frames = {}, -- [entryId] = { enabled, point, x, y, scale }
+        },
     },
     -- Account-wide storage (shared across all characters)
     global = {

@@ -1,6 +1,8 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <Script file="qol.lua"/>
+    <Script file="blizzard_mover.lua"/>
+    <Script file="blizzard_mover_frames.lua"/>
     <Script file="quicksalvage.lua"/>
     <Script file="petwarning.lua"/>
     <Script file="consumablecheck.lua"/>

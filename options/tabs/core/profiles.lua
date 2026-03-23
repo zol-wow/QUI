@@ -129,7 +129,7 @@ local function CreateSpecProfilesPage(parent)
         GUI:ShowConfirmation({
             title = "Reset All Movers?",
             message = "Reset all frame and mover positions to defaults?",
-            warningText = "This resets CDM, unit frames, minimap, action bars, data panels, trackers, and all other movable elements. Requires /reload.",
+            warningText = "This resets CDM, unit frames, minimap, action bars, data panels, trackers, Blizzard UI Mover panel positions, and all other movable elements. Requires /reload.",
             acceptText = "Reset All",
             cancelText = "Cancel",
             isDestructive = true,
@@ -237,6 +237,22 @@ local function CreateSpecProfilesPage(parent)
                     local savedHudMinWidth = p.frameAnchoring.hudMinWidth
                     wipe(p.frameAnchoring)
                     p.frameAnchoring.hudMinWidth = savedHudMinWidth
+                end
+
+                -- Blizzard UI Mover (modifier-drag Blizzard panels)
+                if p.blizzardMover and type(p.blizzardMover.frames) == "table" then
+                    for _, row in pairs(p.blizzardMover.frames) do
+                        if type(row) == "table" then
+                            row.point = nil
+                            row.x = nil
+                            row.y = nil
+                            row.scale = nil
+                        end
+                    end
+                end
+                local bmm = ns.QUI_BlizzardMover
+                if bmm and bmm.functions and bmm.functions.ClearSessionPositions then
+                    bmm.functions.ClearSessionPositions()
                 end
 
                 print("|cff34D399QUI:|r All mover positions reset to defaults.")
