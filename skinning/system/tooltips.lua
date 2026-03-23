@@ -910,3 +910,4 @@ end)
 
 ns.QUI_RefreshTooltipSkinColors = RefreshAllColors
 ns.QUI_RefreshTooltipFontSize = RefreshAllFonts
+

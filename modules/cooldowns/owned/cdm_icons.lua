@@ -1205,14 +1205,15 @@ local function UpdateIconCooldown(icon)
             end
         end
 
-        local safeDur = SafeToNumber(duration, nil)
-        local safeStartVal = SafeToNumber(startTime, nil)
-        -- Only update when safe values are available.  Defaulting to 0 on
-        -- secret values would make the desaturation code think the spell
-        -- is off cooldown mid-combat.
-        if safeDur then icon._lastDuration = safeDur end
-        if safeStartVal then icon._lastStart = safeStartVal end
-        if safeDur == 0 then
+        local hasSafeStart = IsSafeNumeric(startTime)
+        local hasSafeDuration = IsSafeNumeric(duration)
+        if hasSafeDuration then
+            icon._lastDuration = duration
+        end
+        if hasSafeStart then
+            icon._lastStart = startTime
+        end
+        if hasSafeDuration and duration == 0 then
             icon._lastStart = 0
             icon._lastDuration = 0
         end
@@ -1361,10 +1362,10 @@ local function UpdateIconCooldown(icon)
                                 end
                             end
                         end
-                        icon.Icon:SetDesaturated(true)
-                        icon._cdDesaturated = true
-                        return
                     end
+                    icon.Icon:SetDesaturated(true)
+                    icon._cdDesaturated = true
+                    return
                 end
 
                 -- Off cooldown or GCD-only — clear desaturation

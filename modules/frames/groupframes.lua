@@ -3342,6 +3342,7 @@ local function UpdateHeaderVisibility()
         RebuildUnitFrameMap()
         QUI_GF:RefreshAllFrames()
         UpdateAnchorFrames()
+        initSafePeriod = false
     end)
 end
 
@@ -4026,6 +4027,10 @@ local function OnEvent(self, event, arg1, ...)
         end
         if _pending.anchorUpdate then
             _pending.anchorUpdate = false
+            UpdateAnchorFrames()
+        end
+        if pendingAnchorUpdate then
+            pendingAnchorUpdate = false
             UpdateAnchorFrames()
         end
 

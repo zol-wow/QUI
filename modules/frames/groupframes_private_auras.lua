@@ -299,6 +299,11 @@ end
 -- CORE: Clear private auras from a single frame
 ---------------------------------------------------------------------------
 local function ClearPrivateAuras(frame)
+    if InCombatLockdown() then
+        pendingCleanup = true
+        return
+    end
+
     local state = frameState[frame]
     if not state then return end
 
@@ -324,6 +329,11 @@ end
 -- CORE: Reanchor — unit token changed, rebuild anchors (reuse containers)
 ---------------------------------------------------------------------------
 local function ReanchorPrivateAuras(frame)
+    if InCombatLockdown() then
+        pendingReanchor = true
+        return
+    end
+
     local settings = GetSettings(frame._isRaid)
     if not settings or not settings.enabled then return end
 
@@ -372,6 +382,11 @@ end
 
 --- Setup private auras on all visible group frames
 function QUI_GFPA:SetupAll()
+    if InCombatLockdown() then
+        pendingReanchor = true
+        return
+    end
+
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
 
@@ -387,6 +402,11 @@ end
 
 --- Reanchor all frames (unit tokens may have changed)
 function QUI_GFPA:ReanchorAll()
+    if InCombatLockdown() then
+        pendingReanchor = true
+        return
+    end
+
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
 
@@ -404,6 +424,11 @@ end
 
 --- Remove all private aura anchors and return containers to pool
 function QUI_GFPA:CleanupAll()
+    if InCombatLockdown() then
+        pendingCleanup = true
+        return
+    end
+
     for frame in pairs(frameState) do
         ClearPrivateAuras(frame)
     end
@@ -412,6 +437,12 @@ end
 
 --- Full refresh — tear down and rebuild everything
 function QUI_GFPA:RefreshAll()
+    if InCombatLockdown() then
+        pendingCleanup = true
+        pendingReanchor = true
+        return
+    end
+
     -- Clear existing anchors
     for frame in pairs(frameState) do
         ClearPrivateAuras(frame)
@@ -424,6 +455,11 @@ end
 
 --- Refresh a single frame
 function QUI_GFPA:RefreshFrame(frame)
+    if InCombatLockdown() then
+        pendingReanchor = true
+        return
+    end
+
     ClearPrivateAuras(frame)
     frameState[frame] = nil
     SetupPrivateAuras(frame)
