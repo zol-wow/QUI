@@ -705,7 +705,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             {
                 id = "actionBarsTotemBar",
                 label = "Totem Bar",
-                description = "Shaman totem bar settings.",
+                description = "Blizzard TotemFrame bar settings (totems, guardians, etc., per class).",
                 topLevelKeys = { "totemBar" },
             },
         },

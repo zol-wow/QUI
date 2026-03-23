@@ -3639,7 +3639,7 @@ local defaults = {
             },
         },
 
-        -- Shaman Totem Bar (active totem display)
+        -- Totem bar: Blizzard TotemFrame (any class the game uses it for)
         totemBar = {
             enabled = false,
             locked = false,
