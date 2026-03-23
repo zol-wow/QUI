@@ -1596,6 +1596,9 @@ end
 -- ApplyAllFrameAnchors re-runs. This lets children that were chain-walked
 -- to a grandparent snap back when the intermediate parent reappears (and
 -- vice versa when it hides again).
+-- Also hooks SetAlpha: some frames (e.g. unit frames controlled by HUD
+-- visibility) fade to alpha 0 instead of calling Hide(). We detect when
+-- the effective alpha crosses the ~0 threshold and re-evaluate anchors.
 local function InstallVisibilityHook(frame)
     if not frame or _visibilityHooked[frame] then return end
     if not frame.HookScript then return end
@@ -1607,6 +1610,19 @@ local function InstallVisibilityHook(frame)
     end
     frame:HookScript("OnShow", onVisibilityChanged)
     frame:HookScript("OnHide", onVisibilityChanged)
+    -- Detect alpha-based visibility changes (HUD fade system)
+    if frame.SetAlpha then
+        local curAlpha = frame:GetAlpha()
+        local wasAlphaHidden = type(curAlpha) == "number" and curAlpha < 0.01
+        hooksecurefunc(frame, "SetAlpha", function(self, alpha)
+            if type(alpha) ~= "number" then return end  -- secret value, ignore
+            local isAlphaHidden = alpha < 0.01
+            if isAlphaHidden ~= wasAlphaHidden then
+                wasAlphaHidden = isAlphaHidden
+                onVisibilityChanged()
+            end
+        end)
+    end
 end
 
 -- Resolve an anchor parent key to a frame.
@@ -2063,6 +2079,14 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
             InstallVisibilityHook(directParent)
         end
         local directVisible = directParent and directParent.IsShown and directParent:IsShown()
+        -- Also treat alpha ≈ 0 as hidden (HUD visibility fades frames
+        -- to alpha 0 instead of calling Hide, so IsShown stays true).
+        if directVisible and directParent.GetAlpha then
+            local parentAlpha = directParent:GetAlpha()
+            if type(parentAlpha) == "number" and parentAlpha < 0.01 then
+                directVisible = false
+            end
+        end
         if not directVisible then
             -- Parent hidden/missing — hide the child frame
             local canMutate = not InCombatLockdown()
