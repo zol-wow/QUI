@@ -17,5 +17,4 @@
     <Script file="frames/craftingorders.lua"/>
     <Script file="frames/professions.lua"/>
     <Script file="system/tooltips.lua"/>
-    <Script file="thirdparty.lua"/>
 </Ui>

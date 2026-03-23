@@ -36,8 +36,6 @@ local function BuildSkinningTab(tabContent)
         general.skinBorderColor = { accent[1], accent[2], accent[3], accent[4] or 1 }
     end
     if general.skinKeystoneFrame == nil then general.skinKeystoneFrame = true end
-    if general.skinThirdParty == nil then general.skinThirdParty = true end
-
     local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(tabContent, PAD)
 
     -- Helper to refresh all skinned frames
@@ -223,7 +221,7 @@ local function BuildSkinningTab(tabContent)
     if general.skinCraftingOrders == nil then general.skinCraftingOrders = false end
     if general.skinProfessions == nil then general.skinProfessions = false end
 
-    CreateCollapsible("Skin Blizzard Frames", 12 * FORM_ROW + 8, function(body)
+    CreateCollapsible("Skin Blizzard Frames", 11 * FORM_ROW + 8, function(body)
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Alert Frames (Req. Reload)", "skinAlerts", general, ReloadConfirm), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Auction House (Req. Reload)", "skinAuctionHouse", general, ReloadConfirm), body, sy)
@@ -235,8 +233,7 @@ local function BuildSkinningTab(tabContent)
         sy = P(GUI:CreateFormCheckbox(body, "Loot History (Req. Reload)", "enabled", db.lootResults, ReloadConfirm), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Override Action Bar (Req. Reload)", "skinOverrideActionBar", general, ReloadConfirm), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Professions (Req. Reload)", "skinProfessions", general, ReloadConfirm), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Reputation/Currency (Req. Reload)", "skinCharacterFrame", general, ReloadConfirm), body, sy)
-        P(GUI:CreateFormCheckbox(body, "Suppress White Backdrops & NineSlice Borders", "skinThirdParty", general, RefreshAllSkinning), body, sy)
+        P(GUI:CreateFormCheckbox(body, "Reputation/Currency (Req. Reload)", "skinCharacterFrame", general, ReloadConfirm), body, sy)
     end)
 
     relayout()

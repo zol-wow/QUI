@@ -1578,9 +1578,11 @@ function QUI_GFEM:EnableEditMode(previewType)
     if wantType == "raid" then
         needTestFrames = not IsInRaid()
     elseif wantType == "party" then
-        needTestFrames = not IsInGroup()
+        -- Show party test frames when solo or in a raid (WoW hides party
+        -- frames in raid, so there's nothing real to position).
+        needTestFrames = not IsInGroup() or IsInRaid()
     else
-        needTestFrames = not IsInGroup() and not IsInRaid()
+        needTestFrames = not IsInGroup() or not IsInRaid()
     end
     if needTestFrames then
         if not isTestMode or self._lastTestPreviewType ~= wantType then
@@ -1930,7 +1932,9 @@ do
             end,
             onOpen = function()
                 local GFEM = ns.QUI_GroupFrameEditMode
-                if GFEM and not IsInGroup() then GFEM:EnableTestMode("party") end
+                -- Show party preview when solo or in a raid (WoW hides party
+                -- frames in raid, so there's nothing real to position).
+                if GFEM and (not IsInGroup() or IsInRaid()) then GFEM:EnableTestMode("party") end
             end,
             onClose = function()
                 local GFEM = ns.QUI_GroupFrameEditMode
