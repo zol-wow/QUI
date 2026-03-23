@@ -3154,19 +3154,26 @@ SkinButton = function(button, settings)
     if not button or not settings or not settings.skinEnabled then return end
     local state = GetFrameState(button)
 
-    -- Skip if already skinned with same settings
-    local settingsKey = string.format("%d_%.2f_%s_%.2f_%s_%.2f_%s_%s",
-        settings.iconSize or 36,
-        settings.iconZoom or 0.07,
-        tostring(settings.showBackdrop),
-        settings.backdropAlpha or 0.8,
-        tostring(settings.showGloss),
-        settings.glossAlpha or 0.6,
-        tostring(settings.showBorders),
-        tostring(settings.showFlash)
-    )
-    if state.skinKey == settingsKey then return end
-    state.skinKey = settingsKey
+    -- Skip if already skinned with same settings (direct field comparison,
+    -- avoids string.format allocation on every call)
+    local _sz = settings.iconSize or 36
+    local _zm = settings.iconZoom or 0.07
+    local _bd = settings.showBackdrop
+    local _ba = settings.backdropAlpha or 0.8
+    local _gl = settings.showGloss
+    local _ga = settings.glossAlpha or 0.6
+    local _br = settings.showBorders
+    local _fl = settings.showFlash
+    if state.sk_sz == _sz and state.sk_zm == _zm
+        and state.sk_bd == _bd and state.sk_ba == _ba
+        and state.sk_gl == _gl and state.sk_ga == _ga
+        and state.sk_br == _br and state.sk_fl == _fl then
+        return
+    end
+    state.sk_sz = _sz; state.sk_zm = _zm
+    state.sk_bd = _bd; state.sk_ba = _ba
+    state.sk_gl = _gl; state.sk_ga = _ga
+    state.sk_br = _br; state.sk_fl = _fl
 
     -- Save original Blizzard pushed texture before stripping (for restore)
     if not state.origPushedTex then
@@ -3307,6 +3314,30 @@ SkinButton = function(button, settings)
     end
 
     ActionBarsOwned.skinnedButtons[button] = true
+
+    -- PERF: Per-button UpdateButtonArt hook (EllesmereUI pattern).
+    -- Fires only when Blizzard resets button artwork (combat transitions,
+    -- paging, bonus bar swaps) — much less frequent than ActionButton_Update.
+    -- Cached closure avoids allocation per hook fire.
+    if button.UpdateButtonArt and not button._quiArtHooked then
+        local cachedSkinFn = function()
+            if button:IsForbidden() then return end
+            local bk = GetBarKeyFromButton(button)
+            if bk then
+                local s = GetEffectiveSettings(bk)
+                if s then
+                    -- Clear skin cache to force re-apply after Blizzard reset
+                    local st = GetFrameState(button)
+                    st.sk_sz = nil
+                    SkinButton(button, s)
+                end
+            end
+        end
+        hooksecurefunc(button, "UpdateButtonArt", function()
+            C_Timer.After(0, cachedSkinFn)
+        end)
+        button._quiArtHooked = true
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -3729,19 +3760,13 @@ end
 
 -- Usability indicator state tracking
 local usabilityCheckFrame = nil
--- Range check interval (only used when range indicator is enabled)
-local RANGE_CHECK_INTERVAL_NORMAL = 0.25  -- 250ms = 4 FPS (CPU-friendly)
-local RANGE_CHECK_INTERVAL_FAST = 0.1     -- 100ms = 10 FPS (responsive, halved CPU)
-local RANGE_CHECK_INTERVAL_IDLE = 1.0     -- 1s OOC (range matters less)
+-- Range check interval (only used when range indicator is enabled).
+-- PERF: Relaxed from 250ms/100ms to 500ms.  State-change gating in
+-- UpdateButtonUsability means visual updates only happen when the tint
+-- actually changes, so polling less often has no visible impact.
+local RANGE_CHECK_INTERVAL_COMBAT = 0.5   -- 500ms in combat
+local RANGE_CHECK_INTERVAL_IDLE = 2.0     -- 2s OOC (range matters less)
 local actionBarRangeInCombat = false
-
-local function GetUpdateInterval()
-    local settings = GetGlobalSettings()
-    if settings and settings.fastUsabilityUpdates then
-        return RANGE_CHECK_INTERVAL_FAST
-    end
-    return RANGE_CHECK_INTERVAL_NORMAL
-end
 
 -- Get or create a QUI-owned tint overlay for range/usability coloring.
 -- Uses MOD (multiplicative) blend on ARTWORK sublevel 1, so it renders
@@ -3788,55 +3813,62 @@ local function UpdateButtonUsability(button, settings)
         return
     end
 
+    -- Compute new tint state BEFORE applying visuals (Bartender4 pattern:
+    -- skip overlay updates when state hasn't changed).
+    local newTint = nil  -- nil = normal/no tint
+
     -- Priority 1: Out of Range check (if enabled)
     if settings.rangeIndicator then
         local inRange = SafeIsActionInRange(action)
         if inRange == false then  -- false = out of range, nil = no range check needed
-            local overlay = GetTintOverlay(button)
-            if overlay then
-                local c = settings.rangeColor
-                overlay:SetColorTexture(c and c[1] or 0.8, c and c[2] or 0.1, c and c[3] or 0.1, c and c[4] or 1)
-                overlay:Show()
-            end
-            state.tinted = "range"
-            return
+            newTint = "range"
         end
     end
 
-    -- Priority 2: Usability check (if enabled)
-    if settings.usabilityIndicator then
+    -- Priority 2: Usability check (if enabled, and not already range-tinted)
+    if not newTint and settings.usabilityIndicator then
         local isUsable, notEnoughMana = SafeIsUsableAction(action)
-
         if notEnoughMana then
-            -- Out of mana/resources - blue tint
-            local overlay = GetTintOverlay(button)
-            if overlay then
-                local c = settings.manaColor
-                overlay:SetColorTexture(c and c[1] or 0.5, c and c[2] or 0.5, c and c[3] or 1.0, c and c[4] or 1)
-                overlay:Show()
-            end
-            state.tinted = "mana"
-            return
+            newTint = "mana"
         elseif not isUsable then
-            -- Not usable - dark tint (MOD blend can't desaturate, so we
-            -- approximate the desaturate look with a dim grey overlay)
-            local overlay = GetTintOverlay(button)
-            if overlay then
-                if settings.usabilityDesaturate then
-                    overlay:SetColorTexture(0.4, 0.4, 0.4, 1)
-                else
-                    local c = settings.usabilityColor
-                    overlay:SetColorTexture(c and c[1] or 0.4, c and c[2] or 0.4, c and c[3] or 0.4, c and c[4] or 1)
-                end
-                overlay:Show()
-            end
-            state.tinted = "unusable"
-            return
+            newTint = "unusable"
         end
     end
 
-    -- Normal state - hide overlay
-    if state.tinted then
+    -- State-change gate: skip overlay work if tint state unchanged
+    if state.tinted == newTint then return end
+
+    -- Apply the new tint state
+    if newTint == "range" then
+        local overlay = GetTintOverlay(button)
+        if overlay then
+            local c = settings.rangeColor
+            overlay:SetColorTexture(c and c[1] or 0.8, c and c[2] or 0.1, c and c[3] or 0.1, c and c[4] or 1)
+            overlay:Show()
+        end
+        state.tinted = "range"
+    elseif newTint == "mana" then
+        local overlay = GetTintOverlay(button)
+        if overlay then
+            local c = settings.manaColor
+            overlay:SetColorTexture(c and c[1] or 0.5, c and c[2] or 0.5, c and c[3] or 1.0, c and c[4] or 1)
+            overlay:Show()
+        end
+        state.tinted = "mana"
+    elseif newTint == "unusable" then
+        local overlay = GetTintOverlay(button)
+        if overlay then
+            if settings.usabilityDesaturate then
+                overlay:SetColorTexture(0.4, 0.4, 0.4, 1)
+            else
+                local c = settings.usabilityColor
+                overlay:SetColorTexture(c and c[1] or 0.4, c and c[2] or 0.4, c and c[3] or 0.4, c and c[4] or 1)
+            end
+            overlay:Show()
+        end
+        state.tinted = "unusable"
+    else
+        -- Normal state - hide overlay
         if state.tintOverlay then state.tintOverlay:Hide() end
         state.tinted = nil
     end
@@ -3934,13 +3966,14 @@ local function UpdateUsabilityPolling()
         usabilityCheckFrame:SetScript("OnEvent", nil)
     end
 
-    -- Range requires slow polling (no "player moved" event exists)
-    -- Only poll when range indicator is enabled, at 250ms (was 100ms)
-    -- Cache interval to avoid per-frame DB lookup
+    -- Range requires polling (no "player moved" event exists).
+    -- PERF: Relaxed to 500ms combat / 2s OOC.  State-change gating in
+    -- UpdateButtonUsability skips overlay work when tint is unchanged,
+    -- so less frequent polling has no visible impact.
     if rangeEnabled then
         usabilityCheckFrame:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = self.elapsed + elapsed
-            local interval = actionBarRangeInCombat and GetUpdateInterval() or RANGE_CHECK_INTERVAL_IDLE
+            local interval = actionBarRangeInCombat and RANGE_CHECK_INTERVAL_COMBAT or RANGE_CHECK_INTERVAL_IDLE
             if self.elapsed < interval then return end
             self.elapsed = 0
             UpdateAllButtonUsability()
@@ -5141,8 +5174,11 @@ function ActionBarsOwned:Initialize()
     -- size and the container's SetScale handles visual resize. Blizzard overlays
     -- work naturally because button dimensions match what they expect.
 
-    -- Hook ActionButton_Update to re-apply skinning after Blizzard resets artwork.
-    -- This fires when paging changes, action slots update, etc.
+    -- Hook ActionButton_Update to refresh text/visibility (but NOT force re-skin).
+    -- PERF: Removed skinKey = nil force-reset — the field-comparison dedup in
+    -- SkinButton handles this naturally without string.format overhead.
+    -- Actual artwork re-skinning is handled by per-button UpdateButtonArt hooks
+    -- installed during BuildBar (fires less often, deferred via C_Timer).
     if ActionButton_Update then
         hooksecurefunc("ActionButton_Update", function(button)
             if not ActionBarsOwned.skinnedButtons[button] then return end
@@ -5150,8 +5186,6 @@ function ActionBarsOwned:Initialize()
             if not bk then return end
             local s = GetEffectiveSettings(bk)
             if s then
-                local st = GetFrameState(button)
-                st.skinKey = nil  -- Force re-skin
                 SkinButton(button, s)
                 UpdateButtonText(button, s)
                 UpdateEmptySlotVisibility(button, s)
@@ -5169,31 +5203,22 @@ function ActionBarsOwned:Initialize()
         core:RegisterEditModeExit(OnEditModeExit)
     end
 
-    -- Hook tooltip suppression for QUI action bar buttons
-    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+    -- Hook tooltip suppression for QUI action bar buttons.
+    -- PERF: This fires on EVERY tooltip in the game.  Fast-exit via cached
+    -- setting + O(1) skinnedButtons lookup instead of DB walk + string match.
+    ActionBarsOwned._suppressTooltips = false
+    function ActionBarsOwned:RefreshTooltipSuppressCache()
         local global = GetGlobalSettings()
-        if not global or global.showTooltips ~= false then return end
-        if parent and parent.GetName then
-            local name = parent:GetName()
-            -- Check if button belongs to a QUI-managed action bar
-            if name and (name:match("^QUI_Bar1Button") or GetBarKeyFromButton(parent)) then
-                -- Verify it's actually one of our managed buttons
-                local barKey = GetBarKeyFromButton(parent)
-                if barKey then
-                    local buttons = ActionBarsOwned.nativeButtons[barKey]
-                    if buttons then
-                        for _, btn in ipairs(buttons) do
-                            if btn == parent then
-                                tooltip:Hide()
-                                tooltip:SetOwner(UIParent, "ANCHOR_NONE")
-                                tooltip:ClearLines()
-                                return
-                            end
-                        end
-                    end
-                end
-            end
-        end
+        self._suppressTooltips = global and global.showTooltips == false
+    end
+    ActionBarsOwned:RefreshTooltipSuppressCache()
+
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        if not ActionBarsOwned._suppressTooltips then return end
+        if not parent or not ActionBarsOwned.skinnedButtons[parent] then return end
+        tooltip:Hide()
+        tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+        tooltip:ClearLines()
     end)
 
     -- Hook Spellbook visibility for fade system
@@ -5275,6 +5300,7 @@ function ActionBarsOwned:Refresh()
     UpdateStanceBarLayout()
 
     UpdateUsabilityPolling()
+    if self.RefreshTooltipSuppressCache then self:RefreshTooltipSuppressCache() end
 end
 
 

@@ -1618,9 +1618,17 @@ barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
                     -- OOC: readable remaining — update text in Lua
                     if bar.DurationText then
                         if remaining >= 60 then
-                            bar.DurationText:SetText(string.format("%.0fm", remaining / 60))
+                            local text = string.format("%.0fm", remaining / 60)
+                            if text ~= bar._lastDurationText then
+                                bar._lastDurationText = text
+                                bar.DurationText:SetText(text)
+                            end
                         else
-                            bar.DurationText:SetText(string.format("%.1f", remaining))
+                            local text = string.format("%.1f", remaining)
+                            if text ~= bar._lastDurationText then
+                                bar._lastDurationText = text
+                                bar.DurationText:SetText(text)
+                            end
                         end
                     end
                     -- Update bar fill ONLY if C-side SetTimerDuration isn't driving it.
@@ -1645,6 +1653,7 @@ barTimerFrame:SetScript("OnUpdate", function(self, elapsed)
                 else
                     -- Aura expired: remaining is nil or 0 — duration done.
                     bar._durObj = nil
+                    bar._lastDurationText = nil
                     if bar.DurationText then
                         bar.DurationText:SetText("")
                     end

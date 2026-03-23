@@ -1815,7 +1815,7 @@ end
 
 -- ToT polling for health updates (unit events don't fire reliably for targettarget)
 local totUpdateTicker = nil
-local TOT_UPDATE_INTERVAL = 0.2  -- 200ms = 5 updates/sec
+local TOT_UPDATE_INTERVAL = 0.5
 
 local function StartToTTicker()
     if totUpdateTicker then return end

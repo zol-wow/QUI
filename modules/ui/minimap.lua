@@ -3158,31 +3158,27 @@ function Minimap_Module:Initialize()
     SetupAutoZoom()
 
     -- Detect external HUD overlays that scale up / fade out / resize the Minimap
-    hooksecurefunc(Minimap, "SetScale", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetAlpha", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetSize", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetParent", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetWidth", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetHeight", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetPoint", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
+    local hudCheckPending = false
+    local function DeferCheckExternalHud()
+        if hudCheckPending then return end
+        hudCheckPending = true
+        C_Timer.After(0, function()
+            hudCheckPending = false
+            CheckExternalHud()
+        end)
+    end
+
+    hooksecurefunc(Minimap, "SetScale", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetAlpha", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetSize", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetParent", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetWidth", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetHeight", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetPoint", function() DeferCheckExternalHud() end)
 
     -- Periodic fallback: some HUD addons use metatable manipulation that bypasses
-    -- hooksecurefunc. Check every 2 seconds as a safety net.
-    C_Timer.NewTicker(2, CheckExternalHud)
+    -- hooksecurefunc. Check every 5 seconds as a safety net.
+    C_Timer.NewTicker(5, CheckExternalHud)
 
     -- Start performance-optimized ticker updates
     StartUpdateTickers()

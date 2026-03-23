@@ -2529,8 +2529,8 @@ function CustomCDM:UpdateAllCooldowns() CDMIcons:UpdateAllCooldowns() end
 -- matching action-bar behavior. Uses C_Spell.IsSpellInRange for spells.
 -- Polled at 250ms (no "player moved" event) + instant on target change.
 ---------------------------------------------------------------------------
-local RANGE_POLL_INTERVAL_COMBAT = 0.5
-local RANGE_POLL_INTERVAL_IDLE = 1.0   -- relaxed OOC (range matters less)
+local RANGE_POLL_INTERVAL_COMBAT = 0.75
+local RANGE_POLL_INTERVAL_IDLE = 2.0   -- relaxed OOC (range matters less)
 local rangePollElapsed = 0
 local rangePollInCombat = false
 
@@ -2577,6 +2577,7 @@ local function UpdateIconVisualState(icon, cachedDB)
     local settings = cachedDB and cachedDB[viewerType] or GetTrackerSettings(viewerType)
     if not settings then
         if icon._rangeTinted or icon._usabilityTinted then
+            icon._lastVisualState = nil
             ResetIconVisuals(icon)
         end
         return
@@ -2588,6 +2589,7 @@ local function UpdateIconVisualState(icon, cachedDB)
     -- Nothing enabled — reset and bail
     if not rangeEnabled and not usabilityEnabled then
         if icon._rangeTinted or icon._usabilityTinted then
+            icon._lastVisualState = nil
             ResetIconVisuals(icon)
         end
         return
@@ -2611,8 +2613,11 @@ local function UpdateIconVisualState(icon, cachedDB)
     if not spellID then return end
 
     ---------------------------------------------------------------------------
-    -- Priority 1: Out of range (red tint) — only when target exists + ranged
+    -- Compute desired visual state (API calls use per-cycle dedup caches)
     ---------------------------------------------------------------------------
+    local newVisualState = "normal"
+
+    -- Priority 1: Out of range (red tint) — only when target exists + ranged
     if rangeEnabled and UnitExists("target") then
         -- Per-cycle dedup: skip redundant C_Spell API calls for shared spellIDs
         local hasRange = _hasRangeCycleCache[spellID]
@@ -2630,20 +2635,46 @@ local function UpdateIconVisualState(icon, cachedDB)
                 _rangeCycleCache[spellID] = inRange == nil and "nil" or inRange
             end
             if inRange == false then
-                -- Clear usability darkening if switching to range tint
-                if icon._usabilityTinted then
-                    icon._usabilityTinted = nil
-                end
-                local c = settings.rangeColor
-                local r = c and c[1] or 0.8
-                local g = c and c[2] or 0.1
-                local b = c and c[3] or 0.1
-                local a = c and c[4] or 1
-                icon.Icon:SetVertexColor(r, g, b, a)
-                icon._rangeTinted = true
-                return
+                newVisualState = "oor"
             end
         end
+    end
+
+    -- Priority 2: Unusable / resource-starved (darken) — only if not already OOR
+    if newVisualState == "normal" and usabilityEnabled then
+        -- Per-cycle dedup: reuse result for shared spellIDs
+        local isUsable = _usableCycleCache[spellID]
+        if isUsable == nil then
+            isUsable = SafeIsSpellUsable(spellID)
+            _usableCycleCache[spellID] = isUsable
+        end
+        if not isUsable then
+            newVisualState = "unusable"
+        end
+    end
+
+    ---------------------------------------------------------------------------
+    -- State-change gating: skip SetVertexColor if visual state unchanged
+    ---------------------------------------------------------------------------
+    if icon._lastVisualState == newVisualState then return end
+    icon._lastVisualState = newVisualState
+
+    ---------------------------------------------------------------------------
+    -- Apply the computed visual state
+    ---------------------------------------------------------------------------
+    if newVisualState == "oor" then
+        -- Clear usability darkening if switching to range tint
+        if icon._usabilityTinted then
+            icon._usabilityTinted = nil
+        end
+        local c = settings.rangeColor
+        local r = c and c[1] or 0.8
+        local g = c and c[2] or 0.1
+        local b = c and c[3] or 0.1
+        local a = c and c[4] or 1
+        icon.Icon:SetVertexColor(r, g, b, a)
+        icon._rangeTinted = true
+        return
     end
 
     -- If was range-tinted but now in range, clear it
@@ -2652,26 +2683,15 @@ local function UpdateIconVisualState(icon, cachedDB)
         icon._rangeTinted = nil
     end
 
-    ---------------------------------------------------------------------------
-    -- Priority 2: Unusable / resource-starved (darken)
-    ---------------------------------------------------------------------------
-    if usabilityEnabled then
-        -- Per-cycle dedup: reuse result for shared spellIDs
-        local isUsable = _usableCycleCache[spellID]
-        if isUsable == nil then
-            isUsable = SafeIsSpellUsable(spellID)
-            _usableCycleCache[spellID] = isUsable
+    if newVisualState == "unusable" then
+        -- Clear cooldown desaturation so vertex color darkening is visible
+        if icon._cdDesaturated then
+            icon.Icon:SetDesaturated(false)
+            icon._cdDesaturated = nil
         end
-        if not isUsable then
-            -- Clear cooldown desaturation so vertex color darkening is visible
-            if icon._cdDesaturated then
-                icon.Icon:SetDesaturated(false)
-                icon._cdDesaturated = nil
-            end
-            icon.Icon:SetVertexColor(0.4, 0.4, 0.4, 1)
-            icon._usabilityTinted = true
-            return
-        end
+        icon.Icon:SetVertexColor(0.4, 0.4, 0.4, 1)
+        icon._usabilityTinted = true
+        return
     end
 
     -- If was usability-tinted but now usable, clear it
@@ -2708,26 +2728,28 @@ cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 -- UNIT_AURA handled by centralized dispatcher subscription (below)
 
--- Frame-show coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
+-- C_Timer coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
 -- SPELL_UPDATE_CHARGES, BAG_UPDATE_COOLDOWN, and UNIT_AURA into a single
--- UpdateAllCooldowns per render frame (zero-allocation, automatic).
+-- UpdateAllCooldowns after a short delay.
 -- Throttled to max ~20 FPS (50ms) — raid combat fires SPELL_UPDATE_COOLDOWN
 -- many times per second; 60 FPS updates are excessive for icon display.
 local CDM_MIN_UPDATE_INTERVAL = 0.05
 local _lastCDMUpdateTime = 0
 
-local cdCoalesceFrame = CreateFrame("Frame")
-cdCoalesceFrame:Hide()
-cdCoalesceFrame:SetScript("OnUpdate", function(self)
-    local now = GetTime()
-    if now - _lastCDMUpdateTime < CDM_MIN_UPDATE_INTERVAL then return end
-    self:Hide()
-    _lastCDMUpdateTime = now
-    CDMIcons:UpdateAllCooldowns()
-    if ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
-        ns.CDMBars:UpdateOwnedBars()
-    end
-end)
+local _cdmUpdatePending = false
+
+local function ScheduleCDMUpdate()
+    if _cdmUpdatePending then return end
+    _cdmUpdatePending = true
+    C_Timer.After(CDM_MIN_UPDATE_INTERVAL, function()
+        _cdmUpdatePending = false
+        _lastCDMUpdateTime = GetTime()
+        CDMIcons:UpdateAllCooldowns()
+        if ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
+            ns.CDMBars:UpdateOwnedBars()
+        end
+    end)
+end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_TARGET_CHANGED" then
@@ -2752,12 +2774,12 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- One-shot catch-up: refresh all cooldowns after combat ends
         -- (replaces the removed 500ms ticker as a safety net)
         _childMapDirty = true
-        cdCoalesceFrame:Show()
+        ScheduleCDMUpdate()
         return
     end
-    -- Coalesce cooldown events via frame-show pattern
+    -- Coalesce cooldown events via C_Timer
     _childMapDirty = true  -- cooldown state changed, children may have shown/hidden
-    cdCoalesceFrame:Show()
+    ScheduleCDMUpdate()
 end)
 
 -- Subscribe to centralized aura dispatcher for prompt icon updates.
@@ -2766,12 +2788,12 @@ end)
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
         _childMapDirty = true
-        cdCoalesceFrame:Show()
+        ScheduleCDMUpdate()
     end)
     ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
         if unit == "target" then
             _childMapDirty = true
-            cdCoalesceFrame:Show()
+            ScheduleCDMUpdate()
         end
     end)
 end

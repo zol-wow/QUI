@@ -203,25 +203,33 @@ local sharedTimerFrame = CreateFrame("Frame")
 local TIMER_INTERVAL = 0.2 -- Update duration text at 5 Hz (200ms)
 local floor = math.floor
 
--- Returns (text, bucket) where bucket changes only when the display text
--- would actually differ, allowing callers to skip redundant SetText calls.
--- Buckets: remaining<10 → floor(remaining*10), <60 → floor(remaining),
--- <3600 → floor(remaining/60), else floor(remaining/3600).
+-- Compute the bucket for a remaining duration WITHOUT allocating a string.
+-- Only call FormatDuration when the bucket actually changed.
+local function ComputeBucket(remaining)
+    if remaining <= 0 then return -1 end
+    if remaining < 10 then return floor(remaining * 10) end
+    if remaining < 60 then return 1000 + floor(remaining) end
+    if remaining < 3600 then return 2000 + floor(remaining / 60) end
+    return 3000 + floor(remaining / 3600)
+end
+
+-- Returns formatted text for a given remaining duration.
+-- PERF: Only call this when ComputeBucket indicates the display changed.
 local function FormatDuration(remaining)
-    if remaining <= 0 then return "", -1 end
-    if remaining < 10 then
-        local bucket = floor(remaining * 10)
-        return format("%.1f", remaining), bucket
-    elseif remaining < 60 then
-        local bucket = floor(remaining)
-        return format("%d", bucket), 1000 + bucket
-    elseif remaining < 3600 then
-        local bucket = floor(remaining / 60)
-        return format("%dm", bucket), 2000 + bucket
-    else
-        local bucket = floor(remaining / 3600)
-        return format("%dh", bucket), 3000 + bucket
-    end
+    if remaining <= 0 then return "" end
+    if remaining < 10 then return format("%.1f", remaining) end
+    if remaining < 60 then return format("%d", floor(remaining)) end
+    if remaining < 3600 then return format("%dm", floor(remaining / 60)) end
+    return format("%dh", floor(remaining / 3600))
+end
+
+-- Compute color band cheaply (no allocation).
+local function ComputeColorBand(remaining, duration)
+    if duration <= 0 or remaining <= 0 then return 0 end
+    local pct = remaining / duration
+    if pct > 0.5 then return 3 end
+    if pct > 0.25 then return 2 end
+    return 1
 end
 
 -- Returns (r, g, b, colorBand) where colorBand changes only when the color
@@ -268,16 +276,18 @@ local function SharedTimerOnUpdate(self, dt)
                     local auraSettings = isRaid and raidAuras or partyAuras
                     local showDurationText = not auraSettings or auraSettings.showDurationText ~= false
                     if showDurationText then
-                        -- Skip SetText/SetTextColor when displayed value hasn't changed
-                        local text, bucket = FormatDuration(remaining)
+                        -- PERF: Compute bucket (zero allocation) BEFORE formatting.
+                        -- Only call FormatDuration (string.format) when display changes.
+                        local bucket = ComputeBucket(remaining)
                         if bucket ~= state._lastBucket then
-                            icon.durationText:SetText(text)
+                            icon.durationText:SetText(FormatDuration(remaining))
                             state._lastBucket = bucket
                         end
                         local showDurationColor = not auraSettings or auraSettings.showDurationColor ~= false
                         if showDurationColor then
-                            local r, g, b, band = GetDurationColor(remaining, dur)
+                            local band = ComputeColorBand(remaining, dur)
                             if band ~= state._lastColorBand then
+                                local r, g, b = GetDurationColor(remaining, dur)
                                 icon.durationText:SetTextColor(r, g, b, 1)
                                 state._lastColorBand = band
                             end

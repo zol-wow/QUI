@@ -13,6 +13,9 @@ local issecretvalue = issecretvalue
 
 -- Weak-keyed set of frames we've already processed
 local processed = setmetatable({}, { __mode = "k" })
+-- Weak-keyed whitelist of frames identified as needing color override.
+-- The SetBackdropColor hook checks this to skip unrelated frames in O(1).
+local trackedFrames = setmetatable({}, { __mode = "k" })
 local initialized = false
 
 ---------------------------------------------------------------------------
@@ -172,10 +175,12 @@ local function ScanAndSuppress()
             if ok and not isS(vis) then
                 if vis then
                     -- Visible frame: full suppression (backdrop + NineSlice)
+                    trackedFrames[f] = true
                     SuppressFrame(f)
                 elseif f.GetBackdropColor then
                     -- Hidden frame with backdrop: pre-emptively fix white/orphaned
                     -- backdrops so they don't flash white when shown later
+                    trackedFrames[f] = true
                     SuppressFrame(f)
                 end
             end
@@ -192,6 +197,10 @@ if BackdropTemplateMixin and BackdropTemplateMixin.SetBackdropColor then
     hooksecurefunc(BackdropTemplateMixin, "SetBackdropColor", function(self, r, g, b, a)
         if suppressingBackdrop then return end
         if not initialized or not IsEnabled() then return end
+        -- Fast path: skip frames not in our tracked whitelist.
+        -- Only frames identified during the initial scan or by the orphan/SetBackdrop
+        -- hooks are tracked. This skips 99% of frames with a single O(1) lookup.
+        if not trackedFrames[self] and not processed[self] then return end
         -- Fast path: skip non-white colors immediately (most common case).
         -- Color check is 3 number comparisons vs ShouldSkipFrame's string matching.
         local isS = issecretvalue
@@ -234,6 +243,7 @@ local function ProcessPendingOrphans()
         if f.backdropInfo and f.backdropInfo.bgFile and not f.backdropColor then
             if f._quiBgR then
                 -- QUI frame with backup colors: recover
+                trackedFrames[f] = true
                 suppressingBackdrop = true
                 pcall(f.SetBackdropColor, f, f._quiBgR, f._quiBgG, f._quiBgB, f._quiBgA or 1)
                 if f._quiBorderR then
@@ -244,6 +254,7 @@ local function ProcessPendingOrphans()
             elseif not ShouldSkipFrame(f) then
                 local hok, h = pcall(f.GetHeight, f)
                 if hok and not isS(h) and h and h > 10 then
+                    trackedFrames[f] = true
                     suppressingBackdrop = true
                     pcall(f.SetBackdropColor, f, 0.05, 0.05, 0.05, 0.95)
                     pcall(f.SetBackdropBorderColor, f, 0, 0, 0, 1)
@@ -262,6 +273,15 @@ if BackdropTemplateMixin and BackdropTemplateMixin.SetBackdrop then
         if not initialized or not IsEnabled() then return end
         -- Only care about backdrops with a background file (border-only = no white bg)
         if not info or not info.bgFile then return end
+        -- QUI frames with backup colors need orphan recovery even though
+        -- ShouldSkipFrame would skip them — let them through to pendingOrphanCheck.
+        if not self._quiBgR then
+            -- Skip Blizzard/QUI frames early — no need to track or orphan-check them
+            if ShouldSkipFrame(self) then return end
+            -- Add to tracked whitelist so the SetBackdropColor hook can process
+            -- this frame if it receives a white color before orphan check runs.
+            trackedFrames[self] = true
+        end
         -- Frame state changed — clear processed flag so we re-evaluate
         if processed[self] then
             processed[self] = nil
@@ -306,8 +326,9 @@ end
 ---------------------------------------------------------------------------
 
 local function Refresh()
-    -- Clear processed set so we re-evaluate everything
+    -- Clear processed and tracked sets so we re-evaluate everything
     wipe(processed)
+    wipe(trackedFrames)
     wipe(_blizzFrameCache)
     if IsEnabled() then
         C_Timer.After(0.1, ScanAndSuppress)

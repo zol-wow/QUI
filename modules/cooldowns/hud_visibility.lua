@@ -34,28 +34,31 @@ local UpdateUnitframesVisibility
 ---------------------------------------------------------------------------
 local _healthBelowMax = false
 local _healthStableTimer = nil
-local HEALTH_STABLE_DURATION = 3.0  -- seconds after last health event to assume full
+local _lastHealthEventTime = 0
+local HEALTH_STABLE_DURATION = 3.0
 
 local function UpdateHealthState()
-    -- UNIT_HEALTH fired — health is changing, assume below max
     local wasBelowMax = _healthBelowMax
     _healthBelowMax = true
+    _lastHealthEventTime = GetTime()
 
     if not wasBelowMax and UpdateUnitframesVisibility then
         UpdateUnitframesVisibility()
     end
 
-    -- Reset the stable timer — when health stops changing, assume full
-    if _healthStableTimer then
-        _healthStableTimer:Cancel()
+    -- Single ticker checks periodically instead of creating/cancelling timers per event
+    if not _healthStableTimer then
+        _healthStableTimer = C_Timer.NewTicker(1.0, function()
+            if GetTime() - _lastHealthEventTime >= HEALTH_STABLE_DURATION then
+                _healthStableTimer:Cancel()
+                _healthStableTimer = nil
+                _healthBelowMax = false
+                if UpdateUnitframesVisibility then
+                    UpdateUnitframesVisibility()
+                end
+            end
+        end)
     end
-    _healthStableTimer = C_Timer.NewTimer(HEALTH_STABLE_DURATION, function()
-        _healthStableTimer = nil
-        _healthBelowMax = false
-        if UpdateUnitframesVisibility then
-            UpdateUnitframesVisibility()
-        end
-    end)
 end
 
 ---------------------------------------------------------------------------
