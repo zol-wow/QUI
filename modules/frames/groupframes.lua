@@ -1444,15 +1444,23 @@ local function UpdateDefensiveIndicator(frame)
                     local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, aura.auraInstanceID)
                     if ok and durationObj then
                         pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
-                    elseif cd.SetCooldownFromExpirationTime then
-                        pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                    elseif not IsSecretValue(aura.expirationTime) and not IsSecretValue(aura.duration) then
+                        if cd.SetCooldownFromExpirationTime then
+                            pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                        else
+                            pcall(cd.SetCooldown, cd, aura.expirationTime - aura.duration, aura.duration)
+                        end
+                    else
+                        cd:Clear()
                     end
-                elseif cd.SetCooldownFromExpirationTime then
-                    pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                elseif not IsSecretValue(aura.expirationTime) and not IsSecretValue(aura.duration) then
+                    if cd.SetCooldownFromExpirationTime then
+                        pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                    else
+                        pcall(cd.SetCooldown, cd, aura.expirationTime - aura.duration, aura.duration)
+                    end
                 else
-                    pcall(function()
-                        cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
-                    end)
+                    cd:Clear()
                 end
             elseif cd then
                 cd:Clear()

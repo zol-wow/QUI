@@ -289,10 +289,22 @@ local function UpdateTotems()
         btn.slot = slot
 
         local haveTotem, name, startTime, duration, icon = GetTotemInfo(slot)
-        if haveTotem and icon and icon ~= 0 and duration > 0 then
+        -- duration may be a secret value in combat; guard the comparison
+        local ok, isActive = pcall(function() return duration > 0 end)
+        if haveTotem and icon and icon ~= 0 and ok and isActive then
             btn.icon:SetTexture(icon)
-            -- Pass secret values directly to C-side SetCooldown
-            pcall(btn.cooldown.SetCooldown, btn.cooldown, startTime, duration)
+            -- Prefer DurationObject API (12.0.5+, fully secret-safe)
+            local cd = btn.cooldown
+            if GetTotemDuration and cd.SetCooldownFromDurationObject then
+                local dok, durObj = pcall(GetTotemDuration, slot)
+                if dok and durObj then
+                    pcall(cd.SetCooldownFromDurationObject, cd, durObj)
+                end
+            elseif not Helpers.IsSecretValue(startTime)
+               and not Helpers.IsSecretValue(duration) then
+                -- Legacy fallback: only safe with non-secret numerics
+                pcall(cd.SetCooldown, cd, startTime, duration)
+            end
             StyleButton(btn)
             btn:Show()
             hasActive = true

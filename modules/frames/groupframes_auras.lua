@@ -533,7 +533,7 @@ local function UpdateAuraIcon(icon, auraData, unit)
         end
     end
 
-    -- Cooldown swipe (DandersFrames pattern: prefer DurationObject → ExpirationTime → legacy)
+    -- Cooldown swipe (prefer DurationObject → ExpirationTime → legacy)
     if icon.cooldown then
         local dur = displayData.duration
         local expTime = displayData.expirationTime
@@ -543,15 +543,22 @@ local function UpdateAuraIcon(icon, auraData, unit)
             local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraID)
             if ok and durationObj then
                 pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, durationObj, true)
-            elseif icon.cooldown.SetCooldownFromExpirationTime then
-                pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
+            elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
+                if icon.cooldown.SetCooldownFromExpirationTime then
+                    pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
+                else
+                    pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
+                end
+            else
+                icon.cooldown:Clear()
             end
-        elseif icon.cooldown.SetCooldownFromExpirationTime and (dur or expTime) then
-            -- Path 2: SetCooldownFromExpirationTime (C-side, secret-safe)
-            pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
         elseif not IsSecretValue(dur) and dur and not IsSecretValue(expTime) and expTime then
-            -- Path 3: Legacy fallback (Lua arithmetic, only safe with non-secret values)
-            pcall(function() icon.cooldown:SetCooldown(expTime - dur, dur) end)
+            -- Path 2: Non-secret fallback (SetCooldownFromExpirationTime or legacy)
+            if icon.cooldown.SetCooldownFromExpirationTime then
+                pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
+            else
+                pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
+            end
         else
             icon.cooldown:Clear()
         end

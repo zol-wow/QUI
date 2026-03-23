@@ -115,6 +115,7 @@ local previewDebuffIcons = {}
 local PA_MAX_SLOTS = 3
 local paSlots = {}
 local paAnchorIDs = {}
+local paPendingSetup = false   -- deferred AddPrivateAuraAnchor after combat
 
 ---------------------------------------------------------------------------
 -- ICON FACTORY
@@ -604,9 +605,26 @@ local function UpdateAuraIcons(container, activeIcons, sortedList, filter, isBuf
         icon._rawDuration = duration
         icon._rawExpirationTime = expirationTime
 
-        -- Cooldown swipe: pass secret values directly to C-side API
+        -- Cooldown swipe: prefer DurationObject (secret-safe via C-side)
         if expirationTime and duration then
-            pcall(icon.Cooldown.SetCooldownFromExpirationTime, icon.Cooldown, expirationTime, duration)
+            local applied = false
+            -- DurationObject path: fully secret-safe, C-side handles everything
+            if icon._auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraDuration
+               and icon.Cooldown.SetCooldownFromDurationObject then
+                local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", icon._auraInstanceID)
+                if ok and durObj then
+                    pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, true)
+                    applied = true
+                end
+            end
+            -- Fallback: only use expiration time when values are readable in Lua
+            if not applied then
+                if not IsSecretValue(expirationTime) and not IsSecretValue(duration) then
+                    pcall(icon.Cooldown.SetCooldownFromExpirationTime, icon.Cooldown, expirationTime, duration)
+                else
+                    icon.Cooldown:Clear()
+                end
+            end
         else
             icon.Cooldown:Clear()
         end
@@ -668,6 +686,10 @@ end
 ---------------------------------------------------------------------------
 local function ClearPrivateAuraAnchors()
     if not RemovePrivateAuraAnchor then return end
+    if InCombatLockdown() then
+        paPendingSetup = true
+        return
+    end
     for i = 1, #paAnchorIDs do
         local id = paAnchorIDs[i]
         if id then pcall(RemovePrivateAuraAnchor, id) end
@@ -687,6 +709,10 @@ end
 
 local function SetupPrivateAuras()
     if not AddPrivateAuraAnchor or not debuffContainer then return end
+    if InCombatLockdown() then
+        paPendingSetup = true
+        return
+    end
     ClearPrivateAuraAnchors()
 
     local settings = GetSettings()
@@ -794,6 +820,10 @@ local PA_REFRESH_CD = 1.0
 
 local function RefreshPrivateAuraAnchors()
     if not AddPrivateAuraAnchor or not debuffContainer then return end
+    if InCombatLockdown() then
+        paPendingSetup = true
+        return
+    end
     local now = GetTime()
     if now - paLastRefresh < PA_REFRESH_CD then return end
     paLastRefresh = now
@@ -1150,6 +1180,17 @@ if ns.AuraEvents then
         ScheduleDebuffUpdate()
     end)
 end
+
+-- Combat-end handler: process deferred private aura anchor work
+local paRegenFrame = CreateFrame("Frame")
+paRegenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+paRegenFrame:SetScript("OnEvent", function()
+    if paPendingSetup then
+        paPendingSetup = false
+        SetupPrivateAuras()
+        LayoutPrivateAuraSlots()
+    end
+end)
 
 -- Initialize after AceDB is ready (called from core/main.lua OnEnable)
 C_Timer.After(1, Init)

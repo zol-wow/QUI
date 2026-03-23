@@ -190,6 +190,11 @@ end
 
 --- Remove all anchors (main + text) from a state table
 local function RemoveAllAnchors(state)
+    -- Private aura anchor APIs are restricted in combat (12.0.5+)
+    if InCombatLockdown() then
+        pendingReanchor = true
+        return
+    end
     for i, anchorID in ipairs(state.anchorIDs) do
         pcall(RemovePrivateAuraAnchor, anchorID)
         state.anchorIDs[i] = nil
@@ -211,6 +216,12 @@ end
 -- CORE: Setup private auras on a single frame
 ---------------------------------------------------------------------------
 local function SetupPrivateAuras(frame)
+    -- Private aura anchor APIs are restricted in combat (12.0.5+)
+    if InCombatLockdown() then
+        pendingReanchor = true
+        return
+    end
+
     local settings = GetSettings(frame._isRaid)
     if not settings or not settings.enabled then return end
 
@@ -486,6 +497,11 @@ local paRefreshTimes = setmetatable({}, { __mode = "k" })
 -- Subscribe to centralized aura dispatcher for private aura refresh
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+        -- Private aura anchor APIs are restricted in combat (12.0.5+)
+        if InCombatLockdown() then
+            pendingReanchor = true
+            return
+        end
         local GF = ns.QUI_GroupFrames
         if not GF or not GF.initialized then return end
         local frame = GF.unitFrameMap and GF.unitFrameMap[unit]

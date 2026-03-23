@@ -489,15 +489,23 @@ local function UpdateFramePinnedAuras(frame)
                                 local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
                                 if ok and durationObj then
                                     pcall(ind.cooldown.SetCooldownFromDurationObject, ind.cooldown, durationObj)
-                                elseif ind.cooldown.SetCooldownFromExpirationTime then
+                                elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
+                                    if ind.cooldown.SetCooldownFromExpirationTime then
+                                        pcall(ind.cooldown.SetCooldownFromExpirationTime, ind.cooldown, expTime, dur)
+                                    else
+                                        pcall(ind.cooldown.SetCooldown, ind.cooldown, expTime - dur, dur)
+                                    end
+                                else
+                                    ind.cooldown:Clear()
+                                end
+                            elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
+                                if ind.cooldown.SetCooldownFromExpirationTime then
                                     pcall(ind.cooldown.SetCooldownFromExpirationTime, ind.cooldown, expTime, dur)
                                 else
-                                    pcall(function() ind.cooldown:SetCooldown(expTime - dur, dur) end)
+                                    pcall(ind.cooldown.SetCooldown, ind.cooldown, expTime - dur, dur)
                                 end
-                            elseif ind.cooldown.SetCooldownFromExpirationTime then
-                                pcall(ind.cooldown.SetCooldownFromExpirationTime, ind.cooldown, expTime, dur)
                             else
-                                pcall(function() ind.cooldown:SetCooldown(expTime - dur, dur) end)
+                                ind.cooldown:Clear()
                             end
                         end
                     elseif ind.cooldown then
