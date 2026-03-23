@@ -33,7 +33,7 @@ The tooltip module is enabled by default. To configure it:
   - Unit frames
   - CDM icons
   - Custom trackers
-- **Spell ID display** -- Shows the spell ID on ability tooltips, useful for debugging and addon development.
+- **Spell/Item ID display** -- Shows spell/icon IDs on spell tooltips and item IDs on item tooltips, useful for debugging and addon development.
 - **Health bar toggle** -- Option to hide the health bar on unit tooltips for a cleaner look.
 - **Border customization** -- Choose between class color or accent color for the tooltip border, with adjustable thickness (1-10px).
 - **Background opacity** -- Slider to control tooltip background transparency.
@@ -48,7 +48,7 @@ The tooltip module is enabled by default. To configure it:
 | Combat key | Modifier to force-show tooltips in combat | SHIFT |
 | Border color | Class color or accent color | Accent |
 | Border thickness | Border width in pixels (1-10) | 2 |
-| Show spell IDs | Display spell IDs on ability tooltips | Disabled |
+| Show spell/icon/item IDs | Display spell/icon IDs on spell tooltips and item IDs on item tooltips | Disabled |
 | Hide health bar | Remove health bar from unit tooltips | Disabled |
 | Background opacity | Tooltip background transparency | 1.0 |
 

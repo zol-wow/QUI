@@ -1073,6 +1073,43 @@ local function SetupTooltipHook()
         return tostring(data.dataInstanceID) .. ":" .. tostring(spellID)
     end
 
+    local function ResolveItemIDFromTooltipData(tooltip, data)
+        if data then
+            local fromID = data.id
+            if type(fromID) == "number" then
+                if not (type(issecretvalue) == "function" and issecretvalue(fromID)) then
+                    return fromID
+                end
+            end
+
+            local fromItemID = data.itemID
+            if type(fromItemID) == "number" then
+                if not (type(issecretvalue) == "function" and issecretvalue(fromItemID)) then
+                    return fromItemID
+                end
+            end
+        end
+
+        if tooltip and tooltip.GetItem then
+            local ok, _, itemLink = pcall(tooltip.GetItem, tooltip)
+            if ok and type(itemLink) == "string" then
+                local itemID = tonumber(string.match(itemLink, "item:(%d+)"))
+                if itemID then
+                    return itemID
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function BuildItemIDDedupeKey(data, itemID)
+        if not data or type(data.dataInstanceID) ~= "number" then
+            return "item:" .. tostring(itemID)
+        end
+        return tostring(data.dataInstanceID) .. ":item:" .. tostring(itemID)
+    end
+
     local function AddSpellIDToTooltip(tooltip, spellID, data, skipShow)
         if not spellID then return end
         local settings = Provider:GetSettings()
@@ -1096,6 +1133,24 @@ local function SetupTooltipHook()
         if iconID then
             tooltip:AddDoubleLine("Icon ID:", tostring(iconID), 0.5, 0.8, 1, 1, 1, 1)
         end
+
+        if not skipShow then
+            RefreshTooltipLayout(tooltip)
+        end
+    end
+
+    local function AddItemIDToTooltip(tooltip, itemID, data, skipShow)
+        if not itemID then return end
+        local settings = Provider:GetSettings()
+        if not settings or not settings.enabled or not settings.showSpellIDs then return end
+        if type(itemID) ~= "number" then return end
+        if type(issecretvalue) == "function" and issecretvalue(itemID) then return end
+        local dedupeKey = BuildItemIDDedupeKey(data, itemID)
+        if tooltipSpellIDAdded[tooltip] == dedupeKey then return end
+        tooltipSpellIDAdded[tooltip] = dedupeKey
+
+        tooltip:AddLine(" ")
+        tooltip:AddDoubleLine("Item ID:", tostring(itemID), 0.5, 0.8, 1, 1, 1, 1)
 
         if not skipShow then
             RefreshTooltipLayout(tooltip)
@@ -1145,7 +1200,16 @@ local function SetupTooltipHook()
         end
     end)
 
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
+        if not InCombatLockdown() then
+            pcall(function()
+                local itemID = ResolveItemIDFromTooltipData(tooltip, data)
+                if itemID then
+                    AddItemIDToTooltip(tooltip, itemID, data)
+                end
+            end)
+        end
+
         if tooltip ~= GameTooltip then return end
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         local settings = Provider:GetSettings()

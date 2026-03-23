@@ -1370,7 +1370,7 @@ local defaults = {
             borderColor = {0.2, 1.0, 0.6, 1}, -- Border color (default = mint accent)
             borderUseClassColor = false,       -- Use player class color for border
             borderUseAccentColor = false,      -- Use addon accent color for border
-            showSpellIDs = false,              -- Show spell ID and icon ID on buff/debuff tooltips
+            showSpellIDs = false,              -- Show spell/icon IDs and item IDs on tooltips
             showPlayerItemLevel = false,       -- Show inspected player item level on player tooltips
             showTooltipTarget = true,          -- Show target name on unit tooltips when available
             showPlayerMount = true,            -- Show mounted player's mount on player tooltips (out of combat)

@@ -256,12 +256,12 @@ local function BuildTooltipTab(tabContent)
     fontSizeInfo:SetJustifyH("LEFT")
     y = y - FORM_ROW
 
-    local spellIDCheck = GUI:CreateFormCheckbox(tabContent, "Show Spell/Icon IDs", "showSpellIDs", tooltip, RefreshTooltips)
+    local spellIDCheck = GUI:CreateFormCheckbox(tabContent, "Show Spell/Icon/Item IDs", "showSpellIDs", tooltip, RefreshTooltips)
     spellIDCheck:SetPoint("TOPLEFT", PADDING, y)
     spellIDCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     y = y - FORM_ROW
 
-    local spellIDInfo = GUI:CreateLabel(tabContent, "Display spell ID and icon ID on buff, debuff, and spell tooltips. May not work in combat.", 10, C.textMuted)
+    local spellIDInfo = GUI:CreateLabel(tabContent, "Display spell ID, icon ID, and item ID on buff, debuff, spell, and item tooltips. May not work in combat.", 10, C.textMuted)
     spellIDInfo:SetPoint("TOPLEFT", PADDING, y)
     spellIDInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
     spellIDInfo:SetJustifyH("LEFT")

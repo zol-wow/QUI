@@ -33,7 +33,7 @@ Tooltip and Chat settings are accessible from the **General & QoL** tab in-game 
 | `tooltip.borderColor` | color | `{0.2, 1, 0.6, 1}` | Border color (mint) |
 | `tooltip.borderUseClassColor` | boolean | `false` | Class color border |
 | `tooltip.borderUseAccentColor` | boolean | `false` | Accent color border |
-| `tooltip.showSpellIDs` | boolean | `false` | Show spell/icon IDs |
+| `tooltip.showSpellIDs` | boolean | `false` | Show spell/icon IDs and item IDs |
 | `tooltip.hideHealthBar` | boolean | `true` | Hide health bar |
 | `tooltip.combatKey` | string | `"SHIFT"` | Combat modifier key |
 
