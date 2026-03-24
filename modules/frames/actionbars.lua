@@ -2160,6 +2160,29 @@ local function BuildBar(barKey)
 
     ActionBarsOwned.nativeButtons[barKey] = buttons
 
+    -- Guard action-button cooldowns against SetCooldown secret-value errors.
+    -- QUI's buttons run in tainted execution context (addon-created for bar1,
+    -- reparented for bars 2-8/pet/stance), so Blizzard's
+    -- ActionButton_UpdateCooldown → SetCooldown chain rejects the secret
+    -- values returned by GetActionCooldown during combat (12.0.5+).
+    -- Wrap each cooldown frame's SetCooldown in pcall so the error is
+    -- silently caught; the cooldown self-corrects when combat ends.
+    if SKINNABLE_BAR_KEYS[barKey] then
+        for _, btn in ipairs(buttons) do
+            local cd = btn.cooldown or btn.Cooldown
+            if cd and cd.SetCooldown then
+                local origSetCD = cd.SetCooldown
+                cd.SetCooldown = function(self, ...)
+                    if InCombatLockdown() then
+                        pcall(origSetCD, self, ...)
+                    else
+                        origSetCD(self, ...)
+                    end
+                end
+            end
+        end
+    end
+
     -- Register frame refs for the secure layout handler (must be outside combat).
     if SKINNABLE_BAR_KEYS[barKey] then
         layoutHandler:SetFrameRef("bar-" .. barKey, container)
