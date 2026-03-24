@@ -158,6 +158,7 @@ end
 
 local styleFrames = Helpers.CreateStateTable()   -- tooltip → overlay frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
+local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
 
 ---------------------------------------------------------------------------
 -- NineSlice Management
@@ -167,10 +168,16 @@ local function HideNineSlice(tooltip)
     local ns = tooltip.NineSlice
     if not ns then return end
     pcall(ns.Hide, ns)
-    -- Clear cached layout data to prevent Blizzard from re-applying styles
-    ns.layoutType = nil
-    ns.layoutTextureKit = nil
-    ns.backdropInfo = nil
+    -- TAINT SAFETY: Do NOT write to ns.layoutType / ns.layoutTextureKit /
+    -- ns.backdropInfo from addon code.  Writing nil here taints those keys;
+    -- the taint persists across Show() cycles and can propagate into
+    -- Blizzard's widget-layout code (LayoutFrame.lua GetExtents), causing
+    -- "attempt to compare a secret number value" errors when the tainted
+    -- execution context makes GetScaledRect() return secret values.
+    -- NineSliceUtil.ApplyLayout already overwrites these keys from secure
+    -- code before reading them, so the nil write is unnecessary.  Hiding
+    -- the NineSlice frame (C-side Hide above) is sufficient; QUI's
+    -- SharedTooltip_SetBackdropStyle hook re-hides it on every restyle.
 end
 
 ---------------------------------------------------------------------------
@@ -535,6 +542,19 @@ local function SetupBackdropStyleHooks()
             if not IsEnabled() or not tooltip then return end
             if not (tooltip.GetObjectType and tooltip:GetObjectType() == "GameTooltip") then return end
 
+            -- TAINT SAFETY: Defer GameTooltip styling to the watcher's
+            -- OnUpdate to avoid modifying frame properties during the
+            -- synchronous show chain.  Callers (AreaPoiUtil, etc.) call
+            -- SharedTooltip_SetBackdropStyle → Show() → AddWidgetSet in
+            -- one Lua stack; any addon property writes here taint the
+            -- execution context, causing secret-value errors in the
+            -- widget layout's GetExtents / GetScaledRect calls.
+            if tooltip == GameTooltip then
+                pendingGameTooltipRestyle = true
+                -- gtWatcher runs continuously; just setting the flag is sufficient
+                return
+            end
+
             if isEmbedded or tooltip.IsEmbedded then
                 HideNineSlice(tooltip)
                 if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
@@ -552,6 +572,12 @@ local function SetupBackdropStyleHooks()
         hooksecurefunc("GameTooltip_SetBackdropStyle", function(tooltip, style)
             if not IsEnabled() or not tooltip then return end
             if not (tooltip.GetObjectType and tooltip:GetObjectType() == "GameTooltip") then return end
+            -- Defer GameTooltip — same taint safety concern as above.
+            if tooltip == GameTooltip then
+                pendingGameTooltipRestyle = true
+                -- gtWatcher runs continuously; just setting the flag is sufficient
+                return
+            end
             OnTooltipShow(tooltip)
             SafeHookTooltipOnShow(tooltip)
         end)
@@ -605,6 +631,11 @@ local function SetupPostProcessor()
     local function HandlePostCall(tooltip)
         if not tooltip or tooltip == EmbeddedItemTooltip then return end
         SafeHookTooltipOnShow(tooltip)
+        -- TAINT SAFETY: Defer GameTooltip to the watcher (same as backdrop hooks).
+        if tooltip == GameTooltip then
+            pendingGameTooltipRestyle = true
+            return
+        end
         if InCombatLockdown() then
             CombatRefreshTooltip(tooltip)
         else
@@ -693,30 +724,55 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     RebuildTooltipList()
 
     -------------------------------------------------------------------
-    -- GameTooltip watcher (separate frame — no hooks on GT's Show method)
+    -- GameTooltip watcher (separate frame — no hooks on GT directly)
     --
-    -- TAINT SAFETY: HookScript("OnShow"/"OnHide") on GameTooltip is
-    -- acceptable — it only manages the watcher lifecycle. The actual
-    -- skinning work runs in the watcher's OnUpdate or deferred callbacks,
-    -- outside GameTooltip's dispatch chain.
+    -- TAINT SAFETY: Do NOT use HookScript("OnShow"/"OnHide") or
+    -- hooksecurefunc(GameTooltip, "Show") on GameTooltip.  In
+    -- Midnight's taint model, any HookScript on GameTooltip permanently
+    -- taints its dispatch tables, causing secret-value errors when the
+    -- world map's secure context uses GameTooltip (AreaPoiUtil,
+    -- QuestOfferDataProvider, GameTooltip_InsertFrame, etc.).
+    -- Instead, a continuously-running watcher detects visibility
+    -- changes by polling IsShown() every frame.
     -------------------------------------------------------------------
     do
         local wasShown = false
         local watcher = CreateFrame("Frame")
-        watcher:Hide()
-        GameTooltip:HookScript("OnShow", function() watcher:Show() end)
-        GameTooltip:HookScript("OnHide", function()
-            wasShown = false
-            watcher:Hide()
-        end)
+        -- Watcher runs continuously — no HookScript on GameTooltip.
         watcher:SetScript("OnUpdate", function()
-            local shown = GameTooltip:IsShown()
-            if shown == wasShown then
-                if shown then watcher:Hide() end
+            -- Handle deferred restyle from SharedTooltip_SetBackdropStyle /
+            -- GameTooltip_SetBackdropStyle hooks (taint safety).
+            if pendingGameTooltipRestyle then
+                pendingGameTooltipRestyle = false
+                local isShown = GameTooltip:IsShown()
+                if isShown then
+                    OnTooltipShow(GameTooltip)
+                    _pendingFontSet[GameTooltip] = true
+                    C_Timer.After(0, function()
+                        _FlushPendingFonts()
+                        if not GameTooltip:IsShown() then return end
+                        for i = 1, 2 do
+                            local st = _G["ShoppingTooltip" .. i]
+                            if st and st:IsShown() then
+                                SafeHookTooltipOnShow(st)
+                                OnTooltipShow(st)
+                            end
+                        end
+                    end)
+                end
+                -- Sync wasShown so the initial-show branch below doesn't
+                -- fire again and duplicate the styling we just applied.
+                wasShown = isShown
                 return
             end
+
+            local shown = GameTooltip:IsShown()
+            if shown == wasShown then return end
             wasShown = shown
-            if not shown then watcher:Hide() return end
+            if not shown then
+                pendingGameTooltipRestyle = false
+                return
+            end
 
             -- GameTooltip just became visible
             OnTooltipShow(GameTooltip)

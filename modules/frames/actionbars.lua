@@ -439,6 +439,14 @@ local function GetSpellFlyoutSourceBarKey(flyout)
     if not name then return nil end
 
     if name:match("^ActionButton%d+$") then return "bar1" end
+    if name:match("^QUI_Bar1Button%d+$") then return "bar1" end
+    if name:match("^QUI_Bar2Button%d+$") then return "bar2" end
+    if name:match("^QUI_Bar3Button%d+$") then return "bar3" end
+    if name:match("^QUI_Bar4Button%d+$") then return "bar4" end
+    if name:match("^QUI_Bar5Button%d+$") then return "bar5" end
+    if name:match("^QUI_Bar6Button%d+$") then return "bar6" end
+    if name:match("^QUI_Bar7Button%d+$") then return "bar7" end
+    if name:match("^QUI_Bar8Button%d+$") then return "bar8" end
     if name:match("^MultiBarBottomLeftButton%d+$") then return "bar2" end
     if name:match("^MultiBarBottomRightButton%d+$") then return "bar3" end
     if name:match("^MultiBarRightButton%d+$") then return "bar4" end
@@ -516,6 +524,13 @@ local function GetBarKeyFromButton(button)
 
     if name:match("^ActionButton%d+$") then return "bar1" end
     if name:match("^QUI_Bar1Button%d+$") then return "bar1" end
+    if name:match("^QUI_Bar2Button%d+$") then return "bar2" end
+    if name:match("^QUI_Bar3Button%d+$") then return "bar3" end
+    if name:match("^QUI_Bar4Button%d+$") then return "bar4" end
+    if name:match("^QUI_Bar5Button%d+$") then return "bar5" end
+    if name:match("^QUI_Bar6Button%d+$") then return "bar6" end
+    if name:match("^QUI_Bar7Button%d+$") then return "bar7" end
+    if name:match("^QUI_Bar8Button%d+$") then return "bar8" end
     if name:match("^MultiBarBottomLeftButton%d+$") then return "bar2" end
     if name:match("^MultiBarBottomRightButton%d+$") then return "bar3" end
     if name:match("^MultiBarRightButton%d+$") then return "bar4" end
@@ -1686,7 +1701,13 @@ local function BuildBar(barKey)
             local btnName = "QUI_Bar1Button" .. i
             local btn = _G[btnName]
             if not btn then
-                btn = CreateFrame("CheckButton", btnName, container, "ActionBarButtonTemplate")
+                -- pcall: during combat reload, the template's OnLoad fires
+                -- synchronously and hits secret-value comparisons in the
+                -- tainted call stack.  The frame IS created even if OnLoad
+                -- errors — retrieve it from globals.
+                local ok
+                ok, btn = pcall(CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate")
+                if not ok then btn = _G[btnName] end
                 btn:SetAttribute("index", i)
                 btn:SetAttribute("action", i)
                 btn:SetAttribute("_childupdate-offset", [[
@@ -2114,20 +2135,21 @@ local function BuildBar(barKey)
             end
         end
     else
-        -- BARS 2-8: Reparent Blizzard's existing buttons into QUI container.
-        -- Hide the bar frame but do NOT unregister its events or wipe its
-        -- actionButtons table — the native keybind system needs these intact.
+        -- BARS 2-8: Create fresh ActionBarButtonTemplate buttons.
+        -- Fully dispose Blizzard's bar frame and original buttons to prevent
+        -- double event processing and taint propagation from hidden frames.
         if barFrame then
+            barFrame:UnregisterAllEvents()
             barFrame:SetParent(hiddenBarParent)
             barFrame:Hide()
         end
-
         local origButtons = GetOriginalBlizzButtons(barKey)
-        if #origButtons == 0 then return end
+        for _, blizzBtn in ipairs(origButtons) do
+            blizzBtn:SetParent(hiddenBarParent)
+            blizzBtn:UnregisterAllEvents()
+        end
 
         -- Action slot offsets: each bar maps to a fixed range of action slots.
-        -- Reparenting disconnects buttons from the bar's internal slot management,
-        -- so we must set the action attribute explicitly.
         local BAR_ACTION_OFFSETS = {
             bar2 = 60,   -- slots 61-72
             bar3 = 48,   -- slots 49-60
@@ -2138,24 +2160,57 @@ local function BuildBar(barKey)
             bar8 = 168,  -- slots 169-180
         }
         local offset = BAR_ACTION_OFFSETS[barKey] or 0
+        local barNum = barKey:sub(4)  -- "bar2" → "2"
 
-        for i, blizzBtn in ipairs(origButtons) do
-            blizzBtn:SetParent(container)
-            blizzBtn:SetID(0)
-            blizzBtn.Bar = nil
-            -- Set the correct action slot from RESTRICTED code so the
-            -- attribute remains untainted.  Addon-side SetAttribute taints
-            -- the value; Blizzard's ActionButton_UpdateCooldown then reads
-            -- the tainted action, propagating taint through the
-            -- GetActionCooldown → SetCooldown call chain and causing
-            -- "secret value" errors in combat (12.0.5+).
-            container:SetFrameRef("init-btn", blizzBtn)
-            container:Execute(string_format([[
-                local btn = self:GetFrameRef("init-btn")
-                btn:SetAttribute("action", %d)
-            ]], offset + i))
-            blizzBtn:Show()
-            buttons[i] = blizzBtn
+        for i = 1, 12 do
+            local btnName = "QUI_Bar" .. barNum .. "Button" .. i
+            local btn = _G[btnName]
+            if not btn then
+                -- pcall: during combat reload, the template's OnLoad fires
+                -- synchronously and hits secret-value comparisons in the
+                -- tainted call stack.  The frame IS created even if OnLoad
+                -- errors — retrieve it from globals.
+                local ok
+                ok, btn = pcall(CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate")
+                if not ok then btn = _G[btnName] end
+                local action = offset + i
+                -- Set action and pressAndHoldAction from RESTRICTED code so
+                -- attributes remain untainted.  The template's native OnEvent
+                -- handler runs in untainted context and can update these
+                -- safely during combat (no secret-value errors).
+                container:SetFrameRef("init-btn", btn)
+                container:Execute(string_format([[
+                    local btn = self:GetFrameRef("init-btn")
+                    btn:SetAttribute("action", %d)
+                    btn:SetAttribute("typerelease", "actionrelease")
+                    if IsPressHoldReleaseSpell then
+                        local pressAndHold = false
+                        local actionType, id, subType = GetActionInfo(%d)
+                        if actionType == "spell" then
+                            pressAndHold = IsPressHoldReleaseSpell(id)
+                        elseif actionType == "macro" and subType == "spell" then
+                            pressAndHold = IsPressHoldReleaseSpell(id)
+                        end
+                        btn:SetAttribute("pressAndHoldAction", pressAndHold)
+                    end
+                ]], action, action))
+                if btn.RegisterForClicks then
+                    btn:RegisterForClicks("AnyDown", "AnyUp")
+                end
+            else
+                btn:SetParent(container)
+            end
+            btn:Show()
+            -- Force the template to update its visuals (icon, cooldown, count, etc.)
+            -- pcall: addon code is in the call stack, so Blizzard's Update may hit
+            -- secret-value comparisons and throw.  The button will self-correct on the
+            -- next natural event cycle.
+            if ActionButton_Update then
+                pcall(ActionButton_Update, btn)
+            elseif btn.Update then
+                pcall(btn.Update, btn)
+            end
+            buttons[i] = btn
         end
     end
 
@@ -2170,6 +2225,11 @@ local function BuildBar(barKey)
         for _, btn in ipairs(buttons) do
             ActionBarsOwned.UpdateCooldown(btn)
         end
+        -- Template's native OnEvent handler runs in untainted C-dispatched
+        -- context.  All events (cooldowns, usability, proc glows, state,
+        -- flyouts) work during combat without secret-value errors because
+        -- the call stack originates from Blizzard's event dispatch, not
+        -- addon code.  No OnEvent replacement needed.
     end
 
     -- Register frame refs for the secure layout handler (must be outside combat).
@@ -2500,51 +2560,22 @@ do
         end
     end
 
-    -- Global replacement: ActionButton_UpdateCooldown is no longer routed
-    -- through a secure delegate (build 66562+).  Any action button whose
-    -- OnEvent still calls the original will hit the secret-value error.
-    -- Replace it globally so ALL action buttons (QUI-managed, override bar,
-    -- extra action button, etc.) use the DurationObject-safe path.
-    if USE_DURATION_OBJECTS and ActionButton_UpdateCooldown then
-        ActionButton_UpdateCooldown = function(self)
-            local action = self.action or self:GetAttribute("action")
-            if not action or action == 0 then return end
+    -- No global ActionButton_UpdateCooldown replacement needed.  Fresh
+    -- buttons' template handlers run in untainted C-dispatched context,
+    -- so Blizzard's native ActionButton_UpdateCooldown → SetCooldown path
+    -- works during combat (secret values accepted in untainted call stacks).
+    -- ActionBarsOwned.UpdateCooldown (DurationObject path) is kept above
+    -- for addon-initiated refreshes where the call stack IS tainted
+    -- (e.g., PLAYER_ENTERING_WORLD safe window seeding).
 
-            local cooldown = self.cooldown or self.Cooldown
-            if not cooldown then return end
-
-            local cdInfo  = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
-            local chgInfo = C_ActionBar.GetActionCharges(action) or DEFAULT_CHG_INFO
-            local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action) or DEFAULT_LOC_INFO
-
-            local showLoC    = locInfo.isActive
-            local showCharge = not locInfo.shouldReplaceNormalCooldown and chgInfo.isActive
-            local showNormal = not locInfo.shouldReplaceNormalCooldown and cdInfo.isActive
-
-            SetOrClearCooldown(cooldown, showNormal, C_ActionBar.GetActionCooldownDuration(action))
-
-            if showCharge then
-                SetOrClearCooldown(GetOrCreateChargeCooldown(self), true, C_ActionBar.GetActionChargeDuration(action))
-            elseif self.chargeCooldown then
-                self.chargeCooldown:Clear()
-            end
-
-            if showLoC then
-                SetOrClearCooldown(GetOrCreateLoCCooldown(self), true, C_ActionBar.GetActionLossOfControlCooldownDuration(action))
-            elseif self.lossOfControlCooldown then
-                self.lossOfControlCooldown:Clear()
-            end
-        end
-    end
 end -- do block (cooldown ownership)
 
 local function OnOwnedEvent(self, event, ...)
     if not ActionBarsOwned.initialized then return end
 
     if event == "ACTIONBAR_SLOT_CHANGED" then
-        -- Refresh empty slot visibility and cooldown state for the new action.
-        -- Icons are auto-updated by the template but cooldowns are owned by QUI.
-        ActionBarsOwned.UpdateAllCooldowns()
+        -- Refresh empty slot visibility for the changed action.
+        -- Icons and cooldowns are auto-updated by the template's native handler.
         if InCombatLockdown() then
             ActionBarsOwned.pendingSlotUpdate = true
             return
@@ -2716,12 +2747,25 @@ local function OnOwnedEvent(self, event, ...)
             ActionBarsOwned.pendingSpacing = false
             ApplyAllBarSpacing()
         end
+        -- Post-combat skinning refresh: the ActionButton_Update hook has a
+        -- combat guard, so re-apply QUI visuals that may have been skipped.
+        -- Template events ran natively during combat — cooldowns/icons/state
+        -- are already up-to-date.
+        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+            local btns = ActionBarsOwned.nativeButtons[barKey]
+            local s = GetEffectiveSettings(barKey)
+            if btns and s then
+                for _, btn in ipairs(btns) do
+                    SkinButton(btn, s)
+                    UpdateButtonText(btn, s)
+                    UpdateEmptySlotVisibility(btn, s)
+                end
+            end
+        end
 
     elseif event == "PET_BAR_UPDATE" or event == "PET_BAR_UPDATE_COOLDOWN" then
-        -- Pet abilities changed or cooldowns updated — refresh button visuals
-        if PetActionBar and PetActionBar.Update then
-            pcall(PetActionBar.Update, PetActionBar)
-        end
+        -- Pet buttons handle their own updates natively via template OnEvent.
+        -- QUI only manages container visibility (show/hide when pet exists).
         if not InCombatLockdown() then
             UpdatePetBarVisibility()
         end
@@ -2805,14 +2849,10 @@ local function OnOwnedEvent(self, event, ...)
             end
         end
 
-    elseif event == "ACTIONBAR_UPDATE_COOLDOWN"
-        or event == "LOSS_OF_CONTROL_ADDED"
-        or event == "LOSS_OF_CONTROL_UPDATE" then
-        -- Centralized cooldown update for all owned action buttons.
-        -- Replaces per-button template OnEvent → ActionButton_UpdateCooldown
-        -- which fails with secret values in tainted context (12.0.5+).
-        ActionBarsOwned.UpdateAllCooldowns()
     end
+    -- Note: ACTIONBAR_UPDATE_COOLDOWN, LOSS_OF_CONTROL_ADDED/UPDATE are
+    -- handled per-button by the template's native OnEvent handler running
+    -- in untainted C-dispatched context.  No centralized handling needed.
 end
 
 ownedEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
@@ -2829,9 +2869,6 @@ ownedEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 ownedEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
 ownedEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
 ownedEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
-ownedEventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
-ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_ADDED")
-ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_UPDATE")
 ownedEventFrame:SetScript("OnEvent", OnOwnedEvent)
 
 -- Don't process events until Initialize is called
@@ -3581,11 +3618,41 @@ UpdateKeybindText = function(button, settings)
         num = buttonName:match("^ActionButton(%d+)$")
         if num then bindingName = "ACTIONBUTTON" .. num end
 
+        -- QUI fresh buttons (bar1-8)
         if not bindingName then
             num = buttonName:match("^QUI_Bar1Button(%d+)$")
             if num then bindingName = "ACTIONBUTTON" .. num end
         end
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar2Button(%d+)$")
+            if num then bindingName = "MULTIACTIONBAR1BUTTON" .. num end
+        end
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar3Button(%d+)$")
+            if num then bindingName = "MULTIACTIONBAR2BUTTON" .. num end
+        end
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar4Button(%d+)$")
+            if num then bindingName = "MULTIACTIONBAR3BUTTON" .. num end
+        end
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar5Button(%d+)$")
+            if num then bindingName = "MULTIACTIONBAR4BUTTON" .. num end
+        end
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar6Button(%d+)$")
+            if num then bindingName = "MULTIACTIONBAR5BUTTON" .. num end
+        end
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar7Button(%d+)$")
+            if num then bindingName = "MULTIACTIONBAR6BUTTON" .. num end
+        end
+        if not bindingName then
+            num = buttonName:match("^QUI_Bar8Button(%d+)$")
+            if num then bindingName = "MULTIACTIONBAR7BUTTON" .. num end
+        end
 
+        -- Blizzard button names (fallback for reparented buttons)
         if not bindingName then
             num = buttonName:match("^MultiBarBottomRightButton(%d+)$")
             if num then bindingName = "MULTIACTIONBAR2BUTTON" .. num end
@@ -3606,7 +3673,6 @@ UpdateKeybindText = function(button, settings)
             if num then bindingName = "MULTIACTIONBAR4BUTTON" .. num end
         end
 
-        -- MultiBar5-7 (Midnight bars)
         if not bindingName then
             num = buttonName:match("^MultiBar5Button(%d+)$")
             if num then bindingName = "MULTIACTIONBAR5BUTTON" .. num end
@@ -5356,9 +5422,8 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
     ownedEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
     ownedEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
-    ownedEventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
-    ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_ADDED")
-    ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_UPDATE")
+    -- ACTIONBAR_UPDATE_COOLDOWN, LOSS_OF_CONTROL_ADDED/UPDATE handled
+    -- per-button by the template's native OnEvent (untainted context).
         ownedEventFrame:Show()
 
     -- Force all action bars enabled so owned buttons function correctly
@@ -5382,8 +5447,8 @@ function ActionBarsOwned:Initialize()
     UpdatePetBarVisibility()
     UpdateStanceBarLayout()
 
-    -- Note: Do NOT wipe barFrame.actionButtons or replace MultiActionButton*
-    -- handlers. The native keybind system needs these intact for bars 2-8.
+    -- Blizzard bars are fully disposed (hidden + events unregistered).
+    -- QUI creates fresh buttons with SetOverrideBindingClick for keybinds.
 
     -- No overlay scaling hooks needed — buttons stay at their natural 45x45
     -- size and the container's SetScale handles visual resize. Blizzard overlays

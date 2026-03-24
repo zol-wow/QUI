@@ -309,7 +309,57 @@ local function GetKeybindFromActionButton(button, actionSlot)
         end
         
         -- Try standard action button bindings based on name
-        if buttonName:match("ActionButton(%d+)$") then
+        -- QUI fresh buttons (bar1-8)
+        if buttonName:match("^QUI_Bar1Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar1Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("ACTIONBUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^QUI_Bar2Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar2Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("MULTIACTIONBAR1BUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^QUI_Bar3Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar3Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("MULTIACTIONBAR2BUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^QUI_Bar4Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar4Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("MULTIACTIONBAR3BUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^QUI_Bar5Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar5Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("MULTIACTIONBAR4BUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^QUI_Bar6Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar6Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("MULTIACTIONBAR5BUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^QUI_Bar7Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar7Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("MULTIACTIONBAR6BUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^QUI_Bar8Button(%d+)$") then
+            local num = tonumber(buttonName:match("^QUI_Bar8Button(%d+)$"))
+            if num then
+                key1 = GetBindingKey("MULTIACTIONBAR7BUTTON" .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        -- Blizzard button names (fallback)
+        elseif buttonName:match("ActionButton(%d+)$") then
             local num = tonumber(buttonName:match("ActionButton(%d+)$"))
             if num then
                 key1 = GetBindingKey("ACTIONBUTTON" .. num)
@@ -649,6 +699,15 @@ local function BuildActionButtonCache()
     end
     
     local buttonPrefixes = {
+        -- QUI fresh buttons
+        "QUI_Bar1Button",
+        "QUI_Bar2Button",
+        "QUI_Bar3Button",
+        "QUI_Bar4Button",
+        "QUI_Bar5Button",
+        "QUI_Bar6Button",
+        "QUI_Bar7Button",
+        "QUI_Bar8Button",
         -- Default Blizzard (both old and new naming conventions)
         "ActionButton",
         "MultiBarBottomLeftButton",
