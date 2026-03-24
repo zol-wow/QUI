@@ -1028,9 +1028,8 @@ local function UpdateReadyCheck(frame)
     if status then
         -- QUI pattern: AFK players waiting on ready check show "not ready"
         if status == "waiting" then
-            local isAFK = nil
-            pcall(function() isAFK = UnitIsAFK(frame.unit) end)
-            if isAFK and not IsSecretValue(isAFK) and isAFK == true then
+            local isAFK = UnitIsAFK(frame.unit)
+            if not IsSecretValue(isAFK) and isAFK then
                 status = "notready"
             end
         end
@@ -3252,17 +3251,20 @@ end
 ---------------------------------------------------------------------------
 local lastMode = nil
 
--- Resize/layout unit buttons and bars (allowed in combat — only touches
--- non-secure frame geometry). Header initial-attribute dimensions must still
--- be updated out of combat via SetAttribute.
+-- Resize/layout unit buttons and bars. SetSize on the secure unit buttons
+-- themselves is protected, so skip it during combat — the pending resize
+-- will re-apply after combat via PLAYER_REGEN_ENABLED.
 local function ApplyChildFrameLayout(w, h)
+    local inCombat = InCombatLockdown()
     local function LayoutChildren(header)
         if not header then return end
         local i = 1
         while true do
             local child = header:GetAttribute("child" .. i)
             if not child then break end
-            child:SetSize(w, h)
+            if not inCombat then
+                child:SetSize(w, h)
+            end
             if child.healthBar and child.powerBar then
                 local general = GetGeneralSettings(child._isRaid)
                 local borderPx = general and general.borderSize or 1
