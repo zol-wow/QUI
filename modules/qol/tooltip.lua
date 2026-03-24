@@ -612,6 +612,59 @@ local function SetupTooltipHook()
         end)
     end)
 
+    -- Strip server name / player title
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
+        if tooltip ~= GameTooltip then return end
+        local settings = Provider:GetSettings()
+        if not settings or not settings.enabled then return end
+
+        local hideServer = settings.hideServerName
+        local hideTitle = settings.hidePlayerTitle
+        if not hideServer and not hideTitle then return end
+
+        local unit = ResolveTooltipUnit(tooltip)
+        if not unit then return end
+
+        local okPlayer, isPlayer = pcall(UnitIsPlayer, unit)
+        if not okPlayer or not isPlayer then return end
+
+        -- Strip title from name line (line 1)
+        if hideTitle then
+            local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
+            if nameLine then
+                local okText, lineText = pcall(nameLine.GetText, nameLine)
+                if okText and lineText and not Helpers.IsSecretValue(lineText) then
+                    local okName, bareName = pcall(UnitName, unit)
+                    if okName and bareName and not Helpers.IsSecretValue(bareName) and lineText ~= bareName then
+                        pcall(nameLine.SetText, nameLine, bareName)
+                    end
+                end
+            end
+        end
+
+        -- Hide server/realm line
+        if hideServer then
+            local _, unitRealm = UnitName(unit)
+            if unitRealm and unitRealm ~= "" and not Helpers.IsSecretValue(unitRealm) then
+                -- Scan lines 2-5 for the realm name line
+                for i = 2, 5 do
+                    local line = tooltip.GetLeftLine and tooltip:GetLeftLine(i)
+                        or _G["GameTooltipTextLeft" .. i]
+                    if line then
+                        local okLT, lt = pcall(line.GetText, line)
+                        if okLT and lt and not Helpers.IsSecretValue(lt) then
+                            if lt == unitRealm then
+                                pcall(line.SetText, line, "")
+                                pcall(line.Hide, line)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
     -- Class color player names
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
         if tooltip ~= GameTooltip then return end

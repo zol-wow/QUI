@@ -48,6 +48,7 @@ local UnitIsConnected = UnitIsConnected
 local UnitGroupRolesAssigned = UnitGroupRolesAssigned
 local UnitThreatSituation = UnitThreatSituation
 local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
+local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
 local UnitIsUnit = UnitIsUnit
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
@@ -825,6 +826,56 @@ local function UpdateAbsorbs(frame, _unit, _maxHP)
 end
 
 ---------------------------------------------------------------------------
+-- UPDATE: Heal Absorb (debuffs that absorb healing, e.g. Necrotic Wound)
+---------------------------------------------------------------------------
+local function UpdateHealAbsorb(frame, _unit, _maxHP)
+    if not frame or not frame.healAbsorbBar then return end
+    local isRaid = frame._isRaid
+    local vdb = GetVisualDB(isRaid)
+    if not vdb or not vdb.healAbsorbs or vdb.healAbsorbs.enabled == false then
+        frame.healAbsorbBar:Hide()
+        return
+    end
+
+    local unit = _unit or frame.unit
+    if not unit then return end
+
+    if not _unit then
+        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+            frame.healAbsorbBar:Hide()
+            return
+        end
+    end
+
+    local maxHP = _maxHP or UnitHealthMax(unit)
+    local healAbsorbAmount = UnitGetTotalHealAbsorbs(unit)
+
+    if not healAbsorbAmount then
+        frame.healAbsorbBar:Hide()
+        return
+    end
+
+    -- Redo geometry if orientation changed
+    if frame._healAbsorbVertical ~= frame._isVerticalFill then
+        frame.healAbsorbBar:SetFrameLevel(frame.healthBar:GetFrameLevel() + 3)
+        frame.healAbsorbBar:ClearAllPoints()
+        frame.healAbsorbBar:SetAllPoints(frame.healthBar)
+        frame.healAbsorbBar:SetReverseFill(true)
+        frame.healAbsorbBar:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
+        frame._healAbsorbVertical = frame._isVerticalFill
+    end
+
+    -- C-side SetMinMaxValues/SetValue handle secret values natively
+    frame.healAbsorbBar:SetMinMaxValues(0, maxHP)
+    frame.healAbsorbBar:SetValue(healAbsorbAmount)
+
+    local ha = vdb.healAbsorbs.opacity or 0.6
+    local hc = vdb.healAbsorbs.color or { 0.5, 0.1, 0.1 }
+    frame.healAbsorbBar:SetStatusBarColor(hc[1], hc[2], hc[3], ha)
+    frame.healAbsorbBar:Show()
+end
+
+---------------------------------------------------------------------------
 -- UPDATE: Heal Prediction
 ---------------------------------------------------------------------------
 -- HealPrediction: optional pre-computed args from fast health path avoid redundant API calls.
@@ -1577,6 +1628,7 @@ local function UpdateFrame(frame)
     UpdatePower(frame)
     UpdateName(frame)
     UpdateAbsorbs(frame)
+    UpdateHealAbsorb(frame)
     UpdateHealPrediction(frame)
     UpdateRoleIcon(frame)
     UpdateReadyCheck(frame)
@@ -1710,6 +1762,27 @@ local function DecorateGroupFrame(frame)
     absorbBar:SetValue(0)
     absorbBar:Hide()
     frame.absorbBar = absorbBar
+
+    -- Heal absorb bar (overlays health bar — shows heal absorb debuffs like Necrotic Wound)
+    local healAbsorbSettings = vdb and vdb.healAbsorbs
+    local healAbsorbBar = frame.healAbsorbBar
+    if not healAbsorbBar then
+        healAbsorbBar = CreateFrame("StatusBar", nil, healthBar)
+    end
+    healAbsorbBar:SetStatusBarTexture("Interface\\RaidFrame\\Shield-Fill")
+    local hac = healAbsorbSettings and healAbsorbSettings.color or { 0.5, 0.1, 0.1 }
+    local haa = healAbsorbSettings and healAbsorbSettings.opacity or 0.6
+    healAbsorbBar:SetStatusBarColor(hac[1], hac[2], hac[3], haa)
+    healAbsorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 3)
+    healAbsorbBar:SetFrameStrata(healthBar:GetFrameStrata())
+    healAbsorbBar:ClearAllPoints()
+    healAbsorbBar:SetAllPoints(healthBar)
+    healAbsorbBar:SetReverseFill(true)
+    healAbsorbBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    healAbsorbBar:SetMinMaxValues(0, 1)
+    healAbsorbBar:SetValue(0)
+    healAbsorbBar:Hide()
+    frame.healAbsorbBar = healAbsorbBar
 
     -- Power bar
     if showPower then
@@ -3662,10 +3735,12 @@ local function OnEvent(self, event, arg1, ...)
             local isDead = UnitIsDeadOrGhost(unit)
             if isDead then
                 if frame.absorbBar then frame.absorbBar:Hide() end
+                if frame.healAbsorbBar then frame.healAbsorbBar:Hide() end
                 if frame.healPredictionBar then frame.healPredictionBar:Hide() end
             else
                 local maxHP = UnitHealthMax(unit)
                 UpdateAbsorbs(frame, unit, maxHP)
+                UpdateHealAbsorb(frame, unit, maxHP)
                 UpdateHealPrediction(frame, unit, maxHP)
             end
 
@@ -3678,6 +3753,9 @@ local function OnEvent(self, event, arg1, ...)
 
         elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" then
             UpdateAbsorbs(frame)
+
+        elseif event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
+            UpdateHealAbsorb(frame)
 
         elseif event == "UNIT_HEAL_PREDICTION" then
             UpdateHealPrediction(frame)
@@ -3901,6 +3979,7 @@ local function RegisterEvents()
     eventFrame:RegisterEvent("UNIT_MAXHEALTH")
     eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
     eventFrame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
+    eventFrame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
     eventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")
     eventFrame:RegisterEvent("UNIT_NAME_UPDATE")
     eventFrame:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")

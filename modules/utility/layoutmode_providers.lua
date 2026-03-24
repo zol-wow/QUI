@@ -1584,8 +1584,12 @@ local function RegisterAllProviders()
             delayInfo:SetPoint("TOPLEFT", 0, sy)
             delayInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             delayInfo:SetJustifyH("LEFT")
+            sy = sy - FORM_ROW
 
-            local totalHeight = 4 * FORM_ROW + 4 * FORM_ROW + 8
+            sy = P(GUI:CreateFormCheckbox(body, "Hide Server Name", "hideServerName", tooltip, RefreshTooltips), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Hide Player Titles", "hidePlayerTitle", tooltip, RefreshTooltips), body, sy)
+
+            local totalHeight = 4 * FORM_ROW + 4 * FORM_ROW + 2 * FORM_ROW + 8
             local section = body:GetParent()
             section._contentHeight = totalHeight
         end, sections, relayout)

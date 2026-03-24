@@ -984,6 +984,52 @@ CreateToolbar = function(ui)
         SavePersistedState(ui)
     end)
 
+    -- Sync All Fonts & Textures
+    AddButton("Sync Fonts", function()
+        local core = ns.Addon
+        if not core or not core.db or not core.db.profile then return end
+        local profile = core.db.profile
+        local general = profile.general
+        if not general then return end
+        local globalFont = general.font or "Quazii"
+        local globalTexture = general.texture or "Quazii v5"
+        local globalOutline = general.fontOutline or "OUTLINE"
+
+        -- Recursive walk: set every "font" key to globalFont and "texture" key to globalTexture
+        local function SyncTable(t, depth)
+            if depth > 10 then return end
+            for k, v in pairs(t) do
+                if type(v) == "table" then
+                    SyncTable(v, depth + 1)
+                elseif k == "font" and type(v) == "string" then
+                    t[k] = globalFont
+                elseif k == "fontOutline" and type(v) == "string" then
+                    t[k] = globalOutline
+                elseif k == "texture" and type(v) == "string"
+                    and v ~= "Interface\\RaidFrame\\Shield-Fill"
+                    and v ~= "Interface\\Buttons\\WHITE8x8"
+                    and not v:find("^Interface\\") then
+                    t[k] = globalTexture
+                end
+            end
+        end
+        SyncTable(profile, 0)
+
+        -- Refresh all modules
+        if ns.RefreshAll then ns.RefreshAll()
+        elseif _G.QUI_RefreshAll then _G.QUI_RefreshAll()
+        end
+        -- Refresh unit frames
+        local uf = ns.QUI_UnitFrames
+        if uf and uf.RefreshAll then uf:RefreshAll() end
+        -- Refresh group frames
+        if _G.QUI_RefreshGroupFrames then _G.QUI_RefreshGroupFrames() end
+        -- Refresh CDM
+        if _G.QUI_RefreshCDM then _G.QUI_RefreshCDM() end
+
+        print("|cff34D399QUI:|r Synced all fonts to \"" .. globalFont .. "\" and textures to \"" .. globalTexture .. "\"")
+    end, 0.15, 0.25, 0.4)
+
     -- Save button (green)
     ui._saveBtn = AddButton("Save & Close", function()
         local um = ns.QUI_LayoutMode

@@ -2840,7 +2840,7 @@ do
             sections[#sections + 1] = composerRow
 
             -- General section
-            local generalRows = 4 -- +1 for display mode dropdown
+            local generalRows = 5 -- display mode, layout dir, clickable, desaturate, grey out
             if not isEssential then generalRows = generalRows + 2 end -- anchor below + gap
 
             CreateCollapsible(content, "General", generalRows * FORM_ROW + 8, function(body)
@@ -2871,7 +2871,10 @@ do
                 end
 
                 local desatCheck = GUI:CreateFormCheckbox(body, "Desaturate On Cooldown", "desaturateOnCooldown", tracker, Refresh)
-                U.PlaceRow(desatCheck, body, sy)
+                sy = U.PlaceRow(desatCheck, body, sy)
+
+                local greyOutCheck = GUI:CreateFormCheckbox(body, "Grey Out Inactive Debuffs", "greyOutInactive", tracker, Refresh)
+                U.PlaceRow(greyOutCheck, body, sy)
             end, sections, relayout)
 
             -- Row sections

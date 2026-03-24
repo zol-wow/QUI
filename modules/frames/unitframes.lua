@@ -1743,6 +1743,22 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
         frame.classificationIcon = classificationIcon
     end
 
+    -- Target highlight (border when this boss is your current target)
+    if settings.targetHighlight and settings.targetHighlight.enabled ~= false then
+        local px = QUICore:PixelRound(1, frame)
+        local targetHighlight = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        targetHighlight:ClearAllPoints()
+        targetHighlight:SetPoint("TOPLEFT", -px, px)
+        targetHighlight:SetPoint("BOTTOMRIGHT", px, -px)
+        targetHighlight:SetFrameLevel(frame:GetFrameLevel() + 4)
+        targetHighlight:SetBackdrop({
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = px * 2,
+        })
+        targetHighlight:Hide()
+        frame.targetHighlight = targetHighlight
+    end
+
     -- Register events for updates
     -- Throttle UNIT_POWER_FREQUENT to ~5 updates/sec (0.2s) to reduce CPU.
     -- UNIT_POWER_UPDATE and UNIT_MAXPOWER are processed immediately (infrequent).
@@ -1853,6 +1869,37 @@ local function StopToTTicker()
     if totUpdateTicker then
         totUpdateTicker:Cancel()
         totUpdateTicker = nil
+    end
+end
+
+---------------------------------------------------------------------------
+-- Boss Target Highlight
+---------------------------------------------------------------------------
+local _bossTargetHighlightFrame = nil
+
+local function UpdateBossTargetHighlight()
+    local bossSettings = GetUnitSettings("boss")
+    local hlSettings = bossSettings and bossSettings.targetHighlight
+    local enabled = hlSettings and hlSettings.enabled ~= false
+
+    -- Hide previous highlight
+    if _bossTargetHighlightFrame and _bossTargetHighlightFrame.targetHighlight then
+        _bossTargetHighlightFrame.targetHighlight:Hide()
+    end
+    _bossTargetHighlightFrame = nil
+
+    if not enabled or not QUI_UF.frames then return end
+
+    -- Find which boss frame (if any) is our current target
+    for i = 1, 5 do
+        local frame = QUI_UF.frames["boss" .. i]
+        if frame and frame.unit and frame.targetHighlight and UnitExists(frame.unit) and UnitIsUnit(frame.unit, "target") then
+            local c = hlSettings.color or { 1, 1, 1, 0.6 }
+            frame.targetHighlight:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.6)
+            frame.targetHighlight:Show()
+            _bossTargetHighlightFrame = frame
+            return
+        end
     end
 end
 
@@ -3643,6 +3690,13 @@ function QUI_UF:Initialize()
             -- Setup aura tracking for boss frame
             QUI_UF.SetupAuraTracking(self.frames[bossKey])
         end
+
+        -- Boss target highlight: register PLAYER_TARGET_CHANGED on a shared event frame
+        local bossTargetEventFrame = CreateFrame("Frame")
+        bossTargetEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+        bossTargetEventFrame:SetScript("OnEvent", function()
+            UpdateBossTargetHighlight()
+        end)
     end
 
     -- Single delayed refresh to catch health values once available
@@ -4388,6 +4442,17 @@ do
                 sy = P(GUI:CreateFormSlider(body, "X Offset", -50, 50, 1, "xOffset", tm, RefreshUF), body, sy)
                 P(GUI:CreateFormSlider(body, "Y Offset", -50, 50, 1, "yOffset", tm, RefreshUF), body, sy)
             end, sections, relayout)
+
+            -- Target Highlight (boss frames only)
+            if unitKey == "boss" then
+                if unitDB.targetHighlight == nil then unitDB.targetHighlight = {} end
+                local th = unitDB.targetHighlight
+                CreateCollapsible(content, "Target Highlight", 2 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    sy = P(GUI:CreateFormCheckbox(body, "Highlight Current Target", "enabled", th, RefreshUF), body, sy)
+                    P(GUI:CreateFormColorPicker(body, "Highlight Color", "color", th, RefreshUF), body, sy)
+                end, sections, relayout)
+            end
 
             -- Leader Icon (player, target, focus only)
             if unitKey == "player" or unitKey == "target" or unitKey == "focus" then

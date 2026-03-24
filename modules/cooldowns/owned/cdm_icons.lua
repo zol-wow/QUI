@@ -1696,10 +1696,16 @@ local function UpdateIconCooldown(icon)
             end
         end
 
-        -- Forward to C-side: TruncateWhenZero handles secret values and
-        -- returns "" for zero (hides stacks visually even when shown).
+        -- Forward to C-side: TruncateWhenZero returns "" for zero (hides
+        -- stacks visually). Guard with pcall — the function requires a finite
+        -- number and will reject secret values or unexpected types.
         if stackVal then
-            pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(stackVal))
+            local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackVal)
+            if truncOk then
+                pcall(icon.StackText.SetText, icon.StackText, truncText)
+            else
+                pcall(icon.StackText.SetText, icon.StackText, stackVal)
+            end
             icon.StackText:Show()
         else
             icon.StackText:SetText("")
@@ -2170,6 +2176,36 @@ function CDMIcons:UpdateAllCooldowns()
                         else
                             if icon:IsShown() then icon:Hide() end
                         end
+                    end
+
+                    -- Grey out when linked debuff/aura not active on target
+                    local greyOut = containerDB and containerDB.greyOutInactive
+                    if greyOut and icon:IsShown() and icon.Icon and icon.Icon.SetDesaturated then
+                        -- Only apply to spells that have aura tracking (linked auras)
+                        local hasAuraLink = entry.linkedSpellIDs or entry._abilityToAuraSpellID
+                            or (icon._spellEntry and icon._spellEntry.linkedSpellIDs)
+                        if hasAuraLink and not icon._auraActive then
+                            local rowOpacity = icon._rowOpacity or 1
+                            icon:SetAlpha(rowOpacity * 0.4)
+                            if not icon._cdDesaturated then
+                                icon.Icon:SetDesaturated(true)
+                            end
+                            icon._greyedOut = true
+                        elseif icon._greyedOut then
+                            local rowOpacity = icon._rowOpacity or 1
+                            icon:SetAlpha(rowOpacity)
+                            if not icon._cdDesaturated then
+                                icon.Icon:SetDesaturated(false)
+                            end
+                            icon._greyedOut = nil
+                        end
+                    elseif icon._greyedOut then
+                        local rowOpacity = icon._rowOpacity or 1
+                        icon:SetAlpha(rowOpacity)
+                        if icon.Icon and icon.Icon.SetDesaturated and not icon._cdDesaturated then
+                            icon.Icon:SetDesaturated(false)
+                        end
+                        icon._greyedOut = nil
                     end
                 end
                 SyncCooldownBling(icon)

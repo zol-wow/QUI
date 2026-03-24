@@ -183,7 +183,7 @@ end
 ---------------------------------------------------------------------------
 local VISUAL_DB_KEYS = {
     general = true, layout = true, health = true, power = true, name = true,
-    absorbs = true, healPrediction = true, indicators = true,
+    absorbs = true, healAbsorbs = true, healPrediction = true, indicators = true,
     healer = true, classPower = true, range = true, auras = true,
     privateAuras = true, auraIndicators = true, pinnedAuras = true, castbar = true,
     portrait = true, pets = true, dimensions = true, spotlight = true,
@@ -704,6 +704,7 @@ local function BuildHealthSettings(content, gfdb, onChange)
     local general = gfdb.general or {}
     local health = gfdb.health; if not health then gfdb.health = {} health = gfdb.health end
     local absorbs = gfdb.absorbs; if not absorbs then gfdb.absorbs = {} absorbs = gfdb.absorbs end
+    local healAbsorbs = gfdb.healAbsorbs; if not healAbsorbs then gfdb.healAbsorbs = {} healAbsorbs = gfdb.healAbsorbs end
     local healPred = gfdb.healPrediction; if not healPred then gfdb.healPrediction = {} healPred = gfdb.healPrediction end
     local sections = {}
     local function relayout() RelayoutComposerSections(content, sections) end
@@ -737,6 +738,15 @@ local function BuildHealthSettings(content, gfdb, onChange)
         L:Row(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", absorbs, onChange), FORM_ROW, absorbCond)
         L:Row(GUI:CreateFormColorPicker(body, "Absorb Color", "color", absorbs, onChange), FORM_ROW, function() return absorbs.enabled and not absorbs.useClassColor end)
         L:Row(GUI:CreateFormSlider(body, "Absorb Opacity", 0.1, 1, 0.05, "opacity", absorbs, onChange), SLIDER_HEIGHT, absorbCond)
+        L:Finish()
+    end, sections, relayout)
+
+    CreateComposerCollapsible(content, "Heal Absorb", function(body, updateH)
+        local haCond = function() return healAbsorbs.enabled end
+        local L = CreateDynamicLayout(body, updateH)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Heal Absorb", "enabled", healAbsorbs, onChange), FORM_ROW)
+        L:Row(GUI:CreateFormColorPicker(body, "Heal Absorb Color", "color", healAbsorbs, onChange), FORM_ROW, haCond)
+        L:Row(GUI:CreateFormSlider(body, "Heal Absorb Opacity", 0.1, 1, 0.05, "opacity", healAbsorbs, onChange), SLIDER_HEIGHT, haCond)
         L:Finish()
     end, sections, relayout)
 
@@ -2382,7 +2392,7 @@ local DRAG_CONFIG = {
 }
 
 local CLICK_TARGET = {
-    frame = "health", healthText = "health", absorbs = "health",
+    frame = "health", healthText = "health", absorbs = "health", healAbsorbs = "health",
     role = "indicators",
     readyCheck = "indicators", resurrection = "indicators",
     summon = "indicators", leader = "indicators",

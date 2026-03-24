@@ -293,9 +293,11 @@ local function UpdateTotems()
         btn.slot = slot
 
         local haveTotem, name, startTime, duration, icon = GetTotemInfo(slot)
-        -- duration may be a secret value in combat; guard the comparison
-        local ok, isActive = pcall(function() return duration > 0 end)
-        if haveTotem and icon and icon ~= 0 and ok and isActive then
+        -- All return values may be secret in combat; guard every Lua-side read
+        local ok, isActive = pcall(function()
+            return haveTotem and icon and icon ~= 0 and duration > 0
+        end)
+        if ok and isActive then
             btn.icon:SetTexture(icon)
             -- Prefer DurationObject API (12.0.5+, fully secret-safe)
             local cd = btn.cooldown
@@ -321,8 +323,8 @@ local function UpdateTotems()
 
     -- Blizzard normally manages visibility, but ensure active totems are not
     -- left hidden after combat-safe deferred updates.
-    if hasActive and not tf:IsShown() then
-        tf:Show()
+    if hasActive and not TotemBar.container:IsShown() then
+        TotemBar.container:Show()
     end
 
     -- Manage duration ticker

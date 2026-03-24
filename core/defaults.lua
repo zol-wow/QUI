@@ -379,6 +379,7 @@ local defaults = {
                 spellOverrides = {},         -- { [spellID] = { glowColor, hidden, ... } }
                 iconDisplayMode = "always",  -- "always" | "active" | "combat"
                 containerType = "cooldown",  -- "cooldown" | "aura" | "auraBar"
+                greyOutInactive = false,     -- Grey out icons when linked debuff/aura not active on target
             },
             utility = {
                 enabled = true,
@@ -462,6 +463,7 @@ local defaults = {
                 spellOverrides = {},         -- { [spellID] = { glowColor, hidden, ... } }
                 iconDisplayMode = "always",  -- "always" | "active" | "combat"
                 containerType = "cooldown",  -- "cooldown" | "aura" | "auraBar"
+                greyOutInactive = false,     -- Grey out icons when linked debuff/aura not active on target
             },
             buff = {
                 enabled = true,
@@ -1253,6 +1255,8 @@ local defaults = {
             },
             combatKey = "SHIFT",               -- NONE/SHIFT/CTRL/ALT
             hideHealthBar = true,              -- Hide the health bar on unit tooltips
+            hideServerName = false,            -- Hide server/realm name line from player tooltips
+            hidePlayerTitle = false,           -- Hide player title from tooltip name line
             showTooltipTarget = true,          -- Show target of unit on tooltip
             showPlayerMount = true,            -- Show active mount on player tooltip
             showPlayerMythicRating = true,     -- Show M+ rating on player tooltip
@@ -2402,6 +2406,11 @@ local defaults = {
                     xOffset = -8,
                     yOffset = 0,
                 },
+                -- Target highlight (border when boss is your current target)
+                targetHighlight = {
+                    enabled = true,
+                    color = { 1, 1, 1, 0.6 },
+                },
             },
         },
 
@@ -2478,6 +2487,7 @@ local defaults = {
                     nameTextColor = { 1, 1, 1, 1 },
                 },
                 absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.3 },
+                healAbsorbs = { enabled = true, color = { 0.5, 0.1, 0.1 }, opacity = 0.6 },
                 healPrediction = { enabled = true, color = { 0.2, 1, 0.2 }, opacity = 0.5 },
                 indicators = {
                     showRoleIcon = true, roleIconSize = 12, roleIconAnchor = "TOPLEFT", roleIconOffsetX = 2, roleIconOffsetY = -2,
@@ -2640,6 +2650,7 @@ local defaults = {
                     nameTextColor = { 1, 1, 1, 1 },
                 },
                 absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.3 },
+                healAbsorbs = { enabled = true, color = { 0.5, 0.1, 0.1 }, opacity = 0.6 },
                 healPrediction = { enabled = true, color = { 0.2, 1, 0.2 }, opacity = 0.5 },
                 indicators = {
                     showRoleIcon = true, roleIconSize = 12, roleIconAnchor = "TOPLEFT", roleIconOffsetX = 2, roleIconOffsetY = -2,
