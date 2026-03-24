@@ -82,6 +82,36 @@ local function HasActiveWidgetContainer(tooltip)
     return ok and result == true
 end
 
+-- Quest/world map reward tooltips can also attach Blizzard MoneyFrame children
+-- to GameTooltip. Re-anchoring or forcing a re-show while those are active can
+-- taint Blizzard's money width math and explode in MoneyFrame_Update.
+local function HasActiveMoneyFrame(tooltip)
+    if not tooltip or not tooltip.GetChildren then return false end
+
+    local ok, result = pcall(function()
+        for i = 1, select("#", tooltip:GetChildren()) do
+            local child = select(i, tooltip:GetChildren())
+            if child then
+                local childName = child.GetName and child:GetName() or nil
+                if child.moneyType ~= nil or child.staticMoney ~= nil or child.lastArgMoney ~= nil or
+                    (type(childName) == "string" and childName:find("MoneyFrame")) then
+                    if child.IsShown then
+                        local okShown, shown = pcall(child.IsShown, child)
+                        if not okShown or shown then
+                            return true
+                        end
+                    else
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end)
+
+    return ok and result == true
+end
+
 local function EnsureCursorFollowHooks(tooltip)
     if not tooltip or cursorFollowHooked[tooltip] then return end
     cursorFollowHooked[tooltip] = true
@@ -93,6 +123,10 @@ local function EnsureCursorFollowHooks(tooltip)
             gtCursorWatcher:SetScript("OnUpdate", function()
                 if not cursorFollowActive[GameTooltip] then return end
                 if not GameTooltip:IsShown() then
+                    cursorFollowActive[GameTooltip] = nil
+                    return
+                end
+                if HasActiveMoneyFrame(GameTooltip) then
                     cursorFollowActive[GameTooltip] = nil
                     return
                 end
@@ -133,6 +167,7 @@ end
 local function AnchorTooltipToCursor(tooltip, parent, settings)
     if not tooltip then return false end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return false end
+    if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then return false end
     EnsureCursorFollowHooks(tooltip)
     tooltip:SetOwner(parent or UIParent, "ANCHOR_NONE")
     cursorFollowActive[tooltip] = true
@@ -164,6 +199,9 @@ local function RefreshTooltipLayout(tooltip)
     -- active. World quest/map tooltips use this path, and forcing a refresh from
     -- addon code can trip LayoutFrame secret-value comparisons on clear/hide.
     if tooltip == GameTooltip then
+        if HasActiveMoneyFrame(tooltip) then
+            return
+        end
         if HasActiveWidgetContainer(tooltip) then
             return
         end
@@ -971,6 +1009,10 @@ local function SetupTooltipHook()
             -- Blizzard already called SetOwner(parent, "ANCHOR_NONE") inside
             -- GameTooltip_SetDefaultAnchor before this hook fires.
             EnsureCursorFollowHooks(tooltip)
+            if HasActiveMoneyFrame(tooltip) then
+                cursorFollowActive[tooltip] = nil
+                return
+            end
             if HasActiveWidgetContainer(tooltip) then
                 cursorFollowActive[tooltip] = nil
                 return

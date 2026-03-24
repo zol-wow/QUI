@@ -93,6 +93,36 @@ local function IsContainedTooltip(tooltip)
     return false
 end
 
+-- Quest/world map reward tooltips can attach Blizzard MoneyFrame children to
+-- GameTooltip. Mutating the tooltip frame while those children are active can
+-- taint MoneyFrame_Update width arithmetic.
+local function HasActiveMoneyFrame(tooltip)
+    if not tooltip or not tooltip.GetChildren then return false end
+
+    local ok, result = pcall(function()
+        for i = 1, select("#", tooltip:GetChildren()) do
+            local child = select(i, tooltip:GetChildren())
+            if child then
+                local childName = child.GetName and child:GetName() or nil
+                if child.moneyType ~= nil or child.staticMoney ~= nil or child.lastArgMoney ~= nil or
+                    (type(childName) == "string" and childName:find("MoneyFrame")) then
+                    if child.IsShown then
+                        local okShown, shown = pcall(child.IsShown, child)
+                        if not okShown or shown then
+                            return true
+                        end
+                    else
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end)
+
+    return ok and result == true
+end
+
 -- Snap an edge size to the nearest physical pixel boundary so thin borders
 -- always render as whole pixels. Without this, fractional virtual-coord sizes
 -- can round to 0 pixels at certain UI scales, making borders invisible.
@@ -473,6 +503,7 @@ end
 local function SkinTooltip(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+    if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then return end
     if skinnedTooltips[tooltip] then return end
 
     SnapTooltipRect(tooltip)
@@ -510,6 +541,7 @@ end
 local function ReapplySkin(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+    if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then return end
 
     SnapTooltipRect(tooltip)
 
@@ -541,6 +573,7 @@ end
 local function CombatSafeReapply(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+    if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then return end
     if not IsEnabled() then return end
     if not skinnedTooltips[tooltip] then return end
 
@@ -868,6 +901,7 @@ local function SetupTooltipPostProcessor()
         if not IsEnabled() then return end
         C_Timer.After(0, function()
             if tooltip and tooltip.IsShown and tooltip:IsShown() then
+                if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then return end
                 pcall(ApplyTooltipFontSizeToFrame, tooltip)
             end
         end)
@@ -997,6 +1031,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     -- GameTooltip just became visible
                     if not IsEnabled() then
                         -- nothing
+                    elseif HasActiveMoneyFrame(GameTooltip) then
+                        -- Reward money tooltips are left fully to Blizzard to
+                        -- avoid tainting MoneyFrame_Update width calculations.
                     elseif InCombatLockdown() then
                         -- Combat: refresh overlay colors only.
                         pcall(CombatSafeReapply, GameTooltip)
@@ -1009,7 +1046,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         -- Defer font sizing to avoid tainting FontString metrics
                         -- while Blizzard's tooltip chain is still running.
                         C_Timer.After(0, function()
-                            if GameTooltip:IsShown() then
+                            if GameTooltip:IsShown() and not HasActiveMoneyFrame(GameTooltip) then
                                 pcall(ApplyTooltipFontSizeToFrame, GameTooltip)
                             end
                         end)
