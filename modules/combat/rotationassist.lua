@@ -6,6 +6,7 @@ local ADDON_NAME, QUI = ...
 local LSM = QUI.LSM
 
 local GetCore = QUI.Helpers.GetCore
+local IsSecretValue = QUI.Helpers.IsSecretValue
 
 -- Locals for performance
 local GetTime = GetTime
@@ -330,17 +331,38 @@ local function UpdateGCDCooldown()
     -- Only show GCD swipe when the icon itself is visible
     if not iconFrame:IsShown() then return end
 
-    local start, duration, modRate = ReadSpellCooldown(GCD_SPELL_ID)
+    local cd = iconFrame.cooldown
+    local cdInfo = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(GCD_SPELL_ID)
+    if not cdInfo then cd:Clear() return end
 
-    if IsCooldownActive(start, duration) then
-        iconFrame.cooldown:Show()
-        if modRate then
-            iconFrame.cooldown:SetCooldown(start, duration, modRate)
-        else
-            iconFrame.cooldown:SetCooldown(start, duration)
+    -- isActive: new 12.0.5+ non-secret boolean; fall back to pcall detection
+    local isActive = cdInfo.isActive
+    if isActive == nil then
+        isActive = IsCooldownActive(cdInfo.startTime or cdInfo.start, cdInfo.duration)
+    end
+
+    if not isActive then cd:Clear() return end
+
+    cd:Show()
+
+    -- Priority 1: DurationObject (secret-safe, works in combat)
+    if C_Spell.GetSpellCooldownDuration and cd.SetCooldownFromDurationObject then
+        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, GCD_SPELL_ID)
+        if ok and durObj then
+            pcall(cd.SetCooldownFromDurationObject, cd, durObj, false)
+            return
         end
-    else
-        iconFrame.cooldown:Clear()
+    end
+
+    -- Priority 2: non-secret numeric values (SetCooldown restricted from secrets 12.0.5+)
+    local start, duration = cdInfo.startTime or cdInfo.start, cdInfo.duration
+    if start and duration and not IsSecretValue(start) and not IsSecretValue(duration) then
+        local modRate = cdInfo.modRate
+        if modRate and not IsSecretValue(modRate) then
+            cd:SetCooldown(start, duration, modRate)
+        else
+            cd:SetCooldown(start, duration)
+        end
     end
 end
 

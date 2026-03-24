@@ -3320,7 +3320,7 @@ SkinButton = function(button, settings)
 
     ActionBarsOwned.skinnedButtons[button] = true
 
-    -- PERF: Per-button UpdateButtonArt hook (EllesmereUI pattern).
+    -- PERF: Per-button UpdateButtonArt hook.
     -- Fires only when Blizzard resets button artwork (combat transitions,
     -- paging, bonus bar swaps) — much less frequent than ActionButton_Update.
     -- Cached closure avoids allocation per hook fire.

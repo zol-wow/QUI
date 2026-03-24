@@ -158,9 +158,9 @@ for i = 1, MAX_SLOTS do
         GameTooltip:Hide()
     end)
 
-    -- Right-click dismiss
+    -- Right-click dismiss (DestroyTotem is protected in combat)
     btn:SetScript("OnClick", function(self, button)
-        if button == "RightButton" and self.slot then
+        if button == "RightButton" and self.slot and not InCombatLockdown() then
             DestroyTotem(self.slot)
         end
     end)
@@ -293,13 +293,30 @@ local function UpdateTotems()
         btn.slot = slot
 
         local haveTotem, name, startTime, duration, icon = GetTotemInfo(slot)
-        -- All return values may be secret in combat; guard every Lua-side read
-        local ok, isActive = pcall(function()
-            return haveTotem and icon and icon ~= 0 and duration > 0
-        end)
-        if ok and isActive then
-            btn.icon:SetTexture(icon)
-            -- Prefer DurationObject API (12.0.5+, fully secret-safe)
+        -- Detect active totem: OOC values are readable, combat values are secret.
+        -- Secret booleans (haveTotem) can't be truthiness-tested.
+        -- In Lua, 0 is truthy — can't use plain truthiness on GetTotemTimeLeft.
+        -- Use pcall comparison: non-secret 0 correctly yields false,
+        -- secret values error (caught by pcall → assume active in combat).
+        local isActive = false
+        if not InCombatLockdown() then
+            -- OOC: safe to compare
+            isActive = haveTotem and icon and icon ~= 0 and duration and duration > 0
+        else
+            -- Combat: try comparison inside pcall
+            local tok, timeLeft = pcall(GetTotemTimeLeft, slot)
+            if tok and timeLeft then
+                local cok, positive = pcall(function() return timeLeft > 0 end)
+                if cok then
+                    isActive = positive  -- non-secret: true if > 0
+                else
+                    isActive = true  -- secret: active totem (expired data is non-secret)
+                end
+            end
+        end
+        if isActive then
+            pcall(btn.icon.SetTexture, btn.icon, icon)
+            -- Prefer DurationObject API for swipe (secret-safe)
             local cd = btn.cooldown
             if GetTotemDuration and cd.SetCooldownFromDurationObject then
                 local dok, durObj = pcall(GetTotemDuration, slot)
@@ -308,23 +325,28 @@ local function UpdateTotems()
                 end
             elseif not Helpers.IsSecretValue(startTime)
                and not Helpers.IsSecretValue(duration) then
-                -- Legacy fallback: only safe with non-secret numerics
                 pcall(cd.SetCooldown, cd, startTime, duration)
             end
             StyleButton(btn)
             btn:Show()
             hasActive = true
         else
+            btn.cooldown:Clear()
             btn:Hide()
         end
     end
 
     LayoutButtons()
 
-    -- Blizzard normally manages visibility, but ensure active totems are not
-    -- left hidden after combat-safe deferred updates.
-    if hasActive and not TotemBar.container:IsShown() then
-        TotemBar.container:Show()
+    -- Show container when active, hide when all totems expired
+    if hasActive then
+        if not TotemBar.container:IsShown() then
+            TotemBar.container:Show()
+        end
+    else
+        if TotemBar.container:IsShown() then
+            TotemBar.container:Hide()
+        end
     end
 
     -- Manage duration ticker
@@ -336,11 +358,42 @@ local function UpdateTotems()
                 for j = 1, MAX_SLOTS do
                     local b = TotemBar.buttons[j]
                     if b:IsShown() and b.slot and b.duration then
-                        local ok, remaining = pcall(GetTotemTimeLeft, b.slot)
-                        if ok and remaining and remaining > 0 then
-                            b.duration:SetText(FormatDuration(remaining))
-                        else
-                            b.duration:SetText("")
+                        -- GetTotemTimeLeft returns secret values in combat.
+                        -- Use DurationObject API when available, fallback to
+                        -- SetFormattedText which handles secrets C-side.
+                        local shown = false
+                        if GetTotemDuration then
+                            local dok, durObj = pcall(GetTotemDuration, b.slot)
+                            if dok and durObj and durObj.GetRemainingDuration then
+                                local rok, rem = pcall(durObj.GetRemainingDuration, durObj)
+                                if rok and rem then
+                                    -- rem may be secret — use SetFormattedText (C-side)
+                                    local isSecret = Helpers.IsSecretValue(rem)
+                                    if not isSecret and rem > 0 then
+                                        b.duration:SetText(FormatDuration(rem))
+                                    elseif isSecret then
+                                        pcall(b.duration.SetFormattedText, b.duration, "%.0f", rem)
+                                    else
+                                        b.duration:SetText("")
+                                    end
+                                    shown = true
+                                end
+                            end
+                        end
+                        if not shown then
+                            local ok, remaining = pcall(GetTotemTimeLeft, b.slot)
+                            if ok and remaining then
+                                local isSecret = Helpers.IsSecretValue(remaining)
+                                if not isSecret and remaining > 0 then
+                                    b.duration:SetText(FormatDuration(remaining))
+                                elseif isSecret then
+                                    pcall(b.duration.SetFormattedText, b.duration, "%.0f", remaining)
+                                else
+                                    b.duration:SetText("")
+                                end
+                            else
+                                b.duration:SetText("")
+                            end
                         end
                     end
                 end

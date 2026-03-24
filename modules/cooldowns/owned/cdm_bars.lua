@@ -998,307 +998,66 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
 end
 
 ---------------------------------------------------------------------------
--- UPDATE OWNED BAR AURA: Query aura data for an owned bar and update
--- its StatusBar value + active state.
+-- UPDATE OWNED BAR AURA: Delegates to shared CDMSpellData:ResolveAuraState()
+-- and applies results to bar StatusBar fill / duration text / stacks.
 ---------------------------------------------------------------------------
 function CDMBars:UpdateOwnedBarAura(bar)
     if not bar or not bar._spellID then return end
     local spellID = bar._spellID
     local entry = bar._spellEntry
+    if not ns.CDMSpellData then return end
 
-    -- Resolve aura spell ID: the configured spell ID may be an ability ID
-    -- that differs from the actual buff ID.  Check the ability→aura map
-    -- first (built from Blizzard's buff categories), then OOC probing.
-    local auraMap = ns.CDMSpellData and ns.CDMSpellData._abilityToAuraSpellID
-    local resolvedID = bar._resolvedAuraID
-        or (auraMap and auraMap[spellID])
-        or spellID
-    if not InCombatLockdown() and not bar._resolvedAuraID then
-        -- Try primary ID
-        local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-        if ok and ad then
-            bar._resolvedAuraID = spellID
-            resolvedID = spellID
-        else
-            -- Try alt IDs
-            if entry and entry.spellID and entry.spellID ~= spellID then
-                local ok2, ad2 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, entry.spellID)
-                if ok2 and ad2 then
-                    bar._resolvedAuraID = entry.spellID
-                    resolvedID = entry.spellID
-                end
-            end
-            if not bar._resolvedAuraID and entry and entry.id and entry.id ~= spellID then
-                local ok3, ad3 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, entry.id)
-                if ok3 and ad3 then
-                    bar._resolvedAuraID = entry.id
-                    resolvedID = entry.id
-                end
-            end
-            -- Name scan fallback (OOC only — fields are readable).
-            -- Guard each field with issecretvalue to handle the race window
-            -- where InCombatLockdown() is false but values are already secret.
-            if not bar._resolvedAuraID and entry and entry.name and entry.name ~= "" then
-                if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-                    for i = 1, 40 do
-                        local aok, aData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-                        if not aok or not aData then break end
-                        local aName = aData.name
-                        if aName and not (issecretvalue and issecretvalue(aName)) then
-                            local cmpOk, matched = pcall(function() return aName == entry.name end)
-                            if cmpOk and matched then
-                                local sid = aData.spellId
-                                if sid and not (issecretvalue and issecretvalue(sid)) and sid > 0 then
-                                    bar._resolvedAuraID = sid
-                                    resolvedID = sid
-                                end
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
+    local Helpers = ns.Helpers
 
-    -- Query aura data with resolved ID — works in combat when ID is correct.
-    -- Check player auras first, then target debuffs (e.g. Reaper's Mark).
-    local auraData
-    local auraDataUnit = "player"
-    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
-        local ok, result = pcall(C_UnitAuras.GetPlayerAuraBySpellID, resolvedID)
-        if ok and result then auraData = result end
-        -- Fallback: try configured ID if resolved misses
-        if not auraData and resolvedID ~= spellID then
-            local ok2, result2 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-            if ok2 and result2 then auraData = result2 end
-        end
-    end
-    -- Target debuff fallback (for abilities like Reaper's Mark)
-    if not auraData and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
-        local spellName = entry and entry.name
-        if spellName and spellName ~= "" then
-            local ok, result = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", spellName, "HARMFUL")
-            if ok and result then
-                auraData = result
-                auraDataUnit = "target"
-            end
-        end
-    end
+    local p = bar._auraParams or {}
+    bar._auraParams = p
+    p.spellID = spellID
+    p.entrySpellID = entry and entry.spellID
+    p.entryID = entry and entry.id
+    p.entryName = entry and entry.name
+    p.viewerType = entry and entry.viewerType
+    p.blizzChild = bar._blizzIconChild
+    p.blizzBarChild = bar._blizzBar
 
-    if auraData then
+    local r = ns.CDMSpellData:ResolveAuraState(p)
+    if r.blizzChild then bar._blizzIconChild = r.blizzChild end
+
+    if r.isActive then
         bar._active = true
+        bar._auraDataUnit = r.auraUnit
 
-        -- Cache duration + expiration from auraData (readable OOC).
-        -- Used by OnUpdate to compute timer text in combat when
-        -- GetRemainingDuration returns a secret value.
-        local Helpers = ns.Helpers
-        local rawDuration = auraData.duration
-        if rawDuration and not Helpers.IsSecretValue(rawDuration) and rawDuration > 0 then
-            bar._totalDuration = rawDuration
-        end
-        local rawExpiration = auraData.expirationTime
-        if rawExpiration and not Helpers.IsSecretValue(rawExpiration) and rawExpiration > 0 then
-            bar._expirationTime = rawExpiration
+        -- Cache readable duration/expiration from OOC auraData (for OnUpdate timer text)
+        if r.auraData then
+            local rawDur = r.auraData.duration
+            if rawDur and not Helpers.IsSecretValue(rawDur) and rawDur > 0 then
+                bar._totalDuration = rawDur
+            end
+            local rawExp = r.auraData.expirationTime
+            if rawExp and not Helpers.IsSecretValue(rawExp) and rawExp > 0 then
+                bar._expirationTime = rawExp
+            end
         end
 
-        -- Get auraInstanceID → GetAuraDuration → DurationObject.
-        -- Push to StatusBar (fill).
-        local auraInstID = auraData.auraInstanceID
-        if auraInstID and C_UnitAuras.GetAuraDuration then
-            local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, auraDataUnit, auraInstID)
-            if dok and durObj then
-                bar._durObj = durObj
-                if bar.StatusBar and bar.StatusBar.SetTimerDuration then
+        -- Bar fill via DurationObject
+        local durObj = r.durObj or r.hookDurObj
+        if durObj then
+            bar._durObj = durObj
+            if bar.StatusBar then
+                pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                if bar.StatusBar.SetTimerDuration then
                     pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
                     bar._cSideFill = true
                 end
             end
         end
 
-        -- Update stacks — TruncateWhenZero is C-side, handles secrets natively.
-        local apps = auraData.applications
-        if not apps and auraData.auraInstanceID and C_UnitAuras.GetAuraDataByAuraInstanceID then
-            local aok, instData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraDataUnit, auraData.auraInstanceID)
-            if aok and instData then
-                apps = instData.applications
-            end
-        end
+        -- Stacks (appended to name text)
         if bar.NameText then
             local name = (entry and entry.name) or ""
-            -- WrapString returns "" if infix is empty, so "Name" + "" = "Name"
-            -- and "Name" + " (2)" = "Name (2)". All C-side, handles secrets.
-            local stacks = apps and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(apps), " (", ")") or ""
+            local stacks = r.stacks
+                and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
+                or ""
             pcall(bar.NameText.SetText, bar.NameText, name .. stacks)
-        end
-    elseif InCombatLockdown() then
-        -- API returns nil in combat — multiple fallback paths to keep bars alive.
-        local handled = false
-        local Helpers = ns.Helpers
-
-        -- 1. Blizzard child auraInstanceID (most reliable combat source):
-        --    Maintained by C-side code on the viewer child frame.
-        --    Check bar child, icon child, then dynamic scan as fallback.
-        --    Track auraDataUnit for target debuffs (e.g. Reaper's Mark).
-        if C_UnitAuras.GetAuraDuration then
-            local childAuraInstID
-            local auraUnit = "player"
-            -- Only trust child's auraInstanceID if the child is still shown —
-            -- Blizzard hides children C-side when buffs drop but doesn't nil
-            -- their auraInstanceID field.
-            if bar._blizzBar and bar._blizzBar.auraInstanceID then
-                local bok, bshown = pcall(bar._blizzBar.IsShown, bar._blizzBar)
-                if bok and bshown then
-                    childAuraInstID = Helpers.SafeValue(bar._blizzBar.auraInstanceID, nil)
-                    auraUnit = bar._blizzBar.auraDataUnit or "player"
-                end
-            end
-            if not childAuraInstID and bar._blizzIconChild and bar._blizzIconChild.auraInstanceID then
-                local iok, ishown = pcall(bar._blizzIconChild.IsShown, bar._blizzIconChild)
-                if iok and ishown then
-                    childAuraInstID = Helpers.SafeValue(bar._blizzIconChild.auraInstanceID, nil)
-                    auraUnit = bar._blizzIconChild.auraDataUnit or "player"
-                end
-            end
-            -- Dynamic fallback: scan ALL viewer children for matching spell
-            if not childAuraInstID and ns.CDMIcons and ns.CDMIcons.FindChildForSpell then
-                local dynChild = ns.CDMIcons.FindChildForSpell(
-                    spellID, entry and entry.spellID, entry and entry.id)
-                if dynChild then
-                    childAuraInstID = Helpers.SafeValue(dynChild.auraInstanceID, nil)
-                    auraUnit = dynChild.auraDataUnit or "player"
-                end
-            end
-            if childAuraInstID then
-                local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, auraUnit, childAuraInstID)
-                if dok and durObj then
-                    bar._active = true
-                    bar._durObj = durObj
-                    -- Push DurationObject to StatusBar (bar fill) — C-side handles secrets.
-                    if bar.StatusBar then
-                        pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
-                        if bar.StatusBar.SetTimerDuration then
-                            pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
-                            bar._cSideFill = true
-                        end
-                    end
-                    handled = true
-                end
-            end
-        end
-
-        -- 2. Hook cache: DurationObject from direct Blizzard child reference.
-        --    Only trust data from buff viewer children — cooldown viewer
-        --    children have spell cooldown timers, not aura durations.
-        if not handled then
-            local hookDurObj
-            local blzIconChild = bar._blizzIconChild
-            local buffViewer = _G["BuffIconCooldownViewer"]
-            local buffBarViewer = _G["BuffBarCooldownViewer"]
-            if blzIconChild and ns.CDMSpellData then
-                local vf = blzIconChild.viewerFrame
-                if vf and (vf == buffViewer or vf == buffBarViewer) then
-                    hookDurObj = ns.CDMSpellData._durObjCache[blzIconChild]
-                end
-            end
-            -- 3. Hook cache: GetCachedAuraDurObj (buff viewer children only).
-            if not hookDurObj and ns.CDMSpellData and ns.CDMSpellData.GetCachedAuraDurObj then
-                hookDurObj = ns.CDMSpellData:GetCachedAuraDurObj(resolvedID)
-                if not hookDurObj and resolvedID ~= spellID then
-                    hookDurObj = ns.CDMSpellData:GetCachedAuraDurObj(spellID)
-                end
-                if not hookDurObj and entry and entry.spellID and entry.spellID ~= spellID then
-                    hookDurObj = ns.CDMSpellData:GetCachedAuraDurObj(entry.spellID)
-                end
-                if not hookDurObj and entry and entry.id and entry.id ~= spellID then
-                    hookDurObj = ns.CDMSpellData:GetCachedAuraDurObj(entry.id)
-                end
-            end
-            if hookDurObj then
-                bar._active = true
-                bar._durObj = hookDurObj
-                if bar.StatusBar and bar.StatusBar.SetTimerDuration then
-                    pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, hookDurObj, nil, 1)
-                    bar._cSideFill = true
-                end
-                handled = true
-            end
-        end
-
-        -- 4. Blizzard bar child visibility (most reliable combat check):
-        --    Blizzard shows/hides its bar viewer children C-side based on
-        --    aura state.  The MirrorBlizzBar hooks forward SetValue and
-        --    SetMinMaxValues, so the owned bar visual stays in sync.
-        --    We just need the active flag from IsShown().
-        if not handled and bar._blizzBar then
-            local ok, shown = pcall(bar._blizzBar.IsShown, bar._blizzBar)
-            if ok and shown then
-                bar._active = true
-                -- Try to get DurationObject from bar child's hook cache for timer text
-                if ns.CDMSpellData and ns.CDMSpellData._durObjCache then
-                    local durObj = ns.CDMSpellData._durObjCache[bar._blizzBar]
-                    if durObj then
-                        bar._durObj = durObj
-                    end
-                end
-                handled = true
-            end
-        end
-
-        -- 5. Nothing found — deactivate bar and clear stale state.
-        if not handled then
-            bar._active = false
-            bar._durObj = nil
-            bar._cSideFill = nil
-            if bar.DurationText then bar.DurationText:SetText("") end
-            if bar.StatusBar then pcall(bar.StatusBar.SetValue, bar.StatusBar, 0) end
-        end
-
-        -- If nothing handled, check blizzBar visibility as authoritative
-        -- inactive signal (aura expired while in combat).
-        if not handled and bar._blizzBar then
-            local ok, shown = pcall(bar._blizzBar.IsShown, bar._blizzBar)
-            if ok and not shown then
-                bar._active = false
-                bar._durObj = nil
-                bar._cSideFill = nil
-                bar._totalDuration = nil
-                bar._expirationTime = nil
-                if bar.DurationText then bar.DurationText:SetText("") end
-                if bar.StatusBar then pcall(bar.StatusBar.SetValue, bar.StatusBar, 0) end
-            end
-        end
-
-        -- Update stacks in combat — use child auraInstanceID directly
-        if handled and bar.NameText then
-            local apps
-            -- Get auraInstanceID + unit from whichever Blizzard child is shown
-            local stackInstID, stackUnit
-            if bar._blizzBar then
-                local bok, bshown = pcall(bar._blizzBar.IsShown, bar._blizzBar)
-                if bok and bshown and bar._blizzBar.auraInstanceID then
-                    stackInstID = Helpers.SafeValue(bar._blizzBar.auraInstanceID, nil)
-                    stackUnit = bar._blizzBar.auraDataUnit or "player"
-                end
-            end
-            if not stackInstID and bar._blizzIconChild then
-                local iok, ishown = pcall(bar._blizzIconChild.IsShown, bar._blizzIconChild)
-                if iok and ishown and bar._blizzIconChild.auraInstanceID then
-                    stackInstID = Helpers.SafeValue(bar._blizzIconChild.auraInstanceID, nil)
-                    stackUnit = bar._blizzIconChild.auraDataUnit or "player"
-                end
-            end
-            if stackInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
-                local aok, instData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, stackUnit, stackInstID)
-                if aok and instData then
-                    apps = instData.applications
-                end
-            end
-            if bar.NameText then
-                local name = (entry and entry.name) or ""
-                local stacks = apps and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(apps), " (", ")") or ""
-                pcall(bar.NameText.SetText, bar.NameText, name .. stacks)
-            end
         end
     else
         bar._active = false
@@ -1306,15 +1065,14 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._cSideFill = nil
         bar._totalDuration = nil
         bar._expirationTime = nil
+        if not InCombatLockdown() then
+            bar._resolvedAuraID = nil
+        end
         if bar.StatusBar then
             pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
         end
         if bar.DurationText then
             bar.DurationText:SetText("")
-        end
-        -- Clear resolved ID if aura not found OOC (spell may have changed)
-        if not InCombatLockdown() then
-            bar._resolvedAuraID = nil
         end
     end
 end
@@ -1621,13 +1379,18 @@ barTimerGroup:SetScript("OnLoop", function()
                         end
                     end
                 elseif isSecret then
+                    -- Cannot read secret remaining — pass directly to C-side
+                    -- SetFormattedText for display. C-side bar fill via
+                    -- SetTimerDuration handles expiration visually.
                     anyActive = true
                     if bar.DurationText then
                         pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
                     end
                 else
                     -- Aura expired: remaining is nil or 0 — duration done.
+                    bar._active = false
                     bar._durObj = nil
+                    bar._cSideFill = nil
                     bar._lastDurationText = nil
                     if bar.DurationText then
                         bar.DurationText:SetText("")
@@ -1636,6 +1399,15 @@ barTimerGroup:SetScript("OnLoop", function()
                         pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
                     end
                 end
+            end
+        end
+    end
+    -- Re-layout when a bar deactivated during the timer tick so it hides.
+    if _lastContainer and _lastSettings then
+        for _, bar2 in ipairs(barPool) do
+            if bar2._isOwnedBar and not bar2._active and bar2:IsShown() then
+                CDMBars:LayoutBars(_lastContainer, _lastSettings)
+                break
             end
         end
     end
