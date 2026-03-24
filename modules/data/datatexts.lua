@@ -275,12 +275,16 @@ function Datatexts:AttachToSlot(slotFrame, datatextID, settings)
     
     local datatextDef = self.registry[datatextID]
     if not datatextDef then
-        -- Empty slot - show placeholder
+        -- Empty slot - show placeholder (hidden when "No Label" is enabled for the slot)
         if not slotFrame.text then
             slotFrame.text = slotFrame:CreateFontString(nil, "OVERLAY")
             slotFrame.text:SetPoint("CENTER")
         end
-        slotFrame.text:SetText("|cff666666(empty)")
+        if slotFrame.noLabel then
+            slotFrame.text:SetText("")
+        else
+            slotFrame.text:SetText("|cff666666(empty)")
+        end
         return true
     end
     
