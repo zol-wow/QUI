@@ -97,6 +97,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.55.1 - 2026-03-26
+
+### Fixed
+- fixed durations of tracked buffs not showing
+- more tooltip taint hardening
 ## v2.55.0 - 2026-03-25
 
 ### Fixed
