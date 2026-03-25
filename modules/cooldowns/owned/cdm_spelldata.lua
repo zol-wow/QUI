@@ -587,9 +587,13 @@ function CDMSpellData:ResolveAuraState(params)
         -- OOC: API is the reliable source
         -----------------------------------------------------------------
         -- 1. Player aura by spell ID
+        -- GetPlayerAuraBySpellID returns both buffs and debuffs (no filter param),
+        -- including passive talent auras that are always present. Skip passives
+        -- (neither isHelpful nor isHarmful) so they don't false-positive as active.
         if C_UnitAuras.GetPlayerAuraBySpellID then
             local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, auraSpellID)
-            if ok and ad and ad.auraInstanceID then
+            if ok and ad and ad.auraInstanceID
+               and (ad.isHelpful == true or ad.isHarmful == true) then
                 isActive = true
                 childAuraInstID = ad.auraInstanceID
                 auraUnit = "player"
@@ -597,7 +601,8 @@ function CDMSpellData:ResolveAuraState(params)
             end
             if not isActive and entrySpellID and entrySpellID ~= auraSpellID then
                 local ok2, ad2 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, entrySpellID)
-                if ok2 and ad2 and ad2.auraInstanceID then
+                if ok2 and ad2 and ad2.auraInstanceID
+                   and (ad2.isHelpful == true or ad2.isHarmful == true) then
                     isActive = true
                     childAuraInstID = ad2.auraInstanceID
                     auraUnit = "player"
@@ -717,15 +722,22 @@ function CDMSpellData:ResolveAuraState(params)
                 isActive = true
             end
         end
-        -- 5. Player aura by spell ID
+        -- 5. Player aura by spell ID — skip passive talent auras.
+        -- SafeValue for combat: if isHelpful/isHarmful are secret, allow
+        -- (real debuffs without viewer children still need this path).
         if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
             for _, tryID in ipairs({auraSpellID, entrySpellID, entryID}) do
                 if tryID and not isActive then
                     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
                     if ok and ad and ad.auraInstanceID then
-                        isActive = true
-                        childAuraInstID = ad.auraInstanceID
-                        auraUnit = "player"
+                        local helpful = Helpers.SafeValue(ad.isHelpful, nil)
+                        local harmful = Helpers.SafeValue(ad.isHarmful, nil)
+                        -- Reject only when we can confirm it's passive (both false)
+                        if helpful ~= false or harmful ~= false then
+                            isActive = true
+                            childAuraInstID = ad.auraInstanceID
+                            auraUnit = "player"
+                        end
                     end
                 end
             end

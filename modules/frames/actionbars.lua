@@ -2143,11 +2143,12 @@ local function BuildBar(barKey)
             barFrame:SetParent(hiddenBarParent)
             barFrame:Hide()
         end
-        local origButtons = GetOriginalBlizzButtons(barKey)
-        for _, blizzBtn in ipairs(origButtons) do
-            blizzBtn:SetParent(hiddenBarParent)
-            blizzBtn:UnregisterAllEvents()
-        end
+        -- Original Blizzard buttons stay as children of the (now hidden) bar
+        -- frame.  Do NOT call SetParent or UnregisterAllEvents on them —
+        -- either call taints Blizzard-created frames, which causes
+        -- ADDON_ACTION_BLOCKED when their template handlers fire during
+        -- combat.  Leaving them untouched is harmless: they update invisible
+        -- buttons on a hidden parent.
 
         -- Action slot offsets: each bar maps to a fixed range of action slots.
         local BAR_ACTION_OFFSETS = {
@@ -2175,9 +2176,11 @@ local function BuildBar(barKey)
                 if not ok then btn = _G[btnName] end
                 local action = offset + i
                 -- Set action and pressAndHoldAction from RESTRICTED code so
-                -- attributes remain untainted.  The template's native OnEvent
-                -- handler runs in untainted context and can update these
-                -- safely during combat (no secret-value errors).
+                -- attributes remain untainted.  Restricted SetAttribute
+                -- triggers OnAttributeChanged which populates icons/visuals.
+                -- Do NOT call pcall(ActionButton_Update) — that runs in
+                -- addon context and taints self.action, causing secret-value
+                -- errors in every subsequent template handler call.
                 container:SetFrameRef("init-btn", btn)
                 container:Execute(string_format([[
                     local btn = self:GetFrameRef("init-btn")
@@ -2201,15 +2204,6 @@ local function BuildBar(barKey)
                 btn:SetParent(container)
             end
             btn:Show()
-            -- Force the template to update its visuals (icon, cooldown, count, etc.)
-            -- pcall: addon code is in the call stack, so Blizzard's Update may hit
-            -- secret-value comparisons and throw.  The button will self-correct on the
-            -- next natural event cycle.
-            if ActionButton_Update then
-                pcall(ActionButton_Update, btn)
-            elseif btn.Update then
-                pcall(btn.Update, btn)
-            end
             buttons[i] = btn
         end
     end
@@ -2225,11 +2219,48 @@ local function BuildBar(barKey)
         for _, btn in ipairs(buttons) do
             ActionBarsOwned.UpdateCooldown(btn)
         end
-        -- Template's native OnEvent handler runs in untainted C-dispatched
-        -- context.  All events (cooldowns, usability, proc glows, state,
-        -- flyouts) work during combat without secret-value errors because
-        -- the call stack originates from Blizzard's event dispatch, not
-        -- addon code.  No OnEvent replacement needed.
+        -- Addon-created frames are permanently tainted.  Following
+        -- shadow the specific mixin methods
+        -- that hit taint errors, and let everything else flow through
+        -- to C-side functions that accept tainted calls natively.
+        -- No InCombatLockdown checks — events run freely during combat.
+        --
+        -- Shadowed methods:
+        --   UpdatePressAndHoldAction → no-op (handled from restricted
+        --     code in _childupdate-offset; the mixin's version calls
+        --     SetAttribute which is blocked on tainted frames)
+        --   UpdateCooldown → DurationObject path (SetCooldownFromDurationObject
+        --     is secret-safe from tainted code; the mixin's SetCooldown is not)
+        --
+        -- OnEvent: cooldown events route to DurationObject path directly.
+        --   All other events dispatch to pcall(ActionButton_Update) which
+        --   runs cleanly with the above methods shadowed.
+        for _, btn in ipairs(buttons) do
+            btn:SetScript("OnEvent", function(self, event, ...)
+                if event == "GLOBAL_MOUSE_UP" then
+                    self:UnregisterEvent(event)
+                    if self.UpdateFlyout then
+                        pcall(self.UpdateFlyout, self)
+                    end
+                    return
+                end
+                if event == "ACTIONBAR_UPDATE_COOLDOWN"
+                    or event == "LOSS_OF_CONTROL_ADDED"
+                    or event == "LOSS_OF_CONTROL_UPDATE" then
+                    ActionBarsOwned.UpdateCooldown(self)
+                    return
+                end
+                if ActionButton_Update then
+                    pcall(ActionButton_Update, self)
+                end
+            end)
+            -- Shadow taint-prone mixin methods on the instance so the
+            -- template's call chains hit safe wrappers instead.
+            btn.UpdatePressAndHoldAction = function() end
+            btn.UpdateCooldown = function(self)
+                ActionBarsOwned.UpdateCooldown(self)
+            end
+        end
     end
 
     -- Register frame refs for the secure layout handler (must be outside combat).
@@ -2574,8 +2605,8 @@ local function OnOwnedEvent(self, event, ...)
     if not ActionBarsOwned.initialized then return end
 
     if event == "ACTIONBAR_SLOT_CHANGED" then
-        -- Refresh empty slot visibility for the changed action.
-        -- Icons and cooldowns are auto-updated by the template's native handler.
+        -- Refresh cooldown state and empty slot visibility for the new action.
+        ActionBarsOwned.UpdateAllCooldowns()
         if InCombatLockdown() then
             ActionBarsOwned.pendingSlotUpdate = true
             return
@@ -2747,18 +2778,18 @@ local function OnOwnedEvent(self, event, ...)
             ActionBarsOwned.pendingSpacing = false
             ApplyAllBarSpacing()
         end
-        -- Post-combat skinning refresh: the ActionButton_Update hook has a
-        -- combat guard, so re-apply QUI visuals that may have been skipped.
-        -- Template events ran natively during combat — cooldowns/icons/state
-        -- are already up-to-date.
+        -- Post-combat visual refresh.  Events ran during combat via
+        -- shadowed methods, so most state is up-to-date.  This catches
+        -- any edge cases from pcall-suppressed errors and re-applies
+        -- QUI skinning that the ActionButton_Update hook skips in combat.
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
             local btns = ActionBarsOwned.nativeButtons[barKey]
-            local s = GetEffectiveSettings(barKey)
-            if btns and s then
+            if btns then
                 for _, btn in ipairs(btns) do
-                    SkinButton(btn, s)
-                    UpdateButtonText(btn, s)
-                    UpdateEmptySlotVisibility(btn, s)
+                    if ActionButton_Update then
+                        pcall(ActionButton_Update, btn)
+                    end
+                    ActionBarsOwned.UpdateCooldown(btn)
                 end
             end
         end
@@ -2849,10 +2880,14 @@ local function OnOwnedEvent(self, event, ...)
             end
         end
 
+    elseif event == "ACTIONBAR_UPDATE_COOLDOWN"
+        or event == "LOSS_OF_CONTROL_ADDED"
+        or event == "LOSS_OF_CONTROL_UPDATE" then
+        -- Centralized cooldown update for all owned action buttons.
+        -- Per-button OnEvent is suppressed during combat (addon-created
+        -- frames are tainted).  DurationObject path is secret-safe.
+        ActionBarsOwned.UpdateAllCooldowns()
     end
-    -- Note: ACTIONBAR_UPDATE_COOLDOWN, LOSS_OF_CONTROL_ADDED/UPDATE are
-    -- handled per-button by the template's native OnEvent handler running
-    -- in untainted C-dispatched context.  No centralized handling needed.
 end
 
 ownedEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
@@ -2869,6 +2904,9 @@ ownedEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 ownedEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
 ownedEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
 ownedEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+ownedEventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_ADDED")
+ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_UPDATE")
 ownedEventFrame:SetScript("OnEvent", OnOwnedEvent)
 
 -- Don't process events until Initialize is called
@@ -4091,8 +4129,8 @@ local function UpdateButtonUsability(button, settings)
         return
     end
 
-    -- Compute new tint state BEFORE applying visuals (Bartender4 pattern:
-    -- skip overlay updates when state hasn't changed).
+    -- Compute new tint state BEFORE applying visuals — skip overlay
+    -- updates when state hasn't changed.
     local newTint = nil  -- nil = normal/no tint
 
     -- Priority 1: Out of Range check (if enabled)
@@ -5422,8 +5460,9 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
     ownedEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
     ownedEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
-    -- ACTIONBAR_UPDATE_COOLDOWN, LOSS_OF_CONTROL_ADDED/UPDATE handled
-    -- per-button by the template's native OnEvent (untainted context).
+    ownedEventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+    ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_ADDED")
+    ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_UPDATE")
         ownedEventFrame:Show()
 
     -- Force all action bars enabled so owned buttons function correctly
