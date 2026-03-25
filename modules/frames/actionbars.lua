@@ -298,22 +298,29 @@ hiddenBarParent:Hide()
 -- Fully suppress a Blizzard-created action button so the C-side
 -- ActionBarButtonEventsFrame dispatch and mixin handlers are inert.
 local noop = function() end
+
+-- Remove a button from ActionBarButtonEventsFrame's dispatch array.
+-- The array is built via tinsert (no UnregisterFrame method exists).
+-- Setting the entry to nil leaves a hole that pairs() skips.
+local function DeregisterFromEventsFrame(btn)
+    if not ActionBarButtonEventsFrame or not ActionBarButtonEventsFrame.frames then return end
+    for k, v in pairs(ActionBarButtonEventsFrame.frames) do
+        if v == btn then
+            ActionBarButtonEventsFrame.frames[k] = nil
+            break
+        end
+    end
+end
+
 local function SuppressBlizzardButton(btn)
     btn:Hide()
     btn:UnregisterAllEvents()
     btn:SetAttribute("statehidden", true)
-    -- Remove from ActionBarButtonEventsFrame dispatch BEFORE writing
-    -- tainted values.  Writing noop to .Update/.OnEvent on a secure
-    -- Blizzard button taints those fields; if the dispatch loop still
-    -- reaches this button it reads the tainted fields and poisons the
-    -- entire iteration (including OverrideActionBar buttons).
-    if ActionBarButtonEventsFrame then
-        if ActionBarButtonEventsFrame.UnregisterFrame then
-            ActionBarButtonEventsFrame:UnregisterFrame(btn)
-        elseif ActionBarButtonEventsFrame.frames then
-            ActionBarButtonEventsFrame.frames[btn] = nil
-        end
-    end
+    -- Remove from dispatch BEFORE writing tainted values.  Writing
+    -- noop to .OnEvent/.Update on a secure Blizzard button taints
+    -- those fields; if the dispatch still reaches this button it
+    -- reads tainted fields and poisons the entire iteration.
+    DeregisterFromEventsFrame(btn)
     btn.OnEvent = noop
     btn.Update = noop
     btn.UpdateCooldown = noop
@@ -2468,13 +2475,7 @@ local function BuildBar(barKey)
             -- Belt-and-suspenders: deregister from the table AND replace
             -- OnEvent with a no-op so if the dispatch somehow reaches QUI
             -- buttons, the handler is inert and cannot taint the context.
-            if ActionBarButtonEventsFrame then
-                if ActionBarButtonEventsFrame.UnregisterFrame then
-                    ActionBarButtonEventsFrame:UnregisterFrame(btn)
-                elseif ActionBarButtonEventsFrame.frames then
-                    ActionBarButtonEventsFrame.frames[btn] = nil
-                end
-            end
+            DeregisterFromEventsFrame(btn)
             -- Replace OnEvent with QUI's safe handler.  Routes cooldown
             -- events to QUI's DurationObject path; everything else to
             -- SafeUpdate.  Uses only truthiness checks — no secret value
@@ -6174,17 +6175,9 @@ function ActionBarsOwned:Initialize()
         -- Hiding the bar makes them invisible but they're still in the
         -- ActionBarButtonEventsFrame.frames table and still receive
         -- dispatches → SetCooldown with secret values in tainted context.
-        if ActionBarButtonEventsFrame then
-            for i = 1, 6 do
-                local btn = _G["OverrideActionBarButton" .. i]
-                if btn then
-                    if ActionBarButtonEventsFrame.UnregisterFrame then
-                        ActionBarButtonEventsFrame:UnregisterFrame(btn)
-                    elseif ActionBarButtonEventsFrame.frames then
-                        ActionBarButtonEventsFrame.frames[btn] = nil
-                    end
-                end
-            end
+        for i = 1, 6 do
+            local btn = _G["OverrideActionBarButton" .. i]
+            if btn then DeregisterFromEventsFrame(btn) end
         end
     end
 
@@ -6471,13 +6464,7 @@ initFrame:SetScript("OnEvent", function(self, event, addonName)
             end
             for i = 1, 6 do
                 local btn = _G["OverrideActionBarButton" .. i]
-                if btn then
-                    if ActionBarButtonEventsFrame.UnregisterFrame then
-                        ActionBarButtonEventsFrame:UnregisterFrame(btn)
-                    elseif ActionBarButtonEventsFrame.frames then
-                        ActionBarButtonEventsFrame.frames[btn] = nil
-                    end
-                end
+                if btn then DeregisterFromEventsFrame(btn) end
             end
         end
     end
