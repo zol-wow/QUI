@@ -169,8 +169,42 @@ end
 -- COOLDOWN RESOLUTION
 -- Ported from cdm_custom.lua:116-181 (GetBestSpellCooldown)
 ---------------------------------------------------------------------------
+-- Extract a DurationObject from a cooldown info table if the API provides one.
+-- 12.0.1+/12.0.5+ may expose DurationObjects on SpellCooldownInfo/SpellChargeInfo.
+local function ExtractCooldownDurObj(info)
+    if not info then return nil end
+    local obj = info.cooldownDurationObject or info.durationObject
+    if obj and type(obj) == "table" then
+        return obj
+    end
+    return nil
+end
+
+local function AccumulateCooldown(startTime, duration, info, bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
+    local durObj = ExtractCooldownDurObj(info)
+    if durObj and not bestDurObj then
+        bestDurObj = durObj
+    end
+
+    if IsSecretValue(startTime) or IsSecretValue(duration) then
+        if not secretStart then
+            secretStart, secretDuration = startTime, duration
+        end
+        return bestStart, bestDuration, secretStart, secretDuration, bestDurObj
+    end
+
+    if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) or duration <= 0 then
+        return bestStart, bestDuration, secretStart, secretDuration, bestDurObj
+    end
+
+    if not bestDuration or duration > bestDuration then
+        bestStart, bestDuration = startTime, duration
+    end
+    return bestStart, bestDuration, secretStart, secretDuration, bestDurObj
+end
+
 local function GetBestSpellCooldown(spellID)
-    if not spellID then return nil, nil end
+    if not spellID then return nil, nil, nil end
 
     local candidates = { spellID }
 
@@ -184,28 +218,14 @@ local function GetBestSpellCooldown(spellID)
 
     local bestStart, bestDuration = nil, nil
     local secretStart, secretDuration = nil, nil
-
-    local function Consider(startTime, duration)
-        if IsSecretValue(startTime) or IsSecretValue(duration) then
-            if not secretStart and not secretDuration then
-                secretStart, secretDuration = startTime, duration
-            end
-            return
-        end
-
-        if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) or duration <= 0 then
-            return
-        end
-
-        if not bestDuration or duration > bestDuration then
-            bestStart, bestDuration = startTime, duration
-        end
-    end
+    local bestDurObj = nil
 
     for _, identifier in ipairs(candidates) do
         local cdInfo = C_Spell.GetSpellCooldown(identifier)
         if cdInfo then
-            Consider(cdInfo.startTime, cdInfo.duration)
+            bestStart, bestDuration, secretStart, secretDuration, bestDurObj =
+                AccumulateCooldown(cdInfo.startTime, cdInfo.duration, cdInfo,
+                    bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
         end
 
         -- Check charges
@@ -215,30 +235,65 @@ local function GetBestSpellCooldown(spellID)
                 local currentCharges = SafeToNumber(chargeInfo.currentCharges, 0)
                 local maxCharges = SafeToNumber(chargeInfo.maxCharges, 0)
                 if currentCharges < maxCharges then
-                    Consider(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration)
+                    bestStart, bestDuration, secretStart, secretDuration, bestDurObj =
+                        AccumulateCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo,
+                            bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
                 end
             end
         end
     end
 
-    -- Return secret fallback if no safe value found
-    if not bestStart and secretStart then
-        return secretStart, secretDuration
+    -- DurationObject APIs (12.0+, secret-safe). These can be forwarded
+    -- directly to SetCooldownFromDurationObject without reading values in Lua.
+    if not bestDurObj then
+        if C_Spell.GetSpellCooldownDuration then
+            local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+            if ok and durObj then
+                bestDurObj = durObj
+            end
+        end
+        if not bestDurObj and C_Spell.GetOverrideSpell and C_Spell.GetSpellCooldownDuration then
+            local overrideID = C_Spell.GetOverrideSpell(spellID)
+            if overrideID and overrideID ~= spellID then
+                local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, overrideID)
+                if ok and durObj then
+                    bestDurObj = durObj
+                end
+            end
+        end
+        if not bestDurObj and C_Spell.GetSpellChargeDuration then
+            local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
+            if ok and durObj then
+                bestDurObj = durObj
+            end
+        end
     end
-    return bestStart, bestDuration
+
+    if bestStart then
+        return bestStart, bestDuration, bestDurObj
+    end
+    if bestDurObj then
+        return nil, nil, bestDurObj
+    end
+
+    -- Secret numeric cooldowns can no longer be forwarded to SetCooldown().
+    if secretStart then
+        return nil, nil, nil
+    end
+    return nil, nil, nil
 end
 
 -- Item cooldown resolution
 local function GetItemCooldown(itemID)
-    if not itemID or not C_Item.GetItemCooldown then return nil, nil end
+    if not itemID or not C_Item.GetItemCooldown then return nil, nil, nil end
     local startTime, duration = C_Item.GetItemCooldown(itemID)
     if IsSecretValue(startTime) or IsSecretValue(duration) then
-        return startTime, duration -- CooldownFrame can handle secret values
+        return nil, nil, nil
     end
     if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) or duration <= 0 then
-        return nil, nil
+        return nil, nil, nil
     end
-    return startTime, duration
+    return startTime, duration, nil
 end
 
 -- Expose for external use
@@ -258,11 +313,124 @@ local function ReapplySwipeStyle(cd, icon)
     end
 end
 
+local function GetIconCooldownIdentifier(icon)
+    local entry = icon and icon._spellEntry
+    if not entry then return nil end
+    return entry.overrideSpellID or entry.spellID or entry.id
+end
+
+local function RefreshIconGCDState(icon)
+    local sid = GetIconCooldownIdentifier(icon)
+    if not sid or not C_Spell or not C_Spell.GetSpellCooldown then return end
+
+    local ok, cdInfo = pcall(C_Spell.GetSpellCooldown, sid)
+    if ok and cdInfo and not IsSecretValue(cdInfo.isOnGCD) then
+        icon._isOnGCD = cdInfo.isOnGCD or false
+    end
+end
+
+local function SyncMirroredCooldownState(icon, blizzCD, fallbackActive)
+    if not icon then
+        return
+    end
+
+    if not blizzCD or not blizzCD.GetCooldownTimes then
+        if fallbackActive ~= nil then
+            icon._hasCooldownActive = fallbackActive
+        end
+        return
+    end
+
+    local ok, rawStart, rawDuration, isEnabled = pcall(blizzCD.GetCooldownTimes, blizzCD)
+    if not ok or IsSecretValue(rawStart) or IsSecretValue(rawDuration) then
+        if fallbackActive ~= nil then
+            icon._hasCooldownActive = fallbackActive
+        end
+        return
+    end
+
+    local start = (type(rawStart) == "number") and rawStart or nil
+    local duration = (type(rawDuration) == "number") and rawDuration or nil
+    if not start or not duration then
+        if fallbackActive ~= nil then
+            icon._hasCooldownActive = fallbackActive
+        end
+        return
+    end
+
+    if start > 100000 or duration > 100000 then
+        start = start / 1000
+        duration = duration / 1000
+    end
+
+    local enabled = true
+    if isEnabled ~= nil and not IsSecretValue(isEnabled) then
+        enabled = (isEnabled ~= 0 and isEnabled ~= false)
+    end
+
+    icon._lastStart = start
+    icon._lastDuration = duration
+    if duration == 0 or not enabled then
+        icon._lastStart = 0
+        icon._lastDuration = 0
+    end
+    icon._hasCooldownActive = enabled and start > 0 and duration > 0
+end
+
+local function MirrorCurrentBlizzCooldown(icon, blizzCD)
+    local addonCD = icon and icon.Cooldown
+    if not addonCD or not blizzCD then return false end
+
+    local synced = false
+    if blizzCD.GetCooldownTimes then
+        local ok, rawStart, rawDuration, isEnabled = pcall(blizzCD.GetCooldownTimes, blizzCD)
+        if ok and not IsSecretValue(rawStart) and not IsSecretValue(rawDuration) then
+            local start = (type(rawStart) == "number") and rawStart or nil
+            local duration = (type(rawDuration) == "number") and rawDuration or nil
+            local enabled = true
+
+            if isEnabled ~= nil and not IsSecretValue(isEnabled) then
+                enabled = (isEnabled ~= 0 and isEnabled ~= false)
+            end
+
+            if start and duration then
+                if start > 100000 or duration > 100000 then
+                    start = start / 1000
+                    duration = duration / 1000
+                end
+
+                if enabled and start > 0 and duration > 0 then
+                    synced = pcall(addonCD.SetCooldown, addonCD, start, duration)
+                elseif duration == 0 or not enabled then
+                    addonCD:Clear()
+                    synced = true
+                end
+            end
+        end
+    end
+
+    if not synced and addonCD.SetCooldownFromDurationObject then
+        local entry = icon._spellEntry
+        if entry and entry.viewerType ~= "buff" then
+            local startTime, duration, durObj = GetBestSpellCooldown(GetIconCooldownIdentifier(icon))
+            if durObj then
+                synced = pcall(addonCD.SetCooldownFromDurationObject, addonCD, durObj, false)
+            elseif IsSafeNumeric(startTime) and IsSafeNumeric(duration) and duration > 0 then
+                synced = pcall(addonCD.SetCooldown, addonCD, startTime, duration)
+            end
+        end
+    end
+
+    SyncMirroredCooldownState(icon, blizzCD, synced)
+    RefreshIconGCDState(icon)
+    return synced
+end
+
 -- Keep CooldownFrame ready-flash ("bling") hidden when icon is effectively invisible.
 -- This prevents GCD-ready glow from leaking through when row/container alpha is 0.
 local function SyncCooldownBling(icon)
     if not icon or not icon.Cooldown or not icon.Cooldown.SetDrawBling then return end
-    local effectiveAlpha = (icon.GetEffectiveAlpha and icon:GetEffectiveAlpha()) or icon:GetAlpha() or 1
+    local effectiveAlpha = SafeToNumber((icon.GetEffectiveAlpha and icon:GetEffectiveAlpha()) or icon:GetAlpha(), 1)
     local shouldDrawBling = (effectiveAlpha > 0.001) and icon:IsShown()
     if icon._drawBlingEnabled ~= shouldDrawBling then
         icon._drawBlingEnabled = shouldDrawBling
@@ -325,6 +493,9 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                     pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
                 end
 
+                SyncMirroredCooldownState(targetIcon, self, true)
+                RefreshIconGCDState(targetIcon)
+
                 ReapplySwipeStyle(cd, targetIcon)
             end)
         end
@@ -337,23 +508,12 @@ local function MirrorBlizzCooldown(icon, blizzChild)
 
             -- Mirror to addon-owned CD
             local cd = targetIcon.Cooldown
-            if cd then
+            if cd and IsSafeNumeric(start) and IsSafeNumeric(duration) then
                 pcall(cd.SetCooldown, cd, start, duration)
             end
 
-            -- Track GCD state for swipe classification (matches CMC pattern).
-            -- isOnGCD is a Blizzard boolean — CMC accesses it directly without
-            -- secret guards, but we use pcall for safety.
-            local sid = targetIcon._spellEntry and
-                (targetIcon._spellEntry.overrideSpellID or targetIcon._spellEntry.spellID or targetIcon._spellEntry.id)
-            if sid and C_Spell.GetSpellCooldown then
-                local ok, cdInfo = pcall(C_Spell.GetSpellCooldown, sid)
-                if ok and cdInfo then
-                    if not IsSecretValue(cdInfo.isOnGCD) then
-                        targetIcon._isOnGCD = cdInfo.isOnGCD or false
-                    end
-                end
-            end
+            SyncMirroredCooldownState(targetIcon, self, IsSafeNumeric(start) and IsSafeNumeric(duration) and start > 0 and duration > 0)
+            RefreshIconGCDState(targetIcon)
 
             ReapplySwipeStyle(cd, targetIcon)
         end)
@@ -368,15 +528,7 @@ local function MirrorBlizzCooldown(icon, blizzChild)
     -- so swipe/countdown display correctly without waiting for the next update.
     local addonCD = icon.Cooldown
     if addonCD then
-        -- Mirror current cooldown duration via GetCooldownTimes (C-side, secret-safe)
-        local ok, startMs, durMs = pcall(blizzCD.GetCooldownTimes, blizzCD)
-        if ok and startMs and durMs then
-            local start = SafeToNumber(startMs)
-            local dur = SafeToNumber(durMs)
-            if start and dur and start > 0 and dur > 0 then
-                pcall(addonCD.SetCooldown, addonCD, start / 1000, dur / 1000)
-            end
-        end
+        MirrorCurrentBlizzCooldown(icon, blizzCD)
         -- Mirror reverse state (aura timers show reversed swipe)
         local okR, isReversed = pcall(blizzCD.GetReverse, blizzCD)
         if okR and not IsSecretValue(isReversed) then
@@ -1201,29 +1353,116 @@ local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
     if entry._blizzChild then
-        -- Mirrored Blizzard CooldownFrame: Blizzard drives the hidden
-        -- viewer; our hooks forward updates to the addon-owned CD.
-        -- Hooks (SetCooldown / SetCooldownFromDurationObject) drive all
-        -- mirrored cooldown updates; no API polling needed here.
-
-        -- Re-apply swipe styling (colors) in case state changed
-        if icon.Cooldown then
-            ReapplySwipeStyle(icon.Cooldown, icon)
+        -- Mirrored Blizzard child: prefer hook-provided DurationObject data,
+        -- but actively recover the cooldown state from cooldownInfo / spell APIs
+        -- so the owned icon still works if Blizzard stops driving the mirror hook
+        -- for a given update path.
+        local child = entry._blizzChild
+        local info = child and child.cooldownInfo or nil
+        local hookWasAura = info and ((type(info.wasSetFromAura) == "boolean" and info.wasSetFromAura)
+            or (type(info.cooldownUseAuraDisplayTime) == "boolean" and info.cooldownUseAuraDisplayTime)) or false
+        local hookDurObj = ExtractCooldownDurObj(info)
+        local hookStart = info and SafeValue(info.startTime, nil) or nil
+        local hookDuration = info and SafeValue(info.duration, nil) or nil
+        local spellID = GetIconCooldownIdentifier(icon)
+        local startTime, duration, durObj = nil, nil, nil
+        local childAuraInstID = child and child.auraInstanceID or nil
+        local auraUnit = (child and child.auraDataUnit) or ((entry.viewerType == "buff") and "player" or "target")
+        local isActiveAura = (entry.viewerType == "buff") or hookWasAura
+        if spellID then
+            startTime, duration, durObj = GetBestSpellCooldown(spellID)
         end
 
-        -- NOTE: Texture sync for spell replacements (e.g., Judgment → Hammer of
-        -- Wrath) is handled by HookBlizzTexture's SetTexture hook, not polling.
-        -- GetTexture() on Blizzard frames returns secret values during combat.
+        if not InCombatLockdown() then
+            if not isActiveAura and spellID and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+                local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+                if ok and auraData and auraData.auraInstanceID then
+                    isActiveAura = true
+                    childAuraInstID = auraData.auraInstanceID
+                    auraUnit = "player"
+                end
+            end
+        else
+            if hookDurObj or (IsSafeNumeric(hookStart) and IsSafeNumeric(hookDuration) and hookDuration > 0) then
+                isActiveAura = true
+            end
+        end
+
+        if not isActiveAura and entry.name and entry.name ~= "" and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+            for _, lookup in ipairs({
+                { unit = "player", filter = "HELPFUL" },
+                { unit = "pet", filter = "HELPFUL" },
+                { unit = "target", filter = "HARMFUL" },
+                { unit = "target", filter = "HELPFUL" },
+            }) do
+                local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, lookup.unit, entry.name, lookup.filter)
+                if ok and auraData and auraData.auraInstanceID then
+                    isActiveAura = true
+                    childAuraInstID = auraData.auraInstanceID
+                    auraUnit = lookup.unit
+                    break
+                end
+            end
+        end
+
+        if not isActiveAura and childAuraInstID and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
+            local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
+            if ok and auraData then
+                isActiveAura = true
+            end
+        end
+
+        icon._auraActive = isActiveAura
+        RefreshIconGCDState(icon)
+
+        if icon.Cooldown then
+            local cdApplied = false
+            local reverse = icon._auraActive and true or false
+
+            if icon._auraActive and childAuraInstID and C_UnitAuras and C_UnitAuras.GetAuraDuration
+                and icon.Cooldown.SetCooldownFromDurationObject then
+                local okAuraDur, auraDurObj = pcall(C_UnitAuras.GetAuraDuration, auraUnit, childAuraInstID)
+                if okAuraDur and auraDurObj then
+                    cdApplied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, auraDurObj, true)
+                end
+            end
+            if not cdApplied and hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
+                cdApplied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, hookDurObj, reverse)
+            end
+            if not cdApplied and durObj and icon.Cooldown.SetCooldownFromDurationObject then
+                cdApplied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, reverse)
+            end
+            if not cdApplied and IsSafeNumeric(hookStart) and IsSafeNumeric(hookDuration) and hookDuration > 0 then
+                cdApplied = pcall(icon.Cooldown.SetCooldown, icon.Cooldown, hookStart, hookDuration)
+            end
+            if not cdApplied and IsSafeNumeric(startTime) and IsSafeNumeric(duration) and duration > 0 then
+                cdApplied = pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
+            end
+
+            if icon.Cooldown.SetReverse then
+                pcall(icon.Cooldown.SetReverse, icon.Cooldown, reverse)
+            end
+            if not cdApplied then
+                icon.Cooldown:Clear()
+            end
+            icon._hasCooldownActive = cdApplied or false
+            ReapplySwipeStyle(icon.Cooldown, icon)
+        else
+            icon._hasCooldownActive = false
+        end
+
+        -- NOTE: Texture sync for spell replacements (e.g., Judgment -> Hammer of
+        -- Wrath) is still handled by HookBlizzTexture's SetTexture hook, not polling.
     else
         -- Custom entry: use addon-created CD with our cooldown resolution
-        local startTime, duration
+        local startTime, duration, durObj
         if entry.type == "macro" then
             local resolvedID, resolvedType = ResolveMacro(entry)
             if resolvedID then
                 if resolvedType == "item" then
-                    startTime, duration = GetItemCooldown(resolvedID)
+                    startTime, duration, durObj = GetItemCooldown(resolvedID)
                 else
-                    startTime, duration = GetBestSpellCooldown(resolvedID)
+                    startTime, duration, durObj = GetBestSpellCooldown(resolvedID)
                 end
             end
             -- Update icon texture dynamically (resolved spell may change each tick)
@@ -1235,12 +1474,12 @@ local function UpdateIconCooldown(icon)
             -- Trinket entries store equipment slot (13/14), resolve to item ID
             local itemID = GetInventoryItemID("player", entry.id)
             if itemID then
-                startTime, duration = GetItemCooldown(itemID)
+                startTime, duration, durObj = GetItemCooldown(itemID)
             end
         elseif entry.type == "item" then
-            startTime, duration = GetItemCooldown(entry.id)
+            startTime, duration, durObj = GetItemCooldown(entry.id)
         else
-            startTime, duration = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+            startTime, duration, durObj = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
 
             -- Sync texture for spell overrides (e.g., Judgment → Hammer of Wrath).
             -- Custom spell entries don't have _blizzChild to mirror, so check the
@@ -1257,24 +1496,35 @@ local function UpdateIconCooldown(icon)
             end
         end
 
-        local safeDur = SafeToNumber(duration, nil)
-        local safeStartVal = SafeToNumber(startTime, nil)
-        -- Only update when safe values are available.  Defaulting to 0 on
-        -- secret values would make the desaturation code think the spell
-        -- is off cooldown mid-combat.
-        if safeDur then icon._lastDuration = safeDur end
-        if safeStartVal then icon._lastStart = safeStartVal end
-        if safeDur == 0 then
+        local hasSafeStart = IsSafeNumeric(startTime)
+        local hasSafeDuration = IsSafeNumeric(duration)
+        if hasSafeDuration then
+            icon._lastDuration = duration
+        end
+        if hasSafeStart then
+            icon._lastStart = startTime
+        end
+        if hasSafeDuration and duration == 0 then
             icon._lastStart = 0
             icon._lastDuration = 0
         end
 
         if icon.Cooldown then
-            if startTime and duration then
-                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
-            else
+            local cdApplied = false
+            if durObj and icon.Cooldown.SetCooldownFromDurationObject then
+                local ok = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, false)
+                cdApplied = ok
+            end
+            if not cdApplied and hasSafeStart and hasSafeDuration then
+                local ok = pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
+                cdApplied = ok
+            end
+            if not cdApplied then
                 icon.Cooldown:Clear()
             end
+            icon._hasCooldownActive = cdApplied or false
+        else
+            icon._hasCooldownActive = false
         end
     end
 
@@ -1395,33 +1645,39 @@ local function UpdateIconCooldown(icon)
             local db = GetDB()
             local settings = db and db[viewerType]
             if settings and settings.desaturateOnCooldown then
-                local dur = icon._lastDuration or 0
-                local start = icon._lastStart or 0
+                local isOnCooldown = icon._hasCooldownActive or false
+                if not isOnCooldown then
+                    local dur = icon._lastDuration or 0
+                    local start = icon._lastStart or 0
+                    if dur > 1.5 and start > 0 then
+                        local remaining = (start + dur) - GetTime()
+                        if remaining > 0 then
+                            isOnCooldown = true
+                        end
+                    end
+                end
 
-                if dur > 1.5 and start > 0 then
-                    local remaining = (start + dur) - GetTime()
-                    if remaining > 0 then
-                        -- On cooldown — check charges before desaturating
-                        local spellID = entry.overrideSpellID or entry.spellID or entry.id
-                        if spellID and C_Spell.GetSpellCharges then
-                            local chargeInfo = C_Spell.GetSpellCharges(spellID)
-                            if chargeInfo then
-                                -- Secret charge data → keep current state (don't flicker)
-                                if IsSecretValue(chargeInfo.currentCharges) then
-                                    return
-                                end
-                                local current = SafeToNumber(chargeInfo.currentCharges, 0)
-                                if current > 0 then
-                                    icon.Icon:SetDesaturated(false)
-                                    icon._cdDesaturated = nil
-                                    return
-                                end
+                if isOnCooldown then
+                    -- On cooldown — check charges before desaturating
+                    local spellID = entry.overrideSpellID or entry.spellID or entry.id
+                    if spellID and C_Spell.GetSpellCharges then
+                        local chargeInfo = C_Spell.GetSpellCharges(spellID)
+                        if chargeInfo then
+                            -- Secret charge data → keep current state (don't flicker)
+                            if IsSecretValue(chargeInfo.currentCharges) then
+                                return
+                            end
+                            local current = SafeToNumber(chargeInfo.currentCharges, 0)
+                            if current > 0 then
+                                icon.Icon:SetDesaturated(false)
+                                icon._cdDesaturated = nil
+                                return
                             end
                         end
-                        icon.Icon:SetDesaturated(true)
-                        icon._cdDesaturated = true
-                        return
                     end
+                    icon.Icon:SetDesaturated(true)
+                    icon._cdDesaturated = true
+                    return
                 end
 
                 -- Off cooldown or GCD-only — clear desaturation
@@ -1451,6 +1707,7 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._lastStart = nil
         icon._lastDuration = nil
         icon._isOnGCD = nil
+        icon._hasCooldownActive = nil
 
         -- Update texture
         local texID
@@ -1520,6 +1777,7 @@ function CDMIcons:ReleaseIcon(icon)
     icon._lastStart = nil
     icon._lastDuration = nil
     icon._isOnGCD = nil
+    icon._hasCooldownActive = nil
     if icon.Icon then
         icon.Icon:SetVertexColor(1, 1, 1, 1)
         icon.Icon:SetDesaturated(false)
@@ -1974,6 +2232,18 @@ local function SafeIsSpellInRange(spellID)
     return result
 end
 
+local function SafeSpellHasRange(spellID)
+    if not spellID or not C_Spell or not C_Spell.SpellHasRange then return nil end
+    local ok, result = pcall(function()
+        local hasRange = C_Spell.SpellHasRange(spellID)
+        if hasRange == false then return false end
+        if hasRange == true then return true end
+        return nil
+    end)
+    if not ok then return nil end
+    return result
+end
+
 -- Safe wrapper: C_Spell.IsSpellUsable can return secret values in Midnight
 local function SafeIsSpellUsable(spellID)
     if not spellID or not C_Spell or not C_Spell.IsSpellUsable then return true, false end
@@ -2036,11 +2306,8 @@ local function UpdateIconVisualState(icon)
     -- Priority 1: Out of range (red tint) — only when target exists + ranged
     ---------------------------------------------------------------------------
     if rangeEnabled and UnitExists("target") then
-        local hasRange = true
-        if C_Spell.SpellHasRange then
-            hasRange = C_Spell.SpellHasRange(spellID)
-        end
-        if hasRange then
+        local hasRange = SafeSpellHasRange(spellID)
+        if hasRange ~= false then
             local inRange = SafeIsSpellInRange(spellID)
             if inRange == false then
                 -- Clear usability darkening if switching to range tint
@@ -2106,6 +2373,8 @@ cdEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
 cdEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 cdEventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 -- Coalesce rapid cooldown events (SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_CHARGES,
 -- BAG_UPDATE_COOLDOWN) into a single UpdateAllCooldowns call per 50ms window.
@@ -2117,6 +2386,22 @@ local function FlushCooldownUpdate()
     CDMIcons:UpdateAllCooldowns()
 end
 
+-- Combat safety ticker: DurationObject sources can resolve slightly after the
+-- initial event-driven update. A low-frequency ticker lets custom icons
+-- recover within combat without relying on readable numeric start/duration.
+local safetyTickFrame = CreateFrame("Frame")
+local SAFETY_TICK_INTERVAL = 0.25
+local safetyTickElapsed = 0
+local function SafetyTickOnUpdate(self, elapsed)
+    safetyTickElapsed = safetyTickElapsed + elapsed
+    if safetyTickElapsed < SAFETY_TICK_INTERVAL then return end
+    safetyTickElapsed = 0
+    CDMIcons:UpdateAllCooldowns()
+    if ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
+        ns.CDMBars:UpdateOwnedBars()
+    end
+end
+
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_TARGET_CHANGED" then
         CDMIcons:UpdateAllIconRanges()
@@ -2126,6 +2411,19 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Trinket slots 13-14: refresh textures and cooldowns immediately
         if arg1 == 13 or arg1 == 14 then
             CDMIcons:UpdateAllCooldowns()
+        end
+        return
+    end
+    if event == "PLAYER_REGEN_DISABLED" then
+        safetyTickElapsed = 0
+        safetyTickFrame:SetScript("OnUpdate", SafetyTickOnUpdate)
+        return
+    end
+    if event == "PLAYER_REGEN_ENABLED" then
+        safetyTickFrame:SetScript("OnUpdate", nil)
+        CDMIcons:UpdateAllCooldowns()
+        if ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
+            ns.CDMBars:UpdateOwnedBars()
         end
         return
     end

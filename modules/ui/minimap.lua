@@ -3012,7 +3012,7 @@ local function CheckExternalHud()
 
     -- Primary checks: API-reported values (may be overridden by external addons)
     local currentScale = Minimap:GetScale()
-    local currentAlpha = Minimap:GetEffectiveAlpha()
+    local currentAlpha = Helpers.SafeToNumber(Minimap:GetEffectiveAlpha(), 1)
     local currentWidth = Minimap:GetWidth()
 
     -- QUI reparents Minimap to UIParent, so check against UIParent (not MinimapCluster)

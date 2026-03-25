@@ -318,6 +318,7 @@ local function UpdateAuras(frame)
 
     -- Helper to safely set cooldown (handles secret values on enemy targets)
     -- Uses duration object API when available for combat-safe cooldown display
+    local IsSecretValue = ns.Helpers and ns.Helpers.IsSecretValue
     local function SafeSetCooldown(cooldownFrame, auraData, unit)
         if not cooldownFrame then return false end
         if not auraData then return false end
@@ -338,34 +339,21 @@ local function UpdateAuras(frame)
                 local setOk = pcall(cooldownFrame.SetCooldownFromDurationObject, cooldownFrame, durationObj, true)
                 if setOk then
                     applied = true
-                else
-                    -- Fallback: derive numbers from duration object methods
-                    local eOK, elapsed = pcall(durationObj.GetElapsedDuration, durationObj)
-                    local rOK, remaining = pcall(durationObj.GetRemainingDuration, durationObj)
-                    if eOK and rOK and elapsed and remaining then
-                        local startTime = GetTime() - elapsed
-                        local total = elapsed + remaining
-                        local numOk = pcall(cooldownFrame.SetCooldown, cooldownFrame, startTime, total)
-                        if numOk then
-                            applied = true
-                        end
-                    end
                 end
             end
         end
 
-        -- Fallback: numeric start/duration (avoid comparisons; allow secret-safe arithmetic)
+        -- Fallback: numeric start/duration only when values are readable in Lua
         if not applied then
             local duration = auraData.duration
             local expirationTime = auraData.expirationTime
             if duration and expirationTime then
-                local ok = pcall(function()
-                    local startTime = expirationTime - duration
-                    cooldownFrame:SetCooldown(startTime, duration)
-                end)
-                if ok then
-                    applied = true
+                if IsSecretValue and (IsSecretValue(duration) or IsSecretValue(expirationTime)) then
+                    return false
                 end
+                local startTime = expirationTime - duration
+                cooldownFrame:SetCooldown(startTime, duration)
+                applied = true
             end
         end
 

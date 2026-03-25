@@ -160,6 +160,8 @@ local pendingResize = false
 local pendingResizeForce = false
 local pendingVisibilityUpdate = false
 local pendingRegisterClicks = false
+local pendingAnchorUpdate = false
+local initSafePeriod = true
 
 ---------------------------------------------------------------------------
 -- HELPERS: Settings access
@@ -1399,15 +1401,23 @@ local function UpdateDefensiveIndicator(frame)
                     local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, aura.auraInstanceID)
                     if ok and durationObj then
                         pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
-                    elseif cd.SetCooldownFromExpirationTime then
-                        pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                    elseif not IsSecretValue(aura.expirationTime) and not IsSecretValue(aura.duration) then
+                        if cd.SetCooldownFromExpirationTime then
+                            pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                        else
+                            pcall(cd.SetCooldown, cd, aura.expirationTime - aura.duration, aura.duration)
+                        end
+                    else
+                        cd:Clear()
                     end
-                elseif cd.SetCooldownFromExpirationTime then
-                    pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                elseif not IsSecretValue(aura.expirationTime) and not IsSecretValue(aura.duration) then
+                    if cd.SetCooldownFromExpirationTime then
+                        pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
+                    else
+                        pcall(cd.SetCooldown, cd, aura.expirationTime - aura.duration, aura.duration)
+                    end
                 else
-                    pcall(function()
-                        cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
-                    end)
+                    cd:Clear()
                 end
             elseif cd then
                 cd:Clear()
@@ -2158,6 +2168,11 @@ local function UpdateAnchorRoot(key, mainHeader, selfHeader, isRaid)
 end
 
 local function UpdateAnchorFrames()
+    if not initSafePeriod and InCombatLockdown() then
+        pendingAnchorUpdate = true
+        return
+    end
+
     local db = GetSettings()
     if not db then return end
 
@@ -2732,6 +2747,7 @@ local function UpdateHeaderVisibility()
         RebuildUnitFrameMap()
         QUI_GF:RefreshAllFrames()
         UpdateAnchorFrames()
+        initSafePeriod = false
     end)
 end
 
@@ -3318,6 +3334,10 @@ local function OnEvent(self, event, arg1, ...)
             pendingRegisterClicks = false
             DecorateHeaderChildren(QUI_GF.headers.party)
             DecorateHeaderChildren(QUI_GF.headers.raid)
+        end
+        if pendingAnchorUpdate then
+            pendingAnchorUpdate = false
+            UpdateAnchorFrames()
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then

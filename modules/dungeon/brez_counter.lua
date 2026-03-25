@@ -70,6 +70,17 @@ local function GetClassColor()
     return { r, g, b, 1 }
 end
 
+local function SafeChargeNumber(value)
+    if value == nil or Helpers.IsSecretValue(value) then
+        return nil
+    end
+    local ok, num = pcall(tonumber, value)
+    if ok and type(num) == "number" then
+        return num
+    end
+    return nil
+end
+
 ---------------------------------------------------------------------------
 -- Format time as M:SS
 ---------------------------------------------------------------------------
@@ -193,9 +204,18 @@ local function CreateBrezFrame()
         -- Current charges info
         local chargeInfo = C_Spell.GetSpellCharges(REBIRTH_SPELL_ID)
         if chargeInfo then
-            GameTooltip:AddLine(string.format("Charges: %d / %d", chargeInfo.currentCharges, chargeInfo.maxCharges), 1, 1, 1)
-            if chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownDuration > 0 then
-                local remaining = (chargeInfo.cooldownStartTime + chargeInfo.cooldownDuration) - GetTime()
+            local currentCharges = SafeChargeNumber(chargeInfo.currentCharges)
+            local maxCharges = SafeChargeNumber(chargeInfo.maxCharges)
+            local cooldownDuration = SafeChargeNumber(chargeInfo.cooldownDuration)
+            local cooldownStartTime = SafeChargeNumber(chargeInfo.cooldownStartTime)
+            if currentCharges and maxCharges then
+                GameTooltip:AddLine(string.format("Charges: %d / %d", currentCharges, maxCharges), 1, 1, 1)
+            else
+                GameTooltip:AddLine("Charges: ?", 1, 1, 1)
+            end
+            if currentCharges and maxCharges and cooldownDuration and cooldownStartTime
+                and currentCharges < maxCharges and cooldownDuration > 0 then
+                local remaining = (cooldownStartTime + cooldownDuration) - GetTime()
                 if remaining > 0 then
                     GameTooltip:AddLine(string.format("Next charge: %s", FormatTime(remaining)), 0.8, 0.8, 0.8)
                 end
@@ -264,11 +284,19 @@ local function UpdateDisplay()
         return
     end
 
-    local charges = chargeInfo.currentCharges
-    local maxCharges = chargeInfo.maxCharges
+    local charges = SafeChargeNumber(chargeInfo.currentCharges)
+    local maxCharges = SafeChargeNumber(chargeInfo.maxCharges)
+    local cooldownDuration = SafeChargeNumber(chargeInfo.cooldownDuration)
+    local cooldownStartTime = SafeChargeNumber(chargeInfo.cooldownStartTime)
+    if charges == nil or maxCharges == nil then
+        frame.chargeText:SetText("?")
+        frame.timerText:SetText("")
+        frame.icon:SetDesaturated(true)
+        return
+    end
 
     -- Update charges text
-    frame.chargeText:SetText(tostring(charges))
+    frame.chargeText:SetText(string.format("%d", charges))
 
     -- Color based on charges available
     if charges == 0 then
@@ -282,8 +310,8 @@ local function UpdateDisplay()
     end
 
     -- Update timer text
-    if charges < maxCharges and chargeInfo.cooldownDuration > 0 then
-        local remaining = (chargeInfo.cooldownStartTime + chargeInfo.cooldownDuration) - GetTime()
+    if charges < maxCharges and cooldownDuration and cooldownStartTime and cooldownDuration > 0 then
+        local remaining = (cooldownStartTime + cooldownDuration) - GetTime()
         if remaining > 0 then
             frame.timerText:SetText(FormatTime(remaining))
         else

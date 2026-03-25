@@ -91,7 +91,15 @@ local _eventUpdateThrottle = 0.1  -- Minimum interval between event-driven DoUpd
 local _lastEventUpdate = 0
 
 -- Performance: hoisted pcall wrapper functions (avoids anonymous closure allocation per call)
-local function SafeSetCooldown(cd, start, dur) cd:SetCooldown(start, dur) end
+local function SafeSetCooldown(cd, start, dur)
+    if IsSecretValue and (IsSecretValue(start) or IsSecretValue(dur)) then return end
+    cd:SetCooldown(start, dur)
+end
+local function SafeSetCooldownFromDurationObject(cd, durObj)
+    if not cd or not durObj or not cd.SetCooldownFromDurationObject then return false end
+    local ok = pcall(cd.SetCooldownFromDurationObject, cd, durObj)
+    return ok and true or false
+end
 local function SafeSetReverse(cd, val) cd:SetReverse(val) end
 local function SafeSetSwipeColor(cd, r, g, b, a) cd:SetSwipeColor(r, g, b, a) end
 local function SafeSetDrawSwipe(cd, val) cd:SetDrawSwipe(val) end
@@ -497,12 +505,19 @@ end
 -- COOLDOWN INFO HELPERS
 ---------------------------------------------------------------------------
 local function GetSpellCooldownInfo(spellID)
-    if not spellID then return 0, 0, false, nil end
+    if not spellID then return 0, 0, false, nil, false, nil end
     local cooldownInfo = C_Spell.GetSpellCooldown(spellID)
-    if cooldownInfo then
-        return cooldownInfo.startTime, cooldownInfo.duration, cooldownInfo.isEnabled, cooldownInfo.isOnGCD
+    local durObj = nil
+    if C_Spell.GetSpellCooldownDuration then
+        local okDur, obj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if okDur and obj then
+            durObj = obj
+        end
     end
-    return 0, 0, true, nil
+    if cooldownInfo then
+        return cooldownInfo.startTime, cooldownInfo.duration, cooldownInfo.isEnabled, cooldownInfo.isOnGCD, cooldownInfo.isActive, durObj
+    end
+    return 0, 0, true, nil, false, durObj
 end
 
 local function GetItemCooldownInfo(itemID)
@@ -534,18 +549,25 @@ local knownChargeSpells = {}
 local chargeSpellLastCast = {}
 
 local function GetSpellChargeCount(spellID)
-    if not spellID then return 0, 1, 0, 0 end
+    if not spellID then return 0, 1, 0, 0, false, nil end
     local chargeInfo = C_Spell.GetSpellCharges(spellID)
+    local durObj = nil
+    if C_Spell.GetSpellChargeDuration then
+        local okDur, obj = pcall(C_Spell.GetSpellChargeDuration, spellID)
+        if okDur and obj then
+            durObj = obj
+        end
+    end
 
     if not chargeInfo then
-        return 0, 1, 0, 0  -- Not a charge-based spell
+        return 0, 1, 0, 0, false, durObj  -- Not a charge-based spell
     end
 
     local maxCharges = chargeInfo.maxCharges
 
     -- Check if maxCharges exists
     if not maxCharges then
-        return 0, 1, 0, 0
+        return 0, 1, 0, 0, false, durObj
     end
 
     -- Handle secret values (protected in combat)
@@ -556,10 +578,12 @@ local function GetSpellChargeCount(spellID)
             -- Known charge spell - return charge cooldown values with cached maxCharges
             return chargeInfo.currentCharges, cachedMax,
                    chargeInfo.cooldownStartTime or 0,
-                   chargeInfo.cooldownDuration or 0
+                   chargeInfo.cooldownDuration or 0,
+                   chargeInfo.isActive,
+                   durObj
         end
         -- Unknown or single-charge spell - treat as non-charge (safe default)
-        return 0, 1, 0, 0
+        return 0, 1, 0, 0, false, durObj
     end
 
     -- Normal case: safe to compare - also cache the result
@@ -567,12 +591,14 @@ local function GetSpellChargeCount(spellID)
         knownChargeSpells[spellID] = maxCharges  -- Cache for future secret-value situations
         return chargeInfo.currentCharges or 0, maxCharges,
                chargeInfo.cooldownStartTime or 0,
-               chargeInfo.cooldownDuration or 0
+               chargeInfo.cooldownDuration or 0,
+               chargeInfo.isActive,
+               durObj
     end
 
     -- Single charge spell - cache that too
     knownChargeSpells[spellID] = 1
-    return 0, 1, 0, 0
+    return 0, 1, 0, 0, false, durObj
 end
 
 -- Helper to check if cooldown frame is actively showing a cooldown
@@ -1727,14 +1753,15 @@ function CustomTrackers:StartCooldownPolling(bar)
         for _, icon in ipairs(bar.activeIcons or bar.icons or {}) do
             local entry = icon.entry
             if entry and entry.id then
-                local startTime, duration, enabled, isOnGCD
+                local startTime, duration, enabled, isOnGCD, cooldownActive, cooldownDurObj
                 local count = 0
                 local maxCharges = 1
                 local chargeStartTime, chargeDuration = 0, 0  -- For charge spell recharge display
+                local chargeIsActive, chargeDurObj = false, nil
 
                 if entry.type == "spell" then
-                    startTime, duration, enabled, isOnGCD = GetSpellCooldownInfo(entry.id)
-                    count, maxCharges, chargeStartTime, chargeDuration = GetSpellChargeCount(entry.id)
+                    startTime, duration, enabled, isOnGCD, cooldownActive, cooldownDurObj = GetSpellCooldownInfo(entry.id)
+                    count, maxCharges, chargeStartTime, chargeDuration, chargeIsActive, chargeDurObj = GetSpellChargeCount(entry.id)
                 elseif entry.type == "slot" then
                     local itemID = GetInventoryItemID("player", entry.id)
                     if itemID then
@@ -1796,11 +1823,13 @@ function CustomTrackers:StartCooldownPolling(bar)
 
                     if isChargeSpell then
                         -- For charge spells: use charge cooldown values
-                        if chargeStartTime and chargeDuration then
+                        if chargeDurObj and SafeSetCooldownFromDurationObject(icon.cooldown, chargeDurObj) then
+                            rechargeActive = chargeIsActive == true
+                        elseif chargeStartTime and chargeDuration then
                             -- Set cooldown first (pcall for secret value safety)
                             pcall(SafeSetCooldown, icon.cooldown, chargeStartTime, chargeDuration)
                             -- Check if cooldown is active AFTER setting it
-                            rechargeActive = IsCooldownFrameActive(icon.cooldown)
+                            rechargeActive = chargeIsActive == true or IsCooldownFrameActive(icon.cooldown)
                         else
                             icon.cooldown:Clear()
                         end
@@ -1823,22 +1852,26 @@ function CustomTrackers:StartCooldownPolling(bar)
                         end
 
                         -- isOnCD for charge spells = out of charges
-                        -- Use cooldown frame to detect main cooldown active (handles secret values internally)
-                        -- Set cooldown with main values, check if frame is active
-                        local mainCDActive = false
+                        -- Use the new non-secret isActive signal when available; fall back
+                        -- to the frame state only when we only have legacy numeric values.
+                        local mainCDActive = cooldownActive == true
+                        if cooldownActive == nil then
+                            -- Temporarily set cooldown with MAIN spell cooldown values.
+                            -- Main cooldown is only active when ALL charges are depleted.
+                            icon.cooldown:Clear()
+                            if cooldownDurObj and SafeSetCooldownFromDurationObject(icon.cooldown, cooldownDurObj) then
+                                mainCDActive = IsCooldownFrameActive(icon.cooldown)
+                            else
+                                pcall(SafeSetCooldown, icon.cooldown, startTime, duration)
+                                mainCDActive = IsCooldownFrameActive(icon.cooldown)
+                            end
 
-                        -- Temporarily set cooldown with MAIN spell cooldown values
-                        -- Main cooldown is only active when ALL charges are depleted
-                        -- Clear first to ensure clean state (SetCooldown(0,0) doesn't clear previous state)
-                        icon.cooldown:Clear()
-                        pcall(SafeSetCooldown, icon.cooldown, startTime, duration)
-                        -- Check if the frame shows this cooldown as active
-                        -- IsCooldownFrameActive uses IsVisible() which handles secret values internally
-                        mainCDActive = IsCooldownFrameActive(icon.cooldown)
-
-                        -- Now restore charge cooldown values for display
-                        if chargeStartTime and chargeDuration then
-                            pcall(SafeSetCooldown, icon.cooldown, chargeStartTime, chargeDuration)
+                            -- Restore charge cooldown values for display
+                            if chargeDurObj and not SafeSetCooldownFromDurationObject(icon.cooldown, chargeDurObj) and chargeStartTime and chargeDuration then
+                                pcall(SafeSetCooldown, icon.cooldown, chargeStartTime, chargeDuration)
+                            elseif chargeStartTime and chargeDuration and not chargeDurObj then
+                                pcall(SafeSetCooldown, icon.cooldown, chargeStartTime, chargeDuration)
+                            end
                         end
 
                         -- Exclude GCD from triggering desaturation
@@ -1902,7 +1935,9 @@ function CustomTrackers:StartCooldownPolling(bar)
 
                     else
                         -- Normal spell/item cooldown
-                        if startTime and duration then
+                        if cooldownDurObj and SafeSetCooldownFromDurationObject(icon.cooldown, cooldownDurObj) then
+                            -- DurationObject path handles secret cooldown values safely.
+                        elseif startTime and duration then
                             pcall(SafeSetCooldown, icon.cooldown, startTime, duration)
                         end
 
@@ -1928,20 +1963,28 @@ function CustomTrackers:StartCooldownPolling(bar)
                                 isOnCD = false
                             else
                                 -- Real cooldown (> 1.5s duration)
+                                if cooldownActive ~= nil then
+                                    isOnCD = cooldownActive == true
+                                else
+                                    local checkSuccess, checkResult = pcall(SafeCheckCooldownActive, startTime, duration)
+                                    if checkSuccess then
+                                        isOnCD = checkResult
+                                    else
+                                        isOnCD = IsCooldownFrameActive(icon.cooldown)
+                                    end
+                                end
+                            end
+                        else
+                            -- hideGCD is disabled, treat any cooldown as "on cooldown"
+                            if cooldownActive ~= nil then
+                                isOnCD = cooldownActive == true
+                            else
                                 local checkSuccess, checkResult = pcall(SafeCheckCooldownActive, startTime, duration)
                                 if checkSuccess then
                                     isOnCD = checkResult
                                 else
                                     isOnCD = IsCooldownFrameActive(icon.cooldown)
                                 end
-                            end
-                        else
-                            -- hideGCD is disabled, treat any cooldown as "on cooldown"
-                            local checkSuccess, checkResult = pcall(SafeCheckCooldownActive, startTime, duration)
-                            if checkSuccess then
-                                isOnCD = checkResult
-                            else
-                                isOnCD = IsCooldownFrameActive(icon.cooldown)
                             end
                         end
                     end

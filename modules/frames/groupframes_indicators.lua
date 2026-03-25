@@ -493,15 +493,23 @@ local function UpdateFrameIndicators(frame)
                             local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
                             if ok and durationObj then
                                 pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, durationObj)
-                            elseif icon.cooldown.SetCooldownFromExpirationTime then
+                            elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
+                                if icon.cooldown.SetCooldownFromExpirationTime then
+                                    pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
+                                else
+                                    pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
+                                end
+                            else
+                                icon.cooldown:Clear()
+                            end
+                        elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
+                            if icon.cooldown.SetCooldownFromExpirationTime then
                                 pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
                             else
-                                pcall(function() icon.cooldown:SetCooldown(expTime - dur, dur) end)
+                                pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
                             end
-                        elseif icon.cooldown.SetCooldownFromExpirationTime then
-                            pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
                         else
-                            pcall(function() icon.cooldown:SetCooldown(expTime - dur, dur) end)
+                            icon.cooldown:Clear()
                         end
                     end
                 end

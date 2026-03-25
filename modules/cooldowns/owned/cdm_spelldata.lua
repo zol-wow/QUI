@@ -251,7 +251,9 @@ local function ScanCooldownViewer(viewerType)
                         spellID = Helpers.SafeValue(info.spellID, nil)
                         overrideSpellID = Helpers.SafeValue(info.overrideSpellID, nil)
                         name = Helpers.SafeValue(info.name, nil)
-                        isAura = info.wasSetFromAura or info.cooldownUseAuraDisplayTime or false
+                        local wasSetFromAura = (type(info.wasSetFromAura) == "boolean") and info.wasSetFromAura or false
+                        local useAuraDisplayTime = (type(info.cooldownUseAuraDisplayTime) == "boolean") and info.cooldownUseAuraDisplayTime or false
+                        isAura = wasSetFromAura or useAuraDisplayTime
 
                     end
 
@@ -262,11 +264,12 @@ local function ScanCooldownViewer(viewerType)
 
                     if spellID then
                         -- Check for multi-charge spells
-                        -- maxCharges can be a secret value in combat; use SafeToNumber
+                        -- maxCharges can be a secret value in combat; only trust
+                        -- pcall-safe non-secret numeric values here.
                         local hasCharges = false
                         if C_Spell.GetSpellCharges then
-                            local ci = C_Spell.GetSpellCharges(overrideSpellID or spellID)
-                            if ci then
+                            local okCharges, ci = pcall(C_Spell.GetSpellCharges, overrideSpellID or spellID)
+                            if okCharges and ci and not Helpers.IsSecretValue(ci.maxCharges) then
                                 local maxC = Helpers.SafeToNumber(ci.maxCharges, 0)
                                 if maxC and maxC > 1 then
                                     hasCharges = true

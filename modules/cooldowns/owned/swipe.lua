@@ -84,7 +84,7 @@ local function ApplySwipeToIcon(icon, settings)
         -- Fallback 1: buff pool cross-reference (combat-safe).
         -- Fallback 2: aura API queries (out of combat only).
         local blizzChild = entry._blizzChild
-        if blizzChild and blizzChild.wasSetFromAura then
+        if blizzChild and type(blizzChild.wasSetFromAura) == "boolean" and blizzChild.wasSetFromAura then
             mode = "aura"
         end
         if not mode then

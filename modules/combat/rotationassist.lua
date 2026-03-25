@@ -4,6 +4,8 @@
 
 local ADDON_NAME, QUI = ...
 local LSM = LibStub("LibSharedMedia-3.0")
+local Helpers = QUI.Helpers
+local IsSecretValue = Helpers and Helpers.IsSecretValue
 
 local function GetCore()
     return (QUI and QUI.QUICore) or (_G.QUI and _G.QUI.QUICore)
@@ -119,7 +121,6 @@ local function GetKeybindForSpell(spellID)
     return nil
 end
 
---------------------------------------------------------------------------------
 -- GCD Cooldown Helpers (handles Midnight 12.0+ secret values)
 --------------------------------------------------------------------------------
 
@@ -131,16 +132,19 @@ local function ReadSpellCooldown(spellID)
             local start = a.startTime or a.start
             local duration = a.duration
             local modRate = a.modRate
-            return start, duration, modRate
+            return start, duration, modRate, a.isActive
         else
             -- 11.x returns tuple: start, duration, enable, modRate
-            return a, b, d
+            return a, b, d, nil
         end
     end
-    return nil, nil, nil
+    return nil, nil, nil, nil
 end
 
-local function IsCooldownActive(start, duration)
+local function IsCooldownActive(start, duration, isActive)
+    if type(isActive) == "boolean" then
+        return isActive
+    end
     if not start or not duration then return false end
     local ok, result = pcall(function()
         return duration > 0 and start > 0
@@ -148,6 +152,36 @@ local function IsCooldownActive(start, duration)
     -- If comparison threw error = secret value = cooldown IS active
     if not ok then return true end
     return result
+end
+
+local function ApplyCooldownFromSpell(cooldownFrame, spellID)
+    if not cooldownFrame or not spellID then return false end
+
+    local start, duration, modRate, isActive = ReadSpellCooldown(spellID)
+    if not IsCooldownActive(start, duration, isActive) then
+        return false
+    end
+
+    if cooldownFrame.SetCooldownFromDurationObject and C_Spell and C_Spell.GetSpellCooldownDuration then
+        local okDur, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if okDur and durObj then
+            return pcall(cooldownFrame.SetCooldownFromDurationObject, cooldownFrame, durObj)
+        end
+    end
+
+    if IsSecretValue and (IsSecretValue(start) or IsSecretValue(duration) or IsSecretValue(modRate)) then
+        return false
+    end
+    if type(start) ~= "number" or type(duration) ~= "number" then
+        return false
+    end
+    if modRate ~= nil then
+        if type(modRate) ~= "number" then
+            return false
+        end
+        return pcall(cooldownFrame.SetCooldown, cooldownFrame, start, duration, modRate)
+    end
+    return pcall(cooldownFrame.SetCooldown, cooldownFrame, start, duration)
 end
 
 --------------------------------------------------------------------------------
@@ -326,15 +360,8 @@ local function UpdateGCDCooldown()
     -- Only show GCD swipe when the icon itself is visible
     if not iconFrame:IsShown() then return end
 
-    local start, duration, modRate = ReadSpellCooldown(GCD_SPELL_ID)
-
-    if IsCooldownActive(start, duration) then
+    if ApplyCooldownFromSpell(iconFrame.cooldown, GCD_SPELL_ID) then
         iconFrame.cooldown:Show()
-        if modRate then
-            iconFrame.cooldown:SetCooldown(start, duration, modRate)
-        else
-            iconFrame.cooldown:SetCooldown(start, duration)
-        end
     else
         iconFrame.cooldown:Clear()
     end

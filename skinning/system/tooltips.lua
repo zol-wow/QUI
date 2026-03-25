@@ -27,6 +27,7 @@ local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 local tooltipBackdrops = Helpers.CreateStateTable()
 local tooltipBorders = Helpers.CreateStateTable()
 local embeddedTooltips = Helpers.CreateStateTable()
+local guardedBackdropFrames = Helpers.CreateStateTable()
 
 local function GetTooltipBackdrop(tooltip)
     local info = tooltipBackdrops[tooltip]
@@ -420,9 +421,52 @@ end
 -- Ensure tooltip has BackdropTemplateMixin (NineSlice tooltips may not).
 -- Mixin writes function refs to the tooltip's Lua table — taints those keys
 -- but Blizzard's NineSlice code doesn't read them, so this is safe.
+local function GuardBackdropMethods(frame)
+    if not frame or guardedBackdropFrames[frame] then return end
+    guardedBackdropFrames[frame] = true
+
+    -- BackdropTemplate can re-enter Lua with secret width/height during combat.
+    -- Guard the geometry-sensitive helper methods on this tooltip instance.
+    local origSetupTexCoords = frame.SetupTextureCoordinates
+    if type(origSetupTexCoords) == "function" then
+        frame.SetupTextureCoordinates = function(self)
+            local ok, width = pcall(self.GetWidth, self)
+            if not ok then return end
+            if Helpers.IsSecretValue and Helpers.IsSecretValue(width) then return end
+            return origSetupTexCoords(self)
+        end
+    end
+
+    local origSetupVisuals = frame.SetupPieceVisuals
+    if type(origSetupVisuals) == "function" then
+        frame.SetupPieceVisuals = function(self)
+            local ok, width = pcall(self.GetWidth, self)
+            if not ok then return end
+            if Helpers.IsSecretValue and Helpers.IsSecretValue(width) then return end
+            return origSetupVisuals(self)
+        end
+    end
+
+    if frame.HookScript then
+        pcall(frame.HookScript, frame, "OnBackdropSizeChanged", function(self)
+            local ok, width = pcall(self.GetWidth, self)
+            if not ok then return end
+            if Helpers.IsSecretValue and Helpers.IsSecretValue(width) then return end
+            if self.backdropColor then
+                pcall(self.SetBackdropColor, self, self.backdropColor:GetRGBA())
+            end
+            if self.backdropBorderColor then
+                pcall(self.SetBackdropBorderColor, self, self.backdropBorderColor:GetRGBA())
+            end
+        end)
+    end
+end
+
 local function EnsureBackdropTemplate(tooltip)
-    if tooltip.SetBackdrop then return end
-    Mixin(tooltip, BackdropTemplateMixin)
+    if not tooltip.SetBackdrop then
+        Mixin(tooltip, BackdropTemplateMixin)
+    end
+    GuardBackdropMethods(tooltip)
 end
 
 -- Apply QUI's flat backdrop directly to the tooltip frame.

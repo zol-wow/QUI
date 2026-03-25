@@ -924,9 +924,24 @@ local function UpdateAbilityIcon()
 
     -- Get cooldown info
     local cooldownInfo = C_Spell.GetSpellCooldown(WHIRLING_SURGE_SPELL_ID)
-    if cooldownInfo and cooldownInfo.duration and not IsSecretValue(cooldownInfo.duration) and cooldownInfo.duration > 0 then
-        abilityIconCooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
-    else
+    local cooldownApplied = false
+    if abilityIconCooldown.SetCooldownFromDurationObject and C_Spell.GetSpellCooldownDuration and cooldownInfo then
+        local isActive = cooldownInfo.isActive
+        if isActive ~= false and not IsSecretValue(isActive) then
+            local okDur, durObj = pcall(C_Spell.GetSpellCooldownDuration, WHIRLING_SURGE_SPELL_ID)
+            if okDur and durObj then
+                cooldownApplied = pcall(abilityIconCooldown.SetCooldownFromDurationObject, abilityIconCooldown, durObj)
+            end
+        end
+    end
+    if not cooldownApplied and cooldownInfo
+        and cooldownInfo.startTime and cooldownInfo.duration
+        and not IsSecretValue(cooldownInfo.startTime)
+        and not IsSecretValue(cooldownInfo.duration)
+        and cooldownInfo.duration > 0 then
+        cooldownApplied = pcall(abilityIconCooldown.SetCooldown, abilityIconCooldown, cooldownInfo.startTime, cooldownInfo.duration)
+    end
+    if not cooldownApplied then
         abilityIconCooldown:Clear()
     end
 
