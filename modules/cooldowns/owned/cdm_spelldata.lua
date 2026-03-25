@@ -1774,30 +1774,65 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
         -- Essential/utility/buff: use existing scanned lists
         ScanViewer(containerKey)
         scanList = spellLists[containerKey]
-        if not scanList or type(scanList) ~= "table" or #scanList == 0 then
-            return false
-        end
     end
 
-    -- Convert scan results to owned entry format (dedup by spellID).
-    -- For buff/aura containers, use ResolveChildSpellID to get the correct
-    -- aura spellID (e.g. Coagulating Blood instead of Death Strike).
+    -- Primary path: C_CooldownViewer API returns ALL configured spells,
+    -- not just those with active children.  The viewer child scan above
+    -- only finds spells that are currently on cooldown or have active
+    -- auras — first-install snapshots would miss everything else.
     local isAuraContainer = (containerKey == "buff" or containerKey == "trackedBar")
     local owned = {}
     local seenIDs = {}
-    for _, entry in ipairs(scanList) do
-        local sid = entry.spellID
-        -- For aura containers, prefer the frame-resolved aura spellID
-        if isAuraContainer and entry._blizzChild then
-            local correctedSID = ResolveChildSpellID(entry._blizzChild)
-            if correctedSID then
-                sid = correctedSID
+
+    if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
+       and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local categories = CDM_BAR_CATEGORIES[containerKey] or { 0, 1, 2, 3 }
+        for _, category in ipairs(categories) do
+            local ok, cooldownIDs = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, category)
+            if ok and cooldownIDs then
+                for _, cdID in ipairs(cooldownIDs) do
+                    local okInfo, cdInfo = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                    if okInfo and cdInfo then
+                        local sid = _cdIDToCorrectSID[cdID]
+                        if not sid and isAuraContainer then
+                            local tooltipSid = Helpers.SafeValue(cdInfo.overrideTooltipSpellID, nil)
+                            if tooltipSid and tooltipSid > 0 then
+                                sid = tooltipSid
+                            end
+                        end
+                        if not sid then
+                            sid = ResolveInfoSpellID(cdInfo)
+                        end
+                        if sid and not seenIDs[sid] then
+                            seenIDs[sid] = true
+                            owned[#owned + 1] = { type = "spell", id = sid }
+                        end
+                    end
+                end
             end
         end
-        if sid and not seenIDs[sid] then
-            seenIDs[sid] = true
-            owned[#owned + 1] = { type = "spell", id = sid }
+    end
+
+    -- Fallback: merge any viewer-child spells not already found by the API
+    -- (handles edge cases where children exist but the API doesn't list them).
+    if scanList and type(scanList) == "table" then
+        for _, entry in ipairs(scanList) do
+            local sid = entry.spellID
+            if isAuraContainer and entry._blizzChild then
+                local correctedSID = ResolveChildSpellID(entry._blizzChild)
+                if correctedSID then
+                    sid = correctedSID
+                end
+            end
+            if sid and not seenIDs[sid] then
+                seenIDs[sid] = true
+                owned[#owned + 1] = { type = "spell", id = sid }
+            end
         end
+    end
+
+    if #owned == 0 then
+        return false
     end
 
     db.ownedSpells = owned
