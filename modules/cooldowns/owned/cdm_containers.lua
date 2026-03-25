@@ -49,6 +49,7 @@ end
 ---------------------------------------------------------------------------
 local containers = {}  -- { essential = frame, utility = frame, buff = frame }
 local viewerState = {} -- keyed by container frame
+local buffFingerprint = nil  -- fingerprint string for buff icon rebuild skipping
 local applying = {}    -- re-entry guard per tracker
 local refreshTimers = {} -- stored timer handles so overlapping RefreshAll calls cancel prior timers
 local initialized = false
@@ -1091,12 +1092,12 @@ local function LayoutContainer(trackerKey)
         local fingerprint = table.concat(parts, ",")
 
         local currentPool = ns.CDMIcons:GetIconPool("buff")
-        if fingerprint == (containers._buffFingerprint or "") and #currentPool > 0 then
+        if fingerprint == (buffFingerprint or "") and #currentPool > 0 then
             -- Same buff set -- skip destructive rebuild
             applying[trackerKey] = false
             return
         end
-        containers._buffFingerprint = fingerprint
+        buffFingerprint = fingerprint
 
         -- Build addon-owned icons (adopts Blizzard CooldownFrames)
         local allIcons = ns.CDMIcons:BuildIcons("buff", container)
@@ -2369,7 +2370,7 @@ function ownedEngine:Initialize()
                 if specDB then specDB._lastSpecID = newSpecID end
                 -- Profile is now correct — SPELLS_CHANGED can safely run
                 -- dormant/reconcile on the new spec's data.
-                containers._buffFingerprint = nil
+                buffFingerprint = nil
                 if InCombatLockdown() then
                     local regenFrame = CreateFrame("Frame")
                     regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")

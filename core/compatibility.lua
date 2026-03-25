@@ -347,6 +347,134 @@ local function MigrateUnitFrames(profile)
     profile.unitFrames = nil
 end
 
+-- Default frameAnchoring parent chain and structure for profiles that predate
+-- the layout mode anchoring overhaul. These entries define the standard HUD
+-- stacking order (bar layout, unit frame relationships, power bar chain).
+-- Only entries with non-trivial parent relationships are included; entries
+-- that default to parent="screen" at CENTER/0,0 are omitted since they match
+-- the uninitialized pattern already present in old profiles.
+local DEFAULT_FRAME_ANCHORING = {
+    bagBar          = { parent = "microMenu",       point = "TOPLEFT",      relative = "BOTTOMLEFT" },
+    bar1            = { parent = "bar3",            point = "BOTTOM",       relative = "TOP" },
+    bar2            = { parent = "bar1",            point = "BOTTOM",       relative = "TOP" },
+    bar3            = { parent = "screen",          point = "BOTTOMRIGHT",  relative = "BOTTOM" },
+    bar4            = { parent = "bar5",            point = "BOTTOMLEFT",   relative = "TOPLEFT" },
+    bar5            = { parent = "bar6",            point = "BOTTOMLEFT",   relative = "TOPLEFT" },
+    bar6            = { parent = "bar3",            point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    bossFrames      = { parent = "datatextPanel",   point = "TOPLEFT",      relative = "BOTTOMLEFT" },
+    brezCounter     = { parent = "combatTimer",     point = "BOTTOM",       relative = "TOP" },
+    buffFrame       = { parent = "minimap",         point = "TOPRIGHT",     relative = "TOPLEFT" },
+    buffIcon        = { parent = "cdmEssential",    point = "BOTTOM",       relative = "TOP" },
+    cdmUtility      = { parent = "secondaryPower",  point = "TOP",          relative = "BOTTOM" },
+    combatTimer     = { parent = "bar3",            point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
+    consumables     = { parent = "readyCheck",      point = "BOTTOM",       relative = "TOP" },
+    datatextPanel   = { parent = "minimap",         point = "TOP",          relative = "BOTTOM" },
+    debuffFrame     = { parent = "buffFrame",       point = "TOPRIGHT",     relative = "BOTTOMRIGHT" },
+    focusCastbar    = { parent = "focusFrame",      point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    focusFrame      = { parent = "playerFrame",     point = "BOTTOMLEFT",   relative = "TOPLEFT", offsetY = 200 },
+    microMenu       = { parent = "screen",          point = "TOPLEFT",      relative = "TOPLEFT" },
+    minimap         = { parent = "screen",          point = "TOPRIGHT",     relative = "TOPRIGHT", offsetY = -25 },
+    objectiveTracker = { parent = "datatextPanel",  point = "TOPRIGHT",     relative = "BOTTOMRIGHT" },
+    partyFrames     = { parent = "cdmUtility",      point = "TOP",          relative = "BOTTOM",  offsetY = -25, keepInPlace = true },
+    petBar          = { parent = "bar6",            point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    petCastbar      = { parent = "petFrame",        point = "TOP",          relative = "BOTTOM" },
+    petFrame        = { parent = "playerFrame",     point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
+    playerCastbar   = { parent = "playerFrame",     point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    playerFrame     = { parent = "cdmEssential",    point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
+    primaryPower    = { parent = "cdmEssential",    point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    raidFrames      = { parent = "cdmUtility",      point = "TOP",          relative = "BOTTOM",  offsetY = -25, keepInPlace = true },
+    secondaryPower  = { parent = "primaryPower",    point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    stanceBar       = { parent = "petBar",          point = "BOTTOMLEFT",   relative = "TOPLEFT" },
+    targetCastbar   = { parent = "targetFrame",     point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    targetFrame     = { parent = "cdmEssential",    point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    totCastbar      = { parent = "totFrame",        point = "TOP",          relative = "BOTTOM" },
+    totFrame        = { parent = "targetFrame",     point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    zoneAbility     = { parent = "extraActionButton", point = "CENTER",     relative = "CENTER" },
+    cdmEssential    = { parent = "screen",          point = "CENTER",       relative = "CENTER",  offsetY = -180 },
+    lootRollAnchor  = { parent = "readyCheck",      point = "TOP",          relative = "BOTTOM",  keepInPlace = true },
+    skyriding       = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -30 },
+    powerBarAlt     = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -75 },
+    bnetToastAnchor = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -125 },
+}
+
+-- Detect if a frameAnchoring table looks like uninitialized defaults from a
+-- pre-layout-mode profile: every entry has parent="screen", offset 0,0.
+local function IsUninitializedAnchoring(fa)
+    if type(fa) ~= "table" then return true end
+    local count = 0
+    for key, entry in pairs(fa) do
+        if type(entry) == "table" then
+            count = count + 1
+            -- Check for the telltale uninitialized pattern
+            local parent = entry.parent
+            if parent and parent ~= "screen" and parent ~= "disabled" then
+                return false  -- Has a real parent chain
+            end
+            if (entry.offsetX or 0) ~= 0 or (entry.offsetY or 0) ~= 0 then
+                -- Has real position offsets (not all zeroed)
+                if parent ~= "screen" then
+                    return false
+                end
+            end
+        end
+    end
+    -- If all entries look like screen/0,0 defaults, it's uninitialized
+    return count > 0
+end
+
+local function SeedDefaultFrameAnchoring(profile)
+    if not profile then return end
+
+    if type(profile.frameAnchoring) ~= "table" then
+        profile.frameAnchoring = {}
+    end
+    local fa = profile.frameAnchoring
+
+    -- Only seed if the existing data looks uninitialized
+    if not IsUninitializedAnchoring(fa) then return end
+
+    for key, defaults in pairs(DEFAULT_FRAME_ANCHORING) do
+        if type(fa[key]) ~= "table" then
+            fa[key] = {}
+        end
+        local entry = fa[key]
+
+        -- Seed parent chain and anchor points (always overwrite since old data is
+        -- all "screen"/CENTER which is the uninitialized state)
+        entry.parent   = defaults.parent
+        entry.point    = defaults.point
+        entry.relative = defaults.relative
+
+        -- Seed offsets from defaults (only if currently zeroed)
+        if defaults.offsetX and (entry.offsetX or 0) == 0 then
+            entry.offsetX = defaults.offsetX
+        end
+        if defaults.offsetY and (entry.offsetY or 0) == 0 then
+            entry.offsetY = defaults.offsetY
+        end
+
+        -- Seed newer fields that old profiles don't have at all
+        if entry.hideWithParent == nil then
+            entry.hideWithParent = false
+        end
+        if defaults.keepInPlace and entry.keepInPlace == nil then
+            entry.keepInPlace = defaults.keepInPlace
+        elseif entry.keepInPlace == nil then
+            entry.keepInPlace = false
+        end
+        if defaults.autoWidth and entry.autoWidth == nil then
+            entry.autoWidth = defaults.autoWidth
+        end
+
+        -- Ensure standard fields exist
+        if entry.sizeStable == nil then entry.sizeStable = true end
+        if entry.autoHeight == nil then entry.autoHeight = false end
+        if entry.autoWidth == nil then entry.autoWidth = false end
+        if entry.heightAdjust == nil then entry.heightAdjust = 0 end
+        if entry.widthAdjust == nil then entry.widthAdjust = 0 end
+    end
+end
+
 -- Remove orphaned keys that cannot be meaningfully migrated
 local ORPHAN_KEYS = { "cooldownManager", "trackerSystem", "nudgeAmount" }
 
@@ -394,6 +522,12 @@ function QUI:BackwardsCompat()
     -- Remove orphaned keys that no longer have runtime consumers
     if self.db and self.db.profile then
         CleanOrphanKeys(self.db.profile)
+    end
+
+    -- Seed default frameAnchoring parent chain for profiles that predate
+    -- the layout mode anchoring overhaul (all entries parent="screen", offset 0,0)
+    if self.db and self.db.profile then
+        SeedDefaultFrameAnchoring(self.db.profile)
     end
 
     -- Ensure db.global exists and has required fields

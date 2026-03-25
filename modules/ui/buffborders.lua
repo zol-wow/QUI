@@ -91,6 +91,10 @@ local iconCounter = 0
 local buffActiveIcons = {}
 local debuffActiveIcons = {}
 
+-- Weapon enchant icons keyed by inventory slot (16 = mainhand, 17 = offhand)
+local enchantActiveIcons = {}
+local enchantCachedDuration = {} -- cached total duration per slot
+
 -- Sorted icon lists for layout (rebuilt on each update)
 local buffSortedIcons = {}
 local debuffSortedIcons = {}
@@ -860,6 +864,116 @@ local function LayoutPrivateAuraSlots()
 end
 
 ---------------------------------------------------------------------------
+-- WEAPON ENCHANT ICONS (oils, whetstones, etc.)
+-- Owned icons in the buff container, driven by GetWeaponEnchantInfo()
+---------------------------------------------------------------------------
+local ENCHANT_SLOTS = { 16, 17 } -- INVSLOT_MAINHAND, INVSLOT_OFFHAND
+
+local function ReleaseEnchantIcon(slot)
+    local icon = enchantActiveIcons[slot]
+    if icon then
+        ReleaseIcon(icon)
+        enchantActiveIcons[slot] = nil
+        enchantCachedDuration[slot] = nil
+    end
+end
+
+local function UpdateWeaponEnchantIcons()
+    if not buffContainer then return end
+    local settings = GetSettings()
+    if not settings or not settings.enableBuffs or settings.hideBuffFrame then
+        for _, slot in ipairs(ENCHANT_SLOTS) do
+            ReleaseEnchantIcon(slot)
+        end
+        return
+    end
+
+    local hasMain, mainExp, _, mainID, hasOff, offExp, _, offID = GetWeaponEnchantInfo()
+    local slotData = {
+        [16] = hasMain and { expiration = mainExp, enchantID = mainID },
+        [17] = hasOff  and { expiration = offExp,  enchantID = offID  },
+    }
+
+    for _, slot in ipairs(ENCHANT_SLOTS) do
+        local data = slotData[slot]
+        if data then
+            -- Secret-value guard: expiration can be secret in combat
+            local expMs = data.expiration
+            local isSecret = IsSecretValue(expMs)
+
+            local icon = enchantActiveIcons[slot]
+            if not icon then
+                icon = AcquireIcon(buffContainer)
+                enchantActiveIcons[slot] = icon
+                icon._enchantSlot = slot
+                icon._auraInstanceID = nil
+                icon._spellId = nil
+                icon._filter = "HELPFUL"
+            end
+
+            -- Texture: use the equipped weapon's icon
+            local texture = GetInventoryItemTexture("player", slot)
+            if texture and icon.Icon then
+                icon.Icon:SetTexture(texture)
+            end
+
+            -- Cooldown sweep
+            if not isSecret and expMs and expMs > 0 then
+                local remainingSec = expMs / 1000
+                -- Cache total duration on first sight so the sweep is proportional
+                if not enchantCachedDuration[slot] then
+                    enchantCachedDuration[slot] = remainingSec
+                end
+                local total = enchantCachedDuration[slot]
+                local startTime = GetTime() - (total - remainingSec)
+                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, total)
+            else
+                icon.Cooldown:Clear()
+            end
+
+            icon.Stacks:SetText("")
+            icon.Stacks:Hide()
+            StyleIcon(icon, settings, true, nil)
+            icon:Show()
+
+            -- Tooltip: show weapon tooltip (includes enchant line)
+            icon:SetScript("OnEnter", function(self)
+                if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
+                local tooltipSettings = QUI and QUI.db and QUI.db.profile and QUI.db.profile.tooltip
+                if tooltipSettings and tooltipSettings.anchorToCursor then
+                    local anchorTooltip = ns.QUI_AnchorTooltipToCursor
+                    if anchorTooltip then
+                        anchorTooltip(GameTooltip, self, tooltipSettings)
+                    else
+                        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                    end
+                else
+                    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+                end
+                pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", self._enchantSlot)
+                pcall(GameTooltip.Show, GameTooltip)
+                local container = self:GetParent()
+                if container and container._fadeEnabled then
+                    container:SetAlpha(1)
+                end
+            end)
+            icon:SetScript("OnLeave", function(self)
+                pcall(GameTooltip.Hide, GameTooltip)
+                local container = self:GetParent()
+                if container and container._fadeEnabled then
+                    local s = GetSettings()
+                    container:SetAlpha(s and s.fadeOutAlpha or 0)
+                end
+            end)
+            -- No right-click cancel for weapon enchants
+            icon:SetScript("OnMouseUp", nil)
+        else
+            ReleaseEnchantIcon(slot)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- AURA UPDATE WRAPPERS
 ---------------------------------------------------------------------------
 local function UpdateBuffIcons()
@@ -867,6 +981,27 @@ local function UpdateBuffIcons()
     if not settings then return end
     if previewActive then return end
     UpdateAuraIcons(buffContainer, buffActiveIcons, buffSortedIcons, "HELPFUL", true, settings, "buff")
+    UpdateWeaponEnchantIcons()
+    -- Prepend weapon enchant icons before aura icons and re-layout
+    local hasEnchants = false
+    for _, slot in ipairs(ENCHANT_SLOTS) do
+        if enchantActiveIcons[slot] then
+            hasEnchants = true
+            break
+        end
+    end
+    if hasEnchants then
+        local combined = {}
+        for _, slot in ipairs(ENCHANT_SLOTS) do
+            if enchantActiveIcons[slot] then
+                combined[#combined + 1] = enchantActiveIcons[slot]
+            end
+        end
+        for _, icon in ipairs(buffSortedIcons) do
+            combined[#combined + 1] = icon
+        end
+        LayoutIcons(buffContainer, combined, settings, "buff")
+    end
 end
 
 -- Rate-limited private aura anchor re-registration to clean up stale renders.
@@ -931,72 +1066,6 @@ local function ManageBlizzardFrames()
             RestoreBlizzardFrame(DebuffFrame)
             blizzDebuffBanished = false
         end
-    end
-end
-
----------------------------------------------------------------------------
--- TEMPORARY ENCHANT FRAME
--- Keep existing simple border logic for TemporaryEnchantFrame
----------------------------------------------------------------------------
-local borderedEnchantButtons = {}
-local _enchantBorders = Helpers.CreateStateTable()
-
-local function AddBorderToEnchantButton(button)
-    if not button or borderedEnchantButtons[button] then return end
-    local icon = button.Icon or button.icon
-    if not icon then return end
-    if not button.CreateTexture or type(button.CreateTexture) ~= "function" then return end
-
-    local settings = GetSettings()
-    if not settings then return end
-    local borderSize = settings.borderSize or 2
-
-    _enchantBorders[button] = _enchantBorders[button] or {}
-    local borders = _enchantBorders[button]
-    if not borders.top then
-        borders.top = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        borders.top:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
-        borders.top:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
-
-        borders.bottom = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        borders.bottom:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
-        borders.bottom:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
-
-        borders.left = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        borders.left:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
-        borders.left:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
-
-        borders.right = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        borders.right:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
-        borders.right:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
-    end
-
-    borders.top:SetColorTexture(0, 0, 0, 1)
-    borders.bottom:SetColorTexture(0, 0, 0, 1)
-    borders.left:SetColorTexture(0, 0, 0, 1)
-    borders.right:SetColorTexture(0, 0, 0, 1)
-
-    borders.top:SetHeight(borderSize)
-    borders.bottom:SetHeight(borderSize)
-    borders.left:SetWidth(borderSize)
-    borders.right:SetWidth(borderSize)
-
-    borders.top:Show()
-    borders.bottom:Show()
-    borders.left:Show()
-    borders.right:Show()
-
-    borderedEnchantButtons[button] = true
-end
-
-local function ProcessTemporaryEnchants()
-    if not TemporaryEnchantFrame then return end
-    local settings = GetSettings()
-    if not settings or not settings.enableBuffs then return end
-
-    local frames = { TemporaryEnchantFrame:GetChildren() }
-    for _, frame in ipairs(frames) do
-        AddBorderToEnchantButton(frame)
     end
 end
 
@@ -1186,12 +1255,14 @@ local function FullRefresh()
     -- Re-setup private aura anchors with current settings
     SetupPrivateAuras()
 
+    -- Release weapon enchant icons and reset cached durations
+    for _, slot in ipairs(ENCHANT_SLOTS) do
+        ReleaseEnchantIcon(slot)
+    end
+    wipe(enchantCachedDuration)
+
     UpdateBuffIcons()
     UpdateDebuffIcons()
-
-    -- Temporary enchants
-    wipe(borderedEnchantButtons)
-    ProcessTemporaryEnchants()
 end
 
 ---------------------------------------------------------------------------
@@ -1225,7 +1296,6 @@ local function Init()
     -- Initial scan
     UpdateBuffIcons()
     UpdateDebuffIcons()
-    ProcessTemporaryEnchants()
 end
 
 ---------------------------------------------------------------------------
@@ -1237,6 +1307,17 @@ if ns.AuraEvents then
         ScheduleDebuffUpdate()
     end)
 end
+
+-- Weapon enchant events: inventory changes and periodic expiration polling
+local enchantEventFrame = CreateFrame("Frame")
+enchantEventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+enchantEventFrame:SetScript("OnEvent", function(self, event, unit)
+    if unit == "player" then
+        -- Weapon changed — clear cached durations so new enchants get fresh totals
+        wipe(enchantCachedDuration)
+        ScheduleBuffUpdate()
+    end
+end)
 
 -- Combat-end handler: process deferred private aura anchor work
 local paRegenFrame = CreateFrame("Frame")

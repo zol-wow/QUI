@@ -1,6 +1,6 @@
 --[[
     QUI Action Bars - Native Engine
-    Creates native ActionBarButtonTemplate buttons (bar 1) or reparents
+    Creates native ActionButtonTemplate buttons (bar 1) or reparents
     Blizzard's existing buttons (bars 2-8) into QUI-owned containers.
     Buttons get native icon, cooldown, count, drag/pickup, and keybind
     behavior. QUI handles skinning, layout, fade, and empty slot hiding.
@@ -31,7 +31,7 @@ local inInitSafeWindow = false
 local IS_MIDNIGHT = select(4, GetBuildInfo()) >= 120000
 
 -- LOCAL suppression of GetActionCount on Midnight (same approach as
--- LibActionButton).  Must be local — replacing the global taints every
+-- action button addons).  Must be local — replacing the global taints every
 -- Blizzard button that calls it, causing SetCooldown secret-value errors
 -- on the hidden original MultiBar buttons we don't own.
 local GetActionCount = GetActionCount
@@ -144,7 +144,7 @@ local SKINNABLE_BAR_KEYS = {
 local ActionBarsOwned = {
     initialized = false,
     containers = {},       -- barKey → container frame
-    nativeButtons = {},    -- barKey → { button, ... } (native ActionBarButtonTemplate or reparented Blizzard)
+    nativeButtons = {},    -- barKey → { button, ... } (native ActionButtonTemplate or reparented Blizzard)
     cachedLayouts = {},    -- barKey → { numCols, numRows, isVertical, numIcons }
     editModeActive = false,
     editOverlays = {},     -- barKey → overlay frame
@@ -302,6 +302,18 @@ local function SuppressBlizzardButton(btn)
     btn:Hide()
     btn:UnregisterAllEvents()
     btn:SetAttribute("statehidden", true)
+    -- Remove from ActionBarButtonEventsFrame dispatch BEFORE writing
+    -- tainted values.  Writing noop to .Update/.OnEvent on a secure
+    -- Blizzard button taints those fields; if the dispatch loop still
+    -- reaches this button it reads the tainted fields and poisons the
+    -- entire iteration (including OverrideActionBar buttons).
+    if ActionBarButtonEventsFrame then
+        if ActionBarButtonEventsFrame.UnregisterFrame then
+            ActionBarButtonEventsFrame:UnregisterFrame(btn)
+        elseif ActionBarButtonEventsFrame.frames then
+            ActionBarButtonEventsFrame.frames[btn] = nil
+        end
+    end
     btn.OnEvent = noop
     btn.Update = noop
     btn.UpdateCooldown = noop
@@ -1863,7 +1875,7 @@ local function BuildBar(barKey)
     local buttons = {}
 
     if barKey == "bar1" then
-        -- BAR 1: Create new ActionBarButtonTemplate buttons with paging
+        -- BAR 1: Create new ActionButtonTemplate buttons with paging
         -- Hide Blizzard's bar frame and original buttons
         if barFrame then
             barFrame:UnregisterAllEvents()
@@ -1953,7 +1965,7 @@ local function BuildBar(barKey)
     elseif barKey == "pet" or barKey == "stance" then
         -- PET/STANCE: Create fresh buttons from Blizzard templates, then
         -- fully suppress the originals (same pattern as bars 1-8 and
-        -- LibActionButton addons).  Pet/stance buttons use GetID() for
+        -- action button addons).  Pet/stance buttons use GetID() for
         -- slot lookup — SetID is the only required setup.
         if barFrame then
             -- Purge Edit Mode's isShownExternal before reparenting to avoid
@@ -2363,7 +2375,7 @@ local function BuildBar(barKey)
             end
         end
     else
-        -- BARS 2-8: Create fresh ActionBarButtonTemplate buttons.
+        -- BARS 2-8: Create fresh ActionButtonTemplate buttons.
         -- Fully dispose Blizzard's bar frame and original buttons to prevent
         -- double event processing and taint propagation from hidden frames.
         if barFrame then
@@ -2448,6 +2460,34 @@ local function BuildBar(barKey)
         for _, btn in ipairs(buttons) do
             -- Unregister all events — QUI handles events centrally.
             btn:UnregisterAllEvents()
+            -- Deregister from ActionBarButtonEventsFrame.  The template's
+            -- OnLoad auto-registers via RegisterFrame(), putting QUI's
+            -- tainted buttons into the same dispatch loop as Blizzard's
+            -- secure buttons (OverrideActionBar).  Touching tainted buttons
+            -- during iteration taints the context for all subsequent buttons.
+            -- Belt-and-suspenders: deregister from the table AND replace
+            -- OnEvent with a no-op so if the dispatch somehow reaches QUI
+            -- buttons, the handler is inert and cannot taint the context.
+            if ActionBarButtonEventsFrame then
+                if ActionBarButtonEventsFrame.UnregisterFrame then
+                    ActionBarButtonEventsFrame:UnregisterFrame(btn)
+                elseif ActionBarButtonEventsFrame.frames then
+                    ActionBarButtonEventsFrame.frames[btn] = nil
+                end
+            end
+            -- Replace OnEvent with QUI's safe handler.  Routes cooldown
+            -- events to QUI's DurationObject path; everything else to
+            -- SafeUpdate.  Uses only truthiness checks — no secret value
+            -- comparisons — so the handler cannot taint the context.
+            btn:SetScript("OnEvent", function(self, event, ...)
+                if event == "ACTIONBAR_UPDATE_COOLDOWN"
+                    or event == "LOSS_OF_CONTROL_ADDED"
+                    or event == "LOSS_OF_CONTROL_UPDATE" then
+                    ActionBarsOwned.UpdateCooldown(self)
+                else
+                    ActionBarsOwned.SafeUpdate(self)
+                end
+            end)
             -- Shadow taint-unsafe mixin methods.  These shadows are
             -- permanent and serve two purposes:
             --   1. Internal calls (e.g. SafeUpdate → self:UpdateCount())
@@ -2497,7 +2537,7 @@ local function BuildBar(barKey)
 
     -- Micro/bag buttons are not action buttons — skip skinning, keybinds, and override bindings
     if SKINNABLE_BAR_KEYS[barKey] then
-        -- Defer skinning slightly so ActionBarButtonTemplate has time to
+        -- Defer skinning slightly so ActionButtonTemplate has time to
         -- populate icons and visuals from the action attribute.
         local capturedSettings = settings
         C_Timer.After(0, function()
@@ -6105,12 +6145,48 @@ function ActionBarsOwned:Initialize()
         BuildBar(barKey)
     end
 
-    -- Leave OverrideActionBar buttons untouched.  Directly replacing
-    -- methods (Update, OnEvent, etc.) taints the button table, which
-    -- causes Blizzard's own Setup() → SetAttribute() call to be
-    -- blocked with ADDON_ACTION_BLOCKED.  These are Blizzard's secure
-    -- frames for vehicles/boss encounters — let them manage their own
-    -- buttons.
+    -- Hide OverrideActionBar entirely.
+    -- QUI bar1 already pages to override/vehicle action indices via the
+    -- secure _onstate-page handler, so the Blizzard OverrideActionBar is
+    -- redundant.  Leaving it active causes taint: its buttons share the
+    -- ActionBarButtonEventsFrame dispatch with QUI's tainted buttons,
+    -- and the iteration context propagates taint to the secure buttons.
+    local overrideBar = _G.OverrideActionBar
+    if overrideBar then
+        if overrideBar.system then
+            overrideBar.isShownExternal = nil
+            local c = 42
+            repeat
+                if overrideBar[c] == nil then
+                    overrideBar[c] = nil
+                end
+                c = c + 1
+            until issecurevariable(overrideBar, "isShownExternal")
+        end
+        overrideBar:UnregisterAllEvents()
+        if overrideBar.HideBase then
+            overrideBar:HideBase()
+        else
+            overrideBar:Hide()
+        end
+        overrideBar:SetParent(hiddenBarParent)
+        -- Also deregister OverrideActionBar buttons from the dispatch.
+        -- Hiding the bar makes them invisible but they're still in the
+        -- ActionBarButtonEventsFrame.frames table and still receive
+        -- dispatches → SetCooldown with secret values in tainted context.
+        if ActionBarButtonEventsFrame then
+            for i = 1, 6 do
+                local btn = _G["OverrideActionBarButton" .. i]
+                if btn then
+                    if ActionBarButtonEventsFrame.UnregisterFrame then
+                        ActionBarButtonEventsFrame:UnregisterFrame(btn)
+                    elseif ActionBarButtonEventsFrame.frames then
+                        ActionBarButtonEventsFrame.frames[btn] = nil
+                    end
+                end
+            end
+        end
+    end
 
     -- Suppress PossessActionBar (mind control bar) — can overlap QUI bars
     local possessBar = _G.PossessActionBar or _G.PossessBarFrame
@@ -6376,6 +6452,33 @@ initFrame:SetScript("OnEvent", function(self, event, addonName)
             C_Timer.After(0, function()
                 ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
             end)
+        end
+        -- OverrideActionBar buttons are created by Blizzard_ActionBar.
+        -- Suppress them now that they exist — the Initialize() pass
+        -- may have run before this addon loaded.
+        local overrideBar = _G.OverrideActionBar
+        if overrideBar and ActionBarButtonEventsFrame then
+            if not overrideBar:GetParent() or overrideBar:GetParent() == hiddenBarParent then
+                -- Already hidden by Initialize — just deregister buttons
+            else
+                overrideBar:UnregisterAllEvents()
+                if overrideBar.HideBase then
+                    overrideBar:HideBase()
+                else
+                    overrideBar:Hide()
+                end
+                overrideBar:SetParent(hiddenBarParent)
+            end
+            for i = 1, 6 do
+                local btn = _G["OverrideActionBarButton" .. i]
+                if btn then
+                    if ActionBarButtonEventsFrame.UnregisterFrame then
+                        ActionBarButtonEventsFrame:UnregisterFrame(btn)
+                    elseif ActionBarButtonEventsFrame.frames then
+                        ActionBarButtonEventsFrame.frames[btn] = nil
+                    end
+                end
+            end
         end
     end
 end)
