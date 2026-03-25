@@ -1206,7 +1206,7 @@ local function GetOrCreateEntryCell(index)
         GameTooltip:AddLine(name, 1, 1, 1)
         if self._isDormant then
             GameTooltip:AddLine("Not Learned (Dormant)", 0.9, 0.6, 0.2)
-            GameTooltip:AddLine("Right-click to restore", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("Drag to reorder", 0.5, 0.5, 0.5)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
@@ -1429,9 +1429,21 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
     -- Build menu items
     local items = {}
     if isDormant then
-        items[1] = { label = "Restore", color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
+        local sid = entry.id or entry
+        local isKnown = spellData.IsSpellKnown and spellData:IsSpellKnown(sid)
+        if isKnown then
+            items[#items + 1] = { label = "Restore", color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
+                if InCombatLockdown() then return end
+                spellData:RestoreDormantEntry(activeContainer, sid)
+                C_Timer.After(0.02, function()
+                    RefreshEntryList()
+                    RefreshPreview()
+                end)
+            end }
+        end
+        items[#items + 1] = { label = "Remove", color = { 0.9, 0.3, 0.3 }, action = function()
             if InCombatLockdown() then return end
-            spellData:RestoreRemovedEntry(activeContainer, entry.id or entry)
+            spellData:RemoveDormantEntry(activeContainer, sid)
             C_Timer.After(0.02, function()
                 RefreshEntryList()
                 RefreshPreview()

@@ -1346,7 +1346,6 @@ barTimerGroup:SetScript("OnLoop", function()
             if durObj and durObj.GetRemainingDuration then
                 anyActive = true
                 local rok, remaining = pcall(durObj.GetRemainingDuration, durObj)
-
                 local isSecret = remaining and Helpers.IsSecretValue(remaining)
                 if rok and remaining and not isSecret and remaining > 0 then
                     -- OOC: readable remaining — update text in Lua
@@ -1380,15 +1379,17 @@ barTimerGroup:SetScript("OnLoop", function()
                         end
                     end
                 elseif isSecret then
-                    -- Cannot read secret remaining — pass directly to C-side
-                    -- SetFormattedText for display. C-side bar fill via
-                    -- SetTimerDuration handles expiration visually.
+                    -- Combat: C-side SetTimerDuration drives bar fill.
+                    -- Pass secret remaining to C-side SetFormattedText for text.
+                    -- Expiry detection relies on the child Hide hook in
+                    -- cdm_spelldata.lua clearing the durObj cache — the next
+                    -- UpdateOwnedBars cycle will see no active aura.
                     anyActive = true
                     if bar.DurationText then
                         pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
                     end
                 else
-                    -- Aura expired: remaining is nil or 0 — duration done.
+                    -- OOC expired: remaining is nil or 0
                     bar._active = false
                     anyDeactivated = true
                     bar._durObj = nil

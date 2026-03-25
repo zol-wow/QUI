@@ -281,6 +281,10 @@ function CDMSpellData:IsSpellHookActive(spellID)
     local function isValidBuffChild(ch)
         local vf = ch.viewerFrame
         if not (vf and (vf == buffViewer or vf == buffBarViewer)) then return false end
+        -- Child must still represent an active aura (auraInstanceID non-nil).
+        -- Blizzard nils auraInstanceID when the aura expires or the child is
+        -- recycled.  Nil-check is safe in combat (not a value comparison).
+        if ch.auraInstanceID == nil then return false end
         local ids = ch._resolvedIDs
         if ids then
             for k = 1, #ids do
@@ -385,6 +389,8 @@ function CDMSpellData:GetCachedAuraDurObj(spellID)
     local function isActiveBuffChild(ch)
         local vf = ch.viewerFrame
         if not (vf and (vf == buffViewer or vf == buffBarViewer)) then return false end
+        -- Child must still represent an active aura.
+        if ch.auraInstanceID == nil then return false end
         -- Verify child still tracks this spell via _resolvedIDs
         local ids = ch._resolvedIDs
         if ids then
@@ -394,10 +400,7 @@ function CDMSpellData:GetCachedAuraDurObj(spellID)
             end
             if not found then return false end
         end
-        -- Only trust hook data from shown children — hidden children retain
-        -- stale Cooldown hook caches after the buff drops.
-        local sok, shown = pcall(ch.IsShown, ch)
-        return sok and shown
+        return true
     end
 
     local children = _spellIDToChild[spellID]
@@ -588,12 +591,13 @@ function CDMSpellData:ResolveAuraState(params)
         -----------------------------------------------------------------
         -- 1. Player aura by spell ID
         -- GetPlayerAuraBySpellID returns both buffs and debuffs (no filter param),
-        -- including passive talent auras that are always present. Skip passives
-        -- (neither isHelpful nor isHarmful) so they don't false-positive as active.
+        -- including passive talent auras and harmful passives that are always
+        -- present. Only match helpful auras here — harmful player debuffs
+        -- (procs like Purgatory) are detected via viewer child / hook cache
+        -- paths; permanent harmful passives (like Perdition) must be excluded.
         if C_UnitAuras.GetPlayerAuraBySpellID then
             local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, auraSpellID)
-            if ok and ad and ad.auraInstanceID
-               and (ad.isHelpful == true or ad.isHarmful == true) then
+            if ok and ad and ad.auraInstanceID and ad.isHelpful == true then
                 isActive = true
                 childAuraInstID = ad.auraInstanceID
                 auraUnit = "player"
@@ -601,8 +605,7 @@ function CDMSpellData:ResolveAuraState(params)
             end
             if not isActive and entrySpellID and entrySpellID ~= auraSpellID then
                 local ok2, ad2 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, entrySpellID)
-                if ok2 and ad2 and ad2.auraInstanceID
-                   and (ad2.isHelpful == true or ad2.isHarmful == true) then
+                if ok2 and ad2 and ad2.auraInstanceID and ad2.isHelpful == true then
                     isActive = true
                     childAuraInstID = ad2.auraInstanceID
                     auraUnit = "player"
@@ -661,8 +664,17 @@ function CDMSpellData:ResolveAuraState(params)
         -----------------------------------------------------------------
         -- Combat: hook cache + API fallbacks
         -----------------------------------------------------------------
-        -- 1. Hook cache truthiness
-        if hookDurObj or (hookStart and hookDur) then
+        -- 1. Hook cache truthiness — gated on child auraInstanceID.
+        -- When Blizzard removes an aura, the child's auraInstanceID is
+        -- set to nil.  A nil check is safe (not a value comparison, no
+        -- secret-value taint).  The Hide hook also clears the cache, but
+        -- the child may be recycled rather than hidden — auraInstanceID
+        -- nil-check catches that case.
+        local childAlive = blzChild and blzChild.auraInstanceID ~= nil
+        if not childAlive and blzBarChild then
+            childAlive = blzBarChild.auraInstanceID ~= nil
+        end
+        if childAlive and (hookDurObj or (hookStart and hookDur)) then
             isActive = true
         end
         -- 2. IsSpellHookActive scan
@@ -722,18 +734,18 @@ function CDMSpellData:ResolveAuraState(params)
                 isActive = true
             end
         end
-        -- 5. Player aura by spell ID — skip passive talent auras.
-        -- SafeValue for combat: if isHelpful/isHarmful are secret, allow
-        -- (real debuffs without viewer children still need this path).
+        -- 5. Player aura by spell ID — only helpful (buffs).
+        -- Harmful player auras (procs) are detected via viewer child / hook
+        -- cache. This fallback must reject harmful passives (always-present
+        -- talent auras like Perdition) that would false-positive as active.
         if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
             for _, tryID in ipairs({auraSpellID, entrySpellID, entryID}) do
                 if tryID and not isActive then
                     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
                     if ok and ad and ad.auraInstanceID then
                         local helpful = Helpers.SafeValue(ad.isHelpful, nil)
-                        local harmful = Helpers.SafeValue(ad.isHarmful, nil)
-                        -- Reject only when we can confirm it's passive (both false)
-                        if helpful ~= false or harmful ~= false then
+                        -- Allow when helpful or when secret (can't confirm passive)
+                        if helpful ~= false then
                             isActive = true
                             childAuraInstID = ad.auraInstanceID
                             auraUnit = "player"
@@ -1242,6 +1254,16 @@ local function HookChildCooldown(child)
             end)
         end
     end
+
+    -- Hook child Hide — when Blizzard hides a viewer child (aura expired),
+    -- clear its hook cache so stale durObjs don't false-positive as active.
+    -- This is the primary cache invalidation during combat where
+    -- GetRemainingDuration always returns secret values from addon code.
+    hooksecurefunc(child, "Hide", function()
+        _durObjCache[child] = nil
+        _rawStartCache[child] = nil
+        _rawDurCache[child] = nil
+    end)
 
     -- Hook .Bar (StatusBar) — used by BuffBarCooldownViewer children.
     -- Blizzard may call SetTimerDuration on the StatusBar for aura-driven bars.
@@ -1893,14 +1915,22 @@ function CDMSpellData:CheckDormantSpells(containerKey)
             isAuraContainer = (ct == "aura" or ct == "auraBar")
         end
     end
+    -- Aura containers never use dormant — buff/debuff IDs are passive procs
+    -- that IsSpellKnown doesn't cover.  Clear any stale dormant entries that
+    -- accumulated before this guard existed, then bail out of all phases.
+    if isAuraContainer then
+        if type(db.dormantSpells) == "table" and next(db.dormantSpells) then
+            wipe(db.dormantSpells)
+        end
+        return
+    end
+
     local toRemove = {}  -- indices to remove (descending order)
-    if not isAuraContainer then
-        for i, entry in ipairs(ownedSpells) do
-            if entry and entry.id and entry.type == "spell" then
-                if not IsSpellKnownByPlayer(entry.id) then
-                    db.dormantSpells[entry.id] = i  -- save slot position
-                    toRemove[#toRemove + 1] = i
-                end
+    for i, entry in ipairs(ownedSpells) do
+        if entry and entry.id and entry.type == "spell" then
+            if not IsSpellKnownByPlayer(entry.id) then
+                db.dormantSpells[entry.id] = i  -- save slot position
+                toRemove[#toRemove + 1] = i
             end
         end
     end
@@ -2458,6 +2488,36 @@ function CDMSpellData:RestoreRemovedEntry(containerKey, spellID)
     return true
 end
 
+function CDMSpellData:RestoreDormantEntry(containerKey, spellID)
+    if CombatGuard() then return false end
+    local db = GetContainerDB(containerKey)
+    if not db then return false end
+    if type(db.dormantSpells) ~= "table" then return false end
+    local savedSlot = db.dormantSpells[spellID]
+    if not savedSlot then return false end
+    db.dormantSpells[spellID] = nil
+    if db.ownedSpells == nil then db.ownedSpells = {} end
+    local insertAt = math.min(savedSlot, #db.ownedSpells + 1)
+    table.insert(db.ownedSpells, insertAt, { type = "spell", id = spellID })
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:RemoveDormantEntry(containerKey, spellID)
+    if CombatGuard() then return false end
+    local db = GetContainerDB(containerKey)
+    if not db then return false end
+    if type(db.dormantSpells) == "table" then
+        db.dormantSpells[spellID] = nil
+    end
+    FireChangeCallback()
+    return true
+end
+
+function CDMSpellData:IsSpellKnown(spellID)
+    return IsSpellKnownByPlayer(spellID)
+end
+
 function CDMSpellData:ResnapshotFromBlizzard(containerKey)
     if CombatGuard() then return false end
 
@@ -2697,16 +2757,17 @@ function CDMSpellData:GetAllLearnedCooldowns()
         if okTabs and numTabs then
             for tab = 1, numTabs do
                 local okLine, skillLineInfo = pcall(C_SpellBook.GetSpellBookSkillLineInfo, tab)
-                if okLine and skillLineInfo then
+                if okLine and skillLineInfo and skillLineInfo.specID then
                     local offset = skillLineInfo.itemIndexOffset or 0
                     local numEntries = skillLineInfo.numSpellBookItems or 0
                     for i = 1, numEntries do
                         local slotIndex = offset + i
                         local okItem, itemInfo = pcall(C_SpellBook.GetSpellBookItemInfo, slotIndex, Enum.SpellBookSpellBank.Player)
-                        if okItem and itemInfo and itemInfo.spellID then
+                        if okItem and itemInfo and itemInfo.spellID and not itemInfo.isPassive and not itemInfo.isOffSpec then
                             local sid = itemInfo.spellID
                             if not seen[sid] then
-                                -- Check base cooldown (ms) — not current cooldown state
+                                seen[sid] = true
+                                -- Check base cooldown (ms) for sorting/display
                                 local baseCDms = 0
                                 if C_Spell and C_Spell.GetSpellBaseCooldown then
                                     local okCD, ms = pcall(C_Spell.GetSpellBaseCooldown, sid)
@@ -2714,8 +2775,6 @@ function CDMSpellData:GetAllLearnedCooldowns()
                                         baseCDms = Helpers.SafeToNumber(ms, 0) or 0
                                     end
                                 end
-
-                                -- Also count charged spells as having a cooldown
                                 if baseCDms <= 1500 and C_Spell and C_Spell.GetSpellCharges then
                                     local okCh, ci = pcall(C_Spell.GetSpellCharges, sid)
                                     if okCh and ci then
@@ -2723,25 +2782,20 @@ function CDMSpellData:GetAllLearnedCooldowns()
                                         if maxC > 1 then baseCDms = 2000 end
                                     end
                                 end
-
-                                -- Only include spells with meaningful cooldowns (> 1500ms / 1.5s GCD)
-                                if baseCDms > 1500 then
-                                    seen[sid] = true
-                                    local name, icon
-                                    if C_Spell and C_Spell.GetSpellInfo then
-                                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
-                                        if okI and spellInfo then
-                                            name = spellInfo.name
-                                            icon = spellInfo.iconID
-                                        end
+                                local name, icon
+                                if C_Spell and C_Spell.GetSpellInfo then
+                                    local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                                    if okI and spellInfo then
+                                        name = spellInfo.name
+                                        icon = spellInfo.iconID
                                     end
-                                    result[#result + 1] = {
-                                        spellID = sid,
-                                        name = name or "",
-                                        icon = icon or 0,
-                                        cooldown = baseCDms / 1000,
-                                    }
                                 end
+                                result[#result + 1] = {
+                                    spellID = sid,
+                                    name = name or "",
+                                    icon = icon or 0,
+                                    cooldown = baseCDms / 1000,
+                                }
                             end
                         end
                     end

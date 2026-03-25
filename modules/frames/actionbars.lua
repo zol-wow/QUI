@@ -161,6 +161,22 @@ ns.ActionBarsOwned = ActionBarsOwned
 -- Backward compat alias for any code referencing mirrorButtons
 ActionBarsOwned.mirrorButtons = ActionBarsOwned.nativeButtons
 
+-- Taint-safe UpdateAction replacement.  The mixin's UpdateAction calls
+-- ActionButton_CalculateAction and uses comparison operators, which can
+-- error in tainted context during combat.  This version just syncs the
+-- Lua-side self.action from the attribute (set by restricted code) and
+-- triggers a safe visual refresh.  Called explicitly via CallMethod from
+-- the _childupdate-offset restricted snippet after page changes, and
+-- also installed as an instance shadow so any C-side dispatch that
+-- reaches UpdateAction hits this safe version.
+function ActionBarsOwned.SafeSyncAction(self)
+    local action = self:GetAttribute("action")
+    if action then
+        self.action = action
+    end
+    ActionBarsOwned.SafeUpdate(self)
+end
+
 -- Taint-safe Update replacement for addon-created action buttons.
 -- The Blizzard mixin's Update uses comparison operators (==, ~=, >) on
 -- secret number values returned by restricted APIs, which errors when
@@ -240,6 +256,23 @@ function ActionBarsOwned.SafeUpdate(self)
                 self.LevelLinkLockIcon:SetShown(false)
             end
         end
+
+        -- Flash animation (auto-attack / auto-repeat)
+        local shouldFlash = (IsAttackAction(action) and IsCurrentAction(action))
+            or IsAutoRepeatAction(action)
+        if shouldFlash then
+            if not self.flashing then
+                if ActionButton_StartFlash then
+                    pcall(ActionButton_StartFlash, self)
+                end
+            end
+        else
+            if self.flashing then
+                if ActionButton_StopFlash then
+                    pcall(ActionButton_StopFlash, self)
+                end
+            end
+        end
     else
         -- Empty slot
         self.icon:Hide()
@@ -251,6 +284,11 @@ function ActionBarsOwned.SafeUpdate(self)
         self.Border:Hide()
         if self.LevelLinkLockIcon then
             self.LevelLinkLockIcon:SetShown(false)
+        end
+        if self.flashing then
+            if ActionButton_StopFlash then
+                pcall(ActionButton_StopFlash, self)
+            end
         end
     end
 end
@@ -412,50 +450,32 @@ end
 -- HELPERS
 ---------------------------------------------------------------------------
 
--- Safe wrapper for HasAction which may return secret values in Midnight
+-- Safe wrappers for APIs that may return secret values on Midnight.
+-- Use only truthiness tests (if X then) — never comparison operators
+-- (==, ~=, >) — so secret booleans/numbers pass through without error.
+-- No pcall needed since truthiness evaluation never triggers the
+-- secret-value error (only comparisons and arithmetic do).
 local function SafeHasAction(action)
-    if IS_MIDNIGHT then
-        local ok, result = pcall(function()
-            local has = HasAction(action)
-            -- Force comparison to detect secrets
-            if has then return true end
-            return false
-        end)
-        if not ok then return true end  -- Secret value, treat as having action
-        return result
-    else
-        return HasAction(action)
-    end
+    if HasAction(action) then return true end
+    return false
 end
 
 local function SafeIsActionInRange(action)
-    if IS_MIDNIGHT then
-        local ok, result = pcall(function()
-            local inRange = IsActionInRange(action)
-            if inRange == false then return false end
-            if inRange == true then return true end
-            return nil
-        end)
-        if not ok then return nil end
-        return result
-    else
-        return IsActionInRange(action)
-    end
+    -- Returns: true (in range), false (out of range), nil (no range data).
+    -- pcall guards against internal errors; truthiness tests are safe for
+    -- secret values.  The `== nil` check is safe because Lua never invokes
+    -- __eq metamethods when comparing against nil (different types).
+    local ok, val = pcall(IsActionInRange, action)
+    if not ok then return nil end
+    if val then return true end        -- truthy → in range
+    if val == nil then return nil end  -- nil → no range data
+    return false                       -- falsy non-nil → out of range
 end
 
 local function SafeIsUsableAction(action)
-    if IS_MIDNIGHT then
-        local ok, isUsable, notEnoughMana = pcall(function()
-            local usable, noMana = IsUsableAction(action)
-            local boolUsable = usable and true or false
-            local boolNoMana = noMana and true or false
-            return boolUsable, boolNoMana
-        end)
-        if not ok then return true, false end
-        return isUsable, notEnoughMana
-    else
-        return IsUsableAction(action)
-    end
+    local usable, noMana = IsUsableAction(action)
+    -- Convert via truthiness (and/or), not comparison
+    return (usable and true or false), (noMana and true or false)
 end
 
 local function IsPlayerBelowMaxLevel()
@@ -2400,6 +2420,7 @@ local function BuildBar(barKey)
         -- Solution: shadow Update with SafeUpdate (truthiness-only version)
         -- so all call chains that reach self:Update() hit the safe version.
         -- Also shadow specific methods that use comparison operators:
+        --   UpdateAction            → taint-safe action sync (SafeSyncAction)
         --   UpdateCooldown          → DurationObject path
         --   UpdatePressAndHoldAction → no-op (handled from restricted code)
         --   UpdateCount             → C_ActionBar.GetActionDisplayCount
@@ -2429,6 +2450,14 @@ local function BuildBar(barKey)
             end
             btn:SetScript("OnEvent", btn.OnEvent)
             btn.Update = ActionBarsOwned.SafeUpdate
+            -- Shadow UpdateAction so the mixin's taint-unsafe version
+            -- (ActionButton_CalculateAction, comparison operators) never
+            -- runs.  The restricted _childupdate-offset calls
+            -- CallMethod("SafeSyncAction") explicitly; this shadow
+            -- catches any other path (OnAttributeChanged, C-side dispatch).
+            btn.UpdateAction = ActionBarsOwned.SafeSyncAction
+            -- CallMethod target: restricted code calls self:CallMethod("SafeSyncAction")
+            btn.SafeSyncAction = ActionBarsOwned.SafeSyncAction
             btn.UpdateCooldown = function(self)
                 ActionBarsOwned.UpdateCooldown(self)
             end
@@ -2837,29 +2866,32 @@ local function OnOwnedEvent(self, event, ...)
         or event == "UPDATE_SHAPESHIFT_FORM"
         or event == "UPDATE_SHAPESHIFT_FORMS"
         or event == "UPDATE_STEALTH" then
-        -- Paging is handled by state driver; refresh empty slots, cooldowns,
-        -- SetActionUIButton registration, and bar1 bindings.
-        C_Timer.After(0.05, function()
-            local buttons = ActionBarsOwned.nativeButtons["bar1"]
-            local settings = GetEffectiveSettings("bar1")
-            if buttons and settings then
-                for _, btn in ipairs(buttons) do
-                    UpdateEmptySlotVisibility(btn, settings)
-                end
+        -- Paging is handled by state driver + CallMethod("SafeSyncAction")
+        -- which already syncs self.action and refreshes visuals on each
+        -- button synchronously.  Remaining work: empty slot visibility,
+        -- SetActionUIButton re-registration, cooldowns, and bar1 bindings.
+        -- Done synchronously to prevent flickering during stance dancing.
+        local buttons = ActionBarsOwned.nativeButtons["bar1"]
+        local settings = GetEffectiveSettings("bar1")
+        if buttons and settings then
+            for _, btn in ipairs(buttons) do
+                UpdateEmptySlotVisibility(btn, settings)
             end
-            -- Re-register bar1 with new action slots after page change
-            ActionBarsOwned.UpdateActionUIRegistration("bar1")
-            -- Refresh cooldowns for the new page's actions
-            if buttons then
-                for _, btn in ipairs(buttons) do
-                    ActionBarsOwned.UpdateCooldown(btn)
-                end
+        end
+        -- Re-register bar1 with new action slots after page change
+        ActionBarsOwned.UpdateActionUIRegistration("bar1")
+        -- Refresh cooldowns for the new page's actions
+        if buttons then
+            for _, btn in ipairs(buttons) do
+                ActionBarsOwned.UpdateCooldown(btn)
             end
-            -- Stance bar may need re-layout when shapeshift forms change
-            if not InCombatLockdown() then
-                UpdateStanceBarLayout()
-            end
-        end)
+        end
+        -- Stance bar may need re-layout when shapeshift forms change
+        if not InCombatLockdown() then
+            UpdateStanceBarLayout()
+        else
+            ActionBarsOwned.pendingStanceUpdate = true
+        end
         ApplyBar1OverrideBindings()
 
     elseif event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
@@ -2963,11 +2995,13 @@ local function OnOwnedEvent(self, event, ...)
             local btns = ActionBarsOwned.nativeButtons[barKey]
             if btns then
                 for _, btn in ipairs(btns) do
-                    btn.Update = nil  -- expose mixin for one call
+                    btn.Update = nil         -- expose mixin for one call
+                    btn.UpdateAction = nil   -- expose mixin UpdateAction too
                     if ActionButton_Update then
                         pcall(ActionButton_Update, btn)
                     end
                     btn.Update = ActionBarsOwned.SafeUpdate
+                    btn.UpdateAction = ActionBarsOwned.SafeSyncAction
                     ActionBarsOwned.UpdateCooldown(btn)
                 end
             end
@@ -3111,7 +3145,79 @@ local function OnOwnedEvent(self, event, ...)
         end
 
     elseif event == "PLAYER_ENTER_COMBAT" or event == "PLAYER_LEAVE_COMBAT" then
-        -- Auto-attack flash state changes
+        -- Auto-attack flash state changes (SafeUpdate handles flash now)
+        ActionBarsOwned.UpdateAllButtonVisuals()
+
+    elseif event == "START_AUTOREPEAT_SPELL" or event == "STOP_AUTOREPEAT_SPELL" then
+        -- Auto-shot/wand toggle — refresh flash state on all buttons
+        ActionBarsOwned.UpdateAllButtonVisuals()
+
+    elseif event == "SPELLS_CHANGED"
+        or event == "LEARNED_SPELL_IN_SKILL_LINE" then
+        -- Talent swap, respec, new spell learned — full refresh of icons,
+        -- usability, cooldowns, flyouts, and empty slot visibility.
+        ActionBarsOwned.UpdateAllButtonVisuals()
+        ActionBarsOwned.UpdateAllCooldowns()
+        -- Re-register with C-side (action IDs may have shifted)
+        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+            ActionBarsOwned.UpdateActionUIRegistration(barKey)
+        end
+        -- Update flyout data on all buttons
+        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+            local btns = ActionBarsOwned.nativeButtons[barKey]
+            if btns then
+                for _, btn in ipairs(btns) do
+                    if btn.UpdateFlyout then pcall(btn.UpdateFlyout, btn) end
+                end
+            end
+        end
+        -- Refresh empty slot visibility (slots may have gained/lost actions)
+        if not InCombatLockdown() then
+            for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+                local btns = ActionBarsOwned.nativeButtons[barKey]
+                local s = GetEffectiveSettings(barKey)
+                if btns and s then
+                    for _, btn in ipairs(btns) do
+                        UpdateEmptySlotVisibility(btn, s)
+                    end
+                end
+            end
+        else
+            ActionBarsOwned.pendingSlotUpdate = true
+        end
+
+    elseif event == "SPELL_FLYOUT_UPDATE" then
+        -- Flyout data changed — refresh flyout arrows on all buttons
+        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+            local btns = ActionBarsOwned.nativeButtons[barKey]
+            if btns then
+                for _, btn in ipairs(btns) do
+                    if btn.UpdateFlyout then pcall(btn.UpdateFlyout, btn) end
+                end
+            end
+        end
+
+    elseif event == "SPELL_UPDATE_USABLE" then
+        -- Spell usability changed (e.g. resource gained/spent, GCD ended)
+        ActionBarsOwned.UpdateAllButtonVisuals()
+
+    elseif event == "UPDATE_VEHICLE_ACTIONBAR" then
+        -- Vehicle action bar data changed — full refresh + re-register
+        ActionBarsOwned.UpdateAllButtonVisuals()
+        ActionBarsOwned.UpdateAllCooldowns()
+        ActionBarsOwned.UpdateActionUIRegistration("bar1")
+        ApplyBar1OverrideBindings()
+
+    elseif event == "UNIT_INVENTORY_CHANGED" then
+        -- Equipment changed — items on action bars may need icon/cooldown refresh
+        local unit = ...
+        if unit == "player" then
+            ActionBarsOwned.UpdateAllButtonVisuals()
+            ActionBarsOwned.UpdateAllCooldowns()
+        end
+
+    elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
+        -- Mount display changed — icon refresh for mount abilities
         ActionBarsOwned.UpdateAllButtonVisuals()
 
     elseif event == "PET_BATTLE_OPENING_START" then
@@ -5707,6 +5813,19 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("PET_BATTLE_CLOSE")
     ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_ADDED")
     ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_UPDATE")
+    -- Events that LAB handles centrally — needed because per-button
+    -- events are unregistered on QUI-created buttons.
+    ownedEventFrame:RegisterEvent("SPELLS_CHANGED")
+    ownedEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
+    ownedEventFrame:RegisterEvent("SPELL_FLYOUT_UPDATE")
+    ownedEventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+    ownedEventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+    ownedEventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+    ownedEventFrame:RegisterEvent("START_AUTOREPEAT_SPELL")
+    ownedEventFrame:RegisterEvent("STOP_AUTOREPEAT_SPELL")
+    if IS_MIDNIGHT then
+        ownedEventFrame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
+    end
     ownedEventFrame:Show()
 
     -- Force all action bars enabled so owned buttons function correctly
@@ -5729,6 +5848,7 @@ function ActionBarsOwned:Initialize()
         local btn = _G["OverrideActionBarButton" .. i]
         if btn then
             btn.Update = ActionBarsOwned.SafeUpdate
+            btn.UpdateAction = ActionBarsOwned.SafeSyncAction
             btn.OnEvent = function(self, event)
                 if event == "ACTIONBAR_UPDATE_COOLDOWN"
                     or event == "LOSS_OF_CONTROL_ADDED"
@@ -5736,12 +5856,32 @@ function ActionBarsOwned:Initialize()
                     ActionBarsOwned.UpdateCooldown(self)
                     return
                 end
+                if event == "GLOBAL_MOUSE_UP" then
+                    self:UnregisterEvent(event)
+                    if self.UpdateFlyout then
+                        pcall(self.UpdateFlyout, self)
+                    end
+                    return
+                end
                 ActionBarsOwned.SafeUpdate(self)
             end
+            btn:SetScript("OnEvent", btn.OnEvent)
             btn.UpdateCooldown = function(self)
                 ActionBarsOwned.UpdateCooldown(self)
             end
             btn.UpdatePressAndHoldAction = function() end
+            btn.UpdateCount = function(self)
+                local action = self.action
+                if not action or not HasAction(action) then
+                    self.Count:SetText("")
+                    return
+                end
+                if C_ActionBar and C_ActionBar.GetActionDisplayCount then
+                    self.Count:SetText(C_ActionBar.GetActionDisplayCount(action) or "")
+                else
+                    self.Count:SetText("")
+                end
+            end
         end
     end
 
