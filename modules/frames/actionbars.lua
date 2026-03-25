@@ -133,6 +133,19 @@ end
 local Helpers = ns.Helpers
 local GetDB = Helpers.CreateDBGetter("actionBars")
 
+local function GetSafeActionSlot(button)
+    if not button then return nil end
+    local action = button.action
+    if action == nil or Helpers.IsSecretValue(action) then
+        return nil
+    end
+    local ok, numericAction = pcall(tonumber, action)
+    if not ok or type(numericAction) ~= "number" or numericAction < 1 then
+        return nil
+    end
+    return numericAction
+end
+
 local function GetGlobalSettings()
     local db = GetDB()
     return db and db.global
@@ -1359,7 +1372,7 @@ local function SkinButton(button, settings)
         -- having a valid icon.
         -- Also skip spell flyout buttons: Blizzard sets their icon directly.
         local barKey = GetBarKeyFromButton(button)
-        local action = Helpers.SafeToNumber(button.action)
+        local action = GetSafeActionSlot(button)
         if action and barKey ~= "stance" and barKey ~= "pet" and not isSpellFlyoutButton
             and not SafeHasAction(action) then
             icon:SetTexture(nil)
@@ -1510,7 +1523,7 @@ local function UpdateKeybindText(button, settings)
 
     -- Only hide keybinds on empty action slots when hideEmptyKeybinds is enabled
     if shouldShow and settings.hideEmptyKeybinds then
-        local action = Helpers.SafeToNumber(button.action)
+        local action = GetSafeActionSlot(button)
         if action then
             local hasAction = SafeHasAction(action)
             if not hasAction then
@@ -1760,7 +1773,7 @@ local function UpdateEmptySlotVisibility(button, settings)
     end
 
     -- Only applies to action buttons with action property
-    local action = Helpers.SafeToNumber(button.action)
+    local action = GetSafeActionSlot(button)
     if action then
         local hasAction = SafeHasAction(action)
         if hasAction then
@@ -1780,6 +1793,12 @@ local function UpdateEmptySlotVisibility(button, settings)
                 state.hiddenEmpty = true
                 FadeHideTextures(state, button)
             end
+        end
+    else
+        button:SetAlpha(targetAlpha)
+        if state.hiddenEmpty then
+            state.hiddenEmpty = nil
+            FadeShowTextures(state, button)
         end
     end
 end
@@ -1879,15 +1898,21 @@ end
 -- directly, which avoids tainting secret values during combat.
 local function UpdateButtonUsability(button, settings)
     if not settings then return end
-    local action = Helpers.SafeToNumber(button.action)
-    if not action then return end
-
     local state = GetFrameState(button)
+    local action = GetSafeActionSlot(button)
 
     -- Skip buttons that are effectively invisible (faded bar or hidden empty
     -- slot).  MOD-blend textures ignore parent alpha inheritance and will
     -- darken the scene behind them even when the button is at alpha 0.
     if state.fadeHidden or state.hiddenEmpty then
+        return
+    end
+
+    if not action then
+        if state.tinted then
+            if state.tintOverlay then state.tintOverlay:Hide() end
+            state.tinted = nil
+        end
         return
     end
 
