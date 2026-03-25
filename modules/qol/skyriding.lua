@@ -922,10 +922,22 @@ local function UpdateAbilityIcon()
     abilityIcon:ClearAllPoints()
     abilityIcon:SetPoint("LEFT", skyridingFrame, "RIGHT", 2, yOffset)
 
-    -- Get cooldown info
+    -- Get cooldown info (secret-safe: use DurationObject in 12.0+)
     local cooldownInfo = C_Spell.GetSpellCooldown(WHIRLING_SURGE_SPELL_ID)
-    if cooldownInfo and cooldownInfo.duration and not IsSecretValue(cooldownInfo.duration) and cooldownInfo.duration > 0 then
-        abilityIconCooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+    if cooldownInfo and cooldownInfo.duration then
+        if IsSecretValue(cooldownInfo.duration) then
+            -- 12.0+ secret value path
+            if C_Spell.GetSpellCooldownDuration and abilityIconCooldown.SetCooldownFromDurationObject then
+                local ok, dObj = pcall(C_Spell.GetSpellCooldownDuration, WHIRLING_SURGE_SPELL_ID)
+                if ok and dObj then
+                    abilityIconCooldown:SetCooldownFromDurationObject(dObj)
+                end
+            end
+        elseif cooldownInfo.duration > 0 then
+            abilityIconCooldown:SetCooldown(cooldownInfo.startTime, cooldownInfo.duration)
+        else
+            abilityIconCooldown:Clear()
+        end
     else
         abilityIconCooldown:Clear()
     end

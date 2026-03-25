@@ -91,7 +91,20 @@ local _eventUpdateThrottle = 0.1  -- Minimum interval between event-driven DoUpd
 local _lastEventUpdate = 0
 
 -- Performance: hoisted pcall wrapper functions (avoids anonymous closure allocation per call)
-local function SafeSetCooldown(cd, start, dur) cd:SetCooldown(start, dur) end
+-- 12.0+ secret-safe cooldown setter: tries DurationObject path for spells
+-- when start/dur are secret, falls back to SetCooldown.
+-- spellID is optional — pass nil for non-spell entries.
+local function SafeSetCooldownSecure(cd, start, dur, spellID)
+    if spellID and (IsSecretValue(start) or IsSecretValue(dur))
+       and C_Spell.GetSpellCooldownDuration and cd.SetCooldownFromDurationObject then
+        local ok, dObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if ok and dObj then
+            cd:SetCooldownFromDurationObject(dObj)
+            return
+        end
+    end
+    cd:SetCooldown(start, dur)
+end
 local function SafeSetReverse(cd, val) cd:SetReverse(val) end
 local function SafeSetSwipeColor(cd, r, g, b, a) cd:SetSwipeColor(r, g, b, a) end
 local function SafeSetDrawSwipe(cd, val) cd:SetDrawSwipe(val) end
@@ -1783,10 +1796,11 @@ function CustomTrackers:StartCooldownPolling(bar)
                 -- not buff duration (trinkets/pots have meaningful cooldowns users want to track;
                 -- active glow still indicates the buff is active)
                 local isItemEntry = entry.type == "slot" or entry.type == "item"
+                local entrySpellID = entry.type == "spell" and entry.id or nil
                 if isActive and activeStartTime and activeDuration and activeDuration > 0 and not showOnlyOnCooldown and not isItemEntry then
                     -- Active state: show buff/cast duration (reverse fill)
                     pcall(SafeSetReverse, icon.cooldown, true)
-                    pcall(SafeSetCooldown, icon.cooldown, activeStartTime, activeDuration)
+                    pcall(SafeSetCooldownSecure, icon.cooldown, activeStartTime, activeDuration, entrySpellID)
                     isOnCD = false  -- Active overrides cooldown state
                 else
                     -- Normal cooldown display
@@ -1798,7 +1812,7 @@ function CustomTrackers:StartCooldownPolling(bar)
                         -- For charge spells: use charge cooldown values
                         if chargeStartTime and chargeDuration then
                             -- Set cooldown first (pcall for secret value safety)
-                            pcall(SafeSetCooldown, icon.cooldown, chargeStartTime, chargeDuration)
+                            pcall(SafeSetCooldownSecure, icon.cooldown, chargeStartTime, chargeDuration, entrySpellID)
                             -- Check if cooldown is active AFTER setting it
                             rechargeActive = IsCooldownFrameActive(icon.cooldown)
                         else
@@ -1831,14 +1845,14 @@ function CustomTrackers:StartCooldownPolling(bar)
                         -- Main cooldown is only active when ALL charges are depleted
                         -- Clear first to ensure clean state (SetCooldown(0,0) doesn't clear previous state)
                         icon.cooldown:Clear()
-                        pcall(SafeSetCooldown, icon.cooldown, startTime, duration)
+                        pcall(SafeSetCooldownSecure, icon.cooldown, startTime, duration, entrySpellID)
                         -- Check if the frame shows this cooldown as active
                         -- IsCooldownFrameActive uses IsVisible() which handles secret values internally
                         mainCDActive = IsCooldownFrameActive(icon.cooldown)
 
                         -- Now restore charge cooldown values for display
                         if chargeStartTime and chargeDuration then
-                            pcall(SafeSetCooldown, icon.cooldown, chargeStartTime, chargeDuration)
+                            pcall(SafeSetCooldownSecure, icon.cooldown, chargeStartTime, chargeDuration, entrySpellID)
                         end
 
                         -- Exclude GCD from triggering desaturation
@@ -1903,7 +1917,7 @@ function CustomTrackers:StartCooldownPolling(bar)
                     else
                         -- Normal spell/item cooldown
                         if startTime and duration then
-                            pcall(SafeSetCooldown, icon.cooldown, startTime, duration)
+                            pcall(SafeSetCooldownSecure, icon.cooldown, startTime, duration, entrySpellID)
                         end
 
                         pcall(SafeSetDrawSwipe, icon.cooldown, false)

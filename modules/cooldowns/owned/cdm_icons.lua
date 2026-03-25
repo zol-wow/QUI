@@ -338,7 +338,44 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             -- Mirror to addon-owned CD
             local cd = targetIcon.Cooldown
             if cd then
-                pcall(cd.SetCooldown, cd, start, duration)
+                local ok = pcall(cd.SetCooldown, cd, start, duration)
+                -- 12.0+ secret values: SetCooldown fails from tainted (addon)
+                -- context.  Fall back to secret-safe APIs.
+                if not ok then
+                    local entry = targetIcon._spellEntry
+                    local sid = entry and (entry.overrideSpellID or entry.spellID or entry.id)
+                    local recovered = false
+
+                    -- Path 1: Buff/aura icons → C_UnitAuras.GetAuraDuration
+                    if not recovered and sid and entry.viewerType == "buff"
+                       and cd.SetCooldownFromDurationObject
+                       and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+                       and C_UnitAuras.GetAuraDuration then
+                        local aOk, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, sid)
+                        if aOk and auraData and auraData.auraInstanceID then
+                            local dOk, dObj = pcall(C_UnitAuras.GetAuraDuration, "player", auraData.auraInstanceID)
+                            if dOk and dObj then
+                                pcall(cd.SetCooldownFromDurationObject, cd, dObj)
+                                recovered = true
+                            end
+                        end
+                        -- Fallback: SetCooldownFromExpirationTime (accepts secret args)
+                        if not recovered and cd.SetCooldownFromExpirationTime
+                           and aOk and auraData and auraData.expirationTime and auraData.duration then
+                            pcall(cd.SetCooldownFromExpirationTime, cd, auraData.expirationTime, auraData.duration)
+                            recovered = true
+                        end
+                    end
+
+                    -- Path 2: Spell cooldown icons → C_Spell.GetSpellCooldownDuration
+                    if not recovered and sid
+                       and cd.SetCooldownFromDurationObject and C_Spell.GetSpellCooldownDuration then
+                        local dOk, dObj = pcall(C_Spell.GetSpellCooldownDuration, sid)
+                        if dOk and dObj then
+                            pcall(cd.SetCooldownFromDurationObject, cd, dObj)
+                        end
+                    end
+                end
             end
 
             -- Track GCD state for swipe classification (matches CMC pattern).
@@ -370,11 +407,40 @@ local function MirrorBlizzCooldown(icon, blizzChild)
     if addonCD then
         -- Mirror current cooldown duration via GetCooldownTimes (C-side, secret-safe)
         local ok, startMs, durMs = pcall(blizzCD.GetCooldownTimes, blizzCD)
+        local syncDone = false
         if ok and startMs and durMs then
             local start = SafeToNumber(startMs)
             local dur = SafeToNumber(durMs)
             if start and dur and start > 0 and dur > 0 then
-                pcall(addonCD.SetCooldown, addonCD, start / 1000, dur / 1000)
+                local setOk = pcall(addonCD.SetCooldown, addonCD, start / 1000, dur / 1000)
+                syncDone = setOk
+            end
+        end
+        -- 12.0+ fallback: if values were secret or SetCooldown failed, try DurationObject
+        if not syncDone and addonCD.SetCooldownFromDurationObject then
+            local entry = icon._spellEntry
+            local sid = entry and (entry.overrideSpellID or entry.spellID or entry.id)
+            if sid then
+                -- Buff/aura → C_UnitAuras.GetAuraDuration
+                if entry.viewerType == "buff"
+                   and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+                   and C_UnitAuras.GetAuraDuration then
+                    local aOk, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, sid)
+                    if aOk and auraData and auraData.auraInstanceID then
+                        local dOk, dObj = pcall(C_UnitAuras.GetAuraDuration, "player", auraData.auraInstanceID)
+                        if dOk and dObj then
+                            pcall(addonCD.SetCooldownFromDurationObject, addonCD, dObj)
+                            syncDone = true
+                        end
+                    end
+                end
+                -- Spell cooldown → C_Spell.GetSpellCooldownDuration
+                if not syncDone and C_Spell.GetSpellCooldownDuration then
+                    local dOk, dObj = pcall(C_Spell.GetSpellCooldownDuration, sid)
+                    if dOk and dObj then
+                        pcall(addonCD.SetCooldownFromDurationObject, addonCD, dObj)
+                    end
+                end
             end
         end
         -- Mirror reverse state (aura timers show reversed swipe)
@@ -1217,6 +1283,8 @@ local function UpdateIconCooldown(icon)
     else
         -- Custom entry: use addon-created CD with our cooldown resolution
         local startTime, duration
+        local durationObj  -- 12.0+ opaque handle for secret-safe cooldown display
+        local resolvedSpellID  -- track the spell ID for DurationObject lookup
         if entry.type == "macro" then
             local resolvedID, resolvedType = ResolveMacro(entry)
             if resolvedID then
@@ -1224,6 +1292,7 @@ local function UpdateIconCooldown(icon)
                     startTime, duration = GetItemCooldown(resolvedID)
                 else
                     startTime, duration = GetBestSpellCooldown(resolvedID)
+                    resolvedSpellID = resolvedID
                 end
             end
             -- Update icon texture dynamically (resolved spell may change each tick)
@@ -1240,7 +1309,8 @@ local function UpdateIconCooldown(icon)
         elseif entry.type == "item" then
             startTime, duration = GetItemCooldown(entry.id)
         else
-            startTime, duration = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+            resolvedSpellID = entry.overrideSpellID or entry.spellID or entry.id
+            startTime, duration = GetBestSpellCooldown(resolvedSpellID)
 
             -- Sync texture for spell overrides (e.g., Judgment → Hammer of Wrath).
             -- Custom spell entries don't have _blizzChild to mirror, so check the
@@ -1253,6 +1323,16 @@ local function UpdateIconCooldown(icon)
                     if newTex then
                         icon.Icon:SetTexture(newTex)
                     end
+                end
+            end
+        end
+
+        -- 12.0+ secret-safe path: get DurationObject for spells when values are secret
+        if resolvedSpellID and C_Spell.GetSpellCooldownDuration then
+            if IsSecretValue(startTime) or IsSecretValue(duration) then
+                local ok, obj = pcall(C_Spell.GetSpellCooldownDuration, resolvedSpellID)
+                if ok and obj then
+                    durationObj = obj
                 end
             end
         end
@@ -1270,7 +1350,10 @@ local function UpdateIconCooldown(icon)
         end
 
         if icon.Cooldown then
-            if startTime and duration then
+            if durationObj and icon.Cooldown.SetCooldownFromDurationObject then
+                -- Secret-safe: use opaque DurationObject (12.0+)
+                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durationObj)
+            elseif startTime and duration then
                 pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
             else
                 icon.Cooldown:Clear()

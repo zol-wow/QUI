@@ -135,8 +135,31 @@ end
 
 ---------------------------------------------------------------------------
 -- Read spell cooldown (handles both 11.x and 12.0+ API formats)
+-- Returns: start, duration, modRate, durationObject
+-- durationObject is an opaque handle for SetCooldownFromDurationObject (12.0+)
 ---------------------------------------------------------------------------
 local function ReadSpellCooldown(spellID)
+    -- 12.0+ DurationObject path (secret-value safe)
+    if C_Spell and C_Spell.GetSpellCooldownDuration then
+        local ok, durationObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if ok and durationObj then
+            -- Also get the cooldown info for IsCooldownActive checks
+            local start, duration, modRate
+            if C_Spell.GetSpellCooldown then
+                local a, b, _, d = C_Spell.GetSpellCooldown(spellID)
+                if type(a) == "table" then
+                    local t = a
+                    start = t.startTime
+                    duration = t.duration
+                    modRate = t.modRate
+                else
+                    start, duration, modRate = a, b, d
+                end
+            end
+            return start, duration, modRate, durationObj
+        end
+    end
+
     if C_Spell and C_Spell.GetSpellCooldown then
         local a, b, c, d = C_Spell.GetSpellCooldown(spellID)
         if type(a) == "table" then
@@ -145,18 +168,34 @@ local function ReadSpellCooldown(spellID)
             local start = t.startTime or t.start
             local duration = t.duration
             local modRate = t.modRate
-            return start, duration, modRate
+            return start, duration, modRate, nil
         else
             -- 11.x returns tuple: start, duration, enable, modRate
-            return a, b, d
+            return a, b, d, nil
         end
     end
     -- Fallback for older API
     if GetSpellCooldown then
         local s, d = GetSpellCooldown(spellID)
-        return s, d, nil
+        return s, d, nil, nil
     end
-    return nil, nil, nil
+    return nil, nil, nil, nil
+end
+
+---------------------------------------------------------------------------
+-- Apply cooldown to a Cooldown frame (secret-value safe)
+-- Prefers SetCooldownFromDurationObject when available (12.0+)
+---------------------------------------------------------------------------
+local function ApplyCooldown(cooldownFrame, start, duration, modRate, durationObj)
+    if durationObj and cooldownFrame.SetCooldownFromDurationObject then
+        cooldownFrame:SetCooldownFromDurationObject(durationObj)
+        return
+    end
+    if modRate then
+        cooldownFrame:SetCooldown(start, duration, modRate)
+    else
+        cooldownFrame:SetCooldown(start, duration)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -276,15 +315,11 @@ local function UpdateGCDCooldown()
         return
     end
 
-    local start, duration, modRate = ReadSpellCooldown(GCD_SPELL_ID)
+    local start, duration, modRate, durationObj = ReadSpellCooldown(GCD_SPELL_ID)
 
     if IsCooldownActive(start, duration) then
         gcdCooldown:Show()
-        if modRate then
-            gcdCooldown:SetCooldown(start, duration, modRate)
-        else
-            gcdCooldown:SetCooldown(start, duration)
-        end
+        ApplyCooldown(gcdCooldown, start, duration, modRate, durationObj)
     else
         gcdCooldown:Hide()
     end
@@ -472,15 +507,11 @@ eventFrame:SetScript("OnEvent", function(self, event, unit, _, spellID)
 
         -- Check cooldown of cast spell, fall back to GCD spell
         if spellID then
-            local start, duration, modRate = ReadSpellCooldown(spellID)
+            local start, duration, modRate, durationObj = ReadSpellCooldown(spellID)
             if IsCooldownActive(start, duration) then
                 if gcdCooldown then
                     gcdCooldown:Show()
-                    if modRate then
-                        gcdCooldown:SetCooldown(start, duration, modRate)
-                    else
-                        gcdCooldown:SetCooldown(start, duration)
-                    end
+                    ApplyCooldown(gcdCooldown, start, duration, modRate, durationObj)
                     UpdateRingAppearance()
                 end
             else

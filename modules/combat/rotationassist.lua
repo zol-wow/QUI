@@ -124,6 +124,25 @@ end
 --------------------------------------------------------------------------------
 
 local function ReadSpellCooldown(spellID)
+    -- 12.0+ DurationObject path (secret-value safe)
+    if C_Spell and C_Spell.GetSpellCooldownDuration then
+        local ok, durationObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if ok and durationObj then
+            local start, duration, modRate
+            if C_Spell.GetSpellCooldown then
+                local a, b, _, d = C_Spell.GetSpellCooldown(spellID)
+                if type(a) == "table" then
+                    start = a.startTime
+                    duration = a.duration
+                    modRate = a.modRate
+                else
+                    start, duration, modRate = a, b, d
+                end
+            end
+            return start, duration, modRate, durationObj
+        end
+    end
+
     if C_Spell and C_Spell.GetSpellCooldown then
         local a, b, c, d = C_Spell.GetSpellCooldown(spellID)
         if type(a) == "table" then
@@ -131,13 +150,13 @@ local function ReadSpellCooldown(spellID)
             local start = a.startTime or a.start
             local duration = a.duration
             local modRate = a.modRate
-            return start, duration, modRate
+            return start, duration, modRate, nil
         else
             -- 11.x returns tuple: start, duration, enable, modRate
-            return a, b, d
+            return a, b, d, nil
         end
     end
-    return nil, nil, nil
+    return nil, nil, nil, nil
 end
 
 local function IsCooldownActive(start, duration)
@@ -326,11 +345,13 @@ local function UpdateGCDCooldown()
     -- Only show GCD swipe when the icon itself is visible
     if not iconFrame:IsShown() then return end
 
-    local start, duration, modRate = ReadSpellCooldown(GCD_SPELL_ID)
+    local start, duration, modRate, durationObj = ReadSpellCooldown(GCD_SPELL_ID)
 
     if IsCooldownActive(start, duration) then
         iconFrame.cooldown:Show()
-        if modRate then
+        if durationObj and iconFrame.cooldown.SetCooldownFromDurationObject then
+            iconFrame.cooldown:SetCooldownFromDurationObject(durationObj)
+        elseif modRate then
             iconFrame.cooldown:SetCooldown(start, duration, modRate)
         else
             iconFrame.cooldown:SetCooldown(start, duration)

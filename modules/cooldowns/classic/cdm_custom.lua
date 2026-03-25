@@ -319,24 +319,39 @@ local function UpdateIconCooldown(icon)
         end
     end
 
+    -- 12.0+ secret-safe path: use DurationObject for spell cooldowns
+    local function ApplySpellCooldownSafe(spellID, startTime, duration)
+        if not startTime or not duration then
+            cooldown:Clear()
+            return
+        end
+
+        if not IsSecretValue(duration) and type(duration) == "number" and duration <= 0 then
+            cooldown:Clear()
+            return
+        end
+
+        -- Try DurationObject path when values are secret (12.0+)
+        if (IsSecretValue(startTime) or IsSecretValue(duration))
+           and spellID and C_Spell.GetSpellCooldownDuration
+           and cooldown.SetCooldownFromDurationObject then
+            local dOk, dObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+            if dOk and dObj then
+                pcall(cooldown.SetCooldownFromDurationObject, cooldown, dObj)
+                return
+            end
+        end
+
+        local ok = pcall(cooldown.SetCooldown, cooldown, startTime, duration)
+        if not ok then
+            cooldown:Clear()
+        end
+    end
+
     pcall(function()
         if entry.type == "spell" then
             local startTime, duration = GetBestSpellCooldown(entry.id)
-            if not startTime or not duration then
-                cooldown:Clear()
-                return
-            end
-
-            -- Avoid comparing secret values; let CooldownFrame process them.
-            if not IsSecretValue(duration) and type(duration) == "number" and duration <= 0 then
-                cooldown:Clear()
-                return
-            end
-
-            local ok = pcall(cooldown.SetCooldown, cooldown, startTime, duration)
-            if not ok then
-                cooldown:Clear()
-            end
+            ApplySpellCooldownSafe(entry.id, startTime, duration)
         elseif entry.type == "item" then
             local startTime, duration, enable = C_Item.GetItemCooldown(entry.id)
             ApplyCooldown(startTime, duration, enable)
