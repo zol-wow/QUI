@@ -530,6 +530,69 @@ local function CheckBarActive(blizzBarChild)
     return ok and shown or false
 end
 
+-- When an owned bar is rebuilt from the pool, the Blizzard child may already
+-- be hooked and actively updating, but the new owned bar starts with blank
+-- text. Resync the current name/duration strings immediately.
+local function ResyncBlizzBarTexts(ownedBar, blizzBarChild, blizzStatusBar)
+    if not ownedBar or not blizzBarChild then return end
+
+    local knownNameFS = {}
+    local knownDurationFS = {}
+    local frames = { blizzBarChild }
+    if blizzStatusBar then
+        frames[#frames + 1] = blizzStatusBar
+    end
+    if blizzBarChild.GetChildren then
+        for _, subChild in ipairs({ blizzBarChild:GetChildren() }) do
+            frames[#frames + 1] = subChild
+        end
+    end
+
+    local function DiscoverNamedFontStrings(frame)
+        if not frame then return end
+        if frame.Name and type(frame.Name) == "table"
+            and frame.Name.GetObjectType and frame.Name:GetObjectType() == "FontString" then
+            knownNameFS[frame.Name] = true
+        end
+        if frame.Duration and type(frame.Duration) == "table"
+            and frame.Duration.GetObjectType and frame.Duration:GetObjectType() == "FontString" then
+            knownDurationFS[frame.Duration] = true
+        end
+    end
+
+    for _, frame in ipairs(frames) do
+        DiscoverNamedFontStrings(frame)
+    end
+
+    local function ForwardCurrentText(fs, text)
+        if knownDurationFS[fs] then
+            pcall(ownedBar.DurationText.SetText, ownedBar.DurationText, text or "")
+        elseif knownNameFS[fs] then
+            pcall(ownedBar.NameText.SetText, ownedBar.NameText, text or "")
+        else
+            local justify = fs:GetJustifyH()
+            if justify == "RIGHT" then
+                pcall(ownedBar.DurationText.SetText, ownedBar.DurationText, text or "")
+            else
+                pcall(ownedBar.NameText.SetText, ownedBar.NameText, text or "")
+            end
+        end
+    end
+
+    for _, frame in ipairs(frames) do
+        if frame and frame.GetRegions then
+            for _, region in ipairs({ frame:GetRegions() }) do
+                if region and region:GetObjectType() == "FontString" then
+                    local okText, text = pcall(region.GetText, region)
+                    if okText then
+                        ForwardCurrentText(region, text)
+                    end
+                end
+            end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- MIRROR BLIZZARD BAR DATA → OWNED BAR
 -- Uses hooksecurefunc to forward data from hidden Blizzard bar children.
@@ -561,6 +624,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
                 pcall(ownedBar.IconTexture.SetTexture, ownedBar.IconTexture, currentTex)
             end
         end
+        ResyncBlizzBarTexts(ownedBar, blizzBarChild, blizzStatusBar)
         return
     end
     hookedBars[blizzBarChild] = true
