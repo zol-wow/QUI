@@ -171,6 +171,7 @@ local DEFAULTS = {
     layoutMode = "full",    -- "compact" or "full"
     showTimer = true,       -- Show elapsed/total timer text (full mode only)
     showBorder = true,      -- Show frame border
+    frameBackgroundOpacity = 1,  -- Multiplier for panel backdrop alpha (skinning)
     showDeaths = true,
     showAffixes = true,
     showObjectives = true,

@@ -560,6 +560,7 @@ local defaults = {
             layoutMode = "sleek",
             showTimer = true,
             showBorder = true,
+            frameBackgroundOpacity = 1,
             showDeaths = true,
             showAffixes = true,
             showObjectives = true,

@@ -894,6 +894,7 @@ local function BuildSkinningTab(tabContent)
                 layoutMode = "full",
                 showTimer = true,
                 showBorder = true,
+                frameBackgroundOpacity = 1,
                 showDeaths = true,
                 showAffixes = true,
                 showObjectives = true,
@@ -939,6 +940,7 @@ local function BuildSkinningTab(tabContent)
             mplusTimer.barColor = { fallbackBar[1], fallbackBar[2], fallbackBar[3], fallbackBar[4] or 1 }
         end
         if mplusTimer.maxDungeonNameLength == nil then mplusTimer.maxDungeonNameLength = 18 end
+        if mplusTimer.frameBackgroundOpacity == nil then mplusTimer.frameBackgroundOpacity = 1 end
 
         local quiMplusHeader = GUI:CreateSectionHeader(tabContent, "QUI M+ Timer")
         quiMplusHeader:SetPoint("TOPLEFT", PAD, y)
@@ -1038,6 +1040,20 @@ local function BuildSkinningTab(tabContent)
 
         AddModuleBackgroundOverrideControls("QUI M+ Timer", mplusTimer)
 
+        local mplusBgHint = GUI:CreateLabel(tabContent, "Turn on background override to choose a custom panel color; the color dialog includes opacity. Timer panel opacity scales the final fill transparency for both theme and custom colors.", 10, C.textMuted)
+        mplusBgHint:SetPoint("TOPLEFT", PAD, y)
+        mplusBgHint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        mplusBgHint:SetJustifyH("LEFT")
+        mplusBgHint:SetWordWrap(true)
+        mplusBgHint:SetHeight(36)
+        y = y - 42
+
+        local mplusPanelOpacitySlider = GUI:CreateFormSlider(tabContent, "Timer panel opacity", 0, 1, 0.05, "frameBackgroundOpacity", mplusTimer, function()
+            RefreshAllSkinning()
+        end)
+        mplusPanelOpacitySlider:SetPoint("TOPLEFT", PAD, y)
+        mplusPanelOpacitySlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
 
         local quiMplusDeathsCheck = GUI:CreateFormCheckbox(tabContent, "Show Deaths", "showDeaths", mplusTimer, function()
             local MPlusTimer = _G.QUI_MPlusTimer
