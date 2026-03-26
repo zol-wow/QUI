@@ -615,13 +615,15 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
                 pcall(ownedBar.StatusBar.SetValue, ownedBar.StatusBar, val)
             end
         end
-        -- Resync icon texture
-        local blizzIcon = blizzBarChild.Icon
-        local blizzIconTex = blizzIcon and (blizzIcon.Icon or blizzIcon.icon or blizzIcon.texture)
-        if blizzIconTex then
-            local ok, currentTex = pcall(blizzIconTex.GetTexture, blizzIconTex)
-            if ok and currentTex then
-                pcall(ownedBar.IconTexture.SetTexture, ownedBar.IconTexture, currentTex)
+        -- Resync icon texture (skip when bar has a resolved desired texture)
+        if not ownedBar._desiredTexture then
+            local blizzIcon = blizzBarChild.Icon
+            local blizzIconTex = blizzIcon and (blizzIcon.Icon or blizzIcon.icon or blizzIcon.texture)
+            if blizzIconTex then
+                local ok, currentTex = pcall(blizzIconTex.GetTexture, blizzIconTex)
+                if ok and currentTex then
+                    pcall(ownedBar.IconTexture.SetTexture, ownedBar.IconTexture, currentTex)
+                end
             end
         end
         ResyncBlizzBarTexts(ownedBar, blizzBarChild, blizzStatusBar)
@@ -662,6 +664,9 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             hooksecurefunc(blizzIconTex, "SetTexture", function(self, tex)
                 local target = mirrorMap[blizzBarChild]
                 if not target or not target.IconTexture then return end
+                -- Skip when the bar has a resolved desired texture — the Blizzard
+                -- child may use a different icon (e.g., debuff instead of ability).
+                if target._desiredTexture then return end
                 pcall(target.IconTexture.SetTexture, target.IconTexture, tex)
             end)
         end
@@ -669,6 +674,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             hooksecurefunc(blizzIconTex, "SetAtlas", function(self, atlas)
                 local target = mirrorMap[blizzBarChild]
                 if not target or not target.IconTexture then return end
+                if target._desiredTexture then return end
                 pcall(target.IconTexture.SetAtlas, target.IconTexture, atlas)
             end)
         end
@@ -1048,6 +1054,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
             if texID then
                 pcall(bar.IconTexture.SetTexture, bar.IconTexture, texID)
+                bar._desiredTexture = texID
             end
         end
 
@@ -1216,24 +1223,39 @@ function CDMBars:LayoutBars(container, settings)
     local editModeActive = Helpers.IsEditModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
     local visibleIndex = 0
+    -- Build a lightweight config fingerprint so ConfigureBar is skipped
+    -- when settings haven't changed between LayoutBars calls.
+    local cfgFingerprint = (settings.barHeight or 0)
+        + (barWidth or 0) * 7
+        + (settings.borderSize or 0) * 97
+        + (settings.textSize or 0) * 1009
+        + ((settings.barOpacity or 1) * 10000)
+        + ((settings.useClassColor and 1 or 0) * 100003)
     for _, bar in ipairs(barPool) do
-        -- Apply styling
-        CDMBars.ConfigureBar(bar, settings, barWidth)
+        -- Apply styling (skip if settings unchanged and bar was already configured)
+        if bar._cfgFingerprint ~= cfgFingerprint or bar._cfgActive ~= bar._active then
+            bar._cfgFingerprint = cfgFingerprint
+            bar._cfgActive = bar._active
+            CDMBars.ConfigureBar(bar, settings, barWidth)
+        end
 
-        -- Apply strata/level
-        bar:SetFrameStrata("MEDIUM")
-        bar:SetFrameLevel(frameLevel)
-        if bar.StatusBar then
-            bar.StatusBar:SetFrameStrata("MEDIUM")
-            bar.StatusBar:SetFrameLevel(frameLevel + 1)
-        end
-        if bar.TextOverlay then
-            bar.TextOverlay:SetFrameStrata("MEDIUM")
-            bar.TextOverlay:SetFrameLevel(frameLevel + 3)
-        end
-        if bar.IconContainer then
-            bar.IconContainer:SetFrameStrata("MEDIUM")
-            bar.IconContainer:SetFrameLevel(frameLevel + 1)
+        -- Apply strata/level (skip if already correct to avoid layout invalidation)
+        if bar._lastFrameLevel ~= frameLevel then
+            bar._lastFrameLevel = frameLevel
+            bar:SetFrameStrata("MEDIUM")
+            bar:SetFrameLevel(frameLevel)
+            if bar.StatusBar then
+                bar.StatusBar:SetFrameStrata("MEDIUM")
+                bar.StatusBar:SetFrameLevel(frameLevel + 1)
+            end
+            if bar.TextOverlay then
+                bar.TextOverlay:SetFrameStrata("MEDIUM")
+                bar.TextOverlay:SetFrameLevel(frameLevel + 3)
+            end
+            if bar.IconContainer then
+                bar.IconContainer:SetFrameStrata("MEDIUM")
+                bar.IconContainer:SetFrameLevel(frameLevel + 1)
+            end
         end
 
         -- In edit/layout mode, force bar active with a visible fill for previewing

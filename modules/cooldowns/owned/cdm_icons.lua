@@ -182,10 +182,20 @@ end
 ---------------------------------------------------------------------------
 -- TEXTURE HELPERS
 ---------------------------------------------------------------------------
+-- Per-cycle texture cache: wiped once per UpdateAllCooldowns batch so
+-- each spellID→iconID lookup happens at most once per tick, not per-icon.
+local _textureCycleCache = {}
+
 local function GetSpellTexture(spellID)
     if not spellID then return nil end
+    local cached = _textureCycleCache[spellID]
+    if cached ~= nil then
+        return cached ~= false and cached or nil
+    end
     local info = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
-    return info and info.iconID or nil
+    local texID = info and info.iconID or nil
+    _textureCycleCache[spellID] = texID or false
+    return texID
 end
 
 ---------------------------------------------------------------------------
@@ -765,6 +775,9 @@ local function HookBlizzTexture(icon, blizzChild)
                 end
                 if curRegion ~= self then return end
             end
+            -- Skip when the icon has a resolved desired texture — the Blizzard
+            -- child may use a different icon (e.g., debuff instead of ability).
+            if quiIcon._desiredTexture then return end
             if quiIcon.Icon and texture then
                 quiIcon.Icon:SetTexture(texture)
             end
@@ -1065,6 +1078,7 @@ local function CreateIcon(parent, spellEntry)
         end
         if texID then
             icon.Icon:SetTexture(texID)
+            icon._desiredTexture = texID
         end
     end
 
@@ -1628,6 +1642,13 @@ local function GetTrackerSettings(viewerType)
     return db[viewerType]
 end
 
+-- _hoistedNcdm is set once per UpdateAllCooldowns batch (avoids 4 table
+-- hops per icon).  Local to file scope so UpdateIconCooldown can read it.
+local _hoistedNcdm = nil
+-- _batchTime is set once per UpdateAllCooldowns batch so per-icon code
+-- can read GetTime() without crossing the C boundary for every icon.
+local _batchTime = 0
+
 local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
@@ -1635,12 +1656,7 @@ local function UpdateIconCooldown(icon)
         -- Aura-driven update: delegates to shared CDMSpellData:ResolveAuraState().
         -- Icons apply result to swipe/stacks display on CooldownFrame.
         do
-            local ownedDB = nil
-            if ns.CDMSpellData then
-                local QUICore = ns.Addon
-                local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
-                ownedDB = ncdm and ncdm[entry.viewerType]
-            end
+            local ownedDB = _hoistedNcdm and _hoistedNcdm[entry.viewerType]
             local cType = ownedDB and ownedDB.containerType
             if not cType then
                 local vt = entry.viewerType
@@ -1820,19 +1836,21 @@ local function UpdateIconCooldown(icon)
             startTime, duration, durObj = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
 
             -- Sync texture for spell overrides (e.g., Judgment → Hammer of Wrath).
-            -- Cache override ID per icon — only call GetSpellTexture when the
-            -- override actually changes (eliminates ~30 texture lookups per tick).
+            -- Cache override ID to avoid repeated GetSpellTexture lookups, but
+            -- always re-apply the desired texture so Blizzard texture hook drift
+            -- (viewer child showing a different icon, e.g., debuff instead of
+            -- ability) is corrected every tick.
             if C_Spell.GetOverrideSpell and icon.Icon then
-                local baseID = entry.spellID or entry.id
+                local baseID = entry.overrideSpellID or entry.spellID or entry.id
                 if baseID then
                     local overrideID = C_Spell.GetOverrideSpell(baseID)
-                    if overrideID ~= icon._cachedOverrideID then
+                    if not Helpers.IsSecretValue(overrideID) and overrideID ~= icon._cachedOverrideID then
                         icon._cachedOverrideID = overrideID
-                        local newTex = GetSpellTexture(overrideID or baseID)
-                        if newTex and newTex ~= icon._lastTexture then
-                            icon.Icon:SetTexture(newTex)
-                            icon._lastTexture = newTex
-                        end
+                        icon._desiredTexture = GetSpellTexture(overrideID or baseID)
+                    end
+                    -- Always re-apply: SetTexture is a C-side no-op when unchanged.
+                    if icon._desiredTexture then
+                        icon.Icon:SetTexture(icon._desiredTexture)
                     end
                 end
             end
@@ -2006,8 +2024,7 @@ local function UpdateIconCooldown(icon)
         if viewerType ~= "buff" and not icon._auraActive and not icon._rangeTinted and not icon._usabilityTinted then
             -- Per-spell desaturate override takes precedence over tracker-wide setting
             local desatOverride = icon._spellOverrideDesaturate
-            local db = GetDB()
-            local settings = db and db[viewerType]
+            local settings = _hoistedNcdm and _hoistedNcdm[viewerType]
             local shouldDesaturate = settings and settings.desaturateOnCooldown
             if desatOverride == true then
                 shouldDesaturate = true
@@ -2019,7 +2036,7 @@ local function UpdateIconCooldown(icon)
                 local start = icon._lastStart or 0
 
                 if dur > 1.5 and start > 0 then
-                    local remaining = (start + dur) - GetTime()
+                    local remaining = (start + dur) - _batchTime
                     if remaining > 0 then
                         -- Charged spells: Blizzard's viewer handles
                         -- desaturation natively via SetDesaturated on the
@@ -2074,10 +2091,12 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         if icon.Icon then
             if texID then
                 icon.Icon:SetTexture(texID)
+                icon._desiredTexture = texID
             else
                 -- Clear stale texture from previous owner to prevent
                 -- recycled icons showing the wrong spell/item icon.
                 icon.Icon:SetTexture(nil)
+                icon._desiredTexture = nil
             end
             icon.Icon:SetDesaturated(false)
         end
@@ -2351,6 +2370,7 @@ function CDMIcons:UpdateAllCooldowns()
     -- is queried at most once via TickCacheGetCharges/TickCacheGetCooldown.
     wipe(_tickChargeCache)
     wipe(_tickCooldownCache)
+    wipe(_textureCycleCache)
 
     -- Child map is invalidated by aura/cooldown event subscribers via
     -- CDMSpellData:InvalidateChildMap(). RebuildChildMap is a no-op when clean.
@@ -2358,8 +2378,12 @@ function CDMIcons:UpdateAllCooldowns()
     local editMode = Helpers.IsEditModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
 
-    -- Hoist DB lookups above the loop (avoids 4 table hops per icon)
+    -- Hoist DB lookups above the loop (avoids 4 table hops per icon).
+    -- Also set file-scoped _hoistedNcdm so UpdateIconCooldown can read it
+    -- without re-walking the chain for every icon.
     local _ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+    _hoistedNcdm = _ncdm  -- consumed by UpdateIconCooldown
+    _batchTime = GetTime()  -- consumed by UpdateIconCooldown + visibility loop
     local _ncdmContainers = _ncdm and _ncdm.containers
     local inCombat = InCombatLockdown()
 
@@ -2441,7 +2465,7 @@ function CDMIcons:UpdateAllCooldowns()
                         local dur = icon._lastDuration or 0
                         local start = icon._lastStart or 0
                         if dur > 1.5 and start > 0 then
-                            local remaining = (start + dur) - GetTime()
+                            local remaining = (start + dur) - _batchTime
                             if remaining > 0 then
                                 isOnCD = true
                             end

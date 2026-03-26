@@ -202,10 +202,55 @@ end
 --- Find any Blizzard child for a spell ID (any viewer).
 local function FindChildForSpell(id1, id2, id3)
     RebuildChildMap()
-    for _, id in ipairs({id1, id2, id3}) do
-        if id then
-            local list = _childBySpellID[id]
-            if list and list[1] then return list[1] end
+    if id1 then
+        local list = _childBySpellID[id1]
+        if list and list[1] then return list[1] end
+    end
+    if id2 then
+        local list = _childBySpellID[id2]
+        if list and list[1] then return list[1] end
+    end
+    if id3 then
+        local list = _childBySpellID[id3]
+        if list and list[1] then return list[1] end
+    end
+    return nil
+end
+
+--- Check if a child belongs to a specific viewer (or buff container).
+--- Defined at file scope to avoid closure allocation per FindBuffChildForSpell call.
+local function _matchesViewer(ch, targetViewer, buffContainer)
+    if not ch then return false end
+    local vf = ch.viewerFrame
+    if vf and vf == targetViewer then return true end
+    local parent = ch:GetParent()
+    return parent and (parent == targetViewer or parent == buffContainer)
+end
+
+--- Scan _childBySpellID for a child matching targetViewer across up to 3 IDs.
+local function _scanViewerForIDs(targetViewer, buffContainer, id1, id2, id3)
+    if id1 then
+        local list = _childBySpellID[id1]
+        if list then
+            for _, ch in ipairs(list) do
+                if _matchesViewer(ch, targetViewer, buffContainer) then return ch end
+            end
+        end
+    end
+    if id2 then
+        local list = _childBySpellID[id2]
+        if list then
+            for _, ch in ipairs(list) do
+                if _matchesViewer(ch, targetViewer, buffContainer) then return ch end
+            end
+        end
+    end
+    if id3 then
+        local list = _childBySpellID[id3]
+        if list then
+            for _, ch in ipairs(list) do
+                if _matchesViewer(ch, targetViewer, buffContainer) then return ch end
+            end
         end
     end
     return nil
@@ -220,35 +265,9 @@ local function FindBuffChildForSpell(viewerType, id1, id2, id3)
     local primaryViewer = (viewerType == "trackedBar") and buffBarViewer or buffViewer
     local fallbackViewer = (primaryViewer == buffViewer) and buffBarViewer or buffViewer
 
-    local function matchesViewer(ch, targetViewer)
-        if not ch then return false end
-        local vf = ch.viewerFrame
-        if vf and vf == targetViewer then return true end
-        local parent = ch:GetParent()
-        return parent and (parent == targetViewer or parent == buffContainer)
-    end
-
-    for _, id in ipairs({id1, id2, id3}) do
-        if id then
-            local list = _childBySpellID[id]
-            if list then
-                for _, ch in ipairs(list) do
-                    if matchesViewer(ch, primaryViewer) then return ch end
-                end
-            end
-        end
-    end
-    for _, id in ipairs({id1, id2, id3}) do
-        if id then
-            local list = _childBySpellID[id]
-            if list then
-                for _, ch in ipairs(list) do
-                    if matchesViewer(ch, fallbackViewer) then return ch end
-                end
-            end
-        end
-    end
-    return nil
+    local found = _scanViewerForIDs(primaryViewer, buffContainer, id1, id2, id3)
+    if found then return found end
+    return _scanViewerForIDs(fallbackViewer, buffContainer, id1, id2, id3)
 end
 
 function CDMSpellData:InvalidateChildMap()
@@ -327,23 +346,20 @@ end
 function CDMSpellData:GetCachedDurObj(spellID)
     if not spellID then return nil, nil, nil end
 
-    -- Verify child still tracks this spell (guards against stale _spellIDToChild)
-    local function childStillMatches(ch)
-        local ids = ch._resolvedIDs
-        if ids then
-            for k = 1, #ids do
-                if ids[k] == spellID then return true end
-            end
-            return false
-        end
-        return true  -- no _resolvedIDs: trust the map
-    end
-
     local children = _spellIDToChild[spellID]
     if children then
         -- First pass: prefer children with a DurationObject (aura duration)
         for _, child in ipairs(children) do
-            if childStillMatches(child) then
+            -- Inline childStillMatches to avoid closure allocation per call
+            local ids = child._resolvedIDs
+            local matches = true
+            if ids then
+                matches = false
+                for k = 1, #ids do
+                    if ids[k] == spellID then matches = true; break end
+                end
+            end
+            if matches then
                 local durObj = _durObjCache[child]
                 if durObj then
                     return durObj, _rawStartCache[child], _rawDurCache[child]
@@ -352,7 +368,15 @@ function CDMSpellData:GetCachedDurObj(spellID)
         end
         -- Second pass: fall back to raw start/dur (cooldown)
         for _, child in ipairs(children) do
-            if childStillMatches(child) then
+            local ids = child._resolvedIDs
+            local matches = true
+            if ids then
+                matches = false
+                for k = 1, #ids do
+                    if ids[k] == spellID then matches = true; break end
+                end
+            end
+            if matches then
                 local start = _rawStartCache[child]
                 if start then
                     return nil, start, _rawDurCache[child]
@@ -361,15 +385,19 @@ function CDMSpellData:GetCachedDurObj(spellID)
         end
     end
 
-    -- Slow path: iterate caches (handles unmapped children)
-    for ch, durObj in pairs(_durObjCache) do
-        if ChildMatchesSpellID(ch, spellID) then
-            return durObj, _rawStartCache[ch], _rawDurCache[ch]
+    -- Slow path: iterate caches (handles unmapped children).
+    -- Only attempt once per child-map generation to avoid O(n) scans
+    -- every tick for spells that genuinely have no cached data.
+    if not _childMapDirty then
+        for ch, durObj in pairs(_durObjCache) do
+            if ChildMatchesSpellID(ch, spellID) then
+                return durObj, _rawStartCache[ch], _rawDurCache[ch]
+            end
         end
-    end
-    for ch, start in pairs(_rawStartCache) do
-        if ChildMatchesSpellID(ch, spellID) then
-            return nil, start, _rawDurCache[ch]
+        for ch, start in pairs(_rawStartCache) do
+            if ChildMatchesSpellID(ch, spellID) then
+                return nil, start, _rawDurCache[ch]
+            end
         end
     end
     return nil, nil, nil
@@ -386,52 +414,59 @@ function CDMSpellData:GetCachedAuraDurObj(spellID)
     local buffBarViewer = _G["BuffBarCooldownViewer"]
     if not buffViewer and not buffBarViewer then return nil, nil, nil end
 
-    local function isActiveBuffChild(ch)
-        local vf = ch.viewerFrame
-        if not (vf and (vf == buffViewer or vf == buffBarViewer)) then return false end
-        -- Child must still represent an active aura.
-        if ch.auraInstanceID == nil then return false end
-        -- Verify child still tracks this spell via _resolvedIDs
-        local ids = ch._resolvedIDs
-        if ids then
-            local found = false
-            for k = 1, #ids do
-                if ids[k] == spellID then found = true; break end
-            end
-            if not found then return false end
-        end
-        return true
-    end
-
+    -- Inline isActiveBuffChild to avoid closure allocation per call.
+    -- A child qualifies if it belongs to a buff viewer, has an active aura,
+    -- and its _resolvedIDs include our spellID.
     local children = _spellIDToChild[spellID]
     if children then
-        for _, child in ipairs(children) do
-            if isActiveBuffChild(child) then
-                local durObj = _durObjCache[child]
-                if durObj then
-                    return durObj, _rawStartCache[child], _rawDurCache[child]
+        for _, ch in ipairs(children) do
+            local vf = ch.viewerFrame
+            if vf and (vf == buffViewer or vf == buffBarViewer) and ch.auraInstanceID ~= nil then
+                local ids = ch._resolvedIDs
+                local ok = true
+                if ids then
+                    ok = false
+                    for k = 1, #ids do if ids[k] == spellID then ok = true; break end end
+                end
+                if ok then
+                    local durObj = _durObjCache[ch]
+                    if durObj then return durObj, _rawStartCache[ch], _rawDurCache[ch] end
                 end
             end
         end
-        for _, child in ipairs(children) do
-            if isActiveBuffChild(child) then
-                local start = _rawStartCache[child]
-                if start then
-                    return nil, start, _rawDurCache[child]
+        for _, ch in ipairs(children) do
+            local vf = ch.viewerFrame
+            if vf and (vf == buffViewer or vf == buffBarViewer) and ch.auraInstanceID ~= nil then
+                local ids = ch._resolvedIDs
+                local ok = true
+                if ids then
+                    ok = false
+                    for k = 1, #ids do if ids[k] == spellID then ok = true; break end end
+                end
+                if ok then
+                    local start = _rawStartCache[ch]
+                    if start then return nil, start, _rawDurCache[ch] end
                 end
             end
         end
     end
 
-    -- Slow path: iterate caches filtered to shown buff children
-    for ch, durObj in pairs(_durObjCache) do
-        if isActiveBuffChild(ch) and ChildMatchesSpellID(ch, spellID) then
-            return durObj, _rawStartCache[ch], _rawDurCache[ch]
+    -- Slow path: iterate caches filtered to shown buff children.
+    -- Only attempt once per child-map generation.
+    if not _childMapDirty then
+        for ch, durObj in pairs(_durObjCache) do
+            local vf = ch.viewerFrame
+            if vf and (vf == buffViewer or vf == buffBarViewer)
+               and ch.auraInstanceID ~= nil and ChildMatchesSpellID(ch, spellID) then
+                return durObj, _rawStartCache[ch], _rawDurCache[ch]
+            end
         end
-    end
-    for ch, start in pairs(_rawStartCache) do
-        if isActiveBuffChild(ch) and ChildMatchesSpellID(ch, spellID) then
-            return nil, start, _rawDurCache[ch]
+        for ch, start in pairs(_rawStartCache) do
+            local vf = ch.viewerFrame
+            if vf and (vf == buffViewer or vf == buffBarViewer)
+               and ch.auraInstanceID ~= nil and ChildMatchesSpellID(ch, spellID) then
+                return nil, start, _rawDurCache[ch]
+            end
         end
     end
     return nil, nil, nil
@@ -739,8 +774,10 @@ function CDMSpellData:ResolveAuraState(params)
         -- cache. This fallback must reject harmful passives (always-present
         -- talent auras like Perdition) that would false-positive as active.
         if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
-            for _, tryID in ipairs({auraSpellID, entrySpellID, entryID}) do
-                if tryID and not isActive then
+            for tryIdx = 1, 3 do
+                if isActive then break end
+                local tryID = tryIdx == 1 and auraSpellID or tryIdx == 2 and entrySpellID or entryID
+                if tryID then
                     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
                     if ok and ad and ad.auraInstanceID then
                         local helpful = Helpers.SafeValue(ad.isHelpful, nil)
@@ -823,8 +860,10 @@ function CDMSpellData:ResolveAuraState(params)
             end
         end
         if not childAuraInstID and C_UnitAuras.GetPlayerAuraBySpellID then
-            for _, tryID in ipairs({auraSpellID, entrySpellID, entryID}) do
-                if tryID and not childAuraInstID then
+            for tryIdx = 1, 3 do
+                if childAuraInstID then break end
+                local tryID = tryIdx == 1 and auraSpellID or tryIdx == 2 and entrySpellID or entryID
+                if tryID then
                     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
                     if ok and ad and ad.auraInstanceID then
                         childAuraInstID = ad.auraInstanceID
@@ -2915,6 +2954,51 @@ function CDMSpellData:GetAllLearnedCooldowns()
         end
     end
 
+    -- Append racial abilities — not included in Blizzard's CDM categories
+    -- and may be missing from the spellbook scan (no specID on racial tab).
+    do
+        local _, raceFile = UnitRace("player")
+        local _, classFile = UnitClass("player")
+        local racials = raceFile and RACE_RACIALS[raceFile]
+        if racials then
+            for _, racialEntry in ipairs(racials) do
+                local sid, classFilter
+                if type(racialEntry) == "table" then
+                    sid = racialEntry[1]
+                    classFilter = racialEntry.class
+                else
+                    sid = racialEntry
+                end
+                if sid and not seen[sid] and (not classFilter or classFilter == classFile) then
+                    seen[sid] = true
+                    local rName, rIcon
+                    if C_Spell and C_Spell.GetSpellInfo then
+                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                        if okI and spellInfo then
+                            rName = spellInfo.name
+                            rIcon = spellInfo.iconID
+                        end
+                    end
+                    if rName then
+                        local baseCDms = 0
+                        if C_Spell and C_Spell.GetSpellBaseCooldown then
+                            local okCD, ms = pcall(C_Spell.GetSpellBaseCooldown, sid)
+                            if okCD and ms then
+                                baseCDms = Helpers.SafeToNumber(ms, 0) or 0
+                            end
+                        end
+                        result[#result + 1] = {
+                            spellID = sid,
+                            name = rName,
+                            icon = rIcon or 0,
+                            cooldown = baseCDms / 1000,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
     learnedCooldownsCache = result
     learnedCooldownsCacheDirty = false
     return result
@@ -3158,9 +3242,13 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
     eventFrame:SetScript("OnEvent", function(self, event, arg)
         if event == "SPELL_UPDATE_COOLDOWN" then
-            if not InCombatLockdown() then
-                ScanAll()
-            end
+            -- No-op: ScanAll runs on its own 0.5s ticker (line 3178).
+            -- Calling it here on every SPELL_UPDATE_COOLDOWN was redundant —
+            -- this event fires every GCD tick (dozens of times per second OOC).
+            -- CDM icon/bar updates are driven by ScheduleCDMUpdate in cdm_icons,
+            -- which coalesces via C_Timer; the scan ticker catches viewer child
+            -- changes with acceptable latency.
+            do end
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
             -- Spec change is coordinated by cdm_containers.lua which calls
             -- CheckAllDormantSpells / ReconcileAllContainers at the right time

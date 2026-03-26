@@ -161,6 +161,7 @@ end
 local styleFrames = Helpers.CreateStateTable()   -- tooltip → overlay frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
 local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
+local insideRestyle = false                      -- reentrancy guard: true while processing a restyle
 
 ---------------------------------------------------------------------------
 -- NineSlice Management
@@ -170,6 +171,7 @@ local function HideNineSlice(tooltip)
     local ns = tooltip.NineSlice
     if not ns then return end
     pcall(ns.Hide, ns)
+    pcall(ns.SetAlpha, ns, 0)
     -- TAINT SAFETY: Do NOT write to ns.layoutType / ns.layoutTextureKit /
     -- ns.backdropInfo from addon code.  Writing nil here taints those keys;
     -- the taint persists across Show() cycles and can propagate into
@@ -180,6 +182,9 @@ local function HideNineSlice(tooltip)
     -- code before reading them, so the nil write is unnecessary.  Hiding
     -- the NineSlice frame (C-side Hide above) is sufficient; QUI's
     -- SharedTooltip_SetBackdropStyle hook re-hides it on every restyle.
+    -- SetAlpha(0) provides extra safety: if NineSlice is re-shown via
+    -- parent visibility inheritance (C-level, bypasses Lua hooks), it
+    -- remains invisible until the watcher or Show hook catches it.
 end
 
 ---------------------------------------------------------------------------
@@ -590,7 +595,9 @@ local function SetupBackdropStyleHooks()
                 HideNineSlice(tooltip)
                 local sf = styleFrames[tooltip]
                 if sf then sf:Show() end
-                pendingGameTooltipRestyle = true
+                if not insideRestyle then
+                    pendingGameTooltipRestyle = true
+                end
                 return
             end
 
@@ -617,7 +624,9 @@ local function SetupBackdropStyleHooks()
                 HideNineSlice(tooltip)
                 local sf = styleFrames[tooltip]
                 if sf then sf:Show() end
-                pendingGameTooltipRestyle = true
+                if not insideRestyle then
+                    pendingGameTooltipRestyle = true
+                end
                 return
             end
             OnTooltipShow(tooltip)
@@ -678,7 +687,9 @@ local function SetupPostProcessor()
             HideNineSlice(tooltip)
             local sf = styleFrames[tooltip]
             if sf then sf:Show() end
-            pendingGameTooltipRestyle = true
+            if not insideRestyle then
+                pendingGameTooltipRestyle = true
+            end
             return
         end
         if InCombatLockdown() then
@@ -800,6 +811,25 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     RebuildTooltipList()
 
     -------------------------------------------------------------------
+    -- Permanently suppress GameTooltip NineSlice.
+    -- hooksecurefunc on the NineSlice child (not GameTooltip itself) is
+    -- taint-safe: it only taints NineSlice's dispatch table, not GT's.
+    -- This catches all explicit Show() calls (from NineSliceUtil,
+    -- SharedTooltip_SetBackdropStyle, etc.) and immediately undoes them
+    -- so the Blizzard border is never rendered for even a single frame.
+    -- Parent-visibility inheritance (C-level) bypasses Lua dispatch, so
+    -- HideNineSlice also sets alpha=0 as a fallback for that path.
+    -------------------------------------------------------------------
+    if GameTooltip and GameTooltip.NineSlice then
+        hooksecurefunc(GameTooltip.NineSlice, "Show", function(self)
+            if IsEnabled() then
+                self:Hide()
+                self:SetAlpha(0)
+            end
+        end)
+    end
+
+    -------------------------------------------------------------------
     -- GameTooltip watcher (separate frame — no hooks on GT directly)
     --
     -- TAINT SAFETY: Do NOT use HookScript("OnShow"/"OnHide") or
@@ -815,7 +845,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         local wasShown = false
         local watcher = CreateFrame("Frame")
         local watcherElapsed = 0
-        local WATCHER_IDLE_INTERVAL = 0.05  -- 20Hz when tooltip hidden (vs 60Hz)
+        local WATCHER_IDLE_INTERVAL = 0.1   -- 10Hz when tooltip hidden (vs 60Hz)
         -- Watcher runs continuously — no HookScript on GameTooltip.
         watcher:SetScript("OnUpdate", function(self, dt)
             -- Idle throttle: when tooltip is hidden and no pending restyle,
@@ -831,10 +861,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 pendingGameTooltipRestyle = false
                 local isShown = GameTooltip:IsShown()
                 if isShown then
+                    -- Reentrancy guard: block backdrop-style hooks from
+                    -- re-setting pendingGameTooltipRestyle while we restyle
+                    -- and flush fonts.  Font SetFont → resize → Blizzard
+                    -- restyle → hook → pendingRestyle was an infinite loop.
+                    insideRestyle = true
                     OnTooltipShow(GameTooltip)
                     _pendingFontSet[GameTooltip] = true
                     C_Timer.After(0, function()
                         _FlushPendingFonts()
+                        insideRestyle = false
                         if not GameTooltip:IsShown() then return end
                         for i = 1, 2 do
                             local st = _G["ShoppingTooltip" .. i]
