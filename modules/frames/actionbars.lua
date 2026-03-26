@@ -2542,6 +2542,31 @@ local function BuildBar(barKey)
                     self.Count:SetText("")
                 end
             end
+            -- ActionButtonTemplate only provides BaseActionButtonMixin (flyout
+            -- handling).  Tooltip code lives in ActionBarActionButtonMixin
+            -- (part of ActionBarButtonTemplate) which QUI does not use.
+            -- Add SetTooltip + OnEnter/OnLeave hooks for action tooltips.
+            btn.SetTooltip = function(self)
+                if GetCVar("UberTooltips") == "1" then
+                    GameTooltip_SetDefaultAnchor(GameTooltip, self)
+                else
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                end
+                if GameTooltip:SetAction(self.action) then
+                    self.UpdateTooltip = self.SetTooltip
+                else
+                    self.UpdateTooltip = nil
+                end
+            end
+            btn:HookScript("OnEnter", function(self)
+                local global = GetGlobalSettings()
+                if global and global.showTooltips == false then return end
+                self:SetTooltip()
+            end)
+            btn:HookScript("OnLeave", function(self)
+                self.UpdateTooltip = nil
+                GameTooltip:Hide()
+            end)
         end
 
         -- Populate visuals via the mixin (safe — GetActionCount is
