@@ -83,7 +83,15 @@ local function IsOPieFrame(frame)
         if frame == UIParent then
             break
         end
-        frame = frame.GetParent and frame:GetParent() or nil
+        if not frame.GetParent then
+            break
+        end
+        -- GetMouseFoci() can return frames (e.g. PingListenerFrame) whose GetParent errors with "bad self".
+        local ok, parent = pcall(frame.GetParent, frame)
+        if not ok or not parent then
+            break
+        end
+        frame = parent
         depth = depth + 1
     end
     return false
