@@ -102,10 +102,12 @@ end
 local function SetFontStringSize(fs, size)
     if not fs or not fs.GetFont or not fs.SetFont then return end
     if fs.IsForbidden and fs:IsForbidden() then return end
-    local ok, path, _, flags = pcall(fs.GetFont, fs)
+    local ok, path, curSize, flags = pcall(fs.GetFont, fs)
     if not ok or not path then
         path = Helpers.GetGeneralFont and Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
         flags = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline() or ""
+    elseif type(curSize) == "number" and math.abs(curSize - size) < 0.5 then
+        return  -- already at target size; skip SetFont to avoid relayout
     end
     pcall(fs.SetFont, fs, path, size, flags or "")
 end
@@ -851,13 +853,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 
             local shown = GameTooltip:IsShown()
             if shown == wasShown then
-                -- Catch NineSlice reappearing via unhooked restyle paths
+                -- Catch NineSlice reappearing via unhooked restyle paths.
+                -- Only re-hide it + ensure overlay is visible.  Do NOT do
+                -- a full restyle or schedule font sizing here — SetFont
+                -- triggers tooltip relayout which re-shows NineSlice,
+                -- creating an infinite per-frame loop after combat ends.
                 if shown and IsEnabled() then
                     local ns = GameTooltip.NineSlice
                     if ns and ns:IsShown() then
-                        OnTooltipShow(GameTooltip)
-                        _pendingFontSet[GameTooltip] = true
-                        C_Timer.After(0, _FlushPendingFonts)
+                        HideNineSlice(GameTooltip)
+                        local sf = styleFrames[GameTooltip]
+                        if sf then sf:Show() end
                     end
                 end
                 return

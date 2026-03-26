@@ -248,7 +248,7 @@ local function GetEntryTexture(entry)
         local _, _, _, _, icon = C_Item.GetItemInfoInstant(entry.id)
         return icon
     end
-    return GetSpellTexture(entry.id)
+    return GetSpellTexture(entry.overrideSpellID or entry.id)
 end
 
 ---------------------------------------------------------------------------

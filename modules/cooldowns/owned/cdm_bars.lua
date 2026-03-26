@@ -1040,9 +1040,9 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     texID = icon
                 end
             elseif entry.type == "spell" then
-                -- Use entry.id (original spell the user added) for the icon.
-                -- spellID may be a remapped aura ID with a different icon.
-                local iconSid = entry.id or spellID
+                -- Use overrideSpellID (resolved via GetOverrideSpell / correction
+                -- maps) so the icon matches talent replacements and spec overrides.
+                local iconSid = entry.overrideSpellID or entry.id or spellID
                 local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(iconSid)
                 texID = info and info.iconID
             end
