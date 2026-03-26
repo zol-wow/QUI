@@ -1046,9 +1046,15 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     texID = icon
                 end
             elseif entry.type == "spell" then
-                -- Use overrideSpellID (resolved via GetOverrideSpell / correction
-                -- maps) so the icon matches talent replacements and spec overrides.
-                local iconSid = entry.overrideSpellID or entry.id or spellID
+                -- Cooldown bars: use overrideSpellID for talent replacements.
+                -- Aura bars: use raw entry.id — the Blizzard bar viewer hook
+                -- provides the final texture and must agree with the initial.
+                local iconSid
+                if entry.isAura then
+                    iconSid = entry.id or spellID
+                else
+                    iconSid = entry.overrideSpellID or entry.id or spellID
+                end
                 local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(iconSid)
                 texID = info and info.iconID
             end

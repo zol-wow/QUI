@@ -170,7 +170,6 @@ local function HideNineSlice(tooltip)
     local ns = tooltip.NineSlice
     if not ns then return end
     pcall(ns.Hide, ns)
-    pcall(ns.SetAlpha, ns, 0)
     -- TAINT SAFETY: Do NOT write to ns.layoutType / ns.layoutTextureKit /
     -- ns.backdropInfo from addon code.  Writing nil here taints those keys;
     -- the taint persists across Show() cycles and can propagate into
@@ -181,9 +180,9 @@ local function HideNineSlice(tooltip)
     -- code before reading them, so the nil write is unnecessary.  Hiding
     -- the NineSlice frame (C-side Hide above) is sufficient; QUI's
     -- SharedTooltip_SetBackdropStyle hook re-hides it on every restyle.
-    -- SetAlpha(0) provides extra safety: if NineSlice is re-shown via
-    -- parent visibility inheritance (C-level, bypasses Lua hooks), it
-    -- remains invisible until the watcher or Show hook catches it.
+    -- Do NOT call SetAlpha(0) here — it can propagate taint into
+    -- Blizzard's layout code, making GetWidth() return secret values
+    -- even after combat ends.
 end
 
 ---------------------------------------------------------------------------
@@ -279,31 +278,52 @@ local function StyleTooltip(tooltip)
         end
 
         HideNineSlice(tooltip)
-        -- Clear any backdrop on the tooltip frame itself (some tooltips have
-        -- both NineSlice AND BackdropTemplate, creating a doubled border)
-        if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
 
         -- Fall back to NineSlice if dimensions are inaccessible (secret values)
         local dimOk = pcall(function() local _ = tooltip:GetWidth() + 0 end)
         if not dimOk then
             local ns = tooltip.NineSlice
             if ns then pcall(ns.Show, ns) end
+            -- Clear our backdrop so NineSlice is the only visual
+            if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
             local sf = styleFrames[tooltip]
             if sf then sf:Hide() end
             return
         end
-
-        -- Create/get overlay and apply backdrop
-        local frame = GetStyleFrame(tooltip)
-        local ok, level = pcall(tooltip.GetFrameLevel, tooltip)
-        if ok and type(level) == "number" then frame:SetFrameLevel(level) end
 
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
         local thickness = GetEffectiveBorderThickness()
         local px = SkinBase.GetPixelSize(tooltip, 1)
         local edge = math.max(thickness, 1) * px
 
-        -- Only re-set backdrop when edge size changes (avoids piece recreation)
+        -- Apply backdrop directly on the tooltip frame itself (it inherits
+        -- BackdropTemplate).  This renders at the tooltip's own BACKGROUND/
+        -- BORDER draw layers — naturally behind text (ARTWORK) and at the
+        -- same frame level as NineSlice.  A separate overlay child frame
+        -- cannot reliably stack above NineSlice without also covering text,
+        -- because both are at the same frame level (useParentLevel="true")
+        -- and WoW's internal draw order is unpredictable between child
+        -- frames at the same level.  By using the tooltip's own backdrop,
+        -- we avoid the stacking race entirely.
+        if tooltip.SetBackdrop then
+            local frame = tooltip
+            if frame._lastEdge ~= edge or not frame.backdropInfo then
+                frame:SetBackdrop({
+                    bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE,
+                    edgeSize = edge,
+                    insets = { left = edge, right = edge, top = edge, bottom = edge },
+                })
+                frame._lastEdge = edge
+            end
+            frame:SetBackdropColor(bgr, bgg, bgb, bga)
+            frame:SetBackdropBorderColor(sr, sg, sb, sa)
+        end
+
+        -- Also update the separate overlay frame (used by combat-safe path
+        -- and as fallback for tooltips without BackdropTemplate)
+        local frame = GetStyleFrame(tooltip)
+        local ok, level = pcall(tooltip.GetFrameLevel, tooltip)
+        if ok and type(level) == "number" then frame:SetFrameLevel(level) end
         if frame._lastEdge ~= edge or not frame.backdropInfo then
             frame:SetBackdrop({
                 bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE,
@@ -312,7 +332,6 @@ local function StyleTooltip(tooltip)
             })
             frame._lastEdge = edge
         end
-
         frame:SetBackdropColor(bgr, bgg, bgb, bga)
         frame:SetBackdropBorderColor(sr, sg, sb, sa)
         -- Store for global OnBackdropSizeChanged fallback
@@ -683,14 +702,6 @@ local function SetupPostProcessor()
             local sf = styleFrames[tooltip]
             if sf then sf:Show() end
             pendingGameTooltipRestyle = true
-            -- Schedule font sizing directly here (content change) rather
-            -- than from the watcher's pendingRestyle handler.  Applying
-            -- fonts from the restyle path creates resize → Blizzard
-            -- restyle → pendingRestyle → font → infinite loop.
-            if not InCombatLockdown() then
-                _pendingFontSet[tooltip] = true
-                C_Timer.After(0, _FlushPendingFonts)
-            end
             return
         end
         if InCombatLockdown() then
@@ -812,25 +823,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     RebuildTooltipList()
 
     -------------------------------------------------------------------
-    -- Permanently suppress GameTooltip NineSlice.
-    -- hooksecurefunc on the NineSlice child (not GameTooltip itself) is
-    -- taint-safe: it only taints NineSlice's dispatch table, not GT's.
-    -- This catches all explicit Show() calls (from NineSliceUtil,
-    -- SharedTooltip_SetBackdropStyle, etc.) and immediately undoes them
-    -- so the Blizzard border is never rendered for even a single frame.
-    -- Parent-visibility inheritance (C-level) bypasses Lua dispatch, so
-    -- HideNineSlice also sets alpha=0 as a fallback for that path.
-    -------------------------------------------------------------------
-    if GameTooltip and GameTooltip.NineSlice then
-        hooksecurefunc(GameTooltip.NineSlice, "Show", function(self)
-            if IsEnabled() then
-                self:Hide()
-                self:SetAlpha(0)
-            end
-        end)
-    end
-
-    -------------------------------------------------------------------
     -- GameTooltip watcher (separate frame — no hooks on GT directly)
     --
     -- TAINT SAFETY: Do NOT use HookScript("OnShow"/"OnHide") or
@@ -844,6 +836,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     -------------------------------------------------------------------
     do
         local wasShown = false
+        local fontsApplied = false  -- one-shot: true after first font flush per show cycle
         local watcher = CreateFrame("Frame")
         local watcherElapsed = 0
         local WATCHER_IDLE_INTERVAL = 0.1   -- 10Hz when tooltip hidden (vs 60Hz)
@@ -863,12 +856,18 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 local isShown = GameTooltip:IsShown()
                 if isShown then
                     OnTooltipShow(GameTooltip)
-                    -- Font sizing is NOT scheduled here.  Applying fonts on
-                    -- the restyle path triggers resize → Blizzard restyle →
-                    -- pendingRestyle → infinite loop.  Fonts are scheduled
-                    -- from TooltipDataProcessor (content changes), initial
-                    -- show, and PLAYER_REGEN_ENABLED instead.
+                    -- Font sizing: apply once per tooltip show cycle.  The
+                    -- fontsApplied flag prevents re-entry: SetFont → resize →
+                    -- Blizzard restyle → pendingRestyle → watcher → SetFont.
+                    -- The font-size check in SetFontStringSize makes the
+                    -- second pass a no-op, but the flag avoids even
+                    -- scheduling it.
+                    if not fontsApplied then
+                        fontsApplied = true
+                        _pendingFontSet[GameTooltip] = true
+                    end
                     C_Timer.After(0, function()
+                        _FlushPendingFonts()
                         if not GameTooltip:IsShown() then return end
                         for i = 1, 2 do
                             local st = _G["ShoppingTooltip" .. i]
@@ -905,6 +904,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             wasShown = shown
             if not shown then
                 pendingGameTooltipRestyle = false
+                fontsApplied = false
                 return
             end
 

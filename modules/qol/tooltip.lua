@@ -215,7 +215,14 @@ local function RefreshTooltipLayout(tooltip)
     if type(tooltip.UpdateTooltipSize) == "function" then
         pcall(tooltip.UpdateTooltipSize, tooltip)
     end
-    pcall(tooltip.Show, tooltip)
+    -- Only call Show() on hidden tooltips.  On already-visible tooltips
+    -- UpdateTooltipSize handles relayout.  Show() triggers Blizzard's
+    -- internal NineSlice restyle which the skinning watcher can only
+    -- catch one frame later, causing a visible flicker.
+    local alreadyShown = tooltip.IsShown and tooltip:IsShown()
+    if not alreadyShown then
+        pcall(tooltip.Show, tooltip)
+    end
 end
 
 local function InvalidatePendingSetUnit()

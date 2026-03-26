@@ -1000,6 +1000,30 @@ local function CursorHasPlaceableAction()
         or infoType == "petaction" or infoType == "mount" or infoType == "flyout"
 end
 
+-- Drag handlers for owned action buttons.  BaseActionButtonMixin (from
+-- ActionButtonTemplate) does not include OnDragStart/OnReceiveDrag —
+-- those live in ActionBarActionButtonMixin (ActionBarButtonTemplate)
+-- which QUI cannot use (taint).  Implement the standard pickup/place
+-- behavior: respect lockActionBars + PICKUPACTION modifier, guard
+-- combat (PickupAction/PlaceAction are protected).
+local function OwnedButton_OnDragStart(self)
+    if InCombatLockdown() then return end
+    if GetCVar("lockActionBars") ~= "1" or IsModifiedClick("PICKUPACTION") then
+        -- PreClick may have already called PickupAction — only pick up
+        -- if the cursor is still empty to avoid swapping it back.
+        if not GetCursorInfo() then
+            PickupAction(self.action)
+        end
+        ActionBarsOwned.SafeUpdate(self)
+    end
+end
+
+local function OwnedButton_OnReceiveDrag(self)
+    if InCombatLockdown() then return end
+    PlaceAction(self.action)
+    ActionBarsOwned.SafeUpdate(self)
+end
+
 ---------------------------------------------------------------------------
 -- CONTAINER FACTORY
 ---------------------------------------------------------------------------
@@ -2566,6 +2590,34 @@ local function BuildBar(barKey)
             btn:HookScript("OnLeave", function(self)
                 self.UpdateTooltip = nil
                 GameTooltip:Hide()
+            end)
+            -- Drag pickup/place — BaseActionButtonMixin has no drag
+            -- handlers; set them explicitly for shift-drag rearranging.
+            btn:SetScript("OnDragStart", OwnedButton_OnDragStart)
+            btn:SetScript("OnReceiveDrag", OwnedButton_OnReceiveDrag)
+            -- Block the secure action when the pickup modifier is held
+            -- so modifier+click picks up instead of casting.  The
+            -- restricted snippet runs after PreClick but before the
+            -- type handler — clearing "type" makes the action a no-op.
+            btn:SetAttribute("_onclick", [[
+                if IsModifiedClick("PICKUPACTION") then
+                    self:SetAttribute("type", nil)
+                else
+                    self:SetAttribute("type", "action")
+                end
+            ]])
+            -- PreClick fires before the restricted snippet — do the
+            -- actual PickupAction / PlaceAction here.
+            btn:HookScript("PreClick", function(self, button, down)
+                if down and IsModifiedClick("PICKUPACTION") then
+                    if InCombatLockdown() then return end
+                    if GetCursorInfo() then
+                        PlaceAction(self.action)
+                    else
+                        PickupAction(self.action)
+                    end
+                    ActionBarsOwned.SafeUpdate(self)
+                end
             end)
         end
 
