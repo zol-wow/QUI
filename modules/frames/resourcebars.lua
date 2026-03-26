@@ -3780,6 +3780,13 @@ function QUICore:OnUnitAura(_, unit)
     end
 end
 
+function QUICore:OnUnitPowerPointCharge(_, unit)
+    if unit and unit ~= "player" then return end
+    if GetSecondaryResource() == Enum.PowerType.ComboPoints then
+        self:UpdateSecondaryPowerBar()
+    end
+end
+
 -- REFRESH
 
 local oldRefreshAll = QUICore.RefreshAll
@@ -3864,6 +3871,7 @@ local function InitializeResourceBars(self)
     self:RegisterEvent("UNIT_POWER_FREQUENT", "OnUnitPower")
     self:RegisterEvent("UNIT_POWER_UPDATE", "OnUnitPower")
     self:RegisterEvent("UNIT_MAXPOWER", "OnUnitPower")
+    self:RegisterEvent("UNIT_POWER_POINT_CHARGE", "OnUnitPowerPointCharge")
     self:RegisterEvent("RUNE_POWER_UPDATE", "OnRunePowerUpdate")  -- DK rune updates (event-driven, replaces ticker)
     self:RegisterEvent("UNIT_AURA", "OnUnitAura")  -- Aura-based resources (Maelstrom Weapon stacks)
 
