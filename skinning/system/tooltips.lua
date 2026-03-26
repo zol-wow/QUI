@@ -161,7 +161,6 @@ end
 local styleFrames = Helpers.CreateStateTable()   -- tooltip → overlay frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
 local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
-local insideRestyle = false                      -- reentrancy guard: true while processing a restyle
 
 ---------------------------------------------------------------------------
 -- NineSlice Management
@@ -595,9 +594,7 @@ local function SetupBackdropStyleHooks()
                 HideNineSlice(tooltip)
                 local sf = styleFrames[tooltip]
                 if sf then sf:Show() end
-                if not insideRestyle then
-                    pendingGameTooltipRestyle = true
-                end
+                pendingGameTooltipRestyle = true
                 return
             end
 
@@ -624,9 +621,7 @@ local function SetupBackdropStyleHooks()
                 HideNineSlice(tooltip)
                 local sf = styleFrames[tooltip]
                 if sf then sf:Show() end
-                if not insideRestyle then
-                    pendingGameTooltipRestyle = true
-                end
+                pendingGameTooltipRestyle = true
                 return
             end
             OnTooltipShow(tooltip)
@@ -687,8 +682,14 @@ local function SetupPostProcessor()
             HideNineSlice(tooltip)
             local sf = styleFrames[tooltip]
             if sf then sf:Show() end
-            if not insideRestyle then
-                pendingGameTooltipRestyle = true
+            pendingGameTooltipRestyle = true
+            -- Schedule font sizing directly here (content change) rather
+            -- than from the watcher's pendingRestyle handler.  Applying
+            -- fonts from the restyle path creates resize → Blizzard
+            -- restyle → pendingRestyle → font → infinite loop.
+            if not InCombatLockdown() then
+                _pendingFontSet[tooltip] = true
+                C_Timer.After(0, _FlushPendingFonts)
             end
             return
         end
@@ -861,16 +862,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 pendingGameTooltipRestyle = false
                 local isShown = GameTooltip:IsShown()
                 if isShown then
-                    -- Reentrancy guard: block backdrop-style hooks from
-                    -- re-setting pendingGameTooltipRestyle while we restyle
-                    -- and flush fonts.  Font SetFont → resize → Blizzard
-                    -- restyle → hook → pendingRestyle was an infinite loop.
-                    insideRestyle = true
                     OnTooltipShow(GameTooltip)
-                    _pendingFontSet[GameTooltip] = true
+                    -- Font sizing is NOT scheduled here.  Applying fonts on
+                    -- the restyle path triggers resize → Blizzard restyle →
+                    -- pendingRestyle → infinite loop.  Fonts are scheduled
+                    -- from TooltipDataProcessor (content changes), initial
+                    -- show, and PLAYER_REGEN_ENABLED instead.
                     C_Timer.After(0, function()
-                        _FlushPendingFonts()
-                        insideRestyle = false
                         if not GameTooltip:IsShown() then return end
                         for i = 1, 2 do
                             local st = _G["ShoppingTooltip" .. i]

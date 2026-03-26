@@ -1054,7 +1054,11 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
             if texID then
                 pcall(bar.IconTexture.SetTexture, bar.IconTexture, texID)
-                bar._desiredTexture = texID
+                -- Only lock texture for cooldown entries — aura bars rely on
+                -- the Blizzard texture hook for the correct aura icon.
+                if not entry.isAura then
+                    bar._desiredTexture = texID
+                end
             end
         end
 

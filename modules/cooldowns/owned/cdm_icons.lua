@@ -856,6 +856,15 @@ local function SyncStackText(state)
         local eqOk, eqResult = pcall(function() return state.appText == "" end)
         if eqOk and eqResult then hasApp = false end
     end
+    -- For cooldown icons, skip application stacks — they represent aura
+    -- stacks (e.g., Coagulating Blood on Death Strike) which aren't
+    -- meaningful on a cooldown display.  Only charges are relevant.
+    if hasApp and not hasCharge then
+        local entry = icon._spellEntry
+        if entry and not entry.isAura then
+            hasApp = false
+        end
+    end
 
     -- Write when hooks provide actual content.  Only clear when
     -- transitioning from content → empty (e.g., charged child recycled
@@ -1078,7 +1087,11 @@ local function CreateIcon(parent, spellEntry)
         end
         if texID then
             icon.Icon:SetTexture(texID)
-            icon._desiredTexture = texID
+            -- Only lock texture for cooldown entries — aura icons rely on the
+            -- Blizzard texture hook for the correct aura icon.
+            if not spellEntry.isAura then
+                icon._desiredTexture = texID
+            end
         end
     end
 
@@ -2091,7 +2104,9 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         if icon.Icon then
             if texID then
                 icon.Icon:SetTexture(texID)
-                icon._desiredTexture = texID
+                -- Only lock texture for cooldown entries — aura icons rely on
+                -- the Blizzard texture hook for the correct aura icon.
+                icon._desiredTexture = (not spellEntry.isAura) and texID or nil
             else
                 -- Clear stale texture from previous owner to prevent
                 -- recycled icons showing the wrong spell/item icon.
