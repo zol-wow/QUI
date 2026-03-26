@@ -51,6 +51,8 @@ local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
 local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
 local UnitIsUnit = UnitIsUnit
 local UnitGUID = UnitGUID
+local GetNumGroupMembers = GetNumGroupMembers
+local GetRaidRosterInfo = GetRaidRosterInfo
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
 -- ADDON_LOADED safe window flag for combat /reload support
@@ -3126,13 +3128,14 @@ local function UpdateHeaderSizes()
         local horizontal = (grow == "LEFT" or grow == "RIGHT")
 
         local populated = GetPopulatedRaidGroups()
+        local totalMembers = GetNumGroupMembers()
         for g = 1, 8 do
             local header = QUI_GF.raidGroupHeaders[g]
             if header then
                 if populated[g] then
                     -- Count members in this group
                     local groupCount = 0
-                    for i = 1, GetNumGroupMembers() do
+                    for i = 1, totalMembers do
                         local _, _, subgroup = GetRaidRosterInfo(i)
                         if subgroup == g then groupCount = groupCount + 1 end
                     end
@@ -4141,22 +4144,29 @@ end
 -- REFRESH ALL: Update all visible frames
 ---------------------------------------------------------------------------
 function QUI_GF:RefreshAllFrames()
+    -- Pre-loop setup that each module's RefreshAll does once before iteration.
+    -- Inlining per-frame work from auras + indicators avoids 2 extra full
+    -- iterations of unitFrameMap (was 4 passes, now 1 + private auras).
+    local GFA = ns.QUI_GroupFrameAuras
+    if GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
+    local GFI = ns.QUI_GroupFrameIndicators
+
     for _, frame in pairs(self.unitFrameMap) do
         if frame and frame:IsShown() then
             if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
             if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
             if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
             UpdateFrame(frame)
+
+            -- Auras: scan + render (was a separate full iteration)
+            if GFA and GFA.RefreshFrame then GFA:RefreshFrame(frame) end
+            -- Indicators: update tracked spells (was a separate full iteration)
+            if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
         end
     end
 
-    -- Also trigger aura/indicator updates via module callbacks
-    if ns.QUI_GroupFrameAuras and ns.QUI_GroupFrameAuras.RefreshAll then
-        ns.QUI_GroupFrameAuras:RefreshAll()
-    end
-    if ns.QUI_GroupFrameIndicators and ns.QUI_GroupFrameIndicators.RefreshAll then
-        ns.QUI_GroupFrameIndicators:RefreshAll()
-    end
+    -- Private auras use a different clear-all + rebuild pattern that can't
+    -- be inlined into the per-frame loop (needs wipe(frameState) first).
     if ns.QUI_GroupFramePrivateAuras and ns.QUI_GroupFramePrivateAuras.RefreshAll then
         ns.QUI_GroupFramePrivateAuras:RefreshAll()
     end

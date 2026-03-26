@@ -180,6 +180,13 @@ end
 ---------------------------------------------------------------------------
 if BackdropTemplateMixin and BackdropTemplateMixin.OnBackdropSizeChanged then
     hooksecurefunc(BackdropTemplateMixin, "OnBackdropSizeChanged", function(self)
+        -- Fast exit for frames with no stored colors (most Blizzard frames).
+        -- Without this guard the hook fires for EVERY BackdropTemplate resize
+        -- in the entire UI — hundreds of times/sec in raids.
+        if not self.backdropColor and not self._quiBgR
+           and not self.backdropBorderColor and not self._quiBorderR then
+            return
+        end
         if self.backdropColor then
             pcall(self.SetBackdropColor, self, self.backdropColor:GetRGBA())
         elseif self._quiBgR then

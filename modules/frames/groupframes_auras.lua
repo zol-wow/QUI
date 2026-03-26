@@ -267,7 +267,10 @@ local function SharedTimerOnUpdate(self, dt)
 
     for icon, state in pairs(timerIcons) do
         hasAny = true
-        if icon:IsShown() and state.expirationTime then
+        if not icon:IsShown() then
+            -- Skip hidden icons entirely — avoids SafeToNumber calls for
+            -- overflow icons that exceed maxDebuffs/maxBuffs limits in raids.
+        elseif state.expirationTime then
             local expTime = SafeToNumber(state.expirationTime, 0)
             local dur = SafeToNumber(state.duration, 0)
             local remaining = expTime - now

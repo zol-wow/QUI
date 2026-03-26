@@ -2730,18 +2730,13 @@ local buffIconOnUpdateElapsed = 0
 local buffBarOnUpdateElapsed = 0
 
 local function BuffIconViewer_OnUpdate(self, elapsed)
-    -- Suppress Blizzard's dirty flag EVERY FRAME. Icon Show/Hide, child
-    -- additions, and Blizzard's own updates can mark the viewer dirty at any
-    -- time. Clearing it here prevents Blizzard's OnUpdate from re-running
-    -- Layout() and overriding our icon positions before the next poll.
-    -- MarkClean is a single C-side call — negligible cost per frame.
-    if self.MarkClean then
-        self:MarkClean()
-    end
-
     buffIconOnUpdateElapsed = buffIconOnUpdateElapsed + elapsed
     if buffIconOnUpdateElapsed > 0.1 then  -- 10 FPS polling (was 20 FPS)
         buffIconOnUpdateElapsed = 0
+        -- Suppress Blizzard's dirty flag at the same cadence as our poll.
+        -- Previously ran every frame; moving inside the throttle reduces
+        -- calls from 60+/sec to ~10/sec with no visible layout glitches.
+        if self.MarkClean then self:MarkClean() end
         if self:IsShown() then
             CheckIconChanges()
         end
@@ -2749,14 +2744,10 @@ local function BuffIconViewer_OnUpdate(self, elapsed)
 end
 
 local function BuffBarViewer_OnUpdate(self, elapsed)
-    -- Suppress Blizzard's dirty flag every frame (same rationale as icons).
-    if self.MarkClean then
-        self:MarkClean()
-    end
-
     buffBarOnUpdateElapsed = buffBarOnUpdateElapsed + elapsed
     if buffBarOnUpdateElapsed > 0.1 then  -- 10 FPS for bars (was 20 FPS)
         buffBarOnUpdateElapsed = 0
+        if self.MarkClean then self:MarkClean() end
         if self:IsShown() then
             CheckBarChanges()
         end
