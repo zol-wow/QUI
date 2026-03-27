@@ -1123,7 +1123,12 @@ function CDMBars:UpdateOwnedBarAura(bar)
         local durObj = r.durObj or r.hookDurObj
         if durObj then
             bar._durObj = durObj
-            if bar.StatusBar then
+            if bar._blizzBar and hookedBars[bar._blizzBar] then
+                -- MirrorBlizzBar hooks drive fill via SetValue/SetMinMaxValues
+                -- passthrough.  SetTimerDuration would create a C-side animation
+                -- that fights with the hook's SetValue calls, causing bar jumps.
+                bar._cSideFill = true
+            elseif bar.StatusBar then
                 pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
                 if bar.StatusBar.SetTimerDuration then
                     pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
@@ -1438,6 +1443,12 @@ barTimerGroup:SetScript("OnLoop", function()
     local anyDeactivated = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._active and bar:IsShown() then
+            -- When MirrorBlizzBar hooks are active, they drive fill
+            -- (SetValue/SetMinMaxValues) and text (SetText/SetFormattedText).
+            -- Skip all OnLoop processing to avoid competing writes.
+            if bar._blizzBar and hookedBars[bar._blizzBar] then
+                anyActive = true
+            elseif true then
             local durObj = bar._durObj
             if durObj and durObj.GetRemainingDuration then
                 anyActive = true
@@ -1499,6 +1510,7 @@ barTimerGroup:SetScript("OnLoop", function()
                     end
                 end
             end
+        end
         end
     end
     -- Re-layout ONLY when a bar actually deactivated during THIS tick.

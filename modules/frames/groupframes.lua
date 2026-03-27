@@ -849,12 +849,9 @@ local function UpdateAbsorbs(frame, _unit, _maxHP)
         frame._absorbVertical = frame._isVerticalFill
     end
 
-    -- C-side SetMinMaxValues/SetValue handle secret values natively — no pcall needed.
-    -- Only update SetMinMaxValues when maxHP actually changes (rare: buffs/level/UNIT_MAXHEALTH).
-    if maxHP ~= frame._lastMaxHP then
-        frame._lastMaxHP = maxHP
-        frame.absorbBar:SetMinMaxValues(0, maxHP)
-    end
+    -- C-side SetMinMaxValues/SetValue handle secret values natively.
+    -- Always call — maxHP may be a secret value (combat), so Lua-side ~= is forbidden.
+    frame.absorbBar:SetMinMaxValues(0, maxHP)
     frame.absorbBar:SetValue(absorbAmount)
 
     -- Color (dirty-checked: settings-driven or class-based, both stable per event)
@@ -920,12 +917,8 @@ local function UpdateHealAbsorb(frame, _unit, _maxHP)
         frame._healAbsorbVertical = frame._isVerticalFill
     end
 
-    -- SetMinMaxValues handled by UpdateAbsorbs (called first, caches frame._lastMaxHP).
-    -- Standalone path (UNIT_HEAL_ABSORB_AMOUNT_CHANGED): guard here too.
-    if maxHP ~= frame._lastMaxHP then
-        frame._lastMaxHP = maxHP
-        frame.healAbsorbBar:SetMinMaxValues(0, maxHP)
-    end
+    -- C-side SetMinMaxValues handles secret values natively — no Lua comparison.
+    frame.healAbsorbBar:SetMinMaxValues(0, maxHP)
     frame.healAbsorbBar:SetValue(healAbsorbAmount)
 
     -- Color (dirty-checked: settings-driven, never changes during combat)
@@ -1004,12 +997,8 @@ local function UpdateHealPrediction(frame, _unit, _maxHP)
         frame._healPredVertical = frame._isVerticalFill
     end
 
-    -- SetMinMaxValues handled by UpdateAbsorbs (called first, caches frame._lastMaxHP).
-    -- Standalone path (UNIT_HEAL_PREDICTION): guard here too.
-    if maxHP ~= frame._lastMaxHP then
-        frame._lastMaxHP = maxHP
-        frame.healPredictionBar:SetMinMaxValues(0, maxHP)
-    end
+    -- C-side SetMinMaxValues handles secret values natively — no Lua comparison.
+    frame.healPredictionBar:SetMinMaxValues(0, maxHP)
     frame.healPredictionBar:SetValue(incomingHeals)
 
     -- Color (dirty-checked: settings-driven or class-based, both stable per event)
@@ -1734,8 +1723,6 @@ local function DecorateGroupFrame(frame)
 
     local db = GetSettings()
     local general = GetGeneralSettings(isRaid)
-    local mode = GetGroupMode()
-    local frameWidth, frameHeight = GetFrameDimensions(mode)
 
     -- Backdrop
     local borderPx = general and general.borderSize or 1
@@ -2941,11 +2928,20 @@ local function CreateHeaders()
     partyHeader:SetMovable(true)
     partyHeader:SetClampedToScreen(true)
 
-    -- Pre-create all 5 party frames upfront so no frames are created mid-combat
+    -- Pre-create all 5 party frames upfront so no frames are created mid-combat.
+    -- Two requirements for SecureGroupHeaderTemplate to create children:
+    --   1. Parent root must be shown (hidden parent prevents child creation)
+    --   2. At least 1 managed unit must exist (showPlayer + showSolo forces the player)
+    partyRoot:Show()
+    partyHeader:SetAttribute("showPlayer", true)
+    partyHeader:SetAttribute("showSolo", true)
     partyHeader:SetAttribute("startingIndex", -4)
     partyHeader:Show()
     partyHeader:SetAttribute("startingIndex", 1)
     partyHeader:Hide()
+    partyRoot:Hide()
+    -- Restore correct show* attributes for runtime operation
+    ConfigurePartyHeader(partyHeader)
 
     QUI_GF.headers.party = partyHeader
     -- Watch for new children added by the secure header (handles late NPC frames)
@@ -2985,11 +2981,17 @@ local function CreateHeaders()
     raidHeader:SetMovable(true)
     raidHeader:SetClampedToScreen(true)
 
-    -- Pre-create all 40 raid frames upfront so no frames are created mid-combat
+    -- Pre-create all 40 raid frames upfront so no frames are created mid-combat.
+    -- Force showPlayer + showSolo so the header has at least 1 managed unit.
+    raidRoot:Show()
+    raidHeader:SetAttribute("showPlayer", true)
+    raidHeader:SetAttribute("showSolo", true)
     raidHeader:SetAttribute("startingIndex", -39)
     raidHeader:Show()
     raidHeader:SetAttribute("startingIndex", 1)
     raidHeader:Hide()
+    raidRoot:Hide()
+    ConfigureRaidHeader(raidHeader)
 
     QUI_GF.headers.raid = raidHeader
     -- Watch for new children on raid header too
@@ -3005,6 +3007,7 @@ local function CreateHeaders()
     end)
 
     -- Per-group raid headers (multi-header mode: one header per raid group 1-8)
+    raidRoot:Show()  -- Parent must be visible for child creation
     for g = 1, 8 do
         local groupHeader = CreateFrame("Frame", "QUI_RaidGroup" .. g .. "Header", raidRoot, "SecureGroupHeaderTemplate")
         groupHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
@@ -3027,11 +3030,16 @@ local function CreateHeaders()
         groupHeader:SetMovable(true)
         groupHeader:SetClampedToScreen(true)
 
-        -- Pre-create 5 children per group header (40 total across 8 headers)
+        -- Pre-create 5 children per group header (40 total across 8 headers).
+        -- Force showPlayer + showSolo so the header has at least 1 managed unit.
+        groupHeader:SetAttribute("showPlayer", true)
+        groupHeader:SetAttribute("showSolo", true)
         groupHeader:SetAttribute("startingIndex", -4)
         groupHeader:Show()
         groupHeader:SetAttribute("startingIndex", 1)
         groupHeader:Hide()
+        groupHeader:SetAttribute("showPlayer", false)
+        groupHeader:SetAttribute("showSolo", false)
 
         groupHeader:HookScript("OnAttributeChanged", function(self, key, value)
             if value and type(key) == "string" and key:match("^child") then
@@ -3047,6 +3055,7 @@ local function CreateHeaders()
         groupHeader._raidGroupIndex = g
         QUI_GF.raidGroupHeaders[g] = groupHeader
     end
+    raidRoot:Hide()
 
     -- Self header — shows only the player, used for self-first feature
     local selfHeader = CreateFrame("Frame", "QUI_SelfHeader", partyRoot, "SecureGroupHeaderTemplate")
@@ -3070,10 +3079,12 @@ local function CreateHeaders()
     selfHeader:SetMovable(true)
     selfHeader:SetClampedToScreen(true)
 
-    -- Pre-create the single child
+    -- Pre-create the single child (parent must be shown for creation to work)
+    partyRoot:Show()
     selfHeader:SetAttribute("startingIndex", 1)
     selfHeader:Show()
     selfHeader:Hide()
+    partyRoot:Hide()
 
     QUI_GF.headers.self = selfHeader
     selfHeader:HookScript("OnAttributeChanged", function(self, key, value)
@@ -3357,8 +3368,15 @@ local lastMode = nil
 -- Resize/layout unit buttons and bars. SetSize on the secure unit buttons
 -- themselves is protected, so skip it during combat — the pending resize
 -- will re-apply after combat via PLAYER_REGEN_ENABLED.
-local function ApplyChildFrameLayout(w, h)
+-- Uses per-child dimensions: party/self children get party dims, raid
+-- children get current raid-mode dims. This prevents cross-contamination
+-- when the group transitions between party and raid.
+local function ApplyChildFrameLayout()
     local inCombat = InCombatLockdown()
+    local partyW, partyH = GetFrameDimensions("party")
+    local raidMode = GetGroupMode()
+    local raidW, raidH = GetFrameDimensions(raidMode ~= "party" and raidMode or "small")
+
     local function LayoutChildren(header)
         if not header then return end
         local i = 1
@@ -3366,7 +3384,8 @@ local function ApplyChildFrameLayout(w, h)
             local child = header:GetAttribute("child" .. i)
             if not child then break end
             if not inCombat then
-                child:SetSize(w, h)
+                local cw, ch = child._isRaid and raidW or partyW, child._isRaid and raidH or partyH
+                child:SetSize(cw, ch)
             end
             if child.healthBar and child.powerBar then
                 local general = GetGeneralSettings(child._isRaid)
@@ -3410,37 +3429,47 @@ end
 
 local function UpdateFrameScaling(forceUpdate)
     local mode = GetGroupMode()
-    local w, h = GetFrameDimensions(mode)
 
     if InCombatLockdown() and not inInitSafeWindow then
         _pending.resize = true
         _pending.resizeForce = _pending.resizeForce or (forceUpdate and true or false)
-        ApplyChildFrameLayout(w, h)
+        ApplyChildFrameLayout()
         return
     end
 
     if not forceUpdate and mode == lastMode then return end
     lastMode = mode
 
-    w, h = GetFrameDimensions(mode)
+    -- Per-header-type attributes: party/self get party dims, raid headers
+    -- get current raid-mode dims. This ensures initialConfigFunction uses
+    -- the correct dimensions if the secure system ever creates new children.
+    local partyW, partyH = GetFrameDimensions("party")
+    local raidW, raidH = GetFrameDimensions(mode ~= "party" and mode or "small")
 
-    -- Update header attributes (secure context — must be out of combat)
-    for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = QUI_GF.headers[headerKey]
-        if header then
-            header:SetAttribute("_initialAttribute-unit-width", w)
-            header:SetAttribute("_initialAttribute-unit-height", h)
-        end
+    local partyHeader = QUI_GF.headers.party
+    if partyHeader then
+        partyHeader:SetAttribute("_initialAttribute-unit-width", partyW)
+        partyHeader:SetAttribute("_initialAttribute-unit-height", partyH)
+    end
+    local selfHeader = QUI_GF.headers.self
+    if selfHeader then
+        selfHeader:SetAttribute("_initialAttribute-unit-width", partyW)
+        selfHeader:SetAttribute("_initialAttribute-unit-height", partyH)
+    end
+    local raidHeader = QUI_GF.headers.raid
+    if raidHeader then
+        raidHeader:SetAttribute("_initialAttribute-unit-width", raidW)
+        raidHeader:SetAttribute("_initialAttribute-unit-height", raidH)
     end
     for g = 1, 8 do
         local header = QUI_GF.raidGroupHeaders[g]
         if header then
-            header:SetAttribute("_initialAttribute-unit-width", w)
-            header:SetAttribute("_initialAttribute-unit-height", h)
+            header:SetAttribute("_initialAttribute-unit-width", raidW)
+            header:SetAttribute("_initialAttribute-unit-height", raidH)
         end
     end
 
-    ApplyChildFrameLayout(w, h)
+    ApplyChildFrameLayout()
     UpdateHeaderSizes()
 end
 
@@ -4026,6 +4055,14 @@ local function OnEvent(self, event, arg1, ...)
                 end
             else
                 DecorateHeaderChildren(QUI_GF.headers.raid)
+            end
+            -- Re-register click-casting for frames that were decorated during
+            -- combat but missed click-cast setup (SetupFrameClickCast bails
+            -- out during InCombatLockdown — the frame is marked _quiDecorated
+            -- but never got its secure click attributes applied).
+            local GFCC = ns.QUI_GroupFrameClickCast
+            if GFCC and GFCC:IsEnabled() then
+                GFCC:RegisterAllFrames()
             end
         end
         if _pending.anchorUpdate then

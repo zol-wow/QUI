@@ -519,16 +519,50 @@ SafeHookTooltipOnShow = function(tooltip)
     end
 end
 
+-- Detect protected/forbidden tooltip context (world map secure code, etc.).
+-- When the tooltip is owned by a protected frame, addon styling would taint
+-- the execution context.  Fall back to NineSlice in these cases.
+local function IsProtectedTooltip(tip)
+    if not tip then return true end
+    if tip.IsForbidden and tip:IsForbidden() then return true end
+    local owner = tip.GetOwner and tip:GetOwner()
+    if not owner then return false end
+    local current = owner
+    for _ = 1, 10 do
+        if not current then break end
+        if current.IsForbidden and current:IsForbidden() then return true end
+        local ok, parent = pcall(current.GetParent, current)
+        current = ok and parent or nil
+    end
+    return false
+end
+
 HookTooltipOnShow = function(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
 
-    -- TAINT SAFETY: Never hook GameTooltip's Show method directly.
-    -- In Midnight's taint model, hooksecurefunc(GameTooltip, "Show") taints
-    -- the frame's dispatch table, causing ADDON_ACTION_BLOCKED errors when
-    -- the world map's secure context uses GameTooltip. A separate watcher
-    -- frame handles GameTooltip instead (see initialization below).
+    -- GameTooltip: use HookScript("OnShow"/"OnHide") with protected-
+    -- tooltip detection.  OnShow fires before the first render, so
+    -- NineSlice is hidden before the user ever sees it — no 1-frame flash.
+    -- Protected tooltips (world map, AreaPoiUtil) fall back to NineSlice
+    -- to avoid tainting Blizzard's secure execution context.
     if tooltip == GameTooltip then
         hookedTooltips[tooltip] = true
+
+        tooltip:HookScript("OnShow", function(self)
+            if not IsEnabled() then return end
+            if IsProtectedTooltip(self) then
+                -- Protected context: let Blizzard handle it
+                local sf = styleFrames[self]
+                if sf then sf:Hide() end
+                return
+            end
+            if InCombatLockdown() then
+                CombatRefreshTooltip(self)
+            else
+                StyleTooltip(self)
+            end
+        end)
+
         return
     end
 
@@ -538,6 +572,15 @@ HookTooltipOnShow = function(tooltip)
         -- Synchronous: hide NineSlice + apply overlay (no 1-frame flash)
         if InCombatLockdown() then
             CombatRefreshTooltip(self)
+            return
+        end
+
+        -- Skip if already styled — prevents the same restyle loop that
+        -- affects GameTooltip (StyleTooltip side-effects can re-trigger
+        -- SharedTooltip_SetBackdropStyle → Show hook → StyleTooltip).
+        local _ns = self.NineSlice
+        local _sf = styleFrames[self]
+        if _sf and _sf:IsShown() and (not _ns or not _ns:IsShown()) then
             return
         end
 
@@ -611,7 +654,12 @@ local function SetupBackdropStyleHooks()
                 local sf = styleFrames[tooltip]
                 if sf then sf:Hide() end
             else
-                OnTooltipShow(tooltip)
+                -- Skip if already styled (same guard as GameTooltip watcher)
+                local _ns2 = tooltip.NineSlice
+                local _sf2 = styleFrames[tooltip]
+                if not (_sf2 and _sf2:IsShown() and (not _ns2 or not _ns2:IsShown())) then
+                    OnTooltipShow(tooltip)
+                end
                 SafeHookTooltipOnShow(tooltip)
             end
         end)
@@ -631,7 +679,11 @@ local function SetupBackdropStyleHooks()
                 pendingGameTooltipRestyle = true
                 return
             end
-            OnTooltipShow(tooltip)
+            local _ns3 = tooltip.NineSlice
+            local _sf3 = styleFrames[tooltip]
+            if not (_sf3 and _sf3:IsShown() and (not _ns3 or not _ns3:IsShown())) then
+                OnTooltipShow(tooltip)
+            end
             SafeHookTooltipOnShow(tooltip)
         end)
     end
@@ -811,118 +863,54 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     RebuildTooltipList()
 
     -------------------------------------------------------------------
-    -- GameTooltip watcher (separate frame — no hooks on GT directly)
-    --
-    -- TAINT SAFETY: Do NOT use HookScript("OnShow"/"OnHide") or
-    -- hooksecurefunc(GameTooltip, "Show") on GameTooltip.  In
-    -- Midnight's taint model, any HookScript on GameTooltip permanently
-    -- taints its dispatch tables, causing secret-value errors when the
-    -- world map's secure context uses GameTooltip (AreaPoiUtil,
-    -- QuestOfferDataProvider, GameTooltip_InsertFrame, etc.).
-    -- Instead, a continuously-running watcher detects visibility
-    -- changes by polling IsShown() every frame.
+    -- GameTooltip deferred-restyle handler.
+    -- The OnShow HookScript handles initial show styling.  This frame
+    -- processes pendingGameTooltipRestyle from SharedTooltip hooks
+    -- (backdrop restyles that fire AFTER our OnShow has already run).
     -------------------------------------------------------------------
     do
-        local wasShown = false
-        local fontsApplied = false  -- one-shot: true after first font flush per show cycle
-        local watcher = CreateFrame("Frame")
-        local watcherElapsed = 0
-        local WATCHER_IDLE_INTERVAL = 0.1   -- 10Hz when tooltip hidden (vs 60Hz)
-        -- Watcher runs continuously — no HookScript on GameTooltip.
-        watcher:SetScript("OnUpdate", function(self, dt)
-            -- Idle throttle: when tooltip is hidden and no pending restyle,
-            -- check at 20Hz instead of every frame. Saves ~67% of overhead.
-            if not wasShown and not pendingGameTooltipRestyle then
-                watcherElapsed = watcherElapsed + dt
-                if watcherElapsed < WATCHER_IDLE_INTERVAL then return end
-                watcherElapsed = 0
-            end
-            -- Handle deferred restyle from SharedTooltip_SetBackdropStyle /
-            -- GameTooltip_SetBackdropStyle hooks (taint safety).
-            if pendingGameTooltipRestyle then
-                pendingGameTooltipRestyle = false
-                local isShown = GameTooltip:IsShown()
-                if isShown then
-                    -- Skip restyle when NineSlice is already hidden and our
-                    -- overlay is already visible — calling StyleTooltip again
-                    -- would just re-hide NineSlice and re-show the overlay,
-                    -- both of which trigger Blizzard layout recalculations
-                    -- that fire SharedTooltip_SetBackdropStyle again,
-                    -- creating an infinite per-frame loop.
-                    local _ns = GameTooltip.NineSlice
-                    local _sf = styleFrames[GameTooltip]
-                    local alreadyStyled = _sf and _sf:IsShown()
-                        and (not _ns or not _ns:IsShown())
-                    if not alreadyStyled then
-                        OnTooltipShow(GameTooltip)
-                    end
-                    -- Font sizing: apply once per tooltip show cycle.  The
-                    -- fontsApplied flag prevents re-entry: SetFont → resize →
-                    -- Blizzard restyle → pendingRestyle → watcher → SetFont.
-                    -- The font-size check in SetFontStringSize makes the
-                    -- second pass a no-op, but the flag avoids even
-                    -- scheduling it.
-                    if not fontsApplied then
-                        fontsApplied = true
-                        _pendingFontSet[GameTooltip] = true
-                    end
-                    C_Timer.After(0, function()
-                        _FlushPendingFonts()
-                        if not GameTooltip:IsShown() then return end
-                        for i = 1, 2 do
-                            local st = _G["ShoppingTooltip" .. i]
-                            if st and st:IsShown() then
-                                SafeHookTooltipOnShow(st)
-                                OnTooltipShow(st)
-                            end
-                        end
-                    end)
-                end
-                -- Sync wasShown so the initial-show branch below doesn't
-                -- fire again and duplicate the styling we just applied.
-                wasShown = isShown
-                return
-            end
+        local fontsApplied = false
+        local deferFrame = CreateFrame("Frame")
+        deferFrame:SetScript("OnUpdate", function()
+            if not pendingGameTooltipRestyle then return end
+            pendingGameTooltipRestyle = false
 
-            local shown = GameTooltip:IsShown()
-            if shown == wasShown then
-                -- Catch NineSlice reappearing via unhooked restyle paths.
-                -- Only re-hide it + ensure overlay is visible.  Do NOT do
-                -- a full restyle or schedule font sizing here — SetFont
-                -- triggers tooltip relayout which re-shows NineSlice,
-                -- creating an infinite per-frame loop after combat ends.
-                if shown and IsEnabled() then
-                    local ns = GameTooltip.NineSlice
-                    if ns and ns:IsShown() then
-                        HideNineSlice(GameTooltip)
-                        local sf = styleFrames[GameTooltip]
-                        if sf then sf:Show() end
-                    end
-                end
-                return
-            end
-            wasShown = shown
-            if not shown then
-                pendingGameTooltipRestyle = false
+            if not GameTooltip:IsShown() then
                 fontsApplied = false
                 return
             end
 
-            -- GameTooltip just became visible
-            OnTooltipShow(GameTooltip)
-            _pendingFontSet[GameTooltip] = true
-            C_Timer.After(0, function()
-                _FlushPendingFonts()
-                if not GameTooltip:IsShown() then return end
-                -- Discover comparison tooltips (lazily created by C-side)
-                for i = 1, 2 do
-                    local st = _G["ShoppingTooltip" .. i]
-                    if st and st:IsShown() then
-                        SafeHookTooltipOnShow(st)
-                        OnTooltipShow(st)
-                    end
+            -- Skip if already styled (NineSlice hidden, overlay showing)
+            local _ns = GameTooltip.NineSlice
+            local _sf = styleFrames[GameTooltip]
+            if not (_sf and _sf:IsShown() and (not _ns or not _ns:IsShown())) then
+                if not IsProtectedTooltip(GameTooltip) then
+                    OnTooltipShow(GameTooltip)
                 end
-            end)
+            end
+
+            -- Font sizing: once per show cycle
+            if not fontsApplied then
+                fontsApplied = true
+                _pendingFontSet[GameTooltip] = true
+                C_Timer.After(0, function()
+                    _FlushPendingFonts()
+                    if not GameTooltip:IsShown() then return end
+                    for i = 1, 2 do
+                        local st = _G["ShoppingTooltip" .. i]
+                        if st and st:IsShown() then
+                            SafeHookTooltipOnShow(st)
+                            OnTooltipShow(st)
+                        end
+                    end
+                end)
+            end
+        end)
+
+        -- Reset state when tooltip hides
+        GameTooltip:HookScript("OnHide", function()
+            fontsApplied = false
+            pendingGameTooltipRestyle = false
         end)
     end
 

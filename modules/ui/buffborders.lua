@@ -594,16 +594,20 @@ local function UpdateAuraIcons(container, activeIcons, sortedList, filter, isBuf
         return
     end
 
-    -- Scan current auras
+    -- Scan current auras via instance-ID API (covers all aura types including
+    -- consumable buffs like augment runes that ForEachAura's slot iteration can miss)
     local currentAuras = {}
 
-    -- Use AuraUtil.ForEachAura for reliable iteration
-    if AuraUtil and AuraUtil.ForEachAura then
-        AuraUtil.ForEachAura("player", filter, nil, function(auraData)
-            if auraData and auraData.auraInstanceID then
-                currentAuras[auraData.auraInstanceID] = auraData
+    if C_UnitAuras and C_UnitAuras.GetUnitAuraInstanceIDs then
+        local ids = C_UnitAuras.GetUnitAuraInstanceIDs("player", filter)
+        if ids then
+            for _, auraID in ipairs(ids) do
+                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", auraID)
+                if auraData then
+                    currentAuras[auraID] = auraData
+                end
             end
-        end, true) -- usePackedAura = true for C_UnitAuras data
+        end
     end
 
     -- Phase 1: Collect expired auras (don't mutate during iteration)

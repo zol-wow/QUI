@@ -1869,6 +1869,19 @@ local function UpdateIconCooldown(icon)
             end
         end
 
+        -- When mirror hooks are active for this icon's Blizzard viewer child,
+        -- they are the sole driver of cooldown state.  SyncMirroredCooldownState
+        -- (called from the SetCooldown/SetCooldownFromDurationObject hooks)
+        -- maintains _hasCooldownActive, _lastStart, and _lastDuration.  The API
+        -- path below would overwrite those values with stale/GCD data and restart
+        -- the swipe animation, causing flickering.  Skip it entirely.
+        -- Charged entries are excluded: mirror hooks skip them (tSkipCharge),
+        -- so the API path remains their sole cooldown driver.
+        local mirrorActive = icon._blizzCooldown and entry._blizzChild
+            and entry._blizzChild.Cooldown == icon._blizzCooldown
+            and not entry.hasCharges
+
+        if not mirrorActive then
         local hasSafeStart = IsSafeNumeric(startTime)
         local hasSafeDuration = IsSafeNumeric(duration)
         if hasSafeDuration then
@@ -1889,13 +1902,6 @@ local function UpdateIconCooldown(icon)
         end
 
         if icon.Cooldown then
-            -- When mirror hooks are active, they forward Blizzard's exact
-            -- cooldown state (SetCooldown / SetCooldownFromDurationObject)
-            -- and call SyncMirroredCooldownState which maintains
-            -- _hasCooldownActive / _lastStart / _lastDuration.  The API
-            -- path writing to the same CooldownFrame causes the swipe to
-            -- restart or fight (e.g., GCD vs charge recharge).  Skip API
-            -- writes and trust the mirror as sole driver.
             local cdApplied = false
             -- Priority 1: DurationObject (secret-safe via SetCooldownFromDurationObject)
             if durObj and icon.Cooldown.SetCooldownFromDurationObject then
@@ -1923,6 +1929,7 @@ local function UpdateIconCooldown(icon)
             end
             icon._hasCooldownActive = cdApplied or false
         end
+        end -- not mirrorActive
 
     -- Stack/charge text: API-driven on each tick.
     -- Cache chargeInfo for this icon — reused by desaturation check below
@@ -2045,6 +2052,22 @@ local function UpdateIconCooldown(icon)
                 shouldDesaturate = false
             end
             if shouldDesaturate then
+                if mirrorActive then
+                    -- Mirror hooks maintain _hasCooldownActive via
+                    -- SyncMirroredCooldownState.  Use the boolean flag
+                    -- instead of dur/start remaining-time calculation,
+                    -- which may use stale values when GetCooldownTimes
+                    -- returns secret values in combat.
+                    if icon._hasCooldownActive then
+                        icon.Icon:SetDesaturated(true)
+                        icon._cdDesaturated = true
+                    else
+                        icon.Icon:SetDesaturated(false)
+                        icon._cdDesaturated = nil
+                    end
+                    return
+                end
+
                 local dur = icon._lastDuration or 0
                 local start = icon._lastStart or 0
 
