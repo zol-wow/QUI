@@ -69,3 +69,49 @@ World of Warcraft\_retail_\WTF\Account\<ACCOUNT>\SavedVariables\QUI.lua
 ```
 
 They are saved automatically when you log out or reload the UI.
+
+## Migration Test Matrix
+
+Use this checklist when validating changes to profile import, layout migration, or SavedVariables upgrades.
+
+### Required Fixtures
+
+- One `main`-era healing profile with non-default frame positions.
+- One `main`-era `QUI1:` export string from the same character/profile.
+- One old SavedVariables file copied before installing the next-version addon.
+
+### Scenario 1: Old SavedVariables Upgrade
+
+1. Install the next-version addon over the old SavedVariables file.
+2. Log in on the healing character and let the addon load normally.
+3. Verify that these elements still match the `main` branch look before touching any settings:
+   - player, target, focus, pet, boss, and ToT frames
+   - party and raid frame placement
+   - cast bars and power bars
+   - CDM essential and utility containers
+   - loot window, loot history, and loot roll spacing
+   - minimap, micro menu, and bag bar visibility
+   - objective tracker, alert toasts, and ready-check/consumable anchors
+   - addon accent/theme output
+
+### Scenario 2: Old Profile Import
+
+1. Start from a clean or throwaway next-version profile.
+2. Import the `main`-era `QUI1:` string as a full profile replacement.
+3. Repeat the same visual checks from Scenario 1.
+4. Import the same string again into a named target profile and confirm the result is identical.
+
+### Scenario 3: Selective Import Guardrails
+
+1. From a customized next-version profile, selectively import only `Theme / Fonts / Colors`.
+2. Confirm colors/fonts update without moving anchors.
+3. Selectively import only `Layout / Positions`.
+4. Confirm anchors move without replacing unrelated theme choices.
+5. Selectively import loot/skinning-related categories and confirm old `general.skinLoot*` payloads land in `loot`, `lootRoll`, and `lootResults`.
+
+### Pass Criteria
+
+- No frame snaps back to next-version defaults unless the old profile also used those defaults.
+- Old loot, roll-frame, and minimap visibility choices survive both upgrade paths.
+- Old mint-accent profiles do not silently become sky blue.
+- Re-importing or relogging is idempotent: the second load looks the same as the first.

@@ -218,10 +218,10 @@ Blizzard frame skinning toggles that live under the General tab. These control w
 | `skinAlerts` | boolean | `true` | Skin alert and toast notification frames |
 | `skinCharacterFrame` | boolean | `true` | Skin the Character Frame (Character, Reputation, Currency) |
 | `skinInspectFrame` | boolean | `true` | Skin the Inspect Frame to match Character Frame |
-| `skinLootWindow` | boolean | `true` | Enable custom loot window |
-| `skinLootUnderMouse` | boolean | `true` | Position loot window at cursor position |
-| `skinLootHistory` | boolean | `true` | Skin the loot history frame |
-| `skinRollFrames` | boolean | `true` | Skin loot roll frames |
-| `skinRollSpacing` | number | `6` | Spacing between loot roll frames |
+| `loot.enabled` | boolean | `true` | Enable the custom loot window |
+| `loot.lootUnderMouse` | boolean | `false` | Position the loot window at the cursor |
+| `lootResults.enabled` | boolean | `true` | Skin the loot history frame |
+| `lootRoll.enabled` | boolean | `true` | Enable custom loot roll frames |
+| `lootRoll.spacing` | number | `4` | Spacing between loot roll frames |
 | `skinUseClassColor` | boolean | `true` | Use class color for skinning accent highlights |
 | `skinBgColor` | color | `{0.008, 0.008, 0.008, 1}` | Skinning background color |

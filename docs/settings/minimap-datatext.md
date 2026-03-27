@@ -52,8 +52,8 @@ General minimap behavior toggles.
 | `minimap.autoZoom` | boolean | `false` | Automatically zoom out after 10 seconds when zoomed in |
 | `minimap.hideAddonButtons` | boolean | `true` | Hide addon minimap buttons (show on hover only) |
 | `minimap.middleClickMenuEnabled` | boolean | `true` | Open quick menu on middle-click |
-| `minimap.hideMicroMenu` | boolean | `false` | Hide Blizzard's micro menu bar (Character, Spellbook, etc.) |
-| `minimap.hideBagBar` | boolean | `false` | Hide Blizzard's bag bar |
+| `actionBars.bars.microbar.enabled` | boolean | `true` | Toggle the Blizzard micro menu bar |
+| `actionBars.bars.bags.enabled` | boolean | `true` | Toggle the Blizzard bag bar |
 
 ---
 

@@ -41,11 +41,11 @@ General skinning options that replace Blizzard frame visuals with QUI-styled alt
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `skinLootWindow` | boolean | `true` | Skin the loot window |
-| `skinLootUnderMouse` | boolean | `true` | Position loot window at cursor |
-| `skinLootHistory` | boolean | `true` | Skin the loot history frame |
-| `skinRollFrames` | boolean | `true` | Skin loot roll frames |
-| `skinRollSpacing` | number | `6` | Spacing between roll frames |
+| `loot.enabled` | boolean | `true` | Enable the custom loot window |
+| `loot.lootUnderMouse` | boolean | `false` | Position loot at the cursor |
+| `lootResults.enabled` | boolean | `true` | Skin the loot history frame |
+| `lootRoll.enabled` | boolean | `true` | Enable custom loot roll frames |
+| `lootRoll.spacing` | number | `4` | Spacing between roll frames |
 
 ### Dungeon & Instance
 

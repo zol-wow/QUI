@@ -216,6 +216,8 @@ local PROFILE_THEME_GENERAL_KEYS = {
     "font",
     "fontOutline",
     "texture",
+    "addonAccentColor",
+    "themePreset",
     "darkMode",
     "darkModeHealthColor",
     "darkModeBgColor",
@@ -416,6 +418,7 @@ local PROFILE_LAYOUT_PATHS = {
 
 local PROFILE_THEME_PRESERVE_PATHS = {
     "addonAccentColor",
+    "themePreset",
     "powerColors",
 }
 
@@ -555,7 +558,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Theme / Fonts / Colors",
         description = "Shared fonts, textures, dark mode, and addon-wide color settings.",
         recommended = false,
-        topLevelKeys = { "addonAccentColor", "powerColors" },
+        topLevelKeys = { "addonAccentColor", "themePreset", "powerColors" },
         generalKeys = PROFILE_THEME_GENERAL_KEYS,
     },
     {
@@ -1233,12 +1236,16 @@ local function ApplyFullProfilePayload(core, importedProfile)
         profile[key] = CloneValue(value)
     end
 
-    -- Run backward-compatibility migrations on the freshly imported data
-    -- so that legacy keys (castBar, unitFrames, etc.) are moved to their
-    -- current locations before any module tries to read them.
-    local addon = _G.QUI
-    if addon and addon.BackwardsCompat then
-        addon:BackwardsCompat()
+    -- Normalize imports through the same shared migration pipeline used during
+    -- startup so old profile strings and old SavedVariables land on the same
+    -- schema before modules rebuild from them.
+    if core and core.NormalizeActiveProfile then
+        core:NormalizeActiveProfile({ source = "fullImport" })
+    else
+        local addon = _G.QUI
+        if addon and addon.BackwardsCompat then
+            addon:BackwardsCompat()
+        end
     end
 
     -- Refresh all modules via the Registry (includes frame anchoring).
@@ -1479,6 +1486,15 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targ
         RestorePathList(profile, previousProfile, PROFILE_LAYOUT_PATHS)
         RestoreCustomTrackerLayout(profile, previousProfile)
         RestoreDatatextPanelLayout(profile, previousProfile)
+    end
+
+    if self.NormalizeActiveProfile then
+        self:NormalizeActiveProfile({ source = "selectiveImport", selectedCategoryIDs = selectedCategoryIDs })
+    else
+        local addon = _G.QUI
+        if addon and addon.BackwardsCompat then
+            addon:BackwardsCompat()
+        end
     end
 
     if ns.Registry then

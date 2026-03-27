@@ -121,9 +121,28 @@ local CASTBAR_RENAMED_KEYS = {
 }
 
 -- Position keys always migrate (legacy values represent actual screen positions
--- and should take priority even when the target castbar section already exists
--- from a transitional-era profile that had both old and new keys).
+-- when there is no concrete new-style castbar data yet.
 local CASTBAR_POSITION_KEYS = { "offsetX", "offsetY" }
+
+local function HasModernCastbarData(target)
+    if type(target) ~= "table" then
+        return false
+    end
+
+    return target.anchor ~= nil
+        or target.fontSize ~= nil
+        or target.showSpellText ~= nil
+        or target.showTimeText ~= nil
+        or target.showChannelTicks ~= nil
+        or target.spellTextAnchor ~= nil
+        or target.timeTextAnchor ~= nil
+        or target.statusBarAnchor ~= nil
+        or target.widthAdjustment ~= nil
+        or target.freeOffsetX ~= nil
+        or target.freeOffsetY ~= nil
+        or target.lockedOffsetX ~= nil
+        or target.lockedOffsetY ~= nil
+end
 
 local function MigrateCastBars(profile)
     if not profile then return end
@@ -136,12 +155,15 @@ local function MigrateCastBars(profile)
             -- Ensure target table path exists
             local container = profile
             for i = 1, #path - 1 do
-                if type(container[path[i]]) ~= "table" then
-                    container[path[i]] = {}
+                local nextValue = rawget(container, path[i])
+                if type(nextValue) ~= "table" then
+                    nextValue = {}
+                    container[path[i]] = nextValue
                 end
-                container = container[path[i]]
+                container = nextValue
             end
-            local target = container[path[#path]]
+            local target = rawget(container, path[#path])
+            local targetHadModernData = HasModernCastbarData(target)
             if type(target) ~= "table" then
                 target = {}
                 container[path[#path]] = target
@@ -159,9 +181,11 @@ local function MigrateCastBars(profile)
                 end
             end
 
-            -- Position offsets always migrate from legacy (user's actual screen placement)
+            -- Transitional profiles can carry both old top-level castbar keys and the
+            -- real modern nested castbar. Only use legacy offsets when the nested
+            -- castbar is still absent; otherwise preserve the live modern values.
             for _, k in ipairs(CASTBAR_POSITION_KEYS) do
-                if old[k] ~= nil then
+                if old[k] ~= nil and not targetHadModernData then
                     target[k] = old[k]
                 end
             end
