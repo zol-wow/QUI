@@ -1420,7 +1420,8 @@ local function UpdateIconCooldown(icon)
             local reverse = icon._auraActive and true or false
 
             if icon._auraActive and childAuraInstID and C_UnitAuras and C_UnitAuras.GetAuraDuration
-                and icon.Cooldown.SetCooldownFromDurationObject then
+                and icon.Cooldown.SetCooldownFromDurationObject
+                and entry.viewerType == "buff" then
                 local okAuraDur, auraDurObj = pcall(C_UnitAuras.GetAuraDuration, auraUnit, childAuraInstID)
                 if okAuraDur and auraDurObj then
                     cdApplied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, auraDurObj, true)
