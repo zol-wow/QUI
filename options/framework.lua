@@ -660,6 +660,15 @@ local function CreateBackdrop(frame, bgColor, borderColor)
     frame:SetBackdropBorderColor(unpack(borderColor or C.border))
 end
 
+local function BindWidgetMethod(container, fn)
+    return function(selfOrFirst, ...)
+        if selfOrFirst == container then
+            return fn(...)
+        end
+        return fn(selfOrFirst, ...)
+    end
+end
+
 local function SetFont(fontString, size, flags, color)
     fontString:SetFont(GetFontPath(), size or 12, flags or "")
     if color then
@@ -1931,7 +1940,7 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange)
     end
     
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     SetValue(GetValue())
     
     box:SetScript("OnClick", function() SetValue(not GetValue()) end)
@@ -2006,7 +2015,7 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange)
     end
     
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     SetValue(GetValue())
     
     box:SetScript("OnClick", function() SetValue(not GetValue()) end)
@@ -2354,7 +2363,7 @@ function GUI:CreateSlider(parent, label, min, max, step, dbKey, dbTable, onChang
     end
 
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
 
     -- Slider drag callback
     slider:SetScript("OnValueChanged", function(self, value)
@@ -2684,7 +2693,7 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
     end
     
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     
     -- Initialize with current value
     SetValue(GetValue(), true)
@@ -2928,7 +2937,7 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
     end
     
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     SetValue(GetValue(), true)
     
     -- Dropdown menu (parented to UIParent to avoid scroll frame clipping)
@@ -3152,7 +3161,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     end
 
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     container.UpdateVisual = UpdateVisual
 
     -- Register for cross-widget sync
@@ -3465,7 +3474,7 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
     end
 
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     container.UpdateVisual = UpdateVisual
 
     -- Register for cross-widget sync
@@ -3644,7 +3653,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     end
 
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     container.UpdateVisual = UpdateVisual
 
     RegisterWidgetInstance(container, dbTable, dbKey)
@@ -3943,7 +3952,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     end
 
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     container.UpdateVisual = UpdateVisual
 
     -- Register for cross-widget sync
@@ -4332,7 +4341,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
 
     container.GetValue = GetValue
-    container.SetValue = SetValue
+    container.SetValue = BindWidgetMethod(container, SetValue)
     container.SetOptions = SetOptions
     container.UpdateVisual = UpdateVisual
 

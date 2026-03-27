@@ -97,6 +97,53 @@ local function SafeGetVerticalScroll(scrollFrame)
     return ok2 and safeCurrent or 0
 end
 
+local function CreateQUIStyleCloseButton(parent, relativeTo, relativePoint, xOffset, yOffset, onClick)
+    local GUI = _G.QUI and _G.QUI.GUI
+    local C = GUI and GUI.Colors or {}
+    local border = C.border or {0.24, 0.28, 0.34, 1}
+    local text = C.text or {0.85, 0.88, 0.92, 1}
+
+    local close = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    close:SetSize(22, 22)
+    close:SetPoint("RIGHT", relativeTo, "RIGHT", xOffset or 0, yOffset or 0)
+    close:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    close:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+    close:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
+
+    local lineLen, lineWidth = 10, 1.5
+    local xLine1 = close:CreateTexture(nil, "OVERLAY")
+    xLine1:SetSize(lineLen, lineWidth)
+    xLine1:SetPoint("CENTER")
+    xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
+    xLine1:SetRotation(math.rad(45))
+
+    local xLine2 = close:CreateTexture(nil, "OVERLAY")
+    xLine2:SetSize(lineLen, lineWidth)
+    xLine2:SetPoint("CENTER")
+    xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
+    xLine2:SetRotation(math.rad(-45))
+
+    close:SetScript("OnClick", onClick)
+    close:SetScript("OnEnter", function(self)
+        pcall(self.SetBackdropBorderColor, self, ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        self:SetBackdropColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.15)
+        xLine1:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        xLine2:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+    end)
+    close:SetScript("OnLeave", function(self)
+        pcall(self.SetBackdropBorderColor, self, border[1], border[2], border[3], border[4] or 1)
+        self:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+        xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
+        xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
+    end)
+
+    return close
+end
+
 local function CreatePanel()
     local panel = CreateFrame("Frame", "QUI_LayoutMode_SettingsPanel", UIParent)
     panel:SetFrameStrata(PANEL_STRATA)
@@ -157,22 +204,7 @@ local function CreatePanel()
     panel._titleText = titleText
 
     -- Close button
-    local closeBtn = CreateFrame("Button", nil, panel)
-    closeBtn:SetSize(20, 20)
-    closeBtn:SetPoint("RIGHT", titleBg, "RIGHT", -6, 0)
-
-    local closeTxt = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    closeTxt:SetPoint("CENTER")
-    closeTxt:SetText("X")
-    closeTxt:SetTextColor(0.6, 0.65, 0.7, 1)
-
-    closeBtn:SetScript("OnEnter", function()
-        closeTxt:SetTextColor(1, 0.3, 0.3, 1)
-    end)
-    closeBtn:SetScript("OnLeave", function()
-        closeTxt:SetTextColor(0.6, 0.65, 0.7, 1)
-    end)
-    closeBtn:SetScript("OnClick", function()
+    local closeBtn = CreateQUIStyleCloseButton(panel, titleBg, "TOPRIGHT", -6, 0, function()
         QUI_LayoutMode_Settings:Hide()
     end)
 
