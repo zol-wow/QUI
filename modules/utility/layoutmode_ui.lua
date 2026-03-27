@@ -1456,6 +1456,7 @@ local DRAWER_ROW_HEIGHT = 24
 local DRAWER_GROUP_HEIGHT = 22
 local DRAWER_MAX_HEIGHT = 500
 local DRAWER_PADDING = 8
+local DRAWER_CONTROLS_HEIGHT = 24
 
 CreateFramesDrawer = function(ui)
     local drawer = CreateFrame("Frame", "QUI_LayoutMode_Drawer", UIParent)
@@ -1493,9 +1494,78 @@ CreateFramesDrawer = function(ui)
     MakeDrawerLine("TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
     MakeDrawerLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
+    local function CreateDrawerActionButton(parent, text, width)
+        local button = CreateFrame("Button", nil, parent)
+        button:SetSize(width, 18)
+
+        local bgTex = button:CreateTexture(nil, "BACKGROUND")
+        bgTex:SetAllPoints()
+        bgTex:SetColorTexture(0.2, 0.2, 0.2, 0.9)
+        button._bg = bgTex
+
+        local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("CENTER")
+        label:SetText(text)
+        label:SetTextColor(0.8, 0.82, 0.85, 1)
+        button._label = label
+
+        button:SetScript("OnEnter", function(self)
+            self._bg:SetColorTexture(0.3, 0.3, 0.3, 1)
+            self._label:SetTextColor(1, 1, 1, 1)
+        end)
+        button:SetScript("OnLeave", function(self)
+            self._bg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
+            self._label:SetTextColor(0.8, 0.82, 0.85, 1)
+        end)
+
+        return button
+    end
+
+    local controls = CreateFrame("Frame", nil, drawer)
+    controls:SetPoint("TOPLEFT", DRAWER_PADDING, -DRAWER_PADDING)
+    controls:SetPoint("TOPRIGHT", -DRAWER_PADDING, -DRAWER_PADDING)
+    controls:SetHeight(DRAWER_CONTROLS_HEIGHT)
+
+    local controlsLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    controlsLabel:SetPoint("LEFT", 4, 0)
+    controlsLabel:SetText("Layer Visibility")
+    controlsLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+
+    local hideAllBtn = CreateDrawerActionButton(controls, "HIDE ALL", 74)
+    hideAllBtn:SetPoint("RIGHT", controls, "RIGHT", -2, 0)
+
+    local showAllBtn = CreateDrawerActionButton(controls, "SHOW ALL", 74)
+    showAllBtn:SetPoint("RIGHT", hideAllBtn, "LEFT", -6, 0)
+
+    showAllBtn:SetScript("OnClick", function()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+        um:SetAllHandlePreviewsVisible(true)
+        if drawer._refreshLayerButtons then
+            drawer._refreshLayerButtons()
+        end
+    end)
+    showAllBtn:HookScript("OnEnter", function(self)
+        self._bg:SetColorTexture(0.15, 0.35, 0.55, 1)
+    end)
+
+    hideAllBtn:SetScript("OnClick", function()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+        um:SetAllHandlePreviewsVisible(false)
+        if drawer._refreshLayerButtons then
+            drawer._refreshLayerButtons()
+        end
+    end)
+    hideAllBtn:HookScript("OnEnter", function(self)
+        self._bg:SetColorTexture(0.45, 0.16, 0.16, 1)
+    end)
+
+    drawer._controls = controls
+
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", nil, drawer, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", DRAWER_PADDING, -DRAWER_PADDING)
+    scrollFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -6)
     scrollFrame:SetPoint("BOTTOMRIGHT", -(DRAWER_PADDING + 20), DRAWER_PADDING)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
@@ -1573,6 +1643,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
     -- Second pass: build headers and rows
     local allRows = {}   -- { {frame=, group=, isHeader=bool} }
+    local layerRows = {}
 
     for _, group in ipairs(groupOrder) do
         -- Default to collapsed
@@ -1709,7 +1780,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     end
                     um:SetElementEnabled(key, newState)
                     UpdateToggleVisual()
-                    if row._updateShowVisual then row._updateShowVisual() end
+                    if drawer._refreshLayerButtons then
+                        drawer._refreshLayerButtons()
+                    end
                 end)
 
                 toggleBtn:SetScript("OnEnter", function(self)
@@ -1729,7 +1802,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 row._toggle = toggleBtn
             end
 
-            -- Show/Hide preview button (to left of ON/OFF)
+            -- Layer visibility buttons (to left of ON/OFF)
             do
                 local showBtn = CreateFrame("Button", nil, row)
                 showBtn:SetSize(40, 18)
@@ -1747,17 +1820,22 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 showText:SetPoint("CENTER")
                 showBtn._text = showText
 
+                local soloBtn, soloBg, soloText
                 local resetBtn, resetBg, resetText  -- forward refs for dimming
 
                 local function UpdateShowVisual()
                     local en = um:IsElementEnabled(key)
                     local shown = um:IsHandleShown(key)
                     if not en then
-                        -- Disabled: dim show/hide and reset
                         showBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
-                        showText:SetText("HIDE")
+                        showText:SetText("SHOW")
                         showText:SetTextColor(0.35, 0.35, 0.35, 1)
                         showBtn:EnableMouse(false)
+                        if soloBtn then
+                            soloBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
+                            soloText:SetTextColor(0.35, 0.35, 0.35, 1)
+                            soloBtn:EnableMouse(false)
+                        end
                         if resetBtn then
                             resetBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
                             resetText:SetTextColor(0.35, 0.35, 0.35, 1)
@@ -1765,15 +1843,20 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                         end
                     else
                         showBtn:EnableMouse(true)
+                        if soloBtn then soloBtn:EnableMouse(true) end
                         if resetBtn then resetBtn:EnableMouse(true) end
                         if shown then
                             showBg:SetColorTexture(0.15, 0.35, 0.55, 0.9)
-                            showText:SetText("SHOW")
+                            showText:SetText("HIDE")
                             showText:SetTextColor(1, 1, 1, 1)
                         else
                             showBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-                            showText:SetText("HIDE")
-                            showText:SetTextColor(0.5, 0.5, 0.5, 1)
+                            showText:SetText("SHOW")
+                            showText:SetTextColor(0.6, 0.6, 0.6, 1)
+                        end
+                        if soloBtn then
+                            soloBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
+                            soloText:SetTextColor(0.6, 0.6, 0.6, 1)
                         end
                         if resetBtn then
                             resetBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
@@ -1782,9 +1865,31 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     end
                 end
 
+                local function UpdateSoloVisual()
+                    if not soloBtn then return end
+                    local en = um:IsElementEnabled(key)
+                    if not en then
+                        soloBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
+                        soloText:SetTextColor(0.35, 0.35, 0.35, 1)
+                        soloBtn:EnableMouse(false)
+                        return
+                    end
+
+                    soloBtn:EnableMouse(true)
+                    if um.IsHandleSolo and um:IsHandleSolo(key) then
+                        soloBg:SetColorTexture(0.45, 0.27, 0.08, 0.95)
+                        soloText:SetTextColor(1, 0.88, 0.55, 1)
+                    else
+                        soloBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
+                        soloText:SetTextColor(0.6, 0.6, 0.6, 1)
+                    end
+                end
+
                 showBtn:SetScript("OnClick", function()
                     um:ToggleHandlePreview(key)
-                    UpdateShowVisual()
+                    if drawer._refreshLayerButtons then
+                        drawer._refreshLayerButtons()
+                    end
                 end)
 
                 showBtn:SetScript("OnEnter", function(self)
@@ -1798,16 +1903,57 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 end)
 
                 showBtn:SetScript("OnLeave", function()
-                    UpdateShowVisual()
+                    if drawer._refreshLayerButtons then
+                        drawer._refreshLayerButtons()
+                    end
                 end)
 
                 row._showBtn = showBtn
                 row._updateShowVisual = UpdateShowVisual
 
-                -- Reset button (to left of Show/Hide)
+                soloBtn = CreateFrame("Button", nil, row)
+                soloBtn:SetSize(40, 18)
+                soloBtn:SetPoint("RIGHT", showBtn, "LEFT", -4, 0)
+
+                soloBg = soloBtn:CreateTexture(nil, "BACKGROUND")
+                soloBg:SetAllPoints()
+                soloBtn._bg = soloBg
+
+                soloText = soloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                soloText:SetPoint("CENTER")
+                soloText:SetText("SOLO")
+                soloBtn._text = soloText
+
+                soloBtn:SetScript("OnClick", function()
+                    um:SoloHandlePreview(key)
+                    if drawer._refreshLayerButtons then
+                        drawer._refreshLayerButtons()
+                    end
+                end)
+
+                soloBtn:SetScript("OnEnter", function(self)
+                    if not um:IsElementEnabled(key) then return end
+                    if um.IsHandleSolo and um:IsHandleSolo(key) then
+                        self._bg:SetColorTexture(0.52, 0.31, 0.1, 1)
+                    else
+                        self._bg:SetColorTexture(0.35, 0.25, 0.15, 1)
+                    end
+                    soloText:SetTextColor(1, 0.88, 0.55, 1)
+                end)
+
+                soloBtn:SetScript("OnLeave", function()
+                    if drawer._refreshLayerButtons then
+                        drawer._refreshLayerButtons()
+                    end
+                end)
+
+                row._soloBtn = soloBtn
+                row._updateSoloVisual = UpdateSoloVisual
+
+                -- Reset button (to left of Solo)
                 resetBtn = CreateFrame("Button", nil, row)
                 resetBtn:SetSize(44, 18)
-                resetBtn:SetPoint("RIGHT", showBtn, "LEFT", -4, 0)
+                resetBtn:SetPoint("RIGHT", soloBtn, "LEFT", -4, 0)
 
                 resetBg = resetBtn:CreateTexture(nil, "BACKGROUND")
                 resetBg:SetAllPoints()
@@ -1821,7 +1967,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
                 resetBtn:SetScript("OnClick", function()
                     um:ResetToCenter(key)
-                    UpdateShowVisual()
+                    if drawer._refreshLayerButtons then
+                        drawer._refreshLayerButtons()
+                    end
                 end)
 
                 resetBtn:SetScript("OnEnter", function(self)
@@ -1831,13 +1979,16 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 end)
 
                 resetBtn:SetScript("OnLeave", function()
-                    UpdateShowVisual()
+                    if drawer._refreshLayerButtons then
+                        drawer._refreshLayerButtons()
+                    end
                 end)
 
                 row._resetBtn = resetBtn
 
                 -- Initial visual state (after all buttons created)
                 UpdateShowVisual()
+                UpdateSoloVisual()
             end
 
             -- Click row to select frame
@@ -1856,6 +2007,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             end)
 
             allRows[#allRows + 1] = { frame = row, group = group, isHeader = false }
+            layerRows[#layerRows + 1] = row
         end
 
         -- "Add Datapanel" button in Display group
@@ -2033,6 +2185,18 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
     end
 
     drawer._allRows = allRows
+    drawer._layerRows = layerRows
+    drawer._refreshLayerButtons = function()
+        for _, layerRow in ipairs(drawer._layerRows or {}) do
+            if layerRow._updateShowVisual then
+                layerRow._updateShowVisual()
+            end
+            if layerRow._updateSoloVisual then
+                layerRow._updateSoloVisual()
+            end
+        end
+    end
+    drawer._refreshLayerButtons()
     self:_RelayoutDrawer()
 end
 

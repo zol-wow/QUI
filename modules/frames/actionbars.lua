@@ -1696,6 +1696,30 @@ local function CreateEditOverlay(container, barKey)
     return overlay
 end
 
+local function EnsureEditOverlay(barKey)
+    local container = ActionBarsOwned.containers[barKey]
+    if not container then return nil end
+
+    local overlay = ActionBarsOwned.editOverlays[barKey]
+    if not overlay then
+        overlay = CreateEditOverlay(container, barKey)
+        ActionBarsOwned.editOverlays[barKey] = overlay
+    end
+
+    return overlay
+end
+
+local function SetEditOverlayVisible(barKey, visible)
+    local overlay = EnsureEditOverlay(barKey)
+    if not overlay then return end
+
+    if visible then
+        overlay:Show()
+    else
+        overlay:Hide()
+    end
+end
+
 local function OnEditModeEnter()
     ActionBarsOwned.editModeActive = true
 
@@ -1709,10 +1733,7 @@ local function OnEditModeEnter()
             CancelOwnedBarFadeTimers(state)
             SetOwnedBarAlpha(barKey, 1)
 
-            if not ActionBarsOwned.editOverlays[barKey] then
-                ActionBarsOwned.editOverlays[barKey] = CreateEditOverlay(container, barKey)
-            end
-            ActionBarsOwned.editOverlays[barKey]:Show()
+            SetEditOverlayVisible(barKey, true)
         end
     end
 end
@@ -6703,6 +6724,7 @@ do
 
         for _, info in ipairs(BAR_ELEMENTS) do
             local dbKey = DB_KEY_MAP[info.key] or info.key
+            local containerKey = DB_KEY_MAP[info.key] or info.key
             um:RegisterElement({
                 key = info.key,
                 label = info.label,
@@ -6716,7 +6738,6 @@ do
                 setEnabled = function(val)
                     local barDB = GetBarSettings(dbKey)
                     if barDB then barDB.enabled = val end
-                    local containerKey = DB_KEY_MAP[info.key] or info.key
                     local container = ActionBarsOwned.containers and ActionBarsOwned.containers[containerKey]
                     if container then
                         if val then
@@ -6739,6 +6760,12 @@ do
                         microMenu = "MicroMenuContainer", bagBar = "BagsBar",
                     }
                     return _G[BLIZZARD_FRAMES[info.key]]
+                end,
+                onOpen = function()
+                    SetEditOverlayVisible(containerKey, true)
+                end,
+                onClose = function()
+                    SetEditOverlayVisible(containerKey, false)
                 end,
             })
         end
