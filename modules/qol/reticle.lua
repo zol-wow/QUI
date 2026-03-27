@@ -93,8 +93,8 @@ local function GetRingColor()
         end
         return 1, 1, 1, 1
     else
-        local c = settings.customColor or {0.204, 0.827, 0.6, 1}
-        return c[1] or 0.204, c[2] or 0.827, c[3] or 0.6, c[4] or 1
+        local c = settings.customColor or {0.376, 0.647, 0.980, 1}
+        return c[1] or 0.376, c[2] or 0.647, c[3] or 0.980, c[4] or 1
     end
 end
 
@@ -135,6 +135,46 @@ local function IsCooldownActive(start, duration, isActive)
     end
 
     return result and true or false
+end
+
+---------------------------------------------------------------------------
+-- Apply cooldown display for a spell (secret-safe for 12.0.5+)
+-- Returns true if a cooldown was applied, false otherwise
+---------------------------------------------------------------------------
+local function ApplySpellCooldown(cd, spellID)
+    if not cd then return false end
+    local cdInfo = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
+    if not cdInfo then return false end
+
+    -- isActive: new 12.0.5+ non-secret boolean; fall back to pcall detection
+    local isActive = cdInfo.isActive
+    if isActive == nil then
+        isActive = IsCooldownActive(cdInfo.startTime or cdInfo.start, cdInfo.duration)
+    end
+    if not isActive then return false end
+
+    -- Priority 1: DurationObject (secret-safe, works in combat)
+    if C_Spell.GetSpellCooldownDuration and cd.SetCooldownFromDurationObject then
+        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if ok and durObj then
+            pcall(cd.SetCooldownFromDurationObject, cd, durObj, false)
+            return true
+        end
+    end
+
+    -- Priority 2: non-secret numeric values (SetCooldown restricted from secrets 12.0.5+)
+    local start, duration = cdInfo.startTime or cdInfo.start, cdInfo.duration
+    if start and duration and not IsSecretValue(start) and not IsSecretValue(duration) then
+        local modRate = cdInfo.modRate
+        if modRate and not IsSecretValue(modRate) then
+            cd:SetCooldown(start, duration, modRate)
+        else
+            cd:SetCooldown(start, duration)
+        end
+        return true
+    end
+
+    return false
 end
 
 ---------------------------------------------------------------------------
@@ -310,7 +350,7 @@ local function UpdateGCDCooldown()
         return
     end
 
-    if ApplyCooldownFromSpell(gcdCooldown, GCD_SPELL_ID) then
+    if ApplySpellCooldown(gcdCooldown, GCD_SPELL_ID) then
         gcdCooldown:Show()
     else
         gcdCooldown:Hide()
@@ -498,9 +538,13 @@ eventFrame:SetScript("OnEvent", function(self, event, unit, _, spellID)
         end
 
         -- Check cooldown of cast spell, fall back to GCD spell
-        if spellID and gcdCooldown and ApplyCooldownFromSpell(gcdCooldown, spellID) then
-            gcdCooldown:Show()
-            UpdateRingAppearance()
+        if spellID then
+            if ApplySpellCooldown(gcdCooldown, spellID) then
+                gcdCooldown:Show()
+                UpdateRingAppearance()
+            else
+                UpdateGCDCooldown()
+            end
         else
             UpdateGCDCooldown()
         end
@@ -513,6 +557,15 @@ end)
 _G.QUI_RefreshReticle = function()
     InvalidateCache()
     UpdateReticle()
+end
+
+if ns.Registry then
+    ns.Registry:Register("reticle", {
+        refresh = _G.QUI_RefreshReticle,
+        priority = 30,
+        group = "qol",
+        importCategories = { "castBars" },
+    })
 end
 
 ---------------------------------------------------------------------------

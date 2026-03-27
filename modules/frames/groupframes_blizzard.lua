@@ -14,6 +14,15 @@ local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
+-- Upvalue hot-path globals
+local pairs = pairs
+local pcall = pcall
+local wipe = wipe
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local hooksecurefunc = hooksecurefunc
+local C_Timer = C_Timer
+
 ---------------------------------------------------------------------------
 -- MODULE TABLE
 ---------------------------------------------------------------------------
@@ -153,12 +162,16 @@ end
 -- addon code execution for non-party/raid frames (nameplates, boss frames).
 ---------------------------------------------------------------------------
 if CompactUnitFrame_UpdateSelectionHighlight then
+    local sub = string.sub
     hooksecurefunc("CompactUnitFrame_UpdateSelectionHighlight", function(frame)
         if InCombatLockdown() then return end
 
+        -- PERF: This fires for ALL CompactUnitFrames (nameplates, boss, arena).
+        -- Fast string.sub prefix check instead of :match regex.
         local unit = frame.unit or frame.displayedUnit
         if not unit then return end
-        if not (unit == "player" or unit:match("^party") or unit:match("^raid")) then return end
+        local p4 = sub(unit, 1, 4)
+        if not (p4 == "part" or p4 == "raid" or unit == "player") then return end
 
         if not ShouldHide() then return end
 

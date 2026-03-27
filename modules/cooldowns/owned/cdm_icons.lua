@@ -12,7 +12,7 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 
 ---------------------------------------------------------------------------
 -- MODULE
@@ -33,9 +33,41 @@ local IsSecretValue = Helpers.IsSecretValue
 local SafeToNumber = Helpers.SafeToNumber
 local SafeValue = Helpers.SafeValue
 
+-- Upvalue caching for hot-path performance
+local type = type
+local pairs = pairs
+local ipairs = ipairs
+local pcall = pcall
+local CreateFrame = CreateFrame
+local GetTime = GetTime
+local wipe = wipe
+local select = select
+local tostring = tostring
+local format = format
+local InCombatLockdown = InCombatLockdown
+local C_UnitAuras = C_UnitAuras
+local C_Spell = C_Spell
+local C_Item = C_Item
+local C_CooldownViewer = C_CooldownViewer
+local C_StringUtil = C_StringUtil
+local issecretvalue = issecretvalue
+
 local function IsSafeNumeric(val)
     if IsSecretValue(val) then return false end
     return type(val) == "number"
+end
+
+-- Per-spell override lookup helper.  Returns the cached override table
+-- for the icon's spell/container, or nil.  Cheap (two table lookups).
+local function GetIconSpellOverride(icon)
+    local entry = icon and icon._spellEntry
+    if not entry then return nil end
+    local CDMSpellData = ns.CDMSpellData
+    if not CDMSpellData then return nil end
+    local spellID = entry.spellID or entry.id
+    local containerKey = entry.viewerType
+    if not spellID or not containerKey then return nil end
+    return CDMSpellData:GetSpellOverride(containerKey, spellID)
 end
 
 ---------------------------------------------------------------------------
@@ -53,6 +85,7 @@ local iconPools = {
     utility   = {},
     buff      = {},
 }
+-- Phase G: Pools for custom containers are created dynamically via EnsurePool().
 local recyclePool = {}
 local iconCounter = 0
 local updateTicker = nil
@@ -65,8 +98,8 @@ local blizzCDState = setmetatable({}, { __mode = "k" })
 
 -- TAINT SAFETY: Blizzard Icon texture hook state tracked in a weak-keyed table.
 -- Maps Blizzard child Icon regions → { icon = quiIcon } so the SetTexture hook
--- can mirror texture changes (e.g., Judgment → Hammer of Wrath via Wake of Ashes)
--- to the addon-owned icon without reading restricted frames during combat.
+-- can mirror texture changes to the addon-owned icon without reading restricted
+-- frames during combat.
 local blizzTexState = setmetatable({}, { __mode = "k" })
 
 -- TAINT SAFETY: Blizzard stack/charge text hook state tracked in a weak-keyed
@@ -77,15 +110,68 @@ local blizzTexState = setmetatable({}, { __mode = "k" })
 local blizzStackState = setmetatable({}, { __mode = "k" })
 
 ---------------------------------------------------------------------------
+-- PER-TICK CACHES: wiped at the start of each UpdateAllCooldowns batch.
+-- Avoids redundant C API calls when the same spellID appears in multiple
+-- containers or is queried by both GetBestSpellCooldown and stack/visibility.
+---------------------------------------------------------------------------
+local _tickChargeCache = {}   -- [spellID] = chargeInfo or false
+local _tickCooldownCache = {} -- [spellID] = cdInfo or false
+
+-- Persistent multi-charge spell cache (survives combat/reload via SavedVariables).
+-- Populated OOC when GetSpellCharges returns readable values; consulted in combat
+-- when secret values block runtime detection.
+local function GetChargeMetadataDB()
+    local db = QUI and QUI.db and QUI.db.global
+    if not db then return nil end
+    if not db.cdmChargeSpells then db.cdmChargeSpells = {} end
+    return db.cdmChargeSpells
+end
+
+local function TickCacheGetCharges(spellID)
+    local cached = _tickChargeCache[spellID]
+    if cached ~= nil then return cached or nil end
+    local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID) or nil
+    _tickChargeCache[spellID] = chargeInfo or false
+    -- Persist multi-charge detection OOC for combat fallback
+    if chargeInfo and not InCombatLockdown() then
+        local maxC = SafeToNumber(chargeInfo.maxCharges, nil)
+        if maxC and maxC > 1 then
+            local svDB = GetChargeMetadataDB()
+            if svDB then svDB[spellID] = maxC end
+        end
+    end
+    return chargeInfo
+end
+
+local function TickCacheGetCooldown(spellID)
+    local cached = _tickCooldownCache[spellID]
+    if cached ~= nil then return cached or nil end
+    local cdInfo = C_Spell.GetSpellCooldown(spellID)
+    _tickCooldownCache[spellID] = cdInfo or false
+    return cdInfo
+end
+
+
+---------------------------------------------------------------------------
+-- DYNAMIC CHILD LOOKUP: Scan ALL viewer children to find the one with
+-- auraInstanceID matching a tracked spell.  Blizzard recycles children
+-- across auras, so the child→spell assignment changes at runtime.
+-- Child lookup infrastructure lives in cdm_spelldata.lua (shared by icons + bars).
+-- Local wrappers for hot-path performance.
+---------------------------------------------------------------------------
+local function FindChildForSpell(id1, id2, id3)
+    return ns.CDMSpellData.FindChildForSpell(id1, id2, id3)
+end
+local function FindBuffChildForSpell(viewerType, id1, id2, id3)
+    return ns.CDMSpellData.FindBuffChildForSpell(viewerType, id1, id2, id3)
+end
+
+---------------------------------------------------------------------------
 -- DB ACCESS
 ---------------------------------------------------------------------------
 local GetDB = Helpers.CreateDBGetter("ncdm")
 
 local function GetCustomData(trackerKey)
-    if Helpers and Helpers.GetNCDMCustomEntries then
-        return Helpers.GetNCDMCustomEntries(trackerKey)
-    end
-
     if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm
         and QUICore.db.char.ncdm[trackerKey] and QUICore.db.char.ncdm[trackerKey].customEntries then
         return QUICore.db.char.ncdm[trackerKey].customEntries
@@ -96,10 +182,20 @@ end
 ---------------------------------------------------------------------------
 -- TEXTURE HELPERS
 ---------------------------------------------------------------------------
+-- Per-cycle texture cache: wiped once per UpdateAllCooldowns batch so
+-- each spellID→iconID lookup happens at most once per tick, not per-icon.
+local _textureCycleCache = {}
+
 local function GetSpellTexture(spellID)
     if not spellID then return nil end
+    local cached = _textureCycleCache[spellID]
+    if cached ~= nil then
+        return cached ~= false and cached or nil
+    end
     local info = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
-    return info and info.iconID or nil
+    local texID = info and info.iconID or nil
+    _textureCycleCache[spellID] = texID or false
+    return texID
 end
 
 ---------------------------------------------------------------------------
@@ -162,79 +258,111 @@ local function GetEntryTexture(entry)
         local _, _, _, _, icon = C_Item.GetItemInfoInstant(entry.id)
         return icon
     end
-    return GetSpellTexture(entry.id)
+    return GetSpellTexture(entry.overrideSpellID or entry.id)
 end
 
 ---------------------------------------------------------------------------
 -- COOLDOWN RESOLUTION
 -- Ported from cdm_custom.lua:116-181 (GetBestSpellCooldown)
 ---------------------------------------------------------------------------
+-- Zero-allocation cooldown resolution: no table, no closure per call.
+-- This function is called once per cooldown icon per tick (~12-24x per cycle).
+-- Consider logic is fully inlined to avoid closure overhead.
 -- Extract a DurationObject from a cooldown info table if the API provides one.
--- 12.0.1+/12.0.5+ may expose DurationObjects on SpellCooldownInfo/SpellChargeInfo.
+-- 12.0.5+ may expose DurationObjects on SpellCooldownInfo/SpellChargeInfo.
+-- Field names are probed defensively; returns nil when unavailable.
 local function ExtractCooldownDurObj(info)
     if not info then return nil end
     local obj = info.cooldownDurationObject or info.durationObject
-    if obj and type(obj) == "table" then
-        return obj
-    end
+    if obj and type(obj) == "table" then return obj end
     return nil
 end
 
-local function AccumulateCooldown(startTime, duration, info, bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
+-- Evaluate a single SpellCooldownInfo/SpellChargeInfo result and accumulate
+-- into the best safe numeric values, secret fallbacks, and DurationObject.
+local function AccumulateCooldown(st, dur, info, bestStart, bestDur, secStart, secDur, bestDurObj)
     local durObj = ExtractCooldownDurObj(info)
-    if durObj and not bestDurObj then
-        bestDurObj = durObj
-    end
-
-    if IsSecretValue(startTime) or IsSecretValue(duration) then
-        if not secretStart then
-            secretStart, secretDuration = startTime, duration
+    if IsSecretValue(st) or IsSecretValue(dur) then
+        if not secStart then secStart, secDur = st, dur end
+        -- Secret path: take any durObj as fallback
+        if durObj and not bestDurObj then bestDurObj = durObj end
+    elseif IsSafeNumeric(st) and IsSafeNumeric(dur) and dur > 0 then
+        if not bestDur or dur > bestDur then
+            bestStart, bestDur = st, dur
+            -- Always sync durObj with the longest duration — even if
+            -- this source has no durObj (nil clears a stale one from a
+            -- shorter cooldown like GCD, so Priority 2 numeric values
+            -- are used instead of the wrong DurationObject).
+            bestDurObj = durObj
+        elseif not bestDurObj and durObj then
+            bestDurObj = durObj  -- any durObj is better than none
         end
-        return bestStart, bestDuration, secretStart, secretDuration, bestDurObj
     end
-
-    if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) or duration <= 0 then
-        return bestStart, bestDuration, secretStart, secretDuration, bestDurObj
-    end
-
-    if not bestDuration or duration > bestDuration then
-        bestStart, bestDuration = startTime, duration
-    end
-    return bestStart, bestDuration, secretStart, secretDuration, bestDurObj
+    return bestStart, bestDur, secStart, secDur, bestDurObj
 end
 
 local function GetBestSpellCooldown(spellID)
     if not spellID then return nil, nil, nil end
 
-    local candidates = { spellID }
-
-    -- Add override spell if present
-    if C_Spell.GetOverrideSpell then
-        local overrideID = C_Spell.GetOverrideSpell(spellID)
-        if overrideID and overrideID ~= spellID then
-            candidates[#candidates + 1] = overrideID
-        end
-    end
-
     local bestStart, bestDuration = nil, nil
     local secretStart, secretDuration = nil, nil
     local bestDurObj = nil
 
-    for _, identifier in ipairs(candidates) do
-        local cdInfo = C_Spell.GetSpellCooldown(identifier)
-        if cdInfo then
+    -- Check primary spell (per-tick cached)
+    local cdInfo = TickCacheGetCooldown(spellID)
+    if cdInfo then
+        bestStart, bestDuration, secretStart, secretDuration, bestDurObj =
+            AccumulateCooldown(cdInfo.startTime, cdInfo.duration, cdInfo,
+                bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
+    end
+    local chargeInfo = TickCacheGetCharges(spellID)
+    if chargeInfo then
+        -- Use the new non-secret isActive boolean (12.0.5+) which is true
+        -- when maxCharges > 1 AND currentCharges < maxCharges AND the
+        -- recharge timer is running.  Falls back to manual comparison for
+        -- older API versions.  isActive is non-secret even in combat,
+        -- fixing charge detection that failed with secret currentCharges.
+        local chargeActive = false
+        if chargeInfo.isActive ~= nil then
+            chargeActive = chargeInfo.isActive == true
+        else
+            local currentCharges = SafeToNumber(chargeInfo.currentCharges, 0)
+            local maxCharges = SafeToNumber(chargeInfo.maxCharges, 0)
+            chargeActive = currentCharges < maxCharges
+        end
+        if chargeActive then
             bestStart, bestDuration, secretStart, secretDuration, bestDurObj =
-                AccumulateCooldown(cdInfo.startTime, cdInfo.duration, cdInfo,
+                AccumulateCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo,
                     bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
         end
+    end
 
-        -- Check charges
-        if C_Spell.GetSpellCharges then
-            local chargeInfo = C_Spell.GetSpellCharges(identifier)
+    -- Check override spell (no table allocation — just a second ID)
+    if C_Spell.GetOverrideSpell then
+        local overrideID = C_Spell.GetOverrideSpell(spellID)
+        -- overrideID may be secret in combat — guard the comparison.
+        local isOverridden = false
+        if overrideID and not IsSecretValue(overrideID) then
+            isOverridden = overrideID ~= spellID
+        end
+        if isOverridden then
+            cdInfo = TickCacheGetCooldown(overrideID)
+            if cdInfo then
+                bestStart, bestDuration, secretStart, secretDuration, bestDurObj =
+                    AccumulateCooldown(cdInfo.startTime, cdInfo.duration, cdInfo,
+                        bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
+            end
+            chargeInfo = TickCacheGetCharges(overrideID)
             if chargeInfo then
-                local currentCharges = SafeToNumber(chargeInfo.currentCharges, 0)
-                local maxCharges = SafeToNumber(chargeInfo.maxCharges, 0)
-                if currentCharges < maxCharges then
+                local chargeActive2 = false
+                if chargeInfo.isActive ~= nil then
+                    chargeActive2 = chargeInfo.isActive == true
+                else
+                    local cc = SafeToNumber(chargeInfo.currentCharges, 0)
+                    local mc = SafeToNumber(chargeInfo.maxCharges, 0)
+                    chargeActive2 = cc < mc
+                end
+                if chargeActive2 then
                     bestStart, bestDuration, secretStart, secretDuration, bestDurObj =
                         AccumulateCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo,
                             bestStart, bestDuration, secretStart, secretDuration, bestDurObj)
@@ -243,44 +371,74 @@ local function GetBestSpellCooldown(spellID)
         end
     end
 
-    -- DurationObject APIs (12.0+, secret-safe). These can be forwarded
-    -- directly to SetCooldownFromDurationObject without reading values in Lua.
-    if not bestDurObj then
-        if C_Spell.GetSpellCooldownDuration then
-            local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
-            if ok and durObj then
-                bestDurObj = durObj
-            end
+    -- DurationObject APIs (12.0+, secret-safe).  These return objects that
+    -- can be forwarded directly to SetCooldownFromDurationObject without
+    -- reading values in Lua — the Blizzard-blessed path for addon code.
+    -- Gate: only query when a cooldown is known active.  12.0.5+ returns
+    -- zero-span DurationObjects for inactive spells.
+    local hasActiveCooldown = bestStart or secretStart
+    if not bestDurObj and hasActiveCooldown then
+        -- Check charge duration FIRST — for charged spells, the charge
+        -- recharge DurationObject is what we want to display, not the
+        -- spell's own cooldown DurationObject (which may be a shorter
+        -- per-use CD or GCD).  GetSpellChargeDuration returns the
+        -- recharge timer DurationObject, secret-safe for combat.
+        if C_Spell.GetSpellChargeDuration then
+            local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
+            if ok and durObj then bestDurObj = durObj end
         end
-        if not bestDurObj and C_Spell.GetOverrideSpell and C_Spell.GetSpellCooldownDuration then
+        if not bestDurObj and C_Spell.GetOverrideSpell and C_Spell.GetSpellChargeDuration then
             local overrideID = C_Spell.GetOverrideSpell(spellID)
             if overrideID and overrideID ~= spellID then
-                local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, overrideID)
-                if ok and durObj then
-                    bestDurObj = durObj
-                end
+                local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, overrideID)
+                if ok and durObj then bestDurObj = durObj end
             end
         end
-        if not bestDurObj and C_Spell.GetSpellChargeDuration then
-            local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
-            if ok and durObj then
-                bestDurObj = durObj
+        -- Fall back to spell cooldown duration (non-charged spells)
+        if not bestDurObj and C_Spell.GetSpellCooldownDuration then
+            local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+            if ok and durObj then bestDurObj = durObj end
+        end
+        if not bestDurObj and C_Spell.GetOverrideSpell then
+            local overrideID = C_Spell.GetOverrideSpell(spellID)
+            if overrideID and overrideID ~= spellID and C_Spell.GetSpellCooldownDuration then
+                local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, overrideID)
+                if ok and durObj then bestDurObj = durObj end
             end
         end
     end
+    -- Discard DurationObjects extracted from cdInfo when no source confirms
+    -- an active cooldown.  12.0.5+ cooldown info tables may carry zero-span
+    -- DurationObjects for ready-to-use spells.
+    if not hasActiveCooldown then
+        bestDurObj = nil
+    end
 
+    -- isActive: non-secret boolean from cooldown APIs (12.0.5+).
+    local isActive = false
+    if cdInfo and cdInfo.isActive ~= nil then
+        isActive = cdInfo.isActive == true
+    end
+    if chargeInfo and chargeInfo.isActive == true then
+        isActive = true
+    end
+
+    -- Prefer safe numeric values, then DurationObject, then hook cache
     if bestStart then
-        return bestStart, bestDuration, bestDurObj
+        return bestStart, bestDuration, bestDurObj, isActive
     end
     if bestDurObj then
-        return nil, nil, bestDurObj
+        return nil, nil, bestDurObj, isActive
     end
-
-    -- Secret numeric cooldowns can no longer be forwarded to SetCooldown().
-    if secretStart then
-        return nil, nil, nil
+    -- Secret fallback: no longer forward raw secrets to SetCooldown (12.0.5+).
+    -- Try hook cache DurationObject from Blizzard viewer children.
+    if secretStart and ns.CDMSpellData and ns.CDMSpellData.GetCachedDurObj then
+        local hookDurObj = ns.CDMSpellData:GetCachedDurObj(spellID)
+        if hookDurObj then
+            return nil, nil, hookDurObj, isActive
+        end
     end
-    return nil, nil, nil
+    return nil, nil, nil, isActive
 end
 
 -- Item cooldown resolution
@@ -288,6 +446,8 @@ local function GetItemCooldown(itemID)
     if not itemID or not C_Item.GetItemCooldown then return nil, nil, nil end
     local startTime, duration = C_Item.GetItemCooldown(itemID)
     if IsSecretValue(startTime) or IsSecretValue(duration) then
+        -- Secret values can no longer be forwarded via SetCooldown (12.0.5+).
+        -- No DurationObject API exists for items; graceful degradation.
         return nil, nil, nil
     end
     if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) or duration <= 0 then
@@ -485,15 +645,34 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 if not s or s.bypass then return end
                 local targetIcon = s.icon
                 if not targetIcon then return end
+                -- Stale mapping guard: if the icon's entry now references a
+                -- different Blizzard child, this hook is orphaned.
+                local tEntry = targetIcon._spellEntry
+                if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown ~= self then
 
-                -- Mirror to addon-owned CD
-                local cd = targetIcon.Cooldown
-
-                if cd and cd.SetCooldownFromDurationObject then
-                    pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
+                    return
                 end
 
-                SyncMirroredCooldownState(targetIcon, self, true)
+                -- Mirror to addon-owned CD.
+                -- Skip forwarding for charged entries — Blizzard's viewer
+                -- sends zero-span DurationObjects when the spell is usable
+                -- (isActive=false), which clears the addon CooldownFrame
+                -- and overwrites the API's charge recharge swipe.  The API
+                -- path (GetBestSpellCooldown + isActive) handles charged
+                -- cooldowns correctly without mirror interference.
+                local cd = targetIcon.Cooldown
+                local tSkipCharge = tEntry and tEntry.hasCharges
+
+                if not tSkipCharge and cd and cd.SetCooldownFromDurationObject then
+                    pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
+                    -- Track that this hook successfully forwarded a DurationObject
+                    -- so the API path can skip competing CooldownFrame writes.
+                    targetIcon._durObjHookSync = GetTime()
+                end
+
+                if not tSkipCharge then
+                    SyncMirroredCooldownState(targetIcon, self, true)
+                end
                 RefreshIconGCDState(targetIcon)
 
                 ReapplySwipeStyle(cd, targetIcon)
@@ -505,17 +684,17 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             if not s or s.bypass then return end
             local targetIcon = s.icon
             if not targetIcon then return end
+            -- Stale mapping guard
+            local tEntry = targetIcon._spellEntry
+            if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown ~= self then
 
-            -- Mirror to addon-owned CD
-            local cd = targetIcon.Cooldown
-            if cd and IsSafeNumeric(start) and IsSafeNumeric(duration) then
-                pcall(cd.SetCooldown, cd, start, duration)
+                return
             end
 
-            SyncMirroredCooldownState(targetIcon, self, IsSafeNumeric(start) and IsSafeNumeric(duration) and start > 0 and duration > 0)
+            -- Swipe is driven by UpdateIconCooldown via the override chain
+            -- (GetOverrideSpell → GetSpellCooldown/Duration).  The hook
+            -- only needs to refresh GCD state — no CooldownFrame writes.
             RefreshIconGCDState(targetIcon)
-
-            ReapplySwipeStyle(cd, targetIcon)
         end)
 
         -- No SetAllPoints/SetPoint/SetParent hooks: the Blizzard
@@ -562,6 +741,16 @@ local function HookBlizzTexture(icon, blizzChild)
     if not blizzChild then return end
     local iconRegion = blizzChild.Icon or blizzChild.icon
     if not iconRegion then return end
+    -- Bar viewer children have .Icon as a Frame containing .Icon (Texture).
+    -- Resolve to the actual Texture region for hooking.
+    if not iconRegion.SetTexture then
+        local nested = iconRegion.Icon
+        if nested and nested.SetTexture then
+            iconRegion = nested
+        else
+            return  -- no hookable texture region
+        end
+    end
 
     -- Update the mapping (may point to a different QUI icon after pool recycle)
     local state = blizzTexState[iconRegion]
@@ -578,30 +767,38 @@ local function HookBlizzTexture(icon, blizzChild)
             local s = blizzTexState[self]
             if not s or not s.icon then return end
             local quiIcon = s.icon
+            -- Stale mapping guard: if the icon's entry now references a
+            -- different Blizzard child, this hook is orphaned — skip to
+            -- prevent cross-icon texture contamination when Blizzard
+            -- recycles viewer children.
+            local tEntry = quiIcon._spellEntry
+            if tEntry and tEntry._blizzChild then
+                local curRegion = tEntry._blizzChild.Icon or tEntry._blizzChild.icon
+                -- Resolve nested texture for bar viewer children
+                if curRegion and not curRegion.SetTexture and curRegion.Icon then
+                    curRegion = curRegion.Icon
+                end
+                if curRegion ~= self then return end
+            end
+            -- Skip when the icon has a resolved desired texture — the Blizzard
+            -- child may use a different icon (e.g., debuff instead of ability).
+            if quiIcon._desiredTexture then return end
             if quiIcon.Icon and texture then
-                quiIcon.Icon:SetTexture(texture)
+                -- Detect spell override transitions (e.g., Wake of Ashes →
+                -- Hammer of Light).  When texture changes, the spell has
+                -- transformed — clear cached DurationObject to force a swipe
+                -- refresh so the new spell's cooldown state is shown.
+                -- Forward texture to our icon (C-side handles secret values).
+                -- Texture may be secret in combat — no Lua comparisons.
+                pcall(quiIcon.Icon.SetTexture, quiIcon.Icon, texture)
             end
         end)
 
-        -- Mirror desaturation from Blizzard's icon so our icon reflects
-        -- the same visual state without needing API calls in combat.
-        hooksecurefunc(iconRegion, "SetDesaturated", function(self, desaturated)
-            local s = blizzTexState[self]
-            if not s or not s.icon then return end
-            local quiIcon = s.icon
-            if not quiIcon.Icon then return end
-            local entry = quiIcon._spellEntry
-            if not entry then return end
-            local viewerType = entry.viewerType
-            if viewerType == "buff" or quiIcon._auraActive then
-                return
-            end
-            local db = GetDB()
-            local settings = db and db[viewerType]
-            if settings and settings.desaturateOnCooldown then
-                quiIcon.Icon:SetDesaturated(desaturated)
-            end
-        end)
+        -- Desaturation is now driven solely by UpdateIconCooldown's
+        -- desaturation block, which uses _isOnGCD + DurationObject remaining
+        -- to filter GCD from real cooldowns.  The mirror hook was forwarding
+        -- Blizzard's GCD-driven desaturation toggles, causing flickering.
+        -- Intentionally removed: no SetDesaturated forwarding.
     end
 end
 
@@ -610,6 +807,10 @@ local function UnhookBlizzTexture(icon)
     if not entry or not entry._blizzChild then return end
     local iconRegion = entry._blizzChild.Icon or entry._blizzChild.icon
     if not iconRegion then return end
+    -- Resolve nested texture for bar viewer children
+    if not iconRegion.SetTexture and iconRegion.Icon then
+        iconRegion = iconRegion.Icon
+    end
     local state = blizzTexState[iconRegion]
     if state then state.icon = nil end
 end
@@ -624,27 +825,103 @@ end
 -- No initial seeding — hooks fire when Blizzard
 -- first updates the frames (next charge/aura change after BuildIcons).
 ---------------------------------------------------------------------------
+
 local function SyncStackText(state)
     local icon = state.icon
     if not icon then return end
-    -- When apiOverride is set, the API has authoritatively confirmed zero
-    -- stacks/charges.  Hooks may still fire with stale data from Blizzard's
-    -- alpha-0 CDM viewer — ignore them until the API sees a non-zero value.
-    if state.apiOverride then return end
-    -- Visibility is driven by SetText content, not Show/Hide hooks.
-    -- Blizzard calls Show/Hide once during initial layout (before our hooks)
-    -- and never again, but calls SetText whenever charges/stacks change.
+    -- Stale mapping guard: if the icon was remapped to a different
+    -- Blizzard child, this state is orphaned — skip to prevent
+    -- cross-icon stack contamination.
+    if state.blizzChild then
+        local entry = icon._spellEntry
+        if entry and entry._blizzChild and entry._blizzChild ~= state.blizzChild then
+            return
+        end
+    end
     -- ChargeCount takes priority over Applications.
-    if state.chargeText and state.chargeText ~= "" then
-        icon.StackText:SetText(state.chargeText)
+    -- chargeText/appText may be secret values (Blizzard passes them to
+    -- SetText during combat) — forward to C-side SetText without comparing.
+    -- Use pcall for the ~= "" check: secret values will error on comparison;
+    -- if comparison fails, treat the value as non-empty (it's a secret number).
+    local hasCharge = state.chargeText ~= nil
+    if hasCharge then
+        local eqOk, eqResult = pcall(function() return state.chargeText == "" end)
+        if eqOk and eqResult then hasCharge = false end
+    end
+    local hasApp = state.appText ~= nil
+    if hasApp and not hasCharge then
+        local eqOk, eqResult = pcall(function() return state.appText == "" end)
+        if eqOk and eqResult then hasApp = false end
+    end
+    -- For cooldown icons, skip application stacks — they represent aura
+    -- stacks (e.g., Coagulating Blood on Death Strike) which aren't
+    -- meaningful on a cooldown display.  Only charges are relevant.
+    if hasApp and not hasCharge then
+        local entry = icon._spellEntry
+        if entry and not entry.isAura then
+            hasApp = false
+        end
+    end
+
+    -- Write when hooks provide actual content.  Only clear when
+    -- transitioning from content → empty (e.g., charged child recycled
+    -- to a non-charged spell).  Don't clear on repeated empty SetText
+    -- calls — Blizzard spams SetText("") on ChargeCount.Current for
+    -- every viewer child on every refresh (even buffs without charges),
+    -- which would race with the API path and cause flicker.
+    if hasCharge then
+        -- Only forward charge text for multi-charge spells (maxCharges > 1).
+        -- maxCharges is non-secret (12.0.5+).  Single-charge spells can
+        -- show misleading counts from empowerment mechanics (e.g., Wake of
+        -- Ashes showing "2" from Hammer of Light transformation).
+        local entry = icon._spellEntry
+        local sid = entry and (entry.overrideSpellID or entry.spellID or entry.id)
+        local isMulti = false
+        if sid and C_Spell.GetSpellCharges then
+            local ok, ci = pcall(C_Spell.GetSpellCharges, sid)
+            if ok and ci and ci.maxCharges and ci.maxCharges > 1 then
+                isMulti = true
+            end
+        end
+        if not isMulti then hasCharge = false end
+    end
+    if hasCharge then
+        pcall(icon.StackText.SetText, icon.StackText, state.chargeText)
         icon.StackText:Show()
-    elseif state.appText and state.appText ~= "" then
-        icon.StackText:SetText(state.appText)
+        state._hookHadContent = true
+    elseif hasApp then
+        pcall(icon.StackText.SetText, icon.StackText, state.appText)
         icon.StackText:Show()
-    else
+        state._hookHadContent = true
+    elseif state._hookHadContent then
+        -- Was showing content, now empty: legitimate clear
+        -- (child recycled or charges consumed).
         icon.StackText:SetText("")
         icon.StackText:Hide()
+        state._hookHadContent = false
     end
+end
+
+--- Check whether hooks are actively driving stack text for an icon.
+--- When true, API-based stack writes in UpdateIconCooldown should yield
+--- to avoid overwriting the hook-driven values (our event handler runs
+--- after Blizzard's hooks, creating a race where the API path clears or
+--- sets stacks that the hook just populated correctly).
+local function IsHookStackActive(entry, icon)
+    if not entry or not entry._blizzChild then return false end
+    local bss = blizzStackState[entry._blizzChild]
+    if not bss or bss.icon ~= icon then return false end
+    -- chargeText/appText may be secret values — pcall the comparison.
+    -- If comparison errors (secret), treat as non-empty (active).
+    if bss.chargeText ~= nil then
+        local ok, eq = pcall(function() return bss.chargeText == "" end)
+        if not ok or not eq then return true end
+    end
+    if bss.appText ~= nil then
+        local ok, eq = pcall(function() return bss.appText == "" end)
+        if not ok or not eq then return true end
+    end
+    return false
 end
 
 local function HookBlizzStackText(icon, blizzChild)
@@ -656,6 +933,7 @@ local function HookBlizzStackText(icon, blizzChild)
         blizzStackState[blizzChild] = state
     end
     state.icon = icon
+    state.blizzChild = blizzChild  -- Track child for stale mapping guard
 
     if not state.hooked then
         state.hooked = true
@@ -664,19 +942,22 @@ local function HookBlizzStackText(icon, blizzChild)
         local chargeFrame = blizzChild.ChargeCount
         local appFrame = blizzChild.Applications
         -- Hook ChargeCount (e.g., DH Soul Fragments on Soul Cleave)
+        -- Only SetText hooks drive the display — Show/Hide track visibility
+        -- state but do NOT call SyncStackText.  Blizzard's viewer refresh
+        -- cycle (RefreshSpellChargeInfo) calls Hide→SetText→Show in sequence
+        -- on every UNIT_AURA event.  Calling SyncStackText from Hide clears
+        -- chargeText, defeats IsHookStackActive, and causes the API path to
+        -- overwrite — creating a clear/set alternation flicker every tick.
         if chargeFrame then
             hooksecurefunc(chargeFrame, "Show", function()
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
                 s.chargeVisible = true
-                SyncStackText(s)
             end)
             hooksecurefunc(chargeFrame, "Hide", function()
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
                 s.chargeVisible = false
-                s.chargeText = nil
-                SyncStackText(s)
             end)
             if chargeFrame.Current then
                 hooksecurefunc(chargeFrame.Current, "SetText", function(_, text)
@@ -684,10 +965,6 @@ local function HookBlizzStackText(icon, blizzChild)
                     if not s or not s.icon then return end
                     s.lastHookTime = GetTime()
                     s.chargeText = text
-                    -- New stacks arrived — clear API zero-override so hooks drive again
-                    if s.apiOverride and text and text ~= "" and text ~= "0" then
-                        s.apiOverride = nil
-                    end
                     SyncStackText(s)
                 end)
             end
@@ -699,14 +976,11 @@ local function HookBlizzStackText(icon, blizzChild)
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
                 s.appVisible = true
-                SyncStackText(s)
             end)
             hooksecurefunc(appFrame, "Hide", function()
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
                 s.appVisible = false
-                s.appText = nil
-                SyncStackText(s)
             end)
             if appFrame.Applications then
                 hooksecurefunc(appFrame.Applications, "SetText", function(_, text)
@@ -714,9 +988,6 @@ local function HookBlizzStackText(icon, blizzChild)
                     if not s or not s.icon then return end
                     s.lastHookTime = GetTime()
                     s.appText = text
-                    if s.apiOverride and text and text ~= "" and text ~= "0" then
-                        s.apiOverride = nil
-                    end
                     SyncStackText(s)
                 end)
             end
@@ -738,64 +1009,18 @@ local function UnhookBlizzStackText(icon)
 end
 
 ---------------------------------------------------------------------------
--- CAST-BASED STALE STACK DETECTION
--- When stacks drop to 0 (e.g., casting Sheilun's Gift consumes all Clouds
--- of Mist), Blizzard's CDM doesn't call SetText("0") or Hide() — our
--- hooks never fire.  The API (GetSpellCastCount) returns secret values in
--- combat, so it can't help either.
---
--- Detect this by listening for UNIT_SPELLCAST_SUCCEEDED: if the player
--- casts a spell that matches a CDM icon showing stack text, schedule a
--- deferred check.  If no hook fires within 0.3s confirming a new count,
--- the stacks were consumed — clear the display.
+-- CAST-BASED STALE STACK DETECTION — DISABLED
+-- Previously listened for UNIT_SPELLCAST_SUCCEEDED to detect when stacks
+-- drop to 0 (Blizzard may not call SetText/Hide on the viewer child).
+-- Removed because the hook for the charge change fires BEFORE the cast
+-- event in the same frame, making it impossible to distinguish "hook
+-- confirmed new count" from "hook hasn't fired yet."  The 0.3s deferred
+-- clear + apiOverride mechanism caused visible flicker after every
+-- charge-consuming cast — both in and out of combat.
+-- Stale stacks from zero-charge edge cases are now handled by the
+-- ChargeCount Hide hook (which Blizzard does fire for most abilities)
+-- and by the OOC API fallback in UpdateIconCooldown.
 ---------------------------------------------------------------------------
-local stackCastFrame = CreateFrame("Frame")
-stackCastFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-stackCastFrame:SetScript("OnEvent", function(_, _, _, _, castSpellID)
-    if not castSpellID then return end
-    for blizzChild, state in pairs(blizzStackState) do
-        if state.icon and ((state.chargeText and state.chargeText ~= "")
-                        or (state.appText and state.appText ~= "")) then
-            local entry = state.icon._spellEntry
-            if entry then
-                -- Match cast spell against tracked spell and its overrides
-                local baseID = entry.spellID or entry.id
-                local match = (baseID == castSpellID)
-                if not match and entry.overrideSpellID then
-                    match = (entry.overrideSpellID == castSpellID)
-                end
-                if not match and baseID and C_Spell and C_Spell.GetOverrideSpell then
-                    local ok, overrideID = pcall(C_Spell.GetOverrideSpell, baseID)
-                    if ok and overrideID and overrideID == castSpellID then
-                        match = true
-                    end
-                end
-                if match then
-                    local castTime = GetTime()
-                    state.castTime = castTime
-                    C_Timer.After(0.3, function()
-                        -- If this cast was superseded by a newer one, skip
-                        if state.castTime ~= castTime then return end
-                        state.castTime = nil
-                        -- If a hook fired after the cast, stacks are confirmed
-                        if state.lastHookTime and state.lastHookTime > castTime then
-                            return
-                        end
-                        -- No hook fired — stacks were likely consumed
-                        state.chargeText = nil
-                        state.appText = nil
-                        state.apiOverride = true
-                        local icon = state.icon
-                        if icon then
-                            icon.StackText:SetText("")
-                            icon.StackText:Hide()
-                        end
-                    end)
-                end
-            end
-        end
-    end
-end)
 
 ---------------------------------------------------------------------------
 -- BLIZZARD BUFF VISIBILITY
@@ -843,11 +1068,6 @@ local function CreateIcon(parent, spellEntry)
     icon.TextOverlay:SetAllPoints(icon)
     icon.TextOverlay:SetFrameLevel(icon.Cooldown:GetFrameLevel() + 2)
 
-    -- .TextOverlay (sits above the CooldownFrame so text is never behind the swipe)
-    icon.TextOverlay = CreateFrame("Frame", nil, icon)
-    icon.TextOverlay:SetAllPoints(icon)
-    icon.TextOverlay:SetFrameLevel(icon.Cooldown:GetFrameLevel() + 2)
-
     -- .Border texture (BACKGROUND, sublayer -8, pre-created)
     icon.Border = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
     icon.Border:Hide()
@@ -873,32 +1093,18 @@ local function CreateIcon(parent, spellEntry)
     -- Set texture
     if spellEntry then
         local texID
-        if spellEntry.viewerType == "buff" and spellEntry._blizzChild then
-            -- Buff icons: read the texture Blizzard set on the child.
-            -- The spell lookup returns the ability icon which can differ
-            -- from the actual buff/aura icon.
-            local iconRegion = spellEntry._blizzChild.Icon or spellEntry._blizzChild.icon
-            if iconRegion then
-                if iconRegion.GetTexture then
-                    texID = iconRegion:GetTexture()
-                else
-                    local tex = iconRegion.Icon or iconRegion.icon or iconRegion.texture or iconRegion.Texture
-                    if tex and tex.GetTexture then
-                        texID = tex:GetTexture()
-                    end
-                end
-            end
-        end
-        -- Essential/Utility (and buff fallback): spell/item texture lookup
-        if not texID then
-            if spellEntry.type then
-                texID = GetEntryTexture(spellEntry)
-            else
-                texID = GetSpellTexture(spellEntry.overrideSpellID or spellEntry.spellID)
-            end
+        if spellEntry.type then
+            texID = GetEntryTexture(spellEntry)
+        else
+            texID = GetSpellTexture(spellEntry.overrideSpellID or spellEntry.spellID)
         end
         if texID then
             icon.Icon:SetTexture(texID)
+            -- Only lock texture for cooldown entries — aura icons rely on the
+            -- Blizzard texture hook for the correct aura icon.
+            if not spellEntry.isAura then
+                icon._desiredTexture = texID
+            end
         end
     end
 
@@ -908,13 +1114,6 @@ local function CreateIcon(parent, spellEntry)
         if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
         local entry = self._spellEntry
         if not entry then return end
-        local tooltipProvider = ns.TooltipProvider
-        if tooltipProvider and tooltipProvider.ShouldShowTooltip then
-            if not tooltipProvider:ShouldShowTooltip("cdm") then
-                pcall(GameTooltip.Hide, GameTooltip)
-                return
-            end
-        end
         local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
         if tooltipSettings and tooltipSettings.anchorToCursor then
             local anchorTooltip = ns.QUI_AnchorTooltipToCursor
@@ -956,19 +1155,45 @@ end
 -- forwards them to the WoW secure action system.  The parent icon
 -- stays as a plain Frame so layout/pooling remain taint-free.
 ---------------------------------------------------------------------------
+local function SyncClickButtonFrameLevel(icon)
+    if not icon or not icon.clickButton or not icon.TextOverlay then return end
+    local requiredLevel = icon.TextOverlay:GetFrameLevel() + 2
+    if icon.clickButton:GetFrameLevel() ~= requiredLevel then
+        icon.clickButton:SetFrameLevel(requiredLevel)
+    end
+end
+
+-- Keep text above cooldown (baseline) and optionally above another frame level.
+-- Also keeps clickButton above text if one exists.
+function CDMIcons:EnsureTextOverlayLevel(icon, minLevel)
+    if not icon or not icon.TextOverlay then return end
+
+    local requiredLevel = minLevel
+    if icon.Cooldown and icon.Cooldown.GetFrameLevel then
+        local baselineLevel = icon.Cooldown:GetFrameLevel() + 2
+        if not requiredLevel or requiredLevel < baselineLevel then
+            requiredLevel = baselineLevel
+        end
+    end
+
+    if requiredLevel and icon.TextOverlay:GetFrameLevel() < requiredLevel then
+        icon.TextOverlay:SetFrameLevel(requiredLevel)
+    end
+
+    SyncClickButtonFrameLevel(icon)
+end
+
 local function EnsureClickButton(icon)
-    if icon.clickButton then return icon.clickButton end
+    if icon.clickButton then
+        CDMIcons:EnsureTextOverlayLevel(icon)
+        return icon.clickButton
+    end
 
     local btn = CreateFrame("Button", nil, icon, "SecureActionButtonTemplate")
     btn:SetAllPoints()
     btn:RegisterForClicks("AnyUp", "AnyDown")
     btn:EnableMouse(true)
     btn:Hide()
-
-    -- Sit above TextOverlay so the button receives clicks
-    if icon.TextOverlay then
-        btn:SetFrameLevel(icon.TextOverlay:GetFrameLevel() + 2)
-    end
 
     -- Forward tooltip events to the parent icon's handler
     btn:SetScript("OnEnter", function(self)
@@ -983,6 +1208,7 @@ local function EnsureClickButton(icon)
     end)
 
     icon.clickButton = btn
+    CDMIcons:EnsureTextOverlayLevel(icon)
     return btn
 end
 
@@ -1031,8 +1257,22 @@ local function GetMacroTooltipSpell(body)
     return nil
 end
 
+-- Session cache: spellID → macroName or false. Invalidated on UPDATE_MACROS.
+local _macroCache = {}
+local _macroCacheDirty = true
+
+local function InvalidateMacroCache()
+    wipe(_macroCache)
+    _macroCacheDirty = true
+end
+
 local function FindMacroForSpell(spellID, overrideSpellID)
     if not spellID and not overrideSpellID then return nil end
+
+    -- Check session cache (keyed on primary spellID)
+    local cacheKey = spellID or overrideSpellID
+    local cached = _macroCache[cacheKey]
+    if cached ~= nil then return cached or nil end
 
     -- Build lowercase spell name set for matching
     local names = {}
@@ -1044,7 +1284,10 @@ local function FindMacroForSpell(spellID, overrideSpellID)
         local info = C_Spell.GetSpellInfo(overrideSpellID)
         if info and info.name then names[info.name:lower()] = true end
     end
-    if not next(names) then return nil end
+    if not next(names) then
+        _macroCache[cacheKey] = false
+        return nil
+    end
 
     -- Pass 1: GetMacroSpell (WoW-resolved tooltip spell ID)
     for i = 1, MAX_ACCOUNT_MACROS + MAX_CHARACTER_MACROS do
@@ -1052,6 +1295,7 @@ local function FindMacroForSpell(spellID, overrideSpellID)
         if macroName then
             local macroSpell = GetMacroSpell(i)
             if macroSpell and (macroSpell == spellID or macroSpell == overrideSpellID) then
+                _macroCache[cacheKey] = macroName
                 return macroName
             end
         end
@@ -1063,6 +1307,7 @@ local function FindMacroForSpell(spellID, overrideSpellID)
         if macroName then
             local tooltipSpell = GetMacroTooltipSpell(GetMacroBody(i))
             if tooltipSpell and names[tooltipSpell] then
+                _macroCache[cacheKey] = macroName
                 return macroName
             end
         end
@@ -1082,6 +1327,7 @@ local function FindMacroForSpell(spellID, overrideSpellID)
                     local lowerBody = body:lower()
                     for name in pairs(names) do
                         if lowerBody:find(name, 1, true) then
+                            _macroCache[cacheKey] = macroName
                             return macroName
                         end
                     end
@@ -1089,6 +1335,7 @@ local function FindMacroForSpell(spellID, overrideSpellID)
             end
         end
     end
+    _macroCache[cacheKey] = false
     return nil
 end
 
@@ -1286,7 +1533,8 @@ local function ConfigureIcon(icon, rowConfig)
     local generalOutline = GetGeneralFontOutline()
 
     local durationSize = rowConfig.durationSize or 14
-    if durationSize > 0 then
+    local hideDurationText = rowConfig.hideDurationText
+    if durationSize > 0 and not hideDurationText then
         local dtc = rowConfig.durationTextColor or {1, 1, 1, 1}
         local dAnchor = rowConfig.durationAnchor or "CENTER"
         local dox = rowConfig.durationOffsetX or 0
@@ -1300,6 +1548,7 @@ local function ConfigureIcon(icon, rowConfig)
                     if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                         region:SetFont(generalFont, durationSize, generalOutline)
                         region:SetTextColor(dtc[1], dtc[2], dtc[3], dtc[4] or 1)
+                        region:Show()
                         pcall(function()
                             region:ClearAllPoints()
                             region:SetPoint(dAnchor, icon, dAnchor, dox, doy)
@@ -1315,6 +1564,20 @@ local function ConfigureIcon(icon, rowConfig)
         icon.DurationText:SetTextColor(dtc[1], dtc[2], dtc[3], dtc[4] or 1)
         icon.DurationText:ClearAllPoints()
         icon.DurationText:SetPoint(dAnchor, icon, dAnchor, dox, doy)
+        icon.DurationText:Show()
+    elseif hideDurationText then
+        -- Hide all duration text elements
+        if icon.Cooldown then
+            local ok, regions = pcall(function() return { icon.Cooldown:GetRegions() } end)
+            if ok and regions then
+                for _, region in ipairs(regions) do
+                    if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                        region:Hide()
+                    end
+                end
+            end
+        end
+        icon.DurationText:Hide()
     end
 
     -- Stack text styling
@@ -1336,6 +1599,62 @@ local function ConfigureIcon(icon, rowConfig)
     local opacity = rowConfig.opacity or 1.0
     icon:SetAlpha(opacity)
     icon._rowOpacity = opacity
+
+    ---------------------------------------------------------------------------
+    -- Per-spell overrides (additive on top of row-level settings)
+    ---------------------------------------------------------------------------
+    local spellOvr = GetIconSpellOverride(icon)
+    if spellOvr then
+        -- iconSizeOverride: override icon + sub-region sizes
+        if spellOvr.iconSizeOverride then
+            local ovrSize = spellOvr.iconSizeOverride
+            local aspectRatio = rowConfig.aspectRatioCrop or 1.0
+            local ovrW = ovrSize
+            local ovrH = ovrSize / aspectRatio
+            if QUICore and QUICore.PixelRound then
+                ovrW = QUICore:PixelRound(ovrW, icon)
+                ovrH = QUICore:PixelRound(ovrH, icon)
+            end
+            icon:SetSize(ovrW, ovrH)
+            if icon.Cooldown then
+                icon.Cooldown:ClearAllPoints()
+                icon.Cooldown:SetAllPoints(icon)
+            end
+            if icon.Icon then
+                icon.Icon:ClearAllPoints()
+                icon.Icon:SetAllPoints(icon)
+            end
+        end
+
+        -- showDurationText: per-spell duration text visibility override
+        if spellOvr.showDurationText == false then
+            if icon.Cooldown then
+                local ok, regions = pcall(function() return { icon.Cooldown:GetRegions() } end)
+                if ok and regions then
+                    for _, region in ipairs(regions) do
+                        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                            region:Hide()
+                        end
+                    end
+                end
+            end
+            icon.DurationText:Hide()
+        elseif spellOvr.showDurationText == true then
+            icon.DurationText:Show()
+        end
+
+        -- customBorderColor: per-spell border color override
+        if spellOvr.customBorderColor and icon.Border and icon.Border:IsShown() then
+            local bc = spellOvr.customBorderColor
+            icon.Border:SetColorTexture(bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1)
+        end
+
+        -- desaturate: cache for UpdateIconCooldown to use per-icon
+        icon._spellOverrideDesaturate = spellOvr.desaturate
+    else
+        icon._spellOverrideDesaturate = nil
+    end
+
     SyncCooldownBling(icon)
 end
 
@@ -1349,117 +1668,133 @@ local function GetTrackerSettings(viewerType)
     return db[viewerType]
 end
 
+-- _hoistedNcdm is set once per UpdateAllCooldowns batch (avoids 4 table
+-- hops per icon).  Local to file scope so UpdateIconCooldown can read it.
+local _hoistedNcdm = nil
+-- _batchTime is set once per UpdateAllCooldowns batch so per-icon code
+-- can read GetTime() without crossing the C boundary for every icon.
+local _batchTime = 0
+
 local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
-    if entry._blizzChild then
-        -- Mirrored Blizzard child: prefer hook-provided DurationObject data,
-        -- but actively recover the cooldown state from cooldownInfo / spell APIs
-        -- so the owned icon still works if Blizzard stops driving the mirror hook
-        -- for a given update path.
-        local child = entry._blizzChild
-        local info = child and child.cooldownInfo or nil
-        local hookWasAura = info and ((type(info.wasSetFromAura) == "boolean" and info.wasSetFromAura)
-            or (type(info.cooldownUseAuraDisplayTime) == "boolean" and info.cooldownUseAuraDisplayTime)) or false
-        local hookDurObj = ExtractCooldownDurObj(info)
-        local hookStart = info and SafeValue(info.startTime, nil) or nil
-        local hookDuration = info and SafeValue(info.duration, nil) or nil
-        local spellID = GetIconCooldownIdentifier(icon)
-        local startTime, duration, durObj = nil, nil, nil
-        local childAuraInstID = child and child.auraInstanceID or nil
-        local auraUnit = (child and child.auraDataUnit) or ((entry.viewerType == "buff") and "player" or "target")
-        local isActiveAura = (entry.viewerType == "buff") or hookWasAura
-        if spellID then
-            startTime, duration, durObj = GetBestSpellCooldown(spellID)
-        end
 
-        if not InCombatLockdown() then
-            if not isActiveAura and spellID and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
-                local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-                if ok and auraData and auraData.auraInstanceID then
-                    isActiveAura = true
-                    childAuraInstID = auraData.auraInstanceID
-                    auraUnit = "player"
+        -- Aura-driven update: delegates to shared CDMSpellData:ResolveAuraState().
+        -- Icons apply result to swipe/stacks display on CooldownFrame.
+        do
+            local ownedDB = _hoistedNcdm and _hoistedNcdm[entry.viewerType]
+            local cType = ownedDB and ownedDB.containerType
+            if not cType then
+                local vt = entry.viewerType
+                cType = (vt == "buff" or vt == "trackedBar") and "aura" or "cooldown"
+            end
+            if cType == "aura" or cType == "auraBar" then
+                local auraSpellID = entry.overrideSpellID or entry.spellID or entry.id
+                if auraSpellID and ns.CDMSpellData then
+                    local p = icon._auraParams or {}
+                    icon._auraParams = p
+                    p.spellID = auraSpellID
+                    p.entrySpellID = entry.spellID
+                    p.entryID = entry.id
+                    p.entryName = entry.name
+                    p.viewerType = entry.viewerType
+                    p.blizzChild = entry._blizzChild
+                    p.blizzBarChild = nil
+
+                    local r = ns.CDMSpellData:ResolveAuraState(p)
+                    if r.blizzChild and r.blizzChild ~= entry._blizzChild then
+                        -- Blizzard child changed — reconnect mirror/texture/stack
+                        -- hooks to the new child. Old hooks on the previous child
+                        -- self-disable via stale mapping guards in each callback.
+                        entry._blizzChild = r.blizzChild
+                        MirrorBlizzCooldown(icon, r.blizzChild)
+                        HookBlizzTexture(icon, r.blizzChild)
+                        HookBlizzStackText(icon, r.blizzChild)
+                    end
+
+                    if r.isActive then
+                        icon._auraActive = true
+
+                        -- Swipe priority: durObj → hookDurObj → raw start/dur
+                        local swipeSet = false
+                        if icon.Cooldown and r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
+                            pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
+                            pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                            swipeSet = true
+                        end
+                        if not swipeSet and icon.Cooldown and r.hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
+                            pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.hookDurObj, true)
+                            pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                            swipeSet = true
+                        end
+                        if not swipeSet and icon.Cooldown and r.hookStart and r.hookDur
+                           and IsSafeNumeric(r.hookStart) and IsSafeNumeric(r.hookDur) then
+                            pcall(icon.Cooldown.SetCooldown, icon.Cooldown, r.hookStart, r.hookDur)
+                            pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                        end
+
+                        -- Stacks: hooks are authoritative when active —
+                        -- our handler runs after Blizzard's hooks, so
+                        -- API writes would overwrite correct hook values.
+                        local _auraHookActive = IsHookStackActive(entry, icon)
+                        if _auraHookActive then
+
+                        end
+                        if not _auraHookActive then
+                            if r.stacks then
+
+                                pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
+                                icon.StackText:Show()
+                            elseif not InCombatLockdown() then
+
+                                icon.StackText:SetText("")
+                                icon.StackText:Hide()
+                            end
+                        end
+
+                        -- Keep texture showing the tracked aura spell
+                        if icon.Icon then
+                            local texSpellID = entry.overrideSpellID or entry.spellID or entry.id
+                            if texSpellID then
+                                local texID = GetSpellTexture(texSpellID)
+                                if texID and texID ~= icon._lastTexture then
+                                    icon.Icon:SetTexture(texID)
+                                    icon._lastTexture = texID
+                                end
+                            end
+                        end
+
+                        ReapplySwipeStyle(icon.Cooldown, icon)
+                        return  -- Aura path complete
+                    else
+                        -- Combat debounce: if hook cache still has data for this
+                        -- spell, Blizzard's viewer child hasn't been hidden/cleared
+                        -- yet — the aura is still present.  isActive detection can
+                        -- briefly return false due to auraInstanceID nil-check
+                        -- timing races with the viewer update cycle.  Skip the
+                        -- inactive transition to prevent the entire icon from
+                        -- flickering (visibility code hides icon when _auraActive
+                        -- is false).  Once Blizzard actually expires the aura, the
+                        -- Hide/Clear hooks clear the cache and the next tick
+                        -- transitions cleanly.
+                        if InCombatLockdown() and (r.hookDurObj or (r.hookStart and r.hookDur)) then
+                            return  -- transient miss, keep current icon state
+                        end
+                        icon._auraActive = false
+                        if icon.Cooldown then icon.Cooldown:Clear() end
+
+                        icon.StackText:SetText("")
+                        icon.StackText:Hide()
+                        return  -- Aura path complete
+                    end
                 end
             end
-        else
-            if hookDurObj or (IsSafeNumeric(hookStart) and IsSafeNumeric(hookDuration) and hookDuration > 0) then
-                isActiveAura = true
-            end
         end
 
-        if not isActiveAura and entry.name and entry.name ~= "" and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
-            for _, lookup in ipairs({
-                { unit = "player", filter = "HELPFUL" },
-                { unit = "pet", filter = "HELPFUL" },
-                { unit = "target", filter = "HARMFUL" },
-                { unit = "target", filter = "HELPFUL" },
-            }) do
-                local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, lookup.unit, entry.name, lookup.filter)
-                if ok and auraData and auraData.auraInstanceID then
-                    isActiveAura = true
-                    childAuraInstID = auraData.auraInstanceID
-                    auraUnit = lookup.unit
-                    break
-                end
-            end
-        end
-
-        if not isActiveAura and childAuraInstID and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
-            local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
-            if ok and auraData then
-                isActiveAura = true
-            end
-        end
-
-        icon._auraActive = isActiveAura
-        RefreshIconGCDState(icon)
-
-        if icon.Cooldown then
-            local cdApplied = false
-            local reverse = icon._auraActive and true or false
-
-            if icon._auraActive and childAuraInstID and C_UnitAuras and C_UnitAuras.GetAuraDuration
-                and icon.Cooldown.SetCooldownFromDurationObject then
-                local okAuraDur, auraDurObj = pcall(C_UnitAuras.GetAuraDuration, auraUnit, childAuraInstID)
-                if okAuraDur and auraDurObj then
-                    cdApplied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, auraDurObj, true)
-                end
-            end
-            if not cdApplied and hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
-                cdApplied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, hookDurObj, reverse)
-            end
-            if not cdApplied and durObj and icon.Cooldown.SetCooldownFromDurationObject then
-                cdApplied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, reverse)
-            end
-            if not cdApplied and IsSafeNumeric(hookStart) and IsSafeNumeric(hookDuration) and hookDuration > 0 then
-                cdApplied = pcall(icon.Cooldown.SetCooldown, icon.Cooldown, hookStart, hookDuration)
-            end
-            if not cdApplied and IsSafeNumeric(startTime) and IsSafeNumeric(duration) and duration > 0 then
-                cdApplied = pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
-            end
-
-            if icon.Cooldown.SetReverse then
-                pcall(icon.Cooldown.SetReverse, icon.Cooldown, reverse)
-            end
-            if cdApplied then
-                SyncMirroredCooldownState(icon, icon.Cooldown, true)
-            else
-                icon.Cooldown:Clear()
-            end
-            icon._hasCooldownActive = cdApplied or false
-            ReapplySwipeStyle(icon.Cooldown, icon)
-        else
-            icon._hasCooldownActive = false
-        end
-
-        -- NOTE: Texture sync for spell replacements (e.g., Judgment -> Hammer of
-        -- Wrath) is still handled by HookBlizzTexture's SetTexture hook, not polling.
-    else
         -- Custom entry: use addon-created CD with our cooldown resolution
-        local startTime, duration, durObj
+        local startTime, duration, durObj, apiIsActive
         if entry.type == "macro" then
-            local resolvedID, resolvedType = ResolveMacro(entry)
+            local resolvedID, resolvedType, fallbackTex = ResolveMacro(entry)
             if resolvedID then
                 if resolvedType == "item" then
                     startTime, duration, durObj = GetItemCooldown(resolvedID)
@@ -1467,37 +1802,106 @@ local function UpdateIconCooldown(icon)
                     startTime, duration, durObj = GetBestSpellCooldown(resolvedID)
                 end
             end
-            -- Update icon texture dynamically (resolved spell may change each tick)
-            local newTex = GetEntryTexture(entry)
-            if newTex and icon.Icon then
+            -- Update icon texture from already-resolved macro result
+            -- (eliminates a redundant second ResolveMacro call via GetEntryTexture)
+            local newTex
+            if resolvedID then
+                if resolvedType == "item" then
+                    local _, _, _, _, tex = C_Item.GetItemInfoInstant(resolvedID)
+                    newTex = tex
+                else
+                    newTex = GetSpellTexture(resolvedID)
+                end
+            else
+                newTex = fallbackTex
+            end
+            if newTex and icon.Icon and newTex ~= icon._lastTexture then
                 icon.Icon:SetTexture(newTex)
+                icon._lastTexture = newTex
             end
-        elseif entry.type == "trinket" then
-            -- Trinket entries store equipment slot (13/14), resolve to item ID
-            local itemID = GetInventoryItemID("player", entry.id)
+        elseif entry.type == "trinket" or entry.type == "slot" then
+            -- Trinket/slot entries store equipment slot (13/14), resolve to item ID
+            local slotID = entry.id
+            local itemID = GetInventoryItemID("player", slotID)
             if itemID then
-                startTime, duration, durObj = GetItemCooldown(itemID)
+                -- Use GetInventoryItemCooldown for equipped items (not GetItemCooldown).
+                -- Guard comparisons: startTime/duration may be secret in combat.
+                if GetInventoryItemCooldown then
+                    local s, d, e = GetInventoryItemCooldown("player", slotID)
+                    if IsSafeNumeric(s) and IsSafeNumeric(d) and d > 1.5 and e == 1 then
+                        startTime = s
+                        duration = d
+                    end
+                end
+                -- Update texture in case trinket was swapped
+                if icon.Icon then
+                    local ok, tex = pcall(C_Item.GetItemIconByID, itemID)
+                    if ok and tex and tex ~= icon._lastTexture then
+                        icon.Icon:SetTexture(tex)
+                        icon._lastTexture = tex
+                    end
+                end
             end
+            -- Hide stack text for trinkets
+            icon.StackText:SetText("")
+            icon.StackText:Hide()
         elseif entry.type == "item" then
             startTime, duration, durObj = GetItemCooldown(entry.id)
+            -- Show item count as stack text (includeUses=true for charge items)
+            if C_Item and C_Item.GetItemCount then
+                local ok, count = pcall(C_Item.GetItemCount, entry.id, false, true)
+                if ok and count and count > 0 then
+                    icon.StackText:SetText(tostring(count))
+                    icon.StackText:Show()
+                else
+                    icon.StackText:SetText("0")
+                    icon.StackText:Show()
+                end
+            end
         else
-            startTime, duration, durObj = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+            if entry._blizzChild then
+                local sid = entry.overrideSpellID or entry.spellID or entry.id
 
-            -- Sync texture for spell overrides (e.g., Judgment → Hammer of Wrath).
-            -- Custom spell entries don't have _blizzChild to mirror, so check the
-            -- override API directly and update if the active spell changed.
-            if C_Spell.GetOverrideSpell and icon.Icon then
-                local baseID = entry.spellID or entry.id
-                if baseID then
-                    local overrideID = C_Spell.GetOverrideSpell(baseID)
-                    local newTex = GetSpellTexture(overrideID or baseID)
-                    if newTex then
-                        icon.Icon:SetTexture(newTex)
+                -- Chain: GetOverrideSpell → C-side APIs.
+                -- Override ID may be secret in combat — pass directly to
+                -- C-side functions which handle secrets natively.
+                local cdSid = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(sid) or sid
+
+                -- Cooldown state + DurationObject from the override spell
+                local childCi = C_Spell.GetSpellCooldown(cdSid)
+                if childCi and childCi.isActive ~= nil then
+                    apiIsActive = childCi.isActive
+                end
+                durObj = C_Spell.GetSpellCooldownDuration(cdSid)
+
+                -- Texture from the override spell (C-side handles secrets).
+                -- Sets _desiredTexture so the Blizzard SetTexture hook doesn't
+                -- overwrite with debuff/aura icons from the viewer child.
+                if icon.Icon then
+                    local texInfo = C_Spell.GetSpellInfo(cdSid)
+                    if texInfo and texInfo.iconID then
+                        icon._desiredTexture = texInfo.iconID
+                        pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
+                    end
+                end
+            else
+                -- Custom entry without viewer child: full API resolution.
+                startTime, duration, durObj, apiIsActive = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+                -- Texture from override chain — pass secret IDs to C-side.
+                if icon.Icon then
+                    local baseID = entry.overrideSpellID or entry.spellID or entry.id
+                    local texSid = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(baseID) or baseID
+                    local texInfo = C_Spell.GetSpellInfo(texSid)
+                    if texInfo and texInfo.iconID then
+                        icon._desiredTexture = texInfo.iconID
+                        pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
                     end
                 end
             end
         end
 
+        -- _lastStart / _lastDuration: always update from API when readable.
+        -- These are used by the desaturation check and visibility logic below.
         local hasSafeStart = IsSafeNumeric(startTime)
         local hasSafeDuration = IsSafeNumeric(duration)
         if hasSafeDuration then
@@ -1510,173 +1914,190 @@ local function UpdateIconCooldown(icon)
             icon._lastStart = 0
             icon._lastDuration = 0
         end
+        -- When API returns no data (fully charged / off CD), clear stale
+        -- values so desaturation doesn't persist from a previous recharge.
+        if not startTime and not duration then
+            icon._lastStart = 0
+            icon._lastDuration = 0
+        end
+
+        -- Detect whether the DurationObject mirror hook is actively driving
+        -- this icon's CooldownFrame swipe.  When it is, skip API writes to
+        -- icon.Cooldown to avoid restarting the swipe animation (flickering).
+        -- _durObjHookSync is set by the SetCooldownFromDurationObject hook
+        -- when it successfully forwards a DurationObject to our CooldownFrame.
+        -- Charged entries are excluded: mirror hooks skip them (tSkipCharge).
+        local mirrorActive = not entry.hasCharges
+            and icon._durObjHookSync
+            and (_batchTime - icon._durObjHookSync) < 10
 
         if icon.Cooldown then
-            local cdApplied = false
-            if durObj and icon.Cooldown.SetCooldownFromDurationObject then
-                local ok = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, false)
-                cdApplied = ok
-            end
-            if not cdApplied and hasSafeStart and hasSafeDuration then
-                local ok = pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
-                cdApplied = ok
-            end
-            if not cdApplied then
+            -- isActive (non-secret, 12.0.5+) is the authoritative signal for
+            -- whether the UI should render a cooldown.  It handles overrides,
+            -- GCD filtering, and charge states correctly.
+            if apiIsActive == false then
                 icon.Cooldown:Clear()
+            elseif not mirrorActive and durObj then
+                -- Skip applying the swipe during GCD — the override system
+                -- lags by one tick, so the base CD briefly shows before the
+                -- override (e.g., Hammer of Light) clears it.  Deferring
+                -- during GCD lets the override resolve first.
+                if not icon._isOnGCD then
+                    pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, false)
+                end
+            elseif not mirrorActive and startTime and duration
+                   and IsSafeNumeric(startTime) and IsSafeNumeric(duration) then
+                if not icon._isOnGCD then
+                    pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
+                end
             end
-            icon._hasCooldownActive = cdApplied or false
+
+            -- isActive drives _hasCooldownActive for desaturation/visibility.
+            if apiIsActive ~= nil then
+                icon._hasCooldownActive = apiIsActive
+            end
+        end
+
+    -- Stack/charge text: API-driven on each tick.
+    -- Cache chargeInfo for this icon — reused by desaturation check below
+    -- (was called 3x per cooldown icon per tick, now 1x)
+    local _cachedChargeInfo = nil
+    local _cachedChargeOk = false
+
+    -- Populate _cachedChargeInfo unconditionally (needed for desaturation
+    -- check below), independent of whether hooks are driving stack text.
+    do
+        local spellID = entry.overrideSpellID or entry.spellID or entry.id
+        if spellID then
+            local chargeInfo = TickCacheGetCharges(spellID)
+            _cachedChargeOk = chargeInfo ~= nil
+            _cachedChargeInfo = chargeInfo
+        end
+    end
+
+    -- When hooks are actively driving stack text for this icon, skip all
+    -- API-based stack writes.  Our event handler runs AFTER Blizzard's
+    -- hooks in the same frame — API writes would overwrite the correct
+    -- hook-driven values, causing visible flicker every tick.
+    local _hookActive = IsHookStackActive(entry, icon)
+    if _hookActive then
+
+    end
+    if not _hookActive then
+        if entry.type == "item" then
+            -- Item stack text was already set above in the cooldown section;
+            -- nothing to do here — just prevent the else clause from clearing it.
+        elseif entry.type == "spell" then
+            -- Custom spell entry: check charges/stacks via API.
+            -- Values may be secret in combat — pass directly to C-side functions
+            -- (TruncateWhenZero, SetText) without reading in Lua.
+            local spellID = entry.overrideSpellID or entry.spellID or entry.id
+            local stackVal  -- raw value (may be secret), forwarded to C-side
+
+            -- Only show charge count when maxCharges > 1 (multi-charge spell).
+            -- maxCharges is non-secret (12.0.5+), always readable in combat.
+            local isMultiCharge = _cachedChargeInfo
+                and _cachedChargeInfo.maxCharges
+                and _cachedChargeInfo.maxCharges > 1
+
+            if isMultiCharge then
+                -- GetSpellDisplayCount is the canonical charge display API.
+                if spellID and C_Spell.GetSpellDisplayCount then
+                    local ok, val = pcall(C_Spell.GetSpellDisplayCount, spellID)
+                    if ok and val then
+                        stackVal = val
+                    end
+                end
+                -- Fallback: currentCharges directly
+                if not stackVal and _cachedChargeInfo.currentCharges then
+                    stackVal = _cachedChargeInfo.currentCharges
+                end
+            end
+
+            -- Forward to C-side: TruncateWhenZero returns "" for zero (hides
+            -- stacks visually). Guard with pcall — the function requires a finite
+            -- number and will reject secret values or unexpected types.
+            if stackVal then
+                local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackVal)
+                local displayText = truncOk and truncText or stackVal
+                -- Only show when there's actual text — TruncateWhenZero returns
+                -- "" for zero, and many spells return 0 from GetSpellDisplayCount
+                -- even when they have no charge mechanic.
+                local hasText = displayText ~= nil
+                if hasText then
+                    local etOk, etEq = pcall(function() return displayText == "" end)
+                    if etOk and etEq then hasText = false end
+                end
+                if hasText then
+
+                    pcall(icon.StackText.SetText, icon.StackText, displayText)
+                    icon.StackText:Show()
+                else
+                    icon.StackText:SetText("")
+                    icon.StackText:Hide()
+                end
+            elseif not InCombatLockdown() then
+                icon.StackText:SetText("")
+                icon.StackText:Hide()
+            end
         else
-            icon._hasCooldownActive = false
+            -- Harvested entries and other types: hooks drive stack text.
+            -- OOC only: clear stacks (hooks are authoritative but may not
+            -- have fired yet for this tick).
+            if not InCombatLockdown() then
+
+                icon.StackText:SetText("")
+                icon.StackText:Hide()
+            end
         end
     end
 
-    -- Stack/charge text: hook-driven (HookBlizzStackText captures SetText
-    -- calls from Blizzard's secure code) + API supplement on each tick.
-    -- Polling the tainted viewer frames directly is impossible.
-    --
-    -- The API supplement runs ALWAYS (not just OOC) to catch cases where
-    -- Blizzard's CDM doesn't fire SetText — e.g., consuming all Clouds of
-    -- Mist or Soul Fragments doesn't trigger a SetText("0") / Hide().
-    -- GetSpellCastCount/GetSpellCharges are standalone APIs that don't
-    -- touch the tainted viewer hierarchy.
-    if entry._blizzChild then
-        -- Resolve the active override spell (e.g., Vivify → Sheilun's Gift)
-        -- so API calls query the right spell for charges/cast counts.
-        local baseID = entry.spellID or entry.id
-        local spellID = entry.overrideSpellID or baseID
-        if baseID and C_Spell.GetOverrideSpell then
-            local overrideID = C_Spell.GetOverrideSpell(baseID)
-            if overrideID and overrideID ~= baseID then
-                spellID = overrideID
-            end
-        end
-        local apiText = nil
-
-        -- 1) Spell charges (Demon Spikes 2, Fracture 2, etc.)
-        --    maxCharges can be secret in combat — guard with IsSecretValue.
-        if spellID and C_Spell.GetSpellCharges then
-            local ok, chargeInfo = pcall(C_Spell.GetSpellCharges, spellID)
-            if ok and chargeInfo and chargeInfo.maxCharges then
-                if not IsSecretValue(chargeInfo.maxCharges) and chargeInfo.maxCharges > 1 then
-                    local current = chargeInfo.currentCharges
-                    if not IsSecretValue(current) and current and current >= 0 then
-                        apiText = tostring(current)
-                    end
-                end
-            end
-        end
-
-        -- 2) Secondary resource counts (Soul Fragments, Clouds of Mist, etc.)
-        --    GetSpellCastCount with the resolved override ID (e.g., Sheilun's
-        --    Gift 399491 returns cloud count). Override result is authoritative.
-        if not apiText and C_Spell.GetSpellCastCount then
-            local castCount
-            -- Try resolved spell first (override ID returns correct count
-            -- for spell replacements like Vivify → Sheilun's Gift)
-            if spellID then
-                local ok, val = pcall(C_Spell.GetSpellCastCount, spellID)
-                if ok and val and not IsSecretValue(val) then
-                    castCount = val
-                end
-            end
-            -- No base fallback: when an override is active (resolved != base),
-            -- the resolved result is authoritative (e.g., Sheilun's Gift=0
-            -- means clouds consumed; Vivify base returns an unrelated count).
-            -- When no override, resolved == base so the above already covers it.
-            if castCount then
-                if castCount > 0 then
-                    apiText = tostring(castCount)
-                elseif castCount == 0 then
-                    -- Explicitly 0 — only clear if hooks had data for this
-                    -- icon (confirming it uses this mechanic). Spells that
-                    -- don't use secondary resources also return 0.
-                    local state = blizzStackState[entry._blizzChild]
-                    if state and (state.chargeText or state.apiOverride) then
-                        apiText = ""
-                    end
-                end
-            end
-        end
-
-        -- 3) Aura stacks on self (self-buff stacking spells) — OOC only
-        if not apiText and not InCombatLockdown() and spellID
-            and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
-            local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-            if ok and auraData and auraData.applications and auraData.applications > 1 then
-                apiText = tostring(auraData.applications)
-            end
-        end
-
-        -- Apply API result.  nil = API had no data (let hooks drive).
-        -- "" = API confirms zero count (clear display + stale hook data).
-        -- "N" = API has a count (show it, sync to hook state).
-        if apiText and apiText ~= "" then
-            icon.StackText:SetText(apiText)
-            icon.StackText:Show()
-            local state = blizzStackState[entry._blizzChild]
-            if state then
-                state.chargeText = apiText
-                state.apiOverride = nil  -- non-zero: let hooks drive again
-            end
-        elseif apiText == "" then
-            icon.StackText:SetText("")
-            icon.StackText:Hide()
-            local state = blizzStackState[entry._blizzChild]
-            if state then
-                state.chargeText = nil
-                state.appText = nil
-                state.apiOverride = true  -- suppress stale hook reassertion
-            end
-        end
-        -- apiText == nil: no API data, hooks are sole driver (no change)
-    else
-        icon.StackText:SetText("")
-        icon.StackText:Hide()
-    end
-
-    -- Desaturation for _blizzChild entries is driven entirely by the
-    -- SetDesaturated hook in HookBlizzTexture — Blizzard's CooldownViewer
-    -- calls RefreshIconDesaturation natively, and the hook mirrors that
-    -- state onto our icon.  The ticker only handles custom entries (macros,
-    -- manually-added spells) that have no Blizzard source to mirror.
-    if icon.Icon and icon.Icon.SetDesaturated and not entry._blizzChild then
+    -- Desaturation for cooldown entries based on cooldown state.
+    if icon.Icon and icon.Icon.SetDesaturated then
         local viewerType = entry.viewerType
 
         -- Skip buff viewer icons and aura-active icons (they show buff timers)
         if viewerType ~= "buff" and not icon._auraActive and not icon._rangeTinted and not icon._usabilityTinted then
-            local db = GetDB()
-            local settings = db and db[viewerType]
-            if settings and settings.desaturateOnCooldown then
-                local isOnCooldown = icon._hasCooldownActive or false
-                if not isOnCooldown then
-                    local dur = icon._lastDuration or 0
-                    local start = icon._lastStart or 0
-                    if dur > 1.5 and start > 0 then
-                        local remaining = (start + dur) - GetTime()
-                        if remaining > 0 then
-                            isOnCooldown = true
+            -- Per-spell desaturate override takes precedence over tracker-wide setting
+            local desatOverride = icon._spellOverrideDesaturate
+            local settings = _hoistedNcdm and _hoistedNcdm[viewerType]
+            local shouldDesaturate = settings and settings.desaturateOnCooldown
+            if desatOverride == true then
+                shouldDesaturate = true
+            elseif desatOverride == false then
+                shouldDesaturate = false
+            end
+            if shouldDesaturate then
+                -- GCD-only cooldowns should never desaturate.
+                -- _isOnGCD is non-secret (set by RefreshIconGCDState).
+                if icon._isOnGCD then
+                    if icon._cdDesaturated then
+                        icon.Icon:SetDesaturated(false)
+                        icon._cdDesaturated = nil
+                    end
+                    return
+                end
+
+                -- Not on GCD: check if there's a real cooldown active.
+                -- Use DurationObject remaining time (works with secret values)
+                -- combined with _hasCooldownActive as fallback.
+                local hasRealCD = false
+                if not entry.hasCharges then
+                    if durObj and durObj.GetRemainingDuration then
+                        local rok, remaining = pcall(durObj.GetRemainingDuration, durObj)
+                        if rok and remaining then
+                            if IsSecretValue(remaining) or remaining > 0 then
+                                hasRealCD = true
+                            end
                         end
+                    end
+                    if not hasRealCD and icon._hasCooldownActive then
+                        hasRealCD = true
                     end
                 end
 
-                if isOnCooldown then
-                    -- On cooldown — check charges before desaturating
-                    local spellID = entry.overrideSpellID or entry.spellID or entry.id
-                    if spellID and C_Spell.GetSpellCharges then
-                        local chargeInfo = C_Spell.GetSpellCharges(spellID)
-                        if chargeInfo then
-                            -- Secret charge data → keep current state (don't flicker)
-                            if IsSecretValue(chargeInfo.currentCharges) then
-                                return
-                            end
-                            local current = SafeToNumber(chargeInfo.currentCharges, 0)
-                            if current > 0 then
-                                icon.Icon:SetDesaturated(false)
-                                icon._cdDesaturated = nil
-                                return
-                            end
-                        end
-                    end
+
+                if hasRealCD then
                     icon.Icon:SetDesaturated(true)
                     icon._cdDesaturated = true
                     return
@@ -1713,33 +2134,22 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
 
         -- Update texture
         local texID
-        if spellEntry.viewerType == "buff" and spellEntry._blizzChild then
-            local iconRegion = spellEntry._blizzChild.Icon or spellEntry._blizzChild.icon
-            if iconRegion then
-                if iconRegion.GetTexture then
-                    texID = iconRegion:GetTexture()
-                else
-                    local tex = iconRegion.Icon or iconRegion.icon or iconRegion.texture or iconRegion.Texture
-                    if tex and tex.GetTexture then
-                        texID = tex:GetTexture()
-                    end
-                end
-            end
-        end
-        if not texID then
-            if spellEntry.type then
-                texID = GetEntryTexture(spellEntry)
-            else
-                texID = GetSpellTexture(spellEntry.overrideSpellID or spellEntry.spellID)
-            end
+        if spellEntry.type then
+            texID = GetEntryTexture(spellEntry)
+        else
+            texID = GetSpellTexture(spellEntry.overrideSpellID or spellEntry.spellID)
         end
         if icon.Icon then
             if texID then
                 icon.Icon:SetTexture(texID)
+                -- Only lock texture for cooldown entries — aura icons rely on
+                -- the Blizzard texture hook for the correct aura icon.
+                icon._desiredTexture = (not spellEntry.isAura) and texID or nil
             else
                 -- Clear stale texture from previous owner to prevent
                 -- recycled icons showing the wrong spell/item icon.
                 icon.Icon:SetTexture(nil)
+                icon._desiredTexture = nil
             end
             icon.Icon:SetDesaturated(false)
         end
@@ -1776,6 +2186,7 @@ function CDMIcons:ReleaseIcon(icon)
     icon._rangeTinted = nil
     icon._usabilityTinted = nil
     icon._cdDesaturated = nil
+    icon._spellOverrideDesaturate = nil
     icon._lastStart = nil
     icon._lastDuration = nil
     icon._isOnGCD = nil
@@ -1809,6 +2220,13 @@ function CDMIcons:GetIconPool(viewerType)
     return iconPools[viewerType] or {}
 end
 
+--- Ensure an icon pool exists for the given container key (Phase G).
+function CDMIcons:EnsurePool(viewerType)
+    if not iconPools[viewerType] then
+        iconPools[viewerType] = {}
+    end
+end
+
 function CDMIcons:ClearPool(viewerType)
     local pool = iconPools[viewerType]
     if pool then
@@ -1819,9 +2237,6 @@ function CDMIcons:ClearPool(viewerType)
     iconPools[viewerType] = {}
 end
 
-function CDMIcons:SetPool(viewerType, pool)
-    iconPools[viewerType] = pool or {}
-end
 
 ---------------------------------------------------------------------------
 -- BUILD ICONS: Create icons from harvested spell data + custom entries
@@ -1929,12 +2344,39 @@ function CDMIcons:BuildIcons(viewerType, container)
         end
     end
 
+    -- Initialize owned icons: configure addon CD and mark aura containers
+    for _, icon in ipairs(pool) do
+        local entry = icon._spellEntry
+        if entry then
+            local addonCD = icon.Cooldown
+            if addonCD then
+                addonCD:SetDrawSwipe(true)
+                addonCD:SetHideCountdownNumbers(false)
+                addonCD:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+                addonCD:SetSwipeColor(0, 0, 0, 0.8)
+                addonCD:Show()
+            end
+            -- Mark aura containers so visibility handling works correctly
+            local QUICore = ns.Addon
+            local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
+            local containerDB = ncdm and ncdm[entry.viewerType]
+            local cType = containerDB and containerDB.containerType
+            if not cType then
+                local vt = entry.viewerType
+                cType = (vt == "buff" or vt == "trackedBar") and "aura" or "cooldown"
+            end
+            if cType == "aura" or cType == "auraBar" then
+                icon._auraActive = false  -- will be set true by UpdateIconCooldown when aura present
+            end
+        end
+    end
+
     -- Mirror Blizzard viewer children's CooldownFrame updates and texture
     -- hooks onto QUI icons.  Mirror hooks forward SetCooldown /
     -- SetCooldownFromDurationObject calls (including secret values) to our
     -- addon-owned CooldownFrames without touching the Blizzard frames.
-    -- Texture hooks mirror spell-replacement icon changes (e.g.,
-    -- Judgment → Hammer of Wrath) without polling restricted frames.
+    -- Texture hooks mirror spell-replacement icon changes without polling
+    -- restricted frames.
     for _, icon in ipairs(pool) do
         local entry = icon._spellEntry
         if entry and entry._blizzChild then
@@ -1963,6 +2405,7 @@ function CDMIcons:BuildIcons(viewerType, container)
     end
 
     iconPools[viewerType] = pool
+    ns.CDMSpellData:InvalidateChildMap()  -- New icons may need fresh child map
 
     -- Immediately update cooldown state so icons reflect correct
     -- desaturation/stack text without waiting for the next ticker.
@@ -1971,53 +2414,181 @@ function CDMIcons:BuildIcons(viewerType, container)
     return pool
 end
 
+
 ---------------------------------------------------------------------------
 -- UPDATE ALL COOLDOWNS
 ---------------------------------------------------------------------------
 function CDMIcons:UpdateAllCooldowns()
+    -- Wipe per-tick caches: each batch starts fresh so every spellID
+    -- is queried at most once via TickCacheGetCharges/TickCacheGetCooldown.
+    wipe(_tickChargeCache)
+    wipe(_tickCooldownCache)
+    wipe(_textureCycleCache)
+
+    -- Child map is invalidated by aura/cooldown event subscribers via
+    -- CDMSpellData:InvalidateChildMap(). RebuildChildMap is a no-op when clean.
+
     local editMode = Helpers.IsEditModeActive()
+        or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
+
+    -- Hoist DB lookups above the loop (avoids 4 table hops per icon).
+    -- Also set file-scoped _hoistedNcdm so UpdateIconCooldown can read it
+    -- without re-walking the chain for every icon.
+    local _ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+    _hoistedNcdm = _ncdm  -- consumed by UpdateIconCooldown
+    _batchTime = GetTime()  -- consumed by UpdateIconCooldown + visibility loop
+    local _ncdmContainers = _ncdm and _ncdm.containers
+    local inCombat = InCombatLockdown()
+
     for _, pool in pairs(iconPools) do
         for _, icon in ipairs(pool) do
             local entry = icon._spellEntry
-            if entry and entry._blizzChild then
-                if entry.viewerType == "buff" then
-                    -- Buff icons: mirror Blizzard child visibility outside edit mode.
-                    -- During edit mode, force full visibility so user can see all icons.
-                    if editMode then
-                        icon:SetAlpha(1)
-                        icon:Show()
-                        SyncCooldownBling(icon)
-                    else
-                        local blizzShown = entry._blizzChild:IsShown()
-                        if blizzShown then
-                            local blizzAlpha = entry._blizzChild:GetAlpha()
-                            local rowOpacity = icon._rowOpacity or 1
-                            if not IsSecretValue(blizzAlpha) then
-                                icon:SetAlpha(blizzAlpha * rowOpacity)
+            -- Update cooldown/aura state BEFORE visibility so _auraActive,
+            -- _lastDuration, etc. are fresh for Show/Hide decisions.
+            -- pcall only needed during combat (secret values from Blizzard
+            -- frames) — skip overhead during OOC for ~50% less pcall cost.
+            if inCombat then
+                pcall(UpdateIconCooldown, icon)
+            else
+                UpdateIconCooldown(icon)
+            end
+
+            -- Per-spell hidden override: always hide regardless of display mode
+            local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
+            local isHiddenOverride = spellOvr and spellOvr.hidden
+
+            if entry then
+                -- Visibility based on container type + display mode
+                local containerDB = _ncdm and (_ncdm[entry.viewerType] or (_ncdmContainers and _ncdmContainers[entry.viewerType]))
+                local cType = containerDB and containerDB.containerType
+                if not cType then
+                    -- Built-in buff and trackedBar are aura containers even without
+                    -- an explicit containerType (they predate the Composer).
+                    local vt = entry.viewerType
+                    cType = (vt == "buff" or vt == "trackedBar") and "aura" or "cooldown"
+                end
+                local displayMode = containerDB and containerDB.iconDisplayMode or "always"
+
+                if isHiddenOverride then
+                    -- Per-spell hidden override: always hide owned entries
+                    if icon:IsShown() then icon:Hide() end
+                elseif editMode then
+                    icon:SetAlpha(1)
+                    icon:Show()
+                elseif cType == "aura" or cType == "auraBar" then
+                    -- Aura containers: visibility depends on display mode + aura state
+                    local isActive = icon._auraActive
+                    local effectiveMode = displayMode
+                    if effectiveMode == "combat" then
+                        effectiveMode = inCombat and "always" or "active"
+                    end
+
+                    if effectiveMode == "always" then
+                        local rowOpacity = icon._rowOpacity or 1
+                        if isActive then
+                            icon:SetAlpha(rowOpacity)
+                        else
+                            -- Desaturate placeholder when aura is absent
+                            icon:SetAlpha(rowOpacity * 0.3)
+                            if icon.Icon and icon.Icon.SetDesaturated then
+                                icon.Icon:SetDesaturated(true)
                             end
+                        end
+                        if not icon:IsShown() then icon:Show() end
+                    elseif effectiveMode == "active" then
+                        if isActive then
+                            local rowOpacity = icon._rowOpacity or 1
+                            icon:SetAlpha(rowOpacity)
                             if not icon:IsShown() then icon:Show() end
-                            SyncCooldownBling(icon)
                         else
                             if icon:IsShown() then icon:Hide() end
-                            SyncCooldownBling(icon)
                         end
                     end
-                else
-                    -- Essential/Utility: Show/Hide sync.
-                    local blizzShown = entry._blizzChild:IsShown()
-                    local iconShown = icon:IsShown()
-                    if blizzShown and not iconShown then
-                        icon:Show()
-                    elseif not blizzShown and iconShown then
-                        icon:Hide()
+
+                    -- Clear desaturation when aura is active
+                    if isActive and icon.Icon and icon.Icon.SetDesaturated then
+                        icon.Icon:SetDesaturated(false)
                     end
-                    SyncCooldownBling(icon)
+                else
+                    -- Cooldown containers: visibility depends on display mode.
+                    -- _hasCooldownActive is set when a DurationObject was applied
+                    -- (works even when numeric start/dur are secret in combat).
+                    local isOnCD = icon._hasCooldownActive or false
+                    if not isOnCD then
+                        local dur = icon._lastDuration or 0
+                        local start = icon._lastStart or 0
+                        if dur > 1.5 and start > 0 then
+                            local remaining = (start + dur) - _batchTime
+                            if remaining > 0 then
+                                isOnCD = true
+                            end
+                        end
+                    end
+                    -- Also check charge-based cooldowns (per-tick cached)
+                    if not isOnCD and entry.hasCharges then
+                        local spellID = entry.overrideSpellID or entry.spellID or entry.id
+                        if spellID then
+                            local ci = TickCacheGetCharges(spellID)
+                            if ci then
+                                local current = SafeToNumber(ci.currentCharges, nil)
+                                local maxC = SafeToNumber(ci.maxCharges, nil)
+                                if current and maxC and current < maxC then
+                                    isOnCD = true
+                                end
+                            end
+                        end
+                    end
+
+                    local effectiveMode = displayMode
+                    if effectiveMode == "combat" then
+                        effectiveMode = inCombat and "always" or "active"
+                    end
+
+                    if effectiveMode == "always" then
+                        if not icon:IsShown() then icon:Show() end
+                    elseif effectiveMode == "active" then
+                        if isOnCD then
+                            if not icon:IsShown() then icon:Show() end
+                        else
+                            if icon:IsShown() then icon:Hide() end
+                        end
+                    end
+
+                    -- Grey out when linked debuff/aura not active on target
+                    local greyOut = containerDB and containerDB.greyOutInactive
+                    if greyOut and icon:IsShown() and icon.Icon and icon.Icon.SetDesaturated then
+                        -- Only apply to spells that have aura tracking (linked auras)
+                        local hasAuraLink = entry.linkedSpellIDs or entry._abilityToAuraSpellID
+                            or (icon._spellEntry and icon._spellEntry.linkedSpellIDs)
+                        if hasAuraLink and not icon._auraActive then
+                            local rowOpacity = icon._rowOpacity or 1
+                            icon:SetAlpha(rowOpacity * 0.4)
+                            if not icon._cdDesaturated then
+                                icon.Icon:SetDesaturated(true)
+                            end
+                            icon._greyedOut = true
+                        elseif icon._greyedOut then
+                            local rowOpacity = icon._rowOpacity or 1
+                            icon:SetAlpha(rowOpacity)
+                            if not icon._cdDesaturated then
+                                icon.Icon:SetDesaturated(false)
+                            end
+                            icon._greyedOut = nil
+                        end
+                    elseif icon._greyedOut then
+                        local rowOpacity = icon._rowOpacity or 1
+                        icon:SetAlpha(rowOpacity)
+                        if icon.Icon and icon.Icon.SetDesaturated and not icon._cdDesaturated then
+                            icon.Icon:SetDesaturated(false)
+                        end
+                        icon._greyedOut = nil
+                    end
                 end
+                SyncCooldownBling(icon)
             end
-            SyncCooldownBling(icon)
-            UpdateIconCooldown(icon)
         end
     end
+
 end
 
 function CDMIcons:UpdateCooldownsForType(viewerType)
@@ -2029,19 +2600,12 @@ function CDMIcons:UpdateCooldownsForType(viewerType)
     end
 end
 
-function CDMIcons:StartUpdateTicker()
-    if updateTicker then return end
-    updateTicker = C_Timer.NewTicker(0.5, function()
-        self:UpdateAllCooldowns()
-    end)
-end
-
-function CDMIcons:StopUpdateTicker()
-    if updateTicker then
-        updateTicker:Cancel()
-        updateTicker = nil
-    end
-end
+-- The 500ms update ticker has been removed — event-driven coalescing
+-- (SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_CHARGES, BAG_UPDATE_COOLDOWN,
+-- UNIT_AURA) handles all cooldown/aura state changes.  A one-shot
+-- catch-up fires on PLAYER_REGEN_ENABLED below.
+function CDMIcons:StartUpdateTicker() end  -- no-op (kept for API compat)
+function CDMIcons:StopUpdateTicker() end   -- no-op
 
 ---------------------------------------------------------------------------
 -- CONFIGURE ICON (public wrapper)
@@ -2143,51 +2707,6 @@ function CustomCDM:MoveEntry(trackerKey, fromIndex, direction)
     if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
 end
 
-function CustomCDM:TransferEntry(fromTrackerKey, entryIndex, toTrackerKey)
-    if fromTrackerKey == toTrackerKey then return false end
-
-    local fromData = GetCustomData(fromTrackerKey)
-    if not fromData or not fromData.entries then return false end
-    if entryIndex < 1 or entryIndex > #fromData.entries then return false end
-
-    local toData = GetCustomData(toTrackerKey)
-    if not toData then return false end
-    if not toData.entries then toData.entries = {} end
-
-    local entry = fromData.entries[entryIndex]
-
-    -- Duplicate check in destination
-    for _, existing in ipairs(toData.entries) do
-        if existing.type == entry.type and existing.id == entry.id then
-            return false
-        end
-    end
-
-    entry.position = nil
-    toData.entries[#toData.entries + 1] = entry
-    table.remove(fromData.entries, entryIndex)
-
-    if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-    return true
-end
-
-function CustomCDM:SetEntryPosition(trackerKey, entryIndex, position)
-    local customData = GetCustomData(trackerKey)
-    if not customData or not customData.entries or not customData.entries[entryIndex] then return end
-
-    if position == nil or position == 0 or position == "" then
-        customData.entries[entryIndex].position = nil
-    else
-        local num = tonumber(position)
-        if num then
-            customData.entries[entryIndex].position = math.max(1, math.floor(num))
-        else
-            customData.entries[entryIndex].position = nil
-        end
-    end
-
-    if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
-end
 
 -- Legacy compat: GetIcons returns the pool for a viewer name.
 -- Returns empty when called from the classic engine's LayoutViewer context
@@ -2206,8 +2725,6 @@ function CustomCDM:GetIcons(viewerName)
     return {}
 end
 
--- Legacy compat: RebuildIcons (no-op, handled by BuildIcons in containers)
-function CustomCDM:RebuildIcons() end
 function CustomCDM:StartUpdateTicker() CDMIcons:StartUpdateTicker() end
 function CustomCDM:StopUpdateTicker() CDMIcons:StopUpdateTicker() end
 function CustomCDM:UpdateAllCooldowns() CDMIcons:UpdateAllCooldowns() end
@@ -2218,45 +2735,37 @@ function CustomCDM:UpdateAllCooldowns() CDMIcons:UpdateAllCooldowns() end
 -- matching action-bar behavior. Uses C_Spell.IsSpellInRange for spells.
 -- Polled at 250ms (no "player moved" event) + instant on target change.
 ---------------------------------------------------------------------------
-local RANGE_POLL_INTERVAL = 0.25
+local RANGE_POLL_INTERVAL_COMBAT = 0.75
+local RANGE_POLL_INTERVAL_IDLE = 2.0   -- relaxed OOC (range matters less)
 local rangePollElapsed = 0
+local rangePollInCombat = false
 
--- Safe wrapper: C_Spell.IsSpellInRange can return secret values in Midnight
+-- Safe wrapper: C_Spell.IsSpellInRange can return secret values in Midnight.
+-- Calls pcall directly (no closure allocation).
 local function SafeIsSpellInRange(spellID)
     if not spellID or not C_Spell or not C_Spell.IsSpellInRange then return nil end
-    local ok, result = pcall(function()
-        local inRange = C_Spell.IsSpellInRange(spellID, "target")
-        if inRange == false then return false end
-        if inRange == true then return true end
-        return nil
-    end)
+    local ok, inRange = pcall(C_Spell.IsSpellInRange, spellID, "target")
     if not ok then return nil end
-    return result
+    if inRange == false then return false end
+    if inRange == true then return true end
+    return nil
 end
 
-local function SafeSpellHasRange(spellID)
-    if not spellID or not C_Spell or not C_Spell.SpellHasRange then return nil end
-    local ok, result = pcall(function()
-        local hasRange = C_Spell.SpellHasRange(spellID)
-        if hasRange == false then return false end
-        if hasRange == true then return true end
-        return nil
-    end)
-    if not ok then return nil end
-    return result
-end
-
--- Safe wrapper: C_Spell.IsSpellUsable can return secret values in Midnight
+-- Safe wrapper: C_Spell.IsSpellUsable can return secret values in Midnight.
+-- Calls pcall directly (no closure allocation).
 local function SafeIsSpellUsable(spellID)
     if not spellID or not C_Spell or not C_Spell.IsSpellUsable then return true, false end
-    local ok, isUsable, notEnoughMana = pcall(function()
-        local usable, noMana = C_Spell.IsSpellUsable(spellID)
-        -- Convert potential secret booleans to real booleans
-        return usable and true or false, noMana and true or false
-    end)
+    local ok, usable, noMana = pcall(C_Spell.IsSpellUsable, spellID)
     if not ok then return true, false end  -- Secret value: assume usable
-    return isUsable, notEnoughMana
+    -- Convert potential secret booleans to real booleans
+    return usable and true or false, noMana and true or false
 end
+
+-- Per-cycle dedup caches: avoid calling the same C_Spell API for the same
+-- spellID when multiple icons track the same ability.
+local _rangeCycleCache = {}     -- [spellID] = true/false/"nil" (string "nil" for actual nil results)
+local _hasRangeCycleCache = {}  -- [spellID] = true/false
+local _usableCycleCache = {}    -- [spellID] = true/false
 
 -- Reset icon to normal visual state (clear any tinting)
 local function ResetIconVisuals(icon)
@@ -2265,15 +2774,16 @@ local function ResetIconVisuals(icon)
     icon._usabilityTinted = nil
 end
 
-local function UpdateIconVisualState(icon)
+local function UpdateIconVisualState(icon, cachedDB)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
     local viewerType = entry.viewerType
     if not viewerType then return end
 
-    local settings = GetTrackerSettings(viewerType)
+    local settings = cachedDB and cachedDB[viewerType] or GetTrackerSettings(viewerType)
     if not settings then
         if icon._rangeTinted or icon._usabilityTinted then
+            icon._lastVisualState = nil
             ResetIconVisuals(icon)
         end
         return
@@ -2285,6 +2795,7 @@ local function UpdateIconVisualState(icon)
     -- Nothing enabled — reset and bail
     if not rangeEnabled and not usabilityEnabled then
         if icon._rangeTinted or icon._usabilityTinted then
+            icon._lastVisualState = nil
             ResetIconVisuals(icon)
         end
         return
@@ -2296,36 +2807,80 @@ local function UpdateIconVisualState(icon)
     -- Skip items/trinkets (self-use, no range/usability concept)
     if entry.type == "item" or entry.type == "trinket" then return end
 
-    -- Resolve current spell ID (prefer runtime override for accurate checks)
+    -- Resolve current spell ID (prefer cached override from cooldown update cycle
+    -- to avoid redundant GetOverrideSpell API calls during range polling)
     local spellID = entry.overrideSpellID or entry.spellID or entry.id
-    if C_Spell and C_Spell.GetOverrideSpell then
+    if icon._cachedOverrideID then
+        spellID = icon._cachedOverrideID
+    elseif C_Spell and C_Spell.GetOverrideSpell then
         local currentOverride = C_Spell.GetOverrideSpell(entry.spellID or entry.id)
         if currentOverride then spellID = currentOverride end
     end
     if not spellID then return end
 
     ---------------------------------------------------------------------------
-    -- Priority 1: Out of range (red tint) — only when target exists + ranged
+    -- Compute desired visual state (API calls use per-cycle dedup caches)
     ---------------------------------------------------------------------------
+    local newVisualState = "normal"
+
+    -- Priority 1: Out of range (red tint) — only when target exists + ranged
     if rangeEnabled and UnitExists("target") then
-        local hasRange = SafeSpellHasRange(spellID)
-        if hasRange ~= false then
-            local inRange = SafeIsSpellInRange(spellID)
+        -- Per-cycle dedup: skip redundant C_Spell API calls for shared spellIDs
+        local hasRange = _hasRangeCycleCache[spellID]
+        if hasRange == nil then
+            hasRange = (not C_Spell.SpellHasRange) or C_Spell.SpellHasRange(spellID)
+            _hasRangeCycleCache[spellID] = hasRange and true or false
+        end
+        if hasRange then
+            local cached = _rangeCycleCache[spellID]
+            local inRange
+            if cached ~= nil then
+                inRange = cached ~= "nil" and cached or nil
+            else
+                inRange = SafeIsSpellInRange(spellID)
+                _rangeCycleCache[spellID] = inRange == nil and "nil" or inRange
+            end
             if inRange == false then
-                -- Clear usability darkening if switching to range tint
-                if icon._usabilityTinted then
-                    icon._usabilityTinted = nil
-                end
-                local c = settings.rangeColor
-                local r = c and c[1] or 0.8
-                local g = c and c[2] or 0.1
-                local b = c and c[3] or 0.1
-                local a = c and c[4] or 1
-                icon.Icon:SetVertexColor(r, g, b, a)
-                icon._rangeTinted = true
-                return
+                newVisualState = "oor"
             end
         end
+    end
+
+    -- Priority 2: Unusable / resource-starved (darken) — only if not already OOR
+    if newVisualState == "normal" and usabilityEnabled then
+        -- Per-cycle dedup: reuse result for shared spellIDs
+        local isUsable = _usableCycleCache[spellID]
+        if isUsable == nil then
+            isUsable = SafeIsSpellUsable(spellID)
+            _usableCycleCache[spellID] = isUsable
+        end
+        if not isUsable then
+            newVisualState = "unusable"
+        end
+    end
+
+    ---------------------------------------------------------------------------
+    -- State-change gating: skip SetVertexColor if visual state unchanged
+    ---------------------------------------------------------------------------
+    if icon._lastVisualState == newVisualState then return end
+    icon._lastVisualState = newVisualState
+
+    ---------------------------------------------------------------------------
+    -- Apply the computed visual state
+    ---------------------------------------------------------------------------
+    if newVisualState == "oor" then
+        -- Clear usability darkening if switching to range tint
+        if icon._usabilityTinted then
+            icon._usabilityTinted = nil
+        end
+        local c = settings.rangeColor
+        local r = c and c[1] or 0.8
+        local g = c and c[2] or 0.1
+        local b = c and c[3] or 0.1
+        local a = c and c[4] or 1
+        icon.Icon:SetVertexColor(r, g, b, a)
+        icon._rangeTinted = true
+        return
     end
 
     -- If was range-tinted but now in range, clear it
@@ -2334,21 +2889,15 @@ local function UpdateIconVisualState(icon)
         icon._rangeTinted = nil
     end
 
-    ---------------------------------------------------------------------------
-    -- Priority 2: Unusable / resource-starved (darken)
-    ---------------------------------------------------------------------------
-    if usabilityEnabled then
-        local isUsable = SafeIsSpellUsable(spellID)
-        if not isUsable then
-            -- Clear cooldown desaturation so vertex color darkening is visible
-            if icon._cdDesaturated then
-                icon.Icon:SetDesaturated(false)
-                icon._cdDesaturated = nil
-            end
-            icon.Icon:SetVertexColor(0.4, 0.4, 0.4, 1)
-            icon._usabilityTinted = true
-            return
+    if newVisualState == "unusable" then
+        -- Clear cooldown desaturation so vertex color darkening is visible
+        if icon._cdDesaturated then
+            icon.Icon:SetDesaturated(false)
+            icon._cdDesaturated = nil
         end
+        icon.Icon:SetVertexColor(0.4, 0.4, 0.4, 1)
+        icon._usabilityTinted = true
+        return
     end
 
     -- If was usability-tinted but now usable, clear it
@@ -2359,9 +2908,15 @@ local function UpdateIconVisualState(icon)
 end
 
 function CDMIcons:UpdateAllIconRanges()
+    -- Wipe per-cycle dedup caches so each poll starts fresh
+    wipe(_rangeCycleCache)
+    wipe(_hasRangeCycleCache)
+    wipe(_usableCycleCache)
+    -- Hoist DB lookup above the loop (avoids repeated GetDB per icon)
+    local db = GetDB()
     for _, pool in pairs(iconPools) do
         for _, icon in ipairs(pool) do
-            UpdateIconVisualState(icon)
+            UpdateIconVisualState(icon, db)
         end
     end
 end
@@ -2377,20 +2932,36 @@ cdEventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+cdEventFrame:RegisterEvent("UPDATE_MACROS")
+-- UNIT_AURA handled by centralized dispatcher subscription (below)
 
--- Coalesce rapid cooldown events (SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_CHARGES,
--- BAG_UPDATE_COOLDOWN) into a single UpdateAllCooldowns call per 50ms window.
-local CD_COALESCE_WINDOW = 0.05
-local cdCoalesceRunning = false
+-- C_Timer coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
+-- SPELL_UPDATE_CHARGES, BAG_UPDATE_COOLDOWN, and UNIT_AURA into a single
+-- UpdateAllCooldowns after a short delay.
+-- Throttled to max ~20 FPS (50ms) — raid combat fires SPELL_UPDATE_COOLDOWN
+-- many times per second; 60 FPS updates are excessive for icon display.
+local CDM_MIN_UPDATE_INTERVAL = 0.05
+local _lastCDMUpdateTime = 0
 
-local function FlushCooldownUpdate()
-    cdCoalesceRunning = false
-    CDMIcons:UpdateAllCooldowns()
+local _cdmUpdatePending = false
+
+local function ScheduleCDMUpdate()
+    if _cdmUpdatePending then return end
+    _cdmUpdatePending = true
+    C_Timer.After(CDM_MIN_UPDATE_INTERVAL, function()
+        _cdmUpdatePending = false
+        _lastCDMUpdateTime = GetTime()
+        CDMIcons:UpdateAllCooldowns()
+        if ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
+            ns.CDMBars:UpdateOwnedBars()
+        end
+    end)
 end
 
--- Combat safety ticker: DurationObject sources can resolve slightly after the
--- initial event-driven update. A low-frequency ticker lets custom icons
--- recover within combat without relying on readable numeric start/duration.
+-- Combat safety ticker: periodic UpdateAllCooldowns during combat.
+-- DurationObject sources may resolve late (viewer hook delays); a
+-- low-frequency ticker ensures icons recover within 250ms even if the
+-- initial event-driven update failed due to secret values.
 local safetyTickFrame = CreateFrame("Frame")
 local SAFETY_TICK_INTERVAL = 0.25
 local safetyTickElapsed = 0
@@ -2400,47 +2971,72 @@ local function SafetyTickOnUpdate(self, elapsed)
     safetyTickElapsed = 0
     CDMIcons:UpdateAllCooldowns()
     if ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
-        ns.CDMBars:UpdateOwnedBars()
+        ns.CDMBars:UpdateOwnedBars()  -- safety ticker, don't clear oocInactive
     end
 end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_TARGET_CHANGED" then
         CDMIcons:UpdateAllIconRanges()
+        -- Target debuffs (e.g. Reaper's Mark) need a CDM refresh when target changes
+        ns.CDMSpellData:InvalidateChildMap()
+        ScheduleCDMUpdate()
         return
     end
     if event == "PLAYER_EQUIPMENT_CHANGED" then
         -- Trinket slots 13-14: refresh textures and cooldowns immediately
         if arg1 == 13 or arg1 == 14 then
+            ns.CDMSpellData:InvalidateChildMap()
             CDMIcons:UpdateAllCooldowns()
         end
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then
+        rangePollInCombat = true
+        rangePollElapsed = 0  -- reset so combat interval kicks in immediately
         safetyTickElapsed = 0
         safetyTickFrame:SetScript("OnUpdate", SafetyTickOnUpdate)
         return
     end
     if event == "PLAYER_REGEN_ENABLED" then
+        rangePollInCombat = false
         safetyTickFrame:SetScript("OnUpdate", nil)
-        CDMIcons:UpdateAllCooldowns()
-        if ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
-            ns.CDMBars:UpdateOwnedBars()
-        end
+        -- One-shot catch-up: refresh all cooldowns after combat ends
+        ns.CDMSpellData:InvalidateChildMap()
+        ScheduleCDMUpdate()
         return
     end
-    -- Coalesce cooldown events
-    if not cdCoalesceRunning then
-        cdCoalesceRunning = true
-        C_Timer.After(CD_COALESCE_WINDOW, FlushCooldownUpdate)
+    if event == "UPDATE_MACROS" then
+        InvalidateMacroCache()
+        return
     end
+    -- Coalesce cooldown events via C_Timer
+    ns.CDMSpellData:InvalidateChildMap()  -- cooldown state changed, children may have shown/hidden
+    ScheduleCDMUpdate()
 end)
+
+-- Subscribe to centralized aura dispatcher for prompt icon updates.
+-- Player auras via "player" filter (avoids callback for all 20+ raid units).
+-- Target debuffs via "all" filter (no "target" filter in the dispatcher).
+if ns.AuraEvents then
+    ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
+        ns.CDMSpellData:InvalidateChildMap()
+        ScheduleCDMUpdate()
+    end)
+    ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+        if unit == "target" then
+            ns.CDMSpellData:InvalidateChildMap()
+            ScheduleCDMUpdate()
+        end
+    end)
+end
 
 -- Visual state polling: 250ms OnUpdate for range + usability checks.
 -- Only active when at least one tracker has rangeIndicator or usabilityIndicator.
 local function RangePollOnUpdate(self, elapsed)
     rangePollElapsed = rangePollElapsed + elapsed
-    if rangePollElapsed < RANGE_POLL_INTERVAL then return end
+    local interval = rangePollInCombat and RANGE_POLL_INTERVAL_COMBAT or RANGE_POLL_INTERVAL_IDLE
+    if rangePollElapsed < interval then return end
     rangePollElapsed = 0
     CDMIcons:UpdateAllIconRanges()
 end

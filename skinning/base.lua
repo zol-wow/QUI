@@ -60,14 +60,53 @@ function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     local backdrop = frameBackdrops[frame]
     local px = SkinBase.GetPixelSize(backdrop, 1)
+    -- Store backup color fields so third-party frame cleanup recognizes this
+    -- as a QUI-owned frame and skips it during orphan/NineSlice suppression.
+    backdrop._quiBgR = bgr or 0.05
+    backdrop._quiBgG = bgg or 0.05
+    backdrop._quiBgB = bgb or 0.05
+    backdrop._quiBgA = bga or 0.95
+    backdrop._quiBorderR = sr or 0
+    backdrop._quiBorderG = sg or 0
+    backdrop._quiBorderB = sb or 0
+    backdrop._quiBorderA = sa or 1
     backdrop:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px },
     })
-    backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    backdrop:SetBackdropColor(backdrop._quiBgR, backdrop._quiBgG, backdrop._quiBgB, backdrop._quiBgA)
+    backdrop:SetBackdropBorderColor(backdrop._quiBorderR, backdrop._quiBorderG, backdrop._quiBorderB, backdrop._quiBorderA)
+end
+
+---------------------------------------------------------------------------
+-- ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+-- Applies a pixel-perfect backdrop directly to a BackdropTemplate frame.
+-- Unlike CreateBackdrop, this sets the backdrop on the frame itself
+-- (for frames that already have BackdropTemplate or are addon-owned).
+---------------------------------------------------------------------------
+function SkinBase.ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not frame then return end
+    local px = SkinBase.GetPixelSize(frame, 1)
+    -- Store backup color fields so third-party frame cleanup recognizes this
+    -- as a QUI-owned frame and skips it during orphan/NineSlice suppression.
+    frame._quiBgR = bgr or 0.05
+    frame._quiBgG = bgg or 0.05
+    frame._quiBgB = bgb or 0.05
+    frame._quiBgA = bga or 0.95
+    frame._quiBorderR = sr or 0
+    frame._quiBorderG = sg or 0
+    frame._quiBorderB = sb or 0
+    frame._quiBorderA = sa or 1
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = px,
+        insets = { left = px, right = px, top = px, bottom = px },
+    })
+    frame:SetBackdropColor(frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA)
+    frame:SetBackdropBorderColor(frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA)
 end
 
 ---------------------------------------------------------------------------
@@ -130,5 +169,34 @@ function SkinBase.StripTextures(frame)
             region:SetAlpha(0)
         end
     end
+end
+
+---------------------------------------------------------------------------
+-- Global OnBackdropSizeChanged fix
+-- BackdropTemplateMixin.SetupPieceVisuals re-creates backdrop texture pieces
+-- with default white vertex color but does NOT re-apply the stored
+-- backdropColor/backdropBorderColor. This hook ensures colors are always
+-- re-applied after piece recreation on ANY BackdropTemplate frame.
+---------------------------------------------------------------------------
+if BackdropTemplateMixin and BackdropTemplateMixin.OnBackdropSizeChanged then
+    hooksecurefunc(BackdropTemplateMixin, "OnBackdropSizeChanged", function(self)
+        -- Fast exit for frames with no stored colors (most Blizzard frames).
+        -- Without this guard the hook fires for EVERY BackdropTemplate resize
+        -- in the entire UI — hundreds of times/sec in raids.
+        if not self.backdropColor and not self._quiBgR
+           and not self.backdropBorderColor and not self._quiBorderR then
+            return
+        end
+        if self.backdropColor then
+            pcall(self.SetBackdropColor, self, self.backdropColor:GetRGBA())
+        elseif self._quiBgR then
+            pcall(self.SetBackdropColor, self, self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA or 1)
+        end
+        if self.backdropBorderColor then
+            pcall(self.SetBackdropBorderColor, self, self.backdropBorderColor:GetRGBA())
+        elseif self._quiBorderR then
+            pcall(self.SetBackdropBorderColor, self, self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA or 1)
+        end
+    end)
 end
 

@@ -11,6 +11,7 @@ local Helpers = ns.Helpers
 
 -- Cache LibSharedMedia reference
 local LSM = LibStub("LibSharedMedia-3.0", true)
+ns.LSM = LSM
 
 -- Cache global secret-value API functions at file scope (avoids repeated _G lookups)
 local issecretvalue = _G.issecretvalue
@@ -45,7 +46,7 @@ end
 --- @param fallback any Value to return if secret (default: nil)
 --- @return any The value or fallback
 function Helpers.SafeValue(value, fallback)
-    if Helpers.IsSecretValue(value) then
+    if issecretvalue and issecretvalue(value) then
         return fallback
     end
     return value
@@ -56,26 +57,10 @@ end
 --- @param b any Second value
 --- @return boolean|nil Result of comparison, or nil if can't compare
 function Helpers.SafeCompare(a, b)
-    if Helpers.IsSecretValue(a) or Helpers.IsSecretValue(b) then
+    if issecretvalue and (issecretvalue(a) or issecretvalue(b)) then
         return nil
     end
     return a == b
-end
-
---- Safely perform arithmetic on a value
---- @param value any The potentially secret value
---- @param operation function The arithmetic operation (receives value, returns result)
---- @param fallback any Value to return if secret or error
---- @return any Result of operation or fallback
-function Helpers.SafeArithmetic(value, operation, fallback)
-    if Helpers.IsSecretValue(value) then
-        return fallback
-    end
-    local ok, result = pcall(operation, value)
-    if ok then
-        return result
-    end
-    return fallback
 end
 
 --- Safely convert to number
@@ -83,11 +68,12 @@ end
 --- @param fallback number Value to return if secret or not a number
 --- @return number The number or fallback
 function Helpers.SafeToNumber(value, fallback)
-    if Helpers.IsSecretValue(value) then
+    if issecretvalue and issecretvalue(value) then
         return fallback or 0
     end
-    local ok, num = pcall(tonumber, value)
-    if ok and num then
+    -- No pcall needed: tonumber never errors on non-secret values
+    local num = tonumber(value)
+    if num then
         return num
     end
     return fallback or 0
@@ -99,59 +85,21 @@ end
 --- @return string The string or fallback
 function Helpers.SafeToString(value, fallback)
     fallback = fallback or ""
-    if Helpers.IsSecretValue(value) then
+    if issecretvalue and issecretvalue(value) then
         return fallback
     end
-    local ok, str = pcall(tostring, value)
-    if ok and str then
+    -- No pcall needed: tostring never errors on non-secret values
+    local str = tostring(value)
+    if str then
         return str
     end
     return fallback
-end
-
---- Check if a frame has a tainted widget container child.
---- WorldQuestsList can taint shownWidgetCount on GameTooltip's widget container
---- children. If tainted, any layout operation triggers comparison errors in
---- Blizzard's LayoutFrame.lua.
---- @param frame table The frame to check (e.g. GameTooltip)
---- @return boolean True if a tainted widget container child was found
-function Helpers.HasTaintedWidgetContainer(frame)
-    if not frame or not frame.GetChildren then return false end
-    local ok, result = pcall(function()
-        for i = 1, select("#", frame:GetChildren()) do
-            local child = select(i, frame:GetChildren())
-            if child and child.shownWidgetCount ~= nil then
-                if issecretvalue and issecretvalue(child.shownWidgetCount) then
-                    return true
-                end
-            end
-        end
-        return false
-    end)
-    return ok and result == true
 end
 
 ---------------------------------------------------------------------------
 -- DATABASE ACCESS HELPERS
 -- Standardized pattern for accessing QUICore database profiles
 ---------------------------------------------------------------------------
-
--- Reference to QUICore (set after ADDON_LOADED)
-local QUICore = nil
-
---- Initialize QUICore reference (call after ADDON_LOADED)
-function Helpers.InitQUICore()
-    QUICore = ns.Addon
-end
-
---- Get QUICore reference
---- @return table|nil QUICore addon object
-function Helpers.GetQUICore()
-    if not QUICore then
-        QUICore = ns.Addon
-    end
-    return QUICore
-end
 
 --- Get QUICore reference (with _G.QUI fallback)
 --- Drop-in replacement for the local GetCore() pattern used across 30+ files.
@@ -160,14 +108,11 @@ function Helpers.GetCore()
     return (_G.QUI and _G.QUI.QUICore) or ns.Addon
 end
 
---- No-op kept for backward compatibility with callers.
-function Helpers.InvalidateProfileCache()
-end
 
 --- Get the full profile database
 --- @return table|nil The profile table or nil
 function Helpers.GetProfile()
-    local core = Helpers.GetQUICore()
+    local core = Helpers.GetCore()
     if core and core.db and core.db.profile then
         return core.db.profile
     end
@@ -198,9 +143,21 @@ function Helpers.GetModuleDB(moduleName)
     return nil
 end
 
+--- Deep-copy a defaults table (shallow values, recursive sub-tables).
+--- Used by GetModuleSettings to repair corrupted entries.
+local function DeepCopyDefaults(src)
+    local copy = {}
+    for k, v in pairs(src) do
+        copy[k] = type(v) == "table" and DeepCopyDefaults(v) or v
+    end
+    return copy
+end
+
 --- Get module settings with defaults fallback
 --- This is the standard pattern for modules to access their settings.
 --- Creates the profile entry if it doesn't exist.
+--- Detects structural corruption (e.g. a table default overwritten by a scalar)
+--- and resets the module entry from defaults when found.
 --- @param moduleName string The module key in the profile (e.g., "cooldownEffects", "castbar")
 --- @param defaults table Default values to return/initialize if settings don't exist
 --- @return table The module's settings table (never nil)
@@ -209,7 +166,22 @@ function Helpers.GetModuleSettings(moduleName, defaults)
     local profile = Helpers.GetProfile()
     if profile then
         if not profile[moduleName] then
-            profile[moduleName] = defaults
+            profile[moduleName] = DeepCopyDefaults(defaults)
+        else
+            -- Corruption guard: if a key that should be a table is a scalar,
+            -- the SavedVariables are corrupt — wipe and re-merge defaults.
+            local settings = profile[moduleName]
+            for k, v in pairs(defaults) do
+                if type(v) == "table" and type(settings[k]) ~= "table" and settings[k] ~= nil then
+                    wipe(settings)
+                    for dk, dv in pairs(defaults) do
+                        if settings[dk] == nil then
+                            settings[dk] = type(dv) == "table" and DeepCopyDefaults(dv) or dv
+                        end
+                    end
+                    break
+                end
+            end
         end
         return profile[moduleName]
     end
@@ -331,7 +303,7 @@ function Helpers.GetNCDMCustomEntries(trackerKey)
         return nil
     end
 
-    local core = Helpers.GetQUICore()
+    local core = Helpers.GetCore()
     if not (core and core.db and core.db.char and core.db.profile) then
         return nil
     end
@@ -408,7 +380,7 @@ function Helpers.SeedNCDMCustomEntriesForCurrentSpec(trackerKey)
         return false
     end
 
-    local core = Helpers.GetQUICore()
+    local core = Helpers.GetCore()
     if not (core and core.db and core.db.char and core.db.profile) then
         return false
     end
@@ -560,16 +532,39 @@ function Helpers.IsHUDAnchoredToCDM(profile)
 
     local frameAnchoring = profile.frameAnchoring
     if frameAnchoring then
-        local playerFrame = frameAnchoring.playerFrame
-        local targetFrame = frameAnchoring.targetFrame
-        if playerFrame and playerFrame.enabled and (playerFrame.parent == "cdmEssential" or playerFrame.parent == "cdmUtility") then
-            return true
-        end
-        if targetFrame and targetFrame.enabled and (targetFrame.parent == "cdmEssential" or targetFrame.parent == "cdmUtility") then
-            return true
+        for _, key in ipairs({"playerFrame", "targetFrame"}) do
+            local entry = frameAnchoring[key]
+            if type(entry) == "table" then
+                local p = entry.parent
+                if p == "cdmEssential" or p == "cdmUtility" or p == "essential" or p == "utility" then
+                    return true
+                end
+            end
         end
     end
 
+    return false
+end
+
+---------------------------------------------------------------------------
+-- EDIT / UNLOCK MODE STATE HELPERS
+---------------------------------------------------------------------------
+
+--- Check if QUI Layout Mode is currently active
+--- @return boolean
+function Helpers.IsLayoutModeActive()
+    return ns.QUI_LayoutMode and ns.QUI_LayoutMode.isActive or false
+end
+
+--- Check if Blizzard Edit Mode is currently active
+--- @return boolean
+function Helpers.IsEditModeActive()
+    if EditModeManagerFrame then
+        if type(EditModeManagerFrame.IsEditModeActive) == "function" then
+            return EditModeManagerFrame:IsEditModeActive()
+        end
+        return not not EditModeManagerFrame.editModeActive
+    end
     return false
 end
 
@@ -612,27 +607,6 @@ function Helpers.GetGeneralFontSettings()
 end
 
 ---------------------------------------------------------------------------
--- TEXTURE HELPERS
--- Centralized texture fetching from general settings
----------------------------------------------------------------------------
-
-local DEFAULT_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
-local DEFAULT_TEXTURE_NAME = "Blizzard"
-
---- Get the user's configured general texture path
---- @return string Texture file path
-function Helpers.GetGeneralTexture()
-    local profile = Helpers.GetProfile()
-    if profile and profile.general then
-        local textureName = profile.general.texture or DEFAULT_TEXTURE_NAME
-        if LSM then
-            return LSM:Fetch("statusbar", textureName) or DEFAULT_TEXTURE
-        end
-    end
-    return DEFAULT_TEXTURE
-end
-
----------------------------------------------------------------------------
 -- COLOR/THEME HELPERS
 -- Centralized color utilities for skin system and class colors
 ---------------------------------------------------------------------------
@@ -642,8 +616,8 @@ end
 --- @return number, number, number, number, number, number, number, number sr, sg, sb, sa, bgr, bgg, bgb, bga
 function Helpers.GetSkinColors()
     local QUI = _G.QUI
-    -- Fallback mint accent (#34D399)
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
+    -- Fallback sky blue accent (#60A5FA)
+    local sr, sg, sb, sa = 0.376, 0.647, 0.980, 1
     -- Fallback dark background
     local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95
 
@@ -764,16 +738,6 @@ function Helpers.GetSkinBarColor(moduleSettings, prefix)
     return r, g, b, a
 end
 
---- Get the addon-wide accent color (from options panel color picker)
---- @return number, number, number, number r, g, b, a
-function Helpers.GetAddonAccentColor()
-    local QUI = _G.QUI
-    if QUI and QUI.GetAddonAccentColor then
-        return QUI:GetAddonAccentColor()
-    end
-    return 0.204, 0.827, 0.6, 1  -- Fallback to mint
-end
-
 --- Get just the skin background color
 --- @return number, number, number, number r, g, b, a
 function Helpers.GetSkinBgColor()
@@ -853,30 +817,6 @@ end
 -- Common utility functions for frame creation and event handling
 ---------------------------------------------------------------------------
 
---- Create an event frame with registered events and callback
---- @param events table Array of event names to register
---- @param onEventCallback function Callback function(self, event, ...)
---- @param name string|nil Optional frame name
---- @return Frame The created event frame
-function Helpers.CreateEventFrame(events, onEventCallback, name)
-    local frame = CreateFrame("Frame", name)
-    if events then
-        for _, event in ipairs(events) do
-            frame:RegisterEvent(event)
-        end
-    end
-    if onEventCallback then
-        frame:SetScript("OnEvent", onEventCallback)
-    end
-    return frame
-end
-
---- Check if currently in combat lockdown (wrapper for future extensibility)
---- @return boolean True if in combat lockdown
-function Helpers.InCombat()
-    return InCombatLockdown()
-end
-
 --- Create an OnUpdate callback throttler.
 --- Returns a function(self, elapsed, ...) that only calls callback at the
 --- requested interval and passes the accumulated elapsed as second argument.
@@ -937,6 +877,29 @@ function Helpers.FindAnchorFrame(type)
         f = EnumerateFrames(f)
     end
     return frameHighestWidth
+end
+
+--- Clamp a value between min and max bounds
+--- @param value number The value to clamp
+--- @param minVal number Minimum bound
+--- @param maxVal number Maximum bound
+--- @return number Clamped value
+function Helpers.Clamp(value, minVal, maxVal)
+    if value < minVal then return minVal end
+    if value > maxVal then return maxVal end
+    return value
+end
+
+--- Clamp a value to [0, 1] range with optional fallback for nil/secret values
+--- @param value any The value to clamp
+--- @param fallback number|nil Fallback if value is nil or secret (default: 0)
+--- @return number Clamped value in [0, 1]
+function Helpers.Clamp01(value, fallback)
+    local v = tonumber(value)
+    if not v then return fallback or 0 end
+    if v < 0 then return 0 end
+    if v > 1 then return 1 end
+    return v
 end
 
 ---------------------------------------------------------------------------
@@ -1007,12 +970,13 @@ function Helpers.IsPlayerSkyriding()
     return ok and gliding
 end
 
---- Check if player is in a vehicle.
---- Covers both UnitInVehicle and vehicle-UI states.
+--- Check if player is in a vehicle or override-bar state.
+--- Covers UnitInVehicle, vehicle-UI, and override action bar (quest vehicles).
 --- @return boolean True when player is controlling or riding a vehicle
 function Helpers.IsPlayerInVehicle()
     if UnitInVehicle and UnitInVehicle("player") then return true end
     if UnitHasVehicleUI and UnitHasVehicleUI("player") then return true end
+    if HasOverrideActionBar and HasOverrideActionBar() then return true end
     return false
 end
 
@@ -1024,44 +988,31 @@ function Helpers.IsPlayerInDungeonOrRaid()
     return instanceType == "party" or instanceType == "raid"
 end
 
----------------------------------------------------------------------------
--- EXPOSE TO NAMESPACE
--- Also maintain backward compatibility with ns.Utils.IsSecretValue
----------------------------------------------------------------------------
+--- Create a GetSkinColors function for a specific module/frame prefix.
+--- Returns a function that gets skin border + background colors.
+--- @param prefix string|nil The border settings prefix (e.g., "characterFrame", "inspectFrame")
+--- @param settingsPath string|nil The profile sub-key to look up (default: "general")
+--- @return function Returns (sr, sg, sb, sa, bgr, bgg, bgb, bga)
+function Helpers.CreateSkinColorGetter(prefix, settingsPath)
+    settingsPath = settingsPath or "general"
+    return function()
+        local profile = Helpers.GetProfile()
+        local settings = profile and profile[settingsPath]
+        local sr, sg, sb, sa = Helpers.GetSkinBorderColor(settings, prefix)
+        local bgr, bgg, bgb, bga = Helpers.GetSkinBgColor()
+        return sr, sg, sb, sa, bgr, bgg, bgb, bga
+    end
+end
 
--- Ensure ns.Utils exists and add our helpers there too for compatibility
+-- Shared utility namespace (used by consumablecheck, raidbuffs, etc.)
 ns.Utils = ns.Utils or {}
-ns.Utils.IsSecretValue = Helpers.IsSecretValue
-ns.Utils.SafeValue = Helpers.SafeValue
-ns.Utils.SafeCompare = Helpers.SafeCompare
-ns.Utils.SafeArithmetic = Helpers.SafeArithmetic
-ns.Utils.SafeToNumber = Helpers.SafeToNumber
-ns.Utils.SafeToString = Helpers.SafeToString
 
--- Shorthand aliases on namespace for convenience
-ns.GetGeneralFont = Helpers.GetGeneralFont
-ns.GetGeneralFontOutline = Helpers.GetGeneralFontOutline
-ns.GetGeneralTexture = Helpers.GetGeneralTexture
-ns.GetModuleDB = Helpers.GetModuleDB
-ns.GetModuleSettings = Helpers.GetModuleSettings
-ns.CreateDBGetter = Helpers.CreateDBGetter
-ns.GetSkinColors = Helpers.GetSkinColors
-ns.GetSkinBorderColor = Helpers.GetSkinBorderColor
-ns.GetSkinBarColor = Helpers.GetSkinBarColor
-ns.GetClassColor = Helpers.GetClassColor
-ns.GetPlayerClassColor = Helpers.GetPlayerClassColor
-ns.GetItemQualityColor = Helpers.GetItemQualityColor
-ns.CreateEventFrame = Helpers.CreateEventFrame
-ns.InCombat = Helpers.InCombat
-ns.GetCore = Helpers.GetCore
-ns.IsPlayerPassenger = Helpers.IsPlayerPassenger
-ns.IsPlayerMounted = Helpers.IsPlayerMounted
-ns.IsPlayerFlying = Helpers.IsPlayerFlying
-ns.IsPlayerSkyriding = Helpers.IsPlayerSkyriding
-ns.IsPlayerInVehicle = Helpers.IsPlayerInVehicle
-ns.IsPlayerInDungeonOrRaid = Helpers.IsPlayerInDungeonOrRaid
-ns.CreateOnUpdateThrottle = Helpers.CreateOnUpdateThrottle
-ns.CreateTimeThrottle = Helpers.CreateTimeThrottle
+--- Check if player is inside a dungeon or raid instance.
+--- @return boolean
+function ns.Utils.IsInInstancedContent()
+    local inInstance, instanceType = IsInInstance()
+    return inInstance and (instanceType == "party" or instanceType == "raid")
+end
 
  ---------------------------------------------------------------------------
 -- TEXT TRUNCATION HELPERS
@@ -1118,9 +1069,7 @@ ns.CreateTimeThrottle = Helpers.CreateTimeThrottle
      return string.format("%." .. maxLength .. "s", text)
  end
 
- ns.TruncateUTF8 = Helpers.TruncateUTF8
-
----------------------------------------------------------------------------
+ ---------------------------------------------------------------------------
 -- TAINT-SAFETY UTILITIES
 -- Shared patterns for WoW 12.0 taint-safe frame property management.
 ---------------------------------------------------------------------------
@@ -1138,13 +1087,7 @@ function Helpers.CreateStateTable()
     return tbl, get
 end
 
---- Check whether Blizzard Edit Mode is currently active.
--- Nil-safe for EditModeManagerFrame; uses IsEditModeActive() (not IsShown()).
--- @return boolean
-function Helpers.IsEditModeActive()
-    return EditModeManagerFrame and EditModeManagerFrame.IsEditModeActive
-       and EditModeManagerFrame:IsEditModeActive() or false
-end
+-- IsEditModeActive is defined earlier in the EDIT / UNLOCK MODE STATE HELPERS section.
 
 --- Hook a frame's Show method to defer-hide it on the next frame.
 -- @param frame  The frame to hook.
@@ -1255,12 +1198,52 @@ function Helpers.SafeHide(frame)
     return pcall(frame.Hide, frame)
 end
 
-ns.InvalidateProfileCache = Helpers.InvalidateProfileCache
-ns.CreateStateTable = Helpers.CreateStateTable
-ns.IsEditModeActive = Helpers.IsEditModeActive
-ns.IsEditModeShown = Helpers.IsEditModeShown
-ns.SafeShow = Helpers.SafeShow
-ns.SafeHide = Helpers.SafeHide
-ns.DeferredHideOnShow = Helpers.DeferredHideOnShow
-ns.DeferredSetAtlasBlock = Helpers.DeferredSetAtlasBlock
-ns.HasTaintedWidgetContainer = Helpers.HasTaintedWidgetContainer
+---------------------------------------------------------------------------
+-- FORM LAYOUT HELPERS
+---------------------------------------------------------------------------
+
+--- Place a form widget in a standard row layout (TOPLEFT + RIGHT anchors)
+--- and advance the Y cursor by FORM_ROW (default 32).
+--- @param widget table The widget frame to position
+--- @param body table The parent body frame
+--- @param sy number Current Y offset
+--- @param rowHeight number|nil Optional row height (default 32)
+--- @return number New Y offset after this row
+function Helpers.PlaceRow(widget, body, sy, rowHeight)
+    widget:SetPoint("TOPLEFT", 0, sy)
+    widget:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+    return sy - (rowHeight or 32)
+end
+
+--- Apply default values to a table for any keys that are nil.
+--- @param tbl table The target table
+--- @param defaults table Key-value pairs of defaults to apply
+--- Sets backdrop color AND stores backup fields for orphaned overlay recovery.
+--- Use instead of frame:SetBackdropColor() on QUI-owned frames.
+function Helpers.SetFrameBackdropColor(frame, r, g, b, a)
+    frame:SetBackdropColor(r, g, b, a)
+    frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA = r, g, b, a
+end
+
+--- Sets backdrop border color AND stores backup fields for recovery.
+function Helpers.SetFrameBackdropBorderColor(frame, r, g, b, a)
+    frame:SetBackdropBorderColor(r, g, b, a)
+    frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA = r, g, b, a
+end
+
+function Helpers.EnsureDefaults(tbl, defaults)
+    for k, v in pairs(defaults) do
+        if tbl[k] == nil then
+            if type(v) == "table" then
+                -- Shallow-copy table defaults so instances don't share a reference
+                local copy = {}
+                for tk, tv in pairs(v) do copy[tk] = tv end
+                tbl[k] = copy
+            else
+                tbl[k] = v
+            end
+        end
+    end
+end
+
+

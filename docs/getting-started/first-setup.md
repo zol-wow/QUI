@@ -14,8 +14,8 @@ After installing QUI, follow these steps to get the full experience up and runni
 QUI is designed around a specific Blizzard Edit Mode layout. Importing it ensures that default Blizzard frames are positioned correctly for QUI's design.
 
 1. Open QUI settings with `/qui`.
-2. Go to the **Welcome** tab.
-3. Copy the **QUI Edit Mode layout string** provided there.
+2. Go to the **Import & Export Strings** tab.
+3. Select the **QUI Edit Mode Base** preset and copy the Edit Mode layout string.
 4. Open Blizzard's **Edit Mode** (press `Escape` > `Edit Mode`, or use the keybind).
 5. Click **Import** in Edit Mode and paste the string.
 6. Apply the imported layout.
@@ -36,11 +36,22 @@ QUI comes with bundled profile presets that configure all QUI-specific settings 
 
 Type `/rl` to reload the UI. This ensures all settings are fully applied.
 
+## Step 5: Enter Layout Mode
+
+Type `/qui layout` to enter Layout Mode. This is where you can:
+
+- Reposition CDM bars, unit frames, group frames, and other QUI elements by dragging their handles.
+- Access CDM, Group Frames, and Minimap settings through the Layout Mode toolbar and drawer.
+- Fine-tune frame spacing, anchoring, and layout direction.
+- Click **Save** when you are happy with the layout.
+
 ## Important Notes
 
 - **Action bars are hidden on mouseover by default.** If your action bars seem to have disappeared, move your mouse to where they should be. You can disable this behavior in the **Action Bars** tab within `/qui`.
 
-- **CDM (Cooldown Manager) must be enabled manually.** CDM displays your ability cooldowns as icon bars on screen. To enable it, open `/qui` and navigate to the **CDM** tab, or type `/cdm` to open CDM settings directly.
+- **CDM (Cooldown Manager) is enabled by default.** The Essential bar is on by default. If you do not see cooldown icons, enter Layout Mode (`/qui layout`) to position them, or check that your spec's spells are populated in the CDM settings. The intro message on first login will remind you to configure CDM.
+
+- **CDM, Group Frames, and Minimap settings are in Layout Mode.** These settings have been moved out of the main `/qui` options panel and into Layout Mode's side panels and toolbar. Use `/qui layout` to access them.
 
 ## Tip: CDM Icon Size in Edit Mode
 

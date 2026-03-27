@@ -12,151 +12,96 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 
 local function BuildAutohideTab(tabContent)
-    local y = -10
     local PAD = 10
     local FORM_ROW = 32
+    local Helpers = ns.Helpers
+    local P = Helpers.PlaceRow
     local db = Shared.GetDB()
 
-    GUI:SetSearchContext({tabIndex = 9, tabName = "Skinning & Autohide", subTabIndex = 1, subTabName = "Autohide"})
+    GUI:SetSearchContext({tabIndex = 10, tabName = "Skinning & Autohide", subTabIndex = 1, subTabName = "Autohide"})
 
-    GUI:SetSearchSection("Autohide Settings")
-
-    -- Refresh callback
     local function RefreshUIHider()
-        if _G.QUI_RefreshUIHider then
-            _G.QUI_RefreshUIHider()
-        end
+        if _G.QUI_RefreshUIHider then _G.QUI_RefreshUIHider() end
     end
 
-    if db then
-        if not db.uiHider then db.uiHider = {} end
+    if not db then return end
+    if not db.uiHider then db.uiHider = {} end
 
-        -- ═══════════════════════════════════════════════════════════════
-        -- SECTION: Objective Tracker
-        -- ═══════════════════════════════════════════════════════════════
-        local objHeader = GUI:CreateSectionHeader(tabContent, "Objective Tracker")
-        objHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - objHeader.gap
+    local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(tabContent, PAD)
 
-        local checkAlways = GUI:CreateFormCheckbox(tabContent, "Hide Always", "hideObjectiveTrackerAlways", db.uiHider, RefreshUIHider)
-        checkAlways:SetPoint("TOPLEFT", PAD, y)
-        checkAlways:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Ensure instance types table exists
-        if not db.uiHider.hideObjectiveTrackerInstanceTypes then
-            db.uiHider.hideObjectiveTrackerInstanceTypes = {
-                mythicPlus = false,
-                mythicDungeon = false,
-                normalDungeon = false,
-                heroicDungeon = false,
-                followerDungeon = false,
-                raid = false,
-                pvp = false,
-                arena = false,
-            }
-        end
-
-        local instanceTypes = {
-            {key = "mythicPlus", label = "Hide in Mythic+"},
-            {key = "mythicDungeon", label = "Hide in Mythic Dungeons"},
-            {key = "heroicDungeon", label = "Hide in Heroic Dungeons"},
-            {key = "normalDungeon", label = "Hide in Normal Dungeons"},
-            {key = "followerDungeon", label = "Hide in Follower Dungeons"},
-            {key = "raid", label = "Hide in Raids"},
-            {key = "pvp", label = "Hide in Battlegrounds"},
-            {key = "arena", label = "Hide in Arenas"},
+    -- Objective Tracker
+    if not db.uiHider.hideObjectiveTrackerInstanceTypes then
+        db.uiHider.hideObjectiveTrackerInstanceTypes = {
+            mythicPlus = false, mythicDungeon = false, normalDungeon = false,
+            heroicDungeon = false, followerDungeon = false, raid = false, pvp = false, arena = false,
         }
-
-        for _, instanceType in ipairs(instanceTypes) do
-            local checkInstance = GUI:CreateFormCheckbox(tabContent, instanceType.label, instanceType.key, db.uiHider.hideObjectiveTrackerInstanceTypes, RefreshUIHider)
-            checkInstance:SetPoint("TOPLEFT", PAD, y)
-            checkInstance:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
+    end
+    CreateCollapsible("Objective Tracker", 9 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Always", "hideObjectiveTrackerAlways", db.uiHider, RefreshUIHider), body, sy)
+        for _, it in ipairs({
+            {key = "mythicPlus", label = "Hide in Mythic+"}, {key = "mythicDungeon", label = "Hide in Mythic Dungeons"},
+            {key = "heroicDungeon", label = "Hide in Heroic Dungeons"}, {key = "normalDungeon", label = "Hide in Normal Dungeons"},
+            {key = "followerDungeon", label = "Hide in Follower Dungeons"}, {key = "raid", label = "Hide in Raids"},
+            {key = "pvp", label = "Hide in Battlegrounds"}, {key = "arena", label = "Hide in Arenas"},
+        }) do
+            sy = P(GUI:CreateFormCheckbox(body, it.label, it.key, db.uiHider.hideObjectiveTrackerInstanceTypes, RefreshUIHider), body, sy)
         end
+    end)
 
-        -- ═══════════════════════════════════════════════════════════════
-        -- SECTION: Frames & Buttons
-        -- ═══════════════════════════════════════════════════════════════
-        local framesHeader = GUI:CreateSectionHeader(tabContent, "Frames & Buttons")
-        framesHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - framesHeader.gap
-
-        local frameOptions = {
+    -- Frames & Buttons
+    CreateCollapsible("Frames & Buttons", 6 * FORM_ROW + 8, function(body)
+        local sy = -4
+        for _, opt in ipairs({
             {key = "hideRaidFrameManager", label = "Hide Compact Raid Frame Manager"},
             {key = "hideBuffCollapseButton", label = "Hide Buff Frame Collapse Button"},
             {key = "hideTalkingHead", label = "Hide Talking Head Frame"},
             {key = "muteTalkingHead", label = "Mute Talking Head Voice"},
             {key = "hideWorldMapBlackout", label = "Hide World Map Blackout"},
             {key = "hidePlayerFrameInParty", label = "Hide Player Frame in Party/Raid"},
-        }
-
-        for _, opt in ipairs(frameOptions) do
-            local check = GUI:CreateFormCheckbox(tabContent, opt.label, opt.key, db.uiHider, RefreshUIHider)
-            check:SetPoint("TOPLEFT", PAD, y)
-            check:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
+        }) do
+            sy = P(GUI:CreateFormCheckbox(body, opt.label, opt.key, db.uiHider, RefreshUIHider), body, sy)
         end
+    end)
 
-        -- ═══════════════════════════════════════════════════════════════
-        -- SECTION: Nameplates
-        -- ═══════════════════════════════════════════════════════════════
-        local nameplatesHeader = GUI:CreateSectionHeader(tabContent, "Nameplates")
-        nameplatesHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - nameplatesHeader.gap
+    -- Nameplates
+    CreateCollapsible("Nameplates", 2 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Friendly Player Nameplates", "hideFriendlyPlayerNameplates", db.uiHider, RefreshUIHider), body, sy)
+        P(GUI:CreateFormCheckbox(body, "Hide Friendly NPC Nameplates", "hideFriendlyNPCNameplates", db.uiHider, RefreshUIHider), body, sy)
+    end)
 
-        local nameplateOptions = {
-            {key = "hideFriendlyPlayerNameplates", label = "Hide Friendly Player Nameplates"},
-            {key = "hideFriendlyNPCNameplates", label = "Hide Friendly NPC Nameplates"},
-        }
+    -- Status Bars
+    CreateCollapsible("Status Bars", 4 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Experience Bar (XP)", "hideExperienceBar", db.uiHider, RefreshUIHider), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Reputation Bar", "hideReputationBar", db.uiHider, RefreshUIHider), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Data Bars in Vehicle", "hideDataBarsInVehicle", db.uiHider, RefreshUIHider), body, sy)
+        P(GUI:CreateFormCheckbox(body, "Hide Data Bars in Pet Battle", "hideDataBarsInPetBattle", db.uiHider, RefreshUIHider), body, sy)
+    end)
 
-        for _, opt in ipairs(nameplateOptions) do
-            local check = GUI:CreateFormCheckbox(tabContent, opt.label, opt.key, db.uiHider, RefreshUIHider)
-            check:SetPoint("TOPLEFT", PAD, y)
-            check:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
-        end
-
-        -- ═══════════════════════════════════════════════════════════════
-        -- SECTION: Status Bars
-        -- ═══════════════════════════════════════════════════════════════
-        local barsHeader = GUI:CreateSectionHeader(tabContent, "Status Bars")
-        barsHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - barsHeader.gap
-
-        local barOptions = {
-            {key = "hideExperienceBar", label = "Hide Experience Bar (XP)"},
-            {key = "hideReputationBar", label = "Hide Reputation Bar"},
-        }
-
-        for _, opt in ipairs(barOptions) do
-            local check = GUI:CreateFormCheckbox(tabContent, opt.label, opt.key, db.uiHider, RefreshUIHider)
-            check:SetPoint("TOPLEFT", PAD, y)
-            check:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
-        end
-
-        -- ═══════════════════════════════════════════════════════════════
-        -- SECTION: Combat & Messages
-        -- ═══════════════════════════════════════════════════════════════
-        local combatHeader = GUI:CreateSectionHeader(tabContent, "Combat & Messages")
-        combatHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - combatHeader.gap
-
-        local combatOptions = {
-            {key = "hideErrorMessages", label = "Hide Error Messages (Red Text)"},
-            {key = "hideInfoMessages", label = "Hide Info Messages (i.e. Quest Prog)"},
-        }
-
-        for _, opt in ipairs(combatOptions) do
-            local check = GUI:CreateFormCheckbox(tabContent, opt.label, opt.key, db.uiHider, RefreshUIHider)
-            check:SetPoint("TOPLEFT", PAD, y)
-            check:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
-        end
+    -- Buff / Debuff Frames
+    if not db.buffBorders then db.buffBorders = {} end
+    local function RefreshBuffBorders()
+        if _G.QUI_RefreshBuffBorders then _G.QUI_RefreshBuffBorders() end
     end
+    CreateCollapsible("Buff / Debuff Frames", 5 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Buff Frame", "hideBuffFrame", db.buffBorders, RefreshBuffBorders), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Debuff Frame", "hideDebuffFrame", db.buffBorders, RefreshBuffBorders), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Fade Buffs (Show on Mouseover)", "fadeBuffFrame", db.buffBorders, RefreshBuffBorders), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Fade Debuffs (Show on Mouseover)", "fadeDebuffFrame", db.buffBorders, RefreshBuffBorders), body, sy)
+        P(GUI:CreateFormSlider(body, "Fade Out Opacity", 0, 1, 0.05, "fadeOutAlpha", db.buffBorders, RefreshBuffBorders), body, sy)
+    end)
 
-    tabContent:SetHeight(math.abs(y) + 50)
+    -- Combat & Messages
+    CreateCollapsible("Combat & Messages", 2 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Error Messages (Red Text)", "hideErrorMessages", db.uiHider, RefreshUIHider), body, sy)
+        P(GUI:CreateFormCheckbox(body, "Hide Info Messages (i.e. Quest Prog)", "hideInfoMessages", db.uiHider, RefreshUIHider), body, sy)
+    end)
+
+    relayout()
 end
 
 -- Export

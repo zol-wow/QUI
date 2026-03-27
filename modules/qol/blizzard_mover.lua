@@ -262,6 +262,7 @@ function M.functions.RegisterFrame(def)
 		ignoreFramePositionManager = def.ignoreFramePositionManager,
 		userPlaced = def.userPlaced,
 		skipOnHide = def.skipOnHide,
+		secureFrame = def.secureFrame,
 		settingKey = def.settingKey or optionKeyForId(def.id),
 	}
 
@@ -1008,24 +1009,60 @@ function M.functions.createHooks(root, entry)
 		c.applyingLayout = false
 	end
 
-	hooksecurefunc(root, "SetPoint", reassertLayout)
-
-	root:HookScript("OnShow", function(self)
-		if not ctx(self).blizzardAnchors then rememberAnchors(self) end
-		M.functions.applyFrameSettings(self, panel)
-	end)
-
-	if not panel.skipOnHide then
-		root:HookScript("OnHide", function(self)
-			if (db.positionPersistence or "reset") ~= "close" then return end
-			if not panelIsActive(panel) then return end
-			if c.dragging or c.applyingLayout then return end
-			if InCombatLockdown() and self:IsProtected() then return end
-			if not c.blizzardAnchors then return end
-			c.applyingLayout = true
-			restoreAnchors(self)
-			c.applyingLayout = false
+	-- TAINT SAFETY: Frames that use secureexecuterange internally (e.g.
+	-- WorldMapFrame for map data providers) cannot have addon hooks on them.
+	-- hooksecurefunc and HookScript taint the frame's dispatch tables;
+	-- the taint propagates through secureexecuterange, causing
+	-- ADDON_ACTION_BLOCKED on protected calls like SetPassThroughButtons
+	-- when map pins are acquired. Use a watcher frame instead.
+	if panel.secureFrame then
+		local wasShown = root:IsShown()
+		local reassertTicks = 0
+		local watcher = CreateFrame("Frame")
+		watcher:SetScript("OnUpdate", function()
+			local isShown = root:IsShown()
+			if isShown and not wasShown then
+				if not c.blizzardAnchors then rememberAnchors(root) end
+				M.functions.applyFrameSettings(root, panel)
+				reassertTicks = 5
+			elseif not isShown and wasShown then
+				if not panel.skipOnHide
+					and (db.positionPersistence or "reset") == "close"
+					and panelIsActive(panel)
+					and not c.dragging and not c.applyingLayout
+					and not (InCombatLockdown() and root:IsProtected())
+					and c.blizzardAnchors then
+					c.applyingLayout = true
+					restoreAnchors(root)
+					c.applyingLayout = false
+				end
+			end
+			wasShown = isShown
+			if reassertTicks > 0 then
+				reassertTicks = reassertTicks - 1
+				reassertLayout(root)
+			end
 		end)
+	else
+		hooksecurefunc(root, "SetPoint", reassertLayout)
+
+		root:HookScript("OnShow", function(self)
+			if not ctx(self).blizzardAnchors then rememberAnchors(self) end
+			M.functions.applyFrameSettings(self, panel)
+		end)
+
+		if not panel.skipOnHide then
+			root:HookScript("OnHide", function(self)
+				if (db.positionPersistence or "reset") ~= "close" then return end
+				if not panelIsActive(panel) then return end
+				if c.dragging or c.applyingLayout then return end
+				if InCombatLockdown() and self:IsProtected() then return end
+				if not c.blizzardAnchors then return end
+				c.applyingLayout = true
+				restoreAnchors(self)
+				c.applyingLayout = false
+			end)
+		end
 	end
 
 	local function setStripVisible(strip, on)

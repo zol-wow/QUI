@@ -102,6 +102,391 @@ local function MigrateCooldownSwipeV2(profile)
     cs.migratedToV2 = true
 end
 
+-- Migrate legacy top-level castBar/targetCastBar/focusCastBar to quiUnitFrames.*.castbar
+local CASTBAR_MIGRATION_MAP = {
+    castBar       = { "quiUnitFrames", "player",  "castbar" },
+    targetCastBar = { "quiUnitFrames", "target",  "castbar" },
+    focusCastBar  = { "quiUnitFrames", "focus",   "castbar" },
+}
+
+-- Keys that map 1:1 between old castBar and new quiUnitFrames.*.castbar
+local CASTBAR_DIRECT_KEYS = {
+    "enabled", "bgColor", "color", "height",
+    "showIcon", "width",
+}
+
+-- Keys with renamed equivalents: old → new
+local CASTBAR_RENAMED_KEYS = {
+    textSize = "fontSize",
+}
+
+-- Position keys always migrate (legacy values represent actual screen positions
+-- and should take priority even when the target castbar section already exists
+-- from a transitional-era profile that had both old and new keys).
+local CASTBAR_POSITION_KEYS = { "offsetX", "offsetY" }
+
+local function MigrateCastBars(profile)
+    if not profile then return end
+
+    for oldKey, path in pairs(CASTBAR_MIGRATION_MAP) do
+        local old = profile[oldKey]
+        if type(old) ~= "table" then
+            -- Nothing to migrate for this cast bar
+        else
+            -- Ensure target table path exists
+            local container = profile
+            for i = 1, #path - 1 do
+                if type(container[path[i]]) ~= "table" then
+                    container[path[i]] = {}
+                end
+                container = container[path[i]]
+            end
+            local target = container[path[#path]]
+            if type(target) ~= "table" then
+                target = {}
+                container[path[#path]] = target
+            end
+
+            -- Only migrate into keys that are still nil (don't overwrite new-style data)
+            for _, k in ipairs(CASTBAR_DIRECT_KEYS) do
+                if old[k] ~= nil and target[k] == nil then
+                    target[k] = old[k]
+                end
+            end
+            for oldName, newName in pairs(CASTBAR_RENAMED_KEYS) do
+                if old[oldName] ~= nil and target[newName] == nil then
+                    target[newName] = old[oldName]
+                end
+            end
+
+            -- Position offsets always migrate from legacy (user's actual screen placement)
+            for _, k in ipairs(CASTBAR_POSITION_KEYS) do
+                if old[k] ~= nil then
+                    target[k] = old[k]
+                end
+            end
+
+            -- Remove the legacy key
+            profile[oldKey] = nil
+        end
+    end
+end
+
+-- Migrate legacy unitFrames table to quiUnitFrames
+-- The old format used PascalCase (General, Frame.Width, Tags.Health.FontSize)
+-- while the new format uses flat camelCase (width, healthFontSize, showName).
+local UNIT_FRAME_UNITS = { "player", "target", "targettarget", "pet", "focus", "boss" }
+
+-- Helper: set key in target only if target[k] is nil (conservative merge)
+local function SetIfNil(target, key, value)
+    if value ~= nil and target[key] == nil then
+        target[key] = value
+    end
+end
+
+-- Helper: ensure a sub-table exists and merge into it conservatively
+local function EnsureSubTable(target, key)
+    if type(target[key]) ~= "table" then
+        target[key] = {}
+    end
+    return target[key]
+end
+
+-- Migrate legacy General settings (PascalCase → camelCase)
+local function MigrateUnitFramesGeneral(oldGeneral, newGeneral)
+    if type(oldGeneral) ~= "table" then return end
+
+    SetIfNil(newGeneral, "font", oldGeneral.Font)
+    SetIfNil(newGeneral, "fontOutline", oldGeneral.FontFlag)
+
+    -- DarkMode sub-table
+    if type(oldGeneral.DarkMode) == "table" then
+        local dm = oldGeneral.DarkMode
+        SetIfNil(newGeneral, "darkMode", dm.Enabled)
+        SetIfNil(newGeneral, "darkModeBgColor", dm.BackgroundColor)
+        SetIfNil(newGeneral, "darkModeHealthColor", dm.ForegroundColor)
+        if dm.UseSolidTexture ~= nil and newGeneral.darkModeOpacity == nil then
+            newGeneral.darkModeOpacity = 1
+        end
+    end
+
+    -- FontShadows
+    if type(oldGeneral.FontShadows) == "table" then
+        local fs = oldGeneral.FontShadows
+        SetIfNil(newGeneral, "fontShadowColor", fs.Color)
+        SetIfNil(newGeneral, "fontShadowOffsetX", fs.OffsetX)
+        SetIfNil(newGeneral, "fontShadowOffsetY", fs.OffsetY)
+    end
+
+    -- CustomColors.Power → powerColors (top-level, handled separately)
+    -- CustomColors.Reaction → hostility colors
+    if type(oldGeneral.CustomColors) == "table" then
+        local cc = oldGeneral.CustomColors
+        if type(cc.Reaction) == "table" then
+            -- Reaction colors: 1-2 = hostile, 3 = neutral, 4 = friendly, 5-8 = friendly
+            SetIfNil(newGeneral, "hostilityColorHostile", cc.Reaction[1])
+            SetIfNil(newGeneral, "hostilityColorNeutral", cc.Reaction[4])
+            SetIfNil(newGeneral, "hostilityColorFriendly", cc.Reaction[5])
+        end
+    end
+end
+
+-- Migrate a single unit's PascalCase data to camelCase
+local function MigrateUnitFrameUnit(oldUnit, newUnit)
+    if type(oldUnit) ~= "table" then return end
+
+    -- Top-level Enabled
+    SetIfNil(newUnit, "enabled", oldUnit.Enabled)
+
+    -- Frame sub-table → flat keys
+    if type(oldUnit.Frame) == "table" then
+        local f = oldUnit.Frame
+        SetIfNil(newUnit, "width", f.Width)
+        SetIfNil(newUnit, "height", f.Height)
+        SetIfNil(newUnit, "texture", f.Texture)
+        SetIfNil(newUnit, "useClassColor", f.ClassColor)
+        SetIfNil(newUnit, "useHostilityColor", f.ReactionColor)
+        -- Frame position (boss frames used XPosition/YPosition for anchored offset)
+        SetIfNil(newUnit, "offsetX", f.XPosition)
+        SetIfNil(newUnit, "offsetY", f.YPosition)
+    end
+
+    -- Tags.Health → health text keys
+    if type(oldUnit.Tags) == "table" then
+        if type(oldUnit.Tags.Health) == "table" then
+            local h = oldUnit.Tags.Health
+            SetIfNil(newUnit, "showHealth", h.Enabled)
+            SetIfNil(newUnit, "healthFontSize", h.FontSize)
+            SetIfNil(newUnit, "healthAnchor", h.AnchorFrom)
+            SetIfNil(newUnit, "healthOffsetX", h.OffsetX)
+            SetIfNil(newUnit, "healthOffsetY", h.OffsetY)
+            SetIfNil(newUnit, "healthTextColor", h.Color)
+            if h.DisplayPercent ~= nil and newUnit.showHealthPercent == nil then
+                newUnit.showHealthPercent = h.DisplayPercent
+            end
+        end
+
+        -- Tags.Name → name text keys
+        if type(oldUnit.Tags.Name) == "table" then
+            local n = oldUnit.Tags.Name
+            SetIfNil(newUnit, "showName", n.Enabled)
+            SetIfNil(newUnit, "nameFontSize", n.FontSize)
+            SetIfNil(newUnit, "nameAnchor", n.AnchorFrom)
+            SetIfNil(newUnit, "nameOffsetX", n.OffsetX)
+            SetIfNil(newUnit, "nameOffsetY", n.OffsetY)
+            SetIfNil(newUnit, "nameTextColor", n.Color)
+            SetIfNil(newUnit, "nameTextUseClassColor", n.ColorByClass)
+        end
+
+        -- Tags.Power → power text keys
+        if type(oldUnit.Tags.Power) == "table" then
+            local p = oldUnit.Tags.Power
+            SetIfNil(newUnit, "showPowerText", p.Enabled)
+            SetIfNil(newUnit, "powerTextFontSize", p.FontSize)
+            SetIfNil(newUnit, "powerTextAnchor", p.AnchorFrom)
+            SetIfNil(newUnit, "powerTextOffsetX", p.OffsetX)
+            SetIfNil(newUnit, "powerTextOffsetY", p.OffsetY)
+            SetIfNil(newUnit, "powerTextColor", p.Color)
+        end
+    end
+
+    -- PowerBar → flat power bar keys
+    if type(oldUnit.PowerBar) == "table" then
+        local pb = oldUnit.PowerBar
+        SetIfNil(newUnit, "showPowerBar", pb.Enabled)
+        SetIfNil(newUnit, "powerBarHeight", pb.Height)
+        SetIfNil(newUnit, "powerBarUsePowerColor", pb.ColorByType)
+        SetIfNil(newUnit, "powerBarColor", pb.FGColor)
+    end
+
+    -- Absorb → absorbs sub-table
+    if type(oldUnit.Absorb) == "table" then
+        local absorbs = EnsureSubTable(newUnit, "absorbs")
+        SetIfNil(absorbs, "enabled", oldUnit.Absorb.Enabled)
+        SetIfNil(absorbs, "color", oldUnit.Absorb.Color)
+    end
+end
+
+local function MigrateUnitFrames(profile)
+    if not profile then return end
+
+    local old = profile.unitFrames
+    if type(old) ~= "table" then return end
+
+    if type(profile.quiUnitFrames) ~= "table" then
+        profile.quiUnitFrames = {}
+    end
+    local new = profile.quiUnitFrames
+
+    -- Migrate enabled flag
+    SetIfNil(new, "enabled", old.enabled)
+
+    -- Migrate General → general (PascalCase → camelCase with key mapping)
+    if type(old.General) == "table" then
+        local general = EnsureSubTable(new, "general")
+        MigrateUnitFramesGeneral(old.General, general)
+    end
+
+    -- Migrate per-unit sub-tables with PascalCase → camelCase key mapping
+    for _, unit in ipairs(UNIT_FRAME_UNITS) do
+        if type(old[unit]) == "table" then
+            local newUnit = EnsureSubTable(new, unit)
+            MigrateUnitFrameUnit(old[unit], newUnit)
+        end
+    end
+
+    -- Migrate power custom colors to top-level powerColors if available
+    if type(old.General) == "table" and type(old.General.CustomColors) == "table" then
+        local customPower = old.General.CustomColors.Power
+        if type(customPower) == "table" and profile.powerColors == nil then
+            profile.powerColors = customPower
+        end
+    end
+
+    -- Remove the legacy key
+    profile.unitFrames = nil
+end
+
+-- Default frameAnchoring parent chain and structure for profiles that predate
+-- the layout mode anchoring overhaul. These entries define the standard HUD
+-- stacking order (bar layout, unit frame relationships, power bar chain).
+-- Only entries with non-trivial parent relationships are included; entries
+-- that default to parent="screen" at CENTER/0,0 are omitted since they match
+-- the uninitialized pattern already present in old profiles.
+local DEFAULT_FRAME_ANCHORING = {
+    bagBar          = { parent = "microMenu",       point = "TOPLEFT",      relative = "BOTTOMLEFT" },
+    bar1            = { parent = "bar3",            point = "BOTTOM",       relative = "TOP" },
+    bar2            = { parent = "bar1",            point = "BOTTOM",       relative = "TOP" },
+    bar3            = { parent = "screen",          point = "BOTTOMRIGHT",  relative = "BOTTOM" },
+    bar4            = { parent = "bar5",            point = "BOTTOMLEFT",   relative = "TOPLEFT" },
+    bar5            = { parent = "bar6",            point = "BOTTOMLEFT",   relative = "TOPLEFT" },
+    bar6            = { parent = "bar3",            point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    bossFrames      = { parent = "datatextPanel",   point = "TOPLEFT",      relative = "BOTTOMLEFT" },
+    brezCounter     = { parent = "combatTimer",     point = "BOTTOM",       relative = "TOP" },
+    buffFrame       = { parent = "minimap",         point = "TOPRIGHT",     relative = "TOPLEFT" },
+    buffIcon        = { parent = "cdmEssential",    point = "BOTTOM",       relative = "TOP" },
+    cdmUtility      = { parent = "secondaryPower",  point = "TOP",          relative = "BOTTOM" },
+    combatTimer     = { parent = "bar3",            point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
+    consumables     = { parent = "readyCheck",      point = "BOTTOM",       relative = "TOP" },
+    datatextPanel   = { parent = "minimap",         point = "TOP",          relative = "BOTTOM" },
+    debuffFrame     = { parent = "buffFrame",       point = "TOPRIGHT",     relative = "BOTTOMRIGHT" },
+    focusCastbar    = { parent = "focusFrame",      point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    focusFrame      = { parent = "playerFrame",     point = "BOTTOMLEFT",   relative = "TOPLEFT", offsetY = 200 },
+    microMenu       = { parent = "screen",          point = "TOPLEFT",      relative = "TOPLEFT" },
+    minimap         = { parent = "screen",          point = "TOPRIGHT",     relative = "TOPRIGHT", offsetY = -25 },
+    objectiveTracker = { parent = "datatextPanel",  point = "TOPRIGHT",     relative = "BOTTOMRIGHT" },
+    partyFrames     = { parent = "cdmUtility",      point = "TOP",          relative = "BOTTOM",  offsetY = -25, keepInPlace = true },
+    petBar          = { parent = "bar6",            point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    petCastbar      = { parent = "petFrame",        point = "TOP",          relative = "BOTTOM" },
+    petFrame        = { parent = "playerFrame",     point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
+    playerCastbar   = { parent = "playerFrame",     point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    playerFrame     = { parent = "cdmEssential",    point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
+    primaryPower    = { parent = "cdmEssential",    point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    raidFrames      = { parent = "cdmUtility",      point = "TOP",          relative = "BOTTOM",  offsetY = -25, keepInPlace = true },
+    secondaryPower  = { parent = "primaryPower",    point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    stanceBar       = { parent = "petBar",          point = "BOTTOMLEFT",   relative = "TOPLEFT" },
+    targetCastbar   = { parent = "targetFrame",     point = "TOP",          relative = "BOTTOM",  autoWidth = true },
+    targetFrame     = { parent = "cdmEssential",    point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    totCastbar      = { parent = "totFrame",        point = "TOP",          relative = "BOTTOM" },
+    totFrame        = { parent = "targetFrame",     point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
+    zoneAbility     = { parent = "extraActionButton", point = "CENTER",     relative = "CENTER" },
+    cdmEssential    = { parent = "screen",          point = "CENTER",       relative = "CENTER",  offsetY = -180 },
+    lootRollAnchor  = { parent = "readyCheck",      point = "TOP",          relative = "BOTTOM",  keepInPlace = true },
+    skyriding       = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -30 },
+    powerBarAlt     = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -75 },
+    bnetToastAnchor = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -125 },
+}
+
+-- Detect if a frameAnchoring table looks like uninitialized defaults from a
+-- pre-layout-mode profile: every entry has parent="screen", offset 0,0.
+local function IsUninitializedAnchoring(fa)
+    if type(fa) ~= "table" then return true end
+    local count = 0
+    for key, entry in pairs(fa) do
+        if type(entry) == "table" then
+            count = count + 1
+            -- Check for the telltale uninitialized pattern
+            local parent = entry.parent
+            if parent and parent ~= "screen" and parent ~= "disabled" then
+                return false  -- Has a real parent chain
+            end
+            if (entry.offsetX or 0) ~= 0 or (entry.offsetY or 0) ~= 0 then
+                -- Has real position offsets (not all zeroed)
+                if parent ~= "screen" then
+                    return false
+                end
+            end
+        end
+    end
+    -- If all entries look like screen/0,0 defaults, it's uninitialized
+    return count > 0
+end
+
+local function SeedDefaultFrameAnchoring(profile)
+    if not profile then return end
+
+    if type(profile.frameAnchoring) ~= "table" then
+        profile.frameAnchoring = {}
+    end
+    local fa = profile.frameAnchoring
+
+    -- Only seed if the existing data looks uninitialized
+    if not IsUninitializedAnchoring(fa) then return end
+
+    for key, defaults in pairs(DEFAULT_FRAME_ANCHORING) do
+        if type(fa[key]) ~= "table" then
+            fa[key] = {}
+        end
+        local entry = fa[key]
+
+        -- Seed parent chain and anchor points (always overwrite since old data is
+        -- all "screen"/CENTER which is the uninitialized state)
+        entry.parent   = defaults.parent
+        entry.point    = defaults.point
+        entry.relative = defaults.relative
+
+        -- Seed offsets from defaults (only if currently zeroed)
+        if defaults.offsetX and (entry.offsetX or 0) == 0 then
+            entry.offsetX = defaults.offsetX
+        end
+        if defaults.offsetY and (entry.offsetY or 0) == 0 then
+            entry.offsetY = defaults.offsetY
+        end
+
+        -- Seed newer fields that old profiles don't have at all
+        if entry.hideWithParent == nil then
+            entry.hideWithParent = false
+        end
+        if defaults.keepInPlace and entry.keepInPlace == nil then
+            entry.keepInPlace = defaults.keepInPlace
+        elseif entry.keepInPlace == nil then
+            entry.keepInPlace = false
+        end
+        if defaults.autoWidth and entry.autoWidth == nil then
+            entry.autoWidth = defaults.autoWidth
+        end
+
+        -- Ensure standard fields exist
+        if entry.sizeStable == nil then entry.sizeStable = true end
+        if entry.autoHeight == nil then entry.autoHeight = false end
+        if entry.autoWidth == nil then entry.autoWidth = false end
+        if entry.heightAdjust == nil then entry.heightAdjust = 0 end
+        if entry.widthAdjust == nil then entry.widthAdjust = 0 end
+    end
+end
+
+-- Remove orphaned keys that cannot be meaningfully migrated
+local ORPHAN_KEYS = { "cooldownManager", "trackerSystem", "nudgeAmount" }
+
+local function CleanOrphanKeys(profile)
+    if not profile then return end
+    for _, key in ipairs(ORPHAN_KEYS) do
+        if profile[key] ~= nil then
+            profile[key] = nil
+        end
+    end
+end
+
 function QUI:BackwardsCompat()
     -- Migrate datatext settings to slot-based architecture
     if self.db and self.db.profile and self.db.profile.datatext then
@@ -122,6 +507,27 @@ function QUI:BackwardsCompat()
     -- Migrate cooldownSwipe to v2 (3-toggle system)
     if self.db and self.db.profile then
         MigrateCooldownSwipeV2(self.db.profile)
+    end
+
+    -- Migrate legacy top-level castBar keys to quiUnitFrames.*.castbar
+    if self.db and self.db.profile then
+        MigrateCastBars(self.db.profile)
+    end
+
+    -- Migrate legacy unitFrames to quiUnitFrames
+    if self.db and self.db.profile then
+        MigrateUnitFrames(self.db.profile)
+    end
+
+    -- Remove orphaned keys that no longer have runtime consumers
+    if self.db and self.db.profile then
+        CleanOrphanKeys(self.db.profile)
+    end
+
+    -- Seed default frameAnchoring parent chain for profiles that predate
+    -- the layout mode anchoring overhaul (all entries parent="screen", offset 0,0)
+    if self.db and self.db.profile then
+        SeedDefaultFrameAnchoring(self.db.profile)
     end
 
     -- Ensure db.global exists and has required fields

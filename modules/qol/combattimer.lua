@@ -36,9 +36,7 @@ local runtimeEventsRegistered = false
 ---------------------------------------------------------------------------
 -- Get settings from database
 ---------------------------------------------------------------------------
-local function GetSettings()
-    return Helpers.GetModuleDB("combatTimer")
-end
+local GetSettings = Helpers.CreateDBGetter("combatTimer")
 
 ---------------------------------------------------------------------------
 -- Create the timer frame (one-time setup)
@@ -156,7 +154,7 @@ local function UpdateTimerAppearance()
     -- Update position
     local xOffset = settings.xOffset or 0
     local yOffset = settings.yOffset or -150
-    if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(frame)) then
+    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("combatTimer")) then
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", UIParent, "CENTER", xOffset, yOffset)
     end
@@ -449,10 +447,18 @@ end)
 ---------------------------------------------------------------------------
 _G.QUI_RefreshCombatTimer = RefreshCombatTimer
 _G.QUI_ToggleCombatTimerPreview = TogglePreview
-_G.QUI_IsCombatTimerPreviewMode = IsPreviewMode
 
 QUI.CombatTimer = {
     Refresh = RefreshCombatTimer,
     TogglePreview = TogglePreview,
     IsPreviewMode = IsPreviewMode,
 }
+
+if ns.Registry then
+    ns.Registry:Register("combatTimer", {
+        refresh = _G.QUI_RefreshCombatTimer,
+        priority = 40,
+        group = "trackers",
+        importCategories = { "trackersTimers" },
+    })
+end

@@ -222,19 +222,10 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         SkinBase.SetFrameData(button, "backdrop", backdrop)
     end
 
-    local dbPx = SkinBase.GetPixelSize(backdrop)
-    backdrop:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = dbPx,
-        insets = { left = dbPx, right = dbPx, top = dbPx, bottom = dbPx }
-    })
-
     local btnBgR = math.min(bgr + 0.07, 1)
     local btnBgG = math.min(bgg + 0.07, 1)
     local btnBgB = math.min(bgb + 0.07, 1)
-    backdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.ApplyFullBackdrop(backdrop, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
 
     -- Style the icon
     if button.icon then
@@ -785,8 +776,7 @@ local function SkinChallengesFrame()
             end
             -- Style labels
             if wi.Child.Label then
-                local QUI = _G.QUI
-                local fontPath = QUI and QUI.GetGlobalFont and QUI:GetGlobalFont() or STANDARD_TEXT_FONT
+                local fontPath = ns.Helpers.GetGeneralFont()
                 wi.Child.Label:SetFont(fontPath, 14, "OUTLINE")
             end
         end
@@ -1298,22 +1288,6 @@ local function SkinPVPFrame()
         SkinBase.MarkSkinned(TrainingGroundsFrame)
     end
 
-    -- Style Plunderstorm frame (12.x only - CategoryButton5)
-    local PlunderstormFrame = _G.PlunderstormFrame
-    if PlunderstormFrame then
-        -- Hide decorations
-        SkinBase.StripTextures(PlunderstormFrame)
-        if PlunderstormFrame.Bg then PlunderstormFrame.Bg:Hide() end
-        if PlunderstormFrame.Background then PlunderstormFrame.Background:Hide() end
-
-        -- Queue button (if exists)
-        if PlunderstormFrame.QueueButton then
-            StyleButton(PlunderstormFrame.QueueButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        end
-
-        SkinBase.MarkSkinned(PlunderstormFrame)
-    end
-
     SkinBase.MarkSkinned(PVPQueueFrame)
 end
 
@@ -1595,16 +1569,20 @@ local function RefreshInstanceFramesColors()
             end
         end
 
-        -- Plunderstorm frame (12.x only)
-        local PlunderstormFrame = _G.PlunderstormFrame
-        if PlunderstormFrame and SkinBase.IsSkinned(PlunderstormFrame) then
-            UpdateButtonColors(PlunderstormFrame.QueueButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        end
     end
 end
 
 -- Expose refresh function globally
 _G.QUI_RefreshInstanceFramesColors = RefreshInstanceFramesColors
+
+if ns.Registry then
+    ns.Registry:Register("skinInstanceFrames", {
+        refresh = _G.QUI_RefreshInstanceFramesColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION

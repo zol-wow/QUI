@@ -4,344 +4,54 @@ local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
 local QUICore = ns.Addon
+local Helpers = ns.Helpers
 
--- Local references for shared infrastructure
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
+local GetCore = Helpers.GetCore
 
-local GetCore = ns.Helpers.GetCore
+local CreateCollapsiblePage = Shared.CreateCollapsiblePage
 
---------------------------------------------------------------------------------
--- SPEC PROFILES PAGE
---------------------------------------------------------------------------------
 local function CreateSpecProfilesPage(parent)
     local scroll, content = CreateScrollableContent(parent)
-    local y = -15
     local PAD = PADDING
     local FORM_ROW = 32
+    local P = Helpers.PlaceRow
 
+    -- Description
     local info = GUI:CreateLabel(content, "Manage profiles and auto-switch based on specialization", 11, C.textMuted)
-    info:SetPoint("TOPLEFT", PAD, y)
-    info:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
     info:SetJustifyH("LEFT")
-    y = y - 28
+    info:SetPoint("TOPLEFT", PAD, -10)
+    info:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
 
-    -- =====================================================
-    -- CURRENT PROFILE SECTION
-    -- =====================================================
-    local currentHeader = GUI:CreateSectionHeader(content, "Current Profile")
-    currentHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - currentHeader.gap
+    local sections, relayout, CreateCollapsible = CreateCollapsiblePage(content, PAD, -38)
 
-    -- Forward declare profileDropdown so refresh function can reference it
+    -- Shared state
     local profileDropdown
-    -- Collect dropdowns that depend on the profile list so we can refresh them dynamically
-    local profileDropdowns_all = {}       -- spec dropdowns: show all profiles
-    local profileDropdowns_filtered = {}  -- copy/delete: exclude current profile
+    local profileDropdowns_all = {}
+    local profileDropdowns_filtered = {}
+    local currentProfileName
 
-    -- Current profile display (form style row)
-    local activeContainer = CreateFrame("Frame", nil, content)
-    activeContainer:SetHeight(FORM_ROW)
-    activeContainer:SetPoint("TOPLEFT", PAD, y)
-    activeContainer:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-
-    local currentProfileLabel = activeContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    currentProfileLabel:SetPoint("LEFT", 0, 0)
-    currentProfileLabel:SetText("Active Profile")
-    currentProfileLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-    local currentProfileName = activeContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    currentProfileName:SetPoint("LEFT", activeContainer, "LEFT", 180, 0)
-    currentProfileName:SetText("Loading...")
-    currentProfileName:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-
-    -- Function to refresh profile display - called on show and via timer
-    -- Note: This gets replaced later after profileDropdown is created
-    local function RefreshProfileDisplay()
-        local core = GetCore()
-        local freshDB = core and core.db
-        if freshDB then
-            local currentName = freshDB:GetCurrentProfile()
-            currentProfileName:SetText(currentName or "Unknown")
-        end
-    end
-
-    -- Update on show
-    content:SetScript("OnShow", RefreshProfileDisplay)
-
-    -- Also update on scroll parent show (in case content is already visible)
-    scroll:SetScript("OnShow", RefreshProfileDisplay)
-
-    -- Also use a short timer to catch any race conditions
-    C_Timer.After(0.1, RefreshProfileDisplay)
-
-    y = y - FORM_ROW
-
-    -- Reset Profile button (form style row)
-    local resetContainer = CreateFrame("Frame", nil, content)
-    resetContainer:SetHeight(FORM_ROW)
-    resetContainer:SetPoint("TOPLEFT", PAD, y)
-    resetContainer:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-
-    local resetLabel = resetContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    resetLabel:SetPoint("LEFT", 0, 0)
-    resetLabel:SetText("Reset Profile")
-    resetLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-    local resetBtn = GUI:CreateButton(content, "Reset to Defaults", 120, 24, function()
-        local core = GetCore()
-        local dbRef = core and core.db
-        if dbRef then
-            GUI:ShowConfirmation({
-                title = "Reset Profile?",
-                message = "Reset current profile to defaults?",
-                warningText = "This cannot be undone.",
-                acceptText = "Reset",
-                cancelText = "Cancel",
-                isDestructive = true,
-                onAccept = function()
-                    local core = GetCore()
-                    local dbRef = core and core.db
-                    if dbRef then
-                        dbRef:ResetProfile()
-                        print("|cff34D399QUI:|r Profile reset to defaults.")
-                        print("|cff34D399QUI:|r Please type |cFFFFD700/reload|r to apply changes.")
-                    end
-                end,
-            })
-        end
-    end)
-    resetBtn:SetPoint("LEFT", resetContainer, "LEFT", 180, 0)
-    y = y - FORM_ROW
-
-    -- Reset All Movers button (form style row)
-    local moversContainer = CreateFrame("Frame", nil, content)
-    moversContainer:SetHeight(FORM_ROW)
-    moversContainer:SetPoint("TOPLEFT", PAD, y)
-    moversContainer:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-
-    local moversLabel = moversContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    moversLabel:SetPoint("LEFT", 0, 0)
-    moversLabel:SetText("Reset All Movers")
-    moversLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-    local moversBtn = GUI:CreateButton(content, "Reset Positions", 120, 24, function()
-        GUI:ShowConfirmation({
-            title = "Reset All Movers?",
-            message = "Reset all frame and mover positions to defaults?",
-            warningText = "This resets CDM, unit frames, minimap, action bars, data panels, trackers, Blizzard UI Mover panel positions, and all other movable elements. Requires /reload.",
-            acceptText = "Reset All",
-            cancelText = "Cancel",
-            isDestructive = true,
-            onAccept = function()
-                local core = GetCore()
-                local dbRef = core and core.db
-                if not dbRef then return end
-                local p = dbRef.profile
-
-                -- CDM container positions
-                if p.ncdm then
-                    for _, key in ipairs({"essential", "utility", "buff"}) do
-                        if p.ncdm[key] then
-                            p.ncdm[key].pos = nil
-                        end
-                    end
-                end
-
-                -- Unit frame positions
-                if p.quiUnitFrames then
-                    for _, unit in ipairs({"player", "target", "targettarget", "pet", "focus", "boss"}) do
-                        if p.quiUnitFrames[unit] then
-                            p.quiUnitFrames[unit].offsetX = nil
-                            p.quiUnitFrames[unit].offsetY = nil
-                        end
-                    end
-                    -- Unit frame castbar positions
-                    for _, unit in ipairs({"player", "target", "focus"}) do
-                        if p.quiUnitFrames[unit] and p.quiUnitFrames[unit].castbar then
-                            p.quiUnitFrames[unit].castbar.offsetX = nil
-                            p.quiUnitFrames[unit].castbar.offsetY = nil
-                        end
-                    end
-                end
-
-                -- Minimap position
-                if p.minimap then
-                    p.minimap.position = nil
-                end
-
-                -- Action bar positions
-                if p.actionBars and p.actionBars.bars then
-                    if p.actionBars.bars.extraActionButton then
-                        p.actionBars.bars.extraActionButton.position = nil
-                    end
-                    if p.actionBars.bars.zoneAbility then
-                        p.actionBars.bars.zoneAbility.position = nil
-                    end
-                end
-
-                -- Data panel positions
-                if p.quiDatatexts and type(p.quiDatatexts.panels) == "table" then
-                    for _, panel in ipairs(p.quiDatatexts.panels) do
-                        if panel then
-                            panel.position = nil
-                        end
-                    end
-                end
-
-                -- M+ Timer position
-                if p.mplusTimer then
-                    p.mplusTimer.position = nil
-                end
-
-                -- Raid buffs position
-                if p.raidBuffs then
-                    p.raidBuffs.position = nil
-                end
-
-                -- Custom tracker positions
-                if p.customTrackers and type(p.customTrackers.bars) == "table" then
-                    for _, bar in ipairs(p.customTrackers.bars) do
-                        if bar then
-                            bar.offsetX = nil
-                            bar.offsetY = nil
-                        end
-                    end
-                end
-
-                -- Totem bar position
-                if p.totemBar then
-                    p.totemBar.offsetX = nil
-                    p.totemBar.offsetY = nil
-                end
-
-                -- Loot window position
-                if p.loot then
-                    p.loot.position = nil
-                end
-
-                -- Loot roll position
-                if p.lootRoll then
-                    p.lootRoll.position = nil
-                end
-
-                -- Alert/toast positions
-                if p.alerts then
-                    p.alerts.alertPosition = nil
-                    p.alerts.toastPosition = nil
-                    p.alerts.bnetToastPosition = nil
-                end
-
-                -- Frame anchoring (wipe all entries except hudMinWidth)
-                if type(p.frameAnchoring) == "table" then
-                    local savedHudMinWidth = p.frameAnchoring.hudMinWidth
-                    wipe(p.frameAnchoring)
-                    p.frameAnchoring.hudMinWidth = savedHudMinWidth
-                end
-
-                -- Blizzard UI Mover (modifier-drag Blizzard panels)
-                if p.blizzardMover and type(p.blizzardMover.frames) == "table" then
-                    for _, row in pairs(p.blizzardMover.frames) do
-                        if type(row) == "table" then
-                            row.point = nil
-                            row.x = nil
-                            row.y = nil
-                            row.scale = nil
-                        end
-                    end
-                end
-                local bmm = ns.QUI_BlizzardMover
-                if bmm and bmm.functions and bmm.functions.ClearSessionPositions then
-                    bmm.functions.ClearSessionPositions()
-                end
-
-                print("|cff34D399QUI:|r All mover positions reset to defaults.")
-                print("|cff34D399QUI:|r Please type |cFFFFD700/reload|r to apply changes.")
-            end,
-        })
-    end)
-    moversBtn:SetPoint("LEFT", moversContainer, "LEFT", 180, 0)
-    y = y - FORM_ROW
-
-    -- Reset All Data (Factory Reset) button (form style row)
-    local factoryContainer = CreateFrame("Frame", nil, content)
-    factoryContainer:SetHeight(FORM_ROW)
-    factoryContainer:SetPoint("TOPLEFT", PAD, y)
-    factoryContainer:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-
-    local factoryLabel = factoryContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    factoryLabel:SetPoint("LEFT", 0, 0)
-    factoryLabel:SetText("Reset All Data")
-    factoryLabel:SetTextColor(0.9, 0.3, 0.3, 1)
-
-    local factoryBtn = GUI:CreateButton(content, "Factory Reset", 120, 24, function()
-        local core = GetCore()
-        local dbRef = core and core.db
-        if dbRef then
-            GUI:ShowConfirmation({
-                title = "Reset All Data?",
-                message = "Erase ALL QUI data and restore fresh-install defaults?",
-                warningText = "This will delete every profile, all global data (gold tracking, spell scanner, imports), and all character data (keybind overrides). This cannot be undone.",
-                acceptText = "Erase Everything",
-                cancelText = "Cancel",
-                isDestructive = true,
-                onAccept = function()
-                    local core = GetCore()
-                    local dbRef = core and core.db
-                    if dbRef then
-                        dbRef:ResetDB(true)
-                        print("|cff34D399QUI:|r All data erased. Restoring defaults...")
-                        QUI:SafeReload()
-                    end
-                end,
-            })
-        end
-    end)
-    factoryBtn:SetPoint("LEFT", factoryContainer, "LEFT", 180, 0)
-    if factoryBtn.text then
-        factoryBtn.text:SetTextColor(0.9, 0.3, 0.3, 1)
-    end
-    factoryBtn:SetScript("OnEnter", function(self)
-        self:SetFieldBorderColor(0.9, 0.3, 0.3, 1)
-    end)
-    factoryBtn:SetScript("OnLeave", function(self)
-        self:SetFieldBorderColor(C.border[1], C.border[2], C.border[3], 1)
-    end)
-    y = y - FORM_ROW - 10
-
-    -- =====================================================
-    -- PROFILE SELECTION SECTION
-    -- =====================================================
-    local selectHeader = GUI:CreateSectionHeader(content, "Switch Profile")
-    selectHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - selectHeader.gap
-
-    -- Get existing profiles
     local function GetProfileList()
         local profiles = {}
         local core = GetCore()
         local dbRef = core and core.db
         if dbRef then
-            local profileList = dbRef:GetProfiles()
-            for _, name in ipairs(profileList) do
+            for _, name in ipairs(dbRef:GetProfiles()) do
                 table.insert(profiles, {value = name, text = name})
             end
         end
         return profiles
     end
 
-    -- Refresh all profile-dependent dropdowns with the current profile list
     local function RefreshProfileDropdowns()
         local allProfiles = GetProfileList()
         local core = GetCore()
         local dbRef = core and core.db
         local currentProfile = dbRef and dbRef:GetCurrentProfile() or ""
-        -- Filtered list excludes the current profile (for copy/delete)
         local filtered = {}
         for _, opt in ipairs(allProfiles) do
-            if opt.value ~= currentProfile then
-                table.insert(filtered, opt)
-            end
+            if opt.value ~= currentProfile then table.insert(filtered, opt) end
         end
         for _, dd in ipairs(profileDropdowns_all) do
             if dd.SetOptions then dd.SetOptions(allProfiles) end
@@ -351,271 +61,266 @@ local function CreateSpecProfilesPage(parent)
         end
     end
 
-    local profileWrapper = { selected = "" }
-    profileDropdown = GUI:CreateFormDropdown(content, "Select Profile", GetProfileList(), "selected", profileWrapper, function(value)
-        local core = GetCore()
-        local freshDB = core and core.db
-        if freshDB and value and value ~= "" then
-            local currentProfile = freshDB:GetCurrentProfile()
-            if value ~= currentProfile then
-                freshDB:SetProfile(value)
-                currentProfileName:SetText(value)
-                print("|cff34D399QUI:|r Switched to profile: " .. value)
-                RefreshProfileDropdowns()
-            end
-        end
-    end)
-    profileDropdown:SetPoint("TOPLEFT", PAD, y)
-    profileDropdown:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    table.insert(profileDropdowns_all, profileDropdown)
-    local profileDropdownText = profileDropdown.dropdown and profileDropdown.dropdown.selected
-
-    -- Set initial text
-    local initCore = GetCore()
-    local initDB = initCore and initCore.db
-    local initProfile = initDB and initDB:GetCurrentProfile() or "Default"
-    profileWrapper.selected = initProfile
-    if profileDropdown.SetValue then
-        profileDropdown:SetValue(initProfile, true)
-    end
-
-    -- Update RefreshProfileDisplay to use our custom dropdown
-    RefreshProfileDisplay = function()
+    local function RefreshProfileDisplay()
         local core = GetCore()
         local freshDB = core and core.db
         if freshDB then
             local currentName = freshDB:GetCurrentProfile()
-            currentProfileName:SetText(currentName or "Unknown")
-            profileWrapper.selected = currentName or "Default"
+            if currentProfileName then currentProfileName:SetText(currentName or "Unknown") end
             if profileDropdown and profileDropdown.SetValue then
-                profileDropdown:SetValue(profileWrapper.selected, true)
+                profileDropdown:SetValue(currentName or "Default", true)
             end
         end
         RefreshProfileDropdowns()
     end
 
-    -- Re-register OnShow scripts with updated function (they were set before replacement)
-    content:SetScript("OnShow", RefreshProfileDisplay)
-    scroll:SetScript("OnShow", RefreshProfileDisplay)
+    ---------------------------------------------------------------------------
+    -- Current Profile
+    ---------------------------------------------------------------------------
+    CreateCollapsible("Current Profile", 4 * FORM_ROW + 8, function(body)
+        local sy = -4
 
-    -- Staggered C_Timer.After calls ensure RefreshProfileDisplay catches async profile updates.
-    C_Timer.After(0.2, RefreshProfileDisplay)
-    C_Timer.After(0.5, RefreshProfileDisplay)
+        -- Active profile display
+        local activeRow = CreateFrame("Frame", nil, body)
+        activeRow:SetHeight(FORM_ROW)
+        activeRow:SetPoint("TOPLEFT", 0, sy)
+        activeRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+        local activeLabel = activeRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        activeLabel:SetPoint("LEFT", 0, 0)
+        activeLabel:SetText("Active Profile")
+        activeLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+        currentProfileName = activeRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        currentProfileName:SetPoint("LEFT", 180, 0)
+        currentProfileName:SetText("Loading...")
+        currentProfileName:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        sy = sy - FORM_ROW
 
-    -- Expose RefreshProfileDisplay via _G.QUI_RefreshSpecProfilesTab for external profile-change callbacks.
-    _G.QUI_RefreshSpecProfilesTab = RefreshProfileDisplay
+        -- Reset Profile
+        local resetBtn = GUI:CreateButton(body, "Reset to Defaults", 120, 24, function()
+            GUI:ShowConfirmation({
+                title = "Reset Profile?", message = "Reset current profile to defaults?",
+                warningText = "This cannot be undone.", acceptText = "Reset", cancelText = "Cancel", isDestructive = true,
+                onAccept = function()
+                    local core = GetCore(); local dbRef = core and core.db
+                    if dbRef then dbRef:ResetProfile(); print("|cff60A5FAQUI:|r Profile reset. Please /reload.") end
+                end,
+            })
+        end)
+        resetBtn:SetPoint("TOPLEFT", 0, sy)
+        sy = sy - FORM_ROW
 
-    y = y - FORM_ROW - 10
+        -- Reset All Movers
+        local moversBtn = GUI:CreateButton(body, "Reset All Positions", 120, 24, function()
+            GUI:ShowConfirmation({
+                title = "Reset All Movers?", message = "Reset all frame positions to defaults?",
+                warningText = "This resets CDM, unit frames, minimap, action bars, data panels, trackers, Blizzard UI Mover panel positions, and all other movable elements. Requires /reload.", acceptText = "Reset All", cancelText = "Cancel", isDestructive = true,
+                onAccept = function()
+                    local core = GetCore(); local dbRef = core and core.db
+                    if not dbRef then return end
+                    local p = dbRef.profile
+                    if p.ncdm then for _, k in ipairs({"essential","utility","buff"}) do if p.ncdm[k] then p.ncdm[k].pos = nil end end end
+                    if p.quiUnitFrames then
+                        for _, u in ipairs({"player","target","targettarget","pet","focus","boss"}) do if p.quiUnitFrames[u] then p.quiUnitFrames[u].offsetX = nil; p.quiUnitFrames[u].offsetY = nil end end
+                        for _, u in ipairs({"player","target","focus"}) do if p.quiUnitFrames[u] and p.quiUnitFrames[u].castbar then p.quiUnitFrames[u].castbar.offsetX = nil; p.quiUnitFrames[u].castbar.offsetY = nil end end
+                    end
+                    if p.minimap then p.minimap.position = nil end
+                    if p.actionBars and p.actionBars.bars then
+                        if p.actionBars.bars.extraActionButton then p.actionBars.bars.extraActionButton.position = nil end
+                        if p.actionBars.bars.zoneAbility then p.actionBars.bars.zoneAbility.position = nil end
+                    end
+                    if p.quiDatatexts and type(p.quiDatatexts.panels) == "table" then for _, panel in ipairs(p.quiDatatexts.panels) do if panel then panel.position = nil end end end
+                    if p.mplusTimer then p.mplusTimer.position = nil end
+                    if p.raidBuffs then p.raidBuffs.position = nil end
+                    if p.customTrackers and type(p.customTrackers.bars) == "table" then for _, bar in ipairs(p.customTrackers.bars) do if bar then bar.offsetX = nil; bar.offsetY = nil end end end
+                    if p.totemBar then p.totemBar.offsetX = nil; p.totemBar.offsetY = nil end
+                    if p.loot then p.loot.position = nil end
+                    if p.lootRoll then p.lootRoll.position = nil end
+                    if p.alerts then p.alerts.alertPosition = nil; p.alerts.toastPosition = nil; p.alerts.bnetToastPosition = nil end
+                    if type(p.frameAnchoring) == "table" then local hw = p.frameAnchoring.hudMinWidth; wipe(p.frameAnchoring); p.frameAnchoring.hudMinWidth = hw end
+                    if p.blizzardMover and type(p.blizzardMover.frames) == "table" then for _, row in pairs(p.blizzardMover.frames) do if type(row) == "table" then row.point = nil; row.x = nil; row.y = nil; row.scale = nil end end end
+                    local bmm = ns.QUI_BlizzardMover; if bmm and bmm.functions and bmm.functions.ClearSessionPositions then bmm.functions.ClearSessionPositions() end
+                    print("|cff60A5FAQUI:|r All positions reset. Please /reload.")
+                end,
+            })
+        end)
+        moversBtn:SetPoint("TOPLEFT", 0, sy)
+        sy = sy - FORM_ROW
 
-    -- =====================================================
-    -- CREATE NEW PROFILE SECTION
-    -- =====================================================
-    local newHeader = GUI:CreateSectionHeader(content, "Create New Profile")
-    newHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - newHeader.gap
+        -- Factory Reset
+        local factoryBtn = GUI:CreateButton(body, "Factory Reset", 120, 24, function()
+            GUI:ShowConfirmation({
+                title = "Reset All Data?", message = "Erase ALL QUI data and restore fresh-install defaults?",
+                warningText = "Deletes every profile, all global data, and character data. Cannot be undone.",
+                acceptText = "Erase Everything", cancelText = "Cancel", isDestructive = true,
+                onAccept = function()
+                    local core = GetCore(); local dbRef = core and core.db
+                    if dbRef then dbRef:ResetDB(true); print("|cff60A5FAQUI:|r All data erased."); QUI:SafeReload() end
+                end,
+            })
+        end)
+        factoryBtn:SetPoint("TOPLEFT", 0, sy)
+        if factoryBtn.text then factoryBtn.text:SetTextColor(0.9, 0.3, 0.3, 1) end
+    end)
 
-    -- New profile name input (form style row)
-    local newProfileInput = GUI:CreateFormEditBox(content, "Profile Name", nil, nil, nil, {
-        width = 200,
-        commitOnEnter = false,
-        commitOnFocusLost = false,
-        onEscapePressed = function(self)
-            self:ClearFocus()
-        end,
-    })
-    newProfileInput:SetPoint("TOPLEFT", PAD, y)
-    newProfileInput:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    local newProfileBox = newProfileInput.editBox
-
-    -- Create button
-    local createBtn = GUI:CreateButton(content, "Create", 80, 24, function()
-        local core = GetCore()
-        local dbRef = core and core.db
-        local newName = newProfileBox:GetText()
-        if newName and newName ~= "" and dbRef then
-            dbRef:SetProfile(newName)
-            currentProfileName:SetText(newName)
-            profileWrapper.selected = newName
-            if profileDropdown and profileDropdown.SetValue then
-                profileDropdown:SetValue(newName, true)
-            elseif profileDropdownText then
-                profileDropdownText:SetText(newName)
+    ---------------------------------------------------------------------------
+    -- Switch Profile
+    ---------------------------------------------------------------------------
+    CreateCollapsible("Switch Profile", 1 * FORM_ROW + 8, function(body)
+        local sy = -4
+        local profileWrapper = { selected = "" }
+        profileDropdown = GUI:CreateFormDropdown(body, "Select Profile", GetProfileList(), "selected", profileWrapper, function(value)
+            local core = GetCore(); local freshDB = core and core.db
+            if freshDB and value and value ~= "" then
+                local current = freshDB:GetCurrentProfile()
+                if value ~= current then
+                    freshDB:SetProfile(value)
+                    if currentProfileName then currentProfileName:SetText(value) end
+                    print("|cff60A5FAQUI:|r Switched to profile: " .. value)
+                    RefreshProfileDropdowns()
+                end
             end
-            newProfileBox:SetText("")
-            print("|cff34D399QUI:|r Created new profile: " .. newName)
-            RefreshProfileDropdowns()
-        end
+        end)
+        table.insert(profileDropdowns_all, profileDropdown)
+        P(profileDropdown, body, sy)
+
+        local initCore = GetCore(); local initDB = initCore and initCore.db
+        local initProfile = initDB and initDB:GetCurrentProfile() or "Default"
+        profileWrapper.selected = initProfile
+        if profileDropdown.SetValue then profileDropdown:SetValue(initProfile, true) end
     end)
-    createBtn:SetPoint("LEFT", newProfileInput.field, "RIGHT", 10, 0)
-    y = y - FORM_ROW - 10
 
-    -- =====================================================
-    -- COPY FROM PROFILE SECTION
-    -- =====================================================
-    local copyHeader = GUI:CreateSectionHeader(content, "Copy From Profile")
-    copyHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - copyHeader.gap
+    ---------------------------------------------------------------------------
+    -- Create New Profile
+    ---------------------------------------------------------------------------
+    CreateCollapsible("Create New Profile", 2 * FORM_ROW + 8, function(body)
+        local sy = -4
+        local newProfileInput = GUI:CreateFormEditBox(body, "Profile Name", nil, nil, nil, {
+            width = 200, commitOnEnter = false, commitOnFocusLost = false,
+            onEscapePressed = function(self) self:ClearFocus() end,
+        })
+        sy = P(newProfileInput, body, sy)
 
-    local copyInfo = GUI:CreateLabel(content, "Copy settings from another profile into current", 11, C.textMuted)
-    copyInfo:SetPoint("TOPLEFT", PAD, y)
-    copyInfo:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    copyInfo:SetJustifyH("LEFT")
-    y = y - 24
-
-    -- Copy from dropdown (form style)
-    local copyWrapper = { selected = "" }
-    local copyDropdown = GUI:CreateFormDropdown(content, "Copy From", GetProfileList(), "selected", copyWrapper, function(value)
-        local core = GetCore()
-        local dbRef = core and core.db
-        if dbRef and value and value ~= "" then
-            dbRef:CopyProfile(value)
-            print("|cff34D399QUI:|r Copied settings from: " .. value)
-            copyWrapper.selected = ""
-            RefreshProfileDropdowns()
-        end
-    end)
-    copyDropdown:SetPoint("TOPLEFT", PAD, y)
-    copyDropdown:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    table.insert(profileDropdowns_filtered, copyDropdown)
-    y = y - FORM_ROW - 10
-
-    -- =====================================================
-    -- DELETE PROFILE SECTION
-    -- =====================================================
-    local deleteHeader = GUI:CreateSectionHeader(content, "Delete Profile")
-    deleteHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - deleteHeader.gap
-
-    local deleteInfo = GUI:CreateLabel(content, "Remove unused profiles to save space", 11, C.textMuted)
-    deleteInfo:SetPoint("TOPLEFT", PAD, y)
-    deleteInfo:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    deleteInfo:SetJustifyH("LEFT")
-    y = y - 24
-
-    -- Delete dropdown (form style)
-    local deleteWrapper = { selected = "" }
-    local deleteDropdown = GUI:CreateFormDropdown(content, "Delete Profile", GetProfileList(), "selected", deleteWrapper, function(value)
-        local core = GetCore()
-        local dbRef = core and core.db
-        if dbRef and value and value ~= "" then
-            local current = dbRef:GetCurrentProfile()
-            if value == current then
-                print("|cffff0000QUI:|r Cannot delete the active profile!")
-                deleteWrapper.selected = ""
-            else
-                -- Show confirmation dialog
-                local profileToDelete = value
-                GUI:ShowConfirmation({
-                    title = "Delete Profile?",
-                    message = string.format("Delete profile '%s'?", profileToDelete),
-                    warningText = "This cannot be undone.",
-                    acceptText = "Delete",
-                    cancelText = "Cancel",
-                    isDestructive = true,
-                    onAccept = function()
-                        local core = GetCore()
-                        local dbRef = core and core.db
-                        if not dbRef then return end
-                        dbRef:DeleteProfile(profileToDelete, true)
-                        print("|cff34D399QUI:|r Deleted profile: " .. profileToDelete)
-                        deleteWrapper.selected = ""
-                        RefreshProfileDropdowns()
-                    end,
-                })
+        local createBtn = GUI:CreateButton(body, "Create", 80, 24, function()
+            local core = GetCore(); local dbRef = core and core.db
+            local newName = newProfileInput.editBox and newProfileInput.editBox:GetText()
+            if newName and newName ~= "" and dbRef then
+                dbRef:SetProfile(newName)
+                if currentProfileName then currentProfileName:SetText(newName) end
+                if profileDropdown and profileDropdown.SetValue then profileDropdown:SetValue(newName, true) end
+                newProfileInput.editBox:SetText("")
+                print("|cff60A5FAQUI:|r Created new profile: " .. newName)
+                RefreshProfileDropdowns()
             end
-        end
+        end)
+        createBtn:SetPoint("TOPLEFT", 0, sy)
     end)
-    deleteDropdown:SetPoint("TOPLEFT", PAD, y)
-    deleteDropdown:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    table.insert(profileDropdowns_filtered, deleteDropdown)
-    y = y - FORM_ROW - 10
 
-    -- =====================================================
-    -- SPEC AUTO-SWITCH SECTION
-    -- =====================================================
-    local specHeader = GUI:CreateSectionHeader(content, "Spec Auto-Switch")
-    specHeader:SetPoint("TOPLEFT", PAD, y)
-    y = y - specHeader.gap
+    ---------------------------------------------------------------------------
+    -- Copy From Profile
+    ---------------------------------------------------------------------------
+    CreateCollapsible("Copy From Profile", 1 * FORM_ROW + 8, function(body)
+        local sy = -4
+        local copyWrapper = { selected = "" }
+        local copyDropdown = GUI:CreateFormDropdown(body, "Copy From", GetProfileList(), "selected", copyWrapper, function(value)
+            local core = GetCore(); local dbRef = core and core.db
+            if dbRef and value and value ~= "" then
+                dbRef:CopyProfile(value)
+                print("|cff60A5FAQUI:|r Copied settings from: " .. value)
+                copyWrapper.selected = ""
+                RefreshProfileDropdowns()
+            end
+        end)
+        table.insert(profileDropdowns_filtered, copyDropdown)
+        P(copyDropdown, body, sy)
+    end)
 
-    -- Check if LibDualSpec methods are available on db (added by EnhanceDatabase)
+    ---------------------------------------------------------------------------
+    -- Delete Profile
+    ---------------------------------------------------------------------------
+    CreateCollapsible("Delete Profile", 1 * FORM_ROW + 8, function(body)
+        local sy = -4
+        local deleteWrapper = { selected = "" }
+        local deleteDropdown = GUI:CreateFormDropdown(body, "Delete Profile", GetProfileList(), "selected", deleteWrapper, function(value)
+            local core = GetCore(); local dbRef = core and core.db
+            if dbRef and value and value ~= "" then
+                if value == dbRef:GetCurrentProfile() then
+                    print("|cffff0000QUI:|r Cannot delete the active profile!")
+                    deleteWrapper.selected = ""
+                else
+                    local profileToDelete = value
+                    GUI:ShowConfirmation({
+                        title = "Delete Profile?", message = string.format("Delete profile '%s'?", profileToDelete),
+                        warningText = "This cannot be undone.", acceptText = "Delete", cancelText = "Cancel", isDestructive = true,
+                        onAccept = function()
+                            local core = GetCore(); local dbRef = core and core.db
+                            if dbRef then dbRef:DeleteProfile(profileToDelete, true); print("|cff60A5FAQUI:|r Deleted: " .. profileToDelete) end
+                            deleteWrapper.selected = ""
+                            RefreshProfileDropdowns()
+                        end,
+                    })
+                end
+            end
+        end)
+        table.insert(profileDropdowns_filtered, deleteDropdown)
+        P(deleteDropdown, body, sy)
+    end)
+
+    ---------------------------------------------------------------------------
+    -- Spec Auto-Switch
+    ---------------------------------------------------------------------------
     local specCore = GetCore()
     local specDB = specCore and specCore.db
-    if specDB and specDB.IsDualSpecEnabled and specDB.SetDualSpecEnabled and specDB.GetDualSpecProfile and specDB.SetDualSpecProfile then
-        -- Enable checkbox (form style)
-        local enableWrapper = { enabled = specDB:IsDualSpecEnabled() }
-        local enableCheckbox = GUI:CreateFormCheckbox(content, "Enable Spec Profiles", "enabled", enableWrapper,
-            function()
-                local core = GetCore()
-                local dbRef = core and core.db
-                if not dbRef or not dbRef.SetDualSpecEnabled then return end
-                dbRef:SetDualSpecEnabled(enableWrapper.enabled)
-                print("|cff34D399QUI:|r Spec auto-switch " .. (enableWrapper.enabled and "enabled" or "disabled"))
-            end)
-        enableCheckbox:SetPoint("TOPLEFT", PAD, y)
-        enableCheckbox:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+    local numSpecs = GetNumSpecializations()
+    local specRows = 2 + numSpecs  -- enable + info + per-spec dropdowns
 
-        local specInfo = GUI:CreateLabel(content, "When enabled, your profile will switch when you change specialization", 11, C.textMuted)
-        specInfo:SetPoint("TOPLEFT", PAD, y)
-        specInfo:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        specInfo:SetJustifyH("LEFT")
-        y = y - 28
-
-        -- Get spec names for current class
-        local numSpecs = GetNumSpecializations()
-        local currentSpec = GetSpecialization()
-
-        for i = 1, numSpecs do
-            local specID, specName = GetSpecializationInfo(i)
-            if specName then
-                -- Mark active spec
-                local displayName = specName
-                if i == currentSpec then
-                    displayName = specName .. " (Active)"
+    CreateCollapsible("Spec Auto-Switch", specRows * FORM_ROW + 8, function(body)
+        local sy = -4
+        if specDB and specDB.IsDualSpecEnabled and specDB.SetDualSpecEnabled and specDB.GetDualSpecProfile and specDB.SetDualSpecProfile then
+            local enableWrapper = { enabled = specDB:IsDualSpecEnabled() }
+            sy = P(GUI:CreateFormCheckbox(body, "Enable Spec Profiles", "enabled", enableWrapper, function()
+                local core = GetCore(); local dbRef = core and core.db
+                if dbRef and dbRef.SetDualSpecEnabled then
+                    dbRef:SetDualSpecEnabled(enableWrapper.enabled)
+                    print("|cff60A5FAQUI:|r Spec auto-switch " .. (enableWrapper.enabled and "enabled" or "disabled"))
                 end
+            end), body, sy)
 
-                -- Get current profile for this spec using LibDualSpec method
-                local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""
-                local specWrapper = { selected = currentSpecProfile }
-
-                -- Dropdown for this spec (form style)
-                local specDropdown = GUI:CreateFormDropdown(content, displayName, GetProfileList(), "selected", specWrapper, function(value)
-                    local core = GetCore()
-                    local dbRef = core and core.db
-                    if dbRef and dbRef.SetDualSpecProfile and value and value ~= "" then
-                        dbRef:SetDualSpecProfile(value, i)
-                        print("|cff34D399QUI:|r " .. specName .. " will use profile: " .. value)
-                    end
-                end)
-                specDropdown:SetPoint("TOPLEFT", PAD, y)
-                specDropdown:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-                table.insert(profileDropdowns_all, specDropdown)
-
-                y = y - FORM_ROW
+            local currentSpec = GetSpecialization()
+            for i = 1, numSpecs do
+                local specID, specName = GetSpecializationInfo(i)
+                if specName then
+                    local displayName = specName .. (i == currentSpec and " (Active)" or "")
+                    local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""
+                    local specWrapper = { selected = currentSpecProfile }
+                    local specDropdown = GUI:CreateFormDropdown(body, displayName, GetProfileList(), "selected", specWrapper, function(value)
+                        local core = GetCore(); local dbRef = core and core.db
+                        if dbRef and dbRef.SetDualSpecProfile and value and value ~= "" then
+                            dbRef:SetDualSpecProfile(value, i)
+                            print("|cff60A5FAQUI:|r " .. specName .. " will use profile: " .. value)
+                        end
+                    end)
+                    table.insert(profileDropdowns_all, specDropdown)
+                    sy = P(specDropdown, body, sy)
+                end
             end
+        else
+            local noSpec = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            noSpec:SetPoint("TOPLEFT", 4, sy)
+            noSpec:SetTextColor(0.6, 0.6, 0.6, 1)
+            noSpec:SetText("LibDualSpec not available.")
         end
-    else
-        local noSpec = GUI:CreateLabel(content, "LibDualSpec not available. Make sure another addon provides it.", 11, C.textMuted)
-        noSpec:SetPoint("TOPLEFT", PAD, y)
-        noSpec:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        noSpec:SetJustifyH("LEFT")
-        y = y - 24
+    end)
 
-        local noSpec2 = GUI:CreateLabel(content, "Common addons with LibDualSpec: Masque and other action bar addons", 11, C.textMuted)
-        noSpec2:SetPoint("TOPLEFT", PAD, y)
-        noSpec2:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        noSpec2:SetJustifyH("LEFT")
-        y = y - 24
-    end
+    -- Setup refresh hooks
+    content:SetScript("OnShow", RefreshProfileDisplay)
+    scroll:SetScript("OnShow", RefreshProfileDisplay)
+    C_Timer.After(0.2, RefreshProfileDisplay)
+    C_Timer.After(0.5, RefreshProfileDisplay)
+    _G.QUI_RefreshSpecProfilesTab = RefreshProfileDisplay
 
-    y = y - 20
-
-    content:SetHeight(math.abs(y) + 20)
+    relayout()
 end
 
---------------------------------------------------------------------------------
--- Export
---------------------------------------------------------------------------------
 ns.QUI_ProfilesOptions = {
     CreateSpecProfilesPage = CreateSpecProfilesPage
 }

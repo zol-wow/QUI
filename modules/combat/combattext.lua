@@ -9,6 +9,12 @@ local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
+-- Performance: cache frequently-called globals as locals
+local CreateFrame = CreateFrame
+local UIParent = UIParent
+local GetTime = GetTime
+local C_Timer = C_Timer
+
 ---------------------------------------------------------------------------
 -- State tracking for fade animation
 ---------------------------------------------------------------------------
@@ -24,9 +30,7 @@ local CombatTextState = {
 ---------------------------------------------------------------------------
 -- Get settings from database
 ---------------------------------------------------------------------------
-local function GetSettings()
-    return Helpers.GetModuleDB("combatText")
-end
+local GetSettings = Helpers.CreateDBGetter("combatText")
 
 ---------------------------------------------------------------------------
 -- Get global addon font setting
@@ -90,7 +94,7 @@ local function CreateTextFrame()
     local text = frame:CreateFontString(nil, "OVERLAY")
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
     text:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-    text:SetTextColor(0.204, 0.827, 0.6, 1)  -- QUI mint accent
+    text:SetTextColor(0.376, 0.647, 0.980, 1)  -- QUI sky blue accent
     text:SetJustifyH("CENTER")
     frame.text = text
 
@@ -178,9 +182,9 @@ local function ShowCombatText(message)
     -- Determine and apply color based on message
     local color
     if message == "+Combat" then
-        color = settings.enterCombatColor or {0.204, 0.827, 0.6, 1}
+        color = settings.enterCombatColor or {0.376, 0.647, 0.980, 1}
     else
-        color = settings.leaveCombatColor or {0.204, 0.827, 0.6, 1}
+        color = settings.leaveCombatColor or {0.376, 0.647, 0.980, 1}
     end
     CombatTextState.textFrame.text:SetTextColor(color[1], color[2], color[3], color[4] or 1)
 
@@ -258,9 +262,9 @@ _G.QUI_PreviewCombatText = function(message)
     -- Determine and apply color based on message
     local color
     if message == "+Combat" then
-        color = settings.enterCombatColor or {0.204, 0.827, 0.6, 1}
+        color = settings.enterCombatColor or {0.376, 0.647, 0.980, 1}
     else
-        color = settings.leaveCombatColor or {0.204, 0.827, 0.6, 1}
+        color = settings.leaveCombatColor or {0.376, 0.647, 0.980, 1}
     end
     CombatTextState.textFrame.text:SetTextColor(color[1], color[2], color[3], color[4] or 1)
 
@@ -282,3 +286,12 @@ QUI.CombatText = {
     Show = ShowCombatText,
     Preview = _G.QUI_PreviewCombatText,
 }
+
+if ns.Registry then
+    ns.Registry:Register("combatText", {
+        refresh = _G.QUI_RefreshCombatText,
+        priority = 40,
+        group = "combat",
+        importCategories = { "trackersTimers" },
+    })
+end

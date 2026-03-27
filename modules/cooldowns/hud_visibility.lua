@@ -34,28 +34,31 @@ local UpdateUnitframesVisibility
 ---------------------------------------------------------------------------
 local _healthBelowMax = false
 local _healthStableTimer = nil
-local HEALTH_STABLE_DURATION = 3.0  -- seconds after last health event to assume full
+local _lastHealthEventTime = 0
+local HEALTH_STABLE_DURATION = 3.0
 
 local function UpdateHealthState()
-    -- UNIT_HEALTH fired — health is changing, assume below max
     local wasBelowMax = _healthBelowMax
     _healthBelowMax = true
+    _lastHealthEventTime = GetTime()
 
     if not wasBelowMax and UpdateUnitframesVisibility then
         UpdateUnitframesVisibility()
     end
 
-    -- Reset the stable timer — when health stops changing, assume full
-    if _healthStableTimer then
-        _healthStableTimer:Cancel()
+    -- Single ticker checks periodically instead of creating/cancelling timers per event
+    if not _healthStableTimer then
+        _healthStableTimer = C_Timer.NewTicker(1.0, function()
+            if GetTime() - _lastHealthEventTime >= HEALTH_STABLE_DURATION then
+                _healthStableTimer:Cancel()
+                _healthStableTimer = nil
+                _healthBelowMax = false
+                if UpdateUnitframesVisibility then
+                    UpdateUnitframesVisibility()
+                end
+            end
+        end)
     end
-    _healthStableTimer = C_Timer.NewTimer(HEALTH_STABLE_DURATION, function()
-        _healthStableTimer = nil
-        _healthBelowMax = false
-        if UpdateUnitframesVisibility then
-            UpdateUnitframesVisibility()
-        end
-    end)
 end
 
 ---------------------------------------------------------------------------
@@ -246,7 +249,7 @@ end
 
 -- Update CDM visibility
 UpdateCDMVisibility = function()
-    if Helpers.IsEditModeActive() then
+    if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
         StartCDMFade(1)
         return
     end
@@ -524,7 +527,8 @@ end
 
 -- Update Unitframes visibility
 UpdateUnitframesVisibility = function()
-    if _G.QUI_IsUnitFrameEditModeActive and _G.QUI_IsUnitFrameEditModeActive() then
+    if (_G.QUI_IsUnitFrameEditModeActive and _G.QUI_IsUnitFrameEditModeActive())
+        or Helpers.IsLayoutModeActive() then
         StartUnitframesFade(1)
         return
     end
@@ -626,6 +630,375 @@ local function SetupUnitframesMouseoverDetector()
 end
 
 ---------------------------------------------------------------------------
+-- ACTION BARS VISIBILITY CONTROLLER
+---------------------------------------------------------------------------
+local ActionBarsVisibility = {
+    currentlyHidden = false,
+    isFading = false,
+    fadeStart = 0,
+    fadeStartAlpha = 1,
+    fadeTargetAlpha = 1,
+    fadeFrame = nil,
+    mouseOver = false,
+    mouseoverDetector = nil,
+    leaveTimer = nil,
+}
+
+local function GetActionBarsVisibilitySettings()
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.actionBarsVisibility then
+        return QUICore.db.profile.actionBarsVisibility
+    end
+    return nil
+end
+
+local function GetActionBarFrames()
+    local frames = {}
+    -- Action bar containers from the owned action bar system
+    if ns.QUI_ActionBars and ns.QUI_ActionBars.containers then
+        for _, container in pairs(ns.QUI_ActionBars.containers) do
+            if container then
+                frames[#frames + 1] = container
+            end
+        end
+    end
+    return frames
+end
+
+local function ShouldActionBarsBeVisible()
+    local vis = GetActionBarsVisibilitySettings()
+    if not vis then return true end
+
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if not ignoreHideRules then
+        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
+        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    end
+
+    if vis.showAlways then return true end
+
+    if vis.showWhenTargetExists and UnitExists("target") then return true end
+    if vis.showInCombat and UnitAffectingCombat("player") then return true end
+    if vis.showInGroup and IsPlayerInGroup() then return true end
+    if vis.showInInstance and IsPlayerInInstance() then return true end
+    if vis.showOnMouseover and ActionBarsVisibility.mouseOver then return true end
+
+    return false
+end
+
+local function OnActionBarsFadeUpdate(self, elapsed)
+    local vis = GetActionBarsVisibilitySettings()
+    local duration = (vis and vis.fadeDuration) or 0.2
+    if duration <= 0 then duration = 0.01 end
+
+    local now = GetTime()
+    local elapsedTime = now - ActionBarsVisibility.fadeStart
+    local progress = math.min(elapsedTime / duration, 1)
+
+    local alpha = ActionBarsVisibility.fadeStartAlpha +
+        (ActionBarsVisibility.fadeTargetAlpha - ActionBarsVisibility.fadeStartAlpha) * progress
+
+    local frames = GetActionBarFrames()
+    for _, frame in ipairs(frames) do
+        if frame and frame.SetAlpha then
+            pcall(frame.SetAlpha, frame, alpha)
+        end
+    end
+
+    if progress >= 1 then
+        ActionBarsVisibility.isFading = false
+        ActionBarsVisibility.currentlyHidden = (ActionBarsVisibility.fadeTargetAlpha < 1)
+        self:SetScript("OnUpdate", nil)
+    end
+end
+
+local function StartActionBarsFade(targetAlpha)
+    local frames = GetActionBarFrames()
+    if #frames == 0 then return end
+
+    local currentAlpha = frames[1]:GetAlpha()
+
+    if math.abs(currentAlpha - targetAlpha) < 0.01 then
+        ActionBarsVisibility.currentlyHidden = (targetAlpha < 1)
+        return
+    end
+
+    ActionBarsVisibility.isFading = true
+    ActionBarsVisibility.fadeStart = GetTime()
+    ActionBarsVisibility.fadeStartAlpha = currentAlpha
+    ActionBarsVisibility.fadeTargetAlpha = targetAlpha
+
+    if not ActionBarsVisibility.fadeFrame then
+        ActionBarsVisibility.fadeFrame = CreateFrame("Frame")
+    end
+    ActionBarsVisibility.fadeFrame:SetScript("OnUpdate", OnActionBarsFadeUpdate)
+end
+
+local function UpdateActionBarsVisibility()
+    if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
+        StartActionBarsFade(1)
+        return
+    end
+
+    local shouldShow = ShouldActionBarsBeVisible()
+    local vis = GetActionBarsVisibilitySettings()
+
+    if shouldShow then
+        StartActionBarsFade(1)
+    else
+        StartActionBarsFade(vis and vis.fadeOutAlpha or 0)
+    end
+end
+
+local function SetupActionBarsMouseoverDetector()
+    local vis = GetActionBarsVisibilitySettings()
+
+    if ActionBarsVisibility.mouseoverDetector then
+        ActionBarsVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
+        ActionBarsVisibility.mouseoverDetector:Hide()
+        ActionBarsVisibility.mouseoverDetector = nil
+    end
+
+    if ActionBarsVisibility.leaveTimer then
+        ActionBarsVisibility.leaveTimer:Cancel()
+        ActionBarsVisibility.leaveTimer = nil
+    end
+    ActionBarsVisibility.mouseOver = false
+
+    if not vis or vis.showAlways or not vis.showOnMouseover then
+        return
+    end
+
+    local abFrames = GetActionBarFrames()
+    local hoverCount = 0
+
+    for _, frame in ipairs(abFrames) do
+        if frame and not _mouseoverHooked[frame] then
+            _mouseoverHooked[frame] = true
+
+            frame:HookScript("OnEnter", function()
+                if ActionBarsVisibility.leaveTimer then
+                    ActionBarsVisibility.leaveTimer:Cancel()
+                    ActionBarsVisibility.leaveTimer = nil
+                end
+                hoverCount = hoverCount + 1
+                if hoverCount == 1 then
+                    ActionBarsVisibility.mouseOver = true
+                    UpdateActionBarsVisibility()
+                end
+            end)
+
+            frame:HookScript("OnLeave", function()
+                hoverCount = math.max(0, hoverCount - 1)
+                if hoverCount == 0 then
+                    if ActionBarsVisibility.leaveTimer then
+                        ActionBarsVisibility.leaveTimer:Cancel()
+                    end
+                    ActionBarsVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
+                        ActionBarsVisibility.leaveTimer = nil
+                        if hoverCount == 0 then
+                            ActionBarsVisibility.mouseOver = false
+                            UpdateActionBarsVisibility()
+                        end
+                    end)
+                end
+            end)
+        end
+    end
+
+    local detector = CreateFrame("Frame", nil, UIParent)
+    detector:EnableMouse(false)
+    ActionBarsVisibility.mouseoverDetector = detector
+end
+
+---------------------------------------------------------------------------
+-- CHAT FRAMES VISIBILITY CONTROLLER
+---------------------------------------------------------------------------
+local ChatVisibility = {
+    currentlyHidden = false,
+    isFading = false,
+    fadeStart = 0,
+    fadeStartAlpha = 1,
+    fadeTargetAlpha = 1,
+    fadeFrame = nil,
+    mouseOver = false,
+    mouseoverDetector = nil,
+    leaveTimer = nil,
+}
+
+local function GetChatVisibilitySettings()
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.chatVisibility then
+        return QUICore.db.profile.chatVisibility
+    end
+    return nil
+end
+
+local function GetChatFrames()
+    local frames = {}
+    for i = 1, NUM_CHAT_WINDOWS do
+        local chatFrame = _G["ChatFrame" .. i]
+        if chatFrame and chatFrame:IsShown() then
+            -- Include the chat frame and its dock/tab
+            frames[#frames + 1] = chatFrame
+        end
+    end
+    -- Include GeneralDockManager (the tab bar)
+    if _G.GeneralDockManager then
+        frames[#frames + 1] = _G.GeneralDockManager
+    end
+    return frames
+end
+
+local function ShouldChatBeVisible()
+    local vis = GetChatVisibilitySettings()
+    if not vis then return true end
+
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if not ignoreHideRules then
+        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
+        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+    end
+
+    if vis.showAlways then return true end
+
+    if vis.showWhenTargetExists and UnitExists("target") then return true end
+    if vis.showInCombat and UnitAffectingCombat("player") then return true end
+    if vis.showInGroup and IsPlayerInGroup() then return true end
+    if vis.showInInstance and IsPlayerInInstance() then return true end
+    if vis.showOnMouseover and ChatVisibility.mouseOver then return true end
+
+    return false
+end
+
+local function OnChatFadeUpdate(self, elapsed)
+    local vis = GetChatVisibilitySettings()
+    local duration = (vis and vis.fadeDuration) or 0.2
+    if duration <= 0 then duration = 0.01 end
+
+    local now = GetTime()
+    local elapsedTime = now - ChatVisibility.fadeStart
+    local progress = math.min(elapsedTime / duration, 1)
+
+    local alpha = ChatVisibility.fadeStartAlpha +
+        (ChatVisibility.fadeTargetAlpha - ChatVisibility.fadeStartAlpha) * progress
+
+    local frames = GetChatFrames()
+    for _, frame in ipairs(frames) do
+        if frame and frame.SetAlpha then
+            pcall(frame.SetAlpha, frame, alpha)
+        end
+    end
+
+    if progress >= 1 then
+        ChatVisibility.isFading = false
+        ChatVisibility.currentlyHidden = (ChatVisibility.fadeTargetAlpha < 1)
+        self:SetScript("OnUpdate", nil)
+    end
+end
+
+local function StartChatFade(targetAlpha)
+    local frames = GetChatFrames()
+    if #frames == 0 then return end
+
+    local currentAlpha = frames[1]:GetAlpha()
+
+    if math.abs(currentAlpha - targetAlpha) < 0.01 then
+        ChatVisibility.currentlyHidden = (targetAlpha < 1)
+        return
+    end
+
+    ChatVisibility.isFading = true
+    ChatVisibility.fadeStart = GetTime()
+    ChatVisibility.fadeStartAlpha = currentAlpha
+    ChatVisibility.fadeTargetAlpha = targetAlpha
+
+    if not ChatVisibility.fadeFrame then
+        ChatVisibility.fadeFrame = CreateFrame("Frame")
+    end
+    ChatVisibility.fadeFrame:SetScript("OnUpdate", OnChatFadeUpdate)
+end
+
+local function UpdateChatVisibility()
+    if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
+        StartChatFade(1)
+        return
+    end
+
+    local shouldShow = ShouldChatBeVisible()
+    local vis = GetChatVisibilitySettings()
+
+    if shouldShow then
+        StartChatFade(1)
+    else
+        StartChatFade(vis and vis.fadeOutAlpha or 0)
+    end
+end
+
+local function SetupChatMouseoverDetector()
+    local vis = GetChatVisibilitySettings()
+
+    if ChatVisibility.mouseoverDetector then
+        ChatVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
+        ChatVisibility.mouseoverDetector:Hide()
+        ChatVisibility.mouseoverDetector = nil
+    end
+
+    if ChatVisibility.leaveTimer then
+        ChatVisibility.leaveTimer:Cancel()
+        ChatVisibility.leaveTimer = nil
+    end
+    ChatVisibility.mouseOver = false
+
+    if not vis or vis.showAlways or not vis.showOnMouseover then
+        return
+    end
+
+    local chatFrames = GetChatFrames()
+    local hoverCount = 0
+
+    for _, frame in ipairs(chatFrames) do
+        if frame and not _mouseoverHooked[frame] then
+            _mouseoverHooked[frame] = true
+
+            frame:HookScript("OnEnter", function()
+                if ChatVisibility.leaveTimer then
+                    ChatVisibility.leaveTimer:Cancel()
+                    ChatVisibility.leaveTimer = nil
+                end
+                hoverCount = hoverCount + 1
+                if hoverCount == 1 then
+                    ChatVisibility.mouseOver = true
+                    UpdateChatVisibility()
+                end
+            end)
+
+            frame:HookScript("OnLeave", function()
+                hoverCount = math.max(0, hoverCount - 1)
+                if hoverCount == 0 then
+                    if ChatVisibility.leaveTimer then
+                        ChatVisibility.leaveTimer:Cancel()
+                    end
+                    ChatVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
+                        ChatVisibility.leaveTimer = nil
+                        if hoverCount == 0 then
+                            ChatVisibility.mouseOver = false
+                            UpdateChatVisibility()
+                        end
+                    end)
+                end
+            end)
+        end
+    end
+
+    local detector = CreateFrame("Frame", nil, UIParent)
+    detector:EnableMouse(false)
+    ChatVisibility.mouseoverDetector = detector
+end
+
+---------------------------------------------------------------------------
 -- SHARED EVENT HANDLING
 ---------------------------------------------------------------------------
 local visibilityEventFrame = CreateFrame("Frame")
@@ -641,6 +1014,7 @@ visibilityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 visibilityEventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 visibilityEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
 visibilityEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+visibilityEventFrame:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
@@ -682,8 +1056,12 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
             UpdateHealthState()  -- Player healthBar should exist by now
             SetupCDMMouseoverDetector()
             SetupUnitframesMouseoverDetector()
+            SetupActionBarsMouseoverDetector()
+            SetupChatMouseoverDetector()
             UpdateCDMVisibility()
             UpdateUnitframesVisibility()
+            UpdateActionBarsVisibility()
+            UpdateChatVisibility()
         end)
     end
 
@@ -691,6 +1069,8 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     -- already exist, e.g. target changes, combat, zone transitions).
     UpdateCDMVisibility()
     UpdateUnitframesVisibility()
+    UpdateActionBarsVisibility()
+    UpdateChatVisibility()
 end)
 
 ---------------------------------------------------------------------------
@@ -706,6 +1086,19 @@ _G.QUI_RefreshCDMMouseover = SetupCDMMouseoverDetector
 _G.QUI_RefreshUnitframesMouseover = SetupUnitframesMouseoverDetector
 _G.QUI_ShouldCDMBeVisible = ShouldCDMBeVisible
 _G.QUI_ShouldUnitframesBeVisible = ShouldUnitframesBeVisible
+_G.QUI_RefreshActionBarsVisibility = UpdateActionBarsVisibility
+_G.QUI_RefreshActionBarsMouseover = SetupActionBarsMouseoverDetector
+_G.QUI_RefreshChatVisibility = UpdateChatVisibility
+_G.QUI_RefreshChatMouseover = SetupChatMouseoverDetector
+
+if ns.Registry then
+    ns.Registry:Register("cdmVisibility", {
+        refresh = _G.QUI_RefreshCDMVisibility,
+        priority = 10,
+        group = "cooldowns",
+        importCategories = { "cdm" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- NAMESPACE EXPORTS
@@ -714,3 +1107,24 @@ _G.QUI_ShouldUnitframesBeVisible = ShouldUnitframesBeVisible
 ns.HookFrameForMouseover = HookFrameForMouseover
 -- Expose cache invalidation so engines can mark frames dirty after init
 ns.InvalidateCDMFrameCache = InvalidateCDMFrameCache
+
+---------------------------------------------------------------------------
+-- LAYOUT MODE: force all frames visible on enter, restore on exit
+---------------------------------------------------------------------------
+local function RefreshAllVisibility()
+    UpdateCDMVisibility()
+    UpdateUnitframesVisibility()
+    UpdateActionBarsVisibility()
+    UpdateChatVisibility()
+end
+
+C_Timer.After(2, function()
+    local core = ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()
+    if not core then return end
+    if core.RegisterLayoutModeEnter then
+        core:RegisterLayoutModeEnter(RefreshAllVisibility)
+    end
+    if core.RegisterLayoutModeExit then
+        core:RegisterLayoutModeExit(RefreshAllVisibility)
+    end
+end)

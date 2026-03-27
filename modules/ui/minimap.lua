@@ -5,7 +5,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local LibDBIcon = LibStub("LibDBIcon-1.0", true)
 
 -- Module reference
@@ -36,19 +36,19 @@ local clockTicker = nil
 local coordsTicker = nil
 
 -- Combat-deferred refresh flag
+local inInitSafeWindow = false
 local pendingMinimapRefresh = false
 local pendingDrawerSetup = false
 local middleClickMenuHooked = false
 local middleClickBlockerOverlay = nil
-local microMenuShowHooked = false
-local bagsBarShowHooked = false
-local originalMicroMenuParent = nil
-local originalBagsBarParent = nil
+-- (micro/bag visibility now managed by action bars module)
 local minimapOriginalOnMouseUp = nil
 
 -- External HUD overlay detection
 local externalHudActive = false
 local quiUpdatingMinimap = false
+local hudDetectedCount = 0
+local HUD_DEBOUNCE_THRESHOLD = 2  -- require consecutive detections before hiding
 
 ---=================================================================================
 --- BLIZZARD LAYOUT NO-OPS
@@ -483,24 +483,6 @@ local function GetDatatextSettings()
         return nil
     end
     return QUICore.db.profile.datatext
-end
-
-local function ColorWrap(text, r, g, b)
-    return string.format("|cff%02x%02x%02x%s|r", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255), text)
-end
-
-local function FormatGold(copper)
-    local gold = math.floor(copper / 10000)
-    local goldStr = tostring(gold)
-    if gold >= 1000 then
-        goldStr = string.format("%d,%03d", math.floor(gold / 1000), gold % 1000)
-    end
-    if gold >= 1000000 then
-        local millions = math.floor(gold / 1000000)
-        local thousands = math.floor((gold % 1000000) / 1000)
-        goldStr = string.format("%d,%03d,%03d", millions, thousands, gold % 1000)
-    end
-    return goldStr .. "g"
 end
 
 ---=================================================================================
@@ -1136,9 +1118,7 @@ local hiddenButtonParent = CreateFrame("Frame")
 hiddenButtonParent:Hide()
 hiddenButtonParent.Layout = function() end  -- Prevent nil errors when Blizzard code calls Layout on children
 
-local hiddenActionBarParent = CreateFrame("Frame")
-hiddenActionBarParent:Hide()
-hiddenActionBarParent.Layout = function() end
+-- (hiddenActionBarParent removed — micro/bag visibility managed by action bars module)
 
 -- Blizzard has used multiple difficulty indicator frames across versions.
 -- Keep compatibility by iterating all known variants.
@@ -1225,7 +1205,7 @@ if ExpansionLandingPageMinimapButton and not expansionButtonHooked then
 end
 
 local function UpdateButtonVisibility()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not inInitSafeWindow then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -1367,66 +1347,9 @@ local function UpdateButtonVisibility()
     end
 end
 
-local function SetupMicroBagVisibilityHooks()
-    local microMenu = MicroMenuContainer or MicroMenu
-    if microMenu and not microMenuShowHooked then
-        microMenuShowHooked = true
-        hooksecurefunc(microMenu, "Show", function(self)
-            C_Timer.After(0, function()
-                local settings = GetSettings()
-                if settings and settings.hideMicroMenu then
-                    self:Hide()
-                end
-            end)
-        end)
-    end
-
-    local bagsBar = BagsBar
-    if bagsBar and not bagsBarShowHooked then
-        bagsBarShowHooked = true
-        hooksecurefunc(bagsBar, "Show", function(self)
-            C_Timer.After(0, function()
-                local settings = GetSettings()
-                if settings and settings.hideBagBar then
-                    self:Hide()
-                end
-            end)
-        end)
-    end
-end
-
-local function UpdateMicroAndBagVisibility()
-    if InCombatLockdown() then
-        pendingMinimapRefresh = true
-        return
-    end
-    local settings = GetSettings()
-    if not settings or not settings.enabled then return end
-
-    local microMenu = MicroMenuContainer or MicroMenu
-    if microMenu then
-        originalMicroMenuParent = originalMicroMenuParent or microMenu:GetParent()
-        if settings.hideMicroMenu then
-            microMenu:SetParent(hiddenActionBarParent)
-            microMenu:Hide()
-        else
-            microMenu:SetParent(originalMicroMenuParent or UIParent)
-            microMenu:Show()
-        end
-    end
-
-    local bagsBar = BagsBar
-    if bagsBar then
-        originalBagsBarParent = originalBagsBarParent or bagsBar:GetParent()
-        if settings.hideBagBar then
-            bagsBar:SetParent(hiddenActionBarParent)
-            bagsBar:Hide()
-        else
-            bagsBar:SetParent(originalBagsBarParent or UIParent)
-            bagsBar:Show()
-        end
-    end
-end
+-- (SetupMicroBagVisibilityHooks and UpdateMicroAndBagVisibility removed —
+-- micro/bag visibility is now managed by the action bars module via
+-- actionBars.bars.microbar.enabled and actionBars.bars.bags.enabled)
 
 local function BuildMiddleClickMenu()
     local settings = GetSettings() or {}
@@ -1540,15 +1463,7 @@ local function BuildMiddleClickMenu()
                 ClickMicroButton("HelpMicroButton")
             end
         end },
-        { text = "", disabled = true, notCheckable = true },
-        { text = "Hide Micro Menu", keepShownOnClick = true, checked = settings.hideMicroMenu and true or false, func = function()
-            settings.hideMicroMenu = not settings.hideMicroMenu
-            UpdateMicroAndBagVisibility()
-        end },
-        { text = "Hide Bag Bar", keepShownOnClick = true, checked = settings.hideBagBar and true or false, func = function()
-            settings.hideBagBar = not settings.hideBagBar
-            UpdateMicroAndBagVisibility()
-        end },
+        -- (Hide Micro Menu / Hide Bag Bar removed — use Layout Mode to toggle visibility)
     }
 end
 
@@ -1577,8 +1492,7 @@ local function ShowMiddleClickMenu(keepPosition)
     end
 
     local menuData = BuildMiddleClickMenu()
-    local QUI = _G.QUI
-    local fontPath = QUI and QUI.GetGlobalFont and QUI:GetGlobalFont() or STANDARD_TEXT_FONT
+    local fontPath = Helpers.GetGeneralFont()
     local fontSize = 12
     local borderR, borderG, borderB, borderA = 0.2, 0.8, 0.6, 1
     local bgR, bgG, bgB, bgA = 0.03, 0.03, 0.03, 0.98
@@ -1606,8 +1520,8 @@ local function ShowMiddleClickMenu(keepPosition)
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px },
     })
-    middleClickMenuFrame:SetBackdropColor(bgR, bgG, bgB, bgA)
-    middleClickMenuFrame:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
+    Helpers.SetFrameBackdropColor(middleClickMenuFrame, bgR, bgG, bgB, bgA)
+    Helpers.SetFrameBackdropBorderColor(middleClickMenuFrame, borderR, borderG, borderB, borderA)
 
     for i = 1, #middleClickMenuRows do
         middleClickMenuRows[i]:Hide()
@@ -1815,7 +1729,7 @@ local function RestoreDungeonEye()
 end
 
 local function UpdateDungeonEyePosition()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not inInitSafeWindow then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
@@ -2428,8 +2342,8 @@ local function StyleDrawerFrame()
         edgeSize = hasBorder and edgeSize or 0,
         insets = hasBorder and { left = edgeSize, right = edgeSize, top = edgeSize, bottom = edgeSize } or { left = 0, right = 0, top = 0, bottom = 0 },
     })
-    drawerFrame:SetBackdropColor(bgR, bgG, bgB, bgA)
-    drawerFrame:SetBackdropBorderColor(borderR, borderG, borderB, hasBorder and borderA or 0)
+    Helpers.SetFrameBackdropColor(drawerFrame, bgR, bgG, bgB, bgA)
+    Helpers.SetFrameBackdropBorderColor(drawerFrame, borderR, borderG, borderB, hasBorder and borderA or 0)
 end
 
 local function CreateDrawerFrame()
@@ -2468,7 +2382,7 @@ end
 
 local function CreateDrawerToggleButton()
     if drawerToggleButton then return end
-    drawerToggleButton = CreateFrame("Button", "QUI_DrawerToggle", Minimap)
+    drawerToggleButton = CreateFrame("Button", "QUI_DrawerToggle", UIParent)
     drawerToggleButton:SetSize(DEFAULT_TOGGLE_SIZE, DEFAULT_TOGGLE_SIZE)
     drawerToggleButton:SetFrameStrata("HIGH")
     drawerToggleButton:SetFrameLevel(Minimap:GetFrameLevel() + 5)
@@ -2598,6 +2512,10 @@ local function UpdateDrawerAnchor()
     local tOfsX = settings.buttonDrawer.toggleOffsetX or 0
     local tOfsY = settings.buttonDrawer.toggleOffsetY or 0
     local gap = 4
+
+    -- Re-assert strata so the toggle stays above the minimap after layout mode
+    drawerToggleButton:SetFrameStrata("HIGH")
+    drawerToggleButton:SetFrameLevel(Minimap:GetFrameLevel() + 5)
 
     drawerToggleButton:ClearAllPoints()
 
@@ -2784,7 +2702,7 @@ local function SetupButtonDrawer()
         return
     end
 
-    if InCombatLockdown() then
+    if InCombatLockdown() and not inInitSafeWindow then
         pendingDrawerSetup = true
         return
     end
@@ -2865,9 +2783,26 @@ local function RefreshButtonDrawer()
         LayoutDrawerButtons()
         UpdateDrawerAnchor()
 
+        -- Ensure toggle is shown (HideAllDecorations may have hidden it)
+        if drawerToggleButton then
+            drawerToggleButton:Show()
+        end
+
         -- Apply auto-hide toggle state immediately
         if drawerToggleButton then
             if settings.buttonDrawer.autoHideToggle then
+                -- Install Minimap hover hooks if not already done
+                if not toggleAutoHideHooked then
+                    Minimap:HookScript("OnEnter", ShowToggleButton)
+                    Minimap:HookScript("OnLeave", function()
+                        C_Timer.After(0.1, function()
+                            if not IsMouseOverDrawer() and not (Minimap:IsMouseOver()) then
+                                HideToggleButton()
+                            end
+                        end)
+                    end)
+                    toggleAutoHideHooked = true
+                end
                 if not Minimap:IsMouseOver() and not IsMouseOverDrawer() then
                     drawerToggleButton:SetAlpha(0)
                 end
@@ -2885,7 +2820,9 @@ end
 ---=================================================================================
 
 local function UpdateMinimapSize()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not inInitSafeWindow then
+        return
+    end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     
@@ -2919,8 +2856,10 @@ end
 
 local function SetupMinimapDragging()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
-    
+    if not settings or not settings.enabled then
+        return
+    end
+
     -- Reparent minimap to UIParent for proper positioning
     Minimap:SetParent(UIParent)
     Minimap:SetFrameStrata("LOW")
@@ -2961,8 +2900,28 @@ local function SetupMinimapDragging()
         end
     end)
 
-    -- Skip position application if the frame anchoring system owns this frame
-    if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(Minimap) then
+    -- If the frame anchoring system owns this frame, apply the RAW anchor
+    -- point directly (not through ApplyFrameAnchor which converts to size-stable
+    -- CENTER offsets that depend on UIParent dimensions — not final during init).
+    -- The deferred timers in OnEnable will convert to CENTER later when UIParent
+    -- has settled.
+    if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("minimap") then
+        local quiDB = _G.QUI and _G.QUI.db and _G.QUI.db.profile
+        local anchorSettings = quiDB and quiDB.frameAnchoring and quiDB.frameAnchoring["minimap"]
+        if anchorSettings and anchorSettings.enabled then
+            local pt = anchorSettings.point or "CENTER"
+            local rel = anchorSettings.relative or "CENTER"
+            local ox = anchorSettings.offsetX or 0
+            local oy = anchorSettings.offsetY or 0
+            local parent = UIParent
+            -- Resolve "screen" parent
+            if anchorSettings.parent and anchorSettings.parent ~= "screen" then
+                local resolved = _G[anchorSettings.parent]
+                if resolved then parent = resolved end
+            end
+            Minimap:ClearAllPoints()
+            Minimap:SetPoint(pt, parent, rel, ox, oy)
+        end
         return
     end
 
@@ -2976,7 +2935,6 @@ local function SetupMinimapDragging()
         Minimap:ClearAllPoints()
         Minimap:SetPoint(point, UIParent, relPoint, x, y)
     else
-        -- No position saved, use default
         Minimap:ClearAllPoints()
         Minimap:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 790, 285)
     end
@@ -3004,6 +2962,10 @@ end
 local function CheckExternalHud()
     if quiUpdatingMinimap then return end
 
+    -- Layout mode reparents Minimap to a handle — don't treat that as a HUD
+    local um = ns.QUI_LayoutMode
+    if um and um.isActive then return end
+
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
@@ -3011,9 +2973,10 @@ local function CheckExternalHud()
     local expectedSize = settings.size or 140
 
     -- Primary checks: API-reported values (may be overridden by external addons)
-    local currentScale = Minimap:GetScale()
+    -- Guard against secret values from combat — treat them as normal (no HUD)
+    local currentScale = Helpers.SafeToNumber(Minimap:GetScale(), expectedScale)
     local currentAlpha = Helpers.SafeToNumber(Minimap:GetEffectiveAlpha(), 1)
-    local currentWidth = Minimap:GetWidth()
+    local currentWidth = Helpers.SafeToNumber(Minimap:GetWidth(), expectedSize)
 
     -- QUI reparents Minimap to UIParent, so check against UIParent (not MinimapCluster)
     local hudDetected = (currentScale > expectedScale * 2.0)
@@ -3026,8 +2989,10 @@ local function CheckExternalHud()
     if not hudDetected then
         local left, bottom, width, height = Minimap:GetRect()
         if left and width then
-            local uiScale = UIParent:GetEffectiveScale()
-            local renderedSize = width * Minimap:GetEffectiveScale()
+            local safeWidth = Helpers.SafeToNumber(width, 0)
+            local uiScale = Helpers.SafeToNumber(UIParent:GetEffectiveScale(), 1)
+            local mapScale = Helpers.SafeToNumber(Minimap:GetEffectiveScale(), 1)
+            local renderedSize = safeWidth * mapScale
             local expectedPixels = expectedSize * expectedScale * uiScale
             if renderedSize > expectedPixels * 2.0 then
                 hudDetected = true
@@ -3035,12 +3000,19 @@ local function CheckExternalHud()
         end
     end
 
-    if hudDetected and not externalHudActive then
-        externalHudActive = true
-        HideAllDecorations()
-    elseif not hudDetected and externalHudActive then
-        externalHudActive = false
-        Minimap_Module:Refresh()
+    if hudDetected then
+        -- Debounce: require consecutive detections before activating
+        hudDetectedCount = hudDetectedCount + 1
+        if hudDetectedCount >= HUD_DEBOUNCE_THRESHOLD and not externalHudActive then
+            externalHudActive = true
+            HideAllDecorations()
+        end
+    else
+        hudDetectedCount = 0
+        if externalHudActive then
+            externalHudActive = false
+            Minimap_Module:Refresh()
+        end
     end
 end
 
@@ -3048,25 +3020,6 @@ end
 --- EDIT MODE SUPPORT
 ---=================================================================================
 
--- Enable minimap movement during Edit Mode (respects lock setting)
-function QUICore:EnableMinimapEditMode()
-    local settings = GetSettings()
-    if not settings then return end
-
-    -- Block movement if minimap is locked by the anchoring system
-    if _G.QUI_IsFrameLocked and _G.QUI_IsFrameLocked(Minimap) then
-        Minimap:SetMovable(false)
-        return
-    end
-
-    -- Allow movement during Edit Mode unless locked
-    Minimap:SetMovable(not settings.lock)
-end
-
--- Disable minimap Edit Mode (always lock outside Edit Mode)
-function QUICore:DisableMinimapEditMode()
-    Minimap:SetMovable(false)
-end
 
 ---=================================================================================
 --- MOUSE WHEEL ZOOM
@@ -3169,13 +3122,19 @@ end
 ---=================================================================================
 
 function Minimap_Module:Initialize()
+    local icl = InCombatLockdown()
+
     local settings = GetSettings()
     if not settings then return end
 
     if not settings.enabled then
-        -- If disabled, make sure we don't interfere
         return
     end
+
+    -- ADDON_LOADED safe window: protected calls are allowed even though
+    -- InCombatLockdown() returns true during a combat /reload. Set flag
+    -- so sub-functions skip their combat guards during initialization.
+    inInitSafeWindow = true
 
     -- Set shape first (affects other elements)
     SetMinimapShape(settings.shape)
@@ -3186,7 +3145,7 @@ function Minimap_Module:Initialize()
     
     SetupMinimapDragging()
     UpdateMinimapSize()
-    
+
     CreateClock()
     UpdateClock()
     UpdateClockTime()
@@ -3203,8 +3162,6 @@ function Minimap_Module:Initialize()
     UpdateDatatextPanel()
 
     UpdateButtonVisibility()
-    SetupMicroBagVisibilityHooks()
-    UpdateMicroAndBagVisibility()
     SetupAddonButtonHiding()
     SetupButtonDrawer()
     SetupDungeonEyeHook()
@@ -3214,31 +3171,27 @@ function Minimap_Module:Initialize()
     SetupAutoZoom()
 
     -- Detect external HUD overlays that scale up / fade out / resize the Minimap
-    hooksecurefunc(Minimap, "SetScale", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetAlpha", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetSize", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetParent", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetWidth", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetHeight", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
-    hooksecurefunc(Minimap, "SetPoint", function()
-        C_Timer.After(0, CheckExternalHud)
-    end)
+    local hudCheckPending = false
+    local function DeferCheckExternalHud()
+        if hudCheckPending then return end
+        hudCheckPending = true
+        C_Timer.After(0, function()
+            hudCheckPending = false
+            CheckExternalHud()
+        end)
+    end
+
+    hooksecurefunc(Minimap, "SetScale", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetAlpha", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetSize", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetParent", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetWidth", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetHeight", function() DeferCheckExternalHud() end)
+    hooksecurefunc(Minimap, "SetPoint", function() DeferCheckExternalHud() end)
 
     -- Periodic fallback: some HUD addons use metatable manipulation that bypasses
-    -- hooksecurefunc. Check every 2 seconds as a safety net.
-    C_Timer.NewTicker(2, CheckExternalHud)
+    -- hooksecurefunc. Check every 5 seconds as a safety net.
+    C_Timer.NewTicker(5, CheckExternalHud)
 
     -- Start performance-optimized ticker updates
     StartUpdateTickers()
@@ -3305,6 +3258,8 @@ function Minimap_Module:Initialize()
             child:SetBackdrop(nil)
         end
     end
+
+    inInitSafeWindow = false
 end
 
 function Minimap_Module:Refresh()
@@ -3348,6 +3303,13 @@ function Minimap_Module:Refresh()
     -- Restart tickers with potentially new intervals
     StartUpdateTickers()
 
+    -- Re-assert minimap strata/level — layout mode reparenting clears
+    -- SetFixedFrameStrata/Level, so re-apply them every refresh.
+    Minimap:SetFrameStrata("LOW")
+    Minimap:SetFrameLevel(2)
+    Minimap:SetFixedFrameStrata(true)
+    Minimap:SetFixedFrameLevel(true)
+
     SetMinimapShape(settings.shape)
     UpdateBackdrop()
     UpdateMinimapSize()
@@ -3356,15 +3318,13 @@ function Minimap_Module:Refresh()
     UpdateZoneText()
     UpdateDatatextPanel()
     UpdateButtonVisibility()
-    SetupMicroBagVisibilityHooks()
-    UpdateMicroAndBagVisibility()
     SetupAddonButtonHiding()
     RefreshButtonDrawer()
     UpdateDungeonEyePosition()
     UpdateMiddleClickMenuOverlayState()
 
     -- Restore saved position from profile — skip if the frame anchoring system owns this frame
-    if not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(Minimap)) then
+    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("minimap")) then
         if settings.position and settings.position[1] and settings.position[2] then
             Minimap:ClearAllPoints()
             Minimap:SetPoint(settings.position[1], UIParent, settings.position[2], settings.position[3] or 0, settings.position[4] or 0)
@@ -3372,10 +3332,6 @@ function Minimap_Module:Refresh()
     end
 end
 
--- Expose datatext refresh for config panel
-function Minimap_Module:RefreshDatatext()
-    UpdateDatatextPanel()
-end
 
 local function RefreshMinimapButtonsAfterTransition()
     local settings = GetSettings()
@@ -3491,5 +3447,76 @@ _G.QUI_GetDrawerButtonNames = function()
     end
     table.sort(names)
     return names
+end
+
+if ns.Registry then
+    ns.Registry:Register("minimap", {
+        refresh = _G.QUI_RefreshMinimap,
+        priority = 55,
+        group = "ui",
+        importCategories = { "minimapDatatexts" },
+    })
+end
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE ELEMENT REGISTRATION
+---------------------------------------------------------------------------
+do
+    local function RegisterLayoutModeElements()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+
+        um:RegisterElement({
+            key = "minimap",
+            label = "Minimap",
+            group = "Display",
+            order = 1,
+            getFrame = function()
+                return Minimap
+            end,
+        })
+        -- Minimap is a Blizzard frame — uses proxy mover (isOwned defaults to false)
+
+        um:RegisterElement({
+            key = "datatextPanel",
+            label = "Datatext Panel",
+            group = "Display",
+            order = 2,
+            isOwned = false,  -- proxy mover (frame strata too low for child overlay)
+            getFrame = function()
+                -- Ensure the frame exists (it's lazily created)
+                if not datatextFrame then
+                    CreateDatatextPanel()
+                    UpdateDatatextPanel()
+                end
+                return datatextFrame
+            end,
+            isEnabled = function()
+                local dt = GetDatatextSettings()
+                return dt and dt.enabled
+            end,
+            setEnabled = function(val)
+                local dt = GetDatatextSettings()
+                if dt then
+                    dt.enabled = val
+                    UpdateDatatextPanel()
+                end
+            end,
+        })
+    end
+
+    C_Timer.After(2, function()
+        RegisterLayoutModeElements()
+
+        -- After layout mode reparents Minimap to a handle and back,
+        -- the drawer toggle can lose its anchor / strata.  Run a full
+        -- minimap refresh on exit to restore everything.
+        local um = ns.QUI_LayoutMode
+        if um and um.RegisterExitCallback then
+            um:RegisterExitCallback(function()
+                Minimap_Module:Refresh()
+            end)
+        end
+    end)
 end
 

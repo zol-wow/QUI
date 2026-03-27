@@ -24,4 +24,4 @@ This section walks you through everything you need to get QUI up and running, fr
 - **GitHub:** [github.com/zol-wow/QUI](https://github.com/zol-wow/QUI)
 - **CurseForge:** [QUI Community Edition](https://www.curseforge.com/wow/addons/qui-community-edition)
 - **Discord:** [discord.gg/FFUjA4JXnH](https://discord.gg/FFUjA4JXnH)
-- **Current Version:** 2.44.3
+- **Current Version:** 2.51.1

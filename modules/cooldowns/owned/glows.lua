@@ -9,6 +9,10 @@ local Helpers = ns.Helpers
 -- Get LibCustomGlow for custom glow styles
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
+-- Texture assets for overlay glow types
+local FLASH_TEXTURE = [[Interface\AddOns\QUI\assets\iconskin\Flash]]
+local HAMMER_TEXTURE = [[Interface\AddOns\QUI\assets\quazii_hammer]]
+
 -- Get IsSpellOverlayed API: try C_ namespace (12.0+), fall back to deprecated global
 local IsSpellOverlayed = (C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed)
     or _G.IsSpellOverlayed
@@ -23,9 +27,7 @@ local activeGlowIcons = {}  -- [icon] = true
 ---------------------------------------------------------------------------
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
-local function GetSettings()
-    return Helpers.GetModuleDB("customGlow")
-end
+local GetSettings = Helpers.CreateDBGetter("customGlow")
 
 local function IsOwnedEngineSelected()
     if ns.CDMProvider and ns.CDMProvider.GetActiveEngineName then
@@ -67,11 +69,9 @@ local function GetViewerSettings(viewerType)
 
     if viewerType == "Essential" then
         if not settings.essentialEnabled then return nil end
-        local glowType = settings.essentialGlowType or "Pixel Glow"
-        if glowType == "Proc Glow" then glowType = "Pixel Glow" end
         return {
             enabled = true,
-            glowType = glowType,
+            glowType = settings.essentialGlowType or "Pixel Glow",
             color = settings.essentialColor or {0.95, 0.95, 0.32, 1},
             lines = settings.essentialLines or 14,
             frequency = settings.essentialFrequency or 0.25,
@@ -82,11 +82,9 @@ local function GetViewerSettings(viewerType)
         }
     elseif viewerType == "Utility" then
         if not settings.utilityEnabled then return nil end
-        local glowType = settings.utilityGlowType or "Pixel Glow"
-        if glowType == "Proc Glow" then glowType = "Pixel Glow" end
         return {
             enabled = true,
-            glowType = glowType,
+            glowType = settings.utilityGlowType or "Pixel Glow",
             color = settings.utilityColor or {0.95, 0.95, 0.32, 1},
             lines = settings.utilityLines or 14,
             frequency = settings.utilityFrequency or 0.25,
@@ -109,12 +107,72 @@ end
 -- LibCustomGlow sets glow at icon:GetFrameLevel() + 8, but HUD layering
 -- can push CooldownFrameTemplate above that. Reference the Cooldown frame
 -- directly (same pattern as TextOverlay in cdm_icons.lua:659).
--- Layer order: Cooldown swipe (cdLevel) → Glow (+1) → Text (+2)
+-- Layer order: Cooldown swipe (cdLevel) → Glow (+1) → Text (+1) → ClickButton (+2)
 local function EnsureGlowAboveCooldown(icon, glowFrame)
     if not glowFrame or not icon or not icon.Cooldown then return end
+
     local cdLevel = icon.Cooldown:GetFrameLevel()
-    if glowFrame:GetFrameLevel() <= cdLevel then
-        glowFrame:SetFrameLevel(cdLevel + 1)
+    local glowLevel = glowFrame:GetFrameLevel()
+    if glowLevel <= cdLevel then
+        glowLevel = cdLevel + 1
+        glowFrame:SetFrameLevel(glowLevel)
+    end
+
+    -- Keep stack/proc text above glow and click button above text.
+    local CDMIcons = ns.CDMIcons
+    if CDMIcons and CDMIcons.EnsureTextOverlayLevel then
+        CDMIcons:EnsureTextOverlayLevel(icon, glowLevel + 1)
+    end
+end
+
+-- Shared helper: create or reuse a pulsing texture overlay on an icon.
+-- key: unique frame key on icon (e.g. "_QUIFlashGlow")
+-- texturePath: texture file path
+local function StartTextureGlow(icon, key, texturePath, color)
+    local frame = icon[key]
+    if not frame then
+        frame = CreateFrame("Frame", nil, icon)
+        frame:SetAllPoints(icon)
+        icon[key] = frame
+
+        local tex = frame:CreateTexture(nil, "OVERLAY")
+        tex:SetTexture(texturePath)
+        tex:SetTexCoord(0, 1, 0, 1)
+        tex:SetBlendMode("ADD")
+        tex:SetAllPoints(frame)
+        frame.texture = tex
+
+        local ag = frame:CreateAnimationGroup()
+        ag:SetLooping("REPEAT")
+
+        local fadeIn = ag:CreateAnimation("Alpha")
+        fadeIn:SetFromAlpha(0.3)
+        fadeIn:SetToAlpha(1)
+        fadeIn:SetDuration(0.4)
+        fadeIn:SetOrder(1)
+
+        local fadeOut = ag:CreateAnimation("Alpha")
+        fadeOut:SetFromAlpha(1)
+        fadeOut:SetToAlpha(0.3)
+        fadeOut:SetDuration(0.4)
+        fadeOut:SetOrder(2)
+
+        frame.animGroup = ag
+    end
+
+    local r, g, b, a = 1, 1, 1, 1
+    if color then r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 end
+    frame.texture:SetVertexColor(r, g, b, a)
+    frame:Show()
+    frame.animGroup:Play()
+    return frame
+end
+
+local function StopTextureGlow(icon, key)
+    local frame = icon[key]
+    if frame then
+        frame.animGroup:Stop()
+        frame:Hide()
     end
 end
 
@@ -157,6 +215,27 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
     elseif glowType == "Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
         EnsureGlowAboveCooldown(icon, icon["_ButtonGlow"])
+
+    elseif glowType == "Flash" then
+        local frame = StartTextureGlow(icon, "_QUIFlashGlow", FLASH_TEXTURE, color)
+        EnsureGlowAboveCooldown(icon, frame)
+
+    elseif glowType == "Hammer" then
+        local frame = StartTextureGlow(icon, "_QUIHammerGlow", HAMMER_TEXTURE, color)
+        EnsureGlowAboveCooldown(icon, frame)
+
+    elseif glowType == "Proc Glow" then
+        LCG.ProcGlow_Start(icon, {
+            key = "_QUICustomGlow",
+            color = color,
+            startAnim = true,
+            xOffset = xOffset,
+            yOffset = viewerSettings.yOffset or 0,
+        })
+        local glowFrame = icon["_ProcGlow_QUICustomGlow"]
+        if glowFrame then
+            EnsureGlowAboveCooldown(icon, glowFrame)
+        end
     end
 
     activeGlowIcons[icon] = true
@@ -166,7 +245,18 @@ end
 ---------------------------------------------------------------------------
 -- START / STOP GLOW
 ---------------------------------------------------------------------------
-local function StartGlow(icon)
+-- Per-spell glow color override helper: returns a copy of viewerSettings
+-- with the color replaced if a per-spell glowColor override exists.
+local function ApplyGlowColorOverride(viewerSettings, spellOvr)
+    if not spellOvr or not spellOvr.glowColor then return viewerSettings end
+    -- Shallow copy so we don't mutate the cached settings table
+    local copy = {}
+    for k, v in pairs(viewerSettings) do copy[k] = v end
+    copy.color = spellOvr.glowColor
+    return copy
+end
+
+local function StartGlow(icon, spellOvr)
     if not icon then return end
     if activeGlowIcons[icon] then return end
 
@@ -175,6 +265,9 @@ local function StartGlow(icon)
 
     local viewerSettings = GetViewerSettings(viewerType)
     if not viewerSettings then return end
+
+    -- Apply per-spell glow color override
+    viewerSettings = ApplyGlowColorOverride(viewerSettings, spellOvr)
 
     ApplyLibCustomGlow(icon, viewerSettings)
 end
@@ -185,7 +278,10 @@ StopGlow = function(icon)
         pcall(LCG.PixelGlow_Stop, icon, "_QUICustomGlow")
         pcall(LCG.AutoCastGlow_Stop, icon, "_QUICustomGlow")
         pcall(LCG.ButtonGlow_Stop, icon)
+        pcall(LCG.ProcGlow_Stop, icon, "_QUICustomGlow")
     end
+    StopTextureGlow(icon, "_QUIFlashGlow")
+    StopTextureGlow(icon, "_QUIHammerGlow")
     activeGlowIcons[icon] = nil
 end
 
@@ -210,29 +306,50 @@ local function ScanAllGlows()
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
 
+    local CDMSpellData = ns.CDMSpellData
+
     for _, viewerType in ipairs({"essential", "utility"}) do
         local pool = CDMIcons:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
             if icon._spellEntry then
                 local baseID = icon._spellEntry.spellID
                 local overrideID = icon._spellEntry.overrideSpellID
-                local shouldGlow = IsOverlayed(baseID)
-                    or (overrideID and overrideID ~= baseID and IsOverlayed(overrideID))
 
-                -- Check current runtime override: the spell may be temporarily
-                -- replaced (e.g., Judgment → Hammer of Wrath via Wake of Ashes).
-                -- The glow event fires for the override's spell ID, which differs
-                -- from both baseID and the static scan-time overrideSpellID.
-                if not shouldGlow and C_Spell and C_Spell.GetOverrideSpell then
-                    local currentOverride = C_Spell.GetOverrideSpell(baseID)
-                    if currentOverride and currentOverride ~= baseID
-                        and currentOverride ~= overrideID then
-                        shouldGlow = IsOverlayed(currentOverride)
+                -- Per-spell glow override lookup
+                local spellOvr = nil
+                if CDMSpellData then
+                    local lookupID = icon._spellEntry.spellID or icon._spellEntry.id
+                    if lookupID then
+                        spellOvr = CDMSpellData:GetSpellOverride(viewerType, lookupID)
+                    end
+                end
+
+                -- Per-spell glowEnabled override: false suppresses, true forces
+                local shouldGlow
+                if spellOvr and spellOvr.glowEnabled == false then
+                    shouldGlow = false
+                elseif spellOvr and spellOvr.glowEnabled == true then
+                    shouldGlow = true
+                else
+                    -- Default: check proc overlay state
+                    shouldGlow = IsOverlayed(baseID)
+                        or (overrideID and overrideID ~= baseID and IsOverlayed(overrideID))
+
+                    -- Check current runtime override: the spell may be temporarily
+                    -- replaced (e.g., Judgment → Hammer of Wrath via Wake of Ashes).
+                    -- The glow event fires for the override's spell ID, which differs
+                    -- from both baseID and the static scan-time overrideSpellID.
+                    if not shouldGlow and C_Spell and C_Spell.GetOverrideSpell then
+                        local currentOverride = C_Spell.GetOverrideSpell(baseID)
+                        if currentOverride and currentOverride ~= baseID
+                            and currentOverride ~= overrideID then
+                            shouldGlow = IsOverlayed(currentOverride)
+                        end
                     end
                 end
 
                 if shouldGlow and not activeGlowIcons[icon] then
-                    StartGlow(icon)
+                    StartGlow(icon, spellOvr)
                 elseif not shouldGlow and activeGlowIcons[icon] then
                     StopGlow(icon)
                 end

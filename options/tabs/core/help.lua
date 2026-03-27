@@ -27,7 +27,7 @@ local function CreateHelpPage(parent)
     local contentWidth = 700
 
     -- Set search context so Help tab content is searchable
-    GUI:SetSearchContext({tabIndex = 15, tabName = "Help"})
+    GUI:SetSearchContext({tabIndex = 13, tabName = "Help"})
 
     -- =====================================================
     -- HEADER
@@ -52,7 +52,7 @@ local function CreateHelpPage(parent)
     if HelpContent.GettingStarted then
         for _, step in ipairs(HelpContent.GettingStarted) do
             local stepLabel = CreateWrappedLabel(content,
-                "|cff34D399" .. step.num .. "|r  " .. step.text,
+                "|cff60A5FA" .. step.num .. "|r  " .. step.text,
                 12, C.text, contentWidth - PADDING * 2 - 10)
             stepLabel:SetPoint("TOPLEFT", PADDING + 10, y)
             y = y - (stepLabel:GetStringHeight() or 14) - 8
@@ -107,7 +107,7 @@ local function CreateHelpPage(parent)
 
                 for _, tip in ipairs(guide.tips) do
                     local tipLabel = CreateWrappedLabel(sectionContent,
-                        "|cff34D399\226\128\162|r  " .. tip,
+                        "|cff60A5FA\226\128\162|r  " .. tip,
                         11, C.text, contentWidth - PADDING * 2 - 40)
                     tipLabel:SetPoint("TOPLEFT", 20, sy)
                     sy = sy - (tipLabel:GetStringHeight() or 14) - 4
@@ -148,7 +148,7 @@ local function CreateHelpPage(parent)
     if HelpContent.SlashCommands then
         for _, cmd in ipairs(HelpContent.SlashCommands) do
             local cmdLabel = CreateWrappedLabel(afterGuidesContainer,
-                "|cff34D399" .. cmd.command .. "|r  \226\128\148  " .. cmd.description,
+                "|cff60A5FA" .. cmd.command .. "|r  \226\128\148  " .. cmd.description,
                 12, C.text, contentWidth - PADDING * 2)
             cmdLabel:SetPoint("TOPLEFT", PADDING + 10, ay)
             ay = ay - (cmdLabel:GetStringHeight() or 14) - 6

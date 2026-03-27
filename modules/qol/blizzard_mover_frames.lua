@@ -338,6 +338,7 @@ M._FrameRegistryData = {
 			group = "world",
 			names = { "WorldMapFrame" },
 			defaultEnabled = true,
+			secureFrame = true,
 		},
 		{
 			id = "BattlefieldMapFrame",

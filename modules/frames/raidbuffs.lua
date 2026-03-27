@@ -1,9 +1,25 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
+
+-- Performance: cache frequently-called globals as locals
+local CreateFrame = CreateFrame
+local UIParent = UIParent
+local pairs = pairs
+local ipairs = ipairs
+local type = type
+local pcall = pcall
+local wipe = wipe
+local tostring = tostring
+local GetTime = GetTime
+local UnitExists = UnitExists
+local C_Timer = C_Timer
+local InCombatLockdown = InCombatLockdown
+local table_insert = table.insert
+local string_format = string.format
 
 ---------------------------------------------------------------------------
 -- QUI Missing Raid Buffs Display
@@ -254,19 +270,35 @@ local function ScanGroupClasses()
     end
 end
 
--- Check if a unit has a buff by spell ID, with name-based fallback
--- Uses 3-method approach for maximum compatibility across WoW versions
+-- Check if a unit has a buff by spell ID, with name-based fallback.
+-- Uses point queries first (O(1)), falls back to iteration only as last resort.
 local function UnitHasBuff(unit, spellId, spellName)
     if not unit then return false end
     local exists = SafeBooleanCheck(UnitExists(unit))
     if not exists then return false end
 
-    -- Method 1: AuraUtil.ForEachAura (most reliable)
+    -- Method 1: Point query by spell ID (O(1) engine lookup)
+    if spellId and C_UnitAuras then
+        if unit == "player" and C_UnitAuras.GetPlayerAuraBySpellID then
+            local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellId)
+            if ok and auraData then return true end
+        elseif C_UnitAuras.GetAuraDataBySpellName and spellName then
+            local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
+            if ok and auraData then return true end
+        end
+    end
+
+    -- Method 2: Name-based point query (for non-player units when Method 1 didn't try it)
+    if spellName and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName and unit == "player" then
+        local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
+        if ok and auraData then return true end
+    end
+
+    -- Method 3: ForEachAura iteration (last resort — handles talent variants, spell ID mismatches)
     if AuraUtil and AuraUtil.ForEachAura then
         local found = false
         AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(auraData)
             if auraData then
-                -- Use safe field access for Midnight Beta (12.x) secret values
                 local auraSpellId = SafeGetAuraField(auraData, "spellId")
                 local auraName = SafeGetAuraField(auraData, "name")
                 if auraSpellId and auraSpellId == spellId then
@@ -278,28 +310,6 @@ local function UnitHasBuff(unit, spellId, spellName)
             if found then return true end
         end, true)
         if found then return true end
-    end
-
-    -- Method 2: GetAuraDataBySpellName
-    if spellName and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
-        local success, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
-        if success and auraData then return true end
-    end
-
-    -- Method 3: GetAuraDataByIndex iteration
-    if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        for i = 1, MAX_AURA_INDEX do
-            local success, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
-            if not success or not auraData then break end
-            -- Use safe field access for Midnight Beta (12.x) secret values
-            local auraSpellId = SafeGetAuraField(auraData, "spellId")
-            local auraName = SafeGetAuraField(auraData, "name")
-            if auraSpellId and auraSpellId == spellId then
-                return true
-            elseif spellName and auraName and auraName == spellName then
-                return true
-            end
-        end
     end
 
     return false
@@ -460,14 +470,14 @@ local function GetMissingBuffs()
             -- Provider mode: ONLY show buffs YOU can provide that anyone (including yourself) is missing
             if buff.providerClass == playerClass then
                 if not PlayerHasBuff(buff.spellId, buff.name) or AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange) then
-                    table.insert(missing, buff)
+                    table_insert(missing, buff)
                 end
             end
         else
             -- Normal mode: show buffs YOU are missing when provider is in group AND in range
             if groupClasses[buff.providerClass] and not PlayerHasBuff(buff.spellId, buff.name) then
                 if IsProviderClassInRange(buff.providerClass, buffRange) then
-                    table.insert(missing, buff)
+                    table_insert(missing, buff)
                 end
             end
         end
@@ -517,7 +527,7 @@ local function CreateBuffIcon(parent, index)
             local className = LOCALIZED_CLASS_NAMES_MALE[self.buffData.providerClass] or self.buffData.providerClass
             GameTooltip:AddLine("Provided by: " .. className, 0.5, 0.8, 1)
             if self.buffCount and self.buffTotal then
-                GameTooltip:AddLine(string.format("Buffed: %d/%d", self.buffCount, self.buffTotal), 0.7, 1, 0.7)
+                GameTooltip:AddLine(string_format("Buffed: %d/%d", self.buffCount, self.buffTotal), 0.7, 1, 0.7)
             end
             GameTooltip:Show()
         end
@@ -532,11 +542,11 @@ end
 -- Apply border settings to icons
 local function ApplyIconBorderSettings()
     local settings = GetSettings()
-    local borderSettings = settings.iconBorder or { show = true, width = 1, useClassColor = false, color = { 0.2, 1.0, 0.6, 1 } }
+    local borderSettings = settings.iconBorder or { show = true, width = 1, useClassColor = false, color = { 0.376, 0.647, 0.980, 1 } }
     local borderWidth = borderSettings.show and (borderSettings.width or 1) or 0
 
     -- Determine border color
-    local br, bg, bb, ba = 0.2, 1.0, 0.6, 1
+    local br, bg, bb, ba = 0.376, 0.647, 0.980, 1
     if borderSettings.useClassColor then
         local _, class = UnitClass("player")
         if class and RAID_CLASS_COLORS[class] then
@@ -596,7 +606,7 @@ local function CreateMainFrame()
     mainFrame:SetMovable(true)
     mainFrame:RegisterForDrag("LeftButton")
     mainFrame:SetScript("OnDragStart", function(self)
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
+        if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs") then return end
         if not InCombatLockdown() then
             self:StartMoving()
         end
@@ -719,7 +729,7 @@ local function ApplySkin()
     if not mainFrame then return end
 
     local QUI = _G.QUI
-    local sr, sg, sb, sa = 0.2, 1.0, 0.6, 1
+    local sr, sg, sb, sa = 0.376, 0.647, 0.980, 1
     local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.95
 
     if QUI and QUI.GetSkinColor then
@@ -766,9 +776,6 @@ function QUI_RaidBuffs:Refresh()
     UpdateDisplay()
 end
 
-_G.QUI_RefreshRaidBuffColors = function()
-    QUI_RaidBuffs:RefreshColors()
-end
 
 _G.QUI_RefreshRaidBuffs = function()
     QUI_RaidBuffs:Refresh()
@@ -837,7 +844,7 @@ UpdateDisplay = function()
                 local buffed, total = CountBuffedMembers(buff.spellId, buff.name)
                 icon.buffCount = buffed
                 icon.buffTotal = total
-                icon.countText:SetText(string.format("%d/%d", buffed, total))
+                icon.countText:SetText(string_format("%d/%d", buffed, total))
 
                 -- Apply font settings
                 local countFontSize = countSettings.fontSize or 10
@@ -952,7 +959,7 @@ UpdateDisplay = function()
 
     -- Restore saved position (skip if anchoring system has overridden this frame)
     -- Position is saved using grow-direction-appropriate anchor, so icons stay in place
-    if settings.position and not (_G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(mainFrame)) then
+    if settings.position and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs")) then
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint(settings.position.point, UIParent, settings.position.relPoint, settings.position.x, settings.position.y)
     end
@@ -1002,15 +1009,7 @@ local function OnEvent(self, event, ...)
         C_Timer.After(2, UpdateDisplay)
     elseif event == "GROUP_ROSTER_UPDATE" then
         ThrottledUpdate()
-    elseif event == "UNIT_AURA" then
-        local unit = ...
-        if unit == "player" then
-            -- Player aura changes use short throttle to prevent spam during buff/debuff application
-            ThrottledUpdate()
-        elseif unit and settings.providerMode and (unit:match("^party") or unit:match("^raid")) then
-            -- In provider mode, also update when party/raid members' auras change
-            ThrottledUpdate()
-        end
+    -- UNIT_AURA handled by centralized dispatcher subscription (above)
     elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then
         ThrottledUpdate()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
@@ -1029,7 +1028,7 @@ end
 
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-eventFrame:RegisterEvent("UNIT_AURA")
+-- UNIT_AURA handled by centralized dispatcher (below)
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -1037,6 +1036,19 @@ eventFrame:RegisterEvent("UNIT_FLAGS")
 eventFrame:RegisterEvent("PLAYER_DEAD")
 eventFrame:RegisterEvent("PLAYER_UNGHOST")
 eventFrame:SetScript("OnEvent", OnEvent)
+
+-- Subscribe to centralized aura dispatcher
+if ns.AuraEvents then
+    ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+        local settings = GetSettings()
+        if not settings or not settings.enabled then return end
+        if unit == "player" then
+            ThrottledUpdate()
+        elseif settings.providerMode and (unit:match("^party") or unit:match("^raid")) then
+            ThrottledUpdate()
+        end
+    end)
+end
 
 -- Periodic range check (every 5 seconds when out of combat and in group)
 local rangeCheckTicker
@@ -1075,35 +1087,31 @@ function QUI_RaidBuffs:Toggle()
     UpdateDisplay()
 end
 
-function QUI_RaidBuffs:ForceUpdate()
-    UpdateDisplay()
-    ApplySkin()
-end
 
 function QUI_RaidBuffs:Debug()
     local settings = GetSettings()
     local lines = {}
     local playerClass = SafeUnitClass("player")
-    table.insert(lines, "QUI RaidBuffs Debug")
-    table.insert(lines, "Provider Mode: " .. (settings.providerMode and "ON" or "OFF"))
-    table.insert(lines, "Player Class: " .. (playerClass or "UNKNOWN"))
-    table.insert(lines, "In Group: " .. (IsInGroup() and "YES" or "NO"))
-    table.insert(lines, "In Raid: " .. (IsInRaid() and "YES" or "NO"))
-    table.insert(lines, "In Combat: " .. (InCombatLockdown() and "YES" or "NO"))
+    table_insert(lines, "QUI RaidBuffs Debug")
+    table_insert(lines, "Provider Mode: " .. (settings.providerMode and "ON" or "OFF"))
+    table_insert(lines, "Player Class: " .. (playerClass or "UNKNOWN"))
+    table_insert(lines, "In Group: " .. (IsInGroup() and "YES" or "NO"))
+    table_insert(lines, "In Raid: " .. (IsInRaid() and "YES" or "NO"))
+    table_insert(lines, "In Combat: " .. (InCombatLockdown() and "YES" or "NO"))
 
     -- Scan and show group classes
     ScanGroupClasses()
     local classes = {}
     for class, _ in pairs(groupClasses) do
-        table.insert(classes, class)
+        table_insert(classes, class)
     end
-    table.insert(lines, "Group Classes: " .. (#classes > 0 and table.concat(classes, ", ") or "NONE"))
+    table_insert(lines, "Group Classes: " .. (#classes > 0 and table.concat(classes, ", ") or "NONE"))
 
     -- Show party members and their status
-    table.insert(lines, "")
-    table.insert(lines, "Party Members:")
+    table_insert(lines, "")
+    table_insert(lines, "Party Members:")
     local numMembers = GetNumGroupMembers()
-    table.insert(lines, "  GetNumGroupMembers: " .. numMembers)
+    table_insert(lines, "  GetNumGroupMembers: " .. numMembers)
     if IsInGroup() and not IsInRaid() then
         for i = 1, numMembers - 1 do
             local unit = "party" .. i
@@ -1135,14 +1143,14 @@ function QUI_RaidBuffs:Debug()
             end
             local rangeInfo = " UnitInRange:" .. uirRange .. "/" .. uirChecked .. " CheckInteract:" .. cidResult .. " DistSq:" .. udsResult
 
-            table.insert(lines, "  " .. unit .. ": " .. name .. " (" .. (uClass or "?") .. ") exists:" .. tostring(exists) .. " connected:" .. tostring(connected) .. " dead:" .. tostring(dead) .. " available:" .. tostring(available))
-            table.insert(lines, "    Range APIs:" .. rangeInfo)
+            table_insert(lines, "  " .. unit .. ": " .. name .. " (" .. (uClass or "?") .. ") exists:" .. tostring(exists) .. " connected:" .. tostring(connected) .. " dead:" .. tostring(dead) .. " available:" .. tostring(available))
+            table_insert(lines, "    Range APIs:" .. rangeInfo)
         end
     end
 
     -- Check each buff
-    table.insert(lines, "")
-    table.insert(lines, "Buff Status:")
+    table_insert(lines, "")
+    table_insert(lines, "Buff Status:")
     for _, buff in ipairs(RAID_BUFFS) do
         local buffRange = buff.range or 40
         local hasProvider = groupClasses[buff.providerClass] and true or false
@@ -1163,7 +1171,7 @@ function QUI_RaidBuffs:Debug()
             status = "No provider"
         end
         local providerInfo = " range:" .. buffRange .. "yd canProvide:" .. tostring(canProvide) .. " anyMissing:" .. tostring(anyMissing) .. " providerInRange:" .. tostring(providerInRange)
-        table.insert(lines, "  " .. buff.name .. ": " .. status .. " (provider:" .. buff.providerClass .. " inGroup:" .. tostring(hasProvider) .. " hasBuff:" .. tostring(playerHas) .. providerInfo .. ")")
+        table_insert(lines, "  " .. buff.name .. ": " .. status .. " (provider:" .. buff.providerClass .. " inGroup:" .. tostring(hasProvider) .. " hasBuff:" .. tostring(playerHas) .. providerInfo .. ")")
 
         -- If player can provide this buff and provider mode is on, show who's missing it
         if canProvide and settings.providerMode and IsInGroup() and not IsInRaid() then
@@ -1172,7 +1180,7 @@ function QUI_RaidBuffs:Debug()
                 if IsUnitAvailable(unit, buffRange) then
                     local has = UnitHasBuff(unit, buff.spellId, buff.name)
                     local name = UnitName(unit) or "?"
-                    table.insert(lines, "    -> " .. unit .. " (" .. name .. "): " .. (has and "HAS" or "MISSING"))
+                    table_insert(lines, "    -> " .. unit .. " (" .. name .. "): " .. (has and "HAS" or "MISSING"))
                 end
             end
         end
@@ -1222,10 +1230,12 @@ function QUI_RaidBuffs:IsPreviewMode()
     return previewMode
 end
 
--- Global function for options panel
-_G.QUI_ToggleRaidBuffsPreview = function()
-    if ns.RaidBuffs then
-        return ns.RaidBuffs:TogglePreview()
-    end
-    return false
+
+if ns.Registry then
+    ns.Registry:Register("raidbuffs", {
+        refresh = _G.QUI_RefreshRaidBuffs,
+        priority = 20,
+        group = "frames",
+        importCategories = { "groupFrames" },
+    })
 end

@@ -1,17 +1,7 @@
 -- Keybinding display names (must be global before Bindings.xml loads)
 BINDING_NAME_QUI_TOGGLE_OPTIONS = "Open QUI Options"
-BINDING_HEADER_QUI_PING_HEADER  = "Ping"
-BINDING_NAME_QUI_PING           = "Ping (Contextual)"
-BINDING_NAME_QUI_PING_ASSIST    = "Ping: Assist"
-BINDING_NAME_QUI_PING_ATTACK    = "Ping: Attack"
-BINDING_NAME_QUI_PING_WARNING   = "Ping: Warning"
-BINDING_NAME_QUI_PING_ONMYWAY   = "Ping: On My Way"
-
 ---@type table|AceAddon
 QUI = LibStub("AceAddon-3.0"):NewAddon("QUI", "AceConsole-3.0", "AceEvent-3.0")
-
----@type table
-QUI.DF = _G["DetailsFramework"]
 QUI.DEBUG_MODE = false
 QUI.pullAliasOwned = false
 
@@ -24,6 +14,23 @@ local PULL_COMMAND_OWNERS = {
 
 -- Version info
 QUI.versionString = C_AddOns.GetAddOnMetadata("QUI", "Version") or "2.00"
+
+-- Deferred importstring loading: importstring files register loaders
+-- instead of eagerly constructing large tables at login. Data is built
+-- on first access (when the user opens the Import tab).
+QUI._importLoaders = {}
+QUI.imports = setmetatable({}, {
+    __index = function(self, key)
+        local loader = QUI._importLoaders[key]
+        if loader then
+            local data = loader()
+            rawset(self, key, data)
+            QUI._importLoaders[key] = nil -- free the loader closure
+            return data
+        end
+        return nil
+    end,
+})
 
 ---@type table
 QUI.defaults = {
@@ -75,7 +82,7 @@ SlashCmdList["QUIKB"] = function()
         -- Fallback to Blizzard's Quick Keybind Mode (no mousewheel support)
         ShowUIPanel(QuickKeybindFrame)
     else
-        print("|cff34D399QUI:|r Quick Keybind Mode not available.")
+        print("|cff60A5FAQUI:|r Quick Keybind Mode not available.")
     end
 end
 
@@ -85,7 +92,7 @@ SlashCmdList["QUI_CDM"] = function()
     if CooldownViewerSettings then
         CooldownViewerSettings:SetShown(not CooldownViewerSettings:IsShown())
     else
-        print("|cff34D399QUI:|r Cooldown Settings not available. Enable CDM first.")
+        print("|cff60A5FAQUI:|r Cooldown Settings not available. Enable CDM first.")
     end
 end
 
@@ -93,26 +100,84 @@ function QUI:SlashCommandOpen(input)
     if input and input == "debug" then
         self.db.char.debug.reload = true
         QUI:SafeReload()
-    elseif input and input == "editmode" then
-        -- Toggle Unit Frames Edit Mode
-        if _G.QUI_ToggleUnitFrameEditMode then
-            _G.QUI_ToggleUnitFrameEditMode()
+    elseif input and (input == "layout" or input == "unlock" or input == "editmode") then
+        -- Toggle Layout Mode (with backward compat aliases)
+        if _G.QUI_ToggleLayoutMode then
+            _G.QUI_ToggleLayoutMode()
         else
-            print("|cFF56D1FFQUI:|r Unit Frames module not loaded.")
+            print("|cff60A5FAQUI:|r Layout Mode not loaded yet.")
         end
         return
-    elseif input and input:find("^grouptest") then
-        -- Toggle Group Frames test/preview mode
-        local GFEditMode = ns.QUI_GroupFrameEditMode
-        if GFEditMode then
-            local args = input:match("^grouptest%s*(.*)$") or ""
-            GFEditMode:HandleSlashCommand(args)
+    elseif input and input == "tooltipdbg" then
+        local isS = issecretvalue
+        local count = 0
+        local f = EnumerateFrames()
+        while f do
+            local vis = f:IsVisible()
+            if not isS(vis) and vis then
+                -- Check for white backdrop color (explicit white via GetBackdropColor)
+                if f.GetBackdropColor then
+                    local r, g, b = f:GetBackdropColor()
+                    if not isS(r) and r and r > 0.9 and g > 0.9 and b > 0.9 then
+                        local h = f:GetHeight()
+                        if not isS(h) and h and h > 10 then
+                            count = count + 1
+                            print("|cffff0000WHITE BACKDROP:|r", f:GetName() or tostring(f), ("r=%.2f g=%.2f b=%.2f h=%.0f"):format(r, g, b, h))
+                            local p = f:GetParent()
+                            if p then
+                                print("  parent:", p:GetName() or tostring(p))
+                            end
+                        end
+                    end
+                end
+                -- Check for orphaned overlay: has BackdropTemplate + backdrop with bgFile,
+                -- but backdropColor is nil — CENTER piece renders as default white.
+                -- Border-only backdrops (no bgFile) are excluded — no background to be white.
+                if f.backdropInfo and f.backdropInfo.bgFile and not f.backdropColor and f.GetBackdropColor then
+                    local h = f:GetHeight()
+                    if not isS(h) and h and h > 10 then
+                        count = count + 1
+                        print("|cffff4400ORPHANED OVERLAY:|r", f:GetName() or tostring(f), ("h=%.0f backdropColor=nil"):format(h))
+                        local p = f:GetParent()
+                        if p then
+                            print("  parent:", p:GetName() or tostring(p))
+                        end
+                        -- If it has _qui color fields, recover automatically
+                        if f._quiBgR then
+                            print("  _qui colors present — recovering")
+                            pcall(f.SetBackdropColor, f, f._quiBgR, f._quiBgG, f._quiBgB, f._quiBgA or 1)
+                            if f._quiBorderR then
+                                pcall(f.SetBackdropBorderColor, f, f._quiBorderR, f._quiBorderG, f._quiBorderB, f._quiBorderA or 1)
+                            end
+                        end
+                    end
+                end
+                -- Check for NineSlice with alpha > 0
+                if f.NineSlice then
+                    local a = f.NineSlice:GetAlpha()
+                    if not isS(a) and a and a > 0 then
+                        count = count + 1
+                        print("|cffff8800NINESLICE VISIBLE:|r", f:GetName() or tostring(f), ("alpha=%.2f"):format(a))
+                    end
+                end
+            end
+            f = EnumerateFrames(f)
+        end
+        if count == 0 then
+            print("|cff60A5FAQUI:|r No white backdrops or visible NineSlices found.")
         else
-            print("|cFF56D1FFQUI:|r Group Frames module not loaded.")
+            print("|cff60A5FAQUI:|r Found", count, "issues above.")
+        end
+        return
+    elseif input and input == "perf" then
+        if _G.QUI_TogglePerfMonitor then
+            _G.QUI_TogglePerfMonitor()
+        else
+            print("|cff60A5FAQUI:|r Performance Monitor not loaded yet.")
         end
         return
     end
-    
+
     -- Default: Open custom GUI
     if self.GUI then
         self.GUI:Toggle()
@@ -155,6 +220,7 @@ function QUI:OnEnable()
     self:BackwardsCompat()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED")
     self:RegisterEvent("ADDON_LOADED")
     self:RegisterOptionalPullAlias()
     
@@ -164,10 +230,10 @@ function QUI:OnEnable()
         if self.db.profile.chat.showIntroMessage ~= false then
             print("|cFF30D1FFQUI|r loaded. |cFFFFFF00/qui|r to setup.")
             print("|cFF30D1FFQUI REMINDER:|r")
-            print("|cFF34D3991.|r ENABLE |cFFFFFF00Cooldown Manager|r in Options > Gameplay Enhancement")
-            print("|cFF34D3992.|r Action Bars & Menu Bar |cFFFFFF00HIDDEN|r on mouseover |cFFFFFF00by default|r. Go to |cFFFFFF00'Actionbars'|r tab in |cFFFFFF00/qui|r to unhide.")
-            print("|cFF34D3993.|r Use |cFFFFFF00100% Icon Size|r on CDM Essential & Utility bars via |cFFFFFF00Edit Mode|r for best results.")
-            print("|cFF34D3994.|r Position your |cFFFFFF00CDM bars|r in |cFFFFFF00Edit Mode|r and click |cFFFFFF00Save|r before exiting.")
+            print("|cff60A5FA1.|r ENABLE |cFFFFFF00Cooldown Manager|r in Options > Gameplay Enhancement")
+            print("|cff60A5FA2.|r Action Bars & Menu Bar |cFFFFFF00HIDDEN|r on mouseover |cFFFFFF00by default|r. Go to |cFFFFFF00'Actionbars'|r tab in |cFFFFFF00/qui|r to unhide.")
+            print("|cff60A5FA3.|r Use |cFFFFFF00100% Icon Size|r on CDM Essential & Utility bars for best results.")
+            print("|cff60A5FA4.|r Use |cFFFFFF00/qui layout|r to position frames, then click |cFFFFFF00Save|r.")
         end
     end
 end
@@ -208,6 +274,40 @@ function QUI:ADDON_LOADED(_, addonName)
     self:UnregisterOptionalPullAlias()
 end
 
+-- Recover QUI frames with orphaned overlays (backdropInfo set, backdropColor nil).
+-- Uses backup _quiBg* fields stored by Helpers.SetFrameBackdropColor.
+-- Falls back to default dark color for QUI-named frames without backup fields.
+local strsub = string.sub
+local function RecoverQUIBackdrops()
+    local f = EnumerateFrames()
+    while f do
+        if f.backdropInfo and f.backdropInfo.bgFile and not f.backdropColor then
+            if f._quiBgR then
+                pcall(f.SetBackdropColor, f, f._quiBgR, f._quiBgG, f._quiBgB, f._quiBgA or 1)
+                if f._quiBorderR then
+                    pcall(f.SetBackdropBorderColor, f, f._quiBorderR, f._quiBorderG, f._quiBorderB, f._quiBorderA or 1)
+                end
+            else
+                -- Fallback: QUI-named frames without backup colors get default dark.
+                -- No QUI frame intentionally has a white background; a nil backdropColor
+                -- means the initial SetBackdropColor was lost (taint, error, timing).
+                local name = f.GetName and f:GetName()
+                if name and type(name) == "string" and strsub(name, 1, 4) == "QUI_" then
+                    pcall(f.SetBackdropColor, f, 0.05, 0.05, 0.05, 0.95)
+                    pcall(f.SetBackdropBorderColor, f, 0, 0, 0, 1)
+                end
+            end
+        end
+        f = EnumerateFrames(f)
+    end
+end
+
+function QUI:PLAYER_REGEN_ENABLED()
+    -- Recover any QUI backdrops that got orphaned during combat
+    -- (SetBackdrop can error on secret values, preventing SetBackdropColor from running)
+    RecoverQUIBackdrops()
+end
+
 function QUI:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
     -- Ensure debug table exists
     if not self.db.char.debug then
@@ -223,6 +323,9 @@ function QUI:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
     else
         self:DebugPrint("Debug Mode Enabled")
     end
+
+    -- Auto-recover QUI frame backdrops after all modules have initialized
+    C_Timer.After(3, RecoverQUIBackdrops)
 end
 
 function QUI:DebugPrint(...)

@@ -7,7 +7,7 @@
 
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
@@ -16,13 +16,47 @@ local issecretvalue = _G.issecretvalue
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
 local GetCore = Helpers.GetCore
-local floor = math.floor
 
--- Pixel-snap with pre-computed pixel size (avoids per-call GetEffectiveScale in loops)
-local function snapPx(value, px)
-    if value == 0 then return 0 end
-    return floor(value / px + 0.5) * px
-end
+-- Upvalue caching for hot-path performance
+local type = type
+local pairs = pairs
+local ipairs = ipairs
+local pcall = pcall
+local wipe = wipe
+local tostring = tostring
+local select = select
+local format = format
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local GetTime = GetTime
+local hooksecurefunc = hooksecurefunc
+local string_format = string.format
+local math_floor = math.floor
+local math_min = math.min
+local math_max = math.max
+
+-- Upvalue hot-path WoW APIs
+local UnitExists = UnitExists
+local UnitHealth = UnitHealth
+local UnitHealthMax = UnitHealthMax
+local UnitPower = UnitPower
+local UnitPowerMax = UnitPowerMax
+local UnitClass = UnitClass
+local UnitName = UnitName
+local UnitIsDeadOrGhost = UnitIsDeadOrGhost
+local UnitIsConnected = UnitIsConnected
+local UnitGroupRolesAssigned = UnitGroupRolesAssigned
+local UnitThreatSituation = UnitThreatSituation
+local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
+local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
+local UnitIsUnit = UnitIsUnit
+local UnitGUID = UnitGUID
+local GetNumGroupMembers = GetNumGroupMembers
+local GetRaidRosterInfo = GetRaidRosterInfo
+local RAID_CLASS_COLORS = RAID_CLASS_COLORS
+
+-- ADDON_LOADED safe window flag for combat /reload support
+local inInitSafeWindow = false
 
 ---------------------------------------------------------------------------
 -- MODULE TABLE
@@ -32,6 +66,7 @@ ns.QUI_GroupFrames = QUI_GF
 
 -- Frame references
 QUI_GF.headers = {}          -- "party", "raid" header frames
+QUI_GF.raidGroupHeaders = {} -- per-group raid headers [1..8] (multi-header mode)
 QUI_GF.anchorFrames = {}     -- non-secure runtime roots for party/raid blocks
 QUI_GF.petHeader = nil       -- pet header
 QUI_GF.spotlightHeader = nil -- spotlight header
@@ -43,61 +78,71 @@ QUI_GF.editMode = false
 
 -- State tables for taint safety (weak-keyed)
 local frameState, GetFrameState = Helpers.CreateStateTable()
+local _unitGuidCache = {}  -- frame → last-known GUID (for OnAttributeChanged skip)
 
-local healthThrottle = {}     -- unitToken → last update time
 local powerThrottle = {}      -- unitToken → last update time
 local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
 
+---------------------------------------------------------------------------
+-- GROUP_ROSTER_UPDATE coalescing: GRU fires in bursts of 5-20 during roster
+-- changes. Showing an already-shown frame is a no-op (automatic dedup), so
+-- all GRU events in a single render frame collapse into one OnUpdate tick.
+---------------------------------------------------------------------------
+local gruCoalesceFrame = CreateFrame("Frame")
+gruCoalesceFrame:Hide()
+local _gruDeferredPending = false  -- true while the 0.2s deferred timer is active
+
 -- Font/texture caching
-local cachedFontPath = nil
-local cachedTexturePath = nil
-local cachedFontOutline = nil
+local _fontCache = {}
 
 -- Pre-allocated color tables for common colors
-local COLOR_BLACK = { 0, 0, 0, 1 }
-local COLOR_WHITE = { 1, 1, 1, 1 }
-local COLOR_DEAD = { 0.5, 0.5, 0.5, 1 }
-local COLOR_OFFLINE = { 0.4, 0.4, 0.4, 1 }
-local COLOR_GHOST = { 0.6, 0.6, 0.6, 1 }
-
--- Dispel type → color defaults (used when DB colors not set)
-local DEFAULT_DISPEL_COLORS = {
-    Magic   = { 0.2, 0.6, 1.0, 1 },  -- Blue
-    Curse   = { 0.6, 0.0, 1.0, 1 },  -- Purple
-    Disease = { 0.6, 0.4, 0.0, 1 },  -- Brown
-    Poison  = { 0.0, 0.6, 0.0, 1 },  -- Green
-    Bleed   = { 0.8, 0.0, 0.0, 1 },  -- Red
+local COLORS = {
+    BLACK   = { 0, 0, 0, 1 },
+    WHITE   = { 1, 1, 1, 1 },
+    DEAD    = { 0.5, 0.5, 0.5, 1 },
+    OFFLINE = { 0.4, 0.4, 0.4, 1 },
+    GHOST   = { 0.6, 0.6, 0.6, 1 },
 }
 
--- Forward declaration; body defined after GetHealerSettings
+-- Dispel constants and cached state
+local _dispel = {
+    defaultColors = {
+        Magic   = { 0.2, 0.6, 1.0, 1 },  -- Blue
+        Curse   = { 0.6, 0.0, 1.0, 1 },  -- Purple
+        Disease = { 0.6, 0.4, 0.0, 1 },  -- Brown
+        Poison  = { 0.0, 0.6, 0.0, 1 },  -- Green
+        Bleed   = { 0.8, 0.0, 0.0, 1 },  -- Red
+    },
+    allEnums = {1, 2, 3, 4, 9, 11},  -- WoW 12.0+, from SpellDispelType DB2
+    enumNames = {
+        [1] = "Magic", [2] = "Curse", [3] = "Disease", [4] = "Poison",
+        [9] = "Bleed", [11] = "Bleed",
+    },
+    colorCurve = nil,
+    cachedColors = nil,
+    borderKeys = {"borderTop", "borderBottom", "borderLeft", "borderRight"},
+}
+
+-- Forward declarations; bodies defined later in file
 local GetDispelColors
-
--- Dispel type enum values (WoW 12.0+, from SpellDispelType DB2)
-local ALL_DISPEL_ENUMS = {1, 2, 3, 4, 9, 11}
-
--- Enum → dispel type name mapping
-local DISPEL_ENUM_NAMES = {
-    [1] = "Magic", [2] = "Curse", [3] = "Disease", [4] = "Poison",
-    [9] = "Bleed", [11] = "Bleed",
-}
-
-local dispelColorCurve = nil
+local InvalidateDispelColors
+local UpdateSelectiveEvents
 
 local function GetDispelColorCurve(opacity)
-    if dispelColorCurve then return dispelColorCurve end
+    if _dispel.colorCurve then return _dispel.colorCurve end
     if not C_CurveUtil or not C_CurveUtil.CreateColorCurve then return nil end
     local colors = GetDispelColors()
     local curve = C_CurveUtil.CreateColorCurve()
     curve:SetType(Enum.LuaCurveType.Step)
     curve:AddPoint(0, CreateColor(0, 0, 0, 0))  -- None = invisible
-    for _, enumVal in ipairs(ALL_DISPEL_ENUMS) do
-        local typeName = DISPEL_ENUM_NAMES[enumVal]
+    for _, enumVal in ipairs(_dispel.allEnums) do
+        local typeName = _dispel.enumNames[enumVal]
         local c = typeName and colors[typeName]
         if c then
             curve:AddPoint(enumVal, CreateColor(c[1], c[2], c[3], opacity or 0.8))
         end
     end
-    dispelColorCurve = curve
+    _dispel.colorCurve = curve
     return curve
 end
 
@@ -155,13 +200,28 @@ local function IsNPCPartyMember(unit)
     return UnitExists(unit) and not UnitIsPlayer(unit)
 end
 
--- Pending combat-deferred operations
-local pendingResize = false
-local pendingResizeForce = false
-local pendingVisibilityUpdate = false
-local pendingRegisterClicks = false
-local pendingAnchorUpdate = false
-local initSafePeriod = true
+-- Pending combat-deferred operations (consolidated to stay under Lua's 200-local limit)
+local _pending = {
+    resize = false,
+    resizeForce = false,
+    refreshSettings = false,
+    visibilityUpdate = false,
+    registerClicks = false,
+    groupReflow = false,
+    anchorUpdate = false,
+    initSafe = true,
+}
+
+-- Multi-header mode: true when groupBy == "GROUP" (each raid group gets its own header).
+-- The default groupBy is "GROUP" so nil also means multi-header.
+local function IsMultiHeaderMode()
+    local db = GetDB()
+    if not db then return false end
+    local raidVdb = db.raid or db
+    local raidLayout = raidVdb and raidVdb.layout
+    local groupBy = raidLayout and raidLayout.groupBy or "GROUP"
+    return groupBy == "GROUP"
+end
 
 ---------------------------------------------------------------------------
 -- HELPERS: Settings access
@@ -170,14 +230,26 @@ local function GetSettings()
     return GetDB()
 end
 
--- Returns the party or raid visual settings sub-table
+-- Returns the party or raid visual settings sub-table.
+-- Cached per party/raid to avoid 5-6 table lookups per call in hot paths
+-- (UNIT_HEALTH fires for every damaged unit — 4 sub-functions each call this).
+local _cachedVDB_party = nil
+local _cachedVDB_raid = nil
+
 local function GetVisualDB(isRaid)
+    if isRaid then
+        if _cachedVDB_raid then return _cachedVDB_raid end
+    else
+        if _cachedVDB_party then return _cachedVDB_party end
+    end
     local db = GetDB()
     if not db then return nil end
     if isRaid then
-        return db.raid or db
+        _cachedVDB_raid = db.raid or db
+        return _cachedVDB_raid
     else
-        return db.party or db
+        _cachedVDB_party = db.party or db
+        return _cachedVDB_party
     end
 end
 
@@ -228,26 +300,30 @@ local function GetHealerSettings(isRaid)
 end
 
 GetDispelColors = function()
+    if _dispel.cachedColors then return _dispel.cachedColors end
     local hs = GetHealerSettings()
     local dbColors = hs and hs.dispelOverlay and hs.dispelOverlay.colors
-    if not dbColors then return DEFAULT_DISPEL_COLORS end
-    return {
-        Magic   = dbColors.Magic   or DEFAULT_DISPEL_COLORS.Magic,
-        Curse   = dbColors.Curse   or DEFAULT_DISPEL_COLORS.Curse,
-        Disease = dbColors.Disease or DEFAULT_DISPEL_COLORS.Disease,
-        Poison  = dbColors.Poison  or DEFAULT_DISPEL_COLORS.Poison,
-        Bleed   = dbColors.Bleed   or DEFAULT_DISPEL_COLORS.Bleed,
+    if not dbColors then
+        _dispel.cachedColors = _dispel.defaultColors
+        return _dispel.defaultColors
+    end
+    _dispel.cachedColors = {
+        Magic   = dbColors.Magic   or _dispel.defaultColors.Magic,
+        Curse   = dbColors.Curse   or _dispel.defaultColors.Curse,
+        Disease = dbColors.Disease or _dispel.defaultColors.Disease,
+        Poison  = dbColors.Poison  or _dispel.defaultColors.Poison,
+        Bleed   = dbColors.Bleed   or _dispel.defaultColors.Bleed,
     }
+    return _dispel.cachedColors
+end
+
+InvalidateDispelColors = function()
+    _dispel.cachedColors = nil
 end
 
 local function GetRangeSettings(isRaid)
     local vdb = GetVisualDB(isRaid)
     return vdb and vdb.range
-end
-
-local function GetAuraSettings(isRaid)
-    local vdb = GetVisualDB(isRaid)
-    return vdb and vdb.auras
 end
 
 local function GetPortraitSettings(isRaid)
@@ -259,23 +335,23 @@ end
 -- HELPERS: Font and texture
 ---------------------------------------------------------------------------
 local function GetFontPath(isRaid)
-    if cachedFontPath then return cachedFontPath end
+    if _fontCache.fontPath then return _fontCache.fontPath end
     local general = GetGeneralSettings(isRaid)
     local fontName = general and general.font or "Quazii"
-    cachedFontPath = LSM:Fetch("font", fontName) or "Fonts\\FRIZQT__.TTF"
-    return cachedFontPath
+    _fontCache.fontPath = LSM:Fetch("font", fontName) or "Fonts\\FRIZQT__.TTF"
+    return _fontCache.fontPath
 end
 
 local function GetFontOutline(isRaid)
-    if cachedFontOutline then return cachedFontOutline end
+    if _fontCache.fontOutline then return _fontCache.fontOutline end
     local general = GetGeneralSettings(isRaid)
-    cachedFontOutline = general and general.fontOutline or "OUTLINE"
-    return cachedFontOutline
+    _fontCache.fontOutline = general and general.fontOutline or "OUTLINE"
+    return _fontCache.fontOutline
 end
 
 local function GetTexturePath(textureName)
     if not textureName then
-        if cachedTexturePath then return cachedTexturePath end
+        if _fontCache.texturePath then return _fontCache.texturePath end
         local general = GetGeneralSettings()
         textureName = general and general.texture or "Quazii v5"
     end
@@ -283,8 +359,8 @@ local function GetTexturePath(textureName)
     if not path and textureName and textureName:find("[/\\]") then
         path = textureName
     end
-    if not cachedTexturePath then
-        cachedTexturePath = path
+    if not _fontCache.texturePath then
+        _fontCache.texturePath = path
     end
     return path or "Interface\\Buttons\\WHITE8X8"
 end
@@ -306,9 +382,10 @@ local function ApplyStatusBarTexture(statusBar, textureName)
 end
 
 local function InvalidateCache()
-    cachedFontPath = nil
-    cachedTexturePath = nil
-    cachedFontOutline = nil
+    wipe(_fontCache)
+    _cachedVDB_party = nil
+    _cachedVDB_raid = nil
+    InvalidateDispelColors()
 end
 
 ---------------------------------------------------------------------------
@@ -333,22 +410,6 @@ end
 ---------------------------------------------------------------------------
 -- HELPERS: Health formatting
 ---------------------------------------------------------------------------
-local function FormatNumber(num)
-    if not num or num == 0 then return "0" end
-    local ok, result = pcall(function()
-        if num >= 1000000000 then
-            return format("%.1fB", num / 1000000000)
-        elseif num >= 1000000 then
-            return format("%.1fM", num / 1000000)
-        elseif num >= 1000 then
-            return format("%.0fK", num / 1000)
-        end
-        return tostring(math.floor(num))
-    end)
-    if ok then return result end
-    return "?"
-end
-
 local function GetHealthPct(unit)
     -- C-side UnitHealthPercent handles secret values natively — no pcall needed
     -- Returns 0-100 via CurveConstants.ScaleTo100 (matches QUI pattern)
@@ -420,7 +481,7 @@ local function CalculateHeaderSize(db, memberCount)
     local isFlat = (groupBy == "NONE")
     local framesPerGroup = isFlat and (layout and layout.unitsPerFlat or 5) or 5
     local numGroups = math.ceil(memberCount / framesPerGroup)
-    local framesInTallestGroup = math.min(memberCount, framesPerGroup)
+    local framesInTallestGroup = math_min(memberCount, framesPerGroup)
     local colSpacing = isFlat and spacing or groupSpacing
 
     local horizontal = (grow == "LEFT" or grow == "RIGHT")
@@ -434,7 +495,7 @@ local function CalculateHeaderSize(db, memberCount)
         totalH = framesInTallestGroup * h + (framesInTallestGroup - 1) * spacing
     end
 
-    return math.max(totalW, 100), math.max(totalH, 40)
+    return math_max(totalW, 100), math_max(totalH, 40)
 end
 
 -- Expose for sub-modules
@@ -461,9 +522,8 @@ end
 ---------------------------------------------------------------------------
 -- HELPERS: Health bar color
 ---------------------------------------------------------------------------
-local function GetHealthBarColor(unit)
-    local unitFrame = QUI_GF.unitFrameMap[unit]
-    local general = GetGeneralSettings(unitFrame and unitFrame._isRaid)
+local function GetHealthBarColor(unit, isRaid)
+    local general = GetGeneralSettings(isRaid)
     if general and general.darkMode then
         local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
         return c[1], c[2], c[3], c[4] or 1
@@ -485,17 +545,15 @@ end
 ---------------------------------------------------------------------------
 -- HELPERS: Power bar color
 ---------------------------------------------------------------------------
-local function GetPowerBarColor(unit)
-    local unitFrame = QUI_GF.unitFrameMap[unit]
-    local isRaid = unitFrame and unitFrame._isRaid or false
+local function GetPowerBarColor(unit, isRaid)
     local db = GetPowerSettings(isRaid)
     if db and not db.powerBarUsePowerColor then
         local c = db.powerBarColor or { 0.2, 0.4, 0.8, 1 }
         return c[1], c[2], c[3], c[4] or 1
     end
 
-    local ok, powerType = pcall(UnitPowerType, unit)
-    if ok and powerType then
+    local powerType = UnitPowerType(unit)
+    if powerType then
         local c = POWER_COLORS[powerType]
         if c then return c[1], c[2], c[3], 1 end
     end
@@ -520,8 +578,8 @@ local function UpdateHealth(frame)
 
     -- Health bar value — use percentage-based approach
     -- UnitHealthPercent returns 0-100 via CurveConstants.ScaleTo100, C-side handles secrets
+    -- SetMinMaxValues(0, 100) is set once at frame creation (DecorateGroupFrame) — never changes.
     if frame.healthBar then
-        frame.healthBar:SetMinMaxValues(0, 100)
         if isDeadOrGhost then
             frame.healthBar:SetValue(0)
         else
@@ -529,13 +587,19 @@ local function UpdateHealth(frame)
             frame.healthBar:SetValue(pct)
         end
 
-        -- Color
+        -- Color (dirty-checked: skip SetStatusBarColor when unchanged)
+        local r, g, b, a
         if not isConnected then
-            frame.healthBar:SetStatusBarColor(COLOR_OFFLINE[1], COLOR_OFFLINE[2], COLOR_OFFLINE[3], COLOR_OFFLINE[4])
+            r, g, b, a = COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3], COLORS.OFFLINE[4]
         elseif isDeadOrGhost then
-            frame.healthBar:SetStatusBarColor(COLOR_DEAD[1], COLOR_DEAD[2], COLOR_DEAD[3], COLOR_DEAD[4])
+            r, g, b, a = COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3], COLORS.DEAD[4]
         else
-            local r, g, b, a = GetHealthBarColor(unit)
+            r, g, b, a = GetHealthBarColor(unit, frame._isRaid)
+        end
+        -- r is unique per state: class color r varies by class, offline/dead
+        -- colors are distinct fixed values, dark mode is a fixed value.
+        if r ~= frame._lastHealthColorR then
+            frame._lastHealthColorR = r
             frame.healthBar:SetStatusBarColor(r, g, b, a)
         end
     end
@@ -544,12 +608,12 @@ local function UpdateHealth(frame)
     if frame.statusText then
         if not isConnected then
             frame.statusText:SetText("OFFLINE")
-            frame.statusText:SetTextColor(COLOR_OFFLINE[1], COLOR_OFFLINE[2], COLOR_OFFLINE[3])
+            frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
             frame.statusText:Show()
         elseif isDeadOrGhost then
             local isGhost = UnitIsGhost(unit)
             frame.statusText:SetText(isGhost and "GHOST" or "DEAD")
-            frame.statusText:SetTextColor(COLOR_DEAD[1], COLOR_DEAD[2], COLOR_DEAD[3])
+            frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
             frame.statusText:Show()
             -- Dim the frame slightly for dead units (offline dimming handled in UpdateConnection)
             frame:SetAlpha(0.65)
@@ -569,9 +633,10 @@ local function UpdateHealth(frame)
         else
             local style = healthSettings.healthDisplayStyle or "percent"
             local abbr = AbbreviateNumbers or AbbreviateLargeNumbers
+            local pctFmt = healthSettings.hideHealthPercentSymbol and "%.0f" or "%.0f%%"
             if style == "percent" then
                 local pct = GetHealthPct(unit)
-                frame.healthText:SetFormattedText("%.0f%%", pct)
+                frame.healthText:SetFormattedText(pctFmt, pct)
             elseif style == "absolute" then
                 local hp = UnitHealth(unit, true)
                 if abbr then
@@ -582,10 +647,11 @@ local function UpdateHealth(frame)
             elseif style == "both" then
                 local hp = UnitHealth(unit, true)
                 local pct = GetHealthPct(unit)
+                local bothFmt = healthSettings.hideHealthPercentSymbol and "%s | %.0f" or "%s | %.0f%%"
                 if abbr then
-                    frame.healthText:SetFormattedText("%s | %.0f%%", abbr(hp), pct)
+                    frame.healthText:SetFormattedText(bothFmt, abbr(hp), pct)
                 else
-                    frame.healthText:SetFormattedText("%s | %.0f%%", hp, pct)
+                    frame.healthText:SetFormattedText(bothFmt, hp, pct)
                 end
             elseif style == "deficit" then
                 local miss = UnitHealthMissing(unit, true)
@@ -600,9 +666,9 @@ local function UpdateHealth(frame)
                 end
             else
                 local pct = GetHealthPct(unit)
-                frame.healthText:SetFormattedText("%.0f%%", pct)
+                frame.healthText:SetFormattedText(pctFmt, pct)
             end
-            local tc = healthSettings.healthTextColor or COLOR_WHITE
+            local tc = healthSettings.healthTextColor or COLORS.WHITE
             frame.healthText:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
         end
     elseif frame.healthText then
@@ -613,9 +679,7 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Power
 ---------------------------------------------------------------------------
-local function ShouldShowPowerForUnit(unit)
-    local unitFrame = QUI_GF.unitFrameMap[unit]
-    local isRaid = unitFrame and unitFrame._isRaid or false
+local function ShouldShowPowerForUnit(unit, isRaid)
     local ps = GetPowerSettings(isRaid)
     if not ps then return true end
     local onlyHealers = ps.powerBarOnlyHealers
@@ -657,7 +721,7 @@ local function UpdatePower(frame)
     end
 
     -- Role-based filtering
-    if not ShouldShowPowerForUnit(unit) then
+    if not ShouldShowPowerForUnit(unit, frame._isRaid) then
         frame.powerBar:Hide()
         if frame._powerSeparator then frame._powerSeparator:Hide() end
         if frame._powerBg then frame._powerBg:Hide() end
@@ -678,13 +742,20 @@ local function UpdatePower(frame)
         return
     end
 
-    -- C-side SetMinMaxValues/SetValue handle values natively — no pcall needed
-    frame.powerBar:SetMinMaxValues(0, maxPower)
+    -- C-side SetMinMaxValues/SetValue handle values natively — no pcall needed.
+    -- Only update SetMinMaxValues when maxPower actually changes (rare: buffs/talents).
+    if maxPower ~= frame._lastMaxPower then
+        frame._lastMaxPower = maxPower
+        frame.powerBar:SetMinMaxValues(0, maxPower)
+    end
     frame.powerBar:SetValue(power)
 
-    -- Update color
-    local r, g, b, a = GetPowerBarColor(unit)
-    frame.powerBar:SetStatusBarColor(r, g, b, a)
+    -- Color (dirty-checked: power color changes only on form/spec change, not every tick)
+    local r, g, b, a = GetPowerBarColor(unit, frame._isRaid)
+    if r ~= frame._lastPowerColorR then
+        frame._lastPowerColorR = r
+        frame.powerBar:SetStatusBarColor(r, g, b, a)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -725,7 +796,7 @@ local function UpdateName(frame)
                 end
             end
         end
-        local tc = nameSettings and nameSettings.nameTextColor or COLOR_WHITE
+        local tc = nameSettings and nameSettings.nameTextColor or COLORS.WHITE
         frame.nameText:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
     else
         frame.nameText:SetText("")
@@ -735,8 +806,9 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Absorbs
 ---------------------------------------------------------------------------
-local function UpdateAbsorbs(frame)
-    if not frame or not frame.unit or not frame.absorbBar then return end
+-- Absorbs: optional pre-computed args from fast health path avoid redundant API calls.
+local function UpdateAbsorbs(frame, _unit, _maxHP)
+    if not frame or not frame.absorbBar then return end
     local isRaid = frame._isRaid
     local vdb = GetVisualDB(isRaid)
     if not vdb or not vdb.absorbs or vdb.absorbs.enabled == false then
@@ -744,13 +816,18 @@ local function UpdateAbsorbs(frame)
         return
     end
 
-    local unit = frame.unit
-    if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
-        frame.absorbBar:Hide()
-        return
+    local unit = _unit or frame.unit
+    if not unit then return end
+
+    -- When called standalone (UNIT_ABSORB_AMOUNT_CHANGED), do our own guards.
+    if not _unit then
+        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+            frame.absorbBar:Hide()
+            return
+        end
     end
 
-    local maxHP = UnitHealthMax(unit)
+    local maxHP = _maxHP or UnitHealthMax(unit)
     local absorbAmount = UnitGetTotalAbsorbs(unit)
 
     -- Only hide on nil (API unavailable). Do NOT check for zero — StatusBar
@@ -761,34 +838,106 @@ local function UpdateAbsorbs(frame)
         return
     end
 
-    -- C-side SetMinMaxValues/SetValue handle secret values natively — no pcall needed
-    -- Reverse fill from right, clamped to maxHP by StatusBar
-    frame.absorbBar:SetFrameLevel(frame.healthBar:GetFrameLevel() + 2)
-    frame.absorbBar:ClearAllPoints()
-    frame.absorbBar:SetAllPoints(frame.healthBar)
-    frame.absorbBar:SetReverseFill(true)
-    frame.absorbBar:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
+    -- Geometry is set up at frame creation (SetFrameLevel, SetAllPoints,
+    -- SetReverseFill, SetOrientation).  Only redo when orientation changes.
+    if frame._absorbVertical ~= frame._isVerticalFill then
+        frame.absorbBar:SetFrameLevel(frame.healthBar:GetFrameLevel() + 2)
+        frame.absorbBar:ClearAllPoints()
+        frame.absorbBar:SetAllPoints(frame.healthBar)
+        frame.absorbBar:SetReverseFill(true)
+        frame.absorbBar:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
+        frame._absorbVertical = frame._isVerticalFill
+    end
+
+    -- C-side SetMinMaxValues/SetValue handle secret values natively.
+    -- Always call — maxHP may be a secret value (combat), so Lua-side ~= is forbidden.
     frame.absorbBar:SetMinMaxValues(0, maxHP)
     frame.absorbBar:SetValue(absorbAmount)
 
-    local ac
+    -- Color (dirty-checked: settings-driven or class-based, both stable per event)
+    local aa = vdb.absorbs.opacity or 0.3
+    local ar, ag, ab
     if vdb.absorbs.useClassColor then
         local _, class = UnitClass(unit)
         local cc = class and RAID_CLASS_COLORS[class]
-        ac = cc and { cc.r, cc.g, cc.b, 1 } or COLOR_WHITE
+        if cc then
+            ar, ag, ab = cc.r, cc.g, cc.b
+        else
+            ar, ag, ab = 1, 1, 1
+        end
     else
-        ac = vdb.absorbs.color or COLOR_WHITE
+        local ac = vdb.absorbs.color or COLORS.WHITE
+        ar, ag, ab = ac[1], ac[2], ac[3]
     end
-    local aa = vdb.absorbs.opacity or 0.3
-    frame.absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], aa)
+    if ar ~= frame._lastAbsorbColorR or aa ~= frame._lastAbsorbColorA then
+        frame._lastAbsorbColorR = ar
+        frame._lastAbsorbColorA = aa
+        frame.absorbBar:SetStatusBarColor(ar, ag, ab, aa)
+    end
     frame.absorbBar:Show()
+end
+
+---------------------------------------------------------------------------
+-- UPDATE: Heal Absorb (debuffs that absorb healing, e.g. Necrotic Wound)
+---------------------------------------------------------------------------
+local function UpdateHealAbsorb(frame, _unit, _maxHP)
+    if not frame or not frame.healAbsorbBar then return end
+    local isRaid = frame._isRaid
+    local vdb = GetVisualDB(isRaid)
+    if not vdb or not vdb.healAbsorbs or vdb.healAbsorbs.enabled == false then
+        frame.healAbsorbBar:Hide()
+        return
+    end
+
+    local unit = _unit or frame.unit
+    if not unit then return end
+
+    if not _unit then
+        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+            frame.healAbsorbBar:Hide()
+            return
+        end
+    end
+
+    local maxHP = _maxHP or UnitHealthMax(unit)
+    local healAbsorbAmount = UnitGetTotalHealAbsorbs(unit)
+
+    if not healAbsorbAmount then
+        frame.healAbsorbBar:Hide()
+        return
+    end
+
+    -- Redo geometry if orientation changed
+    if frame._healAbsorbVertical ~= frame._isVerticalFill then
+        frame.healAbsorbBar:SetFrameLevel(frame.healthBar:GetFrameLevel() + 3)
+        frame.healAbsorbBar:ClearAllPoints()
+        frame.healAbsorbBar:SetAllPoints(frame.healthBar)
+        frame.healAbsorbBar:SetReverseFill(true)
+        frame.healAbsorbBar:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
+        frame._healAbsorbVertical = frame._isVerticalFill
+    end
+
+    -- C-side SetMinMaxValues handles secret values natively — no Lua comparison.
+    frame.healAbsorbBar:SetMinMaxValues(0, maxHP)
+    frame.healAbsorbBar:SetValue(healAbsorbAmount)
+
+    -- Color (dirty-checked: settings-driven, never changes during combat)
+    local ha = vdb.healAbsorbs.opacity or 0.6
+    local hc = vdb.healAbsorbs.color or { 0.5, 0.1, 0.1 }
+    if hc[1] ~= frame._lastHealAbsorbColorR or ha ~= frame._lastHealAbsorbColorA then
+        frame._lastHealAbsorbColorR = hc[1]
+        frame._lastHealAbsorbColorA = ha
+        frame.healAbsorbBar:SetStatusBarColor(hc[1], hc[2], hc[3], ha)
+    end
+    frame.healAbsorbBar:Show()
 end
 
 ---------------------------------------------------------------------------
 -- UPDATE: Heal Prediction
 ---------------------------------------------------------------------------
-local function UpdateHealPrediction(frame)
-    if not frame or not frame.unit or not frame.healPredictionBar then return end
+-- HealPrediction: optional pre-computed args from fast health path avoid redundant API calls.
+local function UpdateHealPrediction(frame, _unit, _maxHP)
+    if not frame or not frame.healPredictionBar then return end
     local isRaid = frame._isRaid
     local vdb = GetVisualDB(isRaid)
     if not vdb or not vdb.healPrediction or vdb.healPrediction.enabled == false then
@@ -796,13 +945,18 @@ local function UpdateHealPrediction(frame)
         return
     end
 
-    local unit = frame.unit
-    if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
-        frame.healPredictionBar:Hide()
-        return
+    local unit = _unit or frame.unit
+    if not unit then return end
+
+    -- When called standalone (UNIT_HEAL_PREDICTION), do our own guards.
+    if not _unit then
+        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+            frame.healPredictionBar:Hide()
+            return
+        end
     end
 
-    local maxHP = UnitHealthMax(unit)
+    local maxHP = _maxHP or UnitHealthMax(unit)
     local incomingHeals
 
     -- Use CreateUnitHealPredictionCalculator (11.1+) if available (matches QUI pattern)
@@ -827,34 +981,50 @@ local function UpdateHealPrediction(frame)
         return
     end
 
-    -- Anchor from health fill edge — naturally constrains to remaining space.
-    local healthTexture = frame.healthBar:GetStatusBarTexture()
-
-    frame.healPredictionBar:ClearAllPoints()
-    if frame._isVerticalFill then
-        frame.healPredictionBar:SetPoint("BOTTOMLEFT", healthTexture, "TOPLEFT", 0, 0)
-        frame.healPredictionBar:SetPoint("TOPRIGHT", frame.healthBar, "TOPRIGHT", 0, 0)
-        frame.healPredictionBar:SetOrientation("VERTICAL")
-    else
-        frame.healPredictionBar:SetPoint("TOPLEFT", healthTexture, "TOPRIGHT", 0, 0)
-        frame.healPredictionBar:SetPoint("BOTTOMRIGHT", frame.healthBar, "BOTTOMRIGHT", 0, 0)
-        frame.healPredictionBar:SetOrientation("HORIZONTAL")
+    -- Anchor from health fill edge.  Only redo geometry when orientation changes.
+    if frame._healPredVertical ~= frame._isVerticalFill then
+        local healthTexture = frame.healthBar:GetStatusBarTexture()
+        frame.healPredictionBar:ClearAllPoints()
+        if frame._isVerticalFill then
+            frame.healPredictionBar:SetPoint("BOTTOMLEFT", healthTexture, "TOPLEFT", 0, 0)
+            frame.healPredictionBar:SetPoint("TOPRIGHT", frame.healthBar, "TOPRIGHT", 0, 0)
+            frame.healPredictionBar:SetOrientation("VERTICAL")
+        else
+            frame.healPredictionBar:SetPoint("TOPLEFT", healthTexture, "TOPRIGHT", 0, 0)
+            frame.healPredictionBar:SetPoint("BOTTOMRIGHT", frame.healthBar, "BOTTOMRIGHT", 0, 0)
+            frame.healPredictionBar:SetOrientation("HORIZONTAL")
+        end
+        frame._healPredVertical = frame._isVerticalFill
     end
 
-    -- C-side SetMinMaxValues/SetValue handle secret values natively — no pcall needed
+    -- C-side SetMinMaxValues handles secret values natively — no Lua comparison.
     frame.healPredictionBar:SetMinMaxValues(0, maxHP)
     frame.healPredictionBar:SetValue(incomingHeals)
 
-    local pc
+    -- Color (dirty-checked: settings-driven or class-based, both stable per event)
+    local pa = vdb.healPrediction.opacity or 0.5
+    local pr, pg, pb
     if vdb.healPrediction.useClassColor then
         local _, class = UnitClass(unit)
         local cc = class and RAID_CLASS_COLORS[class]
-        pc = cc and { cc.r, cc.g, cc.b, 1 } or { 0.2, 1, 0.2 }
+        if cc then
+            pr, pg, pb = cc.r, cc.g, cc.b
+        else
+            pr, pg, pb = 0.2, 1, 0.2
+        end
     else
-        pc = vdb.healPrediction.color or { 0.2, 1, 0.2 }
+        local pc = vdb.healPrediction.color
+        if pc then
+            pr, pg, pb = pc[1], pc[2], pc[3]
+        else
+            pr, pg, pb = 0.2, 1, 0.2
+        end
     end
-    local pa = vdb.healPrediction.opacity or 0.5
-    frame.healPredictionBar:SetStatusBarColor(pc[1], pc[2], pc[3], pa)
+    if pr ~= frame._lastHealPredColorR or pa ~= frame._lastHealPredColorA then
+        frame._lastHealPredColorR = pr
+        frame._lastHealPredColorA = pa
+        frame.healPredictionBar:SetStatusBarColor(pr, pg, pb, pa)
+    end
     frame.healPredictionBar:Show()
 end
 
@@ -921,9 +1091,8 @@ local function UpdateReadyCheck(frame)
     if status then
         -- QUI pattern: AFK players waiting on ready check show "not ready"
         if status == "waiting" then
-            local isAFK = nil
-            pcall(function() isAFK = UnitIsAFK(frame.unit) end)
-            if isAFK and not IsSecretValue(isAFK) and isAFK == true then
+            local isAFK = UnitIsAFK(frame.unit)
+            if not IsSecretValue(isAFK) and isAFK then
                 status = "notready"
             end
         end
@@ -987,8 +1156,8 @@ local function UpdateThreat(frame)
         return
     end
 
-    local ok, status = pcall(UnitThreatSituation, frame.unit)
-    if ok and status and status >= 2 then
+    local status = UnitThreatSituation(frame.unit)
+    if status and status >= 2 then
         local tc = indSettings.threatColor or { 1, 0, 0, 0.8 }
         frame.threatBorder:SetBackdropBorderColor(tc[1], tc[2], tc[3], tc[4] or 0.8)
         -- Keep threat border below icons/indicators — re-level in case frame
@@ -1115,6 +1284,8 @@ local function UpdateTargetHighlight(frame)
         local c = healerSettings.targetHighlight.color or { 1, 1, 1, 0.6 }
         frame.targetHighlight:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.6)
         frame.targetHighlight:Show()
+        -- Keep fast-path cache in sync (used by PLAYER_TARGET_CHANGED O(1) unhighlight)
+        QUI_GF._targetHighlightFrame = frame
     else
         frame.targetHighlight:Hide()
     end
@@ -1125,7 +1296,7 @@ end
 ---------------------------------------------------------------------------
 -- Helper: apply color to all 4 StatusBar borders + fill
 local function SetDispelBorderColor(overlay, r, g, b, a)
-    for _, key in ipairs({"borderTop", "borderBottom", "borderLeft", "borderRight"}) do
+    for _, key in ipairs(_dispel.borderKeys) do
         local border = overlay[key]
         if border then
             border:GetStatusBarTexture():SetVertexColor(r, g, b, a)
@@ -1139,7 +1310,7 @@ end
 
 -- Helper: apply a ColorMixin (secret-safe) to all 4 StatusBar borders + fill
 local function SetDispelBorderColorMixin(overlay, color)
-    for _, key in ipairs({"borderTop", "borderBottom", "borderLeft", "borderRight"}) do
+    for _, key in ipairs(_dispel.borderKeys) do
         local border = overlay[key]
         if border then
             local tex = border:GetStatusBarTexture()
@@ -1172,56 +1343,62 @@ local function UpdateDispelOverlay(frame)
     local unit = frame.unit
     local overlay = frame.dispelOverlay
 
-    -- WoW 12.0+ secret-safe path: C-side detection + color resolution
-    if C_UnitAuras.GetUnitAuras and C_UnitAuras.GetAuraDispelTypeColor then
-        local opacity = healerSettings.dispelOverlay.opacity or 0.8
-        local curve = GetDispelColorCurve(opacity)
-        if curve then
-            -- C-side filtering: no secret value reads in Lua
-            local ok, dispellables = pcall(C_UnitAuras.GetUnitAuras, unit, "HARMFUL|RAID_PLAYER_DISPELLABLE", 1)
-            if ok and dispellables and dispellables[1] then
-                local auraInstanceID = dispellables[1].auraInstanceID
-                if auraInstanceID then
-                    -- C-side dispel type → color resolution (returns ColorMixin)
-                    local cOk, color = pcall(C_UnitAuras.GetAuraDispelTypeColor, unit, auraInstanceID, curve)
-                    if cOk and color then
-                        SetDispelBorderColorMixin(overlay, color)
-                        overlay:Show()
-                        return
-                    end
-                end
-            end
-            -- No dispellable debuff found (or API returned nil)
-            overlay:Hide()
-            return
-        end
-    end
-
-    -- Fallback: check shared aura cache (avoids redundant slot-scanning)
-    local dispelType = nil
-    local colors = GetDispelColors()
+    -- Check shared aura cache first to avoid redundant C_UnitAuras.GetUnitAuras call.
+    -- The cache was just populated by the aura dispatcher before this function runs.
     local GFA = ns.QUI_GroupFrameAuras
     local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
+    local hasDispellable = false
+    local firstDispellableInstID = nil
+
     if cache and cache.harmful then
         for _, auraData in ipairs(cache.harmful) do
-            if auraData.isHarmful and auraData.dispelName then
+            if auraData.dispelName then
                 local dType = SafeValue(auraData.dispelName, nil)
-                if dType and colors[dType] then
-                    dispelType = dType
+                if dType then
+                    hasDispellable = true
+                    firstDispellableInstID = auraData.auraInstanceID
                     break
                 end
             end
         end
     end
 
-    if dispelType then
-        local c = colors[dispelType]
-        local fallbackOpacity = healerSettings.dispelOverlay.opacity or 0.8
-        SetDispelBorderColor(overlay, c[1], c[2], c[3], fallbackOpacity)
-        overlay:Show()
-    else
+    if not hasDispellable then
         overlay:Hide()
+        return
     end
+
+    -- WoW 12.0+ secret-safe path: C-side color resolution using cached auraInstanceID
+    if firstDispellableInstID and C_UnitAuras.GetAuraDispelTypeColor then
+        local opacity = healerSettings.dispelOverlay.opacity or 0.8
+        local curve = GetDispelColorCurve(opacity)
+        if curve then
+            local cOk, color = pcall(C_UnitAuras.GetAuraDispelTypeColor, unit, firstDispellableInstID, curve)
+            if cOk and color then
+                SetDispelBorderColorMixin(overlay, color)
+                overlay:Show()
+                return
+            end
+        end
+    end
+
+    -- Fallback: use dispel type from cache directly
+    local colors = GetDispelColors()
+    if cache and cache.harmful then
+        for _, auraData in ipairs(cache.harmful) do
+            if auraData.dispelName then
+                local dType = SafeValue(auraData.dispelName, nil)
+                if dType and colors[dType] then
+                    local c = colors[dType]
+                    local fallbackOpacity = healerSettings.dispelOverlay.opacity or 0.8
+                    SetDispelBorderColor(overlay, c[1], c[2], c[3], fallbackOpacity)
+                    overlay:Show()
+                    return
+                end
+            end
+        end
+    end
+    overlay:Hide()
 end
 
 ---------------------------------------------------------------------------
@@ -1236,6 +1413,15 @@ local DEFENSIVE_GROWTH_OFFSETS = {
     DOWN   = function(size, spacing) return 0, -(size + spacing) end,
 }
 
+-- Defensive indicator state (scratch tables, classification cache, filter strings)
+local _defensive = {
+    foundAuras = {},     -- pooled scratch (wipe and reuse)
+    seen = {},           -- pooled scratch (wipe and reuse)
+    cache = {},          -- auraInstanceID → true/false (immutable per ID)
+    filterBig = nil,     -- pre-cached filter string
+    filterExternal = nil,
+}
+
 local function AuraMatchesDefensiveClassification(unit, auraInstanceID, classification)
     if not unit or not classification or not auraInstanceID or IsSecretValue(auraInstanceID) then
         return false
@@ -1244,11 +1430,30 @@ local function AuraMatchesDefensiveClassification(unit, auraInstanceID, classifi
         return false
     end
 
+    -- Use cached filter strings to avoid per-call string concatenation
+    local filterStr
+    if AuraUtil and AuraUtil.AuraFilters then
+        if classification == AuraUtil.AuraFilters.BigDefensive then
+            if not _defensive.filterBig then
+                _defensive.filterBig = "HELPFUL|" .. classification
+            end
+            filterStr = _defensive.filterBig
+        elseif classification == AuraUtil.AuraFilters.ExternalDefensive then
+            if not _defensive.filterExternal then
+                _defensive.filterExternal = "HELPFUL|" .. classification
+            end
+            filterStr = _defensive.filterExternal
+        end
+    end
+    if not filterStr then
+        filterStr = "HELPFUL|" .. classification
+    end
+
     local ok, filteredOut = pcall(
         C_UnitAuras.IsAuraFilteredOutByInstanceID,
         unit,
         auraInstanceID,
-        "HELPFUL|" .. classification
+        filterStr
     )
     if not ok or IsSecretValue(filteredOut) then
         return false
@@ -1275,13 +1480,22 @@ local function IsVerifiedDefensiveAura(unit, auraData)
         return false
     end
 
+    -- Check cache first
+    local cached = _defensive.cache[auraInstanceID]
+    if cached ~= nil then
+        return cached
+    end
+
     if AuraMatchesDefensiveClassification(unit, auraInstanceID, filters.BigDefensive) then
+        _defensive.cache[auraInstanceID] = true
         return true
     end
     if AuraMatchesDefensiveClassification(unit, auraInstanceID, filters.ExternalDefensive) then
+        _defensive.cache[auraInstanceID] = true
         return true
     end
 
+    _defensive.cache[auraInstanceID] = false
     return false
 end
 
@@ -1305,57 +1519,24 @@ local function UpdateDefensiveIndicator(frame)
     local defSettings = healerSettings.defensiveIndicator
     local maxIcons = defSettings.maxIcons or 3
 
-    -- Collect defensive auras (deduplicated by auraInstanceID)
-    local foundAuras = {}
-    local seen = {}
+    -- Collect defensive auras from the shared cache first (just populated by
+    -- the aura dispatcher). This avoids 2-3 redundant C_UnitAuras.GetUnitAuras
+    -- calls per unit per aura event (~60-100 saved C API calls per raid batch).
+    local foundAuras = _defensive.foundAuras
+    local seen = _defensive.seen
+    wipe(foundAuras)
+    wipe(seen)
 
-    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
-        -- BIG_DEFENSIVE filter
-        if AuraUtil and AuraUtil.AuraFilters and AuraUtil.AuraFilters.BigDefensive then
-            local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit,
-                "HELPFUL|" .. AuraUtil.AuraFilters.BigDefensive, maxIcons)
-            if ok and auras then
-                for _, aura in ipairs(auras) do
-                    if IsVerifiedDefensiveAura(unit, aura)
-                       and aura.auraInstanceID
-                       and not seen[aura.auraInstanceID] then
-                        seen[aura.auraInstanceID] = true
-                        foundAuras[#foundAuras + 1] = aura
-                    end
-                end
-            end
-        end
-        -- EXTERNAL_DEFENSIVE filter
-        if #foundAuras < maxIcons and AuraUtil and AuraUtil.AuraFilters
-           and AuraUtil.AuraFilters.ExternalDefensive then
-            local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit,
-                "HELPFUL|" .. AuraUtil.AuraFilters.ExternalDefensive, maxIcons - #foundAuras)
-            if ok and auras then
-                for _, aura in ipairs(auras) do
-                    if IsVerifiedDefensiveAura(unit, aura)
-                       and aura.auraInstanceID
-                       and not seen[aura.auraInstanceID] then
-                        seen[aura.auraInstanceID] = true
-                        foundAuras[#foundAuras + 1] = aura
-                        if #foundAuras >= maxIcons then break end
-                    end
-                end
-            end
-        end
-        -- Fallback: check shared aura cache for known defensive spell IDs
-        if #foundAuras < maxIcons then
-            local GFA = ns.QUI_GroupFrameAuras
-            local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
-            if cache and cache.helpful then
-                for _, auraData in ipairs(cache.helpful) do
-                    if IsVerifiedDefensiveAura(unit, auraData) then
-                        local instID = auraData.auraInstanceID
-                        if not instID or not seen[instID] then
-                            if instID then seen[instID] = true end
-                            foundAuras[#foundAuras + 1] = auraData
-                            if #foundAuras >= maxIcons then break end
-                        end
-                    end
+    local GFA = ns.QUI_GroupFrameAuras
+    local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
+    if cache and cache.helpful then
+        for _, auraData in ipairs(cache.helpful) do
+            if IsVerifiedDefensiveAura(unit, auraData) then
+                local instID = auraData.auraInstanceID
+                if not instID or not seen[instID] then
+                    if instID then seen[instID] = true end
+                    foundAuras[#foundAuras + 1] = auraData
+                    if #foundAuras >= maxIcons then break end
                 end
             end
         end
@@ -1371,11 +1552,12 @@ local function UpdateDefensiveIndicator(frame)
     local growFn = DEFENSIVE_GROWTH_OFFSETS[growDir] or DEFENSIVE_GROWTH_OFFSETS.RIGHT
     local stepX, stepY = growFn(iconSize, spacing)
 
-    -- CENTER: center active icon centers around the anchor point
+    -- CENTER: calculate centering offset based on visible count
     local centerOffX = 0
     if growDir == "CENTER" then
-        local visibleCount = math.min(#foundAuras, maxIcons, #frame.defensiveIcons)
-        centerOffX = -(math.max(visibleCount - 1, 0) * (iconSize + spacing)) / 2
+        local visibleCount = math_min(#foundAuras, #frame.defensiveIcons)
+        local totalSpan = visibleCount * iconSize + math_max(visibleCount - 1, 0) * spacing
+        centerOffX = -totalSpan / 2
     end
 
     -- Expose active defensive auraInstanceIDs for buff deduplication
@@ -1501,6 +1683,7 @@ local function UpdateFrame(frame)
     UpdatePower(frame)
     UpdateName(frame)
     UpdateAbsorbs(frame)
+    UpdateHealAbsorb(frame)
     UpdateHealPrediction(frame)
     UpdateRoleIcon(frame)
     UpdateReadyCheck(frame)
@@ -1526,13 +1709,20 @@ local function DecorateGroupFrame(frame)
 
     -- Tag frame with party/raid context for settings resolution
     local parent = frame:GetParent()
-    frame._isRaid = (parent == QUI_GF.headers.raid)
+    local isRaidParent = (parent == QUI_GF.headers.raid)
+    if not isRaidParent then
+        for g = 1, 8 do
+            if parent == QUI_GF.raidGroupHeaders[g] then
+                isRaidParent = true
+                break
+            end
+        end
+    end
+    frame._isRaid = isRaidParent
     local isRaid = frame._isRaid
 
     local db = GetSettings()
     local general = GetGeneralSettings(isRaid)
-    local mode = GetGroupMode()
-    local frameWidth, frameHeight = GetFrameDimensions(mode)
 
     -- Backdrop
     local borderPx = general and general.borderSize or 1
@@ -1612,7 +1802,7 @@ local function DecorateGroupFrame(frame)
         absorbBar = CreateFrame("StatusBar", nil, healthBar)
     end
     absorbBar:SetStatusBarTexture("Interface\\RaidFrame\\Shield-Fill")
-    local ac = absorbSettings and absorbSettings.color or COLOR_WHITE
+    local ac = absorbSettings and absorbSettings.color or COLORS.WHITE
     local aa = absorbSettings and absorbSettings.opacity or 0.3
     absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], aa)
     absorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 2)
@@ -1625,6 +1815,27 @@ local function DecorateGroupFrame(frame)
     absorbBar:SetValue(0)
     absorbBar:Hide()
     frame.absorbBar = absorbBar
+
+    -- Heal absorb bar (overlays health bar — shows heal absorb debuffs like Necrotic Wound)
+    local healAbsorbSettings = vdb and vdb.healAbsorbs
+    local healAbsorbBar = frame.healAbsorbBar
+    if not healAbsorbBar then
+        healAbsorbBar = CreateFrame("StatusBar", nil, healthBar)
+    end
+    healAbsorbBar:SetStatusBarTexture("Interface\\RaidFrame\\Shield-Fill")
+    local hac = healAbsorbSettings and healAbsorbSettings.color or { 0.5, 0.1, 0.1 }
+    local haa = healAbsorbSettings and healAbsorbSettings.opacity or 0.6
+    healAbsorbBar:SetStatusBarColor(hac[1], hac[2], hac[3], haa)
+    healAbsorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 3)
+    healAbsorbBar:SetFrameStrata(healthBar:GetFrameStrata())
+    healAbsorbBar:ClearAllPoints()
+    healAbsorbBar:SetAllPoints(healthBar)
+    healAbsorbBar:SetReverseFill(true)
+    healAbsorbBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    healAbsorbBar:SetMinMaxValues(0, 1)
+    healAbsorbBar:SetValue(0)
+    healAbsorbBar:Hide()
+    frame.healAbsorbBar = healAbsorbBar
 
     -- Power bar
     if showPower then
@@ -1982,18 +2193,52 @@ local function DecorateGroupFrame(frame)
         end)
         frame:HookScript("OnLeave", HideUnitTooltip)
 
-        -- Sync unit attribute → frame.unit whenever the secure header changes it
+        -- Sync unit attribute → frame.unit whenever the secure header changes it.
+        -- GUID-based skip: avoids expensive UpdateFrame when the same player is
+        -- reassigned to a different slot (common during roster shuffles).
+        --   Level 0: Both old and new nil → skip (empty slot noise)
+        --   Level 1: Same unit + same GUID → skip (no real change)
+        --   Level 2: Different unit, same GUID → light update (remap only)
+        --   Level 3: Genuinely different player → full UpdateFrame
         frame:HookScript("OnAttributeChanged", function(self, key, value)
             if key ~= "unit" then return end
             local oldUnit = self.unit
+            -- Level 0: both nil — nothing to do
+            if not oldUnit and not value then return end
+
             self.unit = value
+
+            -- Clean up old mapping
             if oldUnit and QUI_GF.unitFrameMap[oldUnit] == self then
                 QUI_GF.unitFrameMap[oldUnit] = nil
             end
-            if value then
-                QUI_GF.unitFrameMap[value] = self
-                UpdateFrame(self)
+
+            if not value then
+                -- Unit cleared (frame hidden by header)
+                _unitGuidCache[self] = nil
+                return
             end
+
+            -- Register new mapping immediately (so events dispatch correctly)
+            QUI_GF.unitFrameMap[value] = self
+
+            -- GUID comparison: detect whether the actual player changed
+            local newGuid = UnitGUID(value)
+            local oldGuid = _unitGuidCache[self]
+            _unitGuidCache[self] = newGuid
+
+            if oldGuid and newGuid and oldGuid == newGuid then
+                if oldUnit == value then
+                    -- Level 1: same unit, same player — nothing changed
+                    return
+                end
+                -- Level 2: slot moved (e.g., raid3 → raid5), same player.
+                -- Map is already updated; skip full refresh.
+                return
+            end
+
+            -- Level 3: genuinely different player (or first assignment)
+            UpdateFrame(self)
         end)
     end
 
@@ -2022,24 +2267,33 @@ end
 ---------------------------------------------------------------------------
 -- UNIT FRAME MAP: Rebuild unit → frame lookup
 ---------------------------------------------------------------------------
+local function CollectHeaderUnits(header)
+    if not header or not header:IsShown() then return end
+    local i = 1
+    while true do
+        local child = header:GetAttribute("child" .. i)
+        if not child then break end
+        local unit = child:GetAttribute("unit")
+        child.unit = unit  -- sync Lua property (nil clears stale)
+        if unit then
+            QUI_GF.unitFrameMap[unit] = child
+        end
+        i = i + 1
+    end
+end
+
 local function RebuildUnitFrameMap()
     wipe(QUI_GF.unitFrameMap)
 
-    for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = QUI_GF.headers[headerKey]
-        if header and header:IsShown() then
-            local i = 1
-            while true do
-                local child = header:GetAttribute("child" .. i)
-                if not child then break end
-                local unit = child:GetAttribute("unit")
-                child.unit = unit  -- sync Lua property (nil clears stale)
-                if unit then
-                    QUI_GF.unitFrameMap[unit] = child
-                end
-                i = i + 1
-            end
+    CollectHeaderUnits(QUI_GF.headers.party)
+    CollectHeaderUnits(QUI_GF.headers.self)
+
+    if IsMultiHeaderMode() and IsInRaid() then
+        for g = 1, 8 do
+            CollectHeaderUnits(QUI_GF.raidGroupHeaders[g])
         end
+    else
+        CollectHeaderUnits(QUI_GF.headers.raid)
     end
 end
 
@@ -2123,19 +2377,13 @@ end
 local function UpdateAnchorRoot(key, mainHeader, selfHeader, isRaid)
     local root = EnsureAnchorFrame(key)
     local grow, leadEdge = GetHeaderLeadEdge(isRaid)
-    local rootGrow = grow
+    local gap = 4
 
     local mainVisible = mainHeader and mainHeader:IsShown()
     local selfVisible = selfHeader and selfHeader:IsShown()
-    local gap = (isRaid and selfVisible) and 0 or 4
-
-    -- Horizontal raid growth plus a dedicated self header can look like an
-    -- extra detached column. Stack self above main in this case.
-    if isRaid and selfVisible and (grow == "LEFT" or grow == "RIGHT") then
-        rootGrow = "DOWN"
-    end
 
     if not mainVisible and not selfVisible then
+        root:ClearAllPoints()
         root:Hide()
         return
     end
@@ -2146,33 +2394,77 @@ local function UpdateAnchorRoot(key, mainHeader, selfHeader, isRaid)
     local selfH = selfVisible and Helpers.SafeValue(selfHeader:GetHeight(), 1) or 0
 
     local totalW, totalH
-    if rootGrow == "LEFT" or rootGrow == "RIGHT" then
-        totalW = math.max(1, mainW + (mainVisible and selfVisible and gap or 0) + selfW)
-        totalH = math.max(1, math.max(mainH, selfH))
+    if grow == "LEFT" or grow == "RIGHT" then
+        totalW = math_max(1, mainW + (mainVisible and selfVisible and gap or 0) + selfW)
+        totalH = math_max(1, math_max(mainH, selfH))
     else
-        totalW = math.max(1, math.max(mainW, selfW))
-        totalH = math.max(1, mainH + (mainVisible and selfVisible and gap or 0) + selfH)
+        totalW = math_max(1, math_max(mainW, selfW))
+        totalH = math_max(1, mainH + (mainVisible and selfVisible and gap or 0) + selfH)
     end
 
     root:SetSize(totalW, totalH)
 
     if selfVisible then
-        AnchorHeaderToRoot(root, selfHeader, rootGrow, leadEdge, nil, 0, true)
+        AnchorHeaderToRoot(root, selfHeader, grow, leadEdge, nil, 0, true)
     end
 
     if mainVisible then
-        AnchorHeaderToRoot(root, mainHeader, rootGrow, leadEdge, selfVisible and selfHeader or nil, selfVisible and gap or 0, false)
+        AnchorHeaderToRoot(root, mainHeader, grow, leadEdge, selfVisible and selfHeader or nil, selfVisible and gap or 0, false)
     end
 
     root:Show()
 end
 
-local function UpdateAnchorFrames()
-    if not initSafePeriod and InCombatLockdown() then
-        pendingAnchorUpdate = true
-        return
+-- Compute total dimensions of all visible group headers for the anchor root
+local function GetMultiHeaderTotalSize()
+    local layout = GetLayoutSettings(true)
+    local grow = layout and layout.growDirection or "DOWN"
+    local groupGrow = layout and layout.groupGrowDirection
+    local groupSpacing = layout and layout.groupSpacing or 10
+    local horizontal = (grow == "LEFT" or grow == "RIGHT")
+    if not groupGrow then
+        groupGrow = horizontal and "DOWN" or "RIGHT"
     end
 
+    local totalW, totalH = 0, 0
+    local visibleCount = 0
+
+    for g = 1, 8 do
+        local header = QUI_GF.raidGroupHeaders[g]
+        if header and header:IsShown() then
+            local hW = Helpers.SafeValue(header:GetWidth(), 1)
+            local hH = Helpers.SafeValue(header:GetHeight(), 1)
+            visibleCount = visibleCount + 1
+
+            if horizontal then
+                -- Groups stack vertically; width = max, height = sum
+                totalW = math_max(totalW, hW)
+                totalH = totalH + hH
+            else
+                -- Groups stack horizontally; width = sum, height = max
+                totalW = totalW + hW
+                totalH = math_max(totalH, hH)
+            end
+        end
+    end
+
+    -- Add group spacing between visible groups
+    if visibleCount > 1 then
+        if horizontal then
+            totalH = totalH + (visibleCount - 1) * groupSpacing
+        else
+            totalW = totalW + (visibleCount - 1) * groupSpacing
+        end
+    end
+
+    return math_max(totalW, 1), math_max(totalH, 1)
+end
+
+local function UpdateAnchorFrames()
+    if not _pending.initSafe and InCombatLockdown() then
+        _pending.anchorUpdate = true
+        return
+    end
     local db = GetSettings()
     if not db then return end
 
@@ -2181,10 +2473,18 @@ local function UpdateAnchorFrames()
     local partyX, partyY = GetAnchorPosition("party", db)
     local raidX, raidY = GetAnchorPosition("raid", db)
 
-    if partyRoot:GetNumPoints() == 0 then
+    -- Position roots: delegate to the anchoring system when it owns the frame
+    -- (preserves size-stable CENTER anchoring), otherwise fall back to legacy.
+    local applyAnchor = _G.QUI_ApplyFrameAnchor
+    local hasAnchor = _G.QUI_HasFrameAnchor
+    if hasAnchor and hasAnchor("partyFrames") and applyAnchor then
+        applyAnchor("partyFrames")
+    elseif partyRoot:GetNumPoints() == 0 then
         partyRoot:SetPoint("CENTER", UIParent, "CENTER", partyX, partyY)
     end
-    if raidRoot:GetNumPoints() == 0 then
+    if hasAnchor and hasAnchor("raidFrames") and applyAnchor then
+        applyAnchor("raidFrames")
+    elseif raidRoot:GetNumPoints() == 0 then
         raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidX, raidY)
     end
 
@@ -2192,7 +2492,61 @@ local function UpdateAnchorFrames()
     local selfOnRaid = selfHdr and selfHdr:IsShown() and IsInRaid()
 
     UpdateAnchorRoot("party", QUI_GF.headers.party, selfOnRaid and nil or selfHdr, false)
-    UpdateAnchorRoot("raid", QUI_GF.headers.raid, selfOnRaid and selfHdr or nil, true)
+
+    if IsMultiHeaderMode() and IsInRaid() then
+        -- In multi-header mode, compute root size from all group headers
+        local root = raidRoot
+        local grow, leadEdge = GetHeaderLeadEdge(true)
+        local gap = 4
+        local selfVisible = selfOnRaid and selfHdr and selfHdr:IsShown()
+
+        local mW, mH = GetMultiHeaderTotalSize()
+        local anyVisible = mW > 1 or mH > 1
+
+        if not anyVisible and not selfVisible then
+            root:ClearAllPoints()
+            root:Hide()
+            return
+        end
+
+        local selfW = selfVisible and Helpers.SafeValue(selfHdr:GetWidth(), 1) or 0
+        local selfH = selfVisible and Helpers.SafeValue(selfHdr:GetHeight(), 1) or 0
+
+        local totalW, totalH
+        if grow == "LEFT" or grow == "RIGHT" then
+            totalW = math_max(1, mW + (anyVisible and selfVisible and gap or 0) + selfW)
+            totalH = math_max(1, math_max(mH, selfH))
+        else
+            totalW = math_max(1, math_max(mW, selfW))
+            totalH = math_max(1, mH + (anyVisible and selfVisible and gap or 0) + selfH)
+        end
+
+        root:SetSize(totalW, totalH)
+
+        -- Anchor self header relative to root
+        if selfVisible then
+            AnchorHeaderToRoot(root, selfHdr, grow, leadEdge, nil, 0, true)
+        end
+
+        -- First visible group header anchors to root (or self if present)
+        -- Subsequent group headers are chained by PositionRaidGroupHeaders()
+        local firstVisible = nil
+        for g = 1, 8 do
+            local header = QUI_GF.raidGroupHeaders[g]
+            if header and header:IsShown() then
+                firstVisible = header
+                break
+            end
+        end
+        if firstVisible and not InCombatLockdown() then
+            -- PositionRaidGroupHeaders handles all positioning relative to raidRoot
+            -- Just ensure the root is shown
+        end
+
+        root:Show()
+    else
+        UpdateAnchorRoot("raid", QUI_GF.headers.raid, selfOnRaid and selfHdr or nil, true)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -2214,7 +2568,7 @@ local function GetVisiblePartyUnitCount()
         if type(GetNumSubgroupMembers) == "function" then
             subgroupCount = GetNumSubgroupMembers() or 0
         else
-            subgroupCount = math.max((GetNumGroupMembers() or 0) - 1, 0)
+            subgroupCount = math_max((GetNumGroupMembers() or 0) - 1, 0)
         end
 
         if selfFirst or layout.showPlayer == false then
@@ -2286,90 +2640,14 @@ local function ConfigurePartyHeader(header)
     header:SetAttribute("_initialAttribute-unit-height", h)
 end
 
-local function BuildRaidNameListForSelfFirst(layout)
-    if not IsInRaid() then return nil end
-    local sortMethod = layout and layout.sortMethod or "INDEX"
-    local useRolePriority = layout and (layout.groupBy == "ROLE" or layout.sortByRole)
-    local entries = {}
-    local playerEntry = nil
-    local count = GetNumGroupMembers() or 0
-    for i = 1, count do
-        local unit = "raid" .. i
-        if UnitExists(unit) then
-            local fullName = GetUnitName(unit, true)
-            if fullName and fullName ~= "" then
-                local shortName = GetUnitName(unit, false) or fullName
-                local role = UnitGroupRolesAssigned(unit) or "NONE"
-                local entry = {
-                    name = fullName,
-                    sortName = string.lower(shortName),
-                    sortNameFull = string.lower(fullName),
-                    roleOrder = ROLE_SORT_ORDER[role] or ROLE_SORT_ORDER.NONE,
-                    index = i,
-                }
-                if UnitIsUnit(unit, "player") then
-                    playerEntry = entry
-                else
-                    entries[#entries + 1] = entry
-                end
-            end
-        end
-    end
-
-    table.sort(entries, function(a, b)
-        if useRolePriority and a.roleOrder ~= b.roleOrder then
-            return a.roleOrder < b.roleOrder
-        end
-        if sortMethod == "NAME" then
-            if a.sortName ~= b.sortName then
-                return a.sortName < b.sortName
-            end
-            if a.sortNameFull ~= b.sortNameFull then
-                return a.sortNameFull < b.sortNameFull
-            end
-        end
-        return a.index < b.index
-    end)
-
-    local names = {}
-    if playerEntry then
-        names[#names + 1] = playerEntry.name
-    end
-    for i = 1, #entries do
-        names[#names + 1] = entries[i].name
-    end
-    if #names == 0 then return nil end
-    return table.concat(names, ",")
-end
-
 local function ConfigureRaidHeader(header)
     local layout = GetLayoutSettings(true)
     if not layout then return end
-    local db = GetSettings()
-    local selfFirst = db and db.selfFirst
-    local raidSelfFirst = selfFirst and IsInRaid()
 
     header:SetAttribute("showRaid", true)
     header:SetAttribute("showParty", false)
-    header:SetAttribute("showPlayer", raidSelfFirst and true or false)
+    header:SetAttribute("showPlayer", false)
     header:SetAttribute("showSolo", false)
-
-    -- Keep self-first inside a single raid grid by switching to NAMELIST mode.
-    -- ASSIGNEDROLE/NAME sorting can reorder units away from an explicit
-    -- "player first" intent, while NAMELIST preserves the order we generate.
-    local activeNameList = nil
-    if raidSelfFirst then
-        activeNameList = BuildRaidNameListForSelfFirst(layout)
-        header:SetAttribute("groupBy", nil)
-        header:SetAttribute("groupingOrder", nil)
-        header:SetAttribute("groupFilter", nil)
-        header:SetAttribute("nameList", activeNameList or "")
-        header:SetAttribute("strictFiltering", activeNameList and true or false)
-        header:SetAttribute("sortMethod", "NAMELIST")
-    else
-        header:SetAttribute("nameList", nil)
-        header:SetAttribute("strictFiltering", false)
-    end
 
     local mode = GetGroupMode()
     local w, h = GetFrameDimensions(mode)
@@ -2426,38 +2704,184 @@ local function ConfigureRaidHeader(header)
     end
 
     -- Group filtering
-    if not raidSelfFirst then
-        if groupBy == "NONE" then
-            header:SetAttribute("groupFilter", nil)
-            header:SetAttribute("groupingOrder", nil)
-            header:SetAttribute("groupBy", nil)
-        elseif groupBy == "GROUP" then
-            header:SetAttribute("groupingOrder", "1,2,3,4,5,6,7,8")
-            header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
-            header:SetAttribute("groupBy", "GROUP")
-        elseif groupBy == "ROLE" then
-            header:SetAttribute("groupFilter", nil)
-            header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
-            header:SetAttribute("groupBy", "ASSIGNEDROLE")
-        elseif groupBy == "CLASS" then
-            header:SetAttribute("groupFilter", nil)
-            header:SetAttribute("groupingOrder", "WARRIOR,DEATHKNIGHT,PALADIN,MONK,PRIEST,SHAMAN,DRUID,ROGUE,MAGE,WARLOCK,HUNTER,DEMONHUNTER,EVOKER")
-            header:SetAttribute("groupBy", "CLASS")
-        end
+    if groupBy == "NONE" then
+        header:SetAttribute("groupBy", nil)
+        header:SetAttribute("groupFilter", nil)
+        header:SetAttribute("groupingOrder", nil)
+    elseif groupBy == "GROUP" then
+        header:SetAttribute("groupBy", "GROUP")
+        header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
+        header:SetAttribute("groupingOrder", "1,2,3,4,5,6,7,8")
+    elseif groupBy == "ROLE" then
+        header:SetAttribute("groupBy", "ASSIGNEDROLE")
+        header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
+    elseif groupBy == "CLASS" then
+        header:SetAttribute("groupBy", "CLASS")
+        header:SetAttribute("groupingOrder", "WARRIOR,DEATHKNIGHT,PALADIN,MONK,PRIEST,SHAMAN,DRUID,ROGUE,MAGE,WARLOCK,HUNTER,DEMONHUNTER,EVOKER")
+    end
 
-        -- Sorting
-        if layout.sortByRole and groupBy ~= "ROLE" then
-            -- Role sort within groups
-            header:SetAttribute("sortMethod", "NAME")
-        else
-            header:SetAttribute("sortMethod", layout.sortMethod or "INDEX")
-        end
+    -- Sorting
+    if layout.sortByRole and groupBy ~= "ROLE" then
+        -- Role sort within groups
+        header:SetAttribute("sortMethod", "NAME")
+    else
+        header:SetAttribute("sortMethod", layout.sortMethod or "INDEX")
     end
 
     -- Frame size via initial config
     header:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
     header:SetAttribute("_initialAttribute-unit-width", w)
     header:SetAttribute("_initialAttribute-unit-height", h)
+end
+
+---------------------------------------------------------------------------
+-- MULTI-HEADER: Configure per-group raid headers
+---------------------------------------------------------------------------
+local function ConfigureRaidGroupHeaders()
+    local layout = GetLayoutSettings(true)
+    if not layout then return end
+
+    local mode = GetGroupMode()
+    local w, h = GetFrameDimensions(mode)
+    local spacing = layout.spacing or 2
+
+    local grow = layout.growDirection or "DOWN"
+    local point, xOff, yOff
+    if grow == "DOWN" then
+        point, xOff, yOff = "TOP", 0, -spacing
+    elseif grow == "UP" then
+        point, xOff, yOff = "BOTTOM", 0, spacing
+    elseif grow == "RIGHT" then
+        point, xOff, yOff = "LEFT", spacing, 0
+    elseif grow == "LEFT" then
+        point, xOff, yOff = "RIGHT", -spacing, 0
+    end
+
+    local sortMethod = layout.sortMethod or "INDEX"
+    local sortByRole = layout.sortByRole
+
+    for g = 1, 8 do
+        local header = QUI_GF.raidGroupHeaders[g]
+        if header then
+            header:SetAttribute("point", point)
+            header:SetAttribute("xOffset", xOff)
+            header:SetAttribute("yOffset", yOff)
+            header:SetAttribute("maxColumns", 1)
+            header:SetAttribute("unitsPerColumn", 5)
+            header:SetAttribute("groupBy", "GROUP")
+            header:SetAttribute("groupFilter", tostring(g))
+            header:SetAttribute("groupingOrder", tostring(g))
+
+            if sortByRole then
+                header:SetAttribute("sortMethod", "NAME")
+            else
+                header:SetAttribute("sortMethod", sortMethod)
+            end
+
+            header:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
+            header:SetAttribute("_initialAttribute-unit-width", w)
+            header:SetAttribute("_initialAttribute-unit-height", h)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- MULTI-HEADER: Position per-group headers with group spacing
+---------------------------------------------------------------------------
+local function PositionRaidGroupHeaders()
+    if InCombatLockdown() then
+        _pending.groupReflow = true
+        return
+    end
+
+    local layout = GetLayoutSettings(true)
+    if not layout then return end
+
+    local grow = layout.growDirection or "DOWN"
+    local groupGrow = layout.groupGrowDirection
+    local groupSpacing = layout.groupSpacing or 10
+    local horizontal = (grow == "LEFT" or grow == "RIGHT")
+
+    -- Determine default group grow direction based on primary axis
+    if not groupGrow then
+        groupGrow = horizontal and "DOWN" or "RIGHT"
+    end
+
+    local raidRoot = QUI_GF.anchorFrames.raid
+    local prevHeader = nil
+
+    for g = 1, 8 do
+        local header = QUI_GF.raidGroupHeaders[g]
+        if header and header:IsShown() then
+            header:ClearAllPoints()
+
+            if not prevHeader then
+                -- First visible header: anchor to root
+                if horizontal then
+                    if groupGrow == "UP" then
+                        if grow == "RIGHT" then
+                            header:SetPoint("BOTTOMLEFT", raidRoot, "BOTTOMLEFT", 0, 0)
+                        else
+                            header:SetPoint("BOTTOMRIGHT", raidRoot, "BOTTOMRIGHT", 0, 0)
+                        end
+                    else -- DOWN
+                        if grow == "RIGHT" then
+                            header:SetPoint("TOPLEFT", raidRoot, "TOPLEFT", 0, 0)
+                        else
+                            header:SetPoint("TOPRIGHT", raidRoot, "TOPRIGHT", 0, 0)
+                        end
+                    end
+                else
+                    if groupGrow == "LEFT" then
+                        if grow == "DOWN" then
+                            header:SetPoint("TOPRIGHT", raidRoot, "TOPRIGHT", 0, 0)
+                        else
+                            header:SetPoint("BOTTOMRIGHT", raidRoot, "BOTTOMRIGHT", 0, 0)
+                        end
+                    else -- RIGHT
+                        if grow == "DOWN" then
+                            header:SetPoint("TOPLEFT", raidRoot, "TOPLEFT", 0, 0)
+                        else
+                            header:SetPoint("BOTTOMLEFT", raidRoot, "BOTTOMLEFT", 0, 0)
+                        end
+                    end
+                end
+            else
+                -- Subsequent headers: anchor relative to previous
+                if horizontal then
+                    if groupGrow == "UP" then
+                        if grow == "RIGHT" then
+                            header:SetPoint("BOTTOMLEFT", prevHeader, "TOPLEFT", 0, groupSpacing)
+                        else
+                            header:SetPoint("BOTTOMRIGHT", prevHeader, "TOPRIGHT", 0, groupSpacing)
+                        end
+                    else -- DOWN
+                        if grow == "RIGHT" then
+                            header:SetPoint("TOPLEFT", prevHeader, "BOTTOMLEFT", 0, -groupSpacing)
+                        else
+                            header:SetPoint("TOPRIGHT", prevHeader, "BOTTOMRIGHT", 0, -groupSpacing)
+                        end
+                    end
+                else
+                    if groupGrow == "LEFT" then
+                        if grow == "DOWN" then
+                            header:SetPoint("TOPRIGHT", prevHeader, "TOPLEFT", -groupSpacing, 0)
+                        else
+                            header:SetPoint("BOTTOMRIGHT", prevHeader, "BOTTOMLEFT", -groupSpacing, 0)
+                        end
+                    else -- RIGHT
+                        if grow == "DOWN" then
+                            header:SetPoint("TOPLEFT", prevHeader, "TOPRIGHT", groupSpacing, 0)
+                        else
+                            header:SetPoint("BOTTOMLEFT", prevHeader, "BOTTOMRIGHT", groupSpacing, 0)
+                        end
+                    end
+                end
+            end
+
+            prevHeader = header
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -2488,25 +2912,38 @@ local function CreateHeaders()
     partyHeader:SetAttribute("initialConfigFunction", initConfigFunc)
     ConfigurePartyHeader(partyHeader)
 
-    -- Position
-    local offsetX = position and position.offsetX or -400
-    local offsetY = position and position.offsetY or 0
+    -- Position: prefer frameAnchoring if available, fall back to legacy db.position
     local partyW, partyH = CalculateHeaderSize(db, 5)
     partyHeader:SetSize(partyW, partyH)
     partyRoot:ClearAllPoints()
-    partyRoot:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    local faDB = QUI.db and QUI.db.profile and QUI.db.profile.frameAnchoring
+    local faParty = faDB and faDB.partyFrames
+    if faParty and faParty.point then
+        partyRoot:SetPoint(faParty.point, UIParent, faParty.relative or faParty.point, faParty.offsetX or 0, faParty.offsetY or 0)
+    else
+        local offsetX = position and position.offsetX or -400
+        local offsetY = position and position.offsetY or 0
+        partyRoot:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+    end
     partyHeader:SetMovable(true)
     partyHeader:SetClampedToScreen(true)
 
-    -- Pre-create all 5 party frames upfront so no frames are created mid-combat
+    -- Pre-create all 5 party frames upfront so no frames are created mid-combat.
+    -- Two requirements for SecureGroupHeaderTemplate to create children:
+    --   1. Parent root must be shown (hidden parent prevents child creation)
+    --   2. At least 1 managed unit must exist (showPlayer + showSolo forces the player)
+    partyRoot:Show()
+    partyHeader:SetAttribute("showPlayer", true)
+    partyHeader:SetAttribute("showSolo", true)
     partyHeader:SetAttribute("startingIndex", -4)
     partyHeader:Show()
     partyHeader:SetAttribute("startingIndex", 1)
     partyHeader:Hide()
+    partyRoot:Hide()
+    -- Restore correct show* attributes for runtime operation
+    ConfigurePartyHeader(partyHeader)
 
     QUI_GF.headers.party = partyHeader
-    QUI:DebugPrint(("[GF] CreateHeaders party: pos=(%d,%d) size=(%d,%d)"):format(offsetX, offsetY, partyW, partyH))
-
     -- Watch for new children added by the secure header (handles late NPC frames)
     partyHeader:HookScript("OnAttributeChanged", function(self, key, value)
         if value and type(key) == "string" and key:match("^child") then
@@ -2514,7 +2951,7 @@ local function CreateHeaders()
             if not InCombatLockdown() then
                 value:RegisterForClicks("AnyUp")
             else
-                pendingRegisterClicks = true
+                _pending.registerClicks = true
             end
         end
     end)
@@ -2525,31 +2962,38 @@ local function CreateHeaders()
     raidHeader:SetAttribute("initialConfigFunction", initConfigFunc)
     ConfigureRaidHeader(raidHeader)
 
-    local raidCount = math.max(IsInRaid() and GetNumGroupMembers() or 25, 5)
+    local raidCount = math_max(IsInRaid() and GetNumGroupMembers() or 25, 5)
     local raidW, raidH = CalculateHeaderSize(db, raidCount)
     raidHeader:SetSize(raidW, raidH)
 
-    -- When not unified, raid gets its own position
-    local raidOffX, raidOffY = offsetX, offsetY
-    if not db.unifiedPosition then
-        local raidPos = db.raidPosition
-        raidOffX = raidPos and raidPos.offsetX or -400
-        raidOffY = raidPos and raidPos.offsetY or 0
-    end
+    -- Raid position: position raidRoot from frameAnchoring (matching partyRoot).
+    -- UpdateAnchorRoot will position the header within raidRoot.
     raidRoot:ClearAllPoints()
-    raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidOffX, raidOffY)
+    local faRaid = faDB and faDB.raidFrames
+    if faRaid and faRaid.point then
+        raidRoot:SetPoint(faRaid.point, UIParent, faRaid.relative or faRaid.point, faRaid.offsetX or 0, faRaid.offsetY or 0)
+    else
+        local raidPos = db.raidPosition
+        local raidOffX = raidPos and raidPos.offsetX or -400
+        local raidOffY = raidPos and raidPos.offsetY or 0
+        raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidOffX, raidOffY)
+    end
     raidHeader:SetMovable(true)
     raidHeader:SetClampedToScreen(true)
 
-    -- Pre-create all 40 raid frames upfront so no frames are created mid-combat
+    -- Pre-create all 40 raid frames upfront so no frames are created mid-combat.
+    -- Force showPlayer + showSolo so the header has at least 1 managed unit.
+    raidRoot:Show()
+    raidHeader:SetAttribute("showPlayer", true)
+    raidHeader:SetAttribute("showSolo", true)
     raidHeader:SetAttribute("startingIndex", -39)
     raidHeader:Show()
     raidHeader:SetAttribute("startingIndex", 1)
     raidHeader:Hide()
+    raidRoot:Hide()
+    ConfigureRaidHeader(raidHeader)
 
     QUI_GF.headers.raid = raidHeader
-    QUI:DebugPrint(("[GF] CreateHeaders raid: pos=(%d,%d) size=(%d,%d)"):format(offsetX, offsetY, raidW, raidH))
-
     -- Watch for new children on raid header too
     raidHeader:HookScript("OnAttributeChanged", function(self, key, value)
         if value and type(key) == "string" and key:match("^child") then
@@ -2557,10 +3001,61 @@ local function CreateHeaders()
             if not InCombatLockdown() then
                 value:RegisterForClicks("AnyUp")
             else
-                pendingRegisterClicks = true
+                _pending.registerClicks = true
             end
         end
     end)
+
+    -- Per-group raid headers (multi-header mode: one header per raid group 1-8)
+    raidRoot:Show()  -- Parent must be visible for child creation
+    for g = 1, 8 do
+        local groupHeader = CreateFrame("Frame", "QUI_RaidGroup" .. g .. "Header", raidRoot, "SecureGroupHeaderTemplate")
+        groupHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
+        groupHeader:SetAttribute("initialConfigFunction", initConfigFunc)
+        groupHeader:SetAttribute("showRaid", true)
+        groupHeader:SetAttribute("showParty", false)
+        groupHeader:SetAttribute("showPlayer", false)
+        groupHeader:SetAttribute("showSolo", false)
+        groupHeader:SetAttribute("groupBy", "GROUP")
+        groupHeader:SetAttribute("groupFilter", tostring(g))
+        groupHeader:SetAttribute("groupingOrder", tostring(g))
+        groupHeader:SetAttribute("maxColumns", 1)
+        groupHeader:SetAttribute("unitsPerColumn", 5)
+        groupHeader:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
+
+        local rW, rH = GetFrameDimensions("small")
+        groupHeader:SetAttribute("_initialAttribute-unit-width", rW)
+        groupHeader:SetAttribute("_initialAttribute-unit-height", rH)
+        groupHeader:SetSize(rW, rH)
+        groupHeader:SetMovable(true)
+        groupHeader:SetClampedToScreen(true)
+
+        -- Pre-create 5 children per group header (40 total across 8 headers).
+        -- Force showPlayer + showSolo so the header has at least 1 managed unit.
+        groupHeader:SetAttribute("showPlayer", true)
+        groupHeader:SetAttribute("showSolo", true)
+        groupHeader:SetAttribute("startingIndex", -4)
+        groupHeader:Show()
+        groupHeader:SetAttribute("startingIndex", 1)
+        groupHeader:Hide()
+        groupHeader:SetAttribute("showPlayer", false)
+        groupHeader:SetAttribute("showSolo", false)
+
+        groupHeader:HookScript("OnAttributeChanged", function(self, key, value)
+            if value and type(key) == "string" and key:match("^child") then
+                DecorateGroupFrame(value)
+                if not InCombatLockdown() then
+                    value:RegisterForClicks("AnyUp")
+                else
+                    _pending.registerClicks = true
+                end
+            end
+        end)
+
+        groupHeader._raidGroupIndex = g
+        QUI_GF.raidGroupHeaders[g] = groupHeader
+    end
+    raidRoot:Hide()
 
     -- Self header — shows only the player, used for self-first feature
     local selfHeader = CreateFrame("Frame", "QUI_SelfHeader", partyRoot, "SecureGroupHeaderTemplate")
@@ -2584,69 +3079,127 @@ local function CreateHeaders()
     selfHeader:SetMovable(true)
     selfHeader:SetClampedToScreen(true)
 
-    -- Pre-create the single child
+    -- Pre-create the single child (parent must be shown for creation to work)
+    partyRoot:Show()
     selfHeader:SetAttribute("startingIndex", 1)
     selfHeader:Show()
     selfHeader:Hide()
+    partyRoot:Hide()
 
     QUI_GF.headers.self = selfHeader
-    QUI:DebugPrint("[GF] CreateHeaders self header created")
-
     selfHeader:HookScript("OnAttributeChanged", function(self, key, value)
         if value and type(key) == "string" and key:match("^child") then
             DecorateGroupFrame(value)
             if not InCombatLockdown() then
                 value:RegisterForClicks("AnyUp")
             else
-                pendingRegisterClicks = true
+                _pending.registerClicks = true
             end
         end
     end)
 end
 
 ---------------------------------------------------------------------------
+-- HEADER: Helper to determine which raid groups (1-8) have at least one member
+---------------------------------------------------------------------------
+local function GetPopulatedRaidGroups()
+    local populated = {}
+    for i = 1, GetNumGroupMembers() do
+        local _, _, subgroup = GetRaidRosterInfo(i)
+        if subgroup then
+            populated[subgroup] = true
+        end
+    end
+    return populated
+end
+
+---------------------------------------------------------------------------
 -- HEADER: Update header sizes based on current roster
 ---------------------------------------------------------------------------
 local function UpdateHeaderSizes()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not inInitSafeWindow then return end
     local db = GetSettings()
     if not db then return end
 
     local partyHdr = QUI_GF.headers.party
     if partyHdr then
-        local count = math.max(GetVisiblePartyUnitCount(), 1)
+        local count = math_max(GetVisiblePartyUnitCount(), 1)
         local w, h = CalculateHeaderSize(db, count)
         partyHdr:SetSize(w, h)
-        QUI:DebugPrint(("[GF] UpdateHeaderSizes party: count=%d size=(%d,%d)"):format(count, w, h))
     end
 
-    local raidHdr = QUI_GF.headers.raid
-    if raidHdr then
-        local count = IsInRaid() and GetNumGroupMembers() or 25
-        count = math.max(count, 5)
-        local w, h = CalculateHeaderSize(db, count)
-        raidHdr:SetSize(w, h)
-        QUI:DebugPrint(("[GF] UpdateHeaderSizes raid: count=%d size=(%d,%d)"):format(count, w, h))
+    if IsMultiHeaderMode() and IsInRaid() then
+        -- Multi-header mode: size each group header individually
+        local mode = GetGroupMode()
+        local frameW, frameH = GetFrameDimensions(mode)
+        local raidVdb = db.raid or db
+        local layout = raidVdb and raidVdb.layout
+        local spacing = layout and layout.spacing or 2
+        local grow = layout and layout.growDirection or "DOWN"
+        local horizontal = (grow == "LEFT" or grow == "RIGHT")
+
+        local populated = GetPopulatedRaidGroups()
+        local totalMembers = GetNumGroupMembers()
+        for g = 1, 8 do
+            local header = QUI_GF.raidGroupHeaders[g]
+            if header then
+                if populated[g] then
+                    -- Count members in this group
+                    local groupCount = 0
+                    for i = 1, totalMembers do
+                        local _, _, subgroup = GetRaidRosterInfo(i)
+                        if subgroup == g then groupCount = groupCount + 1 end
+                    end
+                    groupCount = math_max(groupCount, 1)
+
+                    local hdrW, hdrH
+                    if horizontal then
+                        hdrW = groupCount * frameW + (groupCount - 1) * spacing
+                        hdrH = frameH
+                    else
+                        hdrW = frameW
+                        hdrH = groupCount * frameH + (groupCount - 1) * spacing
+                    end
+                    header:SetSize(hdrW, hdrH)
+                else
+                    header:SetSize(1, 1)
+                end
+            end
+        end
+
+        -- Hide single raid header in multi-header mode
+        if QUI_GF.headers.raid then QUI_GF.headers.raid:SetSize(1, 1) end
+    else
+        local raidHdr = QUI_GF.headers.raid
+        if raidHdr then
+            local count = IsInRaid() and GetNumGroupMembers() or 25
+            count = math_max(count, 5)
+            local w, h = CalculateHeaderSize(db, count)
+            raidHdr:SetSize(w, h)
+        end
     end
 
     -- Self header uses party dimensions; root layout handles ordering.
     local selfHdr = QUI_GF.headers.self
     if selfHdr then
-        local sw, sh
-        if IsInRaid() then
-            local mode = GetGroupMode()
-            sw, sh = GetFrameDimensions(mode)
-        else
-            local partyDims = db.party and db.party.dimensions
-            sw = partyDims and partyDims.partyWidth or 200
-            sh = partyDims and partyDims.partyHeight or 40
-        end
+        local partyDims = db.party and db.party.dimensions
+        local sw = partyDims and partyDims.partyWidth or 200
+        local sh = partyDims and partyDims.partyHeight or 40
         selfHdr:SetAttribute("_initialAttribute-unit-width", sw)
         selfHdr:SetAttribute("_initialAttribute-unit-height", sh)
         selfHdr:SetSize(sw, sh)
         -- Resize existing child
         local child = selfHdr:GetAttribute("child1")
         if child then child:SetSize(sw, sh) end
+        -- Anchor above the active header (skip when anchoring override owns the frame)
+        local selfAnchorKey = IsInRaid() and "raidFrames" or "partyFrames"
+        if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(selfAnchorKey)) then
+            selfHdr:ClearAllPoints()
+            local anchor = IsInRaid() and raidHdr or partyHdr
+            if anchor then
+                selfHdr:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 4)
+            end
+        end
     end
 
     UpdateAnchorFrames()
@@ -2666,7 +3219,7 @@ local function DecorateHeaderChildren(header)
         if not InCombatLockdown() then
             child:RegisterForClicks("AnyUp")
         else
-            pendingRegisterClicks = true
+            _pending.registerClicks = true
         end
         i = i + 1
     end
@@ -2675,9 +3228,38 @@ end
 ---------------------------------------------------------------------------
 -- HEADER: Show/hide based on group status
 ---------------------------------------------------------------------------
+-- Show/hide per-group headers; hide single raid header
+local function ShowRaidGroupHeaders()
+    if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
+
+    ConfigureRaidGroupHeaders()
+
+    local populated = GetPopulatedRaidGroups()
+    for g = 1, 8 do
+        local header = QUI_GF.raidGroupHeaders[g]
+        if header then
+            if populated[g] then
+                header:Show()
+            else
+                header:Hide()
+            end
+        end
+    end
+
+    PositionRaidGroupHeaders()
+end
+
+-- Hide all per-group headers
+local function HideRaidGroupHeaders()
+    for g = 1, 8 do
+        local header = QUI_GF.raidGroupHeaders[g]
+        if header then header:Hide() end
+    end
+end
+
 local function UpdateHeaderVisibility()
-    if InCombatLockdown() then
-        pendingVisibilityUpdate = true
+    if InCombatLockdown() and not inInitSafeWindow then
+        _pending.visibilityUpdate = true
         return
     end
 
@@ -2686,6 +3268,7 @@ local function UpdateHeaderVisibility()
         if QUI_GF.headers.party then QUI_GF.headers.party:Hide() end
         if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
         if QUI_GF.headers.self then QUI_GF.headers.self:Hide() end
+        HideRaidGroupHeaders()
         UpdateAnchorFrames()
         return
     end
@@ -2698,22 +3281,37 @@ local function UpdateHeaderVisibility()
 
     local selfFirst = db.selfFirst
     local selfHeader = QUI_GF.headers.self
+    local multiHeader = IsMultiHeaderMode()
 
     if QUI_GF.headers.party then ConfigurePartyHeader(QUI_GF.headers.party) end
-    if QUI_GF.headers.raid then ConfigureRaidHeader(QUI_GF.headers.raid) end
+
+    -- Configure single or multi-header raid headers
+    if multiHeader then
+        -- Single header is hidden; per-group headers are configured below
+    else
+        if QUI_GF.headers.raid then ConfigureRaidHeader(QUI_GF.headers.raid) end
+        HideRaidGroupHeaders()
+    end
+
     if selfHeader then
         selfHeader:SetAttribute("showSolo", selfFirst and true or false)
     end
 
     if IsInRaid() then
         if QUI_GF.headers.party then QUI_GF.headers.party:Hide() end
-        if QUI_GF.headers.raid then QUI_GF.headers.raid:Show() end
-        -- Raid self-first is integrated into raid header ordering.
+        if multiHeader then
+            ShowRaidGroupHeaders()
+        else
+            if QUI_GF.headers.raid then QUI_GF.headers.raid:Show() end
+            HideRaidGroupHeaders()
+        end
+        -- Self header in raid: show above raid frames when selfFirst is on
         if selfHeader then
-            selfHeader:Hide()
+            if selfFirst then selfHeader:Show() else selfHeader:Hide() end
         end
     elseif IsInGroup() then
         if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
+        HideRaidGroupHeaders()
         if QUI_GF.headers.party then QUI_GF.headers.party:Show() end
         if selfHeader then
             if selfFirst then selfHeader:Show() else selfHeader:Hide() end
@@ -2725,10 +3323,12 @@ local function UpdateHeaderVisibility()
         if selfFirst then showSolo = false end
         if showSolo then
             if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
+            HideRaidGroupHeaders()
             if QUI_GF.headers.party then QUI_GF.headers.party:Show() end
         else
             if QUI_GF.headers.party then QUI_GF.headers.party:Hide() end
             if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
+            HideRaidGroupHeaders()
         end
         -- Self header solo: show when selfFirst is on
         if selfHeader then
@@ -2739,10 +3339,19 @@ local function UpdateHeaderVisibility()
     UpdateHeaderSizes()
     UpdateAnchorFrames()
 
+    -- End safe period before the deferred callback so combat guards apply
+    _pending.initSafe = false
+
     -- Defer decoration + map rebuild to next frame (after header creates children)
     C_Timer.After(0.1, function()
         DecorateHeaderChildren(QUI_GF.headers.party)
-        DecorateHeaderChildren(QUI_GF.headers.raid)
+        if IsMultiHeaderMode() and IsInRaid() then
+            for g = 1, 8 do
+                DecorateHeaderChildren(QUI_GF.raidGroupHeaders[g])
+            end
+        else
+            DecorateHeaderChildren(QUI_GF.headers.raid)
+        end
         DecorateHeaderChildren(QUI_GF.headers.self)
         RebuildUnitFrameMap()
         QUI_GF:RefreshAllFrames()
@@ -2756,77 +3365,111 @@ end
 ---------------------------------------------------------------------------
 local lastMode = nil
 
--- Resize/layout unit buttons and bars (allowed in combat). Header initial dimensions
--- must still be updated out of combat via SetAttribute.
-local function ApplyChildFrameLayout(w, h)
-    for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = QUI_GF.headers[headerKey]
-        if header then
-            local headerPx = (QUICore.GetPixelSize and QUICore:GetPixelSize(header)) or 1
-            local i = 1
-            while true do
-                local child = header:GetAttribute("child" .. i)
-                if not child then break end
-                child:SetSize(w, h)
-                if child.healthBar and child.powerBar then
-                    local general = GetGeneralSettings(child._isRaid)
-                    local borderPx = general and general.borderSize or 1
-                    local borderSize = borderPx > 0 and (borderPx * headerPx) or 0
-                    local powerSettings = GetPowerSettings(child._isRaid)
-                    local powerHeight = powerSettings and powerSettings.showPowerBar ~= false and
-                        snapPx(powerSettings.powerBarHeight or 4, headerPx) or 0
-                    local sepH = powerHeight > 0 and headerPx or 0
+-- Resize/layout unit buttons and bars. SetSize on the secure unit buttons
+-- themselves is protected, so skip it during combat — the pending resize
+-- will re-apply after combat via PLAYER_REGEN_ENABLED.
+-- Uses per-child dimensions: party/self children get party dims, raid
+-- children get current raid-mode dims. This prevents cross-contamination
+-- when the group transitions between party and raid.
+local function ApplyChildFrameLayout()
+    local inCombat = InCombatLockdown()
+    local partyW, partyH = GetFrameDimensions("party")
+    local raidMode = GetGroupMode()
+    local raidW, raidH = GetFrameDimensions(raidMode ~= "party" and raidMode or "small")
 
-                    child.healthBar:ClearAllPoints()
-                    child.healthBar:SetPoint("TOPLEFT", child, "TOPLEFT", borderSize, -borderSize)
-                    child.healthBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + sepH)
-                    ApplyStatusBarTexture(child.healthBar)
-
-                    local vertFill = (GetHealthFillDirection(child._isRaid) == "VERTICAL")
-                    child.healthBar:SetOrientation(vertFill and "VERTICAL" or "HORIZONTAL")
-                    child._isVerticalFill = vertFill
-
-                    if child.powerBar then
-                        child.powerBar:ClearAllPoints()
-                        child.powerBar:SetPoint("BOTTOMLEFT", child, "BOTTOMLEFT", borderSize, borderSize)
-                        child.powerBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize)
-                        child.powerBar:SetHeight(powerHeight)
-                        ApplyStatusBarTexture(child.powerBar)
-                    end
-                    if child.healPredictionBar then ApplyStatusBarTexture(child.healPredictionBar) end
-                end
-                i = i + 1
+    local function LayoutChildren(header)
+        if not header then return end
+        local i = 1
+        while true do
+            local child = header:GetAttribute("child" .. i)
+            if not child then break end
+            if not inCombat then
+                local cw, ch = child._isRaid and raidW or partyW, child._isRaid and raidH or partyH
+                child:SetSize(cw, ch)
             end
+            if child.healthBar and child.powerBar then
+                local general = GetGeneralSettings(child._isRaid)
+                local borderPx = general and general.borderSize or 1
+                local borderSize = borderPx > 0 and (QUICore.Pixels and QUICore:Pixels(borderPx, child) or borderPx) or 0
+                local powerSettings = GetPowerSettings(child._isRaid)
+                local powerHeight = powerSettings and powerSettings.showPowerBar ~= false and
+                    (QUICore.PixelRound and QUICore:PixelRound(powerSettings.powerBarHeight or 4, child) or 4) or 0
+                local px = QUICore.GetPixelSize and QUICore:GetPixelSize(child) or 1
+                local sepH = powerHeight > 0 and px or 0
+
+                child.healthBar:ClearAllPoints()
+                child.healthBar:SetPoint("TOPLEFT", child, "TOPLEFT", borderSize, -borderSize)
+                child.healthBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + sepH)
+                ApplyStatusBarTexture(child.healthBar)
+
+                local vertFill = (GetHealthFillDirection(child._isRaid) == "VERTICAL")
+                child.healthBar:SetOrientation(vertFill and "VERTICAL" or "HORIZONTAL")
+                child._isVerticalFill = vertFill
+
+                if child.powerBar then
+                    child.powerBar:ClearAllPoints()
+                    child.powerBar:SetPoint("BOTTOMLEFT", child, "BOTTOMLEFT", borderSize, borderSize)
+                    child.powerBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize)
+                    child.powerBar:SetHeight(powerHeight)
+                    ApplyStatusBarTexture(child.powerBar)
+                end
+                if child.healPredictionBar then ApplyStatusBarTexture(child.healPredictionBar) end
+            end
+            i = i + 1
         end
+    end
+
+    for _, headerKey in ipairs({"party", "raid", "self"}) do
+        LayoutChildren(QUI_GF.headers[headerKey])
+    end
+    for g = 1, 8 do
+        LayoutChildren(QUI_GF.raidGroupHeaders[g])
     end
 end
 
 local function UpdateFrameScaling(forceUpdate)
-    forceUpdate = forceUpdate and true or false
     local mode = GetGroupMode()
-    local w, h = GetFrameDimensions(mode)
 
-    if InCombatLockdown() then
-        pendingResize = true
-        pendingResizeForce = pendingResizeForce or forceUpdate
-        ApplyChildFrameLayout(w, h)
+    if InCombatLockdown() and not inInitSafeWindow then
+        _pending.resize = true
+        _pending.resizeForce = _pending.resizeForce or (forceUpdate and true or false)
+        ApplyChildFrameLayout()
         return
     end
 
     if not forceUpdate and mode == lastMode then return end
     lastMode = mode
 
-    w, h = GetFrameDimensions(mode)
+    -- Per-header-type attributes: party/self get party dims, raid headers
+    -- get current raid-mode dims. This ensures initialConfigFunction uses
+    -- the correct dimensions if the secure system ever creates new children.
+    local partyW, partyH = GetFrameDimensions("party")
+    local raidW, raidH = GetFrameDimensions(mode ~= "party" and mode or "small")
 
-    for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = QUI_GF.headers[headerKey]
+    local partyHeader = QUI_GF.headers.party
+    if partyHeader then
+        partyHeader:SetAttribute("_initialAttribute-unit-width", partyW)
+        partyHeader:SetAttribute("_initialAttribute-unit-height", partyH)
+    end
+    local selfHeader = QUI_GF.headers.self
+    if selfHeader then
+        selfHeader:SetAttribute("_initialAttribute-unit-width", partyW)
+        selfHeader:SetAttribute("_initialAttribute-unit-height", partyH)
+    end
+    local raidHeader = QUI_GF.headers.raid
+    if raidHeader then
+        raidHeader:SetAttribute("_initialAttribute-unit-width", raidW)
+        raidHeader:SetAttribute("_initialAttribute-unit-height", raidH)
+    end
+    for g = 1, 8 do
+        local header = QUI_GF.raidGroupHeaders[g]
         if header then
-            header:SetAttribute("_initialAttribute-unit-width", w)
-            header:SetAttribute("_initialAttribute-unit-height", h)
+            header:SetAttribute("_initialAttribute-unit-width", raidW)
+            header:SetAttribute("_initialAttribute-unit-height", raidH)
         end
     end
 
-    ApplyChildFrameLayout(w, h)
+    ApplyChildFrameLayout()
     UpdateHeaderSizes()
 end
 
@@ -2835,188 +3478,138 @@ end
 ---------------------------------------------------------------------------
 local rangeCheckTicker = nil
 
--- Spec → friendly spell ID for range checking (validated with IsPlayerSpell).
--- Death Knight: no friendly spell — Death Coil returns nil on player targets; use UnitInRange / hostile spell.
-local SPEC_RANGE_SPELLS = {
-    -- Death Knight
-    [250] = nil,
-    [251] = nil,
-    [252] = nil,
-    -- Demon Hunter
-    [577] = nil,    -- Havoc: no friendly spell
-    [581] = nil,    -- Vengeance: no friendly spell
-    -- Druid
-    [102] = 8936,   -- Balance: Regrowth
-    [103] = 8936,   -- Feral: Regrowth
-    [104] = 8936,   -- Guardian: Regrowth
-    [105] = 774,    -- Restoration: Rejuvenation
-    -- Evoker
-    [1467] = 360995, -- Devastation: Emerald Blossom
-    [1468] = 360995, -- Preservation: Emerald Blossom
-    [1473] = 360995, -- Augmentation: Emerald Blossom
-    -- Hunter
-    [253] = nil,    -- Beast Mastery
-    [254] = nil,    -- Marksmanship
-    [255] = nil,    -- Survival
-    -- Mage
-    [62]  = 1459,   -- Arcane: Arcane Intellect
-    [63]  = 1459,   -- Fire: Arcane Intellect
-    [64]  = 1459,   -- Frost: Arcane Intellect
-    -- Monk
-    [268] = 116670, -- Brewmaster: Vivify
-    [269] = 116670, -- Windwalker: Vivify
-    [270] = 116670, -- Mistweaver: Vivify
-    -- Paladin
-    [65]  = 19750,  -- Holy: Flash of Light
-    [66]  = 19750,  -- Protection: Flash of Light
-    [70]  = 19750,  -- Retribution: Flash of Light
-    -- Priest
-    [256] = 17,     -- Discipline: Power Word: Shield
-    [257] = 2061,   -- Holy: Flash Heal
-    [258] = 17,     -- Shadow: Power Word: Shield
-    -- Rogue
-    [259] = 57934,  -- Assassination: Tricks of the Trade
-    [260] = 57934,  -- Outlaw: Tricks of the Trade
-    [261] = 57934,  -- Subtlety: Tricks of the Trade
-    -- Shaman
-    [262] = 8004,   -- Elemental: Healing Surge
-    [263] = 8004,   -- Enhancement: Healing Surge
-    [264] = 8004,   -- Restoration: Healing Surge
-    -- Warlock
-    [265] = 5697,   -- Affliction: Unending Breath
-    [266] = 5697,   -- Demonology: Unending Breath
-    [267] = 5697,   -- Destruction: Unending Breath
-    -- Warrior
-    [71]  = nil,    -- Arms
-    [72]  = nil,    -- Fury
-    [73]  = nil,    -- Protection
+-- Range-check spell lookup tables
+local RANGE_SPELLS = {
+    -- Spec → friendly spell ID (validated with IsPlayerSpell).
+    -- DK: no friendly spell — Death Coil returns nil on player targets; use UnitInRange / hostile spell.
+    spec = {
+        [250] = nil, [251] = nil, [252] = nil,          -- Death Knight
+        [577] = nil, [581] = nil,                        -- Demon Hunter
+        [102] = 8936, [103] = 8936, [104] = 8936,       -- Druid: Regrowth
+        [105] = 774,                                     -- Resto Druid: Rejuvenation
+        [1467] = 360995, [1468] = 360995, [1473] = 360995, -- Evoker: Emerald Blossom
+        [253] = nil, [254] = nil, [255] = nil,           -- Hunter
+        [62] = 1459, [63] = 1459, [64] = 1459,          -- Mage: Arcane Intellect
+        [268] = 116670, [269] = 116670, [270] = 116670, -- Monk: Vivify
+        [65] = 19750, [66] = 19750, [70] = 19750,       -- Paladin: Flash of Light
+        [256] = 17, [257] = 2061, [258] = 17,           -- Priest: PW:S / Flash Heal
+        [259] = 57934, [260] = 57934, [261] = 57934,    -- Rogue: Tricks of the Trade
+        [262] = 8004, [263] = 8004, [264] = 8004,       -- Shaman: Healing Surge
+        [265] = 5697, [266] = 5697, [267] = 5697,       -- Warlock: Unending Breath
+        [71] = nil, [72] = nil, [73] = nil,             -- Warrior
+    },
+    -- Hostile spell per spec (UnitCanAttack)
+    specHostile = {
+        [250] = 47541, [251] = 47541, [252] = 47541,
+        [577] = 185123, [581] = 185123,
+        [102] = 8921, [103] = 8921, [104] = 8921, [105] = 8921,
+        [1467] = 361469, [1468] = 361469, [1473] = 361469,
+        [253] = 193455, [254] = 19434, [255] = 259491,
+        [62] = 30451, [63] = 133, [64] = 116,
+        [268] = 115546, [269] = 115546, [270] = 115546,
+        [65] = 62124, [66] = 62124, [70] = 62124,
+        [256] = 585, [257] = 585, [258] = 585,
+        [259] = 36554, [260] = 185763, [261] = 36554,
+        [262] = 188196, [263] = 188196, [264] = 188196,
+        [265] = 686, [266] = 686, [267] = 29722,
+        [71] = 355, [72] = 355, [73] = 355,
+    },
+    -- Class fallback: used if spec not detected or spec spell not known
+    class = {
+        PRIEST      = { 2061, 17 },          -- Flash Heal, Power Word: Shield
+        PALADIN     = { 19750 },             -- Flash of Light
+        DRUID       = { 8936, 774 },         -- Regrowth, Rejuvenation
+        SHAMAN      = { 8004 },              -- Healing Surge
+        MONK        = { 116670 },            -- Vivify
+        EVOKER      = { 360995, 361469 },    -- Emerald Blossom, Living Flame
+        MAGE        = { 1459 },              -- Arcane Intellect
+        WARLOCK     = { 5697 },              -- Unending Breath
+        ROGUE       = { 57934 },             -- Tricks of the Trade
+        DEATHKNIGHT = {},
+        WARRIOR     = {},
+        DEMONHUNTER = {},
+        HUNTER      = {},
+    },
+    classHostile = {
+        DEATHKNIGHT = 47541, DEMONHUNTER = 185123, DRUID = 8921,
+        EVOKER = 361469, HUNTER = 75, MAGE = 116, MONK = 115546,
+        PALADIN = 62124, PRIEST = 585, ROGUE = 36554,
+        SHAMAN = 188196, WARLOCK = 686, WARRIOR = 355,
+    },
+    -- Class → single rez spell ID (Druid: Rebirth resolved in ResolveRangeSpells)
+    res = {
+        PRIEST = 2006, PALADIN = 7328, DRUID = 50769,
+        SHAMAN = 2008, MONK = 115178, EVOKER = 361227, DEATHKNIGHT = 61999,
+    },
 }
 
--- Hostile spell per spec (UnitCanAttack) — same role as DandersFrames/Grid2
-local SPEC_HOSTILE_RANGE_SPELLS = {
-    [250] = 47541, [251] = 47541, [252] = 47541,
-    [577] = 185123, [581] = 185123,
-    [102] = 8921, [103] = 8921, [104] = 8921, [105] = 8921,
-    [1467] = 361469, [1468] = 361469, [1473] = 361469,
-    [253] = 193455, [254] = 19434, [255] = 259491,
-    [62] = 30451, [63] = 133, [64] = 116,
-    [268] = 115546, [269] = 115546, [270] = 115546,
-    [65] = 62124, [66] = 62124, [70] = 62124,
-    [256] = 585, [257] = 585, [258] = 585,
-    [259] = 36554, [260] = 185763, [261] = 36554,
-    [262] = 188196, [263] = 188196, [264] = 188196,
-    [265] = 686, [266] = 686, [267] = 29722,
-    [71] = 355, [72] = 355, [73] = 355,
+local _range = {
+    playerClass = nil,
+    spell = nil,         -- Resolved friendly spell ID for living targets
+    hostileSpell = nil,  -- Resolved hostile spell for UnitCanAttack targets
+    resSpell = nil,      -- Resolved rez spell ID for dead targets
+    cache = {},          -- unit → boolean (change detection, avoids redundant SetAlpha)
+    cacheTime = {},      -- unit → GetTime() (skip recently event-updated units in ticker)
 }
-
--- Class fallback: used if spec not detected or spec spell not known
-local CLASS_RANGE_SPELLS = {
-    PRIEST      = { 2061, 17 },          -- Flash Heal, Power Word: Shield
-    PALADIN     = { 19750 },             -- Flash of Light
-    DRUID       = { 8936, 774 },         -- Regrowth, Rejuvenation
-    SHAMAN      = { 8004 },              -- Healing Surge
-    MONK        = { 116670 },            -- Vivify
-    EVOKER      = { 360995, 361469 },    -- Emerald Blossom, Living Flame
-    MAGE        = { 1459 },              -- Arcane Intellect
-    WARLOCK     = { 5697 },              -- Unending Breath
-    ROGUE       = { 57934 },             -- Tricks of the Trade
-    DEATHKNIGHT = {},
-    WARRIOR     = {},
-    DEMONHUNTER = {},
-    HUNTER      = {},
-}
-
-local CLASS_HOSTILE_RANGE_SPELLS = {
-    DEATHKNIGHT = 47541,
-    DEMONHUNTER = 185123,
-    DRUID       = 8921,
-    EVOKER      = 361469,
-    HUNTER      = 75,
-    MAGE        = 116,
-    MONK        = 115546,
-    PALADIN     = 62124,
-    PRIEST      = 585,
-    ROGUE       = 36554,
-    SHAMAN      = 188196,
-    WARLOCK     = 686,
-    WARRIOR     = 355,
-}
-
--- Class → single rez spell ID for dead-target range checking (Druid: Rebirth resolved in ResolveRangeSpells).
-local RES_SPELLS = {
-    PRIEST      = 2006,   -- Resurrection
-    PALADIN     = 7328,   -- Redemption
-    DRUID       = 50769,  -- Revive (fallback if Rebirth not known)
-    SHAMAN      = 2008,   -- Ancestral Spirit
-    MONK        = 115178, -- Resuscitate
-    EVOKER      = 361227, -- Return
-    DEATHKNIGHT = 61999,  -- Raise Ally
-}
-
-local playerClass = nil
-local rangeSpell = nil   -- Resolved friendly spell ID for living targets
-local hostileRangeSpell = nil -- Resolved hostile spell for UnitCanAttack targets
-local resSpell = nil     -- Resolved rez spell ID for dead targets
-local rangeCache = {}    -- unit → boolean (change detection, avoids redundant SetAlpha)
 
 local function ResolveRangeSpells()
-    if not playerClass then
-        playerClass = select(2, UnitClass("player"))
+    if not _range.playerClass then
+        _range.playerClass = select(2, UnitClass("player"))
     end
 
     -- Clear cache — spells changed, previous results may be stale
-    wipe(rangeCache)
+    wipe(_range.cache)
 
     -- Resolve primary range spell (spec-based first, then class fallback)
-    rangeSpell = nil
+    _range.spell = nil
     local specIndex = GetSpecialization and GetSpecialization()
     local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex)
-    if specID and SPEC_RANGE_SPELLS[specID] then
-        local spellID = SPEC_RANGE_SPELLS[specID]
+    if specID and RANGE_SPELLS.spec[specID] then
+        local spellID = RANGE_SPELLS.spec[specID]
         if spellID and IsPlayerSpell(spellID) then
-            rangeSpell = spellID
+            _range.spell = spellID
         end
     end
 
     -- Class fallback if spec lookup didn't resolve
-    if not rangeSpell then
-        local candidates = CLASS_RANGE_SPELLS[playerClass]
+    if not _range.spell then
+        local candidates = RANGE_SPELLS.class[_range.playerClass]
         if candidates then
             for _, spellID in ipairs(candidates) do
                 if IsPlayerSpell(spellID) then
-                    rangeSpell = spellID
+                    _range.spell = spellID
                     break
                 end
             end
         end
     end
 
-    hostileRangeSpell = nil
-    if specID and SPEC_HOSTILE_RANGE_SPELLS[specID] then
-        local hid = SPEC_HOSTILE_RANGE_SPELLS[specID]
+    _range.hostileSpell = nil
+    if specID and RANGE_SPELLS.specHostile[specID] then
+        local hid = RANGE_SPELLS.specHostile[specID]
         if hid and IsPlayerSpell(hid) then
-            hostileRangeSpell = hid
+            _range.hostileSpell = hid
         end
     end
-    if not hostileRangeSpell then
-        local hid = CLASS_HOSTILE_RANGE_SPELLS[playerClass]
+    if not _range.hostileSpell then
+        local hid = RANGE_SPELLS.classHostile[_range.playerClass]
         if hid and IsPlayerSpell(hid) then
-            hostileRangeSpell = hid
+            _range.hostileSpell = hid
         end
     end
 
     -- Resolve rez spell (Druid: Rebirth for combat-consistent corpse range)
-    resSpell = nil
-    if playerClass == "DRUID" then
+    _range.resSpell = nil
+    if _range.playerClass == "DRUID" then
         if IsPlayerSpell(20484) then
-            resSpell = 20484
+            _range.resSpell = 20484
         elseif IsPlayerSpell(50769) then
-            resSpell = 50769
+            _range.resSpell = 50769
         end
     else
-        local rezID = RES_SPELLS[playerClass]
+        local rezID = RANGE_SPELLS.res[_range.playerClass]
         if rezID and IsPlayerSpell(rezID) then
-            resSpell = rezID
+            _range.resSpell = rezID
         end
     end
 end
@@ -3041,11 +3634,11 @@ local function CheckUnitRange(unit)
 
     local friendlyReturnedNil = false
 
-    -- Hostile units (UnitCanAttack): branch before friendly spells — matches DandersFrames;
-    -- also correct for edge cases with cross-faction party members.
+    -- Hostile units (UnitCanAttack): check hostile spell range first;
+    -- also handles edge cases with cross-faction party members.
     if UnitCanAttack("player", unit) then
-        if hostileRangeSpell then
-            local inRangeH = C_Spell.IsSpellInRange(hostileRangeSpell, unit)
+        if _range.hostileSpell then
+            local inRangeH = C_Spell.IsSpellInRange(_range.hostileSpell, unit)
             if inRangeH ~= nil then
                 return inRangeH
             end
@@ -3053,8 +3646,8 @@ local function CheckUnitRange(unit)
         return true
     end
 
-    if rangeSpell and not isDead then
-        local result = C_Spell.IsSpellInRange(rangeSpell, unit)
+    if _range.spell and not isDead then
+        local result = C_Spell.IsSpellInRange(_range.spell, unit)
         if result == true then
             return true
         elseif result == false then
@@ -3065,10 +3658,11 @@ local function CheckUnitRange(unit)
         else
             friendlyReturnedNil = true
         end
+        -- result == nil: spell not applicable, fall through to UnitInRange
     end
 
-    if isDead and resSpell then
-        local result = C_Spell.IsSpellInRange(resSpell, unit)
+    if isDead and _range.resSpell then
+        local result = C_Spell.IsSpellInRange(_range.resSpell, unit)
         if result ~= nil then return result end
     end
 
@@ -3076,7 +3670,8 @@ local function CheckUnitRange(unit)
         return CheckInteractDistance(unit, 4) and true or false
     end
 
-    -- In combat: UnitInRange before treating friendly spell nil as OOR (Grid2 / DandersFrames order)
+    -- In-combat fallback: UnitInRange (~38-40 yd) before treating friendly nil as OOR.
+    -- Returns secret booleans in Midnight+ — SetAlphaFromBoolean handles them natively.
     if UnitInRange then
         local inRange = UnitInRange(unit)
         if issecretvalue and issecretvalue(inRange) then
@@ -3085,7 +3680,7 @@ local function CheckUnitRange(unit)
         if inRange ~= nil then return inRange end
     end
 
-    if rangeSpell and friendlyReturnedNil and connected and not isDead then
+    if _range.spell and friendlyReturnedNil and connected and not isDead then
         return false
     end
 
@@ -3103,32 +3698,36 @@ local function ApplyRangeAlpha(frame, inRange, outAlpha)
 end
 
 local function DoRangeCheck()
-    -- Range check uses per-frame isRaid for settings, but we need at least
-    -- one enabled check. Check both party and raid settings.
+    -- Fallback ticker: catches edge cases not covered by UNIT_IN_RANGE_UPDATE
+    -- (LibRangeCheck spells with non-38yd thresholds, OOC interact distance).
+    -- Skips units recently updated by the event handler.
     local partyRange = GetRangeSettings(false)
     local raidRange = GetRangeSettings(true)
     if (not partyRange or partyRange.enabled == false) and (not raidRange or raidRange.enabled == false) then return end
 
+    local now = GetTime()
     for unit, frame in pairs(QUI_GF.unitFrameMap) do
         if frame and frame:IsShown() then
-            local rangeSettings = GetRangeSettings(frame._isRaid)
-            if rangeSettings and rangeSettings.enabled ~= false then
-                local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
-                local inRange = CheckUnitRange(unit)
-                local state = GetFrameState(frame)
+            -- Skip units updated by UNIT_IN_RANGE_UPDATE within the last 0.4s
+            local lastEventTime = _range.cacheTime[unit]
+            if lastEventTime and (now - lastEventTime) < 0.4 then
+                -- Event-driven update is still fresh, skip this unit
+            else
+                local rangeSettings = GetRangeSettings(frame._isRaid)
+                if rangeSettings and rangeSettings.enabled ~= false then
+                    local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
+                    local inRange = CheckUnitRange(unit)
+                    local state = GetFrameState(frame)
 
-                -- Secret values (from UnitInRange fallback) can't be compared
-                -- with ==, so always update when secrets are involved.
-                local cached = rangeCache[unit]
-                local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
+                    local cached = _range.cache[unit]
+                    local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
 
-                if isSecret or cached ~= inRange or state.outOfRange == nil then
-                    rangeCache[unit] = inRange
-                    -- outOfRange state: secret booleans can't be negated in Lua,
-                    -- so store the raw inRange and let alpha application handle it.
-                    state.outOfRange = true  -- Mark as range-managed
-                    state.inRange = inRange  -- Store raw value (may be secret)
-                    ApplyRangeAlpha(frame, inRange, outAlpha)
+                    if isSecret or cached ~= inRange or state.outOfRange == nil then
+                        _range.cache[unit] = inRange
+                        state.outOfRange = true
+                        state.inRange = inRange
+                        ApplyRangeAlpha(frame, inRange, outAlpha)
+                    end
                 end
             end
         end
@@ -3143,12 +3742,13 @@ local function StartRangeCheck()
     if (not partyRange or partyRange.enabled == false) and (not raidRange or raidRange.enabled == false) then return end
 
     -- Ensure spells are resolved before starting
-    if not rangeSpell and not resSpell and not hostileRangeSpell then
+    if not _range.spell and not _range.resSpell and not _range.hostileSpell then
         ResolveRangeSpells()
     end
 
-    -- Longer interval for large raids
-    local interval = GetGroupSize() > 25 and 0.3 or 0.2
+    -- Slow fallback interval — UNIT_IN_RANGE_UPDATE is the primary driver.
+    -- Large raids use a longer interval to reduce per-tick work (40+ frames).
+    local interval = GetGroupSize() > 25 and 1.0 or 0.75
     rangeCheckTicker = C_Timer.NewTicker(interval, DoRangeCheck)
 end
 
@@ -3157,44 +3757,123 @@ local function StopRangeCheck()
         rangeCheckTicker:Cancel()
         rangeCheckTicker = nil
     end
-    wipe(rangeCache)
+    wipe(_range.cache)
+    wipe(_range.cacheTime)
 end
+
+---------------------------------------------------------------------------
+-- GROUP_ROSTER_UPDATE: Hoisted deferred callback (avoids closure allocation)
+-- Called 0.2s after the coalesced GRU fires, giving secure headers time to
+-- create/reassign children before we rebuild the unit→frame map.
+---------------------------------------------------------------------------
+local function GRU_DeferredWork()
+    _gruDeferredPending = false
+    DecorateHeaderChildren(QUI_GF.headers.party)
+    if IsMultiHeaderMode() and IsInRaid() then
+        for g = 1, 8 do
+            DecorateHeaderChildren(QUI_GF.raidGroupHeaders[g])
+        end
+    else
+        DecorateHeaderChildren(QUI_GF.headers.raid)
+    end
+    RebuildUnitFrameMap()
+    -- Refresh GUID cache so OnAttributeChanged skip has fresh data
+    for unit, frame in pairs(QUI_GF.unitFrameMap) do
+        _unitGuidCache[frame] = UnitGUID(unit)
+    end
+    wipe(_range.cache)  -- Fresh map — force re-evaluate all units
+    wipe(_range.cacheTime)
+    -- Evict stale aura cache entries for units no longer in the group
+    local GFA = ns.QUI_GroupFrameAuras
+    if GFA and GFA.PruneAuraCache then GFA.PruneAuraCache() end
+    UpdateFrameScaling(true)
+    QUI_GF:RefreshAllFrames()
+    -- Ensure ticker is running (may not have started yet on first roster event)
+    StartRangeCheck()
+end
+
+-- Coalescing OnUpdate: fires once on the render frame AFTER the GRU burst.
+gruCoalesceFrame:SetScript("OnUpdate", function(self)
+    self:Hide()  -- One-shot: process once, then stop
+    UpdateHeaderVisibility()
+    UpdateFrameScaling(true)
+    UpdateHeaderSizes()
+    UpdateSelectiveEvents()
+    -- Schedule deferred work (secure headers need time to create children).
+    -- Cancel-and-reschedule: if a previous timer is still pending from an
+    -- earlier burst that hasn't fired yet, this replaces it harmlessly
+    -- (the flag prevents double-processing).
+    if not _gruDeferredPending then
+        _gruDeferredPending = true
+        C_Timer.After(0.2, GRU_DeferredWork)
+    end
+end)
 
 ---------------------------------------------------------------------------
 -- EVENTS: Centralized event dispatch
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 
+-- Cached module-enabled flag: refreshed on settings change, avoids
+-- GetSettings() (5-6 table lookups) on every single unit event.
+local _cachedModuleEnabled = false
+local _cachedModuleDB = nil
+
+local function RefreshCachedEnabled()
+    local db = GetSettings()
+    _cachedModuleEnabled = db and db.enabled or false
+    _cachedModuleDB = db
+end
+
+-- Upvalue for fast string prefix check (replaces per-event regex)
+local sub = string.sub
+
 local function OnEvent(self, event, arg1, ...)
     if not QUI_GF.initialized then return end
-    local db = GetSettings()
-    if not db or not db.enabled then return end
 
-    -- Unit-specific events — dispatch via lookup map
-    -- Guard: arg1 is a unit string for unit events, but a boolean for
-    -- PLAYER_ENTERING_WORLD (isInitialLogin) — only index the map with strings.
-    local frame = (type(arg1) == "string") and QUI_GF.unitFrameMap[arg1]
+    -- Fast path: unit events use O(1) map lookup.
+    -- Skip GetSettings() entirely for units not in the map (nameplates,
+    -- boss, arena, target, focus, pet) — saves ~20k table lookups/sec in raids.
+    if type(arg1) == "string" then
+        local frame = QUI_GF.unitFrameMap[arg1]
 
-    -- Self-healing: rebuild map on lookup miss (QUI pattern)
-    -- Handles stale maps from combat zone transitions or delayed header updates
-    if type(arg1) == "string" and not frame and (arg1:match("^party%d") or arg1:match("^raid%d") or arg1 == "player") then
-        local now = GetTime()
-        if not QUI_GF.lastMapRebuild or (now - QUI_GF.lastMapRebuild) > 1.0 then
-            QUI_GF.lastMapRebuild = now
-            RebuildUnitFrameMap()
-            frame = QUI_GF.unitFrameMap[arg1]
+        if not frame then
+            -- Self-healing: rebuild map on miss for party/raid/player units.
+            -- Fast prefix check avoids per-event regex (string.sub vs :match).
+            local p4 = sub(arg1, 1, 4)
+            if p4 == "part" or p4 == "raid" or arg1 == "player" then
+                local now = GetTime()
+                if not QUI_GF.lastMapRebuild or (now - QUI_GF.lastMapRebuild) > 1.0 then
+                    QUI_GF.lastMapRebuild = now
+                    RebuildUnitFrameMap()
+                    frame = QUI_GF.unitFrameMap[arg1]
+                end
+            end
+            if not frame then return end  -- Not a tracked unit, bail early
         end
-    end
 
-    if frame then
+        -- Matched frame — check cached enabled state
+        if not _cachedModuleEnabled then return end
 
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
             -- No throttle — UNIT_HEALTH is already coalesced by the WoW client.
-            -- Throttling drops the final update, leaving the bar stale.
-            -- Process every UNIT_HEALTH without throttling.
+            -- Fast path: share unit/dead/maxHP across all three updates to avoid
+            -- redundant UnitExists, UnitIsDeadOrGhost, UnitHealthMax API calls
+            -- (3→1 of each per event in a 20-person raid).
+            local unit = frame.unit
+            if not unit or not UnitExists(unit) then return end
             UpdateHealth(frame)
-            UpdateAbsorbs(frame)
-            UpdateHealPrediction(frame)
+            local isDead = UnitIsDeadOrGhost(unit)
+            if isDead then
+                if frame.absorbBar then frame.absorbBar:Hide() end
+                if frame.healAbsorbBar then frame.healAbsorbBar:Hide() end
+                if frame.healPredictionBar then frame.healPredictionBar:Hide() end
+            else
+                local maxHP = UnitHealthMax(unit)
+                UpdateAbsorbs(frame, unit, maxHP)
+                UpdateHealAbsorb(frame, unit, maxHP)
+                UpdateHealPrediction(frame, unit, maxHP)
+            end
 
         elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" then
             local now = GetTime()
@@ -3206,6 +3885,9 @@ local function OnEvent(self, event, arg1, ...)
         elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" then
             UpdateAbsorbs(frame)
 
+        elseif event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
+            UpdateHealAbsorb(frame)
+
         elseif event == "UNIT_HEAL_PREDICTION" then
             UpdateHealPrediction(frame)
 
@@ -3215,55 +3897,73 @@ local function OnEvent(self, event, arg1, ...)
         elseif event == "UNIT_THREAT_SITUATION_UPDATE" then
             UpdateThreat(frame)
 
-        elseif event == "UNIT_AURA" then
-            -- All aura-driven updates (icons, dispel, defensive) are handled
-            -- by the shared throttled scan in groupframes_auras.lua.
-            -- This avoids redundant GetUnitAuras calls.
+        -- UNIT_AURA handled by centralized dispatcher → groupframes_auras.lua
 
         elseif event == "UNIT_CONNECTION" or event == "UNIT_FLAGS" then
             UpdateConnection(frame)
             UpdateHealth(frame)
 
+        elseif event == "UNIT_IN_RANGE_UPDATE" then
+            -- Instant range update from Blizzard (~38yd boundary crossing).
+            -- Primary driver for range checks; ticker is a slow fallback.
+            local isRaid = frame._isRaid
+            local rangeSettings = GetRangeSettings(isRaid)
+            if rangeSettings and rangeSettings.enabled ~= false then
+                local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
+                local inRange = CheckUnitRange(arg1)
+                local cached = _range.cache[arg1]
+                local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
+                if isSecret or cached ~= inRange then
+                    _range.cache[arg1] = inRange
+                    local state = GetFrameState(frame)
+                    state.outOfRange = true
+                    state.inRange = inRange
+                    ApplyRangeAlpha(frame, inRange, outAlpha)
+                end
+                _range.cacheTime[arg1] = GetTime()
+            end
+
         elseif event == "UNIT_PHASE" then
             UpdatePhaseIcon(frame)
 
         elseif event == "INCOMING_RESURRECT_CHANGED" then
-            wipe(rangeCache)
+            wipe(_range.cache)
             UpdateResurrection(frame)
 
         elseif event == "INCOMING_SUMMON_CHANGED" then
             UpdateSummonPending(frame)
 
         elseif event == "READY_CHECK_CONFIRM" then
-            -- READY_CHECK_CONFIRM arg1 is a unit token, so it lands here.
-            -- Update ALL frames (not just the confirming unit) to stay consistent.
-            for _, f in pairs(QUI_GF.unitFrameMap) do
-                UpdateReadyCheck(f)
-            end
+            -- READY_CHECK_CONFIRM arg1 is a unit token — dispatch to that frame only.
+            -- GetReadyCheckStatus is per-unit, no cross-frame dependency.
+            UpdateReadyCheck(frame)
         end
         return
-    end
+    end  -- end unit event block (type(arg1) == "string")
 
-    -- Non-unit events — iterate relevant frames
+    -- Non-unit events — check enabled via cached flag
+    if not _cachedModuleEnabled then return end
+
     if event == "GROUP_ROSTER_UPDATE" then
-        UpdateHeaderVisibility()
-        UpdateFrameScaling(true)
-        UpdateHeaderSizes()
-        -- Rebuild map after a short delay (header needs time to create children)
-        StopRangeCheck()
-        C_Timer.After(0.2, function()
-            DecorateHeaderChildren(QUI_GF.headers.party)
-            DecorateHeaderChildren(QUI_GF.headers.raid)
-            RebuildUnitFrameMap()
-            UpdateFrameScaling(true)
-            QUI_GF:RefreshAllFrames()
-            -- Restart range check AFTER map rebuild so it iterates fresh data
-            StartRangeCheck()
-        end)
+        -- Coalesce: show the throttle frame. Multiple GRU events in the same
+        -- render frame collapse into one OnUpdate tick (Show on already-shown
+        -- frame is a no-op). The heavy work runs once, next frame.
+        gruCoalesceFrame:Show()
 
     elseif event == "PLAYER_TARGET_CHANGED" then
+        -- O(1) unhighlight + O(N/2) average find-and-highlight with early exit
+        -- (replaces unconditional O(N) UpdateTargetHighlight on all 40 frames)
+        local prev = QUI_GF._targetHighlightFrame
+        if prev and prev.targetHighlight then
+            prev.targetHighlight:Hide()
+        end
+        QUI_GF._targetHighlightFrame = nil
         for _, frame in pairs(QUI_GF.unitFrameMap) do
-            UpdateTargetHighlight(frame)
+            if frame.unit and UnitIsUnit(frame.unit, "target") then
+                UpdateTargetHighlight(frame)
+                QUI_GF._targetHighlightFrame = frame
+                break
+            end
         end
 
     elseif event == "READY_CHECK" or event == "READY_CHECK_CONFIRM" then
@@ -3311,29 +4011,63 @@ local function OnEvent(self, event, arg1, ...)
     elseif event == "PLAYER_REGEN_DISABLED" then
         -- Combat started: clear range cache so stale OOC values
         -- (CheckInteractDistance) don't persist into combat where
-        -- that API is unavailable. (QUI pattern)
-        wipe(rangeCache)
+        -- that API is unavailable.
+        wipe(_range.cache)
+        wipe(_range.cacheTime)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat ended: clear range cache so combat-era results
         -- don't prevent OOC methods from updating.
-        wipe(rangeCache)
+        wipe(_range.cache)
+        wipe(_range.cacheTime)
+        -- Evict defensive classification cache — auraInstanceIDs are globally
+        -- unique per application, so entries accumulate unboundedly during
+        -- long encounters. Safe to wipe OOC since new auras get fresh IDs.
+        wipe(_defensive.cache)
 
         -- Process deferred operations
-        if pendingResize then
-            local forceResize = pendingResizeForce
-            pendingResize = false
-            pendingResizeForce = false
-            UpdateFrameScaling(forceResize)
+        if _pending.refreshSettings then
+            _pending.refreshSettings = false
+            -- Full refresh: repositions headers AND reconfigures children.
+            -- RefreshSettings deferred during combat because SetAttribute on
+            -- SecureGroupHeaders is protected.
+            QUI_GF:RefreshSettings()
+        elseif _pending.resize then
+            _pending.resize = false
+            local force = _pending.resizeForce
+            _pending.resizeForce = false
+            UpdateFrameScaling(force)
         end
-        if pendingVisibilityUpdate then
-            pendingVisibilityUpdate = false
+        if _pending.visibilityUpdate then
+            _pending.visibilityUpdate = false
             UpdateHeaderVisibility()
         end
-        if pendingRegisterClicks then
-            pendingRegisterClicks = false
+        if _pending.groupReflow then
+            _pending.groupReflow = false
+            PositionRaidGroupHeaders()
+        end
+        if _pending.registerClicks then
+            _pending.registerClicks = false
             DecorateHeaderChildren(QUI_GF.headers.party)
-            DecorateHeaderChildren(QUI_GF.headers.raid)
+            if IsMultiHeaderMode() then
+                for g = 1, 8 do
+                    DecorateHeaderChildren(QUI_GF.raidGroupHeaders[g])
+                end
+            else
+                DecorateHeaderChildren(QUI_GF.headers.raid)
+            end
+            -- Re-register click-casting for frames that were decorated during
+            -- combat but missed click-cast setup (SetupFrameClickCast bails
+            -- out during InCombatLockdown — the frame is marked _quiDecorated
+            -- but never got its secure click attributes applied).
+            local GFCC = ns.QUI_GroupFrameClickCast
+            if GFCC and GFCC:IsEnabled() then
+                GFCC:RegisterAllFrames()
+            end
+        end
+        if _pending.anchorUpdate then
+            _pending.anchorUpdate = false
+            UpdateAnchorFrames()
         end
         if pendingAnchorUpdate then
             pendingAnchorUpdate = false
@@ -3369,15 +4103,19 @@ local function RegisterEvents()
     eventFrame:RegisterEvent("UNIT_MAXHEALTH")
     eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
     eventFrame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
+    eventFrame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
     eventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")
     eventFrame:RegisterEvent("UNIT_NAME_UPDATE")
     eventFrame:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
-    eventFrame:RegisterEvent("UNIT_AURA")
+    -- UNIT_AURA handled by centralized dispatcher (core/aura_events.lua)
     eventFrame:RegisterEvent("UNIT_CONNECTION")
     eventFrame:RegisterEvent("UNIT_FLAGS")
     eventFrame:RegisterEvent("UNIT_PHASE")
     eventFrame:RegisterEvent("INCOMING_RESURRECT_CHANGED")
     eventFrame:RegisterEvent("INCOMING_SUMMON_CHANGED")
+
+    -- Range event (instant ~38yd boundary crossing, supplements ticker polling)
+    eventFrame:RegisterEvent("UNIT_IN_RANGE_UPDATE")
 
     -- Non-unit events
     eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
@@ -3395,19 +4133,35 @@ local function UnregisterEvents()
 end
 
 ---------------------------------------------------------------------------
--- SELECTIVE EVENT REGISTRATION: Unregister power events for large raids
+-- SELECTIVE EVENT REGISTRATION: Unregister noisy events when their
+-- corresponding visual feature is disabled, reducing wasted Lua dispatch.
 ---------------------------------------------------------------------------
-local function UpdateSelectiveEvents()
+UpdateSelectiveEvents = function()
     local db = GetSettings()
     local mode = GetGroupMode()
-    -- Large raids use raid power settings
-    local powerSettings = GetPowerSettings(mode ~= "party")
+    local isRaid = (mode ~= "party")
 
+    -- Power events: unregister in large raids when power bar hidden
+    local powerSettings = GetPowerSettings(isRaid)
     if mode == "large" and (not powerSettings or powerSettings.showPowerBar == false) then
         eventFrame:UnregisterEvent("UNIT_POWER_UPDATE")
         eventFrame:UnregisterEvent("UNIT_POWER_FREQUENT")
     else
         eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
+    end
+
+    -- Threat events: UNIT_THREAT_SITUATION_UPDATE fires for ALL units in the
+    -- game world (not just group members) because it uses global RegisterEvent.
+    -- When threat borders are disabled, unregister to avoid ~100s of wasted
+    -- dispatches per second in raids with many adds.
+    local partyInd = GetIndicatorSettings(false)
+    local raidInd = GetIndicatorSettings(true)
+    local partyThreat = partyInd and partyInd.showThreatBorder ~= false
+    local raidThreat = raidInd and raidInd.showThreatBorder ~= false
+    if partyThreat or raidThreat then
+        eventFrame:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
+    else
+        eventFrame:UnregisterEvent("UNIT_THREAT_SITUATION_UPDATE")
     end
 end
 
@@ -3427,22 +4181,29 @@ end
 -- REFRESH ALL: Update all visible frames
 ---------------------------------------------------------------------------
 function QUI_GF:RefreshAllFrames()
+    -- Pre-loop setup that each module's RefreshAll does once before iteration.
+    -- Inlining per-frame work from auras + indicators avoids 2 extra full
+    -- iterations of unitFrameMap (was 4 passes, now 1 + private auras).
+    local GFA = ns.QUI_GroupFrameAuras
+    if GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
+    local GFI = ns.QUI_GroupFrameIndicators
+
     for _, frame in pairs(self.unitFrameMap) do
         if frame and frame:IsShown() then
             if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
             if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
             if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
             UpdateFrame(frame)
+
+            -- Auras: scan + render (was a separate full iteration)
+            if GFA and GFA.RefreshFrame then GFA:RefreshFrame(frame) end
+            -- Indicators: update tracked spells (was a separate full iteration)
+            if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
         end
     end
 
-    -- Also trigger aura/indicator updates via module callbacks
-    if ns.QUI_GroupFrameAuras and ns.QUI_GroupFrameAuras.RefreshAll then
-        ns.QUI_GroupFrameAuras:RefreshAll()
-    end
-    if ns.QUI_GroupFrameIndicators and ns.QUI_GroupFrameIndicators.RefreshAll then
-        ns.QUI_GroupFrameIndicators:RefreshAll()
-    end
+    -- Private auras use a different clear-all + rebuild pattern that can't
+    -- be inlined into the per-frame loop (needs wipe(frameState) first).
     if ns.QUI_GroupFramePrivateAuras and ns.QUI_GroupFramePrivateAuras.RefreshAll then
         ns.QUI_GroupFramePrivateAuras:RefreshAll()
     end
@@ -3453,7 +4214,8 @@ end
 ---------------------------------------------------------------------------
 function QUI_GF:RefreshSettings()
     InvalidateCache()
-    dispelColorCurve = nil  -- Rebuild with new opacity on next use
+    RefreshCachedEnabled()
+    _dispel.colorCurve = nil  -- Rebuild with new opacity on next use
 
     if not self.initialized then
         return
@@ -3465,15 +4227,51 @@ function QUI_GF:RefreshSettings()
         return
     end
 
-    if InCombatLockdown() then
-        pendingResize = true
-        pendingResizeForce = true
+    if InCombatLockdown() and not inInitSafeWindow then
+        _pending.refreshSettings = true
         return
+    end
+
+    -- Restore root frame positions from the (possibly new) profile DB.
+    -- Prefer frameAnchoring positions; fall back to legacy db.position.
+    -- Position the ROOT frames (not headers) — UpdateAnchorRoot handles
+    -- internal header layout within each root.
+    -- Skip repositioning when the anchoring override system owns the frame.
+    local faDB = QUI.db and QUI.db.profile and QUI.db.profile.frameAnchoring
+    local partyRoot = self.anchorFrames and self.anchorFrames.party
+    if partyRoot and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("partyFrames")) then
+        local faParty = faDB and faDB.partyFrames
+        partyRoot:ClearAllPoints()
+        if faParty and faParty.point then
+            partyRoot:SetPoint(faParty.point, UIParent, faParty.relative or faParty.point, faParty.offsetX or 0, faParty.offsetY or 0)
+        else
+            local position = db.position
+            local offsetX = position and position.offsetX or -400
+            local offsetY = position and position.offsetY or 0
+            partyRoot:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+        end
+    end
+    local raidRoot = self.anchorFrames and self.anchorFrames.raid
+    if raidRoot and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("raidFrames")) then
+        local faRaid = faDB and faDB.raidFrames
+        raidRoot:ClearAllPoints()
+        if faRaid and faRaid.point then
+            raidRoot:SetPoint(faRaid.point, UIParent, faRaid.relative or faRaid.point, faRaid.offsetX or 0, faRaid.offsetY or 0)
+        else
+            local raidPos = db.raidPosition
+            local raidOffX = raidPos and raidPos.offsetX or -400
+            local raidOffY = raidPos and raidPos.offsetY or 0
+            raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidOffX, raidOffY)
+        end
     end
 
     -- Re-configure headers
     if self.headers.party then ConfigurePartyHeader(self.headers.party) end
-    if self.headers.raid then ConfigureRaidHeader(self.headers.raid) end
+    if IsMultiHeaderMode() then
+        ConfigureRaidGroupHeaders()
+    else
+        if self.headers.raid then ConfigureRaidHeader(self.headers.raid) end
+    end
     -- Self header uses party settings; re-apply self-first visibility
     if self.headers.self then
         local selfFirst = db and db.selfFirst
@@ -3487,17 +4285,21 @@ function QUI_GF:RefreshSettings()
     wipe(self.allFrames)
 
     -- Also clear decorated flag on header children directly
-    for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = self.headers[headerKey]
-        if header then
-            local i = 1
-            while true do
-                local child = header:GetAttribute("child" .. i)
-                if not child then break end
-                child._quiDecorated = false
-                i = i + 1
-            end
+    local function ClearDecoratedFlags(header)
+        if not header then return end
+        local i = 1
+        while true do
+            local child = header:GetAttribute("child" .. i)
+            if not child then break end
+            child._quiDecorated = false
+            i = i + 1
         end
+    end
+    for _, headerKey in ipairs({"party", "raid", "self"}) do
+        ClearDecoratedFlags(self.headers[headerKey])
+    end
+    for g = 1, 8 do
+        ClearDecoratedFlags(self.raidGroupHeaders[g])
     end
 
     -- Update visibility + redecorate
@@ -3523,6 +4325,12 @@ local function ApplyHUDLayering()
                 pcall(header.SetFrameLevel, header, frameLevel)
             end
         end
+        for g = 1, 8 do
+            local header = QUI_GF.raidGroupHeaders[g]
+            if header then
+                pcall(header.SetFrameLevel, header, frameLevel)
+            end
+        end
     end
 end
 
@@ -3532,6 +4340,10 @@ end
 function QUI_GF:Initialize()
     local db = GetSettings()
     if not db or not db.enabled then return end
+
+    -- ADDON_LOADED safe window: protected calls are allowed even though
+    -- InCombatLockdown() returns true during a combat /reload.
+    inInitSafeWindow = true
 
     -- Create headers
     CreateHeaders()
@@ -3551,6 +4363,7 @@ function QUI_GF:Initialize()
     StartRangeCheck()
 
     self.initialized = true
+    RefreshCachedEnabled()
 
     -- Initialize click-casting
     local GFCC = ns.QUI_GroupFrameClickCast
@@ -3572,12 +4385,16 @@ function QUI_GF:Initialize()
     C_Timer.After(1.5, function()
         self:RefreshAllFrames()
     end)
+
+    inInitSafeWindow = false
 end
 
 ---------------------------------------------------------------------------
 -- DISABLE
 ---------------------------------------------------------------------------
 function QUI_GF:Disable()
+    _cachedModuleEnabled = false
+    _cachedModuleDB = nil
     UnregisterEvents()
     StopRangeCheck()
 
@@ -3588,6 +4405,10 @@ function QUI_GF:Disable()
         if header then
             header:Hide()
         end
+    end
+    for g = 1, 8 do
+        local header = self.raidGroupHeaders[g]
+        if header then header:Hide() end
     end
 
     for _, proxy in pairs(self.anchorFrames) do
@@ -3634,17 +4455,6 @@ end)
 ---------------------------------------------------------------------------
 -- PUBLIC API (for other modules)
 ---------------------------------------------------------------------------
-function QUI_GF:GetUnitFrame(unit)
-    return self.unitFrameMap[unit]
-end
-
-function QUI_GF:GetAllFrames()
-    return self.unitFrameMap
-end
-
-function QUI_GF:GetHeaders()
-    return self.headers
-end
 
 function QUI_GF:GetAnchorFrame(frameType)
     if self.editMode or self.testMode then
@@ -3666,9 +4476,6 @@ function QUI_GF:IsEnabled()
     return db and db.enabled
 end
 
-function QUI_GF:IsInitialized()
-    return self.initialized
-end
 
 -- Global refresh function for options panel
 _G.QUI_RefreshGroupFrames = function()
@@ -3678,4 +4485,13 @@ _G.QUI_RefreshGroupFrames = function()
     if editMode and editMode.RefreshTestMode then
         editMode:RefreshTestMode()
     end
+end
+
+if ns.Registry then
+    ns.Registry:Register("groupframes", {
+        refresh = _G.QUI_RefreshGroupFrames,
+        priority = 20,
+        group = "frames",
+        importCategories = { "groupFrames" },
+    })
 end

@@ -7,7 +7,7 @@ nav_order: 9
 
 # Custom Trackers
 
-Custom Trackers allow you to define personal spell and item tracking bars that display cooldowns, buffs, debuffs, and item availability. Settings are managed through the `/qui` > Custom Trackers tab. Tracker definitions are stored per-profile.
+Custom Trackers allow you to define personal spell and item tracking bars that display cooldowns, buffs, debuffs, and item availability. Settings are managed through the `/qui` > **Custom CDM Bars** tab. Tracker definitions are stored per-profile.
 
 Individual tracker definitions -- including spell IDs, item IDs, bar appearance, colors, and display behavior -- are configured entirely through the in-game GUI and are not covered here. This page documents the global visibility and display settings that apply to all custom trackers.
 

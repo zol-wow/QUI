@@ -170,7 +170,7 @@ local function SkinKeystoneFrame()
 
     -- Style affix icons when keystone is slotted
     hooksecurefunc(keystoneFrame, "OnKeystoneSlotted", function(f)
-        local sc = SkinBase.GetFrameData(f, "skinColor") or { 0.2, 1.0, 0.6, 1 }
+        local sc = SkinBase.GetFrameData(f, "skinColor") or { 0.376, 0.647, 0.980, 1 }
         local r, g, b, a = unpack(sc)
         for i = 1, 4 do
             local affix = f["Affix" .. i]
@@ -238,6 +238,15 @@ end
 
 -- Expose refresh function globally
 _G.QUI_RefreshKeystoneColors = RefreshKeystoneColors
+
+if ns.Registry then
+    ns.Registry:Register("skinKeystone", {
+        refresh = _G.QUI_RefreshKeystoneColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION

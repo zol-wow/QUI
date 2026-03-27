@@ -2,13 +2,17 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <!-- Shared helpers must load first - provides common utilities for all modules -->
     <Script file="utils.lua"/>
+    <Script file="aura_events.lua"/>
+    <Script file="registry.lua"/>
     <Script file="media.lua"/>
     <Script file="compatibility.lua"/>
+    <Script file="defaults.lua"/>
     <Script file="main.lua"/>
-    <Script file="viewer_skinning.lua"/>
+    <Script file="backdrop_deferred.lua"/>
     <Script file="profile_io.lua"/>
     <Script file="font_system.lua"/>
     <Script file="scaling.lua"/>
     <Script file="uikit.lua"/>
+    <Script file="settings_builders.lua"/>
     <Script file="rangeutils.lua"/>
 </Ui>

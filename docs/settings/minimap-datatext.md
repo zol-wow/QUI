@@ -9,6 +9,8 @@ nav_order: 7
 
 QUI replaces Blizzard's minimap with a clean, configurable version featuring square or round shapes, button management, a clock, coordinates, zone text, and a datatext information panel. Most minimap chrome (zoom buttons, tracking, difficulty badge) is hidden by default for a minimal look.
 
+Minimap settings are accessed through **Layout Mode** (`/qui layout`) -- they have been moved out of the main options panel.
+
 **DB path:** `db.profile.minimap` (minimap), `db.profile.datatext` (datatext panel)
 
 ---

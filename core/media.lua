@@ -1,7 +1,8 @@
 -- QUI Media Registration
 -- This file handles the registration of fonts and textures with LibSharedMedia
 
-local LSM = LibStub("LibSharedMedia-3.0")
+local ADDON_NAME, ns = ...
+local LSM = ns.LSM
 
 -- Media types from LibSharedMedia
 local MediaType = LSM.MediaType

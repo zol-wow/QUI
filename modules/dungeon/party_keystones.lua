@@ -74,16 +74,7 @@ local VISIBILITY_DELAY = 0.1
 local INITIAL_KEYSTONE_REQUEST_DELAY = 5
 
 -- Skinning colors (retrieved dynamically)
-local function GetSkinColors()
-    local QUI = _G.QUI
-    if QUI and QUI.GetSkinColor and QUI.GetSkinBgColor then
-        local sr, sg, sb, sa = QUI:GetSkinColor()
-        local bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-        return sr, sg, sb, sa, bgr, bgg, bgb, bga
-    end
-    -- Fallback colors
-    return 0.2, 0.8, 0.6, 1, 0.067, 0.094, 0.153, 0.95
-end
+local GetSkinColors = Helpers.CreateSkinColorGetter()
 
 ---------------------------------------------------------------------------
 -- HELPER FUNCTIONS
@@ -204,8 +195,6 @@ local function ApplySkinColors()
     UpdateTitleColor()
 end
 
--- Expose refresh function for live color updates
-_G.QUI_RefreshKeyTrackerColors = ApplySkinColors
 
 -- Function to position frame (attached to PVEFrame)
 local function PositionKeyTracker()
@@ -351,8 +340,6 @@ local function UpdateAllButtonFonts()
     end
 end
 
--- Expose for live font size updates from options
-_G.QUI_RefreshKeyTrackerFonts = UpdateAllButtonFonts
 
 ---------------------------------------------------------------------------
 -- UPDATE FUNCTIONS
@@ -535,6 +522,15 @@ end
 
 -- Expose consolidated refresh for options panel
 _G.QUI_RefreshKeyTracker = RefreshKeyTracker
+
+if ns.Registry then
+    ns.Registry:Register("keyTracker", {
+        refresh = _G.QUI_RefreshKeyTracker,
+        priority = 55,
+        group = "data",
+        importCategories = { "minimapDatatexts" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- REQUEST FUNCTIONS

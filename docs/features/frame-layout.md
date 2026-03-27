@@ -15,24 +15,27 @@ The layout system has three pillars: **anchoring** (which frames attach to which
 
 ## How to Configure
 
-Frame layout settings are spread across several tabs in the QUI options panel:
+Frame layout settings are spread across several locations:
 
-- **UI > Frame Anchoring** -- Configure anchor relationships between QUI elements and other frames.
-- **UI > HUD Layering** -- Set frame level priorities to control render order.
-- Open `/qui editmode` to visually drag and reposition unit frames.
+- **Layout Mode** (`/qui layout`) -- The primary tool for positioning QUI frames. Provides an edge-docked slide-out toolbar, settings panels for each frame, a drawer with collapsible groups, and drag handles for repositioning. CDM, Group Frames, and Minimap settings are accessed here.
+- **Frame Positioning** tab in `/qui` -- Configure anchor relationships between QUI elements and other frames.
+- **Frame Levels** tab in `/qui` -- Set frame level priorities to control render order.
 
 ## Key Features
 
 ### Anchoring System
 
+The anchoring system uses `frameAnchoring` as its single source of truth for frame positions. Handle positioning uses parent handles, and all resolvers work through this unified system.
+
 - **Anchor QUI frames to each other** -- Attach one QUI element to another so they maintain a fixed spatial relationship. When the parent moves, the child follows.
 - **Anchor to Blizzard frames** -- Attach QUI elements to default Blizzard frames or third-party addon frames.
-- **Available anchor targets** -- The system supports anchoring to: Essential CDM, Utility CDM, primary and secondary power bars, Player unit frame, Target unit frame, Skyriding bar, Combat Timer, M+ Timer, BRez Timer, ExtraActionButton, BigWigs bars, DandersFrames, main chat frame, and action bars.
+- **Available anchor targets** -- The system supports anchoring to: Essential CDM, Utility CDM, primary and secondary power bars, Player unit frame, Target unit frame, Skyriding bar, Combat Timer, M+ Timer, BRez Timer, ExtraActionButton, BigWigs bars, DandersFrames, AbilityTimeline / Better Timeline, main chat frame, custom tracker bars, and action bars.
 - **Anchor point control** -- For each anchor relationship, you choose the source and target anchor points (TOP, BOTTOM, LEFT, RIGHT, CENTER, and corner combinations), plus X/Y offsets and gap values.
 - **Unit frame anchoring** -- Player and Target unit frames can anchor directly to CDM elements, keeping your core combat HUD as a single cohesive unit.
-- **Buff icon and tracked bar anchoring** -- Buff icons and tracked bars can anchor to CDM elements, maintaining consistent positioning relative to your cooldown display.
-- **Utility auto-anchor** -- The Utility bar can automatically position itself below the Essential bar without manual offset configuration.
+- **Container anchoring** -- CDM containers (aura, aura bar) can anchor to other CDM elements, maintaining consistent positioning relative to your cooldown display.
+- **Utility auto-anchor** -- The Utility container can automatically position itself below the Essential container without manual offset configuration.
 - **DandersFrames integration** -- If DandersFrames is installed, you can anchor its party, raid, and pinned frames to QUI elements, and use the QUI Target unit frame as an anchor target. Container anchoring is supported for DandersFrames preview frames.
+- **Boss frame proxy mover** -- Boss frames use a proxy mover that reparents correctly within the anchoring system.
 
 ### HUD Layering
 

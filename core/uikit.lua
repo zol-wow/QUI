@@ -8,7 +8,7 @@ local ADDON_NAME, ns = ...
 local UIKit = {}
 ns.UIKit = UIKit
 
-local LSM = LibStub("LibSharedMedia-3.0", true)
+local LSM = ns.LSM
 local Helpers = ns.Helpers
 local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
 local floor = math.floor
@@ -28,15 +28,12 @@ local accentCheckboxState = (Helpers and Helpers.CreateStateTable and Helpers.Cr
 
 -- Shared fallback color table for checkboxes (avoids per-widget allocation)
 local DEFAULT_CHECKBOX_COLORS = {
-    accent = {0.204, 0.827, 0.600},
-    accentHover = {0.431, 0.906, 0.718},
+    accent = {0.376, 0.647, 0.980},
+    accentHover = {0.506, 0.737, 1.0},
     toggleOff = {0.18, 0.18, 0.20},
 }
 
---- Lazily resolve QUICore (safe if called before main.lua loads)
-local function GetCore()
-    return ns.Addon
-end
+local GetCore = Helpers.GetCore
 
 local function Round(value)
     return floor((value or 0) + 0.5)
@@ -211,15 +208,6 @@ function UIKit.RegisterScaleRefresh(owner, key, refreshFn)
     callbacks[key or refreshFn] = refreshFn
 end
 
-function UIKit.UnregisterScaleRefresh(owner, key)
-    local callbacks = owner and scaleRefreshRegistry[owner]
-    if not callbacks then return end
-    callbacks[key] = nil
-    if not next(callbacks) then
-        scaleRefreshRegistry[owner] = nil
-    end
-end
-
 function UIKit.RefreshScaleBoundWidgets()
     for owner, callbacks in pairs(scaleRefreshRegistry) do
         for _, refreshFn in pairs(callbacks) do
@@ -231,10 +219,6 @@ end
 ---------------------------------------------------------------------------
 -- PIXEL HELPERS
 ---------------------------------------------------------------------------
-
-function UIKit.Pixels(value, frame)
-    return Pixels(value, frame)
-end
 
 function UIKit.DisablePixelSnap(obj)
     if not obj then return end
@@ -258,16 +242,6 @@ function UIKit.SetSizePx(frame, widthPixels, heightPixels)
         return
     end
     SetRegionSizePx(frame, widthPixels, heightPixels, frame)
-end
-
-function UIKit.SetWidthPx(frame, widthPixels)
-    if not frame then return end
-    local core = GetCore()
-    if core and core.SetPixelPerfectWidth then
-        core:SetPixelPerfectWidth(frame, widthPixels)
-        return
-    end
-    SetRegionSizePx(frame, widthPixels, nil, frame)
 end
 
 function UIKit.SetHeightPx(frame, heightPixels)
@@ -332,10 +306,7 @@ function UIKit.ResolveFontPath(fontName)
         local path = LSM:Fetch("font", fontName)
         if path then return path end
     end
-    if Helpers and Helpers.GetGeneralFont then
-        return Helpers.GetGeneralFont()
-    end
-    return DEFAULT_FONT
+    return Helpers.GetGeneralFont()
 end
 
 ---------------------------------------------------------------------------
@@ -747,6 +718,7 @@ function UIKit.CreateAnchorProxy(sourceFrame, opts)
     local currentSource = sourceFrame
     local lastWidth, lastHeight = 0, 0
     local lastAnchorSource = nil
+    local cachedSourceScale, cachedProxyScale
 
     function proxy:Sync()
         local source = currentSource
@@ -769,16 +741,31 @@ function UIKit.CreateAnchorProxy(sourceFrame, opts)
         if sizeResolver then
             w, h = sizeResolver(source)
         else
-            w = source:GetWidth() or 0
-            h = source:GetHeight() or 0
+            w = Helpers and Helpers.SafeToNumber(source:GetWidth(), 0) or (source:GetWidth() or 0)
+            h = Helpers and Helpers.SafeToNumber(source:GetHeight(), 0) or (source:GetHeight() or 0)
         end
         w = math.max(1, w or 0)
         h = math.max(1, h or 0)
         -- Scale conversion: sizeResolver dimensions are in the source frame's
         -- coordinate space, but the proxy is parented to UIParent.  Convert
         -- so the proxy's screen-space size matches the actual source content.
-        local sourceScale = source:GetEffectiveScale()
-        local proxyScale = self:GetEffectiveScale()
+        -- Cache effective scale — GetEffectiveScale can return secret values
+        -- during combat which cannot be used in Lua arithmetic.
+        local rawSrcScale = source:GetEffectiveScale()
+        local rawPxyScale = self:GetEffectiveScale()
+        local sourceScale, proxyScale
+        if rawSrcScale and not (issecretvalue and issecretvalue(rawSrcScale)) then
+            sourceScale = rawSrcScale
+            cachedSourceScale = rawSrcScale
+        else
+            sourceScale = cachedSourceScale
+        end
+        if rawPxyScale and not (issecretvalue and issecretvalue(rawPxyScale)) then
+            proxyScale = rawPxyScale
+            cachedProxyScale = rawPxyScale
+        else
+            proxyScale = cachedProxyScale
+        end
         if sourceScale and proxyScale and proxyScale > 0 and sourceScale ~= proxyScale then
             local scaleFactor = sourceScale / proxyScale
             w = w * scaleFactor
@@ -788,15 +775,26 @@ function UIKit.CreateAnchorProxy(sourceFrame, opts)
         -- slightly different floats than what was passed to SetSize,
         -- causing infinite SetSize→OnSizeChanged→SetSize loops.
         if math.abs(lastWidth - w) > 0.5 or math.abs(lastHeight - h) > 0.5 then
-            self:SetSize(w, h)
-            lastWidth, lastHeight = w, h
+            -- pcall: if protection somehow propagated to the proxy (e.g.
+            -- brief window at combat boundary), silently defer rather than
+            -- throwing ADDON_ACTION_BLOCKED.
+            local ok = pcall(self.SetSize, self, w, h)
+            if ok then
+                lastWidth, lastHeight = w, h
+            else
+                combatPending = true
+            end
         end
         if anchorResolver then
             anchorResolver(self, source)
             lastAnchorSource = source
         elseif lastAnchorSource ~= source then
-            self:ClearAllPoints()
-            self:SetPoint("CENTER", source, "CENTER", 0, 0)
+            -- pcall: anchoring to source can propagate protection from
+            -- Blizzard frames; if the proxy became protected, ClearAllPoints
+            -- and SetPoint would be blocked during combat.
+            if pcall(self.ClearAllPoints, self) then
+                pcall(self.SetPoint, self, "CENTER", source, "CENTER", 0, 0)
+            end
             lastAnchorSource = source
         end
         initialized = true

@@ -1,4 +1,4 @@
-## Interface: 120000, 120001
+## Interface: 120000, 120001, 120005
 ## Title: |cFF30D1FFQUI (Midnight)|r
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## AddonCompartmentFunc: QUI_CompartmentClick
@@ -6,7 +6,7 @@
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
 ## Author: Zol
-## Version: 2.55.2
+## Version: 2.56.0-alpha.2
 ## Category: User Interface
 ## SavedVariables: QUI_DB, QUIDB
 ## OptionalDeps: DandersFrames, BigWigs

@@ -20,12 +20,6 @@ local function RefreshMinimap()
     end
 end
 
-local function RefreshActionBars()
-    if _G.QUI_RefreshActionBars then
-        _G.QUI_RefreshActionBars()
-    end
-end
-
 local function RefreshUIHider()
     if _G.QUI_RefreshUIHider then
         _G.QUI_RefreshUIHider()
@@ -328,8 +322,7 @@ local function BuildMinimapTab(tabContent)
     end
     local mm = db.minimap
     if mm.middleClickMenuEnabled == nil then mm.middleClickMenuEnabled = true end
-    if mm.hideMicroMenu == nil then mm.hideMicroMenu = false end
-    if mm.hideBagBar == nil then mm.hideBagBar = false end
+    -- (hideMicroMenu/hideBagBar removed — now managed by action bars module)
 
     if true then  -- Always build widgets
 
@@ -343,118 +336,7 @@ local function BuildMinimapTab(tabContent)
         enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local lockCheck = GUI:CreateFormCheckbox(tabContent, "Lock QUI Minimap", "lock", mm, RefreshMinimap)
-        lockCheck:SetPoint("TOPLEFT", PAD, y)
-        lockCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local sizeSlider = GUI:CreateFormSlider(tabContent, "Map Dimensions (Pixels)", 120, 380, 1, "size", mm, RefreshMinimap)
-        sizeSlider:SetPoint("TOPLEFT", PAD, y)
-        sizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local scaleSlider = GUI:CreateFormSlider(tabContent, "Minimap Scale", 0.5, 2.0, 0.01, "scale", mm, RefreshMinimap, { deferOnDrag = true })
-        scaleSlider:SetPoint("TOPLEFT", PAD, y)
-        scaleSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local scaleDesc = GUI:CreateLabel(tabContent, "Scales minimap and datatext panel together without changing base pixel size.", 11, C.textMuted)
-        scaleDesc:SetPoint("TOPLEFT", PAD, y + 4)
-        scaleDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        scaleDesc:SetJustifyH("LEFT")
-        y = y - 20
-
-        y = y - 10
-
-        -- SECTION 1b: Middle Click Menu
-        local middleClickHeader = GUI:CreateSectionHeader(tabContent, "Middle Click Menu")
-        middleClickHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - middleClickHeader.gap
-
-        local middleClickEnabled = GUI:CreateFormCheckbox(tabContent, "Enable middle-click minimap menu", "middleClickMenuEnabled", mm, RefreshMinimap)
-        middleClickEnabled:SetPoint("TOPLEFT", PAD, y)
-        middleClickEnabled:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local hideMicroMenuCheck = GUI:CreateFormCheckbox(tabContent, "Hide Blizzard Micro Menu", "hideMicroMenu", mm, function()
-            RefreshMinimap()
-            RefreshActionBars()
-        end)
-        hideMicroMenuCheck:SetPoint("TOPLEFT", PAD, y)
-        hideMicroMenuCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local hideBagBarCheck = GUI:CreateFormCheckbox(tabContent, "Hide Blizzard Bag Bar", "hideBagBar", mm, function()
-            RefreshMinimap()
-            RefreshActionBars()
-        end)
-        hideBagBarCheck:SetPoint("TOPLEFT", PAD, y)
-        hideBagBarCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local middleClickDesc = GUI:CreateLabel(tabContent, "Middle-click the minimap to open an ElvUI-style quick menu. You can hide Micro Menu and Bag Bar from here too.", 11, C.textMuted)
-        middleClickDesc:SetPoint("TOPLEFT", PAD, y)
-        middleClickDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        middleClickDesc:SetJustifyH("LEFT")
-        y = y - 24
-
-        y = y - 10
-
-        -- SECTION 2: Frame Styling
-        local styleHeader = GUI:CreateSectionHeader(tabContent, "Frame Styling")
-        styleHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - styleHeader.gap
-
-        local borderSlider = GUI:CreateFormSlider(tabContent, "Border Size", 1, 16, 1, "borderSize", mm, RefreshMinimap)
-        borderSlider:SetPoint("TOPLEFT", PAD, y)
-        borderSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local borderColor = GUI:CreateFormColorPicker(tabContent, "Custom Border Color", "borderColor", mm, RefreshMinimap)
-        borderColor:SetPoint("TOPLEFT", PAD, y)
-        borderColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Normalize mutually exclusive flags on load (prefer class color)
-        if mm.useClassColorBorder and mm.useAccentColorBorder then
-            mm.useAccentColorBorder = false
-        end
-
-        local accentBorderCheck
-        local classBorderCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color for Edge", "useClassColorBorder", mm, function(val)
-            if val then
-                mm.useAccentColorBorder = false
-                if accentBorderCheck and accentBorderCheck.SetChecked then accentBorderCheck:SetChecked(false) end
-            end
-            if borderColor and borderColor.SetEnabled then
-                borderColor:SetEnabled(not val and not mm.useAccentColorBorder)
-            end
-            RefreshMinimap()
-        end)
-        classBorderCheck:SetPoint("TOPLEFT", PAD, y)
-        classBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        accentBorderCheck = GUI:CreateFormCheckbox(tabContent, "Use Accent Color for Edge", "useAccentColorBorder", mm, function(val)
-            if val then
-                mm.useClassColorBorder = false
-                if classBorderCheck and classBorderCheck.SetChecked then classBorderCheck:SetChecked(false) end
-            end
-            if borderColor and borderColor.SetEnabled then
-                borderColor:SetEnabled(not val and not mm.useClassColorBorder)
-            end
-            RefreshMinimap()
-        end)
-        accentBorderCheck:SetPoint("TOPLEFT", PAD, y)
-        accentBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Sync color picker enabled state on load
-        if borderColor and borderColor.SetEnabled then
-            borderColor:SetEnabled(not mm.useClassColorBorder and not mm.useAccentColorBorder)
-        end
-
-        y = y - 10
+        -- Minimap size, scale, middle-click menu, micro menu, bag bar, and border settings moved to Edit Mode settings panel.
 
         -- SECTION 3: Hide Minimap Elements
         local hideHeader = GUI:CreateSectionHeader(tabContent, "Hide Minimap Elements")
@@ -1715,8 +1597,3 @@ BuildDatatextTab = function(tabContent)
     tabContent:SetHeight(math.abs(y) + 50)
 end
 
--- Export
-ns.QUI_MinimapOptions = {
-    BuildMinimapTab = BuildMinimapTab,
-    BuildDatatextTab = BuildDatatextTab,
-}

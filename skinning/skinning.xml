@@ -14,5 +14,8 @@
     <Script file="frames/overrideactionbar.lua"/>
     <Script file="gameplay/objectivetracker.lua"/>
     <Script file="frames/instanceframes.lua"/>
+    <Script file="frames/auctionhouse.lua"/>
+    <Script file="frames/craftingorders.lua"/>
+    <Script file="frames/professions.lua"/>
     <Script file="system/tooltips.lua"/>
 </Ui>

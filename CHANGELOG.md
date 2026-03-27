@@ -4,6 +4,33 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v2.56.0-alpha.2
+
+### CDM (Cooldown Manager)
+- Unified icon override texture resolution — both Blizzard-child and custom-entry paths now use C-side `GetSpellInfo` for secret-safe icon lookup
+
+### CI
+- Restored dev build workflow for Discord dev channel notifications on every push
+
+## v2.56.0-alpha.1
+
+### CDM (Cooldown Manager)
+- Overhauled cooldown state to use `isActive` (non-secret) as the authoritative signal
+- Replaced mirror SetCooldown hook with DurationObject-only forwarding — fixes flickering
+- Fixed desaturation: now uses DurationObject remaining time with GCD filtering instead of stale start/duration values
+- Fixed charge text showing misleading counts on single-charge spells (e.g., empowerment mechanics)
+- Guarded `GetOverrideSpell` return value against secret comparisons in combat
+- Bars: timestamp-based mirror fill detection instead of hookedBars lookup — fixes stale mirror state
+- Bars: clear stale mirrorMap entries when Blizzard viewer child changes
+
+### M+ Timer
+- Added Panel Opacity slider in layout mode to control backdrop alpha independently of background color
+
+### Misc
+- Added support for charged combo points
+- Fixed HousingPhotoSharingFrame tooltip issue
+- Fixed group frame pre-creation and aura scan reliability
+
 
 
 

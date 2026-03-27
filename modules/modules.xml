@@ -12,4 +12,5 @@
     <Include file="qol\qol.xml"/>
     <Include file="dungeon\dungeon.xml"/>
     <Include file="chat\chat.xml"/>
+    <Include file="debug\debug.xml"/>
 </Ui>

@@ -1,7 +1,7 @@
 --[[
     QUI Tooltip Provider
     Abstraction layer for the tooltip engine.
-    Load order: tooltip_provider.lua → tooltip_classic.lua
+    Load order: tooltip_provider.lua → tooltip.lua
     Engine files call RegisterEngine() at load time.
     Provider calls Initialize() on the selected engine after PLAYER_LOGIN.
 ]]
@@ -16,7 +16,7 @@ local GetCore = Helpers.GetCore
 local TooltipProvider = {
     engines = {},           -- name → engine table
     activeEngine = nil,     -- the initialized engine table
-    activeEngineName = nil, -- "classic"
+    activeEngineName = nil, -- "default"
     initialized = false,
 }
 
@@ -25,7 +25,7 @@ local TooltipProvider = {
 ---------------------------------------------------------------------------
 
 --- Register a tooltip engine implementation.
---- @param name string  Engine identifier ("classic")
+--- @param name string  Engine identifier ("default")
 --- @param engine table  Table with contract methods (Initialize, Refresh, etc.)
 function TooltipProvider:RegisterEngine(name, engine)
     self.engines[name] = engine
@@ -38,7 +38,7 @@ function TooltipProvider:GetActiveEngineName()
 end
 
 ---------------------------------------------------------------------------
--- SHARED UTILITIES (engine-agnostic, used by both engines)
+-- SHARED UTILITIES (engine-agnostic)
 ---------------------------------------------------------------------------
 
 -- Locals for performance
@@ -153,7 +153,10 @@ function TooltipProvider:IsFrameBlockingMouse()
     if not focus then return false end
     if focus == WorldFrame then return false end
     if IsOPieFrame(focus) then return false end
-    return focus:IsVisible()
+    -- Some frames (e.g. PingListenerFrame) are forbidden objects
+    -- where IsVisible() cannot be called from addon code.
+    local ok, visible = pcall(focus.IsVisible, focus)
+    return ok and visible
 end
 
 ---------------------------------------------------------------------------
@@ -389,6 +392,26 @@ function TooltipProvider:PositionTooltipAtCursor(tooltip, settings)
 end
 
 ---------------------------------------------------------------------------
+-- TOOLTIP ANCHOR (fixed position when not cursor-anchored)
+---------------------------------------------------------------------------
+
+local tooltipAnchor = CreateFrame("Frame", "QUI_TooltipAnchor", UIParent)
+tooltipAnchor:SetSize(200, 40)
+tooltipAnchor:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -200, 100)
+tooltipAnchor:SetClampedToScreen(true)
+
+--- Position the tooltip at the fixed anchor frame.
+function TooltipProvider:PositionTooltipAtAnchor(tooltip, settings)
+    if not tooltip then return end
+    tooltip:ClearAllPoints()
+    tooltip:SetPoint("BOTTOMRIGHT", tooltipAnchor, "BOTTOMRIGHT", 0, 0)
+end
+
+--- Legacy position helpers removed — frameAnchoring system handles positioning.
+--- RestoreAnchorPosition kept as no-op for any remaining callers.
+function TooltipProvider:RestoreAnchorPosition() end
+
+---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
@@ -396,15 +419,15 @@ function TooltipProvider:InitializeEngine()
     if self.initialized then return end
 
     local QUICore = ns.Addon
-    local engineName = "classic"
+    local engineName = "default"
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip then
-        engineName = QUICore.db.profile.tooltip.engine or "classic"
+        engineName = QUICore.db.profile.tooltip.engine or "default"
     end
 
     local engine = self.engines[engineName]
     if not engine then
-        engine = self.engines["classic"]
-        engineName = "classic"
+        engine = self.engines["default"]
+        engineName = "default"
     end
 
     if not engine then
@@ -418,6 +441,9 @@ function TooltipProvider:InitializeEngine()
     if engine.Initialize then
         engine:Initialize()
     end
+
+    -- Restore saved tooltip anchor position
+    self:RestoreAnchorPosition()
 end
 
 ---------------------------------------------------------------------------

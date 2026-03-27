@@ -47,7 +47,7 @@ local function ResolveColor(mode, colorTable)
             local r, g, b = QUI:GetSkinColor()
             return r, g, b, 0.8
         end
-        return 0.2, 1.0, 0.6, 0.8  -- fallback mint
+        return 0.376, 0.647, 0.980, 0.8  -- fallback sky blue
     elseif mode == "custom" then
         local c = colorTable or {}
         return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
@@ -140,7 +140,8 @@ local function ApplySwipeToIcon(icon, settings)
     end
 
     icon.Cooldown:SetDrawSwipe(showSwipe)
-    icon.Cooldown:SetDrawEdge(showSwipe and mode == "aura")
+    local showEdge = showSwipe and (mode == "aura" or (mode == "cooldown" and settings.showRechargeEdge))
+    icon.Cooldown:SetDrawEdge(showEdge)
 
     -- Apply color and texture based on mode
     if mode == "aura" then

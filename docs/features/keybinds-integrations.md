@@ -17,8 +17,9 @@ The keybind features cover two areas: binding keys to abilities (via LibKeyBound
 
 Keybind features are available by default. To configure display options:
 
-- Open `/qui` and navigate to the **Utility > Keybinds** tab.
+- Open `/qui` -- keybind display settings are within each module's settings.
 - Type `/kb` in chat to toggle keybind mode for hover-and-press binding.
+- Click-casting settings are in the dedicated **Click-Cast** tab in `/qui`.
 
 Third-party integrations are configured in their respective tabs within `/qui`, and most activate automatically when the relevant addon is detected.
 
@@ -73,13 +74,17 @@ QUI detects DandersFrames automatically and enables frame anchoring integration:
 
 - **Frame anchoring** -- When BigWigs is installed, QUI elements can be anchored to the BigWigs bar display. This lets you position your CDM or other elements relative to boss timers, keeping your encounter HUD organized.
 
+### AbilityTimeline / Better Timeline
+
+- **Frame anchoring** -- When AbilityTimeline (Better Timeline) is installed, QUI elements can be anchored to it for consistent layout positioning.
+
 ### Plater and Platynator
 
-- **Bundled import strings** -- QUI ships with pre-built Plater and Platynator nameplate profiles that complement QUI's visual style. These are available in the **Core > Import** tab and can be applied with one click.
+- **Bundled import strings** -- QUI ships with pre-built Plater and Platynator nameplate profiles that complement QUI's visual style. These are available in the **Import & Export Strings** tab and can be applied with one click.
 
 ### LibDualSpec
 
-- **Automatic profile switching** -- LibDualSpec integration lets QUI automatically switch to a different profile when you change specializations. Configure which profile maps to each spec in the **Core > Profiles** tab.
+- **Automatic profile switching** -- LibDualSpec integration lets QUI automatically switch to a different profile when you change specializations. Configure which profile maps to each spec in the **Profiles** tab.
 
 ### LibSharedMedia
 

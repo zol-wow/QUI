@@ -11,12 +11,8 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local QUICore = ns.Addon
 
-local function SafeGetPixelSize(frame)
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
-
 -- Local references
+local SafeGetPixelSize = Shared.SafeGetPixelSize
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
 local GetDB = Shared.GetDB
@@ -24,6 +20,7 @@ local GetTextureList = Shared.GetTextureList
 local GetFontList = Shared.GetFontList
 local RefreshUnitFrames = Shared.RefreshUnitFrames
 local NINE_POINT_ANCHOR_OPTIONS = Shared.NINE_POINT_ANCHOR_OPTIONS
+local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- PAGE: Unit Frames (Single Frames & Castbars)
@@ -46,30 +43,27 @@ local function CreateUnitFramesPage(parent)
 
     -- Build the General tab content
     local function BuildGeneralTab(tabContent)
-        local y = -10
         local PAD = 10
         local FORM_ROW = 32
+        local P = Helpers.PlaceRow
         local ufdb = GetUFDB()
 
-        -- Set search context for auto-registration
         GUI:SetSearchContext({tabIndex = 5, tabName = "Unit Frames", subTabIndex = 1, subTabName = "General"})
-
 
         if not ufdb then
             local info = GUI:CreateLabel(tabContent, "Unit frame settings not available - database not loaded", 12, C.textMuted)
-            info:SetPoint("TOPLEFT", PAD, y)
+            info:SetPoint("TOPLEFT", PAD, -10)
             tabContent:SetHeight(100)
             return
         end
 
-        -- Use the main profile general settings (not ufdb.general)
         local general = db.general
         if not general then
             db.general = {}
             general = db.general
         end
 
-        -- Enable checkbox
+        -- Enable checkbox (always visible, not collapsible)
         local enableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Unitframes (Req. Reload)", "enabled", ufdb, function()
             RefreshNewUF()
             GUI:ShowConfirmation({
@@ -80,275 +74,152 @@ local function CreateUnitFramesPage(parent)
                 onAccept = function() QUI:SafeReload() end,
             })
         end)
-        enableCheck:SetPoint("TOPLEFT", PAD, y)
+        enableCheck:SetPoint("TOPLEFT", PAD, -10)
         enableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
-        -- EDIT MODE section
-        local editHeader = GUI:CreateSectionHeader(tabContent, "Positioning")
-        editHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - editHeader.gap
+        local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(tabContent, PAD, -10 - FORM_ROW)
 
-        local editDesc = GUI:CreateLabel(tabContent, "Toggle Edit Mode to drag and reposition unit frames. Or use /qui editmode", 11, C.textMuted)
-        editDesc:SetPoint("TOPLEFT", PAD, y)
-        editDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        editDesc:SetJustifyH("LEFT")
-        y = y - 24
-
-        -- Edit Mode button (form style)
-        local editContainer = CreateFrame("Frame", nil, tabContent)
-        editContainer:SetHeight(FORM_ROW)
-        editContainer:SetPoint("TOPLEFT", PAD, y)
-        editContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-
-        local editLabel = editContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        editLabel:SetPoint("LEFT", 0, 0)
-        editLabel:SetText("Edit Mode")
-        editLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-        local editModeBtn = CreateFrame("Button", nil, editContainer, "BackdropTemplate")
-        editModeBtn:SetSize(120, 24)
-        editModeBtn:SetPoint("LEFT", editContainer, "LEFT", 180, 0)
-        local px = SafeGetPixelSize(editModeBtn)
-        editModeBtn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        editModeBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-        editModeBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
-
-        local editBtnText = editModeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        editBtnText:SetPoint("CENTER")
-        editBtnText:SetText("Toggle")
-        editBtnText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-        editModeBtn:SetScript("OnEnter", function(self)
-            self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-        end)
-        editModeBtn:SetScript("OnLeave", function(self)
-            self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
-        end)
-        editModeBtn:SetScript("OnClick", function()
-            if _G.QUI_ToggleUnitFrameEditMode then
-                _G.QUI_ToggleUnitFrameEditMode()
-            end
-        end)
-        y = y - FORM_ROW - 10
-
-        -- Store widget refs for BOTH sections (bidirectional conditional disable)
+        -- Widget refs for cross-section conditional disable
         local defaultWidgets = {}
         local darkModeWidgets = {}
 
-        -- Helper to update enable states based on dark mode toggle
         local function UpdateDarkModeWidgetStates()
             local darkModeOn = general.darkMode
-            -- Default widgets: enabled when dark mode OFF
             if defaultWidgets.healthColor then defaultWidgets.healthColor:SetEnabled(not darkModeOn) end
             if defaultWidgets.bgColor then defaultWidgets.bgColor:SetEnabled(not darkModeOn) end
-            if defaultWidgets.opacity then defaultWidgets.opacity:SetEnabled(not darkModeOn) end
-            -- Darkmode widgets: enabled when dark mode ON
             if darkModeWidgets.healthColor then darkModeWidgets.healthColor:SetEnabled(darkModeOn) end
             if darkModeWidgets.bgColor then darkModeWidgets.bgColor:SetEnabled(darkModeOn) end
-            if darkModeWidgets.opacity then darkModeWidgets.opacity:SetEnabled(darkModeOn) end
         end
 
-        -- DEFAULT UNITFRAME COLORS section
-        local defaultHeader = GUI:CreateSectionHeader(tabContent, "Default Unitframe Colors")
-        defaultHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - defaultHeader.gap
+        -- Default Unitframe Colors
+        CreateCollapsible("Default Unitframe Colors", 5 * FORM_ROW + 24 + 8, function(body)
+            local sy = -4
 
-        local defaultDesc = GUI:CreateLabel(tabContent, "Colors and opacity applied to unit frames when Dark Mode is disabled.", 11, C.textMuted)
-        defaultDesc:SetPoint("TOPLEFT", PAD, y)
-        defaultDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        defaultDesc:SetJustifyH("LEFT")
-        y = y - 24
+            local desc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            desc:SetPoint("TOPLEFT", 0, sy)
+            desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            desc:SetJustifyH("LEFT")
+            desc:SetText("Colors and opacity applied when Dark Mode is disabled.")
+            desc:SetTextColor(0.5, 0.5, 0.5, 1)
+            sy = sy - 24
 
-        -- Use Class Colors toggle (greys out Default Health Color when ON)
-        local defUseClassColor = GUI:CreateFormCheckbox(tabContent, "Use Class Colors", "defaultUseClassColor", general, function()
-            RefreshNewUF()
-            -- Grey out health color picker when class colors is enabled
-            if defaultWidgets.healthColor then
-                defaultWidgets.healthColor:SetEnabled(not general.defaultUseClassColor)
-            end
+            local defUseClassColor = GUI:CreateFormCheckbox(body, "Use Class Colors", "defaultUseClassColor", general, function()
+                RefreshNewUF()
+                if defaultWidgets.healthColor then defaultWidgets.healthColor:SetEnabled(not general.defaultUseClassColor) end
+            end)
+            sy = P(defUseClassColor, body, sy)
+
+            local defHealthColor = GUI:CreateFormColorPicker(body, "Default Health Color", "defaultHealthColor", general, RefreshNewUF, { noAlpha = true })
+            sy = P(defHealthColor, body, sy)
+            defaultWidgets.healthColor = defHealthColor
+            defHealthColor:SetEnabled(not general.defaultUseClassColor)
+
+            local defBgColor = GUI:CreateFormColorPicker(body, "Default Background Color", "defaultBgColor", general, RefreshNewUF, { noAlpha = true })
+            sy = P(defBgColor, body, sy)
+            defaultWidgets.bgColor = defBgColor
+
+            local defHealthOpacity = GUI:CreateFormSlider(body, "Health Opacity", 0.1, 1.0, 0.01, "defaultHealthOpacity", general, RefreshNewUF)
+            sy = P(defHealthOpacity, body, sy)
+
+            local defBgOpacity = GUI:CreateFormSlider(body, "Background Opacity", 0.1, 1.0, 0.01, "defaultBgOpacity", general, RefreshNewUF)
+            P(defBgOpacity, body, sy)
         end)
-        defUseClassColor:SetPoint("TOPLEFT", PAD, y)
-        defUseClassColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        defaultWidgets.useClassColor = defUseClassColor
-        y = y - FORM_ROW
 
-        -- Default Health Color (greyed out when Use Class Colors is ON)
-        local defHealthColor = GUI:CreateFormColorPicker(tabContent, "Default Health Color", "defaultHealthColor", general, RefreshNewUF, { noAlpha = true })
-        defHealthColor:SetPoint("TOPLEFT", PAD, y)
-        defHealthColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        defaultWidgets.healthColor = defHealthColor
-        defHealthColor:SetEnabled(not general.defaultUseClassColor)  -- Initial state
-        y = y - FORM_ROW
+        -- Darkmode
+        CreateCollapsible("Darkmode", 5 * FORM_ROW + 24 + 8, function(body)
+            local sy = -4
 
-        -- Default Background Color
-        local defBgColor = GUI:CreateFormColorPicker(tabContent, "Default Background Color", "defaultBgColor", general, RefreshNewUF, { noAlpha = true })
-        defBgColor:SetPoint("TOPLEFT", PAD, y)
-        defBgColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        defaultWidgets.bgColor = defBgColor
-        y = y - FORM_ROW
+            local desc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            desc:SetPoint("TOPLEFT", 0, sy)
+            desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            desc:SetJustifyH("LEFT")
+            desc:SetText("Instantly applies dark flat colors to all unit frame health bars.")
+            desc:SetTextColor(0.5, 0.5, 0.5, 1)
+            sy = sy - 24
 
-        -- Health Opacity slider
-        local defHealthOpacity = GUI:CreateFormSlider(tabContent, "Health Opacity", 0.1, 1.0, 0.01, "defaultHealthOpacity", general, RefreshNewUF)
-        defHealthOpacity:SetPoint("TOPLEFT", PAD, y)
-        defHealthOpacity:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        defaultWidgets.healthOpacity = defHealthOpacity
-        y = y - FORM_ROW
+            local darkEnable = GUI:CreateFormCheckbox(body, "Enable Dark Mode", "darkMode", general, function()
+                RefreshNewUF()
+                UpdateDarkModeWidgetStates()
+            end)
+            sy = P(darkEnable, body, sy)
 
-        -- Background Opacity slider
-        local defBgOpacity = GUI:CreateFormSlider(tabContent, "Background Opacity", 0.1, 1.0, 0.01, "defaultBgOpacity", general, RefreshNewUF)
-        defBgOpacity:SetPoint("TOPLEFT", PAD, y)
-        defBgOpacity:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        defaultWidgets.bgOpacity = defBgOpacity
-        y = y - FORM_ROW - 10
+            local hc = GUI:CreateFormColorPicker(body, "Darkmode Health Color", "darkModeHealthColor", general, RefreshNewUF, { noAlpha = true })
+            sy = P(hc, body, sy)
+            darkModeWidgets.healthColor = hc
 
-        -- DARK MODE section
-        local darkHeader = GUI:CreateSectionHeader(tabContent, "Darkmode For Unitframes")
-        darkHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - darkHeader.gap
+            local bc = GUI:CreateFormColorPicker(body, "Darkmode Background Color", "darkModeBgColor", general, RefreshNewUF, { noAlpha = true })
+            sy = P(bc, body, sy)
+            darkModeWidgets.bgColor = bc
 
-        local darkDesc = GUI:CreateLabel(tabContent, "Instantly applies dark flat colors to all unit frame health bars.", 11, C.textMuted)
-        darkDesc:SetPoint("TOPLEFT", PAD, y)
-        darkDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        darkDesc:SetJustifyH("LEFT")
-        y = y - 24
+            local dmHO = GUI:CreateFormSlider(body, "Darkmode Health Opacity", 0.1, 1.0, 0.01, "darkModeHealthOpacity", general, RefreshNewUF)
+            sy = P(dmHO, body, sy)
 
-        local darkEnable = GUI:CreateFormCheckbox(tabContent, "Enable Dark Mode", "darkMode", general, function()
-            RefreshNewUF()
-            UpdateDarkModeWidgetStates()
+            local dmBO = GUI:CreateFormSlider(body, "Darkmode Background Opacity", 0.1, 1.0, 0.01, "darkModeBgOpacity", general, RefreshNewUF)
+            P(dmBO, body, sy)
         end)
-        darkEnable:SetPoint("TOPLEFT", PAD, y)
-        darkEnable:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
-        -- Darkmode Health Color (no alpha - pure RGB)
-        local healthColor = GUI:CreateFormColorPicker(tabContent, "Darkmode Health Color", "darkModeHealthColor", general, RefreshNewUF, { noAlpha = true })
-        healthColor:SetPoint("TOPLEFT", PAD, y)
-        healthColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        darkModeWidgets.healthColor = healthColor
-        y = y - FORM_ROW
-
-        -- Darkmode Background Color (no alpha - pure RGB)
-        local bgColor = GUI:CreateFormColorPicker(tabContent, "Darkmode Background Color", "darkModeBgColor", general, RefreshNewUF, { noAlpha = true })
-        bgColor:SetPoint("TOPLEFT", PAD, y)
-        bgColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        darkModeWidgets.bgColor = bgColor
-        y = y - FORM_ROW
-
-        -- Darkmode Health Opacity slider
-        local dmHealthOpacity = GUI:CreateFormSlider(tabContent, "Darkmode Health Opacity", 0.1, 1.0, 0.01, "darkModeHealthOpacity", general, RefreshNewUF)
-        dmHealthOpacity:SetPoint("TOPLEFT", PAD, y)
-        dmHealthOpacity:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        darkModeWidgets.healthOpacity = dmHealthOpacity
-        y = y - FORM_ROW
-
-        -- Darkmode Background Opacity slider
-        local dmBgOpacity = GUI:CreateFormSlider(tabContent, "Darkmode Background Opacity", 0.1, 1.0, 0.01, "darkModeBgOpacity", general, RefreshNewUF)
-        dmBgOpacity:SetPoint("TOPLEFT", PAD, y)
-        dmBgOpacity:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        darkModeWidgets.bgOpacity = dmBgOpacity
-        y = y - FORM_ROW - 10
-
-        -- Set initial enable/disable states for both sections
         UpdateDarkModeWidgetStates()
 
-        -- MASTER TEXT COLOR OVERRIDES section
-        local textHeader = GUI:CreateSectionHeader(tabContent, "Text Class Color/React Color Overrides (Recommended For Dark Mode)")
-        textHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - textHeader.gap
+        -- Text Color Overrides
+        CreateCollapsible("Text Class Color Overrides", 5 * FORM_ROW + 40 + 8, function(body)
+            local sy = -4
 
-        local textDesc = GUI:CreateLabel(tabContent, "Apply class/reaction color to text across ALL unit frames. When enabled, master toggles override individual frame settings.", 11, C.textMuted)
-        textDesc:SetPoint("TOPLEFT", PAD, y)
-        textDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        textDesc:SetJustifyH("LEFT")
-        textDesc:SetWordWrap(true)
-        textDesc:SetHeight(30)
-        y = y - 40
+            local desc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            desc:SetPoint("TOPLEFT", 0, sy)
+            desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            desc:SetJustifyH("LEFT")
+            desc:SetWordWrap(true)
+            desc:SetText("Apply class/reaction color to text across ALL unit frames. Recommended for Dark Mode.")
+            desc:SetTextColor(0.5, 0.5, 0.5, 1)
+            desc:SetHeight(30)
+            sy = sy - 40
 
-        local masterNameText = GUI:CreateFormCheckbox(tabContent, "Color ALL Name Text", "masterColorNameText", general, RefreshNewUF)
-        masterNameText:SetPoint("TOPLEFT", PAD, y)
-        masterNameText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+            sy = P(GUI:CreateFormCheckbox(body, "Color ALL Name Text", "masterColorNameText", general, RefreshNewUF), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Color ALL Health Text", "masterColorHealthText", general, RefreshNewUF), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Color ALL Power Text", "masterColorPowerText", general, RefreshNewUF), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Color ALL Castbar Text", "masterColorCastbarText", general, RefreshNewUF), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Color ALL ToT Text", "masterColorToTText", general, RefreshNewUF), body, sy)
+        end)
 
-        local masterHealthText = GUI:CreateFormCheckbox(tabContent, "Color ALL Health Text", "masterColorHealthText", general, RefreshNewUF)
-        masterHealthText:SetPoint("TOPLEFT", PAD, y)
-        masterHealthText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+        -- Tooltips
+        CreateCollapsible("Tooltips", 1 * FORM_ROW + 8, function(body)
+            local sy = -4
+            P(GUI:CreateFormCheckbox(body, "Show Tooltip for Unitframes", "showTooltips", ufdb.general, RefreshNewUF), body, sy)
+        end)
 
-        local masterPowerText = GUI:CreateFormCheckbox(tabContent, "Color ALL Power Text", "masterColorPowerText", general, RefreshNewUF)
-        masterPowerText:SetPoint("TOPLEFT", PAD, y)
-        masterPowerText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+        -- Smoother Updates
+        CreateCollapsible("Smoother Updates", 1 * FORM_ROW + 24 + 8, function(body)
+            local sy = -4
 
-        local masterCastbarText = GUI:CreateFormCheckbox(tabContent, "Color ALL Castbar Text", "masterColorCastbarText", general, RefreshNewUF)
-        masterCastbarText:SetPoint("TOPLEFT", PAD, y)
-        masterCastbarText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+            local desc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            desc:SetPoint("TOPLEFT", 0, sy)
+            desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            desc:SetJustifyH("LEFT")
+            desc:SetText("Enable for maximum smoothness at the cost of extra CPU usage.")
+            desc:SetTextColor(0.5, 0.5, 0.5, 1)
+            sy = sy - 24
 
-        local masterToTText = GUI:CreateFormCheckbox(tabContent, "Color ALL ToT Text", "masterColorToTText", general, RefreshNewUF)
-        masterToTText:SetPoint("TOPLEFT", PAD, y)
-        masterToTText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+            P(GUI:CreateFormCheckbox(body, "Smoother Animation", "smootherAnimation", ufdb.general, RefreshNewUF), body, sy)
+        end)
 
-        -- TOOLTIPS SECTION
-        y = y - 10
+        -- Hostility Colors
+        CreateCollapsible("Hostility Colors", 3 * FORM_ROW + 24 + 8, function(body)
+            local sy = -4
 
-        local tooltipHeader = GUI:CreateSectionHeader(tabContent, "Tooltips on QUI Unitframes")
-        tooltipHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - tooltipHeader.gap
+            local desc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            desc:SetPoint("TOPLEFT", 0, sy)
+            desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            desc:SetJustifyH("LEFT")
+            desc:SetText("Customize hostile, neutral, and friendly NPC colors.")
+            desc:SetTextColor(0.5, 0.5, 0.5, 1)
+            sy = sy - 24
 
-        local tooltipCheck = GUI:CreateFormCheckbox(tabContent, "Show Tooltip for Unitframes", "showTooltips", ufdb.general, RefreshNewUF)
-        tooltipCheck:SetPoint("TOPLEFT", PAD, y)
-        tooltipCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+            sy = P(GUI:CreateFormColorPicker(body, "Hostile Color", "hostilityColorHostile", general, RefreshNewUF, { noAlpha = true }), body, sy)
+            sy = P(GUI:CreateFormColorPicker(body, "Neutral Color", "hostilityColorNeutral", general, RefreshNewUF, { noAlpha = true }), body, sy)
+            P(GUI:CreateFormColorPicker(body, "Friendly Color", "hostilityColorFriendly", general, RefreshNewUF, { noAlpha = true }), body, sy)
+        end)
 
-        -- Smoother Updates section
-        local smoothHeader = GUI:CreateSectionHeader(tabContent, "Smoother Updates")
-        smoothHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - smoothHeader.gap
-
-        local smoothDesc = GUI:CreateLabel(tabContent, "Target, Focus, and Boss castbars are throttled to 60 FPS for CPU efficiency. Enable this option if you prefer maximum smoothness and don't mind the extra CPU usage.", 11, C.textMuted)
-        smoothDesc:SetPoint("TOPLEFT", PAD, y)
-        smoothDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        smoothDesc:SetJustifyH("LEFT")
-        y = y - 24
-
-        local smoothCheck = GUI:CreateFormCheckbox(tabContent, "Smoother Animation", "smootherAnimation", ufdb.general, RefreshNewUF)
-        smoothCheck:SetPoint("TOPLEFT", PAD, y)
-        smoothCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Hostility Color Customization section
-        local hostilityHeader = GUI:CreateSectionHeader(tabContent, "Hostility Color Customization")
-        hostilityHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - hostilityHeader.gap
-
-        local hostilityDesc = GUI:CreateLabel(tabContent, "Customize the colors used for hostile, neutral, and friendly NPCs on unit frames that have 'Use Hostility Color' enabled.", 11, C.textMuted)
-        hostilityDesc:SetPoint("TOPLEFT", PAD, y)
-        hostilityDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        hostilityDesc:SetJustifyH("LEFT")
-        y = y - 24
-
-        local hostileColor = GUI:CreateFormColorPicker(tabContent, "Hostile Color", "hostilityColorHostile", general, RefreshNewUF, { noAlpha = true })
-        hostileColor:SetPoint("TOPLEFT", PAD, y)
-        hostileColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local neutralColor = GUI:CreateFormColorPicker(tabContent, "Neutral Color", "hostilityColorNeutral", general, RefreshNewUF, { noAlpha = true })
-        neutralColor:SetPoint("TOPLEFT", PAD, y)
-        neutralColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local friendlyColor = GUI:CreateFormColorPicker(tabContent, "Friendly Color", "hostilityColorFriendly", general, RefreshNewUF, { noAlpha = true })
-        friendlyColor:SetPoint("TOPLEFT", PAD, y)
-        friendlyColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        tabContent:SetHeight(math.abs(y) + 20)
+        relayout()
     end
 
     -- Build unit-specific tab content (Player, Target, etc.)
@@ -554,113 +425,7 @@ local function CreateUnitFramesPage(parent)
             y = y - FORM_ROW
         end
 
-        -- Position sliders
-        local offsetXSlider = GUI:CreateFormSlider(tabContent, "X Offset", -3000, 3000, 1, "offsetX", unitDB, RefreshUnit)
-        offsetXSlider:SetPoint("TOPLEFT", PAD, y)
-        offsetXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        local offsetYSlider = GUI:CreateFormSlider(tabContent, "Y Offset", -3000, 3000, 1, "offsetY", unitDB, RefreshUnit)
-        offsetYSlider:SetPoint("TOPLEFT", PAD, y)
-        offsetYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        -- Register sliders for real-time sync during Edit Mode
-        if _G.QUI_RegisterEditModeSliders then
-            _G.QUI_RegisterEditModeSliders(unitKey, offsetXSlider, offsetYSlider)
-        end
-
-        -- Frame Anchoring section (only for player and target)
-        if unitKey == "player" or unitKey == "target" then
-            local anchorHeader = GUI:CreateSectionHeader(tabContent, "Frame Anchoring")
-            anchorHeader:SetPoint("TOPLEFT", PAD, y)
-            y = y - anchorHeader.gap
-
-            -- Initialize defaults if needed
-            if unitDB.anchorTo == nil then unitDB.anchorTo = "disabled" end
-            if unitDB.anchorGap == nil then unitDB.anchorGap = 10 end
-            if unitDB.anchorYOffset == nil then unitDB.anchorYOffset = 0 end
-
-            -- Description text
-            local anchorDesc = GUI:CreateLabel(tabContent,
-                unitKey == "player"
-                    and "Anchors frame to the LEFT edge of selected target. As the anchor width changes, this frame will reposition automatically."
-                    or "Anchors frame to the RIGHT edge of selected target. As the anchor width changes, this frame will reposition automatically.",
-                11, C.textMuted)
-            anchorDesc:SetPoint("TOPLEFT", PAD, y)
-            anchorDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            anchorDesc:SetJustifyH("LEFT")
-            y = y - 36
-
-            -- Forward declarations for sliders
-            local anchorGapSlider, anchorYOffsetSlider
-
-            -- Helper function to update slider enabled states
-            local function UpdateAnchorSliderStates()
-                local isAnchored = unitDB.anchorTo and unitDB.anchorTo ~= "disabled"
-                if isAnchored then
-                    anchorGapSlider:SetAlpha(1)
-                    anchorGapSlider:EnableMouse(true)
-                    anchorYOffsetSlider:SetAlpha(1)
-                    anchorYOffsetSlider:EnableMouse(true)
-                    offsetXSlider:SetAlpha(0.4)
-                    offsetXSlider:EnableMouse(false)
-                    offsetYSlider:SetAlpha(0.4)
-                    offsetYSlider:EnableMouse(false)
-                else
-                    anchorGapSlider:SetAlpha(0.4)
-                    anchorGapSlider:EnableMouse(false)
-                    anchorYOffsetSlider:SetAlpha(0.4)
-                    anchorYOffsetSlider:EnableMouse(false)
-                    offsetXSlider:SetAlpha(1)
-                    offsetXSlider:EnableMouse(true)
-                    offsetYSlider:SetAlpha(1)
-                    offsetYSlider:EnableMouse(true)
-                end
-            end
-
-            -- Anchor dropdown with 5 options
-            local anchorOptions = {
-                {value = "disabled", text = "Disabled"},
-                {value = "essential", text = "Essential CDM"},
-                {value = "utility", text = "Utility CDM"},
-                {value = "primary", text = "Primary Resource Bar"},
-                {value = "secondary", text = "Secondary Resource Bar"},
-            }
-            local anchorDropdown = GUI:CreateFormDropdown(tabContent, "Anchor To", anchorOptions, "anchorTo", unitDB, function()
-                RefreshUnit()
-                if _G.QUI_UpdateAnchoredUnitFrames then
-                    _G.QUI_UpdateAnchoredUnitFrames()
-                end
-                UpdateAnchorSliderStates()
-            end)
-            anchorDropdown:SetPoint("TOPLEFT", PAD, y)
-            anchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
-
-            -- Horizontal gap slider
-            anchorGapSlider = GUI:CreateFormSlider(tabContent, "Horizontal Gap", 0, 100, 1, "anchorGap", unitDB, function()
-                if _G.QUI_UpdateAnchoredUnitFrames then
-                    _G.QUI_UpdateAnchoredUnitFrames()
-                end
-            end)
-            anchorGapSlider:SetPoint("TOPLEFT", PAD, y)
-            anchorGapSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
-
-            -- Vertical offset slider
-            anchorYOffsetSlider = GUI:CreateFormSlider(tabContent, "Vertical Offset", -200, 200, 1, "anchorYOffset", unitDB, function()
-                if _G.QUI_UpdateAnchoredUnitFrames then
-                    _G.QUI_UpdateAnchoredUnitFrames()
-                end
-            end)
-            anchorYOffsetSlider:SetPoint("TOPLEFT", PAD, y)
-            anchorYOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - FORM_ROW
-
-            -- Set initial enabled state
-            UpdateAnchorSliderStates()
-        end
+        -- Unit frame positioning moved to Edit Mode settings panels.
 
         -- Texture dropdown
         local textureDropdown = GUI:CreateFormDropdown(tabContent, "Bar Texture", GetTextureList(), "texture", unitDB, RefreshUnit)
@@ -1234,6 +999,11 @@ local function CreateUnitFramesPage(parent)
             debuffMaxSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
 
+            local debuffMaxPerRowSlider = GUI:CreateFormSlider(tabContent, "Max Per Row (0=unlimited)", 0, 16, 1, "debuffMaxPerRow", auraDB, RefreshAuras)
+            debuffMaxPerRowSlider:SetPoint("TOPLEFT", PAD, y)
+            debuffMaxPerRowSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
             local debuffXSlider = GUI:CreateFormSlider(tabContent, "X Offset", -100, 100, 1, "debuffOffsetX", auraDB, RefreshAuras)
             debuffXSlider:SetPoint("TOPLEFT", PAD, y)
             debuffXSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
@@ -1418,6 +1188,11 @@ local function CreateUnitFramesPage(parent)
             local buffMaxSlider = GUI:CreateFormSlider(tabContent, "Max Icons", 1, 32, 1, "buffMaxIcons", auraDB, RefreshAuras)
             buffMaxSlider:SetPoint("TOPLEFT", PAD, y)
             buffMaxSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            local buffMaxPerRowSlider = GUI:CreateFormSlider(tabContent, "Max Per Row (0=unlimited)", 0, 16, 1, "buffMaxPerRow", auraDB, RefreshAuras)
+            buffMaxPerRowSlider:SetPoint("TOPLEFT", PAD, y)
+            buffMaxPerRowSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
 
             local buffXSlider = GUI:CreateFormSlider(tabContent, "X Offset", -100, 100, 1, "buffOffsetX", auraDB, RefreshAuras)
@@ -1905,20 +1680,8 @@ local function CreateUnitFramesPage(parent)
         tabContent:SetHeight(math.abs(y) + 30)
     end
 
-    -- Create sub-tabs
-    local subTabs = {
-        {name = "General", builder = BuildGeneralTab},
-        {name = "Player", builder = function(c) BuildUnitTab(c, "player") end},
-        {name = "Target", builder = function(c) BuildUnitTab(c, "target") end},
-        {name = "ToT", builder = function(c) BuildUnitTab(c, "targettarget") end},
-        {name = "Pet", builder = function(c) BuildUnitTab(c, "pet") end},
-        {name = "Focus", builder = function(c) BuildUnitTab(c, "focus") end},
-        {name = "Boss", builder = function(c) BuildUnitTab(c, "boss") end},
-    }
-
-    GUI:CreateSubTabs(content, subTabs)
-
-    content:SetHeight(600)
+    -- Per-unit settings moved to Edit Mode settings panels.
+    BuildGeneralTab(content)
 end
 
 ---------------------------------------------------------------------------

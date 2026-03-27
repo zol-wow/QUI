@@ -4,7 +4,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 
 -- Cache frequently used globals
 local format = string.format
@@ -12,6 +12,15 @@ local floor = math.floor
 local max = math.max
 local min = math.min
 local wipe = wipe
+
+-- Upvalue caching for hot-path performance
+local type = type
+local pairs = pairs
+local ipairs = ipairs
+local pcall = pcall
+local tostring = tostring
+local tonumber = tonumber
+local CreateFrame = CreateFrame
 
 -- Constants
 local MAX_GUILD_TOOLTIP_DISPLAY = 20

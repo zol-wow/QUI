@@ -8,7 +8,7 @@
     <Script file="consumablecheck.lua"/>
     <Script file="tooltip_provider.lua"/>
     <Script file="tooltip_inspect.lua"/>
-    <Script file="tooltip_classic.lua"/>
+    <Script file="tooltip.lua"/>
     <Script file="combattimer.lua"/>
     <Script file="actiontracker.lua"/>
     <Script file="crosshair.lua"/>

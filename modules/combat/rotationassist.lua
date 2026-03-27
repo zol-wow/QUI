@@ -3,19 +3,22 @@
 -- Uses C_AssistedCombat API (Starter Build / Rotation Helper)
 
 local ADDON_NAME, QUI = ...
-local LSM = LibStub("LibSharedMedia-3.0")
-local Helpers = QUI.Helpers
-local IsSecretValue = Helpers and Helpers.IsSecretValue
+local LSM = QUI.LSM
 
-local function GetCore()
-    return (QUI and QUI.QUICore) or (_G.QUI and _G.QUI.QUICore)
-end
+local GetCore = QUI.Helpers.GetCore
+local IsSecretValue = QUI.Helpers.IsSecretValue
 
 -- Locals for performance
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
 local UnitExists = UnitExists
+local CreateFrame = CreateFrame
+local UIParent = UIParent
+local type = type
+local pcall = pcall
+local ipairs = ipairs
+local C_Timer = C_Timer
 
 -- Update intervals
 local UPDATE_INTERVAL_COMBAT = 0.3
@@ -239,7 +242,7 @@ CreateIconFrame = function()
     -- Drag handlers
     iconFrame:SetScript("OnDragStart", function(self)
         local db = GetDB()
-        local isAnchoredOverride = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self)
+        local isAnchoredOverride = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("rotationAssistIcon")
         if db and not db.isLocked and not isAnchoredOverride then
             self:StartMoving()
         end
@@ -249,7 +252,7 @@ CreateIconFrame = function()
         self:StopMovingOrSizing()
 
         -- Frame anchoring owns position while an override is active.
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then
+        if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("rotationAssistIcon") then
             return
         end
 
@@ -360,10 +363,38 @@ local function UpdateGCDCooldown()
     -- Only show GCD swipe when the icon itself is visible
     if not iconFrame:IsShown() then return end
 
-    if ApplyCooldownFromSpell(iconFrame.cooldown, GCD_SPELL_ID) then
-        iconFrame.cooldown:Show()
-    else
-        iconFrame.cooldown:Clear()
+    local cd = iconFrame.cooldown
+    local cdInfo = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(GCD_SPELL_ID)
+    if not cdInfo then cd:Clear() return end
+
+    -- isActive: new 12.0.5+ non-secret boolean; fall back to pcall detection
+    local isActive = cdInfo.isActive
+    if isActive == nil then
+        isActive = IsCooldownActive(cdInfo.startTime or cdInfo.start, cdInfo.duration)
+    end
+
+    if not isActive then cd:Clear() return end
+
+    cd:Show()
+
+    -- Priority 1: DurationObject (secret-safe, works in combat)
+    if C_Spell.GetSpellCooldownDuration and cd.SetCooldownFromDurationObject then
+        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, GCD_SPELL_ID)
+        if ok and durObj then
+            pcall(cd.SetCooldownFromDurationObject, cd, durObj, false)
+            return
+        end
+    end
+
+    -- Priority 2: non-secret numeric values (SetCooldown restricted from secrets 12.0.5+)
+    local start, duration = cdInfo.startTime or cdInfo.start, cdInfo.duration
+    if start and duration and not IsSecretValue(start) and not IsSecretValue(duration) then
+        local modRate = cdInfo.modRate
+        if modRate and not IsSecretValue(modRate) then
+            cd:SetCooldown(start, duration, modRate)
+        else
+            cd:SetCooldown(start, duration)
+        end
     end
 end
 
@@ -473,7 +504,7 @@ RefreshIconFrame = function()
     pcall(iconFrame.SetSize, iconFrame, size, size)
 
     -- Position (manual only when no frame-anchoring override is active)
-    local isAnchoredOverride = _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(iconFrame)
+    local isAnchoredOverride = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("rotationAssistIcon")
     if not isAnchoredOverride then
         iconFrame:ClearAllPoints()
         local posX = db.positionX or 0
@@ -515,6 +546,7 @@ RefreshIconFrame = function()
                 iconFrame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
             end
         end
+        iconFrame:SetBackdropColor(0, 0, 0, 0)
     else
         if SafeSetBackdrop then
             SafeSetBackdrop(iconFrame, nil)
@@ -565,8 +597,11 @@ RefreshIconFrame = function()
         iconFrame.keybindText:SetPoint(anchor, iconFrame, anchor, offsetX, offsetY)
     end
 
-    -- Don't call UpdateVisibility() here - let OnUpdate show the frame
-    -- only after a spell has been fetched, to avoid empty border flash
+    -- Force a full visibility + display recheck with the new settings.
+    -- Reset lastSpellID so the next DoUpdate() treats the current spell as
+    -- "changed" and runs UpdateIconDisplay → UpdateVisibility.
+    lastSpellID = nil
+    DoUpdate()
 end
 
 --------------------------------------------------------------------------------
@@ -639,3 +674,12 @@ QUI.RotationAssistIcon = {
     Refresh = RefreshRotationAssistIcon,
     GetFrame = function() return iconFrame end,
 }
+
+if QUI.Registry then
+    QUI.Registry:Register("rotationAssist", {
+        refresh = _G.QUI_RefreshRotationAssistIcon,
+        priority = 40,
+        group = "combat",
+        importCategories = { "cdm" },
+    })
+end

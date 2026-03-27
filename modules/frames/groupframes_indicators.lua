@@ -8,12 +8,24 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local QUICore = ns.Addon
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
+
+-- Upvalue hot-path globals
+local pairs = pairs
+local ipairs = ipairs
+local type = type
+local pcall = pcall
+local wipe = wipe
+local CreateFrame = CreateFrame
+local UnitExists = UnitExists
+local C_UnitAuras = C_UnitAuras
+local table_insert = table.insert
+local table_remove = table.remove
 
 ---------------------------------------------------------------------------
 -- MODULE TABLE
@@ -27,6 +39,11 @@ ns.QUI_GroupFrameIndicators = QUI_GFI
 local iconPool = {}
 local POOL_SIZE = 40
 local spellNameCache = {}
+
+-- Reusable scratch tables for aura lookups (avoids 2 table allocations
+-- per frame per UNIT_AURA event — 80+ garbage tables per raid burst).
+local _scratchActiveAuras = {}     -- [spellID] = auraData
+local _scratchActiveAuraNames = {} -- [spellName] = auraData
 
 local FILTER_RAID = "PLAYER|HELPFUL|RAID"
 local FILTER_RIC = "PLAYER|HELPFUL|RAID_IN_COMBAT"
@@ -233,7 +250,7 @@ local function CreateIconIndicator(parent)
 end
 
 local function AcquireIcon(parent)
-    local item = table.remove(iconPool)
+    local item = table_remove(iconPool)
     if item then
         item:SetParent(parent)
         item:ClearAllPoints()
@@ -248,7 +265,55 @@ local function ReleaseIcon(item)
     if item.cooldown then item.cooldown:Clear() end
     if item.stackText then item.stackText:SetText("") end
     if #iconPool < POOL_SIZE then
-        table.insert(iconPool, item)
+        table_insert(iconPool, item)
+    end
+end
+
+-- Update icon data in-place (texture, cooldown, stacks) without touching
+-- position or acquire/release. Used by the fast diff path to skip the
+-- full release→acquire→position cycle when the active aura set is unchanged.
+local function UpdateIconData(icon, unit, auraData)
+    -- Texture
+    if icon.icon and auraData.icon then
+        icon.icon:SetTexture(auraData.icon)
+    end
+
+    -- Cooldown swipe
+    if icon.cooldown and auraData then
+        local dur = auraData.duration
+        local expTime = auraData.expirationTime
+        if dur and expTime then
+            if unit and auraData.auraInstanceID
+               and C_UnitAuras and C_UnitAuras.GetAuraDuration
+               and icon.cooldown.SetCooldownFromDurationObject then
+                local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
+                if ok and durationObj then
+                    pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, durationObj)
+                elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
+                    if icon.cooldown.SetCooldownFromExpirationTime then
+                        pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
+                    else
+                        pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
+                    end
+                else
+                    icon.cooldown:Clear()
+                end
+            elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
+                if icon.cooldown.SetCooldownFromExpirationTime then
+                    pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
+                else
+                    pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
+                end
+            else
+                icon.cooldown:Clear()
+            end
+        end
+    end
+
+    -- Stacks
+    if icon.stackText and auraData then
+        local stacks = SafeToNumber(auraData.applications, 0)
+        icon.stackText:SetText(stacks > 1 and stacks or "")
     end
 end
 
@@ -280,12 +345,12 @@ end
 ---------------------------------------------------------------------------
 -- INDICATOR STATE per frame
 ---------------------------------------------------------------------------
-local frameIndicatorState = setmetatable({}, { __mode = "k" })
+local frameIndicatorState = Helpers.CreateStateTable()
 
 local function GetIndicatorState(frame)
     local state = frameIndicatorState[frame]
     if not state then
-        state = { icons = {}, container = nil }
+        state = { icons = {}, container = nil, _prevAuraIDs = {} }
         frameIndicatorState[frame] = state
     end
     return state
@@ -376,9 +441,12 @@ local function UpdateFrameIndicators(frame)
     local maxIcons = ai.maxIndicators or 5
     local anchor = ai.anchor or "TOPLEFT"
 
-    -- Build a set of active auras on the unit from shared cache
-    local activeAuras = {} -- [spellID] = auraData
-    local activeAuraNames = {} -- [spellName] = auraData
+    -- Build a set of active auras on the unit from shared cache.
+    -- Uses module-level scratch tables (wipe+reuse) to avoid per-call allocation.
+    local activeAuras = _scratchActiveAuras
+    local activeAuraNames = _scratchActiveAuraNames
+    wipe(activeAuras)
+    wipe(activeAuraNames)
     local helpfulAuras = nil
     local GFA = ns.QUI_GroupFrameAuras
     local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
@@ -426,117 +494,117 @@ local function UpdateFrameIndicators(frame)
         end
     end
 
-    -- Clear previous icons
     local state = GetIndicatorState(frame)
-    for _, icon in ipairs(state.icons) do
-        ReleaseIcon(icon)
-    end
-    wipe(state.icons)
-
-    -- Render matching auras as icons in a row
-    local container = EnsureContainer(frame)
-    PositionContainer(frame)
 
     -- Expose active indicator auraInstanceIDs for buff deduplication
     if not frame._indicatorAuraIDs then frame._indicatorAuraIDs = {} end
     wipe(frame._indicatorAuraIDs)
 
-    local count = 0
-    for _, spellID in ipairs(trackedSpells) do
-        if count >= maxIcons then break end
+    -- Pre-resolve which tracked spells are active and collect their auraData.
+    -- This lets us diff against the previous set before touching any icons.
+    local defIDs = frame._defensiveAuraIDs
+    local resolvedCount = 0
+    local resolvedData = state._resolvedData
+    if not resolvedData then
+        resolvedData = {}
+        state._resolvedData = resolvedData
+    end
 
+    for _, spellID in ipairs(trackedSpells) do
+        if resolvedCount >= maxIcons then break end
         local auraData = FindTrackedAuraData(unit, spellID, activeAuras, activeAuraNames, helpfulAuras)
         if auraData then
-            -- Skip if already shown as a defensive indicator
-            local defIDs = frame._defensiveAuraIDs
             if not (defIDs and auraData.auraInstanceID and defIDs[auraData.auraInstanceID]) then
-                -- Track for buff dedup
+                resolvedCount = resolvedCount + 1
+                resolvedData[resolvedCount] = auraData
                 if auraData.auraInstanceID then
                     frame._indicatorAuraIDs[auraData.auraInstanceID] = true
                 end
-                count = count + 1
-                local icon = AcquireIcon(container)
-                icon:SetSize(iconSize, iconSize)
+            end
+        end
+    end
+    -- Trim stale entries from previous pass
+    for i = resolvedCount + 1, #resolvedData do
+        resolvedData[i] = nil
+    end
 
-                -- Position in row
-                icon:ClearAllPoints()
-                local vertPart = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
-                local firstHoriz = growDir == "LEFT" and "RIGHT" or "LEFT"
-                local firstAnchor = vertPart .. firstHoriz
-
-                if count == 1 then
-                    icon:SetPoint(firstAnchor, container, firstAnchor, 0, 0)
-                else
-                    local prev = state.icons[count - 1]
-                    if prev then
-                        if growDir == "LEFT" then
-                            icon:SetPoint("RIGHT", prev, "LEFT", -spacing, 0)
-                        else
-                            icon:SetPoint("LEFT", prev, "RIGHT", spacing, 0)
-                        end
-                    end
-                end
-
-                -- Icon texture (C-side handles secret values)
-                if icon.icon and auraData.icon then
-                    icon.icon:SetTexture(auraData.icon)
-                end
-
-                -- Cooldown swipe
-                if icon.cooldown and auraData then
-                    local dur = auraData.duration
-                    local expTime = auraData.expirationTime
-                    if dur and expTime then
-                        if unit and auraData.auraInstanceID
-                           and C_UnitAuras and C_UnitAuras.GetAuraDuration
-                           and icon.cooldown.SetCooldownFromDurationObject then
-                            local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
-                            if ok and durationObj then
-                                pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, durationObj)
-                            elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
-                                if icon.cooldown.SetCooldownFromExpirationTime then
-                                    pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
-                                else
-                                    pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
-                                end
-                            else
-                                icon.cooldown:Clear()
-                            end
-                        elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
-                            if icon.cooldown.SetCooldownFromExpirationTime then
-                                pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
-                            else
-                                pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
-                            end
-                        else
-                            icon.cooldown:Clear()
-                        end
-                    end
-                end
-
-                -- Stacks
-                if icon.stackText and auraData then
-                    local stacks = SafeToNumber(auraData.applications, 0)
-                    icon.stackText:SetText(stacks > 1 and stacks or "")
-                end
-
-                icon:Show()
-                state.icons[count] = icon
+    -- Diff: check if the active aura set matches the previous frame.
+    -- If same count and same auraInstanceIDs in order, skip the expensive
+    -- release→acquire→position cycle and just update icon data in-place.
+    local prevIDs = state._prevAuraIDs
+    local canFastPath = (#prevIDs == resolvedCount) and (resolvedCount == #state.icons)
+    if canFastPath then
+        for i = 1, resolvedCount do
+            local newID = resolvedData[i].auraInstanceID
+            if not newID or IsSecretValue(newID) or prevIDs[i] ~= newID then
+                canFastPath = false
+                break
             end
         end
     end
 
-    -- CENTER: reposition all icons centered around the container's anchor
-    if growDir == "CENTER" and count > 0 then
-        local totalSpan = count * iconSize + math.max(count - 1, 0) * spacing
-        local startX = -totalSpan / 2
-        local vertPart = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
-        local iconPoint = vertPart == "" and "LEFT" or (vertPart .. "LEFT")
-        for idx = 1, count do
-            local ic = state.icons[idx]
-            if ic then
-                ic:ClearAllPoints()
-                ic:SetPoint(iconPoint, container, anchor, startX + (idx - 1) * (iconSize + spacing), 0)
+    if canFastPath then
+        -- Fast path: same aura set — only update data (cooldown, stacks, texture).
+        -- Positions are unchanged, skip release→acquire→position entirely.
+        for i = 1, resolvedCount do
+            UpdateIconData(state.icons[i], unit, resolvedData[i])
+        end
+    else
+        -- Full rebuild: release all icons, acquire new ones, position them
+        for _, icon in ipairs(state.icons) do
+            ReleaseIcon(icon)
+        end
+        wipe(state.icons)
+        wipe(prevIDs)
+
+        local container = EnsureContainer(frame)
+        PositionContainer(frame)
+
+        local count = 0
+        for i = 1, resolvedCount do
+            local auraData = resolvedData[i]
+            count = count + 1
+            local icon = AcquireIcon(container)
+            icon:SetSize(iconSize, iconSize)
+
+            -- Position in row
+            icon:ClearAllPoints()
+            local vertPart = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
+            local firstHoriz = growDir == "LEFT" and "RIGHT" or "LEFT"
+            local firstAnchor = vertPart .. firstHoriz
+
+            if count == 1 then
+                icon:SetPoint(firstAnchor, container, firstAnchor, 0, 0)
+            else
+                local prev = state.icons[count - 1]
+                if prev then
+                    if growDir == "LEFT" then
+                        icon:SetPoint("RIGHT", prev, "LEFT", -spacing, 0)
+                    else
+                        icon:SetPoint("LEFT", prev, "RIGHT", spacing, 0)
+                    end
+                end
+            end
+
+            UpdateIconData(icon, unit, auraData)
+            icon:Show()
+            state.icons[count] = icon
+            prevIDs[count] = auraData.auraInstanceID
+        end
+
+        -- CENTER: reposition all icons centered around the container's anchor.
+        -- Only needed on full rebuild — fast path preserves existing positions.
+        if growDir == "CENTER" and count > 0 then
+            local totalSpan = count * iconSize + math.max(count - 1, 0) * spacing
+            local startX = -totalSpan / 2
+            local vertPart2 = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
+            local iconPoint = vertPart2 == "" and "LEFT" or (vertPart2 .. "LEFT")
+            for idx = 1, count do
+                local ic = state.icons[idx]
+                if ic then
+                    ic:ClearAllPoints()
+                    ic:SetPoint(iconPoint, container, anchor, startX + (idx - 1) * (iconSize + spacing), 0)
+                end
             end
         end
     end

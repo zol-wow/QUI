@@ -17,7 +17,21 @@ jobs:
 
       - name: Get version from tag
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "version=${TAG}" >> $GITHUB_OUTPUT
+
+          # Determine release channel from tag suffix
+          if [[ "$TAG" == *-alpha* ]]; then
+            echo "release_type=alpha" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" == *-beta* ]]; then
+            echo "release_type=beta" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "release_type=release" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create addon zip
         run: |
@@ -70,7 +84,7 @@ jobs:
           files: QUI-${{ steps.version.outputs.version }}.zip
           body_path: release_notes.txt
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -82,12 +96,13 @@ jobs:
           METADATA=$(jq -n \
             --arg changelog "$CHANGELOG" \
             --arg name "QUI-${{ steps.version.outputs.version }}" \
+            --arg reltype "${{ steps.version.outputs.release_type }}" \
             '{
               changelog: $changelog,
               changelogType: "markdown",
               displayName: $name,
               gameVersions: [13924,14422],
-              releaseType: "release"
+              releaseType: $reltype
             }')
           
           curl --fail-with-body -X POST \
@@ -99,19 +114,37 @@ jobs:
       - name: Notify Discord
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_DEV_WEBHOOK: ${{ secrets.DISCORD_DEV_WEBHOOK_URL }}
           VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TYPE: ${{ steps.version.outputs.release_type }}
           REPO: ${{ github.repository }}
         run: |
           # Read the extracted changelog
           CHANGELOG=$(cat release_notes.txt)
-          
+
           # Construct URLs
           RELEASE_URL="https://github.com/$REPO/releases/tag/$VERSION"
           ZIP_URL="https://github.com/$REPO/releases/download/$VERSION/QUI-$VERSION.zip"
-          
+
           # Truncate changelog if it exceeds Discord's 4096 character embed limit
           if [ ${#CHANGELOG} -gt 4000 ]; then
             CHANGELOG="${CHANGELOG:0:4000}... *(Changelog truncated, view GitHub release for full notes)*"
+          fi
+
+          # Pick webhook and message based on release type
+          if [ "$RELEASE_TYPE" = "release" ]; then
+            WEBHOOK="$DISCORD_WEBHOOK"
+            LABEL="New QUI Release"
+            EMOJI="🚀"
+            COLOR=3447003
+            FOOTER="\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*\n\n"
+          else
+            WEBHOOK="$DISCORD_DEV_WEBHOOK"
+            CHANNEL_LABEL=$(echo "$RELEASE_TYPE" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')
+            LABEL="New QUI ${CHANNEL_LABEL}"
+            EMOJI="🧪"
+            COLOR=16761095
+            FOOTER="\n\n⚠️ *This is a ${RELEASE_TYPE} build — expect bugs. Please report issues on GitHub!*\n\n"
           fi
 
           # Use jq to safely format the multi-line text into valid JSON
@@ -120,16 +153,20 @@ jobs:
             --arg url "$RELEASE_URL" \
             --arg zip "$ZIP_URL" \
             --arg changelog "$CHANGELOG" \
+            --arg label "$LABEL" \
+            --arg emoji "$EMOJI" \
+            --arg footer "$FOOTER" \
+            --argjson color "$COLOR" \
             '{
-              content: "🚀 **New QUI Release:** \($version)\n\n📥 **[Download \($version) zip](\($zip))**\n🔗 [View Release on GitHub](\($url))\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*\n\n",
+              content: "\($emoji) **\($label):** \($version)\n\n📥 **[Download \($version) zip](\($zip))**\n🔗 [View Release on GitHub](\($url))\($footer)",
               embeds: [
                 {
                   title: "Changelog",
                   description: $changelog,
-                  color: 3447003
+                  color: $color
                 }
               ]
             }')
-          
+
           # Send the request to Discord
-          curl -H "Content-Type: application/json" -d "$JSON_PAYLOAD" $DISCORD_WEBHOOK
+          curl -H "Content-Type: application/json" -d "$JSON_PAYLOAD" $WEBHOOK

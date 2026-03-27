@@ -56,9 +56,9 @@ end
 -- showReloadHint is optional and only used by profile imports.
 function ns.PrintImportFeedback(ok, message, showReloadHint)
     if ok then
-        print("|cff34D399QUI:|r " .. (message or "Import successful"))
+        print("|cff60A5FAQUI:|r " .. (message or "Import successful"))
         if showReloadHint then
-            print("|cff34D399QUI:|r Please type |cFFFFD700/reload|r to apply changes.")
+            print("|cff60A5FAQUI:|r Please type |cFFFFD700/reload|r to apply changes.")
         end
         return
     end
@@ -181,7 +181,7 @@ local QUAZII_FPS_CVARS = {
 ---------------------------------------------------------------------------
 -- HELPER: Get texture list from LSM
 ---------------------------------------------------------------------------
-local LSM = LibStub("LibSharedMedia-3.0", true)
+local LSM = ns.LSM
 
 local function GetTextureList()
     local textures = {}
@@ -250,16 +250,6 @@ local function GetFontList()
 
     _fontListCache = fonts
     return fonts
-end
-
-local function GetBorderList()
-    local borders = {{value = "None", text = "None (Solid)"}}
-    if LSM then
-        for _, name in ipairs(LSM:List("border")) do
-            table.insert(borders, {value = name, text = name})
-        end
-    end
-    return borders
 end
 
 local function GetSoundList()
@@ -375,7 +365,7 @@ local function RestorePreviousFPSSettings()
     -- Clear backup after successful restore
     db.fpsBackup = nil
 
-    print("|cff34D399QUI:|r Restored " .. successCount .. " previous settings.")
+    print("|cff60A5FAQUI:|r Restored " .. successCount .. " previous settings.")
     if failCount > 0 then
         print("|cffFF6B6BQUI:|r " .. failCount .. " settings could not be restored.")
     end
@@ -401,8 +391,8 @@ local function ApplyQuaziiFPSSettings()
         end
     end
 
-    print("|cff34D399QUI:|r Your previous settings have been backed up.")
-    print("|cff34D399QUI:|r Applied " .. successCount .. " FPS settings. Use 'Restore Previous Settings' to undo.")
+    print("|cff60A5FAQUI:|r Your previous settings have been backed up.")
+    print("|cff60A5FAQUI:|r Applied " .. successCount .. " FPS settings. Use 'Restore Previous Settings' to undo.")
     if failCount > 0 then
         print("|cffFF6B6BQUI:|r " .. failCount .. " settings could not be applied (may require restart).")
     end
@@ -423,10 +413,6 @@ end
 ---------------------------------------------------------------------------
 -- HELPER: Refresh callbacks
 ---------------------------------------------------------------------------
-local function RefreshAll()
-    if QUICore and QUICore.RefreshAll then QUICore:RefreshAll() end
-end
-
 local function RefreshMinimap()
     if QUICore and QUICore.Minimap and QUICore.Minimap.Refresh then QUICore.Minimap:Refresh() end
 end
@@ -564,65 +550,125 @@ local function CreateLinkItem(parent, label, url, iconR, iconG, iconB, iconTextu
 end
 
 ---------------------------------------------------------------------------
--- HELPER: Contextual help block for existing tabs
--- Returns the frame and the updated y position
----------------------------------------------------------------------------
-local function CreateContextualHelp(parent, text, y, padding)
-    local C = GUI.Colors
-    local helpFrame = CreateFrame("Frame", nil, parent)
-    helpFrame:SetHeight(1) -- will resize
-
-    local fontPath = GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF"
-    local helpIcon = helpFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    helpIcon:SetFont(fontPath, 12, "")
-    helpIcon:SetTextColor(C.accent[1], C.accent[2], C.accent[3])
-    helpIcon:SetText("?")
-    helpIcon:SetPoint("TOPLEFT", 0, 0)
-
-    local helpText = helpFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    helpText:SetFont(fontPath, 11, "")
-    helpText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3])
-    helpText:SetText(text)
-    helpText:SetJustifyH("LEFT")
-    helpText:SetWordWrap(true)
-    helpText:SetNonSpaceWrap(true)
-    helpText:SetPoint("TOPLEFT", helpIcon, "TOPRIGHT", 6, 0)
-    helpText:SetPoint("RIGHT", parent, "RIGHT", -(padding or PADDING), 0)
-
-    local textHeight = helpText:GetStringHeight() or 14
-    helpFrame:SetHeight(textHeight + 4)
-    helpFrame:SetPoint("TOPLEFT", padding or PADDING, y)
-    helpFrame:SetPoint("RIGHT", parent, "RIGHT", -(padding or PADDING), 0)
-
-    return helpFrame, y - textHeight - 12
-end
-
----------------------------------------------------------------------------
 -- EXPORT TO NAMESPACE
 ---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- COLLAPSIBLE PAGE HELPER
+-- Creates the boilerplate for a page with collapsible sections.
+-- Returns: sections table, relayout function, CreateCollapsible builder
+---------------------------------------------------------------------------
+-- Accent color: read from GUI.Colors.accent so collapsible headers
+-- update when the user changes the accent color via the theme picker.
+local function GetCollapsibleAccent()
+    local GUI = _G.QUI and _G.QUI.GUI
+    if GUI and GUI.Colors and GUI.Colors.accent then
+        return GUI.Colors.accent[1], GUI.Colors.accent[2], GUI.Colors.accent[3]
+    end
+    return 0.376, 0.647, 0.980 -- fallback: Sky Blue
+end
+local COLLAPSIBLE_HEADER_HEIGHT = 24
+local COLLAPSIBLE_FORM_ROW = 32
+
+local function CreateCollapsiblePage(parent, pad, topOffset)
+    local PAD = pad or PADDING
+    local startY = topOffset or -10
+    local sections = {}
+
+    local function relayout()
+        local cy = startY
+        for _, s in ipairs(sections) do
+            s:ClearAllPoints()
+            s:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, cy)
+            s:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
+            cy = cy - s:GetHeight() - 4
+        end
+        parent:SetHeight(math.abs(cy) + 20)
+    end
+
+    local function CreateCollapsible(title, contentHeight, buildFunc)
+        local section = CreateFrame("Frame", nil, parent)
+        section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+
+        local btn = CreateFrame("Button", nil, section)
+        btn:SetPoint("TOPLEFT", 0, 0)
+        btn:SetPoint("TOPRIGHT", 0, 0)
+        btn:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+
+        local chevron = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        chevron:SetPoint("LEFT", 2, 0)
+        local ar, ag, ab = GetCollapsibleAccent()
+        chevron:SetTextColor(ar, ag, ab, 1)
+        chevron:SetText(">")
+
+        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+        label:SetTextColor(ar, ag, ab, 1)
+        label:SetText(title)
+
+        local underline = btn:CreateTexture(nil, "ARTWORK")
+        underline:SetHeight(1)
+        underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+        underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+        underline:SetColorTexture(ar, ag, ab, 0.3)
+
+        local body = CreateFrame("Frame", nil, section)
+        body:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
+        body:SetPoint("RIGHT", 0, 0)
+        body:SetHeight(contentHeight)
+        body:Hide()
+
+        section._expanded = false
+        section._contentHeight = contentHeight
+
+        btn:SetScript("OnClick", function()
+            section._expanded = not section._expanded
+            if section._expanded then
+                chevron:SetText("v")
+                body:Show()
+                section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + section._contentHeight)
+            else
+                chevron:SetText(">")
+                body:Hide()
+                section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+            end
+            relayout()
+        end)
+
+        btn:SetScript("OnEnter", function()
+            label:SetTextColor(1, 1, 1, 1)
+            chevron:SetTextColor(1, 1, 1, 1)
+        end)
+        btn:SetScript("OnLeave", function()
+            local lr, lg, lb = GetCollapsibleAccent()
+            label:SetTextColor(lr, lg, lb, 1)
+            chevron:SetTextColor(lr, lg, lb, 1)
+        end)
+
+        buildFunc(body)
+        table.insert(sections, section)
+        return section
+    end
+
+    return sections, relayout, CreateCollapsible
+end
+
 ns.QUI_Options = {
     -- Constants
-    ROW_GAP = ROW_GAP,
-    SECTION_GAP = SECTION_GAP,
-    SECTION_HEADER_GAP = SECTION_HEADER_GAP,
     PADDING = PADDING,
-    SLIDER_HEIGHT = SLIDER_HEIGHT,
     NINE_POINT_ANCHOR_OPTIONS = NINE_POINT_ANCHOR_OPTIONS,
     QUAZII_FPS_CVARS = QUAZII_FPS_CVARS,
 
     -- Helper functions
     GetDB = GetDB,
     CreateScrollableContent = CreateScrollableContent,
+    CreateCollapsiblePage = CreateCollapsiblePage,
     GetTextureList = GetTextureList,
     GetFontList = GetFontList,
-    GetBorderList = GetBorderList,
     GetSoundList = GetSoundList,
     PrintImportFeedback = ns.PrintImportFeedback,
     SafeGetPixelSize = SafeGetPixelSize,
     CreateWrappedLabel = CreateWrappedLabel,
     CreateLinkItem = CreateLinkItem,
-    CreateContextualHelp = CreateContextualHelp,
-
     -- FPS functions
     BackupCurrentFPSSettings = BackupCurrentFPSSettings,
     RestorePreviousFPSSettings = RestorePreviousFPSSettings,
@@ -630,7 +676,6 @@ ns.QUI_Options = {
     CheckCVarsMatch = CheckCVarsMatch,
 
     -- Refresh callbacks
-    RefreshAll = RefreshAll,
     RefreshMinimap = RefreshMinimap,
     RefreshUIHider = RefreshUIHider,
     RefreshUnitFrames = RefreshUnitFrames,

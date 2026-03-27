@@ -11,8 +11,6 @@ local GetCore = ns.Helpers.GetCore
 
 -- Module reference
 local InspectSkinning = {}
-QUICore.InspectSkinning = InspectSkinning
-
 -- Configuration constants
 local CONFIG = {
     PANEL_WIDTH_EXTENSION = 0,    -- No stats panel, no width extension needed
@@ -25,13 +23,7 @@ local customBg = nil
 ---------------------------------------------------------------------------
 -- Helper: Get skin colors from QUI system
 ---------------------------------------------------------------------------
-local function GetSkinColors()
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
-    local sr, sg, sb, sa = Helpers.GetSkinBorderColor(settings, "inspectFrame")
-    local bgr, bgg, bgb, bga = Helpers.GetSkinBgColor()
-    return sr, sg, sb, sa, bgr, bgg, bgb, bga
-end
+local GetSkinColors = Helpers.CreateSkinColorGetter("inspectFrame")
 
 ---------------------------------------------------------------------------
 -- Helper: Check if skinning is enabled
@@ -220,6 +212,15 @@ _G.QUI_InspectFrameSkinning = {
 
 -- Legacy compatibility alias
 _G.QUI_RefreshInspectColors = RefreshInspectFrameColors
+
+if ns.Registry then
+    ns.Registry:Register("skinInspect", {
+        refresh = _G.QUI_RefreshInspectColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION

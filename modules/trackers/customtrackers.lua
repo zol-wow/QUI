@@ -6,7 +6,7 @@
 
 local ADDON_NAME, ns = ...
 local QUI = QUI  -- Use global addon table, not ns.Addon (which is QUICore)
-local LSM = LibStub("LibSharedMedia-3.0")
+local LSM = ns.LSM
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)  -- For active state glow
 local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
@@ -16,16 +16,19 @@ local GetDB = Helpers.CreateDBGetter("customTrackers")
 local GetCore = ns.Helpers.GetCore
 
 -- Performance: cache frequently-called WoW API globals as locals
+local type = type
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local UnitAffectingCombat = UnitAffectingCombat
 local math_min = math.min
 local math_max = math.max
 local table_insert = table.insert
+local table_remove = table.remove
 local wipe = wipe
 local pairs = pairs
 local ipairs = ipairs
 local pcall = pcall
+local CreateFrame = CreateFrame
 
 ---------------------------------------------------------------------------
 -- MODULE NAMESPACE
@@ -42,7 +45,7 @@ CustomTrackers.infoCache = {}    -- Cached spell/item info
 local _detectorPool = {}
 
 local function AcquireDetector()
-    local f = table.remove(_detectorPool)
+    local f = table_remove(_detectorPool)
     if not f then
         f = CreateFrame("Frame")
     end
@@ -55,7 +58,7 @@ local function ReleaseDetector(f)
     f:SetScript("OnEvent", nil)
     f:SetScript("OnUpdate", nil)
     f:UnregisterAllEvents()
-    table.insert(_detectorPool, f)
+    table_insert(_detectorPool, f)
 end
 
 ---------------------------------------------------------------------------
@@ -83,12 +86,51 @@ local BASE_CROP = 0.08  -- Standard WoW icon crop
 -- Performance: reusable scratch table for LayoutVisibleIcons (avoids per-call allocation)
 local _visibleIconsScratch = {}
 
--- Performance: event-driven DoUpdate throttle state
--- Prevents multiple DoUpdate calls per frame from stacked events
--- (SPELL_UPDATE_COOLDOWN + UNIT_AURA + ACTIONBAR_UPDATE_COOLDOWN can all fire in the same frame)
-local _eventUpdatePending = false
-local _eventUpdateThrottle = 0.1  -- Minimum interval between event-driven DoUpdate bursts (seconds)
+-- Forward declaration: tracks whether active state events are needed
+-- (set by UpdateEventRegistrations, checked by aura dispatcher subscription)
+local _activeStateEventsRegistered = false
+
+-- Performance: frame-show coalescing for event-driven DoUpdate.
+-- Show() on an already-shown frame is a no-op, so rapid events within
+-- the same render frame are automatically batched into a single OnUpdate.
+local _ctCoalesceFrame = CreateFrame("Frame")
+_ctCoalesceFrame:Hide()
+_ctCoalesceFrame:SetScript("OnUpdate", function(self)
+    self:Hide()
+    for _, bar in pairs(CustomTrackers.activeBars) do
+        if bar and bar:IsShown() and bar.DoUpdate then
+            bar.DoUpdate()
+        end
+    end
+end)
+
+-- Spellcast event throttle: prevents redundant DoUpdate scans from rapid
+-- UNIT_SPELLCAST_* events within the same GCD window.
 local _lastEventUpdate = 0
+local _eventUpdateThrottle = 0.1
+local _eventUpdatePending = false
+
+-- Separate coalescing frame for UNIT_AURA (only updates bars with active state)
+local _ctAuraCoalesceFrame = CreateFrame("Frame")
+_ctAuraCoalesceFrame:Hide()
+_ctAuraCoalesceFrame:SetScript("OnUpdate", function(self)
+    self:Hide()
+    for _, bar in pairs(CustomTrackers.activeBars) do
+        if bar and bar:IsShown() and bar.DoUpdate and bar.config and bar.config.showActiveState ~= false then
+            bar.DoUpdate()
+        end
+    end
+end)
+
+-- Subscribe to centralized aura dispatcher (player only).
+-- Checks _activeStateEventsRegistered so it only does work when needed.
+if ns.AuraEvents then
+    ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
+        if _activeStateEventsRegistered then
+            _ctAuraCoalesceFrame:Show()
+        end
+    end)
+end
 
 -- Performance: hoisted pcall wrapper functions (avoids anonymous closure allocation per call)
 local function SafeSetCooldown(cd, start, dur)
@@ -133,7 +175,7 @@ local function PositionBar(bar)
     if not bar or not bar.config then return end
 
     -- Skip if anchoring system has overridden this frame
-    if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar) then return end
+    if bar.barID and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("customTracker:" .. bar.barID) then return end
 
     local config = bar.config
 
@@ -302,7 +344,7 @@ local function GetAllClassSpecs()
     for i = 1, numSpecs do
         local specID, specName = GetSpecializationInfo(i)
         if specID and specName then
-            table.insert(specs, {
+            table_insert(specs, {
                 key = className .. "-" .. specID,
                 specID = specID,
                 specIndex = i,
@@ -402,7 +444,7 @@ function CustomTrackers:CopyEntriesToSpec(barConfig, specKey)
     -- Deep copy entries
     local copiedEntries = {}
     for _, entry in ipairs(barConfig.entries) do
-        table.insert(copiedEntries, {
+        table_insert(copiedEntries, {
             type = entry.type,
             id = entry.id,
             customName = entry.customName,
@@ -977,7 +1019,7 @@ local function CreateTrackerIcon(parent, clickable)
     icon:RegisterForDrag("LeftButton")
     icon:SetScript("OnDragStart", function(self)
         local bar = self:GetParent()
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar) then return end
+        if bar and bar.barID and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("customTracker:" .. bar.barID) then return end
         if bar and bar.config and not bar.config.locked and not bar.config.lockedToPlayer and not bar.config.lockedToTarget then
             bar:StartMoving()
         end
@@ -1008,7 +1050,7 @@ local function CreateTrackerIcon(parent, clickable)
         icon.clickButton:RegisterForDrag("LeftButton")
         icon.clickButton:SetScript("OnDragStart", function(self)
             local bar = self:GetParent():GetParent()
-            if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(bar) then return end
+            if bar and bar.barID and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("customTracker:" .. bar.barID) then return end
             if bar and bar.config and not bar.config.locked and not bar.config.lockedToPlayer and not bar.config.lockedToTarget then
                 bar:StartMoving()
             end
@@ -1586,7 +1628,7 @@ function CustomTrackers:UpdateBarIcons(bar)
         UpdateIconSecureAttributes(icon, entry, config)
         ApplyKeybindToTrackerIcon(icon)
 
-        table.insert(bar.icons, icon)
+        table_insert(bar.icons, icon)
     end
 
     -- Layout the icons (sets bar size)
@@ -1605,19 +1647,6 @@ end
 ---------------------------------------------------------------------------
 -- COOLDOWN POLLING
 ---------------------------------------------------------------------------
-local function FormatDuration(seconds)
-    if seconds >= 3600 then
-        return string.format("%dh", math.floor(seconds / 3600))
-    elseif seconds >= 60 then
-        return string.format("%dm", math.floor(seconds / 60))
-    elseif seconds >= 10 then
-        return string.format("%d", math.floor(seconds))
-    elseif seconds > 0 then
-        return string.format("%.1f", seconds)
-    end
-    return ""
-end
-
 ---------------------------------------------------------------------------
 -- ACTIVE SET MANAGEMENT (Performance optimization)
 ---------------------------------------------------------------------------
@@ -1673,7 +1702,7 @@ local function RebuildActiveSet(bar)
             -- Only add usable spells to activeIcons (CPU optimization)
             -- This ensures we never process unknown spells in DoUpdate, regardless of hideNonUsable toggle
             if isUsable then
-                table.insert(bar.activeIcons, icon)
+                table_insert(bar.activeIcons, icon)
                 icon._usable = true
                 icon.isVisible = true  -- Mark as visible for layout
                 icon.tex:SetDesaturated(false)  -- Ensure known spells are full color
@@ -2240,7 +2269,7 @@ function CustomTrackers:SetupDragging(bar)
     bar:SetClampedToScreen(true)
 
     bar:SetScript("OnDragStart", function(self)
-        if _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
+        if self.barID and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("customTracker:" .. self.barID) then return end
         if not self.config.locked and not self.config.lockedToPlayer and not self.config.lockedToTarget then
             self:StartMoving()
         end
@@ -2394,7 +2423,7 @@ function CustomTrackers:CreateBar(barID, config)
         bgFile = "Interface\\Buttons\\WHITE8x8",
     })
     local bgColor = config.bgColor or {0, 0, 0, 1}
-    bar:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], config.bgOpacity or 0)
+    Helpers.SetFrameBackdropColor(bar, bgColor[1], bgColor[2], bgColor[3], config.bgOpacity or 0)
 
     -- Initialize icons array
     bar.icons = {}
@@ -2473,7 +2502,7 @@ function CustomTrackers:UpdateBar(barID)
 
             -- Update background
             local bgColor = barConfig.bgColor or {0, 0, 0, 1}
-            bar:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], barConfig.bgOpacity or 0)
+            Helpers.SetFrameBackdropColor(bar, bgColor[1], bgColor[2], bgColor[3], barConfig.bgOpacity or 0)
 
             -- Update icons
             self:UpdateBarIcons(bar)
@@ -2627,7 +2656,7 @@ function CustomTrackers:AddEntry(barID, entryType, entryID, specKeyOverride)
                 end
             end
 
-            table.insert(entries, {
+            table_insert(entries, {
                 type = entryType,
                 id = entryID,
             })
@@ -2683,7 +2712,7 @@ function CustomTrackers:RemoveEntry(barID, entryType, entryID, specKeyOverride)
             if entries then
                 for i, entry in ipairs(entries) do
                     if entry.type == entryType and entry.id == entryID then
-                        table.remove(entries, i)
+                        table_remove(entries, i)
 
                         -- Refresh the bar (only if viewing current spec or not spec-specific)
                         if self.activeBars[barID] then
@@ -2740,8 +2769,8 @@ function CustomTrackers:MoveEntry(barID, entryIndex, direction, specKeyOverride)
             if newIndex < 1 or newIndex > #entries then return false end
 
             -- Swap entries
-            local entry = table.remove(entries, entryIndex)
-            table.insert(entries, newIndex, entry)
+            local entry = table_remove(entries, entryIndex)
+            table_insert(entries, newIndex, entry)
 
             -- Refresh bar display (only if viewing current spec or not spec-specific)
             if self.activeBars[barID] then
@@ -2796,7 +2825,7 @@ initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 -- Only register SPELL_UPDATE_COOLDOWN, ACTIONBAR_UPDATE_COOLDOWN, UNIT_AURA,
 -- and spellcast events when at least one bar actually needs them.
 local _cooldownEventsRegistered = false
-local _activeStateEventsRegistered = false
+-- _activeStateEventsRegistered declared above (forward declaration for aura dispatcher)
 
 local function UpdateEventRegistrations()
     local needsCooldownEvents = false
@@ -2832,7 +2861,7 @@ local function UpdateEventRegistrations()
 
     if needsActiveStateEvents and not _activeStateEventsRegistered then
         _activeStateEventsRegistered = true
-        initFrame:RegisterEvent("UNIT_AURA")
+        -- UNIT_AURA handled by centralized dispatcher subscription
         initFrame:RegisterEvent("UNIT_SPELLCAST_START")
         initFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
         initFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
@@ -2840,7 +2869,6 @@ local function UpdateEventRegistrations()
         initFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
     elseif not needsActiveStateEvents and _activeStateEventsRegistered then
         _activeStateEventsRegistered = false
-        initFrame:UnregisterEvent("UNIT_AURA")
         initFrame:UnregisterEvent("UNIT_SPELLCAST_START")
         initFrame:UnregisterEvent("UNIT_SPELLCAST_STOP")
         initFrame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
@@ -2981,28 +3009,9 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
     -- can all fire multiple times per frame/GCD. Instead of calling DoUpdate on every event,
     -- we coalesce them with a minimum interval to prevent redundant full-bar scans.
     if event == "SPELL_UPDATE_COOLDOWN" or event == "ACTIONBAR_UPDATE_COOLDOWN" then
-        local now = GetTime()
-        if (now - _lastEventUpdate) >= _eventUpdateThrottle then
-            _lastEventUpdate = now
-            _eventUpdatePending = false
-            for _, bar in pairs(CustomTrackers.activeBars) do
-                if bar and bar:IsShown() and bar.DoUpdate then
-                    bar.DoUpdate()
-                end
-            end
-        elseif not _eventUpdatePending then
-            -- Schedule a deferred update to ensure we don't miss the final state
-            _eventUpdatePending = true
-            C_Timer.After(_eventUpdateThrottle, function()
-                _eventUpdatePending = false
-                _lastEventUpdate = GetTime()
-                for _, bar in pairs(CustomTrackers.activeBars) do
-                    if bar and bar:IsShown() and bar.DoUpdate then
-                        bar.DoUpdate()
-                    end
-                end
-            end)
-        end
+        -- Frame-show coalescing: batches rapid cooldown events within the
+        -- same render frame into a single DoUpdate pass (zero allocation).
+        _ctCoalesceFrame:Show()
         return
     end
 
@@ -3045,34 +3054,7 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
         return
     end
 
-    if event == "UNIT_AURA" then
-        local unit = ...
-        if unit == "player" then
-            -- Throttle: reuse same coalescing as cooldown events
-            local now = GetTime()
-            if (now - _lastEventUpdate) >= _eventUpdateThrottle then
-                _lastEventUpdate = now
-                _eventUpdatePending = false
-                for _, bar in pairs(CustomTrackers.activeBars) do
-                    if bar and bar:IsShown() and bar.DoUpdate and bar.config and bar.config.showActiveState ~= false then
-                        bar.DoUpdate()
-                    end
-                end
-            elseif not _eventUpdatePending then
-                _eventUpdatePending = true
-                C_Timer.After(_eventUpdateThrottle, function()
-                    _eventUpdatePending = false
-                    _lastEventUpdate = GetTime()
-                    for _, bar in pairs(CustomTrackers.activeBars) do
-                        if bar and bar:IsShown() and bar.DoUpdate and bar.config and bar.config.showActiveState ~= false then
-                            bar.DoUpdate()
-                        end
-                    end
-                end)
-            end
-        end
-        return
-    end
+    -- UNIT_AURA handled by centralized dispatcher subscription
 
     if event == "PLAYER_EQUIPMENT_CHANGED" then
         local slot = ...
@@ -3242,7 +3224,7 @@ local function GetCustomTrackerFrames(includeAllBars)
     if CustomTrackers and CustomTrackers.activeBars then
         for _, bar in pairs(CustomTrackers.activeBars) do
             if bar and bar.config and (includeAllBars or (bar.config.enabled and bar:IsShown())) then
-                table.insert(frames, bar)
+                table_insert(frames, bar)
             end
         end
     end
@@ -3578,4 +3560,533 @@ _G.QUI_RefreshCustomTrackerKeybinds = function()
             end
         end
     end
+end
+
+if ns.Registry then
+    ns.Registry:Register("customTrackers", {
+        refresh = _G.QUI_RefreshCustomTrackers,
+        priority = 40,
+        group = "trackers",
+        importCategories = { "customTrackers" },
+    })
+end
+
+---------------------------------------------------------------------------
+-- LAYOUT MODE: SETTINGS PROVIDER
+---------------------------------------------------------------------------
+
+--- Register a settings provider for a custom tracker bar in layout mode.
+--- Called from both startup registration and dynamic "Add CDM Bar" button.
+local function RegisterCustomTrackerProvider(barID, elementKey)
+    local settingsPanel = ns.QUI_LayoutMode_Settings
+    if not settingsPanel then return end
+
+    settingsPanel:RegisterProvider(elementKey, { build = function(content, key, width)
+        local db = GetDB()
+        if not db or not db.bars then return 80 end
+
+        -- Find bar config by ID
+        local barConfig = nil
+        for _, bc in ipairs(db.bars) do
+            if bc.id == barID then barConfig = bc; break end
+        end
+        if not barConfig then return 80 end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return 80 end
+
+        local U = ns.QUI_LayoutMode_Utils
+        if not U then return 80 end
+        local P = U.PlaceRow
+        local FORM_ROW = U.FORM_ROW
+
+        local sections = {}
+        local function relayout() U.StandardRelayout(content, sections) end
+        local function Refresh()
+            local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[barID]
+            if bar then
+                CustomTrackers:RefreshAll()
+            end
+            -- Sync the mover handle to reflect new size/position
+            if _G.QUI_LayoutModeSyncHandle then
+                _G.QUI_LayoutModeSyncHandle(elementKey)
+            end
+        end
+
+        -- Items & Spells section
+        U.CreateCollapsible(content, "Items & Spells", 6 * FORM_ROW + 40, function(body)
+            local sy = -4
+
+            -- Drop zone hint
+            local dropHint = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            dropHint:SetPoint("TOPLEFT", 4, sy)
+            dropHint:SetPoint("RIGHT", body, "RIGHT", -4, 0)
+            dropHint:SetTextColor(0.6, 0.6, 0.6, 0.8)
+            dropHint:SetText("Drag items or spells from your spellbook/bags onto the drop zone below")
+            dropHint:SetJustifyH("LEFT")
+            sy = sy - 16
+
+            -- Drop zone frame
+            local dropZone = CreateFrame("Button", nil, body)
+            dropZone:SetSize(width - 20, 28)
+            dropZone:SetPoint("TOPLEFT", 4, sy)
+
+            local dropBg = dropZone:CreateTexture(nil, "BACKGROUND")
+            dropBg:SetAllPoints()
+            dropBg:SetColorTexture(0.1, 0.15, 0.1, 0.6)
+
+            local dropText = dropZone:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            dropText:SetPoint("CENTER")
+            dropText:SetText("|cff34D399Drop Item or Spell Here|r")
+
+            dropZone:SetScript("OnReceiveDrag", function()
+                local infoType, id, subType = GetCursorInfo()
+                if infoType == "item" then
+                    if not barConfig.entries then barConfig.entries = {} end
+                    table_insert(barConfig.entries, { type = "item", id = id })
+                    ClearCursor()
+                    Refresh()
+                    -- Force rebuild to show new entry
+                    if settingsPanel then
+                        settingsPanel._currentKey = nil
+                        settingsPanel:Show(key)
+                    end
+                elseif infoType == "spell" then
+                    if not barConfig.entries then barConfig.entries = {} end
+                    table_insert(barConfig.entries, { type = "spell", id = id })
+                    ClearCursor()
+                    Refresh()
+                    if settingsPanel then
+                        settingsPanel._currentKey = nil
+                        settingsPanel:Show(key)
+                    end
+                end
+            end)
+            dropZone:SetScript("OnMouseUp", dropZone:GetScript("OnReceiveDrag"))
+
+            sy = sy - 34
+
+            -- Trinket slot buttons
+            local trinket1Btn = CreateFrame("Button", nil, body)
+            trinket1Btn:SetSize((width - 30) / 2, 22)
+            trinket1Btn:SetPoint("TOPLEFT", 4, sy)
+            trinket1Btn:SetNormalFontObject("GameFontNormalSmall")
+            trinket1Btn:SetText("|cff60A5FA+ Trinket 1|r")
+            local t1bg = trinket1Btn:CreateTexture(nil, "BACKGROUND")
+            t1bg:SetAllPoints()
+            t1bg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+            trinket1Btn:SetScript("OnClick", function()
+                if not barConfig.entries then barConfig.entries = {} end
+                table_insert(barConfig.entries, { type = "slot", id = 13, name = "Trinket 1" })
+                Refresh()
+                if settingsPanel then
+                    settingsPanel._currentKey = nil
+                    settingsPanel:Show(key)
+                end
+            end)
+
+            local trinket2Btn = CreateFrame("Button", nil, body)
+            trinket2Btn:SetSize((width - 30) / 2, 22)
+            trinket2Btn:SetPoint("LEFT", trinket1Btn, "RIGHT", 4, 0)
+            trinket2Btn:SetNormalFontObject("GameFontNormalSmall")
+            trinket2Btn:SetText("|cff60A5FA+ Trinket 2|r")
+            local t2bg = trinket2Btn:CreateTexture(nil, "BACKGROUND")
+            t2bg:SetAllPoints()
+            t2bg:SetColorTexture(0.15, 0.15, 0.2, 0.8)
+            trinket2Btn:SetScript("OnClick", function()
+                if not barConfig.entries then barConfig.entries = {} end
+                table_insert(barConfig.entries, { type = "slot", id = 14, name = "Trinket 2" })
+                Refresh()
+                if settingsPanel then
+                    settingsPanel._currentKey = nil
+                    settingsPanel:Show(key)
+                end
+            end)
+
+            sy = sy - 28
+
+            -- Entry list
+            if barConfig.entries and #barConfig.entries > 0 then
+                for idx, entry in ipairs(barConfig.entries) do
+                    local entryRow = CreateFrame("Frame", nil, body)
+                    entryRow:SetHeight(22)
+                    entryRow:SetPoint("TOPLEFT", 4, sy)
+                    entryRow:SetPoint("RIGHT", body, "RIGHT", -4, 0)
+
+                    -- Icon
+                    local icon = entryRow:CreateTexture(nil, "ARTWORK")
+                    icon:SetSize(18, 18)
+                    icon:SetPoint("LEFT", 0, 0)
+                    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                    local entryName = entry.name or ""
+                    if entry.type == "item" then
+                        local itemName, _, _, _, _, _, _, _, _, itemIcon = C_Item.GetItemInfo(entry.id)
+                        icon:SetTexture(itemIcon or 134400)
+                        entryName = itemName or entry.name or ("Item " .. (entry.id or "?"))
+                    elseif entry.type == "spell" then
+                        local spellInfo = C_Spell.GetSpellInfo(entry.id)
+                        if spellInfo then
+                            icon:SetTexture(spellInfo.iconID or 134400)
+                            entryName = spellInfo.name or entry.name or ("Spell " .. (entry.id or "?"))
+                        else
+                            icon:SetTexture(134400)
+                            entryName = entry.name or ("Spell " .. (entry.id or "?"))
+                        end
+                    elseif entry.type == "slot" then
+                        local slotID = entry.id
+                        local itemID = GetInventoryItemID("player", slotID)
+                        if itemID then
+                            local _, _, _, _, _, _, _, _, _, itemIcon = C_Item.GetItemInfo(itemID)
+                            icon:SetTexture(itemIcon or 134400)
+                        else
+                            icon:SetTexture(134400)
+                        end
+                        entryName = entry.name or ("Slot " .. (slotID or "?"))
+                    end
+
+                    local nameText = entryRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    nameText:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+                    nameText:SetPoint("RIGHT", entryRow, "RIGHT", -50, 0)
+                    nameText:SetText(entryName)
+                    nameText:SetTextColor(0.9, 0.9, 0.9, 1)
+                    nameText:SetJustifyH("LEFT")
+
+                    -- Remove button
+                    local capturedIdx = idx
+                    local removeBtn = CreateFrame("Button", nil, entryRow)
+                    removeBtn:SetSize(18, 18)
+                    removeBtn:SetPoint("RIGHT", 0, 0)
+                    removeBtn:SetNormalFontObject("GameFontNormalSmall")
+                    removeBtn:SetText("|cffFF4444X|r")
+                    removeBtn:SetScript("OnClick", function()
+                        table_remove(barConfig.entries, capturedIdx)
+                        Refresh()
+                        if settingsPanel then
+                            settingsPanel._currentKey = nil
+                            settingsPanel:Show(key)
+                        end
+                    end)
+
+                    sy = sy - 24
+                end
+            end
+
+            -- Adjust body height
+            local realHeight = math.abs(sy) + 4
+            body:SetHeight(realHeight)
+            local sec = body:GetParent()
+            if sec then
+                sec._contentHeight = realHeight
+                if sec._expanded then
+                    sec:SetHeight((U.HEADER_HEIGHT or 24) + realHeight)
+                end
+            end
+        end, sections, relayout)
+
+        -- Layout
+        local directionOptions = {
+            {value = "RIGHT", text = "Right"}, {value = "LEFT", text = "Left"},
+            {value = "UP", text = "Up"}, {value = "DOWN", text = "Down"},
+            {value = "CENTER", text = "Center (H)"}, {value = "CENTER_VERTICAL", text = "Center (V)"},
+        }
+        U.CreateCollapsible(content, "Layout", 6 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormDropdown(body, "Growth Direction", directionOptions, "growDirection", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Icon Size", 16, 64, 1, "iconSize", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Spacing", 0, 20, 1, "spacing", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Icon Shape", 1.0, 2.0, 0.05, "aspectRatioCrop", barConfig, Refresh, { precision = 2 }), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Dynamic Layout (Collapsing)", "dynamicLayout", barConfig, Refresh), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Clickable Icons", "clickableIcons", barConfig, Refresh), body, sy)
+        end, sections, relayout)
+
+        -- Icon Style
+        U.CreateCollapsible(content, "Icon Style", 2 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormSlider(body, "Border Size", 0, 8, 1, "borderSize", barConfig, Refresh), body, sy)
+            P(GUI:CreateFormSlider(body, "Zoom", 0, 0.2, 0.01, "zoom", barConfig, Refresh, { precision = 2 }), body, sy)
+        end, sections, relayout)
+
+        -- Duration Text
+        U.CreateCollapsible(content, "Duration Text", 6 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Hide Duration Text", "hideDurationText", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 24, 1, "durationSize", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormColorPicker(body, "Duration Color", "durationColor", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "X Offset", -20, 20, 1, "durationOffsetX", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Y Offset", -20, 20, 1, "durationOffsetY", barConfig, Refresh), body, sy)
+            -- Font dropdown
+            local fontList = U.GetFontList()
+            if #fontList > 0 then
+                P(GUI:CreateFormDropdown(body, "Font", fontList, "durationFont", barConfig, Refresh), body, sy)
+            end
+        end, sections, relayout)
+
+        -- Stack Text
+        U.CreateCollapsible(content, "Stack Text", 6 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Hide Stack Text", "hideStackText", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Item Charges", "showItemCharges", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 24, 1, "stackSize", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormColorPicker(body, "Stack Color", "stackColor", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "X Offset", -20, 20, 1, "stackOffsetX", barConfig, Refresh), body, sy)
+            P(GUI:CreateFormSlider(body, "Y Offset", -20, 20, 1, "stackOffsetY", barConfig, Refresh), body, sy)
+        end, sections, relayout)
+
+        -- Buff Active
+        local glowTypeOptions = {
+            {value = "Pixel Glow", text = "Pixel Glow"},
+            {value = "Autocast Shine", text = "Autocast Shine"},
+            {value = "Proc Glow", text = "Proc Glow"},
+        }
+        U.CreateCollapsible(content, "Buff Active", 7 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Enable Active Glow", "activeGlowEnabled", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormDropdown(body, "Glow Type", glowTypeOptions, "activeGlowType", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormColorPicker(body, "Glow Color", "activeGlowColor", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Lines", 4, 16, 1, "activeGlowLines", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Frequency", 0.1, 1.0, 0.05, "activeGlowFrequency", barConfig, Refresh, { precision = 2 }), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Thickness", 1, 5, 1, "activeGlowThickness", barConfig, Refresh), body, sy)
+            P(GUI:CreateFormSlider(body, "Scale", 0.5, 2.0, 0.1, "activeGlowScale", barConfig, Refresh, { precision = 1 }), body, sy)
+        end, sections, relayout)
+
+        -- Visibility
+        U.CreateCollapsible(content, "Visibility", 5 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Show Only In Combat", "showOnlyInCombat", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Only On Cooldown", "showOnlyOnCooldown", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "No Desaturate With Charges", "noDesaturateWithCharges", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Only When Active", "showOnlyWhenActive", barConfig, Refresh), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Show Only When Off Cooldown", "showOnlyWhenOffCooldown", barConfig, Refresh), body, sy)
+        end, sections, relayout)
+
+        -- Advanced
+        U.CreateCollapsible(content, "Advanced", 4 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Show Recharge Swipe", "showRechargeSwipe", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Hide Non-Usable Items", "hideNonUsable", barConfig, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Hide GCD", "hideGCD", barConfig, Refresh), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Spec-Specific Spells", "specSpecificSpells", barConfig, Refresh), body, sy)
+        end, sections, relayout)
+
+        -- Export & Delete buttons
+        local actionSection = CreateFrame("Frame", nil, content)
+        actionSection:SetHeight(2 * FORM_ROW + 8)
+
+        -- Export button
+        local exportBtn = CreateFrame("Button", nil, actionSection)
+        exportBtn:SetSize(width - 20, 24)
+        exportBtn:SetPoint("TOP", 0, -4)
+        exportBtn:SetNormalFontObject("GameFontNormal")
+        exportBtn:SetText("|cff60A5FAExport Bar|r")
+        local exportBg = exportBtn:CreateTexture(nil, "BACKGROUND")
+        exportBg:SetAllPoints()
+        exportBg:SetColorTexture(0.1, 0.12, 0.18, 0.9)
+        exportBtn:SetScript("OnClick", function()
+            local QUICore = ns.Addon
+            if QUICore and QUICore.ExportCustomTrackerBar then
+                local exportStr, err = QUICore:ExportCustomTrackerBar(barID)
+                if exportStr and GUI.ShowExportPopup then
+                    GUI:ShowExportPopup("Export Tracker Bar", exportStr)
+                elseif err then
+                    print("|cffff0000QUI:|r " .. err)
+                end
+            end
+        end)
+
+        -- Delete button (hidden for default tracker)
+        local isDefaultTracker = (barID == "default_tracker_1")
+        local deleteBtn = CreateFrame("Button", nil, actionSection)
+        deleteBtn:SetSize(width - 20, 24)
+        deleteBtn:SetPoint("TOP", exportBtn, "BOTTOM", 0, -4)
+        deleteBtn:SetNormalFontObject("GameFontNormal")
+        if isDefaultTracker then
+            deleteBtn:Hide()
+            actionSection:SetHeight(FORM_ROW + 4)
+        end
+        deleteBtn:SetText("|cffFF4444Delete Tracker|r")
+        local deleteBg = deleteBtn:CreateTexture(nil, "BACKGROUND")
+        deleteBg:SetAllPoints()
+        deleteBg:SetColorTexture(0.18, 0.08, 0.08, 0.9)
+        deleteBtn:SetScript("OnClick", function()
+            if GUI and GUI.ShowConfirmation then
+                GUI:ShowConfirmation({
+                    title = "Delete Tracker?",
+                    message = "This will permanently remove this tracker bar.",
+                    acceptText = "Delete",
+                    cancelText = "Cancel",
+                    onAccept = function()
+                        -- Remove from DB
+                        if db and db.bars then
+                            for idx, bc in ipairs(db.bars) do
+                                if bc.id == barID then
+                                    table_remove(db.bars, idx)
+                                    break
+                                end
+                            end
+                        end
+                        -- Delete runtime bar
+                        CustomTrackers:DeleteBar(barID)
+                        -- Close settings
+                        if settingsPanel then settingsPanel:Reset() end
+                        -- Unregister from layout mode
+                        local um = ns.QUI_LayoutMode
+                        if um then
+                            local handle = um._handles and um._handles[elementKey]
+                            if handle then
+                                handle:Hide()
+                                handle:SetParent(nil)
+                                um._handles[elementKey] = nil
+                            end
+                            if um._elements then um._elements[elementKey] = nil end
+                            if um._elementOrder then
+                                for i, k in ipairs(um._elementOrder) do
+                                    if k == elementKey then
+                                        table_remove(um._elementOrder, i)
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        -- Rebuild drawer
+                        local uiModule = ns.QUI_LayoutMode_UI
+                        if uiModule and uiModule._RebuildDrawer then
+                            uiModule:_RebuildDrawer()
+                        end
+                    end,
+                })
+            end
+        end)
+        table_insert(sections, actionSection)
+
+        -- Position
+        U.BuildPositionCollapsible(content, elementKey, nil, sections, relayout)
+
+        relayout()
+        return content:GetHeight()
+    end })
+end
+
+-- Expose for dynamic registration
+CustomTrackers.RegisterProvider = RegisterCustomTrackerProvider
+
+---------------------------------------------------------------------------
+-- UNLOCK MODE ELEMENT REGISTRATION
+---------------------------------------------------------------------------
+do
+    local function RegisterLayoutModeElements()
+        local um = ns.QUI_LayoutMode
+        if not um then return end
+
+        local function GetTrackerDB()
+            local core = ns.Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.customTrackers
+        end
+
+        local trackerDB = GetTrackerDB()
+        if not trackerDB or not trackerDB.bars then return end
+
+        -- Register each tracker bar from DB
+        for i, barConfig in ipairs(trackerDB.bars) do
+            local barID = barConfig.id
+            if barID then
+                local elementKey = "customTracker:" .. barID
+                local capturedID = barID
+
+                um:RegisterElement({
+                    key = elementKey,
+                    label = barConfig.name or ("CDM Bar " .. barID),
+                    group = "Cooldown Manager",
+                    order = i,
+                    isOwned = false,  -- proxy mover (LOW strata)
+                    getSize = function()
+                        -- Compute size from config to avoid feedback loop
+                        -- (frame may be reparented to mover via SetAllPoints)
+                        local db2 = GetTrackerDB()
+                        if not db2 or not db2.bars then return nil end
+                        local cfg = nil
+                        for _, bc in ipairs(db2.bars) do
+                            if bc.id == capturedID then cfg = bc; break end
+                        end
+                        if not cfg or not cfg.entries then return nil end
+                        local iconSize = cfg.iconSize or 28
+                        local spacing = cfg.spacing or 4
+                        local numEntries = #cfg.entries
+                        if numEntries == 0 then numEntries = 1 end
+                        local crop = cfg.aspectRatioCrop or 1.0
+                        local iconW = iconSize
+                        local iconH = math.floor(iconSize / crop + 0.5)
+                        local dir = cfg.growDirection or "RIGHT"
+                        if dir == "RIGHT" or dir == "LEFT" or dir == "CENTER" then
+                            return iconW * numEntries + spacing * (numEntries - 1), iconH
+                        else
+                            return iconW, iconH * numEntries + spacing * (numEntries - 1)
+                        end
+                    end,
+                    isEnabled = function()
+                        local db2 = GetTrackerDB()
+                        if not db2 or not db2.bars then return false end
+                        for _, bc in ipairs(db2.bars) do
+                            if bc.id == capturedID then return bc.enabled ~= false end
+                        end
+                        return false
+                    end,
+                    setEnabled = function(val)
+                        local db2 = GetTrackerDB()
+                        if not db2 or not db2.bars then return end
+                        for _, bc in ipairs(db2.bars) do
+                            if bc.id == capturedID then
+                                bc.enabled = val
+                                break
+                            end
+                        end
+                        -- Show/hide the bar
+                        local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                        if bar then
+                            if val then
+                                SetBarShownForPreview(bar, true)
+                            else
+                                SetBarShownForPreview(bar, false)
+                            end
+                        end
+                    end,
+                    getFrame = function()
+                        return CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                    end,
+                    onOpen = function()
+                        -- Show bar for preview during layout mode
+                        local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                        if bar then
+                            SetBarShownForPreview(bar, true)
+                            bar:SetAlpha(bar.config and bar.config.enabled and 1 or 0.5)
+                        end
+                    end,
+                    onClose = function()
+                        -- Restore normal visibility
+                        local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                        if bar then
+                            local shouldShow = bar.config and bar.config.enabled
+                            SetBarShownForPreview(bar, shouldShow == true)
+                            if shouldShow and bar:IsShown() then
+                                bar:SetAlpha(1)
+                            end
+                        end
+                    end,
+                })
+
+                -- Register settings provider
+                RegisterCustomTrackerProvider(barID, elementKey)
+
+                -- Add to FRAME_ANCHOR_INFO
+                if ns.FRAME_ANCHOR_INFO then
+                    ns.FRAME_ANCHOR_INFO[elementKey] = {
+                        displayName = barConfig.name or ("CDM Bar " .. barID),
+                        category = "Cooldown Manager",
+                        order = i,
+                    }
+                end
+            end
+        end
+    end
+
+    C_Timer.After(3, RegisterLayoutModeElements)
 end
