@@ -1045,6 +1045,62 @@ end
 -- Read layout settings from ownedLayout DB (fully independent of Blizzard Edit Mode)
 local function GetOwnedLayout(barKey)
     local barDB = GetBarSettings(barKey)
+    local profile = nil
+    local core = GetCore()
+    if core and core.db then
+        profile = core.db.profile
+    end
+
+    if type(barDB) == "table"
+        and type(profile) == "table"
+        and profile._legacyMainlineUsesEditModeActionBars
+        and (barKey == "bar1" or barKey == "bar2" or barKey == "bar3" or barKey == "bar4"
+            or barKey == "bar5" or barKey == "bar6" or barKey == "bar7" or barKey == "bar8")
+    then
+        local layout = rawget(barDB, "ownedLayout")
+        local expectedColumns = (barKey == "bar4" or barKey == "bar5") and 6 or 12
+        local isSyntheticLayout = type(layout) == "table"
+            and (layout.orientation or "horizontal") == "horizontal"
+            and (layout.columns or 12) == expectedColumns
+            and (layout.iconCount or 12) == 12
+            and layout.buttonSize == nil
+            and layout.buttonSpacing == nil
+            and layout.buttonHeight == nil
+            and (layout.growUp or false) == false
+            and (layout.growLeft or false) == false
+
+        if layout == nil or isSyntheticLayout then
+            local barFrame = GetBarFrame(barKey)
+            if barFrame and barFrame.GetSettingValue and Enum and Enum.EditModeActionBarSetting then
+                local allButtons = GetBarButtons(barKey)
+                local buttonCount = #allButtons
+                if buttonCount > 0 then
+                    local EditModeSettings = Enum.EditModeActionBarSetting
+                    local okOrientation, orientation = pcall(barFrame.GetSettingValue, barFrame, EditModeSettings.Orientation)
+                    local okRows, numRows = pcall(barFrame.GetSettingValue, barFrame, EditModeSettings.NumRows)
+                    local okIcons, numIcons = pcall(barFrame.GetSettingValue, barFrame, EditModeSettings.NumIcons)
+                    if not okIcons or type(numIcons) ~= "number" or numIcons <= 0 then
+                        numIcons = buttonCount
+                    else
+                        numIcons = math.min(numIcons, buttonCount)
+                    end
+
+                    local isVertical = okOrientation and orientation == 1
+                    local columns = 12
+                    if okRows and type(numRows) == "number" and numRows > 0 then
+                        if isVertical then
+                            columns = numRows
+                        else
+                            columns = math.ceil(numIcons / numRows)
+                        end
+                    end
+
+                    return isVertical and "vertical" or "horizontal", math.max(1, columns), numIcons, false, false, nil, nil, nil
+                end
+            end
+        end
+    end
+
     local layout = barDB and barDB.ownedLayout
     if not layout then
         return "horizontal", 12, 12, false, false, nil, nil, nil
@@ -1282,6 +1338,15 @@ local function RestoreContainerPosition(barKey)
         local ok, point, relativeTo, relPoint, x, y = pcall(barFrame.GetPoint, barFrame, 1)
         if ok and point then
             container:ClearAllPoints()
+            local ox = Helpers.SafeToNumber(x, 0)
+            local oy = Helpers.SafeToNumber(y, 0)
+            local anchorParent = relativeTo or UIParent
+            local anchorRelative = relPoint or point
+            local setOk = pcall(container.SetPoint, container, point, anchorParent, anchorRelative, ox, oy)
+            if setOk then
+                return true
+            end
+
             local rawCx, rawCy = barFrame:GetCenter()
             local rawSx, rawSy = UIParent:GetCenter()
             local cx = Helpers.SafeToNumber(rawCx)
