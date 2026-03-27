@@ -3093,6 +3093,9 @@ function QUI_LayoutMode:ToggleHandlePreview(key)
         -- Hide it
         handle:Hide()
         if hidden then hidden[key] = true end
+        if self._selectedKey == key then
+            self:SelectMover(nil)
+        end
         if def.onClose then pcall(def.onClose) end
         return false
     else
@@ -3147,6 +3150,64 @@ function QUI_LayoutMode:ToggleHandlePreview(key)
         end)
         return true
     end
+end
+
+--- Ensure a handle preview matches the requested visibility state.
+function QUI_LayoutMode:SetHandlePreviewVisible(key, shouldShow)
+    if not self.isActive then return false end
+    if not self:IsElementEnabled(key) then return false end
+
+    local isShown = self:IsHandleShown(key)
+    if isShown == shouldShow then
+        return isShown
+    end
+
+    return self:ToggleHandlePreview(key)
+end
+
+--- Show or hide every enabled handle preview.
+function QUI_LayoutMode:SetAllHandlePreviewsVisible(shouldShow)
+    if not self.isActive then return end
+
+    for _, key in ipairs(self._elementOrder) do
+        if self:IsElementEnabled(key) then
+            self:SetHandlePreviewVisible(key, shouldShow)
+        end
+    end
+
+    if not shouldShow then
+        self:SelectMover(nil)
+    end
+end
+
+--- Show only one enabled handle preview and hide the rest.
+function QUI_LayoutMode:SoloHandlePreview(key)
+    if not self.isActive then return false end
+    if not self:IsElementEnabled(key) then return false end
+
+    for _, otherKey in ipairs(self._elementOrder) do
+        if self:IsElementEnabled(otherKey) then
+            self:SetHandlePreviewVisible(otherKey, otherKey == key)
+        end
+    end
+
+    self:SelectMover(key)
+    return true
+end
+
+--- Returns true when this is the only visible enabled handle.
+function QUI_LayoutMode:IsHandleSolo(key)
+    if not self:IsElementEnabled(key) or not self:IsHandleShown(key) then
+        return false
+    end
+
+    for _, otherKey in ipairs(self._elementOrder) do
+        if otherKey ~= key and self:IsElementEnabled(otherKey) and self:IsHandleShown(otherKey) then
+            return false
+        end
+    end
+
+    return true
 end
 
 --- Clear the hidden state for a key (used when enabling an element).
