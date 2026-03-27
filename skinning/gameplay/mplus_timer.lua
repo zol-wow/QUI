@@ -158,6 +158,10 @@ local function ApplyMPlusTimerSkin()
 
     local settings = GetMPlusTimerSettings()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings)
+    local opacityMul = settings.frameBackgroundOpacity
+    if opacityMul == nil then opacityMul = 1 end
+    opacityMul = math.max(0, math.min(1, opacityMul))
+    bga = math.max(0, math.min(1, bga * opacityMul))
     local br, bg, bb, ba = SkinBase.GetSkinBarColor(settings)
     local colors = GetContrastColors(bgr, bgg, bgb)
     local showBorder = settings.showBorder ~= false  -- Default true

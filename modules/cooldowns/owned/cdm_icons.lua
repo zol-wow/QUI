@@ -340,7 +340,12 @@ local function GetBestSpellCooldown(spellID)
     -- Check override spell (no table allocation — just a second ID)
     if C_Spell.GetOverrideSpell then
         local overrideID = C_Spell.GetOverrideSpell(spellID)
-        if overrideID and overrideID ~= spellID then
+        -- overrideID may be secret in combat — guard the comparison.
+        local isOverridden = false
+        if overrideID and not IsSecretValue(overrideID) then
+            isOverridden = overrideID ~= spellID
+        end
+        if isOverridden then
             cdInfo = TickCacheGetCooldown(overrideID)
             if cdInfo then
                 bestStart, bestDuration, secretStart, secretDuration, bestDurObj =
@@ -409,22 +414,31 @@ local function GetBestSpellCooldown(spellID)
         bestDurObj = nil
     end
 
+    -- isActive: non-secret boolean from cooldown APIs (12.0.5+).
+    local isActive = false
+    if cdInfo and cdInfo.isActive ~= nil then
+        isActive = cdInfo.isActive == true
+    end
+    if chargeInfo and chargeInfo.isActive == true then
+        isActive = true
+    end
+
     -- Prefer safe numeric values, then DurationObject, then hook cache
     if bestStart then
-        return bestStart, bestDuration, bestDurObj
+        return bestStart, bestDuration, bestDurObj, isActive
     end
     if bestDurObj then
-        return nil, nil, bestDurObj
+        return nil, nil, bestDurObj, isActive
     end
     -- Secret fallback: no longer forward raw secrets to SetCooldown (12.0.5+).
     -- Try hook cache DurationObject from Blizzard viewer children.
     if secretStart and ns.CDMSpellData and ns.CDMSpellData.GetCachedDurObj then
         local hookDurObj = ns.CDMSpellData:GetCachedDurObj(spellID)
         if hookDurObj then
-            return nil, nil, hookDurObj
+            return nil, nil, hookDurObj, isActive
         end
     end
-    return nil, nil, nil
+    return nil, nil, nil, isActive
 end
 
 -- Item cooldown resolution
@@ -651,6 +665,9 @@ local function MirrorBlizzCooldown(icon, blizzChild)
 
                 if not tSkipCharge and cd and cd.SetCooldownFromDurationObject then
                     pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
+                    -- Track that this hook successfully forwarded a DurationObject
+                    -- so the API path can skip competing CooldownFrame writes.
+                    targetIcon._durObjHookSync = GetTime()
                 end
 
                 if not tSkipCharge then
@@ -674,22 +691,10 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 return
             end
 
-            -- Mirror to addon-owned CD.
-            -- Skip for charged entries (same reason as durObj hook above).
-            local cd = targetIcon.Cooldown
-            local tSkipCharge2 = tEntry and tEntry.hasCharges
-            if not tSkipCharge2 and cd and IsSafeNumeric(start) and IsSafeNumeric(duration)
-               and start > 0 and duration > 0 then
-                pcall(cd.SetCooldown, cd, start, duration)
-            end
-
-
-            if not tSkipCharge2 then
-                SyncMirroredCooldownState(targetIcon, self, IsSafeNumeric(start) and IsSafeNumeric(duration) and start > 0 and duration > 0)
-            end
+            -- Swipe is driven by UpdateIconCooldown via the override chain
+            -- (GetOverrideSpell → GetSpellCooldown/Duration).  The hook
+            -- only needs to refresh GCD state — no CooldownFrame writes.
             RefreshIconGCDState(targetIcon)
-
-            ReapplySwipeStyle(cd, targetIcon)
         end)
 
         -- No SetAllPoints/SetPoint/SetParent hooks: the Blizzard
@@ -779,29 +784,21 @@ local function HookBlizzTexture(icon, blizzChild)
             -- child may use a different icon (e.g., debuff instead of ability).
             if quiIcon._desiredTexture then return end
             if quiIcon.Icon and texture then
-                quiIcon.Icon:SetTexture(texture)
+                -- Detect spell override transitions (e.g., Wake of Ashes →
+                -- Hammer of Light).  When texture changes, the spell has
+                -- transformed — clear cached DurationObject to force a swipe
+                -- refresh so the new spell's cooldown state is shown.
+                -- Forward texture to our icon (C-side handles secret values).
+                -- Texture may be secret in combat — no Lua comparisons.
+                pcall(quiIcon.Icon.SetTexture, quiIcon.Icon, texture)
             end
         end)
 
-        -- Mirror desaturation from Blizzard's icon so our icon reflects
-        -- the same visual state without needing API calls in combat.
-        hooksecurefunc(iconRegion, "SetDesaturated", function(self, desaturated)
-            local s = blizzTexState[self]
-            if not s or not s.icon then return end
-            local quiIcon = s.icon
-            if not quiIcon.Icon then return end
-            local entry = quiIcon._spellEntry
-            if not entry then return end
-            local viewerType = entry.viewerType
-            if viewerType == "buff" or quiIcon._auraActive then
-                return
-            end
-            local db = GetDB()
-            local settings = db and db[viewerType]
-            if settings and settings.desaturateOnCooldown then
-                quiIcon.Icon:SetDesaturated(desaturated)
-            end
-        end)
+        -- Desaturation is now driven solely by UpdateIconCooldown's
+        -- desaturation block, which uses _isOnGCD + DurationObject remaining
+        -- to filter GCD from real cooldowns.  The mirror hook was forwarding
+        -- Blizzard's GCD-driven desaturation toggles, causing flickering.
+        -- Intentionally removed: no SetDesaturated forwarding.
     end
 end
 
@@ -872,6 +869,22 @@ local function SyncStackText(state)
     -- calls — Blizzard spams SetText("") on ChargeCount.Current for
     -- every viewer child on every refresh (even buffs without charges),
     -- which would race with the API path and cause flicker.
+    if hasCharge then
+        -- Only forward charge text for multi-charge spells (maxCharges > 1).
+        -- maxCharges is non-secret (12.0.5+).  Single-charge spells can
+        -- show misleading counts from empowerment mechanics (e.g., Wake of
+        -- Ashes showing "2" from Hammer of Light transformation).
+        local entry = icon._spellEntry
+        local sid = entry and (entry.overrideSpellID or entry.spellID or entry.id)
+        local isMulti = false
+        if sid and C_Spell.GetSpellCharges then
+            local ok, ci = pcall(C_Spell.GetSpellCharges, sid)
+            if ok and ci and ci.maxCharges and ci.maxCharges > 1 then
+                isMulti = true
+            end
+        end
+        if not isMulti then hasCharge = false end
+    end
     if hasCharge then
         pcall(icon.StackText.SetText, icon.StackText, state.chargeText)
         icon.StackText:Show()
@@ -1779,7 +1792,7 @@ local function UpdateIconCooldown(icon)
         end
 
         -- Custom entry: use addon-created CD with our cooldown resolution
-        local startTime, duration, durObj
+        local startTime, duration, durObj, apiIsActive
         if entry.type == "macro" then
             local resolvedID, resolvedType, fallbackTex = ResolveMacro(entry)
             if resolvedID then
@@ -1846,42 +1859,49 @@ local function UpdateIconCooldown(icon)
                 end
             end
         else
-            startTime, duration, durObj = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+            if entry._blizzChild then
+                -- Blizzard viewer child drives texture (SetTexture hook).
+                -- Read isActive (non-secret) for cooldown state.
+                icon._desiredTexture = nil
+                local sid = entry.overrideSpellID or entry.spellID or entry.id
+                local ci = sid and TickCacheGetCooldown(sid)
+                apiIsActive = ci and ci.isActive
 
-            -- Sync texture for spell overrides (e.g., Judgment → Hammer of Wrath).
-            -- Cache override ID to avoid repeated GetSpellTexture lookups, but
-            -- always re-apply the desired texture so Blizzard texture hook drift
-            -- (viewer child showing a different icon, e.g., debuff instead of
-            -- ability) is corrected every tick.
-            if C_Spell.GetOverrideSpell and icon.Icon then
-                local baseID = entry.overrideSpellID or entry.spellID or entry.id
-                if baseID then
-                    local overrideID = C_Spell.GetOverrideSpell(baseID)
-                    if not Helpers.IsSecretValue(overrideID) and overrideID ~= icon._cachedOverrideID then
-                        icon._cachedOverrideID = overrideID
-                        icon._desiredTexture = GetSpellTexture(overrideID or baseID)
-                    end
-                    -- Always re-apply: SetTexture is a C-side no-op when unchanged.
-                    if icon._desiredTexture then
-                        icon.Icon:SetTexture(icon._desiredTexture)
+                -- Chain: GetOverrideSpell → GetSpellCooldown / GetSpellCooldownDuration.
+                -- GetOverrideSpell may return a secret override ID in combat.
+                -- Pass it directly to C-side functions which handle secrets
+                -- natively and return non-secret isActive + DurationObject.
+                local cdSid = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(sid) or sid
+                local childCi = C_Spell.GetSpellCooldown(cdSid)
+                if childCi and childCi.isActive ~= nil then
+                    apiIsActive = childCi.isActive
+                end
+                durObj = C_Spell.GetSpellCooldownDuration(cdSid)
+            else
+                -- Custom entry without viewer child: full API resolution.
+                startTime, duration, durObj, apiIsActive = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+                -- Resolve override texture via API.
+                if C_Spell.GetOverrideSpell and icon.Icon then
+                    local baseID = entry.overrideSpellID or entry.spellID or entry.id
+                    if baseID then
+                        local overrideID = C_Spell.GetOverrideSpell(baseID)
+                        if not Helpers.IsSecretValue(overrideID) then
+                            local texSpellID = overrideID or baseID
+                            if texSpellID ~= icon._cachedOverrideID then
+                                icon._cachedOverrideID = texSpellID
+                                icon._desiredTexture = GetSpellTexture(texSpellID)
+                            end
+                            if icon._desiredTexture then
+                                icon.Icon:SetTexture(icon._desiredTexture)
+                            end
+                        end
                     end
                 end
             end
         end
 
-        -- When mirror hooks are active for this icon's Blizzard viewer child,
-        -- they are the sole driver of cooldown state.  SyncMirroredCooldownState
-        -- (called from the SetCooldown/SetCooldownFromDurationObject hooks)
-        -- maintains _hasCooldownActive, _lastStart, and _lastDuration.  The API
-        -- path below would overwrite those values with stale/GCD data and restart
-        -- the swipe animation, causing flickering.  Skip it entirely.
-        -- Charged entries are excluded: mirror hooks skip them (tSkipCharge),
-        -- so the API path remains their sole cooldown driver.
-        local mirrorActive = icon._blizzCooldown and entry._blizzChild
-            and entry._blizzChild.Cooldown == icon._blizzCooldown
-            and not entry.hasCharges
-
-        if not mirrorActive then
+        -- _lastStart / _lastDuration: always update from API when readable.
+        -- These are used by the desaturation check and visibility logic below.
         local hasSafeStart = IsSafeNumeric(startTime)
         local hasSafeDuration = IsSafeNumeric(duration)
         if hasSafeDuration then
@@ -1901,35 +1921,42 @@ local function UpdateIconCooldown(icon)
             icon._lastDuration = 0
         end
 
+        -- Detect whether the DurationObject mirror hook is actively driving
+        -- this icon's CooldownFrame swipe.  When it is, skip API writes to
+        -- icon.Cooldown to avoid restarting the swipe animation (flickering).
+        -- _durObjHookSync is set by the SetCooldownFromDurationObject hook
+        -- when it successfully forwards a DurationObject to our CooldownFrame.
+        -- Charged entries are excluded: mirror hooks skip them (tSkipCharge).
+        local mirrorActive = not entry.hasCharges
+            and icon._durObjHookSync
+            and (_batchTime - icon._durObjHookSync) < 10
+
         if icon.Cooldown then
-            local cdApplied = false
-            -- Priority 1: DurationObject (secret-safe via SetCooldownFromDurationObject)
-            if durObj and icon.Cooldown.SetCooldownFromDurationObject then
-                local ok = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, false)
-                cdApplied = ok
-            end
-            -- Priority 2: safe numeric values (OOC or non-secret)
-            if not cdApplied and startTime and duration
-               and IsSafeNumeric(startTime) and IsSafeNumeric(duration) then
-                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
-                cdApplied = true
-            end
-            -- Priority 3: hook cache DurationObject from Blizzard viewer children
-            if not cdApplied and ns.CDMSpellData then
-                local hookDurObj = ns.CDMSpellData:GetCachedDurObj(
-                    entry.overrideSpellID or entry.spellID or entry.id)
-                if hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
-                    pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, hookDurObj, false)
-                    cdApplied = true
+            -- isActive (non-secret, 12.0.5+) is the authoritative signal for
+            -- whether the UI should render a cooldown.  It handles overrides,
+            -- GCD filtering, and charge states correctly.
+            if apiIsActive == false then
+                icon.Cooldown:Clear()
+            elseif not mirrorActive and durObj then
+                -- Skip applying the swipe during GCD — the override system
+                -- lags by one tick, so the base CD briefly shows before the
+                -- override (e.g., Hammer of Light) clears it.  Deferring
+                -- during GCD lets the override resolve first.
+                if not icon._isOnGCD then
+                    pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, false)
+                end
+            elseif not mirrorActive and startTime and duration
+                   and IsSafeNumeric(startTime) and IsSafeNumeric(duration) then
+                if not icon._isOnGCD then
+                    pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
                 end
             end
-            -- No data: clear
-            if not cdApplied and not startTime and not duration then
-                icon.Cooldown:Clear()
+
+            -- isActive drives _hasCooldownActive for desaturation/visibility.
+            if apiIsActive ~= nil then
+                icon._hasCooldownActive = apiIsActive
             end
-            icon._hasCooldownActive = cdApplied or false
         end
-        end -- not mirrorActive
 
     -- Stack/charge text: API-driven on each tick.
     -- Cache chargeInfo for this icon — reused by desaturation check below
@@ -1967,34 +1994,23 @@ local function UpdateIconCooldown(icon)
             local spellID = entry.overrideSpellID or entry.spellID or entry.id
             local stackVal  -- raw value (may be secret), forwarded to C-side
 
-            -- Primary: C_Spell.GetSpellDisplayCount (canonical API, handles
-            -- charges, stacks, and cast counts; secret-safe via C-side).
-            if spellID and C_Spell.GetSpellDisplayCount then
-                local ok, val = pcall(C_Spell.GetSpellDisplayCount, spellID)
-                if ok and val then
-                    stackVal = val
-                end
-            end
+            -- Only show charge count when maxCharges > 1 (multi-charge spell).
+            -- maxCharges is non-secret (12.0.5+), always readable in combat.
+            local isMultiCharge = _cachedChargeInfo
+                and _cachedChargeInfo.maxCharges
+                and _cachedChargeInfo.maxCharges > 1
 
-            -- Fallback: manual charge detection when GetSpellDisplayCount unavailable
-            if not stackVal and _cachedChargeInfo and _cachedChargeInfo.maxCharges then
-                local isMultiCharge = false
-                if not IsSecretValue(_cachedChargeInfo.maxCharges) then
-                    isMultiCharge = _cachedChargeInfo.maxCharges > 1
-                else
-                    local svDB = GetChargeMetadataDB()
-                    isMultiCharge = svDB and svDB[spellID] and true or false
+            if isMultiCharge then
+                -- GetSpellDisplayCount is the canonical charge display API.
+                if spellID and C_Spell.GetSpellDisplayCount then
+                    local ok, val = pcall(C_Spell.GetSpellDisplayCount, spellID)
+                    if ok and val then
+                        stackVal = val
+                    end
                 end
-                if isMultiCharge and _cachedChargeInfo.currentCharges then
+                -- Fallback: currentCharges directly
+                if not stackVal and _cachedChargeInfo.currentCharges then
                     stackVal = _cachedChargeInfo.currentCharges
-                end
-            end
-
-            -- Fallback: secondary resource counts (e.g. Festering Wounds)
-            if not stackVal and spellID and C_Spell.GetSpellCastCount then
-                local ok, val = pcall(C_Spell.GetSpellCastCount, spellID)
-                if ok and val then
-                    stackVal = val
                 end
             end
 
@@ -2052,37 +2068,36 @@ local function UpdateIconCooldown(icon)
                 shouldDesaturate = false
             end
             if shouldDesaturate then
-                if mirrorActive then
-                    -- Mirror hooks maintain _hasCooldownActive via
-                    -- SyncMirroredCooldownState.  Use the boolean flag
-                    -- instead of dur/start remaining-time calculation,
-                    -- which may use stale values when GetCooldownTimes
-                    -- returns secret values in combat.
-                    if icon._hasCooldownActive then
-                        icon.Icon:SetDesaturated(true)
-                        icon._cdDesaturated = true
-                    else
+                -- GCD-only cooldowns should never desaturate.
+                -- _isOnGCD is non-secret (set by RefreshIconGCDState).
+                if icon._isOnGCD then
+                    if icon._cdDesaturated then
                         icon.Icon:SetDesaturated(false)
                         icon._cdDesaturated = nil
                     end
                     return
                 end
 
-                local dur = icon._lastDuration or 0
-                local start = icon._lastStart or 0
-
-                if dur > 1.5 and start > 0 then
-                    local remaining = (start + dur) - _batchTime
-                    if remaining > 0 then
-                        -- Charged spells: Blizzard's viewer handles
-                        -- desaturation natively via SetDesaturated on the
-                        -- viewer child's Icon texture — our mirror hook
-                        -- forwards these calls.  Skip our own logic to
-                        -- avoid overriding Blizzard's correct charge state.
-                        if entry.hasCharges then
-                            return
+                -- Not on GCD: check if there's a real cooldown active.
+                -- Use DurationObject remaining time (works with secret values)
+                -- combined with _hasCooldownActive as fallback.
+                local hasRealCD = false
+                if not entry.hasCharges then
+                    if durObj and durObj.GetRemainingDuration then
+                        local rok, remaining = pcall(durObj.GetRemainingDuration, durObj)
+                        if rok and remaining then
+                            if IsSecretValue(remaining) or remaining > 0 then
+                                hasRealCD = true
+                            end
                         end
                     end
+                    if not hasRealCD and icon._hasCooldownActive then
+                        hasRealCD = true
+                    end
+                end
+
+
+                if hasRealCD then
                     icon.Icon:SetDesaturated(true)
                     icon._cdDesaturated = true
                     return

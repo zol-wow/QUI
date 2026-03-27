@@ -2829,13 +2829,14 @@ do
             Helpers.EnsureDefaults(mpDB, {
                 bgOverride = false,
                 hideBackground = false,
+                frameBackgroundOpacity = 1,
             })
             if mpDB.backgroundColor == nil then
                 local fb = general and general.skinBgColor or { 0.05, 0.05, 0.05, 0.95 }
                 mpDB.backgroundColor = { fb[1], fb[2], fb[3], fb[4] or 0.95 }
             end
 
-            U.CreateCollapsible(content, "Background", 3 * FORM_ROW + 8, function(body)
+            U.CreateCollapsible(content, "Background", 4 * FORM_ROW + 8, function(body)
                 local sy = -4
                 local colorPicker, hideCheck
 
@@ -2858,7 +2859,9 @@ do
                 sy = P(hideCheck, body, sy)
 
                 colorPicker = GUI:CreateFormColorPicker(body, "Background Color", "backgroundColor", mpDB, RefreshColors)
-                P(colorPicker, body, sy)
+                sy = P(colorPicker, body, sy)
+
+                P(GUI:CreateFormSlider(body, "Panel Opacity", 0, 1, 0.05, "frameBackgroundOpacity", mpDB, RefreshSkin, { deferOnDrag = true }), body, sy)
 
                 UpdateState()
             end, sections, relayout)

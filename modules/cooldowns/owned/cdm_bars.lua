@@ -646,6 +646,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             if not target then return end
             -- Forward value to owned StatusBar (C-side handles secret values)
             pcall(target.StatusBar.SetValue, target.StatusBar, value)
+            target._lastMirrorFill = GetTime()
         end)
 
         -- Mirror SetMinMaxValues
@@ -1010,6 +1011,12 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
 
         -- Find matching BuffBarCooldownViewer child and set up direct mirror.
         local blzBarChild = FindBlizzBarChild(spellID, entry)
+        -- Clear stale mirrorMap entry if the Blizzard child changed.
+        -- Without this, hooks on the old child still write to this bar.
+        local oldBlizz = bar._blizzBar
+        if oldBlizz and oldBlizz ~= blzBarChild then
+            mirrorMap[oldBlizz] = nil
+        end
         bar._blizzBar = blzBarChild
         if blzBarChild then
             MirrorBlizzBar(bar, blzBarChild)
@@ -1123,10 +1130,13 @@ function CDMBars:UpdateOwnedBarAura(bar)
         local durObj = r.durObj or r.hookDurObj
         if durObj then
             bar._durObj = durObj
-            if bar._blizzBar and hookedBars[bar._blizzBar] then
-                -- MirrorBlizzBar hooks drive fill via SetValue/SetMinMaxValues
-                -- passthrough.  SetTimerDuration would create a C-side animation
-                -- that fights with the hook's SetValue calls, causing bar jumps.
+            local mirrorFillActive = bar._lastMirrorFill
+                and (GetTime() - bar._lastMirrorFill) < 5
+            if mirrorFillActive then
+                -- MirrorBlizzBar hooks are actively driving fill via
+                -- SetValue/SetMinMaxValues passthrough.  SetTimerDuration
+                -- would create a C-side animation that fights with the
+                -- hook's SetValue calls, causing bar jumps.
                 bar._cSideFill = true
             elseif bar.StatusBar then
                 pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
@@ -1443,10 +1453,11 @@ barTimerGroup:SetScript("OnLoop", function()
     local anyDeactivated = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._active and bar:IsShown() then
-            -- When MirrorBlizzBar hooks are active, they drive fill
-            -- (SetValue/SetMinMaxValues) and text (SetText/SetFormattedText).
-            -- Skip all OnLoop processing to avoid competing writes.
-            if bar._blizzBar and hookedBars[bar._blizzBar] then
+            -- When MirrorBlizzBar hooks are actively driving fill,
+            -- skip OnLoop processing to avoid competing writes.
+            local mirrorFillActive = bar._lastMirrorFill
+                and (GetTime() - bar._lastMirrorFill) < 5
+            if mirrorFillActive then
                 anyActive = true
             elseif true then
             local durObj = bar._durObj
