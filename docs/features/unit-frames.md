@@ -35,6 +35,8 @@ To reposition frames, use `/qui editmode` to enter the drag-and-drop edit mode.
 - **Heal prediction** -- Incoming heal overlay on the health bar.
 - **Dark mode** -- Separate health and background colors with independent opacity controls for a subdued visual style.
 - **Resource bar breakpoint indicators** -- Configurable breakpoint indicators on resource bars for specs that have meaningful thresholds.
+- **Totem bars** -- Totem and utility bars for applicable classes. Shaman totems, Brewmaster stagger tracking, and other class-specific utility displays are shown in a dedicated bar that can be positioned independently.
+- **Charged combo points** -- Support for charged combo points with distinct visual styling to differentiate regular and charged combo points.
 - **Secondary resource bar swap** -- Option to swap primary and secondary resource bar positions for certain specs (Balance Druid, Frost DK, Enhancement Shaman, Devourer DH, and others), with option to hide primary when swapped.
 - **Classification icons** -- Target, Focus, and Boss frames can display classification icons (elite, rare, rare-elite, etc.).
 - **Reverse health fill** -- Option to reverse the fill direction on target health bars.

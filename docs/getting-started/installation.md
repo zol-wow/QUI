@@ -7,7 +7,7 @@ nav_order: 1
 
 # Installation
 
-QUI requires **World of Warcraft Midnight (12.0+)**. It supports Interface versions `120000` and `120001`.
+QUI requires **World of Warcraft Midnight (12.0+)**. It supports Interface versions `120000`, `120001`, and `120005`.
 
 ## Option 1: CurseForge or WoWUp App
 

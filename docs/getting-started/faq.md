@@ -97,3 +97,26 @@ QUI ships with two CDM engines:
 - **Classic** -- A legacy engine that hooks into Blizzard frames. It exists for backward compatibility but is no longer actively developed.
 
 If you experience issues with cooldown tracking, make sure your engine is set to "owned."
+
+## How do I move Blizzard frames without Edit Mode?
+
+QUI includes a **Blizzard Frame Mover** feature (added in v2.54.0) that lets you drag default Blizzard UI elements directly.
+
+1. Open `/qui`.
+2. Navigate to the **QoL** tab.
+3. Enable the **Blizzard Frame Mover**.
+4. Drag the frames you want to reposition.
+
+Positions persist across reloads and sessions. For more details, see the [Blizzard Frame Mover](../features/blizzard-frame-mover) feature page.
+
+## What are totem bars?
+
+Totem bars display class-specific utility elements like Shaman totems and Brewmaster stagger bars. They were added in v2.54.0 and are automatically available for applicable classes. Configure them through the unit frames settings or Layout Mode.
+
+## How do I use the performance monitor?
+
+Type `/qui perf` to toggle the performance monitor overlay. It shows real-time memory usage, event frequency, and helps identify performance bottlenecks. This is primarily a debugging tool for advanced users and addon developers.
+
+## Can I import just part of a profile?
+
+Yes. Since v2.53.0, QUI supports **partial profile imports**. When importing a profile string, you can choose to import only specific categories (like Theme/Fonts/Colors or Layout/Positions) without overwriting your other settings. See the [Profiles](profiles) page for details.

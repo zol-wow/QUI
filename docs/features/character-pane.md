@@ -32,6 +32,8 @@ The character pane enhancements are enabled by default. To configure them:
 - **Panel scale** -- Adjust the overall character frame scale from 0.75x to 1.5x.
 - **Overlay scale** -- Independent scale control for the equipment slot overlays.
 - **Custom background color** -- Set a custom background color for the character and inspect frames.
+- **Avoidance and stagger stats** -- Displays avoidance and stagger stats in the character stats panel, useful for tanks.
+- **PvP item level** -- Shows PvP item level when hovering over the item level display on the character sheet.
 - **Model background toggle** -- Show or hide the 3D model background behind your character.
 
 ## Important Settings

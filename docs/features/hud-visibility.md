@@ -65,6 +65,24 @@ Show rules are evaluated first. If any enabled show rule is satisfied, the frame
 
 If "Show Always" is enabled, no other show rules matter -- the frame is always eligible. Hide rules still apply on top of "Show Always" unless overridden by the dungeon/raid exception.
 
+```mermaid
+flowchart TD
+    START["Frame visibility check"] --> ALWAYS{"Show Always?"}
+    ALWAYS -->|Yes| ELIGIBLE["Eligible to show"]
+    ALWAYS -->|No| SHOW{"Any show rule satisfied?<br/>Combat / Target / Group /<br/>Instance / Mouseover"}
+    SHOW -->|No| HIDDEN["Frame hidden<br/>(fade to Fade Out Alpha)"]
+    SHOW -->|Yes| ELIGIBLE
+    ELIGIBLE --> HIDE{"Any hide rule active?<br/>Mounted / Flying / Skyriding / Vehicle"}
+    HIDE -->|No| VISIBLE["Frame visible"]
+    HIDE -->|Yes| INSTANCE{"In dungeon/raid AND<br/>Don't Hide In Dungeons/Raids?"}
+    INSTANCE -->|Yes| VISIBLE
+    INSTANCE -->|No| HIDDEN
+
+    style START fill:#1a1a2e,stroke:#34D399,color:#fff
+    style VISIBLE fill:#065f46,stroke:#34D399,color:#fff
+    style HIDDEN fill:#7f1d1d,stroke:#ef4444,color:#fff
+```
+
 ## Tips
 
 {: .note }

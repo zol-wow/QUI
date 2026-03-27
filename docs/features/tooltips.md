@@ -34,7 +34,11 @@ The tooltip module is enabled by default. To configure it:
   - Unit frames
   - CDM icons
   - Custom trackers
+- **Guild rank display** -- Shows the player's guild rank in the tooltip.
+- **Mount information** -- Displays mount info in the tooltip.
+- **M+ rating** -- Shows the player's Mythic Plus rating in the tooltip.
 - **Spell/Item ID display** -- Shows spell/icon IDs on spell tooltips and item IDs on item tooltips, useful for debugging and addon development.
+- **PvP item level** -- Available when hovering over the item level display on the character sheet.
 - **Health bar toggle** -- Option to hide the health bar on unit tooltips for a cleaner look.
 - **Border customization** -- Choose between class color or accent color for the tooltip border, with adjustable thickness (1-10px).
 - **Font size** -- Configurable font size for tooltip text.

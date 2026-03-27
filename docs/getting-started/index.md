@@ -18,10 +18,11 @@ This section walks you through everything you need to get QUI up and running, fr
 - [Profiles](profiles) -- Managing profiles, per-spec switching, importing and exporting settings, and bundled presets.
 - [Slash Commands](slash-commands) -- Complete reference of all slash commands available in QUI.
 - [FAQ](faq) -- Answers to frequently asked questions about QUI features, troubleshooting, and configuration.
+- [Troubleshooting](troubleshooting) -- Solutions for common issues like missing frames, invisible bars, and click-casting problems.
 
 ## Quick Links
 
 - **GitHub:** [github.com/zol-wow/QUI](https://github.com/zol-wow/QUI)
 - **CurseForge:** [QUI Community Edition](https://www.curseforge.com/wow/addons/qui-community-edition)
 - **Discord:** [discord.gg/FFUjA4JXnH](https://discord.gg/FFUjA4JXnH)
-- **Current Version:** 2.51.1
+- **Current Version:** 2.55.2

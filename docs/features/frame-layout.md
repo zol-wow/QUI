@@ -27,6 +27,32 @@ Frame layout settings are spread across several locations:
 
 The anchoring system uses `frameAnchoring` as its single source of truth for frame positions. Handle positioning uses parent handles, and all resolvers work through this unified system.
 
+```mermaid
+graph TD
+    ESS["Essential CDM"] --> UTIL["Utility CDM"]
+    ESS --> PLAYER["Player Frame"]
+    ESS --> AURA["Aura Container"]
+    ESS --> ABAR["Aura Bar Container"]
+    PLAYER --> TARGET["Target Frame"]
+    TARGET --> TOT["Target of Target"]
+
+    BW["BigWigs Bars"] -.-> ESS
+    DF["DandersFrames"] -.-> TARGET
+    AT["AbilityTimeline"] -.-> ESS
+
+    SKY["Skyriding Bar"]
+    MPT["M+ Timer"]
+    BREZ["BRez Counter"]
+    CHAT["Chat Frame"]
+
+    style ESS fill:#1a1a2e,stroke:#34D399,color:#fff
+    style UTIL fill:#1a1a2e,stroke:#34D399,color:#fff
+    style PLAYER fill:#1a1a2e,stroke:#34D399,color:#fff
+    style TARGET fill:#1a1a2e,stroke:#34D399,color:#fff
+```
+
+The diagram above shows a typical anchoring setup. Solid arrows represent anchor relationships (child anchored to parent). Dashed arrows show optional third-party addon anchoring. Moving the Essential CDM bar repositions the Utility bar, Player frame, and aura containers as a group.
+
 - **Anchor QUI frames to each other** -- Attach one QUI element to another so they maintain a fixed spatial relationship. When the parent moves, the child follows.
 - **Anchor to Blizzard frames** -- Attach QUI elements to default Blizzard frames or third-party addon frames.
 - **Available anchor targets** -- The system supports anchoring to: Essential CDM, Utility CDM, primary and secondary power bars, Player unit frame, Target unit frame, Skyriding bar, Combat Timer, M+ Timer, BRez Timer, ExtraActionButton, BigWigs bars, DandersFrames, AbilityTimeline / Better Timeline, main chat frame, custom tracker bars, and action bars.

@@ -40,6 +40,7 @@ Group frame settings are managed through Layout Mode, not the main `/qui` option
 - **Auras** -- Debuff icons (default 3 max), buff icons, duration-based coloring, and expiring pulse animation when a buff is about to fall off.
 - **Power Infusion tracking** -- Option to track Power Infusion on group frames.
 - **Custom aura indicators** -- Per-specialization presets for tracking specific buffs and debuffs with custom positioning on the frame.
+- **Always show me first** -- Option to pin your own frame at the top of the group frame list regardless of sorting rules, ensuring you always know where your frame is in raid.
 - **Spotlight** -- Pin specific group members by role or name to a separate group, useful for keeping tanks or key players always visible in a consistent location.
 - **Range check** -- Out-of-range players fade to a configurable alpha, giving you instant visual feedback on who you can reach.
 - **Class power pips** -- Optional display of combo points, holy power, chi, etc.

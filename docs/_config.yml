@@ -16,6 +16,9 @@ search.tokenizer_separator: /[\s/]+/
 
 heading_anchors: true
 
+mermaid:
+  version: "11"
+
 aux_links:
   GitHub:
     - "https://github.com/zol-wow/QUI"

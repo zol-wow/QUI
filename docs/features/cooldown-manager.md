@@ -37,6 +37,27 @@ The owned engine uses a flexible **container** system. Each container has a type
 - **Aura** -- Tracks buffs and debuffs as icon displays (replaces the old "Buff Icons" concept).
 - **Aura Bar** -- Tracks buffs as status bars with progress indicators (replaces the old "Tracked Bar" concept).
 
+```mermaid
+graph LR
+    subgraph Cooldown["Cooldown Containers"]
+        ESS["Essential<br/>8 icons/row, 39px"]
+        UTIL["Utility<br/>6 icons/row, 30px"]
+    end
+
+    subgraph Aura["Aura Containers"]
+        ICONS["Aura Icons<br/>Buff/debuff tracking"]
+        BARS["Aura Bars<br/>Status bar display"]
+    end
+
+    SPELL["Spell Data<br/>+ Custom Entries"] --> Cooldown
+    HOOKS["Blizzard Viewer<br/>Hooks"] --> Aura
+    COMPOSER["Composer<br/>(Layout Mode)"] --> Cooldown
+    COMPOSER --> Aura
+
+    style Cooldown fill:#1a1a2e,stroke:#34D399,color:#fff
+    style Aura fill:#1a1a2e,stroke:#34D399,color:#fff
+```
+
 Containers can be positioned independently in Layout Mode and each has its own layout settings (icon count, icon size, growth direction, rows, etc.).
 
 ## Key Features
@@ -44,9 +65,10 @@ Containers can be positioned independently in Layout Mode and each has its own l
 - **Essential Container** -- Your primary rotation abilities. Defaults to 8 icons per row with up to 3 rows. Default icon size is 39px.
 - **Utility Container** -- Defensive and utility cooldowns. Defaults to 6 icons per row (row 1 only; rows 2-3 are disabled by default). Default icon size is 30px.
 - **Aura Containers** -- Tracked buff and aura display with customizable shape, growth direction, and duration/stack text.
-- **Aura Bar Containers** -- Status bars for tracked buffs with inactive mode options: always visible, fade out, or hide entirely.
+- **Aura Bar Containers** -- Status bars for tracked buffs with inactive mode options: always visible, fade out, or hide entirely. Supports custom fill colors for individual bar entries.
 - **Composer** -- A Layout Mode interface for managing what spells appear in each container, reordering them, enabling/disabling individual spells, and configuring per-spell settings.
 - **Custom Entries** -- Per-character spell or item additions to the Essential or Utility containers. Stored in your character-specific database (`db.char`), so each character can have unique additions.
+- **Spec-specific custom entries** -- Custom CDM entries can be configured per-specialization, allowing different tracked spells for each spec.
 - **Per-Spell Settings** -- Individual spells in the Composer can have per-entry overrides for enabled/disabled state, glow behavior, and other display options.
 - **Effects** -- Glow types (Pixel Glow, Autocast Shine, Button Glow) and swipe overlays for GCD, cooldown, and buff duration visualization. Separate swipe color defaults for aura and cooldown swipes.
 - **Range Indicator** -- Tints icons red when your target is out of range for that ability.

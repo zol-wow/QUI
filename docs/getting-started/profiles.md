@@ -38,6 +38,16 @@ QUI supports importing and exporting profiles as compressed text strings, using 
 
 Profile strings include validation checks (maximum depth of 20, maximum of 50,000 nodes, and type checking) to ensure safe imports.
 
+## Partial Imports
+
+Since v2.53.0, QUI supports importing only specific parts of a profile string. When importing, you can select individual categories to apply:
+
+- **Theme / Fonts / Colors** -- Update visual settings without moving frame positions.
+- **Layout / Positions** -- Update frame positions without changing visual settings.
+- **Module-specific** -- Import settings for specific modules (loot, skinning, etc.) independently.
+
+This is useful when you want to adopt someone else's color scheme without losing your carefully positioned frame layout, or vice versa.
+
 ## Bundled Presets
 
 QUI ships with several built-in profile presets that you can import from the **Import & Export Strings** tab:

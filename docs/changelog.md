@@ -10,6 +10,127 @@ All notable changes to QUI are documented here. For the complete changelog, see 
 
 ---
 
+## v2.55.2 - 2026-03-27
+
+### Added
+- Added support for charged combo points
+- Made M+ timer background configurable
+
+### Fixed
+- Fixed HousingPhotoSharingFrame tooltip issue
+
+---
+
+## v2.55.1 - 2026-03-26
+
+### Fixed
+- Fixed durations of tracked buffs not showing
+- More tooltip taint hardening
+
+---
+
+## v2.55.0 - 2026-03-25
+
+### Fixed
+- Backported API-change related fixes to QUI mainline
+- Fixed custom trackers not showing in M+ and raids
+- Fixed swipes and cooldowns not showing on CDM viewers
+
+---
+
+## v2.54.1 - 2026-03-24
+
+### Fixed
+- Fixed datatext placeholders showing when "no label" is selected
+- Fixed moneyframe tooltip taint
+
+---
+
+## v2.54.0 - 2026-03-23
+
+### Added
+- Added Blizzard Frame Mover feature
+- Added general status bar skinning (reputation bars, etc.)
+- Added totem bars for all applicable classes (Brewmasters, etc.)
+
+### Fixed
+- Attempt to fix golden circles appearing around hidden action bars
+- Attempt to fix world quest hovering tooltip taint
+
+---
+
+## v2.53.4 - 2026-03-23
+
+### Added
+- Added item IDs in tooltips
+- Added PvP iLvl display when hovering iLvl on character sheet
+
+---
+
+## v2.53.3 - 2026-03-21
+
+### Fixed
+- Fixed range check issues on group frames
+- Fixed current expansion flasks and oils not showing in consumable checker
+
+---
+
+## v2.53.2 - 2026-03-19
+
+### Changed
+- Performance: cached GetPixelSize() in hot loops for buff bars, resource bars, and group frames
+
+---
+
+## v2.53.1 - 2026-03-19
+
+### Added
+- Added option for spec-specific custom CDM entries
+- Added "always show me first" option for raid frames
+
+### Fixed
+- Fixed dungeon difficulty icon anchoring
+- Fixed raid frames randomly resizing
+- Fixed raid frame sorting
+- Fixed several tooltip taint vectors
+
+---
+
+## v2.53.0 - 2026-03-18
+
+### Added
+- Added partial profile imports
+- Added avoidance and stagger to character stats
+
+### Fixed
+- Fixed tooltip combat visibility for custom trackers and CDM viewers
+- Fixed raid tooltip taint
+- Fixed totem bar taint issue
+
+---
+
+## v2.52.1 - 2026-03-15
+
+### Added
+- Added guild rank to tooltip display
+
+### Fixed
+- Fixed targetName comparison taint
+
+---
+
+## v2.52.0 - 2026-03-15
+
+### Added
+- Added customizable colors for CDM buff bars
+- Added mount, target, and M+ rating to tooltip information
+
+### Fixed
+- Fixed group frame defensives showing random buffs when players are out of range
+- Fixed castbar border frame strata
+
+---
+
 ## v2.51.1 - 2026-03-14
 
 ### Added

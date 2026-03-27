@@ -77,6 +77,10 @@ Both frames are skinned as part of the [Character Pane]({% link features/charact
 
 The ready check popup is reskinned with QUI's dark theme for a cleaner appearance during group content.
 
+### Status Bars
+
+General status bar skinning applies QUI's dark theme to reputation bars, honor bars, and other Blizzard status tracking bars for visual consistency.
+
 ## Key Features
 
 - **Global background color** -- A single setting controls the background color across all skinned frames for consistent appearance.

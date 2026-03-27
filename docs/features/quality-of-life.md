@@ -111,6 +111,12 @@ Customizes the appearance of buff and debuff borders on unit frames and other di
 - **Border size** -- Adjust the thickness of buff/debuff borders.
 - **Font customization** -- Font face, size, and outline for duration and stack count text.
 
+### Blizzard Frame Mover
+
+Reposition default Blizzard UI frames by dragging them directly, without entering Edit Mode. This feature was added in v2.54.0 and provides quick, persistent frame adjustments for elements that Blizzard's Edit Mode may not expose.
+
+For details, see the [Blizzard Frame Mover]({% link features/blizzard-frame-mover.md %}) feature page.
+
 ## Important Settings
 
 | Setting | Description | Default |
