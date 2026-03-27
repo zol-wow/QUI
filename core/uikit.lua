@@ -25,6 +25,8 @@ local borderLineState = (Helpers and Helpers.CreateStateTable and Helpers.Create
 local backdropBorderState = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
 local iconState = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
 local accentCheckboxState = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
+local chevronCaretState = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
+local valueAnimationState = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
 
 -- Shared fallback color table for checkboxes (avoids per-widget allocation)
 local DEFAULT_CHECKBOX_COLORS = {
@@ -188,6 +190,57 @@ local function RefreshAccentCheckboxLayout(checkbox)
     UIKit.SetPointPx(checkbox.checkRight, "CENTER", checkbox, "CENTER", 2, 0)
 end
 
+local function RefreshChevronCaretLayout(caret)
+    local state = chevronCaretState[caret]
+    if not state or not caret or not caret.line1 or not caret.line2 then return end
+
+    UIKit.SetSizePx(caret, state.sizePixels or 10, state.sizePixels or 10)
+    UIKit.SetPointPx(
+        caret,
+        state.point or "RIGHT",
+        state.relativeTo or state.parent,
+        state.relativePoint or state.point or "RIGHT",
+        state.xPixels or 0,
+        state.yPixels or 0
+    )
+
+    SetRegionSizePx(caret.line1, state.lineWidthPixels or 6, state.lineHeightPixels or 1, caret)
+    SetRegionSizePx(caret.line2, state.lineWidthPixels or 6, state.lineHeightPixels or 1, caret)
+
+    if state.expanded then
+        caret.line1:SetRotation(math.rad(-45))
+        caret.line1:ClearAllPoints()
+        UIKit.SetPointPx(caret.line1, "CENTER", caret, "CENTER", -2, 0)
+
+        caret.line2:SetRotation(math.rad(45))
+        caret.line2:ClearAllPoints()
+        UIKit.SetPointPx(caret.line2, "CENTER", caret, "CENTER", 2, 0)
+    else
+        local collapsedDirection = state.collapsedDirection or "left"
+        if collapsedDirection == "right" then
+            caret.line1:SetRotation(math.rad(-45))
+            caret.line1:ClearAllPoints()
+            UIKit.SetPointPx(caret.line1, "CENTER", caret, "CENTER", 1, 2)
+
+            caret.line2:SetRotation(math.rad(45))
+            caret.line2:ClearAllPoints()
+            UIKit.SetPointPx(caret.line2, "CENTER", caret, "CENTER", 1, -2)
+        else
+            caret.line1:SetRotation(math.rad(45))
+            caret.line1:ClearAllPoints()
+            UIKit.SetPointPx(caret.line1, "CENTER", caret, "CENTER", -1, 2)
+
+            caret.line2:SetRotation(math.rad(-45))
+            caret.line2:ClearAllPoints()
+            UIKit.SetPointPx(caret.line2, "CENTER", caret, "CENTER", -1, -2)
+        end
+    end
+
+    local color = state.color or { 1, 1, 1, 1 }
+    ApplyColorTexture(caret.line1, color[1], color[2], color[3], color[4] or 1)
+    ApplyColorTexture(caret.line2, color[1], color[2], color[3], color[4] or 1)
+end
+
 ---------------------------------------------------------------------------
 -- SCALE-BOUND REGISTRY
 ---------------------------------------------------------------------------
@@ -214,6 +267,77 @@ function UIKit.RefreshScaleBoundWidgets()
             pcall(refreshFn, owner)
         end
     end
+end
+
+local animationDriver
+local animationDriverOnUpdate
+
+local function EnsureAnimationDriver()
+    if animationDriver then return animationDriver end
+    animationDriver = CreateFrame("Frame")
+    animationDriverOnUpdate = function(self, elapsed)
+        local anyActive = false
+        for owner, states in pairs(valueAnimationState) do
+            for key, state in pairs(states) do
+                state.elapsed = math.min((state.elapsed or 0) + elapsed, state.duration)
+                local progress = (state.duration > 0) and (state.elapsed / state.duration) or 1
+                local value = state.fromValue + ((state.toValue - state.fromValue) * progress)
+                if state.onUpdate then
+                    pcall(state.onUpdate, owner, value, progress)
+                end
+                if progress >= 1 then
+                    states[key] = nil
+                    if state.onFinish then
+                        pcall(state.onFinish, owner, state.toValue)
+                    end
+                else
+                    anyActive = true
+                end
+            end
+            if not next(states) then
+                valueAnimationState[owner] = nil
+            end
+        end
+        if not anyActive then
+            self:SetScript("OnUpdate", nil)
+        end
+    end
+    animationDriver:SetScript("OnUpdate", animationDriverOnUpdate)
+    return animationDriver
+end
+
+function UIKit.CancelValueAnimation(owner, key)
+    local states = owner and valueAnimationState[owner]
+    if not states then return end
+    states[key or "default"] = nil
+    if not next(states) then
+        valueAnimationState[owner] = nil
+    end
+end
+
+function UIKit.AnimateValue(owner, key, options)
+    if not owner or type(options) ~= "table" then return end
+    if type(options.onUpdate) ~= "function" then return end
+
+    local animKey = key or "default"
+    local states = valueAnimationState[owner]
+    if not states then
+        states = {}
+        valueAnimationState[owner] = states
+    end
+
+    states[animKey] = {
+        fromValue = options.fromValue or 0,
+        toValue = options.toValue or 0,
+        duration = math.max(0, options.duration or 0.16),
+        elapsed = 0,
+        onUpdate = options.onUpdate,
+        onFinish = options.onFinish,
+    }
+
+    pcall(options.onUpdate, owner, options.fromValue or 0, 0)
+    local driver = EnsureAnimationDriver()
+    driver:SetScript("OnUpdate", animationDriverOnUpdate)
 end
 
 ---------------------------------------------------------------------------
@@ -607,6 +731,58 @@ function UIKit.CreateAccentCheckbox(parent, options)
 
     checkbox:SetChecked(checked, true)
     return checkbox
+end
+
+---------------------------------------------------------------------------
+-- CHEVRON CARET
+---------------------------------------------------------------------------
+
+function UIKit.CreateChevronCaret(parent, options)
+    options = options or {}
+
+    local caret = CreateFrame("Frame", nil, parent)
+    caret.line1 = caret:CreateTexture(nil, options.layer or "OVERLAY")
+    caret.line2 = caret:CreateTexture(nil, options.layer or "OVERLAY")
+
+    chevronCaretState[caret] = {
+        parent = parent,
+        point = options.point or "RIGHT",
+        relativeTo = options.relativeTo or parent,
+        relativePoint = options.relativePoint or options.point or "RIGHT",
+        xPixels = options.xPixels or 0,
+        yPixels = options.yPixels or 0,
+        sizePixels = options.sizePixels or 10,
+        lineWidthPixels = options.lineWidthPixels or 6,
+        lineHeightPixels = options.lineHeightPixels or 1,
+        expanded = options.expanded and true or false,
+        collapsedDirection = options.collapsedDirection or "left",
+        color = {
+            options.r or 1,
+            options.g or 1,
+            options.b or 1,
+            options.a or 1,
+        },
+    }
+
+    UIKit.RegisterScaleRefresh(caret, "chevronCaret", function(owner)
+        RefreshChevronCaretLayout(owner)
+    end)
+    RefreshChevronCaretLayout(caret)
+    return caret
+end
+
+function UIKit.SetChevronCaretExpanded(caret, expanded)
+    local state = chevronCaretState[caret]
+    if not state then return end
+    state.expanded = expanded and true or false
+    RefreshChevronCaretLayout(caret)
+end
+
+function UIKit.SetChevronCaretColor(caret, r, g, b, a)
+    local state = chevronCaretState[caret]
+    if not state then return end
+    state.color = { r or 1, g or 1, b or 1, a or 1 }
+    RefreshChevronCaretLayout(caret)
 end
 
 ---------------------------------------------------------------------------

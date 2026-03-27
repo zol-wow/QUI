@@ -8,6 +8,7 @@ local ADDON_NAME, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 local QUICore = ns.Addon
+local UIKit = ns.UIKit
 
 ---------------------------------------------------------------------------
 -- CONSTANTS - Match panel width (750px panel)
@@ -573,32 +574,155 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
     local PAD = pad or PADDING
     local startY = topOffset or -10
     local sections = {}
+    local controlsHeight = 28
+    local controlsGap = 8
+    local db = GetDB()
+    if db then
+        db.optionsPanelCollapsibleStates = db.optionsPanelCollapsibleStates or {}
+        GUI._optionsCollapsibleStates = db.optionsPanelCollapsibleStates
+    else
+        GUI._optionsCollapsibleStates = GUI._optionsCollapsibleStates or {}
+    end
+
+    local function GetSectionRegistryKey(tabIndex, subTabIndex)
+        return (tabIndex or 0) * 10000 + (subTabIndex or 0)
+    end
+
+    local function FindScrollParent(frame)
+        local current = frame
+        while current do
+            if current.GetVerticalScroll and current.SetVerticalScroll then
+                return current
+            end
+            current = current:GetParent()
+        end
+        return nil
+    end
+
+    local function RegisterCollapsibleSection(section)
+        local title = section and section._sectionTitle
+        local context = section and section._searchContext
+        if not title or not context or not context.tabIndex then return end
+
+        local tabIndex = context.tabIndex
+        local subTabIndex = context.subTabIndex or 0
+        local numKey = GetSectionRegistryKey(tabIndex, subTabIndex)
+        local scrollParent = FindScrollParent(parent)
+
+        GUI.SectionRegistry[numKey] = GUI.SectionRegistry[numKey] or {}
+        GUI.SectionRegistryOrder[numKey] = GUI.SectionRegistryOrder[numKey] or {}
+        if not GUI.SectionRegistry[numKey][title] then
+            table.insert(GUI.SectionRegistryOrder[numKey], title)
+        end
+        GUI.SectionRegistry[numKey][title] = {
+            frame = section,
+            scrollParent = scrollParent,
+            contentParent = parent,
+        }
+        if scrollParent then
+            GUI:AttachSidebarSectionScrollSpy(scrollParent)
+        end
+
+        GUI:RegisterSectionNavigateHandler(tabIndex, subTabIndex, title, function()
+            if section.SetExpanded then
+                section:SetExpanded(true)
+            end
+            return false
+        end)
+    end
 
     local function relayout()
-        local cy = startY
+        local cy = startY - controlsHeight - controlsGap
         for _, s in ipairs(sections) do
             s:ClearAllPoints()
             s:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, cy)
             s:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
+            RegisterCollapsibleSection(s)
             cy = cy - s:GetHeight() - 4
         end
         parent:SetHeight(math.abs(cy) + 20)
     end
 
+    local bulkActions = CreateFrame("Frame", nil, parent)
+    bulkActions:SetHeight(controlsHeight)
+    bulkActions:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, startY)
+    bulkActions:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
+
+    local closeAllBtn
+    local expandAllBtn = GUI:CreateButton(bulkActions, "Expand All", 110, 24, function()
+        for _, section in ipairs(sections) do
+            if section.SetExpanded then
+                section:SetExpanded(true, true)
+            end
+        end
+        relayout()
+    end)
+    expandAllBtn:SetPoint("TOPRIGHT", bulkActions, "TOPRIGHT", -96, -2)
+
+    closeAllBtn = GUI:CreateButton(bulkActions, "Close All", 90, 24, function()
+        for _, section in ipairs(sections) do
+            if section.SetExpanded then
+                section:SetExpanded(false, true)
+            end
+        end
+        relayout()
+    end)
+    closeAllBtn:SetPoint("TOPRIGHT", bulkActions, "TOPRIGHT", 0, -2)
+
     local function CreateCollapsible(title, contentHeight, buildFunc)
+        local suppressedAtCreation = GUI._suppressSearchRegistration
+        local searchContext = {
+            tabIndex = GUI._searchContext.tabIndex,
+            tabName = GUI._searchContext.tabName,
+            subTabIndex = GUI._searchContext.subTabIndex,
+            subTabName = GUI._searchContext.subTabName,
+        }
+        local stateKey
+        if searchContext.tabIndex and title and title ~= "" then
+            stateKey = table.concat({
+                tostring(searchContext.tabIndex or 0),
+                tostring(searchContext.subTabIndex or 0),
+                title,
+            }, ":")
+        end
+        if title and not suppressedAtCreation then
+            GUI:SetSearchSection(title)
+        end
+
         local section = CreateFrame("Frame", nil, parent)
         section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+        section._sectionTitle = title
+        section._searchContext = searchContext
+        section._stateKey = stateKey
+        section._hasStoredState = stateKey and GUI._optionsCollapsibleStates[stateKey] ~= nil or false
 
         local btn = CreateFrame("Button", nil, section)
         btn:SetPoint("TOPLEFT", 0, 0)
         btn:SetPoint("TOPRIGHT", 0, 0)
         btn:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
 
-        local chevron = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        chevron:SetPoint("LEFT", 2, 0)
         local ar, ag, ab = GetCollapsibleAccent()
-        chevron:SetTextColor(ar, ag, ab, 1)
-        chevron:SetText(">")
+        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
+            point = "LEFT",
+            relativeTo = btn,
+            relativePoint = "LEFT",
+            xPixels = 2,
+            yPixels = 0,
+            sizePixels = 10,
+            lineWidthPixels = 6,
+            lineHeightPixels = 1,
+            expanded = false,
+            collapsedDirection = "right",
+            r = ar,
+            g = ag,
+            b = ab,
+            a = 1,
+        }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        if not (UIKit and UIKit.CreateChevronCaret) then
+            chevron:SetPoint("LEFT", 2, 0)
+            chevron:SetTextColor(ar, ag, ab, 1)
+            chevron:SetText(">")
+        end
 
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
@@ -611,40 +735,175 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
         underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
         underline:SetColorTexture(ar, ag, ab, 0.3)
 
-        local body = CreateFrame("Frame", nil, section)
-        body:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
-        body:SetPoint("RIGHT", 0, 0)
+        local bodyClip = CreateFrame("ScrollFrame", nil, section)
+        bodyClip:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
+        bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
+        bodyClip:SetHeight(0)
+        bodyClip:Hide()
+
+        local body = CreateFrame("Frame", nil, bodyClip)
         body:SetHeight(contentHeight)
-        body:Hide()
+        body:SetWidth(1)
+        bodyClip:SetScrollChild(body)
+        bodyClip:SetScript("OnSizeChanged", function(self, width)
+            body:SetWidth(math.max(width or 1, 1))
+        end)
+        body:SetAlpha(0)
+        body._logicalSection = section
+        bodyClip._logicalSection = section
 
         section._expanded = false
         section._contentHeight = contentHeight
+        section._body = body
+        section._bodyClip = bodyClip
+
+        local function MeasureBodyContentHeight()
+            local bodyTop = body.GetTop and body:GetTop()
+            if not bodyTop then return nil end
+
+            local maxOffset = 0
+            local function Accumulate(region)
+                if not region or not region.GetBottom then return end
+                if region.IsShown and not region:IsShown() then return end
+                local bottom = region:GetBottom()
+                if bottom then
+                    maxOffset = math.max(maxOffset, bodyTop - bottom)
+                end
+            end
+
+            local childCount = body.GetNumChildren and body:GetNumChildren() or 0
+            for i = 1, childCount do
+                Accumulate(select(i, body:GetChildren()))
+            end
+
+            local regionCount = body.GetNumRegions and body:GetNumRegions() or 0
+            for i = 1, regionCount do
+                Accumulate(select(i, body:GetRegions()))
+            end
+
+            if maxOffset <= 0 then
+                return nil
+            end
+            return math.ceil(maxOffset + 8)
+        end
+
+        local function RefreshContentHeight()
+            if type(body._contentHeight) == "number" and body._contentHeight > 0 then
+                section._contentHeight = math.max(section._contentHeight or 0, body._contentHeight)
+                body._contentHeight = nil
+            end
+            if type(bodyClip._contentHeight) == "number" and bodyClip._contentHeight > 0 then
+                section._contentHeight = math.max(section._contentHeight or 0, bodyClip._contentHeight)
+                bodyClip._contentHeight = nil
+            end
+
+            local measuredHeight = MeasureBodyContentHeight()
+            if measuredHeight and measuredHeight > 0 then
+                section._contentHeight = math.max(section._contentHeight or 0, measuredHeight)
+            end
+
+            body:SetHeight(section._contentHeight or contentHeight)
+        end
+
+        local function ApplyExpandedState(currentHeight)
+            local height = math.max(0, math.min(section._contentHeight, currentHeight or 0))
+            bodyClip:SetHeight(height)
+            section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + height)
+        end
+
+        section.SetExpanded = function(self, expanded, skipRelayout)
+            section._expanded = expanded and true or false
+            if stateKey then
+                GUI._optionsCollapsibleStates[stateKey] = section._expanded
+            end
+            if UIKit and UIKit.SetChevronCaretExpanded then
+                UIKit.SetChevronCaretExpanded(chevron, section._expanded)
+            else
+                chevron:SetText(section._expanded and "v" or ">")
+            end
+
+            RefreshContentHeight()
+            local targetHeight = section._expanded and section._contentHeight or 0
+            local currentHeight = bodyClip:GetHeight() or 0
+
+            if section._expanded then
+                bodyClip:Show()
+                body:SetAlpha(skipRelayout and 1 or body:GetAlpha())
+            end
+
+            if skipRelayout or not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
+                if UIKit and UIKit.CancelValueAnimation then
+                    UIKit.CancelValueAnimation(section, "optionsCollapsible")
+                end
+                ApplyExpandedState(targetHeight)
+                body:SetAlpha(section._expanded and 1 or 0)
+                if not section._expanded then
+                    bodyClip:Hide()
+                end
+                if not skipRelayout then
+                    relayout()
+                end
+                return
+            end
+
+            UIKit.CancelValueAnimation(section, "optionsCollapsible")
+            UIKit.AnimateValue(section, "optionsCollapsible", {
+                fromValue = currentHeight,
+                toValue = targetHeight,
+                duration = (GUI and GUI._sidebarAnimDuration) or 0.16,
+                onUpdate = function(_, progressHeight)
+                    local totalRange = math.max(section._contentHeight, 1)
+                    local ratio = math.max(0, math.min(1, progressHeight / totalRange))
+                    ApplyExpandedState(progressHeight)
+                    body:SetAlpha(ratio)
+                    relayout()
+                end,
+                onFinish = function(_, finalHeight)
+                    ApplyExpandedState(finalHeight)
+                    body:SetAlpha(section._expanded and 1 or 0)
+                    if not section._expanded then
+                        bodyClip:Hide()
+                    end
+                    relayout()
+                end,
+            })
+        end
 
         btn:SetScript("OnClick", function()
-            section._expanded = not section._expanded
-            if section._expanded then
-                chevron:SetText("v")
-                body:Show()
-                section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + section._contentHeight)
-            else
-                chevron:SetText(">")
-                body:Hide()
-                section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
-            end
-            relayout()
+            section:SetExpanded(not section._expanded)
         end)
 
         btn:SetScript("OnEnter", function()
             label:SetTextColor(1, 1, 1, 1)
-            chevron:SetTextColor(1, 1, 1, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
+            else
+                chevron:SetTextColor(1, 1, 1, 1)
+            end
         end)
         btn:SetScript("OnLeave", function()
             local lr, lg, lb = GetCollapsibleAccent()
             label:SetTextColor(lr, lg, lb, 1)
-            chevron:SetTextColor(lr, lg, lb, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, lr, lg, lb, 1)
+            else
+                chevron:SetTextColor(lr, lg, lb, 1)
+            end
         end)
 
         buildFunc(body)
+        RefreshContentHeight()
+        if stateKey and GUI._optionsCollapsibleStates[stateKey] then
+            section:SetExpanded(true, true)
+        end
+        C_Timer.After(0, function()
+            if not section or not body then return end
+            RefreshContentHeight()
+            if section._expanded then
+                ApplyExpandedState(section._contentHeight)
+                relayout()
+            end
+        end)
         table.insert(sections, section)
         return section
     end

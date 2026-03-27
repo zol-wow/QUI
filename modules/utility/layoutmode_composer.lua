@@ -420,9 +420,26 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
     btn:SetPoint("TOPRIGHT", 0, 0)
     btn:SetHeight(COLLAPSIBLE_HEADER_H)
 
-    local chevron = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    chevron:SetPoint("LEFT", 2, 0)
-    chevron:SetText(">")
+    local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
+        point = "LEFT",
+        relativeTo = btn,
+        relativePoint = "LEFT",
+        xPixels = 2,
+        yPixels = 0,
+        sizePixels = 10,
+        lineWidthPixels = 6,
+        lineHeightPixels = 1,
+        expanded = false,
+        collapsedDirection = "right",
+        r = 0.376,
+        g = 0.647,
+        b = 0.980,
+        a = 1,
+    }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if not (UIKit and UIKit.CreateChevronCaret) then
+        chevron:SetPoint("LEFT", 2, 0)
+        chevron:SetText(">")
+    end
 
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
@@ -433,21 +450,31 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
     underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
     underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
 
-    local body = CreateFrame("Frame", nil, section)
-    body:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_H)
-    body:SetPoint("RIGHT", 0, 0)
+    local bodyClip = CreateFrame("ScrollFrame", nil, section)
+    bodyClip:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_H)
+    bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
+    bodyClip:SetHeight(0)
+    bodyClip:Hide()
+
+    local body = CreateFrame("Frame", nil, bodyClip)
     body:SetHeight(1)
-    body:Hide()
+    body:SetWidth(1)
+    bodyClip:SetScrollChild(body)
+    bodyClip:SetScript("OnSizeChanged", function(self, width)
+        body:SetWidth(math.max(width or 1, 1))
+    end)
+    body:SetAlpha(0)
 
     section._expanded = false
     section._body = body
+    section._bodyClip = bodyClip
 
     local function UpdateSectionHeight()
-        if section._expanded then
-            section:SetHeight(COLLAPSIBLE_HEADER_H + body:GetHeight())
-        else
-            section:SetHeight(COLLAPSIBLE_HEADER_H)
-        end
+        local targetHeight = section._expanded and body:GetHeight() or 0
+        bodyClip:SetHeight(targetHeight)
+        section:SetHeight(COLLAPSIBLE_HEADER_H + targetHeight)
+        body:SetAlpha(section._expanded and 1 or 0)
+        bodyClip:SetShown(section._expanded)
         if masterRelayout then masterRelayout() end
     end
 
@@ -459,30 +486,77 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
         local colors = GUI and GUI.Colors
         local r, g, b = 0.376, 0.647, 0.980
         if colors and colors.accent then r, g, b = colors.accent[1], colors.accent[2], colors.accent[3] end
-        chevron:SetTextColor(r, g, b, 1)
+        if UIKit and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretColor(chevron, r, g, b, 1)
+        else
+            chevron:SetTextColor(r, g, b, 1)
+        end
         label:SetTextColor(r, g, b, 1)
         underline:SetColorTexture(r, g, b, 0.3)
         btn:SetScript("OnEnter", function()
             label:SetTextColor(1, 1, 1, 1)
-            chevron:SetTextColor(1, 1, 1, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
+            else
+                chevron:SetTextColor(1, 1, 1, 1)
+            end
         end)
         btn:SetScript("OnLeave", function()
             label:SetTextColor(r, g, b, 1)
-            chevron:SetTextColor(r, g, b, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, r, g, b, 1)
+            else
+                chevron:SetTextColor(r, g, b, 1)
+            end
         end)
     end
     ApplyColors()
 
     btn:SetScript("OnClick", function()
         section._expanded = not section._expanded
+        local targetHeight = section._expanded and body:GetHeight() or 0
+        local currentHeight = bodyClip:GetHeight() or 0
         if section._expanded then
-            chevron:SetText("v")
-            body:Show()
+            if UIKit and UIKit.SetChevronCaretExpanded then
+                UIKit.SetChevronCaretExpanded(chevron, true)
+            else
+                chevron:SetText("v")
+            end
+            bodyClip:Show()
         else
-            chevron:SetText(">")
-            body:Hide()
+            if UIKit and UIKit.SetChevronCaretExpanded then
+                UIKit.SetChevronCaretExpanded(chevron, false)
+            else
+                chevron:SetText(">")
+            end
         end
-        UpdateSectionHeight()
+        if UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation then
+            UIKit.CancelValueAnimation(section, "composerCollapsible")
+            UIKit.AnimateValue(section, "composerCollapsible", {
+                fromValue = currentHeight,
+                toValue = targetHeight,
+                duration = ((_G.QUI and _G.QUI.GUI and _G.QUI.GUI._sidebarAnimDuration) or 0.16),
+                onUpdate = function(_, progressHeight)
+                    local totalRange = math.max(body:GetHeight(), 1)
+                    local ratio = math.max(0, math.min(1, progressHeight / totalRange))
+                    bodyClip:SetHeight(progressHeight)
+                    section:SetHeight(COLLAPSIBLE_HEADER_H + progressHeight)
+                    body:SetAlpha(ratio)
+                    if masterRelayout then masterRelayout() end
+                end,
+                onFinish = function(_, finalHeight)
+                    bodyClip:SetHeight(finalHeight)
+                    section:SetHeight(COLLAPSIBLE_HEADER_H + finalHeight)
+                    body:SetAlpha(section._expanded and 1 or 0)
+                    if not section._expanded then
+                        bodyClip:Hide()
+                    end
+                    if masterRelayout then masterRelayout() end
+                end,
+            })
+        else
+            UpdateSectionHeight()
+        end
     end)
 
     if sections then sections[#sections + 1] = section end
