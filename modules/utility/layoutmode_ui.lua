@@ -1554,10 +1554,28 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
         header:SetSize(contentWidth, DRAWER_GROUP_HEIGHT)
         drawer._rows[#drawer._rows + 1] = header
 
-        local chevron = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        chevron:SetPoint("LEFT", 4, 0)
-        chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        chevron:SetText(isCollapsed and ">" or "v")
+        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(header, {
+            point = "LEFT",
+            relativeTo = header,
+            relativePoint = "LEFT",
+            xPixels = 4,
+            yPixels = 0,
+            sizePixels = 10,
+            lineWidthPixels = 6,
+            lineHeightPixels = 1,
+            expanded = not isCollapsed,
+            collapsedDirection = "right",
+            r = ACCENT_R,
+            g = ACCENT_G,
+            b = ACCENT_B,
+            a = 1,
+        }) or header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if not (UIKit and UIKit.CreateChevronCaret) then
+            chevron:SetPoint("LEFT", 4, 0)
+            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            chevron:SetText(isCollapsed and ">" or "v")
+        end
+        header._chevron = chevron
 
         local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         headerText:SetPoint("LEFT", chevron, "RIGHT", 4, 0)
@@ -1572,11 +1590,19 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
         header:SetScript("OnEnter", function()
             headerText:SetTextColor(1, 1, 1, 1)
-            chevron:SetTextColor(1, 1, 1, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
+            else
+                chevron:SetTextColor(1, 1, 1, 1)
+            end
         end)
         header:SetScript("OnLeave", function()
             headerText:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            else
+                chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            end
         end)
         header:SetScript("OnClick", function()
             groupCollapsed[group] = not groupCollapsed[group]
@@ -1993,8 +2019,10 @@ function QUI_LayoutMode_UI:_RelayoutDrawer()
             y = y - DRAWER_GROUP_HEIGHT
 
             -- Update chevron text
-            local chevron = select(1, entry.frame:GetRegions())
-            if chevron and chevron.SetText then
+            local chevron = entry.frame._chevron or select(1, entry.frame:GetRegions())
+            if UIKit and UIKit.SetChevronCaretExpanded and chevron and chevron.GetObjectType and chevron:GetObjectType() == "Frame" then
+                UIKit.SetChevronCaretExpanded(chevron, not groupCollapsed[entry.group])
+            elseif chevron and chevron.SetText then
                 chevron:SetText(groupCollapsed[entry.group] and ">" or "v")
             end
         else

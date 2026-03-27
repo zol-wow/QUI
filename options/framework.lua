@@ -7,6 +7,7 @@
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local QUICore = ns.Addon
+local UIKit = ns.UIKit
 local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Create GUI namespace
@@ -1287,10 +1288,29 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     header:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
 
     -- Chevron indicator
-    local chevron = header:CreateFontString(nil, "OVERLAY")
-    chevron:SetFont(GetFontPath(), 12, "")
-    chevron:SetPoint("LEFT", 10, 0)
-    chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    local chevron
+    if UIKit and UIKit.CreateChevronCaret then
+        chevron = UIKit.CreateChevronCaret(header, {
+            point = "LEFT",
+            relativeTo = header,
+            relativePoint = "LEFT",
+            xPixels = 10,
+            yPixels = 0,
+            sizePixels = 10,
+            lineWidthPixels = 6,
+            lineHeightPixels = 1,
+            expanded = isExpanded,
+            collapsedDirection = "right",
+            r = C.accent[1],
+            g = C.accent[2],
+            b = C.accent[3],
+            a = 1,
+        })
+    else
+        chevron = CreateVectorCaret(header, 0)
+        chevron:ClearAllPoints()
+        chevron:SetPoint("LEFT", header, "LEFT", 10, 0)
+    end
 
     -- Title text
     local titleText = header:CreateFontString(nil, "OVERLAY")
@@ -1329,45 +1349,110 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     end
 
     -- Content area
-    local content = CreateFrame("Frame", nil, container)
-    content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
-    content:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+    local contentClip = CreateFrame("ScrollFrame", nil, container)
+    contentClip:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
+    contentClip:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+    contentClip:SetHeight(0)
+    contentClip:SetShown(isExpanded)
+
+    local content = CreateFrame("Frame", nil, contentClip)
+    content:SetHeight(1)
+    content:SetWidth(1)
+    contentClip:SetScrollChild(content)
+    contentClip:SetScript("OnSizeChanged", function(self, width)
+        content:SetWidth(math.max(width or 1, 1))
+    end)
     content._hasContent = false
+    content:SetAlpha(isExpanded and 1 or 0)
+
+    local function UpdateChevronVisual()
+        if UIKit and UIKit.SetChevronCaretExpanded and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretExpanded(chevron, isExpanded)
+            UIKit.SetChevronCaretColor(chevron, C.accent[1], C.accent[2], C.accent[3], 1)
+        elseif chevron and chevron.SetText then
+            chevron:SetText(isExpanded and "v" or ">")
+            chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        end
+    end
 
     -- Update function
-    local function UpdateState()
-        if isExpanded then
-            chevron:SetText("v")  -- Down arrow
-            content:Show()
-            container:SetHeight(header:GetHeight() + 4 + (content:GetHeight() or 0))
-        else
-            chevron:SetText(">")  -- Right arrow
-            content:Hide()
-            container:SetHeight(header:GetHeight())
+    local function ApplyState(currentHeight)
+        local height = math.max(0, currentHeight or 0)
+        contentClip:SetHeight(height)
+        container:SetHeight(header:GetHeight() + height + (height > 0 and 4 or 0))
+    end
+
+    local function NotifyExpandChanged()
+        if container.OnExpandChanged then
+            container.OnExpandChanged(isExpanded)
         end
+    end
+
+    local function UpdateState(skipAnimation)
+        local targetHeight = isExpanded and (content:GetHeight() or 0) or 0
+        UpdateChevronVisual()
+        if isExpanded then
+            contentClip:Show()
+        end
+
+        if skipAnimation or not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
+            if UIKit and UIKit.CancelValueAnimation then
+                UIKit.CancelValueAnimation(container, "helpCollapsible")
+            end
+            ApplyState(targetHeight)
+            content:SetAlpha(isExpanded and 1 or 0)
+            if not isExpanded then
+                contentClip:Hide()
+            end
+            NotifyExpandChanged()
+            return
+        end
+
+        UIKit.CancelValueAnimation(container, "helpCollapsible")
+        UIKit.AnimateValue(container, "helpCollapsible", {
+            fromValue = contentClip:GetHeight() or 0,
+            toValue = targetHeight,
+            duration = (GUI._sidebarAnimDuration or 0.16),
+            onUpdate = function(_, progressHeight)
+                local totalRange = math.max(content:GetHeight() or 0, 1)
+                local ratio = math.max(0, math.min(1, progressHeight / totalRange))
+                ApplyState(progressHeight)
+                content:SetAlpha(ratio)
+                NotifyExpandChanged()
+            end,
+            onFinish = function(_, finalHeight)
+                ApplyState(finalHeight)
+                content:SetAlpha(isExpanded and 1 or 0)
+                if not isExpanded then
+                    contentClip:Hide()
+                end
+                NotifyExpandChanged()
+            end,
+        })
     end
 
     -- Click handler
     header:SetScript("OnClick", function()
         isExpanded = not isExpanded
         UpdateState()
-        if container.OnExpandChanged then
-            container.OnExpandChanged(isExpanded)
-        end
     end)
 
     -- Hover effects
     header:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
+        if UIKit and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
+        end
     end)
     header:SetScript("OnLeave", function(self)
         self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
+        UpdateChevronVisual()
     end)
 
     -- API methods
-    container.SetExpanded = function(self, expanded)
+    container.SetExpanded = function(self, expanded, skipAnimation)
         isExpanded = expanded
-        UpdateState()
+        UpdateState(skipAnimation)
     end
 
     container.GetExpanded = function()
@@ -1375,7 +1460,7 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     end
 
     container.UpdateHeight = function()
-        UpdateState()
+        UpdateState(true)
     end
 
     container.SetTitle = function(self, newTitle)
@@ -1393,7 +1478,7 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     container.header = header
     container.badge = badge
 
-    UpdateState()
+    UpdateState(true)
     return container
 end
 
@@ -5207,16 +5292,40 @@ local function PlayCaretToggleAnimation(caret)
 end
 
 local function CreateVectorCaret(parent, xOffset)
+    if UIKit and UIKit.CreateChevronCaret then
+        return UIKit.CreateChevronCaret(parent, {
+            point = "RIGHT",
+            relativeTo = parent,
+            relativePoint = "RIGHT",
+            xPixels = xOffset or -8,
+            yPixels = 0,
+            sizePixels = 10,
+            lineWidthPixels = 6,
+            lineHeightPixels = 1,
+        })
+    end
+
     local caret = CreateFrame("Frame", nil, parent)
-    caret:SetSize(11, 11)
-    caret:SetPoint("RIGHT", parent, "RIGHT", xOffset or -8, 0)
+    local function Pixels(value)
+        if QUICore and QUICore.Pixels then
+            return QUICore:Pixels(value, caret)
+        end
+        return value
+    end
+
+    caret:SetSize(Pixels(10), Pixels(10))
+    if QUICore and QUICore.SetSnappedPoint then
+        QUICore:SetSnappedPoint(caret, "RIGHT", parent, "RIGHT", xOffset or -8, 0)
+    else
+        caret:SetPoint("RIGHT", parent, "RIGHT", xOffset or -8, 0)
+    end
 
     caret.line1 = caret:CreateTexture(nil, "OVERLAY")
-    caret.line1:SetSize(7, 2)
+    caret.line1:SetSize(Pixels(6), Pixels(1))
     caret.line1:SetColorTexture(1, 1, 1, 1)
 
     caret.line2 = caret:CreateTexture(nil, "OVERLAY")
-    caret.line2:SetSize(7, 2)
+    caret.line2:SetSize(Pixels(6), Pixels(1))
     caret.line2:SetColorTexture(1, 1, 1, 1)
 
     return caret
@@ -5224,23 +5333,48 @@ end
 
 local function SetCaretVisual(caret, isExpanded, useAccent)
     if not caret then return end
+    if UIKit and UIKit.SetChevronCaretExpanded and UIKit.SetChevronCaretColor then
+        UIKit.SetChevronCaretExpanded(caret, isExpanded)
+        if useAccent then
+            UIKit.SetChevronCaretColor(caret, C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+        else
+            UIKit.SetChevronCaretColor(caret, C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+        end
+        return
+    end
+
+    local function Pixels(value)
+        if QUICore and QUICore.Pixels then
+            return QUICore:Pixels(value, caret)
+        end
+        return value
+    end
+
+    caret:SetSize(Pixels(10), Pixels(10))
+    if caret.line1 then
+        caret.line1:SetSize(Pixels(6), Pixels(1))
+    end
+    if caret.line2 then
+        caret.line2:SetSize(Pixels(6), Pixels(1))
+    end
+
     if caret.line1 and caret.line2 then
         if isExpanded then
             -- Down chevron (v)
             caret.line1:SetRotation(math.rad(-45))
             caret.line1:ClearAllPoints()
-            caret.line1:SetPoint("CENTER", caret, "CENTER", -2, 0)
+            caret.line1:SetPoint("CENTER", caret, "CENTER", -Pixels(2), 0)
             caret.line2:SetRotation(math.rad(45))
             caret.line2:ClearAllPoints()
-            caret.line2:SetPoint("CENTER", caret, "CENTER", 2, 0)
+            caret.line2:SetPoint("CENTER", caret, "CENTER", Pixels(2), 0)
         else
             -- Right chevron (>)
             caret.line1:SetRotation(math.rad(45))
             caret.line1:ClearAllPoints()
-            caret.line1:SetPoint("CENTER", caret, "CENTER", -1, 2)
+            caret.line1:SetPoint("CENTER", caret, "CENTER", -Pixels(1), Pixels(2))
             caret.line2:SetRotation(math.rad(-45))
             caret.line2:ClearAllPoints()
-            caret.line2:SetPoint("CENTER", caret, "CENTER", -1, -2)
+            caret.line2:SetPoint("CENTER", caret, "CENTER", -Pixels(1), -Pixels(2))
         end
     end
     if useAccent then

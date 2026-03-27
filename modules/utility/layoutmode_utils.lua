@@ -6,6 +6,7 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local LSM = ns.LSM
+local UIKit = ns.UIKit
 
 local Utils = {}
 ns.QUI_LayoutMode_Utils = Utils
@@ -101,10 +102,27 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     btn:SetPoint("TOPRIGHT", 0, 0)
     btn:SetHeight(HEADER_HEIGHT)
 
-    local chevron = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    chevron:SetPoint("LEFT", 2, 0)
-    chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-    chevron:SetText(">")
+    local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
+        point = "LEFT",
+        relativeTo = btn,
+        relativePoint = "LEFT",
+        xPixels = 2,
+        yPixels = 0,
+        sizePixels = 10,
+        lineWidthPixels = 6,
+        lineHeightPixels = 1,
+        expanded = false,
+        collapsedDirection = "right",
+        r = ACCENT_R,
+        g = ACCENT_G,
+        b = ACCENT_B,
+        a = 1,
+    }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if not (UIKit and UIKit.CreateChevronCaret) then
+        chevron:SetPoint("LEFT", 2, 0)
+        chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        chevron:SetText(">")
+    end
 
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
@@ -117,51 +135,177 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
     underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
 
-    local body = CreateFrame("Frame", nil, section)
-    body:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
-    body:SetPoint("RIGHT", 0, 0)
+    local bodyClip = CreateFrame("ScrollFrame", nil, section)
+    bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
+    bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
+    bodyClip:SetHeight(0)
+    bodyClip:Hide()
+
+    local body = CreateFrame("Frame", nil, bodyClip)
     body:SetHeight(contentHeight)
-    body:Hide()
+    body:SetWidth(1)
+    bodyClip:SetScrollChild(body)
+    bodyClip:SetScript("OnSizeChanged", function(self, width)
+        body:SetWidth(math.max(width or 1, 1))
+    end)
+    body:SetAlpha(0)
+    body._logicalSection = section
+    bodyClip._logicalSection = section
 
     section._expanded = false
     section._contentHeight = contentHeight
     section._body = body
+    section._bodyClip = bodyClip
     section._sectionTitle = title  -- used for saving/restoring expanded state
+
+    local function MeasureBodyContentHeight()
+        local bodyTop = body.GetTop and body:GetTop()
+        if not bodyTop then return nil end
+
+        local maxOffset = 0
+        local function Accumulate(region)
+            if not region or not region.GetBottom then return end
+            if region.IsShown and not region:IsShown() then return end
+            local bottom = region:GetBottom()
+            if bottom then
+                maxOffset = math.max(maxOffset, bodyTop - bottom)
+            end
+        end
+
+        local childCount = body.GetNumChildren and body:GetNumChildren() or 0
+        for i = 1, childCount do
+            Accumulate(select(i, body:GetChildren()))
+        end
+
+        local regionCount = body.GetNumRegions and body:GetNumRegions() or 0
+        for i = 1, regionCount do
+            Accumulate(select(i, body:GetRegions()))
+        end
+
+        if maxOffset <= 0 then
+            return nil
+        end
+        return math.ceil(maxOffset + 8)
+    end
+
+    local function RefreshContentHeight()
+        if type(body._contentHeight) == "number" and body._contentHeight > 0 then
+            section._contentHeight = math.max(section._contentHeight or 0, body._contentHeight)
+            body._contentHeight = nil
+        end
+        if type(bodyClip._contentHeight) == "number" and bodyClip._contentHeight > 0 then
+            section._contentHeight = math.max(section._contentHeight or 0, bodyClip._contentHeight)
+            bodyClip._contentHeight = nil
+        end
+
+        local measuredHeight = MeasureBodyContentHeight()
+        if measuredHeight and measuredHeight > 0 then
+            section._contentHeight = math.max(section._contentHeight or 0, measuredHeight)
+        end
+
+        body:SetHeight(section._contentHeight or contentHeight)
+    end
+
+    local function ApplyExpandedState(currentHeight)
+        local height = math.max(0, math.min(section._contentHeight, currentHeight or 0))
+        bodyClip:SetHeight(height)
+        section:SetHeight(HEADER_HEIGHT + height)
+    end
+
+    section.SetExpanded = function(self, expanded, skipRelayout)
+        section._expanded = expanded and true or false
+        if UIKit and UIKit.SetChevronCaretExpanded then
+            UIKit.SetChevronCaretExpanded(chevron, section._expanded)
+        else
+            chevron:SetText(section._expanded and "v" or ">")
+        end
+
+        RefreshContentHeight()
+        local targetHeight = section._expanded and section._contentHeight or 0
+        local currentHeight = bodyClip:GetHeight() or 0
+
+        if section._expanded then
+            bodyClip:Show()
+            body:SetAlpha(skipRelayout and 1 or body:GetAlpha())
+        end
+
+        if skipRelayout or not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
+            if UIKit and UIKit.CancelValueAnimation then
+                UIKit.CancelValueAnimation(section, "layoutCollapsible")
+            end
+            ApplyExpandedState(targetHeight)
+            body:SetAlpha(section._expanded and 1 or 0)
+            if not section._expanded then
+                bodyClip:Hide()
+            end
+            if not skipRelayout then
+                relayout()
+            end
+            return
+        end
+
+        UIKit.CancelValueAnimation(section, "layoutCollapsible")
+        UIKit.AnimateValue(section, "layoutCollapsible", {
+            fromValue = currentHeight,
+            toValue = targetHeight,
+            duration = ((_G.QUI and _G.QUI.GUI and _G.QUI.GUI._sidebarAnimDuration) or 0.16),
+            onUpdate = function(_, progressHeight)
+                local totalRange = math.max(section._contentHeight, 1)
+                local ratio = math.max(0, math.min(1, progressHeight / totalRange))
+                ApplyExpandedState(progressHeight)
+                body:SetAlpha(ratio)
+                relayout()
+            end,
+            onFinish = function(_, finalHeight)
+                ApplyExpandedState(finalHeight)
+                body:SetAlpha(section._expanded and 1 or 0)
+                if not section._expanded then
+                    bodyClip:Hide()
+                end
+                relayout()
+            end,
+        })
+    end
 
     -- Restore expanded state from previous build if available
     local settings = ns.QUI_LayoutMode_Settings
     local savedStates = settings and settings._expandedStates
+    RefreshContentHeight()
     if savedStates and savedStates[title] then
-        section._expanded = true
-        chevron:SetText("v")
-        body:Show()
-        section:SetHeight(HEADER_HEIGHT + contentHeight)
+        section:SetExpanded(true, true)
     end
 
     btn:SetScript("OnClick", function()
-        section._expanded = not section._expanded
-        if section._expanded then
-            chevron:SetText("v")
-            body:Show()
-            section:SetHeight(HEADER_HEIGHT + section._contentHeight)
-        else
-            chevron:SetText(">")
-            body:Hide()
-            section:SetHeight(HEADER_HEIGHT)
-        end
-        relayout()
+        section:SetExpanded(not section._expanded)
     end)
 
     btn:SetScript("OnEnter", function()
         label:SetTextColor(1, 1, 1, 1)
-        chevron:SetTextColor(1, 1, 1, 1)
+        if UIKit and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
+        else
+            chevron:SetTextColor(1, 1, 1, 1)
+        end
     end)
     btn:SetScript("OnLeave", function()
         label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        if UIKit and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretColor(chevron, ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        else
+            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        end
     end)
 
     buildFunc(body)
+    RefreshContentHeight()
+    C_Timer.After(0, function()
+        if not section or not body then return end
+        RefreshContentHeight()
+        if section._expanded then
+            ApplyExpandedState(section._contentHeight)
+            relayout()
+        end
+    end)
     table.insert(sections, section)
     return section
 end

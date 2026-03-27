@@ -449,9 +449,26 @@ local function BuildContent(panel, key)
         btn:SetPoint("TOPRIGHT", 0, 0)
         btn:SetHeight(HEADER_HEIGHT)
 
-        local chevron = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        chevron:SetPoint("LEFT", 2, 0)
-        chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
+            point = "LEFT",
+            relativeTo = btn,
+            relativePoint = "LEFT",
+            xPixels = 2,
+            yPixels = 0,
+            sizePixels = 10,
+            lineWidthPixels = 6,
+            lineHeightPixels = 1,
+            expanded = true,
+            collapsedDirection = "right",
+            r = ACCENT_R,
+            g = ACCENT_G,
+            b = ACCENT_B,
+            a = 1,
+        }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        if not (UIKit and UIKit.CreateChevronCaret) then
+            chevron:SetPoint("LEFT", 2, 0)
+            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        end
 
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
@@ -464,9 +481,19 @@ local function BuildContent(panel, key)
         underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
         underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
 
-        local body = CreateFrame("Frame", nil, infoSection)
-        body:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
-        body:SetPoint("RIGHT", 0, 0)
+        local bodyClip = CreateFrame("ScrollFrame", nil, infoSection)
+        bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
+        bodyClip:SetPoint("RIGHT", infoSection, "RIGHT", 0, 0)
+        bodyClip:SetHeight(0)
+        bodyClip:Hide()
+
+        local body = CreateFrame("Frame", nil, bodyClip)
+        body:SetWidth(1)
+        bodyClip:SetScrollChild(body)
+        bodyClip:SetScript("OnSizeChanged", function(self, width)
+            body:SetWidth(math.max(width or 1, 1))
+        end)
+        body:SetAlpha(0)
 
         -- Anchor status line
         local statusLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -492,8 +519,12 @@ local function BuildContent(panel, key)
         -- Default to expanded
         infoSection._expanded = true
         infoSection._sectionTitle = "Anchoring Details"
-        chevron:SetText("v")
-        body:Show()
+        if not (UIKit and UIKit.CreateChevronCaret) then
+            chevron:SetText("v")
+        end
+        bodyClip:Show()
+        bodyClip:SetHeight(bodyHeight)
+        body:SetAlpha(1)
         infoSection:SetHeight(HEADER_HEIGHT + bodyHeight)
 
         -- Position Info section dynamically below provider content.
@@ -519,32 +550,85 @@ local function BuildContent(panel, key)
         local savedStates = QUI_LayoutMode_Settings._expandedStates
         if savedStates and savedStates["Anchoring Details"] == false then
             infoSection._expanded = false
-            chevron:SetText(">")
-            body:Hide()
+            if UIKit and UIKit.SetChevronCaretExpanded then
+                UIKit.SetChevronCaretExpanded(chevron, false)
+            else
+                chevron:SetText(">")
+            end
+            bodyClip:SetHeight(0)
+            bodyClip:Hide()
+            body:SetAlpha(0)
             infoSection:SetHeight(HEADER_HEIGHT)
+        end
+
+        local function ApplyInfoState(currentHeight)
+            local height = math.max(0, math.min(bodyHeight, currentHeight or 0))
+            bodyClip:SetHeight(height)
+            infoSection:SetHeight(HEADER_HEIGHT + height)
+            repositionInfo()
         end
 
         btn:SetScript("OnClick", function()
             infoSection._expanded = not infoSection._expanded
+            local targetHeight = infoSection._expanded and bodyHeight or 0
+            local currentHeight = bodyClip:GetHeight() or 0
             if infoSection._expanded then
-                chevron:SetText("v")
-                body:Show()
-                infoSection:SetHeight(HEADER_HEIGHT + bodyHeight)
+                if UIKit and UIKit.SetChevronCaretExpanded then
+                    UIKit.SetChevronCaretExpanded(chevron, true)
+                else
+                    chevron:SetText("v")
+                end
+                bodyClip:Show()
             else
-                chevron:SetText(">")
-                body:Hide()
-                infoSection:SetHeight(HEADER_HEIGHT)
+                if UIKit and UIKit.SetChevronCaretExpanded then
+                    UIKit.SetChevronCaretExpanded(chevron, false)
+                else
+                    chevron:SetText(">")
+                end
             end
-            repositionInfo()
+            if UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation then
+                UIKit.CancelValueAnimation(infoSection, "anchoringInfo")
+                UIKit.AnimateValue(infoSection, "anchoringInfo", {
+                    fromValue = currentHeight,
+                    toValue = targetHeight,
+                    duration = ((_G.QUI and _G.QUI.GUI and _G.QUI.GUI._sidebarAnimDuration) or 0.16),
+                    onUpdate = function(_, progressHeight)
+                        local ratio = math.max(0, math.min(1, progressHeight / math.max(bodyHeight, 1)))
+                        ApplyInfoState(progressHeight)
+                        body:SetAlpha(ratio)
+                    end,
+                    onFinish = function(_, finalHeight)
+                        ApplyInfoState(finalHeight)
+                        body:SetAlpha(infoSection._expanded and 1 or 0)
+                        if not infoSection._expanded then
+                            bodyClip:Hide()
+                        end
+                    end,
+                })
+            else
+                ApplyInfoState(targetHeight)
+                body:SetAlpha(infoSection._expanded and 1 or 0)
+                if not infoSection._expanded then
+                    bodyClip:Hide()
+                end
+            end
         end)
 
         btn:SetScript("OnEnter", function()
             label:SetTextColor(1, 1, 1, 1)
-            chevron:SetTextColor(1, 1, 1, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
+            else
+                chevron:SetTextColor(1, 1, 1, 1)
+            end
         end)
         btn:SetScript("OnLeave", function()
             label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            if UIKit and UIKit.SetChevronCaretColor then
+                UIKit.SetChevronCaretColor(chevron, ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            else
+                chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            end
         end)
 
         content.SetHeight = function(self, h)
