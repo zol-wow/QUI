@@ -274,6 +274,9 @@ local function PositionNearMover(panel, moverFrame)
 
     local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
     local panelW, panelH = panel:GetSize()
+    local panelScale = panel:GetScale() or 1
+    panelW = panelW * panelScale
+    panelH = panelH * panelScale
 
     -- Determine which side has more space
     local spaceRight = screenW - moverFrame:GetRight()
@@ -670,6 +673,10 @@ function QUI_LayoutMode_Settings:Show(key)
     end
 
     local panel = self._panel
+    local layoutUI = ns.QUI_LayoutMode_UI
+    if layoutUI and layoutUI.ApplyConfigPanelScale then
+        layoutUI:ApplyConfigPanelScale(panel)
+    end
     local um = ns.QUI_LayoutMode
     local def = um and um._elements and um._elements[key]
     local label = def and def.label or key

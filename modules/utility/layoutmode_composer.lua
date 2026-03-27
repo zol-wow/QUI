@@ -2881,6 +2881,10 @@ function QUI_LayoutMode_Composer:Open(contextMode)
     C = GUI and GUI.Colors or {}
 
     local frame = GetOrCreateFrame()
+    local layoutUI = ns.QUI_LayoutMode_UI
+    if layoutUI and layoutUI.ApplyConfigPanelScale then
+        layoutUI:ApplyConfigPanelScale(frame)
+    end
 
     -- Refresh border accent color
     if C.accent then

@@ -52,7 +52,6 @@ QUI_LayoutMode_UI.snapEnabled = true
 QUI_LayoutMode_UI.gridMode = 0      -- 0=off, 1=dimmed, 2=bright
 QUI_LayoutMode_UI.showCoords = false -- show coords on all movers
 QUI_LayoutMode_UI.showOverlays = true -- show mover backgrounds
-QUI_LayoutMode_UI.drawerScale = 1
 
 -- Forward declarations
 local CreateOverlay, CreateGrid, CreateToolbar, CreateNudgeHandler
@@ -74,7 +73,6 @@ local function LoadPersistedState(ui)
     if not db then return end
     if db.snapEnabled ~= nil then ui.snapEnabled = db.snapEnabled end
     if db.gridMode ~= nil then ui.gridMode = db.gridMode end
-    if db.drawerScale ~= nil then ui.drawerScale = db.drawerScale end
 end
 
 local function SavePersistedState(ui)
@@ -82,62 +80,23 @@ local function SavePersistedState(ui)
     if not db then return end
     db.snapEnabled = ui.snapEnabled
     db.gridMode = ui.gridMode
-    db.drawerScale = ui.drawerScale
 end
 
-local function ClampDrawerScale(value)
-    local presets = {0.75, 1.0, 1.5}
-    value = tonumber(value) or 1
-    local best = presets[1]
-    local bestDelta = abs(value - best)
-    for i = 2, #presets do
-        local preset = presets[i]
-        local delta = abs(value - preset)
-        if delta < bestDelta then
-            best = preset
-            bestDelta = delta
-        end
-    end
-    return best
+local function GetConfigPanelScale()
+    local core = Helpers and Helpers.GetCore and Helpers.GetCore()
+    local db = core and core.db and core.db.profile
+    local scale = db and db.configPanelScale or 1
+    scale = tonumber(scale) or 1
+    return max(0.8, min(1.5, scale))
 end
 
-local function ApplyDrawerScale(ui)
-    local scale = ClampDrawerScale(ui and ui.drawerScale or 1)
-    if ui then
-        ui.drawerScale = scale
-    end
-    if ui and ui._toolbarPanel then
-        ui._toolbarPanel:SetScale(scale)
-    end
-    if ui and ui._drawer then
-        ui._drawer:SetScale(scale)
-    end
-    local buttons = ui and ui._toolbarScaleButtons
-    if buttons then
-        for _, btn in ipairs(buttons) do
-            local active = abs((btn._scaleValue or 1) - scale) < 0.001
-            if btn._bg then
-                if active then
-                    btn._bg:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.22)
-                else
-                    btn._bg:SetColorTexture(0.12, 0.14, 0.18, 0.95)
-                end
-            end
-            if btn._border and UIKit and UIKit.UpdateBorderLines then
-                if active then
-                    UIKit.UpdateBorderLines(btn, 1, ACCENT_R, ACCENT_G, ACCENT_B, 0.95, false)
-                else
-                    UIKit.UpdateBorderLines(btn, 1, ACCENT_R, ACCENT_G, ACCENT_B, 0.35, false)
-                end
-            end
-            if btn._text then
-                if active then
-                    btn._text:SetTextColor(1, 1, 1, 1)
-                else
-                    btn._text:SetTextColor(0.82, 0.86, 0.92, 1)
-                end
-            end
-        end
+function QUI_LayoutMode_UI:GetConfigPanelScale()
+    return GetConfigPanelScale()
+end
+
+function QUI_LayoutMode_UI:ApplyConfigPanelScale(frame)
+    if frame and frame.SetScale then
+        frame:SetScale(GetConfigPanelScale())
     end
 end
 
@@ -152,7 +111,8 @@ function QUI_LayoutMode_UI:Show()
 
     -- Restore persisted snap/grid state
     LoadPersistedState(self)
-    ApplyDrawerScale(self)
+    self:ApplyConfigPanelScale(self._toolbarPanel)
+    self:ApplyConfigPanelScale(self._drawer)
     self:_UpdateToolbarButtons()
 
     if self._overlay then
@@ -1107,69 +1067,9 @@ CreateToolbar = function(ui)
         if um then um:DiscardAndClose() end
     end, 0.5, 0.1, 0.1)
 
-    local scaleRowHeight = 20
-    local scaleRowGap = 8
-
     -- Set panel height
-    local panelHeight = math.abs(btnY) + PANEL_PAD + scaleRowGap + scaleRowHeight
+    local panelHeight = math.abs(btnY) + PANEL_PAD
     panel:SetHeight(panelHeight)
-
-    local scaleBox = CreateFrame("Frame", nil, panel)
-    scaleBox:SetPoint("BOTTOM", panel, "BOTTOM", 0, PANEL_PAD)
-    scaleBox:SetSize(PANEL_WIDTH - (PANEL_PAD * 2), scaleRowHeight)
-    ui._toolbarScaleBox = scaleBox
-
-    ui._toolbarScaleButtons = {}
-    local presetValues = {
-        { value = 0.75, label = "75%" },
-        { value = 1.0, label = "100%" },
-        { value = 1.5, label = "150%" },
-    }
-    local presetWidth = 36
-    local presetGap = 6
-    local totalPresetWidth = (#presetValues * presetWidth) + ((#presetValues - 1) * presetGap)
-    local startX = -math.floor(totalPresetWidth / 2)
-
-    for i, preset in ipairs(presetValues) do
-        local btn = CreateFrame("Button", nil, scaleBox)
-        btn:SetSize(presetWidth, scaleRowHeight)
-        btn:SetPoint("LEFT", scaleBox, "CENTER", startX + ((i - 1) * (presetWidth + presetGap)), 0)
-        btn._scaleValue = preset.value
-
-        btn._bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn._bg:SetAllPoints()
-        btn._bg:SetColorTexture(0.12, 0.14, 0.18, 0.95)
-
-        if UIKit and UIKit.CreateBorderLines then
-            UIKit.CreateBorderLines(btn)
-            UIKit.UpdateBorderLines(btn, 1, ACCENT_R, ACCENT_G, ACCENT_B, 0.35, false)
-            btn._border = true
-        end
-
-        local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btnText:SetPoint("CENTER", btn, "CENTER", 0, 0)
-        btnText:SetText(preset.label)
-        btnText:SetTextColor(0.82, 0.86, 0.92, 1)
-        btn._text = btnText
-
-        btn:SetScript("OnClick", function()
-            ui.drawerScale = preset.value
-            ApplyDrawerScale(ui)
-            SavePersistedState(ui)
-            if ui._cancelCollapseTimer then ui._cancelCollapseTimer() end
-        end)
-        btn:SetScript("OnEnter", function(self)
-            if abs((ui.drawerScale or 1) - preset.value) >= 0.001 and self._bg then
-                self._bg:SetColorTexture(0.18, 0.20, 0.26, 1)
-            end
-        end)
-        btn:SetScript("OnLeave", function()
-            ApplyDrawerScale(ui)
-        end)
-
-        ui._toolbarScaleButtons[#ui._toolbarScaleButtons + 1] = btn
-        ui._toolbarButtons[#ui._toolbarButtons + 1] = btn
-    end
 
     -- Side and position state (persisted)
     local docked = "RIGHT"  -- "LEFT" or "RIGHT"
@@ -1438,7 +1338,7 @@ CreateToolbar = function(ui)
     ui._toolbar = tab
     ui._toolbarPanel = panel
     ui._tabDocked = function() return docked end
-    ApplyDrawerScale(ui)
+    ui:ApplyConfigPanelScale(panel)
 end
 
 function QUI_LayoutMode_UI:_UpdateToolbarButtons()
@@ -1541,6 +1441,7 @@ function QUI_LayoutMode_UI:ShowSaveDiscardPopup()
         self:_Initialize()
     end
     if self._popup then
+        self:ApplyConfigPanelScale(self._popup)
         self._popup:Show()
     end
 end
@@ -1629,7 +1530,7 @@ CreateFramesDrawer = function(ui)
     drawer._content = content
     drawer._rows = {}
     ui._drawer = drawer
-    ApplyDrawerScale(ui)
+    ui:ApplyConfigPanelScale(drawer)
 end
 
 --- Rebuild the drawer content from current element list.
