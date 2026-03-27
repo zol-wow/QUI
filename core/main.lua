@@ -32,25 +32,44 @@ ns.Addon = QUICore
 QUICore.__pendingReload = false
 QUICore.__reloadEventFrame = nil
 
+local function EnsureReloadEventFrame(self)
+    if self.__reloadEventFrame then
+        return self.__reloadEventFrame
+    end
+
+    self.__reloadEventFrame = CreateFrame("Frame")
+    self.__reloadEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    self.__reloadEventFrame:SetScript("OnEvent", function(frame, event)
+        if event == "PLAYER_REGEN_ENABLED" and QUICore.__pendingReload then
+            QUICore.__pendingReload = false
+            -- Show popup with reload button (user click = allowed)
+            QUICore:ShowReloadPopup()
+        end
+    end)
+
+    return self.__reloadEventFrame
+end
+
+function QUICore:RequestReload()
+    if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
+        if not self.__pendingReload then
+            self.__pendingReload = true
+            print("|cFF30D1FFQUI:|r Reload queued - will execute when combat ends.")
+            EnsureReloadEventFrame(self)
+        end
+        return
+    end
+
+    self:ShowReloadPopup()
+end
+
 -- Safe reload function - queues if in combat, reloads immediately if not
 function QUICore:SafeReload()
     if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
         if not self.__pendingReload then
             self.__pendingReload = true
             print("|cFF30D1FFQUI:|r Reload queued - will execute when combat ends.")
-
-            -- Create event frame if needed
-            if not self.__reloadEventFrame then
-                self.__reloadEventFrame = CreateFrame("Frame")
-                self.__reloadEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-                self.__reloadEventFrame:SetScript("OnEvent", function(frame, event)
-                    if event == "PLAYER_REGEN_ENABLED" and QUICore.__pendingReload then
-                        QUICore.__pendingReload = false
-                        -- Show popup with reload button (user click = allowed)
-                        QUICore:ShowReloadPopup()
-                    end
-                end)
-            end
+            EnsureReloadEventFrame(self)
         end
     else
         ReloadUI()
@@ -786,7 +805,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             if currentScale and math.abs(newProfileScale - currentScale) > 0.001 then
                 self._preservedUIScale = newProfileScale
                 C_Timer.After(0, function()
-                    QUICore:SafeReload()
+                    QUICore:RequestReload()
                 end)
                 return
             end

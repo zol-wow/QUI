@@ -99,6 +99,15 @@ local function BuildImportExportTab(tabContent)
     local y = -10
     local PAD = 10
 
+    local function NormalizeTargetProfileName(raw)
+        raw = tostring(raw or "")
+        raw = raw:gsub("^%s+", ""):gsub("%s+$", "")
+        if raw == "" then
+            return nil
+        end
+        return raw
+    end
+
     GUI:SetSearchContext({tabIndex = 14, tabName = "Import & Export Strings", subTabIndex = 1, subTabName = "Import/Export"})
 
     local info = GUI:CreateLabel(tabContent, "Import and export QUI profiles", 11, C.textMuted)
@@ -175,11 +184,38 @@ local function BuildImportExportTab(tabContent)
         importEditBox:SetFocus()
     end)
 
-    y = y - 115
+    y = y - 110
+
+    local targetProfileInput = GUI:CreateFormEditBox(tabContent, "Save As Profile", nil, nil, nil, {
+        width = 240,
+        commitOnEnter = false,
+        commitOnFocusLost = false,
+        maxLetters = 64,
+        onEscapePressed = function(self) self:ClearFocus() end,
+    })
+    targetProfileInput:SetPoint("TOPLEFT", PAD, y)
+    targetProfileInput:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+
+    local targetProfileHint = CreateWrappedLabel(
+        tabContent,
+        "Optional. Leave this empty to overwrite your current active profile. Enter a name to import into that profile instead.",
+        10,
+        C.textMuted
+    )
+    targetProfileHint:SetPoint("TOPLEFT", PAD, y - 30)
+    targetProfileHint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    y = y - (targetProfileHint:GetStringHeight() or 28) - 42
+
+    local function GetTargetProfileName()
+        if not targetProfileInput or not targetProfileInput.editBox then
+            return nil
+        end
+        return NormalizeTargetProfileName(targetProfileInput.editBox:GetText())
+    end
 
     local analysisNote = CreateWrappedLabel(
         tabContent,
-        "Paste a QUI profile string, analyze it, then choose which categories to import. Unselected categories will stay as they are in your current profile.",
+        "Paste a QUI profile string, analyze it, then choose which categories to import. Unselected categories stay as they are in the target profile.",
         10,
         C.textMuted
     )
@@ -439,7 +475,7 @@ local function BuildImportExportTab(tabContent)
 
             local actionNote = CreateWrappedLabel(
                 content,
-                "Import Selected keeps all unchecked categories from your current profile. If a parent section is checked, its child rows are ignored. Import Everything replaces the whole profile, just like the old importer.",
+                "Import Selected keeps all unchecked categories from the target profile. If a parent section is checked, its child rows are ignored. If Save As Profile is empty, the target is your current profile. Import Everything replaces the whole target profile.",
                 10,
                 C.textMuted
             )
@@ -459,7 +495,7 @@ local function BuildImportExportTab(tabContent)
                     return
                 end
 
-                local ok, err = core:ImportProfileSelectionFromString(importEditBox:GetText(), selectedIDs)
+                local ok, err = core:ImportProfileSelectionFromString(importEditBox:GetText(), selectedIDs, GetTargetProfileName())
                 PrintImportResult(ok, err)
                 if ok then
                     ShowReloadPrompt("Selected profile settings imported. Reload UI to fully apply the changes?")
@@ -468,11 +504,16 @@ local function BuildImportExportTab(tabContent)
             analysisState.importSelectedBtn:SetPoint("TOPLEFT", 0, localY)
 
             analysisState.importEverythingBtn = GUI:CreateButton(content, "IMPORT EVERYTHING", 180, 28, function()
+                local targetProfileName = GetTargetProfileName()
                 GUI:ShowConfirmation({
-                    title = "Import Entire Profile?",
-                    message = "Replace your current profile with every setting from this string?",
-                    warningText = "This overwrites the whole profile.",
-                    acceptText = "Import Everything",
+                    title = targetProfileName and "Import Into Profile?" or "Import Entire Profile?",
+                    message = targetProfileName
+                        and ("Replace every setting in profile '%s' with this import string?"):format(targetProfileName)
+                        or "Replace your current profile with every setting from this string?",
+                    warningText = targetProfileName
+                        and "If that profile already exists, its settings will be overwritten."
+                        or "This overwrites the whole current profile.",
+                    acceptText = targetProfileName and "Import Into Profile" or "Import Everything",
                     cancelText = "Cancel",
                     isDestructive = true,
                     onAccept = function()
@@ -482,7 +523,7 @@ local function BuildImportExportTab(tabContent)
                             return
                         end
 
-                        local ok, err = core:ImportProfileFromString(importEditBox:GetText())
+                        local ok, err = core:ImportProfileFromString(importEditBox:GetText(), targetProfileName)
                         PrintImportResult(ok, err)
                         if ok then
                             ShowReloadPrompt("Full profile imported. Reload UI to fully apply the changes?")

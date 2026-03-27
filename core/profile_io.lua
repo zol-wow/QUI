@@ -1252,6 +1252,39 @@ local function ApplyFullProfilePayload(core, importedProfile)
     return true, "Profile imported successfully."
 end
 
+local function NormalizeOptionalProfileName(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then
+        return nil
+    end
+    return name
+end
+
+local function PrepareImportTargetProfile(core, requestedProfileName)
+    local db = core and core.db
+    if not db or not db.profile then
+        return false, "No profile loaded."
+    end
+
+    local explicitName = NormalizeOptionalProfileName(requestedProfileName)
+    local currentName = db.GetCurrentProfile and db:GetCurrentProfile() or "Default"
+    if not explicitName then
+        return true, currentName, false
+    end
+
+    if explicitName ~= currentName then
+        local ok, err = pcall(db.SetProfile, db, explicitName)
+        if not ok then
+            return false, ("Could not switch to profile '%s': %s"):format(explicitName, tostring(err))
+        end
+    end
+
+    return true, (db.GetCurrentProfile and db:GetCurrentProfile()) or explicitName, true
+end
+
 ---=================================================================================
 --- PROFILE IMPORT/EXPORT
 ---=================================================================================
@@ -1296,16 +1329,25 @@ function QUICore:AnalyzeProfileImportString(str)
     return true, BuildProfileImportPreview(payloadOrErr, prefix)
 end
 
-function QUICore:ImportProfileFromString(str)
+function QUICore:ImportProfileFromString(str, targetProfileName)
     local ok, payloadOrErr = ParseProfileImportString(self, str)
     if not ok then
         return false, payloadOrErr
     end
 
-    return ApplyFullProfilePayload(self, payloadOrErr)
+    local targetOK, activeProfileName, usingExplicitTarget = PrepareImportTargetProfile(self, targetProfileName)
+    if not targetOK then
+        return false, activeProfileName
+    end
+
+    local importOK, message = ApplyFullProfilePayload(self, payloadOrErr)
+    if importOK and usingExplicitTarget then
+        return true, ("Profile imported successfully into profile '%s'."):format(activeProfileName)
+    end
+    return importOK, message
 end
 
-function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs)
+function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targetProfileName)
     local ok, payloadOrErr = ParseProfileImportString(self, str)
     if not ok then
         return false, payloadOrErr
@@ -1361,6 +1403,11 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs)
 
     if #selectedLabels == 0 then
         return false, "Select at least one category to import."
+    end
+
+    local targetOK, activeProfileName, usingExplicitTarget = PrepareImportTargetProfile(self, targetProfileName)
+    if not targetOK then
+        return false, activeProfileName
     end
 
     local profile = self.db and self.db.profile
@@ -1440,6 +1487,9 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs)
         self:RefreshAll()
     end
 
+    if usingExplicitTarget then
+        return true, ("Imported %s into profile '%s'."):format(table.concat(selectedLabels, ", "), activeProfileName)
+    end
     return true, ("Imported %s."):format(table.concat(selectedLabels, ", "))
 end
 
