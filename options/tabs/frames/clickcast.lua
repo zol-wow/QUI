@@ -1055,7 +1055,7 @@ end
 local function CreateClickCastPage(parent)
     local scroll, content = CreateScrollableContent(parent)
 
-    GUI:SetSearchContext({tabIndex = 7, tabName = "Click-Cast", subTabIndex = 1, subTabName = "Click-Cast"})
+    GUI:SetSearchContext({tabIndex = 5, tabName = "Click-Cast", subTabIndex = 1, subTabName = "Click-Cast"})
 
     local gfdb = GetGFDB()
     if not gfdb then

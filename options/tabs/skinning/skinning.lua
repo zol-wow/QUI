@@ -20,7 +20,7 @@ local function BuildSkinningTab(tabContent)
     local P = Helpers.PlaceRow
     local db = Shared.GetDB()
 
-    GUI:SetSearchContext({tabIndex = 10, tabName = "Skinning & Autohide", subTabIndex = 2, subTabName = "Skinning"})
+    GUI:SetSearchContext({tabIndex = 7, tabName = "Skinning & Autohide", subTabIndex = 2, subTabName = "Skinning"})
 
     if not db or not db.general then return end
 

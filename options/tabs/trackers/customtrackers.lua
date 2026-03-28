@@ -123,7 +123,7 @@ local function CreateCustomTrackersPage(parent)
     local db = GetDB()
 
     -- Set search context for auto-registration
-    GUI:SetSearchContext({tabIndex = 11, tabName = "Custom Trackers"})
+    GUI:SetSearchContext({tabIndex = 8, tabName = "Custom CDM Bars"})
 
     -- Ensure customTrackers.bars exists
     if not db.customTrackers then
@@ -297,7 +297,7 @@ local function CreateCustomTrackersPage(parent)
     -- Build tab content for a single tracker bar
     ---------------------------------------------------------------------------
     local function BuildTrackerBarTab(tabContent, barConfig, barIndex, subTabsRef)
-        GUI:SetSearchContext({tabIndex = 11, tabName = "Custom Trackers", subTabIndex = barIndex, subTabName = barConfig.name or ("Bar " .. barIndex)})
+        GUI:SetSearchContext({tabIndex = 8, tabName = "Custom CDM Bars", subTabIndex = barIndex, subTabName = barConfig.name or ("Bar " .. barIndex)})
         local y = -10
 
         local entryListFrame  -- Forward declaration for refresh callback
@@ -1651,7 +1651,7 @@ local function CreateCustomTrackersPage(parent)
     -- SPELL SCANNER (collapsible)
     ---------------------------------------------------------------------------
     CreateCollapsible("Setup Custom Buff Tracking", 550, function(tabContent)
-        GUI:SetSearchContext({tabIndex = 11, tabName = "Custom Trackers"})
+        GUI:SetSearchContext({tabIndex = 8, tabName = "Custom CDM Bars"})
         local y = -4
         local scanner = QUI.SpellScanner
             local scannedListFrame  -- Forward declaration for refresh

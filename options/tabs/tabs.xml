@@ -5,20 +5,11 @@
     <Script file="qol/blizzard_mover.lua"/>
     <Script file="ui/hud_visibility.lua"/>
     <Script file="qol/crosshair.lua"/>
-    <Script file="qol/tooltips.lua"/>
-    <Script file="qol/skyriding.lua"/>
-    <Script file="qol/party_keystones.lua"/>
-    <Script file="qol/xptracker.lua"/>
     <Script file="chat/chat.lua"/>
     <Script file="character/character.lua"/>
-    <Script file="cooldowns/cdm_effects.lua"/>
-    <Script file="cooldowns/cdm.lua"/>
     <Script file="ui/autohide.lua"/>
     <Script file="skinning/skinning.lua"/>
     <Script file="ui/minimap.lua"/>
-    <Script file="frames/buffdebuff.lua"/>
-    <Script file="frames/raidbuffs.lua"/>
-    <Script file="frames/groupframedesigner.lua"/>
     <Script file="frames/castbar.lua"/>
     <Script file="ui/hudlayering.lua"/>
     <Script file="ui/frameanchoring.lua"/>
@@ -36,7 +27,6 @@
     <!-- Page coordinators (load after subtab files) -->
     <Script file="core/welcome.lua"/>
     <Script file="core/general.lua"/>
-    <Script file="ui/minimap_page.lua"/>
     <Script file="ui/autohides.lua"/>
     <Script file="core/help.lua"/>
 </Ui>

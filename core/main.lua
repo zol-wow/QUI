@@ -132,21 +132,536 @@ end
 
 local defaults = ns.defaults
 
-function QUICore:NormalizeActiveProfile(opts)
-    if ns.Migrations and ns.Migrations.NormalizeProfile then
-        return ns.Migrations.NormalizeProfile(self, opts)
-    end
-    return false
-end
-
 
 function QUICore:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("QUIDB", defaults, true)
     QUI.db = self.db  -- Make database accessible to other QUI modules
 
-    self:NormalizeActiveProfile({ source = "startup" })
-
+    -- Migrate visibility settings to SHOW logic
+    -- Old hideWhenX → new showX (semantic conversion)
+    -- hideOutOfCombat=true → showInCombat=true (user wants combat-only)
+    -- hideWhenNotInGroup=true → showInGroup=true (user wants group-only)
+    -- hideWhenNotInInstance=true → showInInstance=true (user wants instance-only)
+    -- hideWhenMounted has no equivalent (can't express "hide when mounted" in SHOW logic)
     local profile = self.db.profile
+
+    -- Castbar preview is a transient options-state and should never persist
+    -- across reload/login. Clear it early before frame modules initialize.
+    if profile and profile.quiUnitFrames then
+        for _, unitKey in ipairs({"player", "target", "focus", "pet", "targettarget"}) do
+            local unitDB = profile.quiUnitFrames[unitKey]
+            if unitDB and unitDB.castbar then
+                unitDB.castbar.previewMode = false
+            end
+        end
+        for i = 1, 8 do
+            local bossDB = profile.quiUnitFrames["boss" .. i]
+            if bossDB and bossDB.castbar then
+                bossDB.castbar.previewMode = false
+            end
+        end
+    end
+
+    -- Migrate skinUseClassColor → themePreset
+    if profile.general and profile.general.skinUseClassColor and not profile.general.themePreset then
+        profile.general.themePreset = "Class Colored"
+    end
+
+    -- One-time migration: enable work order (crafting order) minimap indicator
+    -- for existing profiles. After this runs once, user preference is preserved.
+    if profile then
+        if not profile.minimap then
+            profile.minimap = {}
+        end
+        if profile.minimap._showCraftingOrderMigrated ~= true then
+            profile.minimap.showCraftingOrder = true
+            profile.minimap._showCraftingOrderMigrated = true
+        end
+    end
+
+    -- Helper to migrate a visibility table from HIDE to SHOW logic
+    local function migrateToShowLogic(visTable)
+        if not visTable then return end
+        -- Convert hideOutOfCombat → showInCombat
+        if visTable.hideOutOfCombat then
+            visTable.showInCombat = true
+        end
+        -- Convert hideWhenNotInGroup → showInGroup
+        if visTable.hideWhenNotInGroup then
+            visTable.showInGroup = true
+        end
+        -- Convert hideWhenNotInInstance → showInInstance
+        if visTable.hideWhenNotInInstance then
+            visTable.showInInstance = true
+        end
+        -- Clean up old keys (hideWhenMounted is a new feature, not migrated)
+        visTable.hideOutOfCombat = nil
+        visTable.hideWhenNotInGroup = nil
+        visTable.hideWhenNotInInstance = nil
+    end
+
+    -- Migrate recently-added hideWhenX keys to showX (if user reloaded after first implementation)
+    migrateToShowLogic(profile.cdmVisibility)
+    migrateToShowLogic(profile.unitframesVisibility)
+
+    -- Migrate flat group frame visual settings → party/raid containers
+    local gf = profile.quiGroupFrames
+    if gf then
+        -- Keys that should live under party/raid containers
+        local VISUAL_KEYS = {
+            "general", "layout", "health", "power", "name", "absorbs", "healPrediction",
+            "indicators", "healer", "classPower", "range", "auras",
+            "privateAuras", "auraIndicators", "castbar", "portrait", "pets",
+        }
+        -- Also handle the previous partyLayout/raidLayout migration
+        local needsMigration = false
+        for _, key in ipairs(VISUAL_KEYS) do
+            if gf[key] then needsMigration = true break end
+        end
+        if gf.partyLayout or gf.raidLayout then needsMigration = true end
+
+        if needsMigration then
+            if not gf.party then gf.party = {} end
+            if not gf.raid then gf.raid = {} end
+
+            -- Deep-copy helper for migration
+            local function deepCopy(src)
+                if type(src) ~= "table" then return src end
+                local copy = {}
+                for k, v in pairs(src) do copy[k] = deepCopy(v) end
+                return copy
+            end
+
+            -- Copy each flat visual key into both party and raid
+            for _, key in ipairs(VISUAL_KEYS) do
+                if gf[key] then
+                    if not gf.party[key] then gf.party[key] = deepCopy(gf[key]) end
+                    if not gf.raid[key] then gf.raid[key] = deepCopy(gf[key]) end
+                    gf[key] = nil
+                end
+            end
+
+            -- Handle partyLayout/raidLayout from the intermediate migration
+            if gf.partyLayout then
+                if not gf.party.layout then gf.party.layout = gf.partyLayout
+                else
+                    for k, v in pairs(gf.partyLayout) do
+                        if gf.party.layout[k] == nil then gf.party.layout[k] = v end
+                    end
+                end
+                gf.partyLayout = nil
+            end
+            if gf.raidLayout then
+                if not gf.raid.layout then gf.raid.layout = gf.raidLayout
+                else
+                    for k, v in pairs(gf.raidLayout) do
+                        if gf.raid.layout[k] == nil then gf.raid.layout[k] = v end
+                    end
+                end
+                gf.raidLayout = nil
+            end
+        end
+
+        -- Migrate shared dimensions → party/raid containers
+        if gf.dimensions then
+            local function deepCopyDims(src)
+                if type(src) ~= "table" then return src end
+                local copy = {}
+                for k, v in pairs(src) do copy[k] = deepCopyDims(v) end
+                return copy
+            end
+            if not gf.party.dimensions then gf.party.dimensions = deepCopyDims(gf.dimensions) end
+            if not gf.raid.dimensions then gf.raid.dimensions = deepCopyDims(gf.dimensions) end
+            gf.dimensions = nil
+        end
+
+        -- Migrate shared spotlight → raid-only
+        if gf.spotlight then
+            if not gf.raid.spotlight then gf.raid.spotlight = gf.spotlight end
+            gf.spotlight = nil
+        end
+    end
+
+    -- Migrate unifiedPosition → always separate party/raid positions
+    if gf and gf.unifiedPosition ~= nil then
+        if gf.unifiedPosition and gf.position then
+            -- User had unified mode: copy shared position to raidPosition
+            if not gf.raidPosition then
+                gf.raidPosition = { offsetX = gf.position.offsetX, offsetY = gf.position.offsetY }
+            end
+        end
+        gf.unifiedPosition = nil
+    end
+
+    -- Migrate tooltip engine: normalize legacy engine names to "default"
+    if profile.tooltip and profile.tooltip.engine and profile.tooltip.engine ~= "default" then
+        profile.tooltip.engine = "default"
+    end
+
+    -- Migrate CDM engine: classic engine removed, force to "owned"
+    if profile.ncdm and profile.ncdm.engine and profile.ncdm.engine ~= "owned" then
+        profile.ncdm.engine = "owned"
+    end
+
+    -- Migrate action bar engine: classic engine removed, force to "owned"
+    if profile.actionBars and profile.actionBars.engine == "classic" then
+        profile.actionBars.engine = "owned"
+    end
+
+    -- Force minimap scale to 1.0 (UI option removed; stale values may linger in saved profiles)
+    if profile.minimap and profile.minimap.scale ~= nil and profile.minimap.scale ~= 1.0 then
+        profile.minimap.scale = 1.0
+    end
+
+    -- Migrate minimap hideMicroMenu/hideBagBar → actionBars.bars.microbar/bags.enabled
+    if profile.minimap then
+        local mm = profile.minimap
+        if mm.hideMicroMenu ~= nil then
+            if not profile.actionBars then profile.actionBars = {} end
+            if not profile.actionBars.bars then profile.actionBars.bars = {} end
+            if not profile.actionBars.bars.microbar then profile.actionBars.bars.microbar = {} end
+            if mm.hideMicroMenu then
+                profile.actionBars.bars.microbar.enabled = false
+            end
+            mm.hideMicroMenu = nil
+        end
+        if mm.hideBagBar ~= nil then
+            if not profile.actionBars then profile.actionBars = {} end
+            if not profile.actionBars.bars then profile.actionBars.bars = {} end
+            if not profile.actionBars.bars.bags then profile.actionBars.bars.bags = {} end
+            if mm.hideBagBar then
+                profile.actionBars.bars.bags.enabled = false
+            end
+            mm.hideBagBar = nil
+        end
+    end
+
+    ---------------------------------------------------------------------------
+    -- Anchoring unification migration: remove enabled field, migrate inline
+    -- offsets to frameAnchoring as the single source of truth.
+    ---------------------------------------------------------------------------
+    if not profile._anchoringMigrationVersion then
+        if not profile.frameAnchoring then
+            profile.frameAnchoring = {}
+        end
+        local fa = profile.frameAnchoring
+
+        -- 2a: Remove enabled field from existing entries
+        for key, settings in pairs(fa) do
+            if type(settings) == "table" and settings.enabled ~= nil then
+                if settings.enabled == false then
+                    -- User never configured this — delete the entry
+                    fa[key] = nil
+                else
+                    -- Was enabled — remove the field (now implicit)
+                    settings.enabled = nil
+                end
+            end
+        end
+
+        -- 2b: Migrate inline offsets → frameAnchoring (only if not already set)
+        local function MigrateInlineOffsets(sourceTable, targetKey)
+            if not sourceTable then return end
+            local ox = sourceTable.offsetX
+            local oy = sourceTable.offsetY
+            if ox == nil and oy == nil then return end
+            if fa[targetKey] then return end  -- Already has anchoring config
+            fa[targetKey] = {
+                parent = "screen",
+                point = "CENTER",
+                relative = "CENTER",
+                offsetX = ox or 0,
+                offsetY = oy or 0,
+                sizeStable = true,
+            }
+        end
+
+        -- Unit frames
+        local uf = profile.quiUnitFrames
+        if uf then
+            MigrateInlineOffsets(uf.player, "playerFrame")
+            MigrateInlineOffsets(uf.target, "targetFrame")
+            MigrateInlineOffsets(uf.targettarget, "totFrame")
+            MigrateInlineOffsets(uf.focus, "focusFrame")
+            MigrateInlineOffsets(uf.pet, "petFrame")
+            MigrateInlineOffsets(uf.boss, "bossFrames")
+        end
+
+        -- Action bar special buttons
+        local bars = profile.actionBars and profile.actionBars.bars
+        if bars then
+            MigrateInlineOffsets(bars.extraActionButton, "extraActionButton")
+            MigrateInlineOffsets(bars.zoneAbility, "zoneAbility")
+        end
+
+        -- Other modules
+        MigrateInlineOffsets(profile.totemBar, "totemBar")
+        MigrateInlineOffsets(profile.xpTracker, "xpTracker")
+        MigrateInlineOffsets(profile.skyriding, "skyriding")
+        MigrateInlineOffsets(profile.crosshair, "crosshair")
+
+        -- Group frames
+        local gf = profile.quiGroupFrames
+        if gf then
+            local pos = gf.position
+            if pos and (pos.offsetX or pos.offsetY) and not fa.partyFrames then
+                fa.partyFrames = {
+                    parent = "screen",
+                    point = "CENTER",
+                    relative = "CENTER",
+                    offsetX = pos.offsetX or 0,
+                    offsetY = pos.offsetY or 0,
+                    sizeStable = true,
+                }
+            end
+            local raidPos = gf.raidPosition
+            if raidPos and (raidPos.offsetX or raidPos.offsetY) and not fa.raidFrames then
+                fa.raidFrames = {
+                    parent = "screen",
+                    point = "CENTER",
+                    relative = "CENTER",
+                    offsetX = raidPos.offsetX or 0,
+                    offsetY = raidPos.offsetY or 0,
+                    sizeStable = true,
+                }
+            end
+        end
+
+        -- 2c: Migrate castbar anchor modes → frameAnchoring
+        if uf then
+            local castbarMigrations = {
+                { unitKey = "player", targetKey = "playerCastbar", parentFrameKey = "playerFrame" },
+                { unitKey = "target", targetKey = "targetCastbar", parentFrameKey = "targetFrame" },
+                { unitKey = "focus",  targetKey = "focusCastbar",  parentFrameKey = "focusFrame" },
+            }
+            for _, cm in ipairs(castbarMigrations) do
+                local unitSettings = uf[cm.unitKey]
+                local castDB = unitSettings and unitSettings.castbar
+                if castDB and not fa[cm.targetKey] then
+                    local anchor = castDB.anchor or "none"
+                    local parent, ox, oy
+                    if anchor == "none" then
+                        parent = "screen"
+                        ox = castDB.freeOffsetX or castDB.offsetX or 0
+                        oy = castDB.freeOffsetY or castDB.offsetY or 0
+                    elseif anchor == "unitframe" then
+                        parent = cm.parentFrameKey
+                        ox = castDB.lockedOffsetX or castDB.offsetX or 0
+                        oy = castDB.lockedOffsetY or castDB.offsetY or 0
+                    elseif anchor == "essential" then
+                        parent = "cdmEssential"
+                        ox = castDB.lockedOffsetX or castDB.offsetX or 0
+                        oy = castDB.lockedOffsetY or castDB.offsetY or 0
+                    elseif anchor == "utility" then
+                        parent = "cdmUtility"
+                        ox = castDB.lockedOffsetX or castDB.offsetX or 0
+                        oy = castDB.lockedOffsetY or castDB.offsetY or 0
+                    else
+                        parent = "screen"
+                        ox = castDB.offsetX or 0
+                        oy = castDB.offsetY or 0
+                    end
+
+                    local entry = {
+                        parent = parent,
+                        point = "CENTER",
+                        relative = "CENTER",
+                        offsetX = ox,
+                        offsetY = oy,
+                        sizeStable = true,
+                    }
+                    -- Migrate width adjustment
+                    if castDB.widthAdjustment and castDB.widthAdjustment ~= 0 then
+                        entry.widthAdjust = castDB.widthAdjustment
+                    end
+                    -- Auto-width when locked to a parent
+                    if anchor ~= "none" then
+                        entry.autoWidth = true
+                    end
+                    fa[cm.targetKey] = entry
+                end
+            end
+        end
+
+        -- 2d: Leave inline fields intact for backup (don't delete)
+
+        profile._anchoringMigrationVersion = 1
+    end
+
+    -- Migration v2: module-specific position formats → frameAnchoring
+    if (profile._anchoringMigrationVersion or 0) < 2 then
+        if not profile.frameAnchoring then profile.frameAnchoring = {} end
+        local fa = profile.frameAnchoring
+
+        -- M+ Timer: position = { point, relPoint, x, y }
+        local mpt = profile.mplusTimer and profile.mplusTimer.position
+        if mpt and not fa.mplusTimer then
+            fa.mplusTimer = {
+                point = mpt.point or "TOPRIGHT",
+                relative = mpt.relPoint or "TOPRIGHT",
+                offsetX = mpt.x or -100,
+                offsetY = mpt.y or -200,
+                sizeStable = true,
+            }
+        end
+
+        -- Tooltip: anchorPosition = { point, relPoint, x, y }
+        local tp = profile.tooltip and profile.tooltip.anchorPosition
+        if tp and not fa.tooltipAnchor then
+            fa.tooltipAnchor = {
+                point = tp.point or "BOTTOMRIGHT",
+                relative = tp.relPoint or "BOTTOMRIGHT",
+                offsetX = tp.x or -200,
+                offsetY = tp.y or 100,
+                sizeStable = true,
+            }
+        end
+
+        -- Modules using offsetX/offsetY not covered in v1
+        local function MigrateOffsets(sourceTable, targetKey)
+            if not sourceTable then return end
+            local ox = sourceTable.offsetX or sourceTable.xOffset
+            local oy = sourceTable.offsetY or sourceTable.yOffset
+            if ox == nil and oy == nil then return end
+            if fa[targetKey] then return end
+            fa[targetKey] = {
+                point = "CENTER",
+                relative = "CENTER",
+                offsetX = ox or 0,
+                offsetY = oy or 0,
+                sizeStable = true,
+            }
+        end
+
+        MigrateOffsets(profile.brzCounter, "brezCounter")
+        MigrateOffsets(profile.combatTimer, "combatTimer")
+        MigrateOffsets(profile.rangeCheck, "rangeCheck")
+        MigrateOffsets(profile.actionTracker, "actionTracker")
+        MigrateOffsets(profile.focusCastAlert, "focusCastAlert")
+        MigrateOffsets(profile.petCombatWarning, "petWarning")
+        MigrateOffsets(profile.raidBuffs, "missingRaidBuffs")
+
+        profile._anchoringMigrationVersion = 2
+    end
+
+    -- Migration v3: remaining module position formats → frameAnchoring
+    if (profile._anchoringMigrationVersion or 0) < 3 then
+        if not profile.frameAnchoring then profile.frameAnchoring = {} end
+        local fa = profile.frameAnchoring
+
+        -- Helper: migrate { point, relPoint/relativePoint, x, y } → frameAnchoring entry
+        local function MigratePos(source, faKey, defaults)
+            if not source then return end
+            if fa[faKey] then return end
+            fa[faKey] = {
+                point = source.point or defaults.point,
+                relative = source.relPoint or source.relativePoint or defaults.relative,
+                offsetX = source.x or defaults.offsetX,
+                offsetY = source.y or defaults.offsetY,
+                sizeStable = true,
+            }
+        end
+
+        -- ReadyCheck: general.readyCheckPosition
+        local gen = profile.general
+        if gen then
+            MigratePos(gen.readyCheckPosition, "readyCheck",
+                { point = "CENTER", relative = "CENTER", offsetX = 0, offsetY = -10 })
+        end
+
+        -- Power Bar Alt: profile.powerBarAltPosition (top-level in profile)
+        MigratePos(profile.powerBarAltPosition, "powerBarAlt",
+            { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -100 })
+
+        -- Loot frame: profile.loot.position
+        local lootDB = profile.loot
+        if lootDB then
+            MigratePos(lootDB.position, "lootFrame",
+                { point = "CENTER", relative = "CENTER", offsetX = 0, offsetY = 100 })
+        end
+
+        -- Loot roll anchor: profile.lootRoll.position
+        local rollDB = profile.lootRoll
+        if rollDB then
+            MigratePos(rollDB.position, "lootRollAnchor",
+                { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -200 })
+        end
+
+        -- Consumable Check: general.consumableFreePosition
+        if gen then
+            local cfp = gen.consumableFreePosition
+            if cfp and not fa.consumables then
+                fa.consumables = {
+                    point = cfp.point or "CENTER",
+                    relative = cfp.relativePoint or cfp.relPoint or "CENTER",
+                    offsetX = cfp.x or 0,
+                    offsetY = cfp.y or 100,
+                    sizeStable = true,
+                }
+            end
+        end
+
+        -- Alert holders: profile.alerts.*Position
+        local alertDB = profile.alerts
+        if alertDB then
+            MigratePos(alertDB.alertPosition, "alertAnchor",
+                { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -20 })
+            MigratePos(alertDB.toastPosition, "toastAnchor",
+                { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -150 })
+            MigratePos(alertDB.bnetToastPosition, "bnetToastAnchor",
+                { point = "TOPRIGHT", relative = "TOPRIGHT", offsetX = -200, offsetY = -80 })
+        end
+
+        -- Action bars: actionBars.bars[barKey].ownedPosition
+        local barsDB = profile.actionBars and profile.actionBars.bars
+        if barsDB then
+            -- Layout mode keys differ from DB keys for some bars
+            local barKeyMap = {
+                pet = "petBar", stance = "stanceBar",
+                microbar = "microMenu", bags = "bagBar",
+            }
+            for dbKey, barData in pairs(barsDB) do
+                if type(barData) == "table" and barData.ownedPosition then
+                    local faKey = barKeyMap[dbKey] or dbKey
+                    MigratePos(barData.ownedPosition, faKey,
+                        { point = "CENTER", relative = "CENTER", offsetX = 0, offsetY = 0 })
+                end
+            end
+        end
+
+        profile._anchoringMigrationVersion = 3
+    end
+
+    -- Phase G CDM Overhaul: Migrate top-level ncdm container keys into
+    -- unified ncdm.containers table.  Existing data is copied (not moved)
+    -- so the old paths stay for backward compatibility during the transition.
+    if profile.ncdm and not profile.ncdm._containersMigrated then
+        if not profile.ncdm.containers then
+            profile.ncdm.containers = {}
+        end
+        local CONTAINER_NAMES = {
+            essential  = "Essential",
+            utility    = "Utility",
+            buff       = "Buff Icons",
+            trackedBar = "Buff Bars",
+        }
+        local CONTAINER_TYPES = {
+            essential  = "cooldown",
+            utility    = "cooldown",
+            buff       = "aura",
+            trackedBar = "auraBar",
+        }
+        for _, key in ipairs({"essential", "utility", "buff", "trackedBar"}) do
+            if profile.ncdm[key] then
+                -- Force-overwrite the AceDB-populated defaults with real user data
+                profile.ncdm.containers[key] = CopyTable(profile.ncdm[key])
+                profile.ncdm.containers[key].builtIn = true
+                profile.ncdm.containers[key].containerType = CONTAINER_TYPES[key]
+                profile.ncdm.containers[key].name = CONTAINER_NAMES[key]
+            end
+        end
+        profile.ncdm._containersMigrated = true
+    end
 
     -- Initialize preserved scale - will be properly set in OnEnable after UI scale is applied
     self._preservedUIScale = nil
@@ -219,9 +734,6 @@ function QUICore:OnProfileChanged(event, db, profileKey)
 
     -- Update spec tracking (kept for reference)
     self._lastKnownSpec = GetSpecialization() or 0
-
-    -- Normalize the active profile before modules read or rebuild from it.
-    self:NormalizeActiveProfile({ source = "profileChange", event = event })
 
     -- Wipe the font registry so stale FontStrings from the old profile's frames
     -- are released. Modules will re-register via ApplyFont when they rebuild.

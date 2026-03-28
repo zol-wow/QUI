@@ -16,7 +16,7 @@ local function BuildCharacterPaneTab(tabContent)
     local PAD = Shared.PADDING
     local db = Shared.GetDB()
 
-    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 7, subTabName = "Character Pane"})
+    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 5, subTabName = "Character Pane"})
 
     local char = db and db.character
     if not char then return end

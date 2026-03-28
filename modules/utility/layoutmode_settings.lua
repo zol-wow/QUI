@@ -5,7 +5,6 @@
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local UIKit = ns.UIKit
 
 local QUI_LayoutMode_Settings = {}
 ns.QUI_LayoutMode_Settings = QUI_LayoutMode_Settings
@@ -62,13 +61,6 @@ end
 -- PANEL CREATION
 ---------------------------------------------------------------------------
 
-local function GetPixelLineSize(frame)
-    local core = ns.Addon
-    local pixel = (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-    local scaled = (core and core.Pixels and core:Pixels(BORDER_SIZE, frame)) or BORDER_SIZE
-    return math.max(pixel, scaled)
-end
-
 local function CreateBorderLine(parent, p1, r1, p2, r2, isHoriz, r, g, b, a)
     local line = parent:CreateTexture(nil, "BORDER")
     line:SetColorTexture(r or ACCENT_R, g or ACCENT_G, b or ACCENT_B, a or 0.6)
@@ -76,9 +68,9 @@ local function CreateBorderLine(parent, p1, r1, p2, r2, isHoriz, r, g, b, a)
     line:SetPoint(p1, parent, r1, 0, 0)
     line:SetPoint(p2, parent, r2, 0, 0)
     if isHoriz then
-        line:SetHeight(GetPixelLineSize(parent))
+        line:SetHeight(BORDER_SIZE)
     else
-        line:SetWidth(GetPixelLineSize(parent))
+        line:SetWidth(BORDER_SIZE)
     end
     return line
 end
@@ -97,53 +89,6 @@ local function SafeGetVerticalScroll(scrollFrame)
     return ok2 and safeCurrent or 0
 end
 
-local function CreateQUIStyleCloseButton(parent, relativeTo, relativePoint, xOffset, yOffset, onClick)
-    local GUI = _G.QUI and _G.QUI.GUI
-    local C = GUI and GUI.Colors or {}
-    local border = C.border or {0.24, 0.28, 0.34, 1}
-    local text = C.text or {0.85, 0.88, 0.92, 1}
-
-    local close = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    close:SetSize(22, 22)
-    close:SetPoint("RIGHT", relativeTo, "RIGHT", xOffset or 0, yOffset or 0)
-    close:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    close:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
-    close:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
-
-    local lineLen, lineWidth = 10, 1.5
-    local xLine1 = close:CreateTexture(nil, "OVERLAY")
-    xLine1:SetSize(lineLen, lineWidth)
-    xLine1:SetPoint("CENTER")
-    xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
-    xLine1:SetRotation(math.rad(45))
-
-    local xLine2 = close:CreateTexture(nil, "OVERLAY")
-    xLine2:SetSize(lineLen, lineWidth)
-    xLine2:SetPoint("CENTER")
-    xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
-    xLine2:SetRotation(math.rad(-45))
-
-    close:SetScript("OnClick", onClick)
-    close:SetScript("OnEnter", function(self)
-        pcall(self.SetBackdropBorderColor, self, ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        self:SetBackdropColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.15)
-        xLine1:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        xLine2:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-    end)
-    close:SetScript("OnLeave", function(self)
-        pcall(self.SetBackdropBorderColor, self, border[1], border[2], border[3], border[4] or 1)
-        self:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
-        xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
-        xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
-    end)
-
-    return close
-end
-
 local function CreatePanel()
     local panel = CreateFrame("Frame", "QUI_LayoutMode_SettingsPanel", UIParent)
     panel:SetFrameStrata(PANEL_STRATA)
@@ -155,35 +100,20 @@ local function CreatePanel()
     panel:Hide()
 
     -- Background
-    local bg
-    if UIKit and UIKit.CreateBackground then
-        bg = UIKit.CreateBackground(panel, 0.067, 0.094, 0.153, 0.97)
-    else
-        bg = panel:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0.067, 0.094, 0.153, 0.97)
-    end
+    local bg = panel:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.067, 0.094, 0.153, 0.97)
 
     -- Border
-    if UIKit and UIKit.CreateBorderLines and UIKit.UpdateBorderLines then
-        UIKit.CreateBorderLines(panel)
-        UIKit.UpdateBorderLines(panel, BORDER_SIZE, ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
-    else
-        CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
-        CreateBorderLine(panel, "BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
-        CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
-        CreateBorderLine(panel, "TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
-    end
+    CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
+    CreateBorderLine(panel, "BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
+    CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
+    CreateBorderLine(panel, "TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
     -- Title bar background
     local titleBg = panel:CreateTexture(nil, "ARTWORK")
-    if UIKit and UIKit.SetInsetPointsPx then
-        titleBg:SetPoint("TOPLEFT", panel, "TOPLEFT", GetPixelLineSize(panel), -GetPixelLineSize(panel))
-        titleBg:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -GetPixelLineSize(panel), -GetPixelLineSize(panel))
-    else
-        titleBg:SetPoint("TOPLEFT", BORDER_SIZE, -BORDER_SIZE)
-        titleBg:SetPoint("TOPRIGHT", -BORDER_SIZE, -BORDER_SIZE)
-    end
+    titleBg:SetPoint("TOPLEFT", BORDER_SIZE, -BORDER_SIZE)
+    titleBg:SetPoint("TOPRIGHT", -BORDER_SIZE, -BORDER_SIZE)
     titleBg:SetHeight(TITLE_HEIGHT)
     titleBg:SetColorTexture(0.04, 0.06, 0.1, 1)
 
@@ -191,7 +121,7 @@ local function CreatePanel()
     local titleLine = panel:CreateTexture(nil, "ARTWORK", nil, 1)
     titleLine:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT")
     titleLine:SetPoint("TOPRIGHT", titleBg, "BOTTOMRIGHT")
-    titleLine:SetHeight(GetPixelLineSize(panel))
+    titleLine:SetHeight(BORDER_SIZE)
     titleLine:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.4)
 
     -- Title text
@@ -204,7 +134,22 @@ local function CreatePanel()
     panel._titleText = titleText
 
     -- Close button
-    local closeBtn = CreateQUIStyleCloseButton(panel, titleBg, "TOPRIGHT", -6, 0, function()
+    local closeBtn = CreateFrame("Button", nil, panel)
+    closeBtn:SetSize(20, 20)
+    closeBtn:SetPoint("RIGHT", titleBg, "RIGHT", -6, 0)
+
+    local closeTxt = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    closeTxt:SetPoint("CENTER")
+    closeTxt:SetText("X")
+    closeTxt:SetTextColor(0.6, 0.65, 0.7, 1)
+
+    closeBtn:SetScript("OnEnter", function()
+        closeTxt:SetTextColor(1, 0.3, 0.3, 1)
+    end)
+    closeBtn:SetScript("OnLeave", function()
+        closeTxt:SetTextColor(0.6, 0.65, 0.7, 1)
+    end)
+    closeBtn:SetScript("OnClick", function()
         QUI_LayoutMode_Settings:Hide()
     end)
 
@@ -297,9 +242,6 @@ local function PositionNearMover(panel, moverFrame)
 
     local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
     local panelW, panelH = panel:GetSize()
-    local panelScale = panel:GetScale() or 1
-    panelW = panelW * panelScale
-    panelH = panelH * panelScale
 
     -- Determine which side has more space
     local spaceRight = screenW - moverFrame:GetRight()
@@ -484,26 +426,9 @@ local function BuildContent(panel, key)
         btn:SetPoint("TOPRIGHT", 0, 0)
         btn:SetHeight(HEADER_HEIGHT)
 
-        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
-            point = "LEFT",
-            relativeTo = btn,
-            relativePoint = "LEFT",
-            xPixels = 2,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = true,
-            collapsedDirection = "right",
-            r = ACCENT_R,
-            g = ACCENT_G,
-            b = ACCENT_B,
-            a = 1,
-        }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        if not (UIKit and UIKit.CreateChevronCaret) then
-            chevron:SetPoint("LEFT", 2, 0)
-            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        end
+        local chevron = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        chevron:SetPoint("LEFT", 2, 0)
+        chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
@@ -511,24 +436,14 @@ local function BuildContent(panel, key)
         label:SetText("Anchoring Details")
 
         local underline = btn:CreateTexture(nil, "ARTWORK")
-        underline:SetHeight(GetPixelLineSize(btn))
+        underline:SetHeight(1)
         underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
         underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
         underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
 
-        local bodyClip = CreateFrame("ScrollFrame", nil, infoSection)
-        bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
-        bodyClip:SetPoint("RIGHT", infoSection, "RIGHT", 0, 0)
-        bodyClip:SetHeight(0)
-        bodyClip:Hide()
-
-        local body = CreateFrame("Frame", nil, bodyClip)
-        body:SetWidth(1)
-        bodyClip:SetScrollChild(body)
-        bodyClip:SetScript("OnSizeChanged", function(self, width)
-            body:SetWidth(math.max(width or 1, 1))
-        end)
-        body:SetAlpha(0)
+        local body = CreateFrame("Frame", nil, infoSection)
+        body:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
+        body:SetPoint("RIGHT", 0, 0)
 
         -- Anchor status line
         local statusLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -554,12 +469,8 @@ local function BuildContent(panel, key)
         -- Default to expanded
         infoSection._expanded = true
         infoSection._sectionTitle = "Anchoring Details"
-        if not (UIKit and UIKit.CreateChevronCaret) then
-            chevron:SetText("v")
-        end
-        bodyClip:Show()
-        bodyClip:SetHeight(bodyHeight)
-        body:SetAlpha(1)
+        chevron:SetText("v")
+        body:Show()
         infoSection:SetHeight(HEADER_HEIGHT + bodyHeight)
 
         -- Position Info section dynamically below provider content.
@@ -585,85 +496,32 @@ local function BuildContent(panel, key)
         local savedStates = QUI_LayoutMode_Settings._expandedStates
         if savedStates and savedStates["Anchoring Details"] == false then
             infoSection._expanded = false
-            if UIKit and UIKit.SetChevronCaretExpanded then
-                UIKit.SetChevronCaretExpanded(chevron, false)
-            else
-                chevron:SetText(">")
-            end
-            bodyClip:SetHeight(0)
-            bodyClip:Hide()
-            body:SetAlpha(0)
+            chevron:SetText(">")
+            body:Hide()
             infoSection:SetHeight(HEADER_HEIGHT)
-        end
-
-        local function ApplyInfoState(currentHeight)
-            local height = math.max(0, math.min(bodyHeight, currentHeight or 0))
-            bodyClip:SetHeight(height)
-            infoSection:SetHeight(HEADER_HEIGHT + height)
-            repositionInfo()
         end
 
         btn:SetScript("OnClick", function()
             infoSection._expanded = not infoSection._expanded
-            local targetHeight = infoSection._expanded and bodyHeight or 0
-            local currentHeight = bodyClip:GetHeight() or 0
             if infoSection._expanded then
-                if UIKit and UIKit.SetChevronCaretExpanded then
-                    UIKit.SetChevronCaretExpanded(chevron, true)
-                else
-                    chevron:SetText("v")
-                end
-                bodyClip:Show()
+                chevron:SetText("v")
+                body:Show()
+                infoSection:SetHeight(HEADER_HEIGHT + bodyHeight)
             else
-                if UIKit and UIKit.SetChevronCaretExpanded then
-                    UIKit.SetChevronCaretExpanded(chevron, false)
-                else
-                    chevron:SetText(">")
-                end
+                chevron:SetText(">")
+                body:Hide()
+                infoSection:SetHeight(HEADER_HEIGHT)
             end
-            if UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation then
-                UIKit.CancelValueAnimation(infoSection, "anchoringInfo")
-                UIKit.AnimateValue(infoSection, "anchoringInfo", {
-                    fromValue = currentHeight,
-                    toValue = targetHeight,
-                    duration = ((_G.QUI and _G.QUI.GUI and _G.QUI.GUI._sidebarAnimDuration) or 0.16),
-                    onUpdate = function(_, progressHeight)
-                        local ratio = math.max(0, math.min(1, progressHeight / math.max(bodyHeight, 1)))
-                        ApplyInfoState(progressHeight)
-                        body:SetAlpha(ratio)
-                    end,
-                    onFinish = function(_, finalHeight)
-                        ApplyInfoState(finalHeight)
-                        body:SetAlpha(infoSection._expanded and 1 or 0)
-                        if not infoSection._expanded then
-                            bodyClip:Hide()
-                        end
-                    end,
-                })
-            else
-                ApplyInfoState(targetHeight)
-                body:SetAlpha(infoSection._expanded and 1 or 0)
-                if not infoSection._expanded then
-                    bodyClip:Hide()
-                end
-            end
+            repositionInfo()
         end)
 
         btn:SetScript("OnEnter", function()
             label:SetTextColor(1, 1, 1, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
-            else
-                chevron:SetTextColor(1, 1, 1, 1)
-            end
+            chevron:SetTextColor(1, 1, 1, 1)
         end)
         btn:SetScript("OnLeave", function()
             label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            else
-                chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            end
+            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         end)
 
         content.SetHeight = function(self, h)
@@ -696,10 +554,6 @@ function QUI_LayoutMode_Settings:Show(key)
     end
 
     local panel = self._panel
-    local layoutUI = ns.QUI_LayoutMode_UI
-    if layoutUI and layoutUI.ApplyConfigPanelScale then
-        layoutUI:ApplyConfigPanelScale(panel)
-    end
     local um = ns.QUI_LayoutMode
     local def = um and um._elements and um._elements[key]
     local label = def and def.label or key

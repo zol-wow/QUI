@@ -10,7 +10,6 @@
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local UIKit = ns.UIKit
 
 local QUI_LayoutMode = {}
 ns.QUI_LayoutMode = QUI_LayoutMode
@@ -1175,48 +1174,44 @@ end
 --- Add visual elements (bg, border, label, coords, group) to a handle frame.
 AddHandleVisuals = function(handle, def)
     -- Background
-    local bg
-    if UIKit and UIKit.CreateBackground then
-        bg = UIKit.CreateBackground(handle, 0.08, 0.08, 0.10, HANDLE_BG_ALPHA)
-    else
-        bg = handle:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0.08, 0.08, 0.10, HANDLE_BG_ALPHA)
-    end
+    local bg = handle:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.08, 0.08, 0.10, HANDLE_BG_ALPHA)
     handle._bg = bg
 
-    -- Border
-    local border = { _size = HANDLE_BORDER_SIZE }
-    if UIKit and UIKit.CreateBorderLines and UIKit.UpdateBorderLines then
-        UIKit.CreateBorderLines(handle)
-        UIKit.UpdateBorderLines(handle, HANDLE_BORDER_SIZE, ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        border.top = handle._quiBorderTop
-        border.bottom = handle._quiBorderBottom
-        border.left = handle._quiBorderLeft
-        border.right = handle._quiBorderRight
+    -- Border (4 lines)
+    local border = {}
+    local function MakeBorderLine(point1, rel1, point2, rel2, isHoriz)
+        local line = handle:CreateTexture(nil, "BORDER")
+        line:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        line:ClearAllPoints()
+        line:SetPoint(point1, handle, rel1, 0, 0)
+        line:SetPoint(point2, handle, rel2, 0, 0)
+        if isHoriz then
+            line:SetHeight(HANDLE_BORDER_SIZE)
+        else
+            line:SetWidth(HANDLE_BORDER_SIZE)
+        end
+        return line
     end
 
+    border.top    = MakeBorderLine("TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
+    border.bottom = MakeBorderLine("BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
+    border.left   = MakeBorderLine("TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
+    border.right  = MakeBorderLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
+
     border.SetColor = function(_, r, g, b, a)
-        if UIKit and UIKit.UpdateBorderLines then
-            UIKit.UpdateBorderLines(handle, border._size or HANDLE_BORDER_SIZE, r, g, b, a or 1)
-        else
-            for _, line in pairs(border) do
-                if type(line) == "table" and line.SetColorTexture then
-                    line:SetColorTexture(r, g, b, a or 1)
-                end
+        for _, line in pairs(border) do
+            if type(line) == "table" and line.SetColorTexture then
+                line:SetColorTexture(r, g, b, a or 1)
             end
         end
     end
     border.SetLineSize = function(_, size)
-        border._size = size
-        if UIKit and UIKit.UpdateBorderLines then
-            UIKit.UpdateBorderLines(handle, size, ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        elseif border.top and border.bottom and border.left and border.right then
-            border.top:SetHeight(size)
-            border.bottom:SetHeight(size)
-            border.left:SetWidth(size)
-            border.right:SetWidth(size)
-        end
+        border.top:SetHeight(size)
+        border.bottom:SetHeight(size)
+        border.left:SetWidth(size)
+        border.right:SetWidth(size)
     end
     handle._border = border
 
@@ -3093,9 +3088,6 @@ function QUI_LayoutMode:ToggleHandlePreview(key)
         -- Hide it
         handle:Hide()
         if hidden then hidden[key] = true end
-        if self._selectedKey == key then
-            self:SelectMover(nil)
-        end
         if def.onClose then pcall(def.onClose) end
         return false
     else
@@ -3150,64 +3142,6 @@ function QUI_LayoutMode:ToggleHandlePreview(key)
         end)
         return true
     end
-end
-
---- Ensure a handle preview matches the requested visibility state.
-function QUI_LayoutMode:SetHandlePreviewVisible(key, shouldShow)
-    if not self.isActive then return false end
-    if not self:IsElementEnabled(key) then return false end
-
-    local isShown = self:IsHandleShown(key)
-    if isShown == shouldShow then
-        return isShown
-    end
-
-    return self:ToggleHandlePreview(key)
-end
-
---- Show or hide every enabled handle preview.
-function QUI_LayoutMode:SetAllHandlePreviewsVisible(shouldShow)
-    if not self.isActive then return end
-
-    for _, key in ipairs(self._elementOrder) do
-        if self:IsElementEnabled(key) then
-            self:SetHandlePreviewVisible(key, shouldShow)
-        end
-    end
-
-    if not shouldShow then
-        self:SelectMover(nil)
-    end
-end
-
---- Show only one enabled handle preview and hide the rest.
-function QUI_LayoutMode:SoloHandlePreview(key)
-    if not self.isActive then return false end
-    if not self:IsElementEnabled(key) then return false end
-
-    for _, otherKey in ipairs(self._elementOrder) do
-        if self:IsElementEnabled(otherKey) then
-            self:SetHandlePreviewVisible(otherKey, otherKey == key)
-        end
-    end
-
-    self:SelectMover(key)
-    return true
-end
-
---- Returns true when this is the only visible enabled handle.
-function QUI_LayoutMode:IsHandleSolo(key)
-    if not self:IsElementEnabled(key) or not self:IsHandleShown(key) then
-        return false
-    end
-
-    for _, otherKey in ipairs(self._elementOrder) do
-        if otherKey ~= key and self:IsElementEnabled(otherKey) and self:IsHandleShown(otherKey) then
-            return false
-        end
-    end
-
-    return true
 end
 
 --- Clear the hidden state for a key (used when enabling an element).

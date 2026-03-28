@@ -13,13 +13,7 @@ local ADDON_NAME, ns = ...
 ---------------------------------------------------------------------------
 -- REGISTER ALL PROVIDERS
 ---------------------------------------------------------------------------
-local _providersRegistered = false
-
 local function RegisterAllProviders()
-    if _providersRegistered then
-        return
-    end
-
     local settingsPanel = ns.QUI_LayoutMode_Settings
     if not settingsPanel then return end
 
@@ -28,8 +22,6 @@ local function RegisterAllProviders()
 
     local U = ns.QUI_LayoutMode_Utils
     if not U then return end
-
-    _providersRegistered = true
 
     local P = U.PlaceRow
     local FORM_ROW = U.FORM_ROW
@@ -2176,5 +2168,4 @@ local function RegisterAllProviders()
     end })
 end
 
-RegisterAllProviders()
 C_Timer.After(3, RegisterAllProviders)

@@ -355,13 +355,7 @@ end
 ---------------------------------------------------------------------------
 -- REGISTER PROVIDERS
 ---------------------------------------------------------------------------
-local _groupProvidersRegistered = false
-
 local function RegisterGroupFrameProviders()
-    if _groupProvidersRegistered then
-        return
-    end
-
     local settingsPanel = ns.QUI_LayoutMode_Settings
     if not settingsPanel then return end
 
@@ -370,8 +364,6 @@ local function RegisterGroupFrameProviders()
 
     local U = ns.QUI_LayoutMode_Utils
     if not U then return end
-
-    _groupProvidersRegistered = true
 
     ---------------------------------------------------------------------------
     -- PARTY FRAMES
@@ -400,5 +392,4 @@ local function RegisterGroupFrameProviders()
     end })
 end
 
-RegisterGroupFrameProviders()
 C_Timer.After(3.1, RegisterGroupFrameProviders)

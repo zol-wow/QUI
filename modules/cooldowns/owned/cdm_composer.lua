@@ -10,7 +10,6 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local UIKit = ns.UIKit
 
 local type = type
 local pairs = pairs
@@ -2740,12 +2739,9 @@ local function CreateComposerFrame()
 
     -- Nav border (right edge)
     local navBorder = navPanel:CreateTexture(nil, "ARTWORK")
+    navBorder:SetWidth(1)
     navBorder:SetPoint("TOPRIGHT", navPanel, "TOPRIGHT", 0, 0)
     navBorder:SetPoint("BOTTOMRIGHT", navPanel, "BOTTOMRIGHT", 0, 0)
-    navBorder:SetWidth((ns.Addon and ns.Addon.GetPixelSize and ns.Addon:GetPixelSize(navPanel)) or 1)
-    if UIKit and UIKit.DisablePixelSnap then
-        UIKit.DisablePixelSnap(navBorder)
-    end
     navBorder:SetColorTexture(0.2, 0.2, 0.2, 1)
 
     -- Content area (right of nav)

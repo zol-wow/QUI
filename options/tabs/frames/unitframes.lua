@@ -48,7 +48,7 @@ local function CreateUnitFramesPage(parent)
         local P = Helpers.PlaceRow
         local ufdb = GetUFDB()
 
-        GUI:SetSearchContext({tabIndex = 5, tabName = "Unit Frames", subTabIndex = 1, subTabName = "General"})
+        GUI:SetSearchContext({tabIndex = 4, tabName = "Unit Frames", subTabIndex = 1, subTabName = "General"})
 
         if not ufdb then
             local info = GUI:CreateLabel(tabContent, "Unit frame settings not available - database not loaded", 12, C.textMuted)
@@ -239,7 +239,7 @@ local function CreateUnitFramesPage(parent)
             boss = {index = 7, name = "Boss"},
         }
         local subTabInfo = unitSubTabs[unitKey] or {index = 2, name = unitKey}
-        GUI:SetSearchContext({tabIndex = 5, tabName = "Unit Frames", subTabIndex = subTabInfo.index, subTabName = subTabInfo.name})
+        GUI:SetSearchContext({tabIndex = 4, tabName = "Unit Frames", subTabIndex = subTabInfo.index, subTabName = subTabInfo.name})
 
         if not ufdb or not ufdb[unitKey] then
             local info = GUI:CreateLabel(tabContent, "Unit frame settings not available for " .. unitKey, 12, C.textMuted)

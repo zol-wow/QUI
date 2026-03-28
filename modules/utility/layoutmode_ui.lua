@@ -5,11 +5,6 @@
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local UIKit = ns.UIKit
-local floor = math.floor
-local max = math.max
-local min = math.min
-local abs = math.abs
 
 local QUI_LayoutMode_UI = {}
 ns.QUI_LayoutMode_UI = QUI_LayoutMode_UI
@@ -82,24 +77,6 @@ local function SavePersistedState(ui)
     db.gridMode = ui.gridMode
 end
 
-local function GetConfigPanelScale()
-    local core = Helpers and Helpers.GetCore and Helpers.GetCore()
-    local db = core and core.db and core.db.profile
-    local scale = db and db.configPanelScale or 1
-    scale = tonumber(scale) or 1
-    return max(0.8, min(1.5, scale))
-end
-
-function QUI_LayoutMode_UI:GetConfigPanelScale()
-    return GetConfigPanelScale()
-end
-
-function QUI_LayoutMode_UI:ApplyConfigPanelScale(frame)
-    if frame and frame.SetScale then
-        frame:SetScale(GetConfigPanelScale())
-    end
-end
-
 ---------------------------------------------------------------------------
 -- SHOW / HIDE (called by layoutmode.lua)
 ---------------------------------------------------------------------------
@@ -111,8 +88,6 @@ function QUI_LayoutMode_UI:Show()
 
     -- Restore persisted snap/grid state
     LoadPersistedState(self)
-    self:ApplyConfigPanelScale(self._toolbarPanel)
-    self:ApplyConfigPanelScale(self._drawer)
     self:_UpdateToolbarButtons()
 
     if self._overlay then
@@ -929,29 +904,24 @@ CreateToolbar = function(ui)
     panel:SetPoint("TOPRIGHT", tab, "TOPLEFT", 0, 0)
     panel:Hide()
 
-    local panelBg
-    if UIKit and UIKit.CreateBackground then
-        panelBg = UIKit.CreateBackground(panel, 0.08, 0.08, 0.10, 0.92)
-    else
-        panelBg = panel:CreateTexture(nil, "BACKGROUND")
-        panelBg:SetAllPoints()
-        panelBg:SetColorTexture(0.08, 0.08, 0.10, 0.92)
-    end
+    local panelBg = panel:CreateTexture(nil, "BACKGROUND")
+    panelBg:SetAllPoints()
+    panelBg:SetColorTexture(0.08, 0.08, 0.10, 0.92)
 
-    if UIKit and UIKit.CreateBackdropBorder then
-        panel._pixelBorder = UIKit.CreateBackdropBorder(panel, 1, ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
+    -- Panel border
+    local function MakeLine(p1, r1, p2, r2, isH)
+        local line = panel:CreateTexture(nil, "BORDER")
+        line:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
+        line:ClearAllPoints()
+        line:SetPoint(p1, panel, r1)
+        line:SetPoint(p2, panel, r2)
+        if isH then line:SetHeight(1) else line:SetWidth(1) end
+        return line
     end
-    local separatorSize = (ns.Addon and ns.Addon.GetPixelSize and ns.Addon:GetPixelSize(panel)) or 1
-    local panelBorderLeft = panel:CreateTexture(nil, "BORDER")
-    panelBorderLeft:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
-    panelBorderLeft:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    panelBorderLeft:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 0)
-    panelBorderLeft:SetWidth(separatorSize)
-    local panelBorderRight = panel:CreateTexture(nil, "BORDER")
-    panelBorderRight:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
-    panelBorderRight:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    panelBorderRight:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
-    panelBorderRight:SetWidth(separatorSize)
+    MakeLine("TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
+    MakeLine("BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
+    local panelBorderLeft = MakeLine("TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
+    local panelBorderRight = MakeLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
     -- Title
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1343,7 +1313,6 @@ CreateToolbar = function(ui)
     ui._toolbar = tab
     ui._toolbarPanel = panel
     ui._tabDocked = function() return docked end
-    ui:ApplyConfigPanelScale(panel)
 end
 
 function QUI_LayoutMode_UI:_UpdateToolbarButtons()
@@ -1369,17 +1338,23 @@ CreateSaveDiscardPopup = function(ui)
     popup:Hide()
 
     -- Background
-    local bg
-    if UIKit and UIKit.CreateBackground then
-        bg = UIKit.CreateBackground(popup, 0.08, 0.08, 0.10, 0.95)
-    else
-        bg = popup:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0.08, 0.08, 0.10, 0.95)
+    local bg = popup:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.08, 0.08, 0.10, 0.95)
+
+    -- Border
+    local function MakePopupLine(p1, r1, p2, r2, isH)
+        local line = popup:CreateTexture(nil, "BORDER")
+        line:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
+        line:ClearAllPoints()
+        line:SetPoint(p1, popup, r1)
+        line:SetPoint(p2, popup, r2)
+        if isH then line:SetHeight(1) else line:SetWidth(1) end
     end
-    if UIKit and UIKit.CreateBackdropBorder then
-        popup._pixelBorder = UIKit.CreateBackdropBorder(popup, 1, ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
-    end
+    MakePopupLine("TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
+    MakePopupLine("BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
+    MakePopupLine("TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
+    MakePopupLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
     -- Title
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1440,7 +1415,6 @@ function QUI_LayoutMode_UI:ShowSaveDiscardPopup()
         self:_Initialize()
     end
     if self._popup then
-        self:ApplyConfigPanelScale(self._popup)
         self._popup:Show()
     end
 end
@@ -1455,7 +1429,6 @@ local DRAWER_ROW_HEIGHT = 24
 local DRAWER_GROUP_HEIGHT = 22
 local DRAWER_MAX_HEIGHT = 500
 local DRAWER_PADDING = 8
-local DRAWER_CONTROLS_HEIGHT = 24
 
 CreateFramesDrawer = function(ui)
     local drawer = CreateFrame("Frame", "QUI_LayoutMode_Drawer", UIParent)
@@ -1475,90 +1448,27 @@ CreateFramesDrawer = function(ui)
     end)
 
     -- Background
-    local bg
-    if UIKit and UIKit.CreateBackground then
-        bg = UIKit.CreateBackground(drawer, 0.067, 0.094, 0.153, 0.97)
-    else
-        bg = drawer:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0.067, 0.094, 0.153, 0.97)
+    local bg = drawer:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.067, 0.094, 0.153, 0.97)
+
+    -- Border
+    local function MakeDrawerLine(p1, r1, p2, r2, isH)
+        local line = drawer:CreateTexture(nil, "BORDER")
+        line:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
+        line:ClearAllPoints()
+        line:SetPoint(p1, drawer, r1)
+        line:SetPoint(p2, drawer, r2)
+        if isH then line:SetHeight(1) else line:SetWidth(1) end
     end
-    if UIKit and UIKit.CreateBackdropBorder then
-        drawer._pixelBorder = UIKit.CreateBackdropBorder(drawer, 1, ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
-    end
-
-    local function CreateDrawerActionButton(parent, text, width)
-        local button = CreateFrame("Button", nil, parent)
-        button:SetSize(width, 18)
-
-        local bgTex = button:CreateTexture(nil, "BACKGROUND")
-        bgTex:SetAllPoints()
-        bgTex:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-        button._bg = bgTex
-
-        local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("CENTER")
-        label:SetText(text)
-        label:SetTextColor(0.8, 0.82, 0.85, 1)
-        button._label = label
-
-        button:SetScript("OnEnter", function(self)
-            self._bg:SetColorTexture(0.3, 0.3, 0.3, 1)
-            self._label:SetTextColor(1, 1, 1, 1)
-        end)
-        button:SetScript("OnLeave", function(self)
-            self._bg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-            self._label:SetTextColor(0.8, 0.82, 0.85, 1)
-        end)
-
-        return button
-    end
-
-    local controls = CreateFrame("Frame", nil, drawer)
-    controls:SetPoint("TOPLEFT", DRAWER_PADDING, -DRAWER_PADDING)
-    controls:SetPoint("TOPRIGHT", -DRAWER_PADDING, -DRAWER_PADDING)
-    controls:SetHeight(DRAWER_CONTROLS_HEIGHT)
-
-    local controlsLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    controlsLabel:SetPoint("LEFT", 4, 0)
-    controlsLabel:SetText("Layer Visibility")
-    controlsLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-
-    local hideAllBtn = CreateDrawerActionButton(controls, "HIDE ALL", 74)
-    hideAllBtn:SetPoint("RIGHT", controls, "RIGHT", -2, 0)
-
-    local showAllBtn = CreateDrawerActionButton(controls, "SHOW ALL", 74)
-    showAllBtn:SetPoint("RIGHT", hideAllBtn, "LEFT", -6, 0)
-
-    showAllBtn:SetScript("OnClick", function()
-        local um = ns.QUI_LayoutMode
-        if not um then return end
-        um:SetAllHandlePreviewsVisible(true)
-        if drawer._refreshLayerButtons then
-            drawer._refreshLayerButtons()
-        end
-    end)
-    showAllBtn:HookScript("OnEnter", function(self)
-        self._bg:SetColorTexture(0.15, 0.35, 0.55, 1)
-    end)
-
-    hideAllBtn:SetScript("OnClick", function()
-        local um = ns.QUI_LayoutMode
-        if not um then return end
-        um:SetAllHandlePreviewsVisible(false)
-        if drawer._refreshLayerButtons then
-            drawer._refreshLayerButtons()
-        end
-    end)
-    hideAllBtn:HookScript("OnEnter", function(self)
-        self._bg:SetColorTexture(0.45, 0.16, 0.16, 1)
-    end)
-
-    drawer._controls = controls
+    MakeDrawerLine("TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
+    MakeDrawerLine("BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
+    MakeDrawerLine("TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
+    MakeDrawerLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", nil, drawer, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -6)
+    scrollFrame:SetPoint("TOPLEFT", DRAWER_PADDING, -DRAWER_PADDING)
     scrollFrame:SetPoint("BOTTOMRIGHT", -(DRAWER_PADDING + 20), DRAWER_PADDING)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
@@ -1592,8 +1502,8 @@ CreateFramesDrawer = function(ui)
     drawer._scrollFrame = scrollFrame
     drawer._content = content
     drawer._rows = {}
+
     ui._drawer = drawer
-    ui:ApplyConfigPanelScale(drawer)
 end
 
 --- Rebuild the drawer content from current element list.
@@ -1636,7 +1546,6 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
     -- Second pass: build headers and rows
     local allRows = {}   -- { {frame=, group=, isHeader=bool} }
-    local layerRows = {}
 
     for _, group in ipairs(groupOrder) do
         -- Default to collapsed
@@ -1651,28 +1560,10 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
         header:SetSize(contentWidth, DRAWER_GROUP_HEIGHT)
         drawer._rows[#drawer._rows + 1] = header
 
-        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(header, {
-            point = "LEFT",
-            relativeTo = header,
-            relativePoint = "LEFT",
-            xPixels = 4,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = not isCollapsed,
-            collapsedDirection = "right",
-            r = ACCENT_R,
-            g = ACCENT_G,
-            b = ACCENT_B,
-            a = 1,
-        }) or header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        if not (UIKit and UIKit.CreateChevronCaret) then
-            chevron:SetPoint("LEFT", 4, 0)
-            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            chevron:SetText(isCollapsed and ">" or "v")
-        end
-        header._chevron = chevron
+        local chevron = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        chevron:SetPoint("LEFT", 4, 0)
+        chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        chevron:SetText(isCollapsed and ">" or "v")
 
         local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         headerText:SetPoint("LEFT", chevron, "RIGHT", 4, 0)
@@ -1687,19 +1578,11 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
         header:SetScript("OnEnter", function()
             headerText:SetTextColor(1, 1, 1, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
-            else
-                chevron:SetTextColor(1, 1, 1, 1)
-            end
+            chevron:SetTextColor(1, 1, 1, 1)
         end)
         header:SetScript("OnLeave", function()
             headerText:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            else
-                chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            end
+            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         end)
         header:SetScript("OnClick", function()
             groupCollapsed[group] = not groupCollapsed[group]
@@ -1773,9 +1656,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     end
                     um:SetElementEnabled(key, newState)
                     UpdateToggleVisual()
-                    if drawer._refreshLayerButtons then
-                        drawer._refreshLayerButtons()
-                    end
+                    if row._updateShowVisual then row._updateShowVisual() end
                 end)
 
                 toggleBtn:SetScript("OnEnter", function(self)
@@ -1795,7 +1676,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 row._toggle = toggleBtn
             end
 
-            -- Layer visibility buttons (to left of ON/OFF)
+            -- Show/Hide preview button (to left of ON/OFF)
             do
                 local showBtn = CreateFrame("Button", nil, row)
                 showBtn:SetSize(40, 18)
@@ -1813,22 +1694,17 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 showText:SetPoint("CENTER")
                 showBtn._text = showText
 
-                local soloBtn, soloBg, soloText
                 local resetBtn, resetBg, resetText  -- forward refs for dimming
 
                 local function UpdateShowVisual()
                     local en = um:IsElementEnabled(key)
                     local shown = um:IsHandleShown(key)
                     if not en then
+                        -- Disabled: dim show/hide and reset
                         showBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
-                        showText:SetText("SHOW")
+                        showText:SetText("HIDE")
                         showText:SetTextColor(0.35, 0.35, 0.35, 1)
                         showBtn:EnableMouse(false)
-                        if soloBtn then
-                            soloBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
-                            soloText:SetTextColor(0.35, 0.35, 0.35, 1)
-                            soloBtn:EnableMouse(false)
-                        end
                         if resetBtn then
                             resetBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
                             resetText:SetTextColor(0.35, 0.35, 0.35, 1)
@@ -1836,20 +1712,15 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                         end
                     else
                         showBtn:EnableMouse(true)
-                        if soloBtn then soloBtn:EnableMouse(true) end
                         if resetBtn then resetBtn:EnableMouse(true) end
                         if shown then
                             showBg:SetColorTexture(0.15, 0.35, 0.55, 0.9)
-                            showText:SetText("HIDE")
+                            showText:SetText("SHOW")
                             showText:SetTextColor(1, 1, 1, 1)
                         else
                             showBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-                            showText:SetText("SHOW")
-                            showText:SetTextColor(0.6, 0.6, 0.6, 1)
-                        end
-                        if soloBtn then
-                            soloBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-                            soloText:SetTextColor(0.6, 0.6, 0.6, 1)
+                            showText:SetText("HIDE")
+                            showText:SetTextColor(0.5, 0.5, 0.5, 1)
                         end
                         if resetBtn then
                             resetBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
@@ -1858,31 +1729,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     end
                 end
 
-                local function UpdateSoloVisual()
-                    if not soloBtn then return end
-                    local en = um:IsElementEnabled(key)
-                    if not en then
-                        soloBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
-                        soloText:SetTextColor(0.35, 0.35, 0.35, 1)
-                        soloBtn:EnableMouse(false)
-                        return
-                    end
-
-                    soloBtn:EnableMouse(true)
-                    if um.IsHandleSolo and um:IsHandleSolo(key) then
-                        soloBg:SetColorTexture(0.45, 0.27, 0.08, 0.95)
-                        soloText:SetTextColor(1, 0.88, 0.55, 1)
-                    else
-                        soloBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-                        soloText:SetTextColor(0.6, 0.6, 0.6, 1)
-                    end
-                end
-
                 showBtn:SetScript("OnClick", function()
                     um:ToggleHandlePreview(key)
-                    if drawer._refreshLayerButtons then
-                        drawer._refreshLayerButtons()
-                    end
+                    UpdateShowVisual()
                 end)
 
                 showBtn:SetScript("OnEnter", function(self)
@@ -1896,57 +1745,16 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 end)
 
                 showBtn:SetScript("OnLeave", function()
-                    if drawer._refreshLayerButtons then
-                        drawer._refreshLayerButtons()
-                    end
+                    UpdateShowVisual()
                 end)
 
                 row._showBtn = showBtn
                 row._updateShowVisual = UpdateShowVisual
 
-                soloBtn = CreateFrame("Button", nil, row)
-                soloBtn:SetSize(40, 18)
-                soloBtn:SetPoint("RIGHT", showBtn, "LEFT", -4, 0)
-
-                soloBg = soloBtn:CreateTexture(nil, "BACKGROUND")
-                soloBg:SetAllPoints()
-                soloBtn._bg = soloBg
-
-                soloText = soloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                soloText:SetPoint("CENTER")
-                soloText:SetText("SOLO")
-                soloBtn._text = soloText
-
-                soloBtn:SetScript("OnClick", function()
-                    um:SoloHandlePreview(key)
-                    if drawer._refreshLayerButtons then
-                        drawer._refreshLayerButtons()
-                    end
-                end)
-
-                soloBtn:SetScript("OnEnter", function(self)
-                    if not um:IsElementEnabled(key) then return end
-                    if um.IsHandleSolo and um:IsHandleSolo(key) then
-                        self._bg:SetColorTexture(0.52, 0.31, 0.1, 1)
-                    else
-                        self._bg:SetColorTexture(0.35, 0.25, 0.15, 1)
-                    end
-                    soloText:SetTextColor(1, 0.88, 0.55, 1)
-                end)
-
-                soloBtn:SetScript("OnLeave", function()
-                    if drawer._refreshLayerButtons then
-                        drawer._refreshLayerButtons()
-                    end
-                end)
-
-                row._soloBtn = soloBtn
-                row._updateSoloVisual = UpdateSoloVisual
-
-                -- Reset button (to left of Solo)
+                -- Reset button (to left of Show/Hide)
                 resetBtn = CreateFrame("Button", nil, row)
                 resetBtn:SetSize(44, 18)
-                resetBtn:SetPoint("RIGHT", soloBtn, "LEFT", -4, 0)
+                resetBtn:SetPoint("RIGHT", showBtn, "LEFT", -4, 0)
 
                 resetBg = resetBtn:CreateTexture(nil, "BACKGROUND")
                 resetBg:SetAllPoints()
@@ -1960,9 +1768,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
                 resetBtn:SetScript("OnClick", function()
                     um:ResetToCenter(key)
-                    if drawer._refreshLayerButtons then
-                        drawer._refreshLayerButtons()
-                    end
+                    UpdateShowVisual()
                 end)
 
                 resetBtn:SetScript("OnEnter", function(self)
@@ -1972,16 +1778,13 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 end)
 
                 resetBtn:SetScript("OnLeave", function()
-                    if drawer._refreshLayerButtons then
-                        drawer._refreshLayerButtons()
-                    end
+                    UpdateShowVisual()
                 end)
 
                 row._resetBtn = resetBtn
 
                 -- Initial visual state (after all buttons created)
                 UpdateShowVisual()
-                UpdateSoloVisual()
             end
 
             -- Click row to select frame
@@ -2000,7 +1803,6 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             end)
 
             allRows[#allRows + 1] = { frame = row, group = group, isHeader = false }
-            layerRows[#layerRows + 1] = row
         end
 
         -- "Add Datapanel" button in Display group
@@ -2178,18 +1980,6 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
     end
 
     drawer._allRows = allRows
-    drawer._layerRows = layerRows
-    drawer._refreshLayerButtons = function()
-        for _, layerRow in ipairs(drawer._layerRows or {}) do
-            if layerRow._updateShowVisual then
-                layerRow._updateShowVisual()
-            end
-            if layerRow._updateSoloVisual then
-                layerRow._updateSoloVisual()
-            end
-        end
-    end
-    drawer._refreshLayerButtons()
     self:_RelayoutDrawer()
 end
 
@@ -2209,10 +1999,8 @@ function QUI_LayoutMode_UI:_RelayoutDrawer()
             y = y - DRAWER_GROUP_HEIGHT
 
             -- Update chevron text
-            local chevron = entry.frame._chevron or select(1, entry.frame:GetRegions())
-            if UIKit and UIKit.SetChevronCaretExpanded and chevron and chevron.GetObjectType and chevron:GetObjectType() == "Frame" then
-                UIKit.SetChevronCaretExpanded(chevron, not groupCollapsed[entry.group])
-            elseif chevron and chevron.SetText then
+            local chevron = select(1, entry.frame:GetRegions())
+            if chevron and chevron.SetText then
                 chevron:SetText(groupCollapsed[entry.group] and ">" or "v")
             end
         else

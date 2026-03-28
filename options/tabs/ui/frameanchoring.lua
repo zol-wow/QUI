@@ -277,8 +277,20 @@ local function CreateFrameAnchoringPage(parent)
     end)
 
     -- Expand 3rd Party section by default
-    if thirdPartySection and thirdPartySection.SetExpanded and not thirdPartySection._hasStoredState then
-        thirdPartySection:SetExpanded(true)
+    if thirdPartySection then
+        thirdPartySection._expanded = true
+        local chevron = thirdPartySection:GetChildren()
+        if chevron then
+            local chevronFS = select(1, chevron:GetRegions())
+            if chevronFS and chevronFS.SetText then
+                chevronFS:SetText("v")
+            end
+        end
+        local body = select(2, thirdPartySection:GetChildren())
+        if body then
+            body:Show()
+        end
+        thirdPartySection:SetHeight(24 + thirdPartySection._contentHeight)
     end
 
     relayout()

@@ -51,7 +51,7 @@ local function CreateActionBarsPage(parent)
         local FORM_ROW = 32
         local P = Helpers.PlaceRow
 
-        GUI:SetSearchContext({tabIndex = 8, tabName = "Action Bars", subTabIndex = 2, subTabName = "Mouseover Hide"})
+        GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 2, subTabName = "Mouseover Hide"})
 
         local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(tabContent, PAD)
 
@@ -104,7 +104,7 @@ local function CreateActionBarsPage(parent)
         local FORM_ROW = 32
         local P = Helpers.PlaceRow
 
-        GUI:SetSearchContext({tabIndex = 8, tabName = "Action Bars", subTabIndex = 1, subTabName = "General"})
+        GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 1, subTabName = "General"})
 
         local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(tabContent, PAD)
 
@@ -194,7 +194,7 @@ local function CreateActionBarsPage(parent)
         local FORM_ROW = 32
 
         -- Set search context
-        GUI:SetSearchContext({tabIndex = 8, tabName = "Action Bars", subTabIndex = 4, subTabName = "Extra Buttons"})
+        GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars", subTabIndex = 4, subTabName = "Extra Buttons"})
 
         -- Refresh callback
         local function RefreshExtraButtons()
@@ -240,7 +240,7 @@ local function CreateActionBarsPage(parent)
 
     local PAD = PADDING
 
-    GUI:SetSearchContext({tabIndex = 8, tabName = "Action Bars"})
+    GUI:SetSearchContext({tabIndex = 6, tabName = "Action Bars"})
 
     -- Host frame for sub-tabs
     local subTabHost = CreateFrame("Frame", nil, content)
@@ -268,7 +268,7 @@ BuildTotemBarTab = function(tabContent)
     local db = core and core.db and core.db.profile and core.db.profile.totemBar
 
     -- Set search context for widget auto-registration
-    GUI:SetSearchContext({tabIndex = 8, tabName = "Action Bars", subTabIndex = 5, subTabName = "Totem Bar"})
+    GUI:SetSearchContext({tabIndex = 7, tabName = "Action Bars", subTabIndex = 5, subTabName = "Totem Bar"})
 
     if not db then
         local notice = GUI:CreateLabel(tabContent, "Totem Bar settings not available. Try /rl.", 12, C.textMuted)

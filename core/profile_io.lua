@@ -1236,16 +1236,12 @@ local function ApplyFullProfilePayload(core, importedProfile)
         profile[key] = CloneValue(value)
     end
 
-    -- Normalize imports through the same shared migration pipeline used during
-    -- startup so old profile strings and old SavedVariables land on the same
-    -- schema before modules rebuild from them.
-    if core and core.NormalizeActiveProfile then
-        core:NormalizeActiveProfile({ source = "fullImport" })
-    else
-        local addon = _G.QUI
-        if addon and addon.BackwardsCompat then
-            addon:BackwardsCompat()
-        end
+    -- Run backward-compatibility migrations on the freshly imported data
+    -- so that legacy keys (castBar, unitFrames, etc.) are moved to their
+    -- current locations before any module tries to read them.
+    local addon = _G.QUI
+    if addon and addon.BackwardsCompat then
+        addon:BackwardsCompat()
     end
 
     -- Refresh all modules via the Registry (includes frame anchoring).
@@ -1486,15 +1482,6 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targ
         RestorePathList(profile, previousProfile, PROFILE_LAYOUT_PATHS)
         RestoreCustomTrackerLayout(profile, previousProfile)
         RestoreDatatextPanelLayout(profile, previousProfile)
-    end
-
-    if self.NormalizeActiveProfile then
-        self:NormalizeActiveProfile({ source = "selectiveImport", selectedCategoryIDs = selectedCategoryIDs })
-    else
-        local addon = _G.QUI
-        if addon and addon.BackwardsCompat then
-            addon:BackwardsCompat()
-        end
     end
 
     if ns.Registry then

@@ -15,14 +15,11 @@ local function CreateGeneralQoLPage(parent)
         {name = "General", builder = ns.QUI_QoLOptions.BuildGeneralTab},
         {name = "HUD Visibility", builder = ns.QUI_HUDVisibilityOptions.BuildHUDVisibilityTab},
         {name = "Cursor & Crosshair", builder = ns.QUI_CrosshairOptions.BuildCrosshairTab},
-        {name = "Buff & Debuff", builder = ns.QUI_BuffDebuffOptions.BuildBuffDebuffTab},
-        {name = "Chat", builder = ns.QUI_ChatOptions.BuildChatTab},
-        {name = "Tooltip", builder = ns.QUI_TooltipsOptions.BuildTooltipTab},
+        -- Buff & Debuff settings moved to Layout Mode settings panels
+        -- Chat settings moved to Layout Mode settings panels
         {name = "Character Pane", builder = ns.QUI_CharacterOptions.BuildCharacterPaneTab},
-        {name = "Skyriding", builder = ns.QUI_SkyridingOptions.BuildDragonridingTab},
-        {name = "Missing Raid Buffs", builder = ns.QUI_RaidBuffsOptions.BuildRaidBuffsTab},
-        {name = "Party Keystones", builder = ns.QUI_PartyKeystonesOptions.BuildPartyKeystonesTab},
-        {name = "XP Tracker", builder = ns.QUI_XPTrackerOptions.BuildXPTrackerTab},
+        -- Tooltip, Skyriding, Missing Raid Buffs, Party Keystones moved to Layout Mode settings panels
+        -- XP Tracker settings moved to Layout Mode settings panels
         {name = "Blizzard Mover", builder = ns.QUI_BlizzardMoverOptions.BuildBlizzardMoverTab},
     })
 

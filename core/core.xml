@@ -6,7 +6,6 @@
     <Script file="registry.lua"/>
     <Script file="media.lua"/>
     <Script file="compatibility.lua"/>
-    <Script file="migrations.lua"/>
     <Script file="defaults.lua"/>
     <Script file="main.lua"/>
     <Script file="backdrop_deferred.lua"/>

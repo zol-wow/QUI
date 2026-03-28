@@ -74,58 +74,6 @@ local function SetOutsidePx(frame, anchor, sizePixels)
     end
 end
 
-local function CreateQUIStyleCloseButton(parent, relativeTo, relativePoint, xOffset, yOffset, onClick)
-    local GUI = _G.QUI and _G.QUI.GUI
-    local C = GUI and GUI.Colors or {}
-    local border = C.border or {0.24, 0.28, 0.34, 1}
-    local text = C.text or {0.85, 0.88, 0.92, 1}
-
-    local close = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    close:SetSize(22, 22)
-    close:SetPoint("RIGHT", relativeTo, "RIGHT", xOffset or 0, yOffset or 0)
-    close:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    close:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
-    close:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
-
-    local lineLen, lineWidth = 10, 1.5
-    local xLine1 = close:CreateTexture(nil, "OVERLAY")
-    xLine1:SetSize(lineLen, lineWidth)
-    xLine1:SetPoint("CENTER")
-    xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
-    xLine1:SetRotation(math.rad(45))
-
-    local xLine2 = close:CreateTexture(nil, "OVERLAY")
-    xLine2:SetSize(lineLen, lineWidth)
-    xLine2:SetPoint("CENTER")
-    xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
-    xLine2:SetRotation(math.rad(-45))
-
-    close:SetScript("OnClick", onClick)
-    close:SetScript("OnEnter", function(self)
-        local gui = _G.QUI and _G.QUI.GUI
-        local accent = gui and gui.Colors and gui.Colors.accent
-        local ar = accent and accent[1] or 0.376
-        local ag = accent and accent[2] or 0.647
-        local ab = accent and accent[3] or 0.980
-        pcall(self.SetBackdropBorderColor, self, ar, ag, ab, 1)
-        self:SetBackdropColor(ar, ag, ab, 0.15)
-        xLine1:SetColorTexture(ar, ag, ab, 1)
-        xLine2:SetColorTexture(ar, ag, ab, 1)
-    end)
-    close:SetScript("OnLeave", function(self)
-        pcall(self.SetBackdropBorderColor, self, border[1], border[2], border[3], border[4] or 1)
-        self:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
-        xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
-        xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
-    end)
-
-    return close
-end
-
 local function EnsurePixelBackdropCompat(frame)
     if not frame then return nil end
     local uikit = ns.UIKit or UIKit
@@ -472,26 +420,9 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
     btn:SetPoint("TOPRIGHT", 0, 0)
     btn:SetHeight(COLLAPSIBLE_HEADER_H)
 
-    local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
-        point = "LEFT",
-        relativeTo = btn,
-        relativePoint = "LEFT",
-        xPixels = 2,
-        yPixels = 0,
-        sizePixels = 10,
-        lineWidthPixels = 6,
-        lineHeightPixels = 1,
-        expanded = false,
-        collapsedDirection = "right",
-        r = 0.376,
-        g = 0.647,
-        b = 0.980,
-        a = 1,
-    }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    if not (UIKit and UIKit.CreateChevronCaret) then
-        chevron:SetPoint("LEFT", 2, 0)
-        chevron:SetText(">")
-    end
+    local chevron = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    chevron:SetPoint("LEFT", 2, 0)
+    chevron:SetText(">")
 
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
@@ -502,31 +433,21 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
     underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
     underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
 
-    local bodyClip = CreateFrame("ScrollFrame", nil, section)
-    bodyClip:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_H)
-    bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
-    bodyClip:SetHeight(0)
-    bodyClip:Hide()
-
-    local body = CreateFrame("Frame", nil, bodyClip)
+    local body = CreateFrame("Frame", nil, section)
+    body:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_H)
+    body:SetPoint("RIGHT", 0, 0)
     body:SetHeight(1)
-    body:SetWidth(1)
-    bodyClip:SetScrollChild(body)
-    bodyClip:SetScript("OnSizeChanged", function(self, width)
-        body:SetWidth(math.max(width or 1, 1))
-    end)
-    body:SetAlpha(0)
+    body:Hide()
 
     section._expanded = false
     section._body = body
-    section._bodyClip = bodyClip
 
     local function UpdateSectionHeight()
-        local targetHeight = section._expanded and body:GetHeight() or 0
-        bodyClip:SetHeight(targetHeight)
-        section:SetHeight(COLLAPSIBLE_HEADER_H + targetHeight)
-        body:SetAlpha(section._expanded and 1 or 0)
-        bodyClip:SetShown(section._expanded)
+        if section._expanded then
+            section:SetHeight(COLLAPSIBLE_HEADER_H + body:GetHeight())
+        else
+            section:SetHeight(COLLAPSIBLE_HEADER_H)
+        end
         if masterRelayout then masterRelayout() end
     end
 
@@ -538,77 +459,30 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
         local colors = GUI and GUI.Colors
         local r, g, b = 0.376, 0.647, 0.980
         if colors and colors.accent then r, g, b = colors.accent[1], colors.accent[2], colors.accent[3] end
-        if UIKit and UIKit.SetChevronCaretColor then
-            UIKit.SetChevronCaretColor(chevron, r, g, b, 1)
-        else
-            chevron:SetTextColor(r, g, b, 1)
-        end
+        chevron:SetTextColor(r, g, b, 1)
         label:SetTextColor(r, g, b, 1)
         underline:SetColorTexture(r, g, b, 0.3)
         btn:SetScript("OnEnter", function()
             label:SetTextColor(1, 1, 1, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
-            else
-                chevron:SetTextColor(1, 1, 1, 1)
-            end
+            chevron:SetTextColor(1, 1, 1, 1)
         end)
         btn:SetScript("OnLeave", function()
             label:SetTextColor(r, g, b, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, r, g, b, 1)
-            else
-                chevron:SetTextColor(r, g, b, 1)
-            end
+            chevron:SetTextColor(r, g, b, 1)
         end)
     end
     ApplyColors()
 
     btn:SetScript("OnClick", function()
         section._expanded = not section._expanded
-        local targetHeight = section._expanded and body:GetHeight() or 0
-        local currentHeight = bodyClip:GetHeight() or 0
         if section._expanded then
-            if UIKit and UIKit.SetChevronCaretExpanded then
-                UIKit.SetChevronCaretExpanded(chevron, true)
-            else
-                chevron:SetText("v")
-            end
-            bodyClip:Show()
+            chevron:SetText("v")
+            body:Show()
         else
-            if UIKit and UIKit.SetChevronCaretExpanded then
-                UIKit.SetChevronCaretExpanded(chevron, false)
-            else
-                chevron:SetText(">")
-            end
+            chevron:SetText(">")
+            body:Hide()
         end
-        if UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation then
-            UIKit.CancelValueAnimation(section, "composerCollapsible")
-            UIKit.AnimateValue(section, "composerCollapsible", {
-                fromValue = currentHeight,
-                toValue = targetHeight,
-                duration = ((_G.QUI and _G.QUI.GUI and _G.QUI.GUI._sidebarAnimDuration) or 0.16),
-                onUpdate = function(_, progressHeight)
-                    local totalRange = math.max(body:GetHeight(), 1)
-                    local ratio = math.max(0, math.min(1, progressHeight / totalRange))
-                    bodyClip:SetHeight(progressHeight)
-                    section:SetHeight(COLLAPSIBLE_HEADER_H + progressHeight)
-                    body:SetAlpha(ratio)
-                    if masterRelayout then masterRelayout() end
-                end,
-                onFinish = function(_, finalHeight)
-                    bodyClip:SetHeight(finalHeight)
-                    section:SetHeight(COLLAPSIBLE_HEADER_H + finalHeight)
-                    body:SetAlpha(section._expanded and 1 or 0)
-                    if not section._expanded then
-                        bodyClip:Hide()
-                    end
-                    if masterRelayout then masterRelayout() end
-                end,
-            })
-        else
-            UpdateSectionHeight()
-        end
+        UpdateSectionHeight()
     end)
 
     if sections then sections[#sections + 1] = section end
@@ -1960,9 +1834,17 @@ local function GetOrCreateFrame()
     composerFrame._titleText = titleText
 
     -- Close button
-    CreateQUIStyleCloseButton(titleBar, titleBar, "RIGHT", -6, 0, function()
-        QUI_LayoutMode_Composer:Close()
-    end)
+    local closeBtn = CreateFrame("Button", nil, titleBar)
+    closeBtn:SetSize(28, 28)
+    closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -4, 0)
+    local closeBtnText = closeBtn:CreateFontString(nil, "OVERLAY")
+    closeBtnText:SetFont(GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF", 18, "")
+    closeBtnText:SetPoint("CENTER", 0, 0)
+    closeBtnText:SetText("\195\151")
+    closeBtnText:SetTextColor(0.8, 0.3, 0.3, 1)
+    closeBtn:SetScript("OnEnter", function() closeBtnText:SetTextColor(1, 0.4, 0.4, 1) end)
+    closeBtn:SetScript("OnLeave", function() closeBtnText:SetTextColor(0.8, 0.3, 0.3, 1) end)
+    closeBtn:SetScript("OnClick", function() QUI_LayoutMode_Composer:Close() end)
 
     -- Content area
     local contentArea = CreateFrame("Frame", nil, composerFrame)
@@ -2881,10 +2763,6 @@ function QUI_LayoutMode_Composer:Open(contextMode)
     C = GUI and GUI.Colors or {}
 
     local frame = GetOrCreateFrame()
-    local layoutUI = ns.QUI_LayoutMode_UI
-    if layoutUI and layoutUI.ApplyConfigPanelScale then
-        layoutUI:ApplyConfigPanelScale(frame)
-    end
 
     -- Refresh border accent color
     if C.accent then
