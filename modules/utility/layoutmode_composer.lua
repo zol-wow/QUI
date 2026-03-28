@@ -74,6 +74,52 @@ local function SetOutsidePx(frame, anchor, sizePixels)
     end
 end
 
+local function SafeGetVerticalScrollRange(scrollFrame)
+    local ok, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
+    if not ok then return 0 end
+    local ok2, safeMax = pcall(function() return math.max(0, maxScroll or 0) end)
+    return ok2 and safeMax or 0
+end
+
+local function SafeGetVerticalScroll(scrollFrame)
+    local ok, currentScroll = pcall(scrollFrame.GetVerticalScroll, scrollFrame)
+    if not ok then return 0 end
+    local ok2, safeCurrent = pcall(function() return currentScroll + 0 end)
+    return ok2 and safeCurrent or 0
+end
+
+local function ComposerDebugPrint(...)
+    local addon = _G.QUI
+    if addon and addon.DebugPrint then
+        addon:DebugPrint("|cff8BFF8B[ComposerDbg]|r", ...)
+    end
+end
+
+local function ComposerFrameHeight(frame)
+    local h = frame and frame.GetHeight and frame:GetHeight()
+    if type(h) ~= "number" then return "nil" end
+    return string.format("%.1f", h)
+end
+
+local function ComposerSectionSummary(sections)
+    if not sections or #sections == 0 then
+        return "(no sections)"
+    end
+
+    local parts = {}
+    for i, section in ipairs(sections) do
+        parts[#parts + 1] = string.format(
+            "%d:%s[e=%s sh=%s ch=%s]",
+            i,
+            section._title or "?",
+            section._expanded and "1" or "0",
+            ComposerFrameHeight(section),
+            type(section._contentHeight) == "number" and string.format("%.1f", section._contentHeight) or "nil"
+        )
+    end
+    return table.concat(parts, " | ")
+end
+
 local function CreateQUIStyleCloseButton(parent, relativeTo, relativePoint, xOffset, yOffset, onClick)
     local GUI = _G.QUI and _G.QUI.GUI
     local C = GUI and GUI.Colors or {}
@@ -466,6 +512,7 @@ local COLLAPSIBLE_HEADER_H = 24
 local function CreateComposerCollapsible(parent, title, buildFn, sections, masterRelayout)
     local section = CreateFrame("Frame", nil, parent)
     section:SetHeight(COLLAPSIBLE_HEADER_H)
+    section._title = title
 
     local btn = CreateFrame("Button", nil, section)
     btn:SetPoint("TOPLEFT", 0, 0)
@@ -502,31 +549,115 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
     underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
     underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
 
-    local bodyClip = CreateFrame("ScrollFrame", nil, section)
-    bodyClip:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_H)
-    bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
+    local bodyClip = CreateFrame("Frame", nil, section)
+    bodyClip:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -COLLAPSIBLE_HEADER_H)
+    bodyClip:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -COLLAPSIBLE_HEADER_H)
     bodyClip:SetHeight(0)
     bodyClip:Hide()
 
     local body = CreateFrame("Frame", nil, bodyClip)
+    body:SetPoint("TOPLEFT", bodyClip, "TOPLEFT", 0, 0)
+    body:SetPoint("TOPRIGHT", bodyClip, "TOPRIGHT", 0, 0)
     body:SetHeight(1)
-    body:SetWidth(1)
-    bodyClip:SetScrollChild(body)
-    bodyClip:SetScript("OnSizeChanged", function(self, width)
-        body:SetWidth(math.max(width or 1, 1))
-    end)
     body:SetAlpha(0)
+    body._logicalSection = section
+    bodyClip._logicalSection = section
 
     section._expanded = false
+    section._contentHeight = 1
     section._body = body
     section._bodyClip = bodyClip
 
+    local function LogSectionState(reason, extra)
+        ComposerDebugPrint(
+            string.format(
+                "%s section=%s expanded=%s sectionH=%s bodyH=%s clipH=%s contentH=%s parentH=%s%s",
+                reason,
+                title,
+                section._expanded and "1" or "0",
+                ComposerFrameHeight(section),
+                ComposerFrameHeight(body),
+                ComposerFrameHeight(bodyClip),
+                type(section._contentHeight) == "number" and string.format("%.1f", section._contentHeight) or "nil",
+                ComposerFrameHeight(parent),
+                extra and (" " .. extra) or ""
+            )
+        )
+    end
+
+    local function MeasureBodyContentHeight()
+        local bodyTop = body.GetTop and body:GetTop()
+        if not bodyTop then return nil end
+
+        local maxOffset = 0
+        local function Accumulate(region)
+            if not region or not region.GetBottom then return end
+            if region.IsShown and not region:IsShown() then return end
+            local bottom = region:GetBottom()
+            if bottom then
+                maxOffset = math.max(maxOffset, bodyTop - bottom)
+            end
+        end
+
+        local childCount = body.GetNumChildren and body:GetNumChildren() or 0
+        for i = 1, childCount do
+            Accumulate(select(i, body:GetChildren()))
+        end
+
+        local regionCount = body.GetNumRegions and body:GetNumRegions() or 0
+        for i = 1, regionCount do
+            Accumulate(select(i, body:GetRegions()))
+        end
+
+        if maxOffset <= 0 then
+            return nil
+        end
+        return math.ceil(maxOffset + 8)
+    end
+
+    local function RefreshContentHeight()
+        local contentHeight = 0
+        if type(body._contentHeight) == "number" and body._contentHeight > 0 then
+            contentHeight = math.max(contentHeight, body._contentHeight)
+            body._contentHeight = nil
+        end
+        if type(bodyClip._contentHeight) == "number" and bodyClip._contentHeight > 0 then
+            contentHeight = math.max(contentHeight, bodyClip._contentHeight)
+            bodyClip._contentHeight = nil
+        end
+
+        local bodyHeight = body.GetHeight and body:GetHeight() or 0
+        if bodyHeight and bodyHeight > 0 then
+            contentHeight = math.max(contentHeight, bodyHeight)
+        end
+
+        local measuredHeight = MeasureBodyContentHeight()
+        if measuredHeight and measuredHeight > 0 then
+            contentHeight = math.max(contentHeight, measuredHeight)
+        end
+
+        if contentHeight <= 0 then
+            contentHeight = section._contentHeight or 1
+        end
+
+        section._contentHeight = contentHeight
+        body:SetHeight(contentHeight)
+        return contentHeight
+    end
+
+    local function ApplyExpandedState(currentHeight)
+        local maxHeight = section._contentHeight or 0
+        local height = math.max(0, math.min(maxHeight, currentHeight or 0))
+        bodyClip:SetHeight(height)
+        section:SetHeight(COLLAPSIBLE_HEADER_H + height)
+    end
+
     local function UpdateSectionHeight()
-        local targetHeight = section._expanded and body:GetHeight() or 0
-        bodyClip:SetHeight(targetHeight)
-        section:SetHeight(COLLAPSIBLE_HEADER_H + targetHeight)
+        local targetHeight = section._expanded and RefreshContentHeight() or 0
+        ApplyExpandedState(targetHeight)
         body:SetAlpha(section._expanded and 1 or 0)
         bodyClip:SetShown(section._expanded)
+        LogSectionState("update", string.format("target=%s", type(targetHeight) == "number" and string.format("%.1f", targetHeight) or "nil"))
         if masterRelayout then masterRelayout() end
     end
 
@@ -565,8 +696,9 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
     ApplyColors()
 
     btn:SetScript("OnClick", function()
+        LogSectionState("click-before")
         section._expanded = not section._expanded
-        local targetHeight = section._expanded and body:GetHeight() or 0
+        local targetHeight = section._expanded and RefreshContentHeight() or 0
         local currentHeight = bodyClip:GetHeight() or 0
         if section._expanded then
             if UIKit and UIKit.SetChevronCaretExpanded then
@@ -574,7 +706,6 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
             else
                 chevron:SetText("v")
             end
-            bodyClip:Show()
         else
             if UIKit and UIKit.SetChevronCaretExpanded then
                 UIKit.SetChevronCaretExpanded(chevron, false)
@@ -584,31 +715,41 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
         end
         if UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation then
             UIKit.CancelValueAnimation(section, "composerCollapsible")
+            bodyClip:Show()
+            body:SetAlpha(1)
             UIKit.AnimateValue(section, "composerCollapsible", {
                 fromValue = currentHeight,
                 toValue = targetHeight,
                 duration = ((_G.QUI and _G.QUI.GUI and _G.QUI.GUI._sidebarAnimDuration) or 0.16),
                 onUpdate = function(_, progressHeight)
-                    local totalRange = math.max(body:GetHeight(), 1)
-                    local ratio = math.max(0, math.min(1, progressHeight / totalRange))
-                    bodyClip:SetHeight(progressHeight)
-                    section:SetHeight(COLLAPSIBLE_HEADER_H + progressHeight)
-                    body:SetAlpha(ratio)
+                    ApplyExpandedState(progressHeight)
                     if masterRelayout then masterRelayout() end
                 end,
-                onFinish = function(_, finalHeight)
-                    bodyClip:SetHeight(finalHeight)
-                    section:SetHeight(COLLAPSIBLE_HEADER_H + finalHeight)
+                onFinish = function()
+                    local resolvedHeight = section._expanded and RefreshContentHeight() or 0
+                    ApplyExpandedState(resolvedHeight)
                     body:SetAlpha(section._expanded and 1 or 0)
-                    if not section._expanded then
-                        bodyClip:Hide()
-                    end
+                    bodyClip:SetShown(section._expanded)
+                    LogSectionState("anim-finish", string.format("target=%s", type(resolvedHeight) == "number" and string.format("%.1f", resolvedHeight) or "nil"))
                     if masterRelayout then masterRelayout() end
                 end,
             })
         else
+            if UIKit and UIKit.CancelValueAnimation then
+                UIKit.CancelValueAnimation(section, "composerCollapsible")
+            end
             UpdateSectionHeight()
         end
+        LogSectionState("click-after")
+    end)
+
+    RefreshContentHeight()
+    C_Timer.After(0, function()
+        if not section or not body then return end
+        RefreshContentHeight()
+        ApplyExpandedState(section._expanded and section._contentHeight or 0)
+        LogSectionState("deferred")
+        if masterRelayout then masterRelayout() end
     end)
 
     if sections then sections[#sections + 1] = section end
@@ -617,13 +758,32 @@ end
 
 local function RelayoutComposerSections(content, sections)
     local cy = -4
+    local prevSection
     for _, s in ipairs(sections) do
-        s:ClearAllPoints()
-        s:SetPoint("TOPLEFT", content, "TOPLEFT", 0, cy)
-        s:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+        if (not s._composerLayoutAnchored) or s._composerLayoutPrev ~= prevSection then
+            s:ClearAllPoints()
+            if prevSection then
+                s:SetPoint("TOPLEFT", prevSection, "BOTTOMLEFT", 0, -2)
+                s:SetPoint("TOPRIGHT", prevSection, "BOTTOMRIGHT", 0, -2)
+            else
+                s:SetPoint("TOPLEFT", content, "TOPLEFT", 0, cy)
+                s:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, cy)
+            end
+            s._composerLayoutPrev = prevSection
+            s._composerLayoutAnchored = true
+        end
         cy = cy - s:GetHeight() - 2
+        prevSection = s
     end
     content:SetHeight(math.abs(cy) + 8)
+    ComposerDebugPrint(
+        string.format(
+            "relayout panel=%s contentH=%s sections=%s",
+            content._composerElementKey or "?",
+            ComposerFrameHeight(content),
+            ComposerSectionSummary(sections)
+        )
+    )
 end
 
 ---------------------------------------------------------------------------
@@ -2537,6 +2697,41 @@ local function BuildComposerContent(contentArea, contextMode)
         childRefs = {}, hitOverlays = {}, widgetBarButtons = {},
     }
 
+    local function RefreshSettingsScroll(resetToTop)
+        local scrollFrame = state.scrollFrame
+        if not scrollFrame then return end
+
+        local function ApplyScrollState(forceTop)
+            local currentScroll = forceTop and 0 or SafeGetVerticalScroll(scrollFrame)
+            local maxScroll = SafeGetVerticalScrollRange(scrollFrame)
+            if currentScroll <= 2 then
+                currentScroll = 0
+            end
+            local clampedScroll = math.max(0, math.min(currentScroll, maxScroll))
+            pcall(scrollFrame.SetVerticalScroll, scrollFrame, clampedScroll)
+            if state.refreshScrollBar then state.refreshScrollBar() end
+            ComposerDebugPrint(
+                string.format(
+                    "scroll-sync panel=%s forceTop=%s current=%.1f max=%.1f clamped=%.1f settingsAreaH=%s",
+                    state.selectedElement or "?",
+                    forceTop and "1" or "0",
+                    currentScroll,
+                    maxScroll,
+                    clampedScroll,
+                    ComposerFrameHeight(state.settingsArea)
+                )
+            )
+        end
+
+        state._scrollSyncSerial = (state._scrollSyncSerial or 0) + 1
+        local serial = state._scrollSyncSerial
+        ApplyScrollState(resetToTop)
+        C_Timer.After(0, function()
+            if state._scrollSyncSerial ~= serial then return end
+            ApplyScrollState(resetToTop)
+        end)
+    end
+
     -- Preview frame (rebuilt on settings change)
     local previewContainer = CreateFrame("Frame", nil, contentArea)
     previewContainer:SetPoint("TOPLEFT", 0, 0)
@@ -2751,6 +2946,14 @@ local function BuildComposerContent(contentArea, contextMode)
                     for _, fn in ipairs(body._relayouts) do fn() end
                 end
             end
+            ComposerDebugPrint(
+                string.format(
+                    "change-handler panel=%s panelH=%s settingsAreaH=%s",
+                    activeKey or "?",
+                    ComposerFrameHeight(activePanel),
+                    ComposerFrameHeight(state.settingsArea)
+                )
+            )
         end
     end
 
@@ -2785,21 +2988,33 @@ local function BuildComposerContent(contentArea, contextMode)
             panel = CreateFrame("Frame", nil, state.settingsArea)
             panel:SetPoint("TOPLEFT", 0, 0)
             panel:SetPoint("RIGHT", state.settingsArea, "RIGHT", 0, 0)
+            panel._composerElementKey = key
             builder(panel, proxyGFDB, onChangeHandler)
             state.settingsPanels[key] = panel
         end
         panel:Show()
         -- Resize scroll area to match panel, and keep in sync when collapsibles toggle
-        local function SyncScrollHeight()
+        local function SyncScrollHeight(resetToTop)
             local h = panel:GetHeight()
             if h and h > 0 then state.settingsArea:SetHeight(h) end
-            if state.refreshScrollBar then state.refreshScrollBar() end
+            ComposerDebugPrint(
+                string.format(
+                    "panel-sync panel=%s reset=%s panelH=%s settingsAreaH=%s",
+                    key,
+                    resetToTop and "1" or "0",
+                    ComposerFrameHeight(panel),
+                    ComposerFrameHeight(state.settingsArea)
+                )
+            )
+            RefreshSettingsScroll(resetToTop)
         end
         if not panel._scrollSyncHooked then
             panel._scrollSyncHooked = true
-            panel:HookScript("OnSizeChanged", SyncScrollHeight)
+            panel:HookScript("OnSizeChanged", function()
+                SyncScrollHeight(false)
+            end)
         end
-        SyncScrollHeight()
+        SyncScrollHeight(true)
     end
 
     state.selectElement = SelectElement
@@ -2818,6 +3033,7 @@ local function BuildComposerContent(contentArea, contextMode)
     scrollChild:SetHeight(1)
     scrollFrame:SetScrollChild(scrollChild)
     state.settingsArea = scrollChild
+    state.scrollFrame = scrollFrame
 
     -- Auto-resize scroll child width
     contentArea:HookScript("OnSizeChanged", function(self, w)
@@ -2840,17 +3056,16 @@ local function BuildComposerContent(contentArea, contextMode)
     -- Mouse wheel scrolling
     scrollFrame:EnableMouseWheel(true)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local ok1, currentScroll = pcall(self.GetVerticalScroll, self)
-        local ok2, maxScroll = pcall(self.GetVerticalScrollRange, self)
-        if not ok1 or not ok2 then return end
-        local newScroll = math.max(0, math.min((currentScroll or 0) - (delta * SCROLL_STEP), maxScroll or 0))
+        local currentScroll = SafeGetVerticalScroll(self)
+        local maxScroll = SafeGetVerticalScrollRange(self)
+        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
         pcall(self.SetVerticalScroll, self, newScroll)
     end)
 
     state.refreshScrollBar = function()
         if scrollBar and scrollBar.SetShown then
-            local ok, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
-            scrollBar:SetShown(ok and maxScroll and maxScroll > 1)
+            local maxScroll = SafeGetVerticalScrollRange(scrollFrame)
+            scrollBar:SetShown(maxScroll > 1)
         end
     end
 
@@ -2862,6 +3077,7 @@ local function BuildComposerContent(contentArea, contextMode)
                 local panel = CreateFrame("Frame", nil, scrollChild)
                 panel:SetPoint("TOPLEFT", 0, 0)
                 panel:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
+                panel._composerElementKey = key
                 builder(panel, proxyGFDB, onChangeHandler)
                 panel:Hide()
                 state.settingsPanels[key] = panel
