@@ -31,22 +31,13 @@ local BASE_CROP = 0.08
 local pendingReconcile = false
 
 local function SafeShowButton(btn)
-    if InCombatLockdown() then
-        btn:SetAlpha(1)
-        pendingReconcile = true
-    else
-        btn:Show()
-        btn:SetAlpha(1)
-    end
+    btn:SetAlpha(1)
+    btn.active = true
 end
 
 local function SafeHideButton(btn)
-    if InCombatLockdown() then
-        btn:SetAlpha(0)
-        pendingReconcile = true
-    else
-        btn:Hide()
-    end
+    btn:SetAlpha(0)
+    btn.active = false
 end
 
 ---------------------------------------------------------------------------
@@ -142,7 +133,8 @@ container:SetMovable(true)
 container:EnableMouse(true)
 container:RegisterForDrag("LeftButton")
 container:SetClampedToScreen(true)
-container:Hide()
+container:SetAlpha(0)
+container.visible = false
 
 TotemBar.container = container
 TotemBar.buttons = {}
@@ -154,7 +146,8 @@ for i = 1, MAX_SLOTS do
     local btn = CreateFrame("Button", "QUI_TotemBarButton" .. i, container, "SecureActionButtonTemplate")
     btn:SetSize(36, 36)
     btn:RegisterForClicks("RightButtonUp")
-    btn:Hide()
+    btn:SetAlpha(0)
+    btn.active = false
 
     -- Icon texture
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -266,6 +259,10 @@ end
 -- LAYOUT VISIBLE BUTTONS
 ---------------------------------------------------------------------------
 local function LayoutButtons()
+    if InCombatLockdown() then
+        pendingReconcile = true
+        return
+    end
     local db = GetDB()
     if not db then return end
 
@@ -276,7 +273,7 @@ local function LayoutButtons()
     local visibleCount = 0
     for i = 1, MAX_SLOTS do
         local btn = TotemBar.buttons[i]
-        if btn:IsShown() then
+        if btn.active then
             visibleCount = visibleCount + 1
             btn:ClearAllPoints()
             local offset = (visibleCount - 1) * (iconSize + spacing)
@@ -357,6 +354,19 @@ local function UpdateTotems()
                 end
             end
         end
+
+        -- Debug: log totem slot data
+        if QUI.DEBUG_MODE then
+            local secretH = Helpers.IsSecretValue(haveTotem) and "[secret]" or tostring(haveTotem)
+            local secretD = Helpers.IsSecretValue(duration) and "[secret]" or tostring(duration)
+            local secretI = Helpers.IsSecretValue(icon) and "[secret]" or tostring(icon)
+            QUI:DebugPrint(string_format(
+                "|cff34D399[TotemBar]|r slot=%d have=%s icon=%s dur=%s active=%s combat=%s",
+                slot, secretH, secretI, secretD, tostring(isActive),
+                tostring(InCombatLockdown())
+            ))
+        end
+
         if isActive then
             pcall(btn.icon.SetTexture, btn.icon, icon)
             -- Prefer DurationObject API for swipe (secret-safe)
@@ -381,14 +391,16 @@ local function UpdateTotems()
 
     LayoutButtons()
 
-    -- Show container when active, hide when all totems expired
+    -- Show/hide container via alpha (Show/Hide is protected — secure children)
     if hasActive then
-        if not TotemBar.container:IsShown() then
-            TotemBar.container:Show()
+        if not container.visible then
+            container:SetAlpha(1)
+            container.visible = true
         end
     else
-        if TotemBar.container:IsShown() then
-            TotemBar.container:Hide()
+        if container.visible then
+            container:SetAlpha(0)
+            container.visible = false
         end
     end
 
@@ -519,7 +531,8 @@ local function Enable()
 
     StealEvents()
     PositionContainer()
-    container:Show()
+    -- Alpha managed by UpdateTotems; just ensure container is in the frame tree
+    if not container:IsShown() then container:Show() end
 
     container:RegisterEvent("PLAYER_TOTEM_UPDATE")
     UpdateTotems()
@@ -530,7 +543,8 @@ local function Disable()
     TotemBar.enabled = false
 
     container:UnregisterEvent("PLAYER_TOTEM_UPDATE")
-    container:Hide()
+    container:SetAlpha(0)
+    container.visible = false
 
     if TotemBar.ticker then
         TotemBar.ticker:Cancel()
@@ -621,9 +635,9 @@ local function ShowMockTotems()
                 btn.duration:SetText(MOCK_DURATIONS[i] or "")
                 btn.duration:Show()
             end
-            btn:Show()
+            SafeShowButton(btn)
         else
-            btn:Hide()
+            SafeHideButton(btn)
         end
     end
 
@@ -632,7 +646,7 @@ end
 
 local function ClearMockTotems()
     for i = 1, MAX_SLOTS do
-        TotemBar.buttons[i]:Hide()
+        SafeHideButton(TotemBar.buttons[i])
     end
 end
 
@@ -640,7 +654,9 @@ function TotemBar:ShowPreview()
     self.previewing = true
     -- Ensure container is visible and positioned even if disabled
     PositionContainer()
-    container:Show()
+    if not container:IsShown() then container:Show() end
+    container:SetAlpha(1)
+    container.visible = true
     ShowMockTotems()
 end
 
@@ -652,7 +668,8 @@ function TotemBar:HidePreview()
     if self.enabled then
         UpdateTotems()
     else
-        container:Hide()
+        container:SetAlpha(0)
+        container.visible = false
     end
 end
 

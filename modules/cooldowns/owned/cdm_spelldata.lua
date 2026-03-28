@@ -1039,6 +1039,18 @@ local function HookViewerAlpha(viewer, viewerName)
     end)
 end
 
+-- Disable mouse on all children of a viewer so they can't show tooltips.
+-- Blizzard creates children dynamically, so the alpha enforcer re-runs this.
+local function DisableViewerChildrenMouse(viewer)
+    local ok, children = pcall(function() return { viewer:GetChildren() } end)
+    if not ok or not children then return end
+    for _, child in ipairs(children) do
+        if child.EnableMouse then child:EnableMouse(false) end
+        if child.SetMouseClickEnabled then child:SetMouseClickEnabled(false) end
+        if child.SetMouseMotionEnabled then child:SetMouseMotionEnabled(false) end
+    end
+end
+
 -- Periodic alpha enforcer: catches cases where Blizzard restores alpha
 -- via internal paths that don't trigger the SetAlpha hook.
 -- Only active while viewers are hidden (toggled by Hide/ShowBlizzardViewers).
@@ -1050,8 +1062,13 @@ local function AlphaEnforcerOnUpdate(self, dt)
     alphaEnforcerElapsed = 0
     for _, viewerName in pairs(VIEWER_NAMES) do
         local viewer = _G[viewerName]
-        if viewer and viewer:GetAlpha() > 0 then
-            viewer:SetAlpha(0)
+        if viewer then
+            if viewer:GetAlpha() > 0 then
+                viewer:SetAlpha(0)
+            end
+            -- Blizzard creates children dynamically when cooldowns activate;
+            -- disable mouse on any new children so they can't show tooltips.
+            DisableViewerChildrenMouse(viewer)
         end
     end
 end
@@ -1060,8 +1077,9 @@ alphaEnforcerFrame:SetScript("OnUpdate", nil)
 
 local function HideBlizzardViewers()
     if viewersHidden then return end
-    -- Hide all three viewers (alpha 0, no mouse).
-    -- QUI creates addon-owned containers and reparents children into them.
+    -- Hide all viewers (alpha 0, no mouse on parent AND children).
+    -- QUI creates addon-owned containers; Blizzard children stay here as
+    -- data sources only — they must not be hit-testable.
     for vtype, viewerName in pairs(VIEWER_NAMES) do
         local viewer = _G[viewerName]
         if viewer then
@@ -1070,6 +1088,10 @@ local function HideBlizzardViewers()
             if viewer.SetMouseClickEnabled then
                 viewer:SetMouseClickEnabled(false)
             end
+            if viewer.SetMouseMotionEnabled then
+                viewer:SetMouseMotionEnabled(false)
+            end
+            DisableViewerChildrenMouse(viewer)
             -- Hook SetAlpha to prevent Blizzard from restoring visibility
             -- during combat (CDM system calls SetAlpha(1) when cooldowns activate)
             HookViewerAlpha(viewer, viewerName)
@@ -1092,6 +1114,18 @@ local function ShowBlizzardViewers()
             viewer:EnableMouse(true)
             if viewer.SetMouseClickEnabled then
                 viewer:SetMouseClickEnabled(true)
+            end
+            if viewer.SetMouseMotionEnabled then
+                viewer:SetMouseMotionEnabled(true)
+            end
+            -- Re-enable mouse on children so tooltips work again
+            local ok, children = pcall(function() return { viewer:GetChildren() } end)
+            if ok and children then
+                for _, child in ipairs(children) do
+                    if child.EnableMouse then child:EnableMouse(true) end
+                    if child.SetMouseClickEnabled then child:SetMouseClickEnabled(true) end
+                    if child.SetMouseMotionEnabled then child:SetMouseMotionEnabled(true) end
+                end
             end
         end
     end
