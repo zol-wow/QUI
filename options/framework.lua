@@ -110,6 +110,55 @@ function GUI:ApplyAccentColor(r, g, b)
     RefreshCachedColors()
 end
 
+---------------------------------------------------------------------------
+-- THEME PRESETS
+---------------------------------------------------------------------------
+GUI.ThemePresets = {
+    { name = "Sky Blue",     color = {0.376, 0.647, 0.980} },
+    { name = "Classic Mint", color = {0.204, 0.827, 0.600} },
+    { name = "Horde",        color = {0.780, 0.192, 0.192} },
+    { name = "Alliance",     color = {0.267, 0.467, 0.800} },
+    { name = "Midnight",     color = {0.580, 0.490, 0.890} },
+    { name = "Amber",        color = {0.961, 0.620, 0.043} },
+    { name = "Rose",         color = {0.914, 0.349, 0.518} },
+    { name = "Emerald",      color = {0.196, 0.804, 0.494} },
+}
+-- Computed presets (not in the table — handled by name):
+-- "Class Colored"  — uses RAID_CLASS_COLORS for the player's class
+-- "Faction Auto"   — Horde or Alliance based on player faction
+-- "Custom"         — user picks via color picker (stored in addonAccentColor)
+
+--- Resolve a theme preset name to RGB values.
+--- @param presetName string
+--- @return number r, number g, number b
+function GUI:ResolveThemePreset(presetName)
+    -- Static presets
+    for _, preset in ipairs(self.ThemePresets) do
+        if preset.name == presetName then
+            return preset.color[1], preset.color[2], preset.color[3]
+        end
+    end
+    -- Dynamic presets
+    if presetName == "Class Colored" then
+        local _, class = UnitClass("player")
+        local color = RAID_CLASS_COLORS[class]
+        if color then return color.r, color.g, color.b end
+        return 0.376, 0.647, 0.980
+    end
+    if presetName == "Faction Auto" then
+        local faction = UnitFactionGroup("player")
+        if faction == "Horde" then return 0.780, 0.192, 0.192 end
+        return 0.267, 0.467, 0.800
+    end
+    if presetName == "Custom" then
+        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile
+        local c = db and db.general and db.general.addonAccentColor
+        if c then return c[1], c[2], c[3] end
+    end
+    -- Fallback
+    return 0.376, 0.647, 0.980
+end
+
 -- Panel dimensions (used for widget sizing)
 GUI.PANEL_WIDTH = 1000
 GUI.SIDEBAR_WIDTH = 190
@@ -5818,9 +5867,15 @@ function GUI:CreateMainFrame()
     local db = QUI.QUICore and QUI.QUICore.db
     local profile = db and db.profile
     local general = profile and profile.general
-    local accentDB = general and general.addonAccentColor
-    if accentDB and accentDB[1] and accentDB[2] and accentDB[3] then
-        GUI:ApplyAccentColor(accentDB[1], accentDB[2], accentDB[3])
+    local preset = general and general.themePreset
+    if preset and GUI.ResolveThemePreset then
+        local r, g, b = GUI:ResolveThemePreset(preset)
+        GUI:ApplyAccentColor(r, g, b)
+    else
+        local accentDB = general and general.addonAccentColor
+        if accentDB and accentDB[1] and accentDB[2] and accentDB[3] then
+            GUI:ApplyAccentColor(accentDB[1], accentDB[2], accentDB[3])
+        end
     end
 
     local FRAME_WIDTH = GUI.PANEL_WIDTH
@@ -5896,26 +5951,12 @@ function GUI:CreateMainFrame()
     accentSwatch:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 1)
     accentSwatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 
-    local accentLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(accentLabel, 10, "", C.textMuted)
-    accentLabel:SetText("Accent")
-    accentLabel:SetPoint("LEFT", accentSwatch, "RIGHT", 4, 0)
-
     -- Helper to refresh all skinned in-game elements
     local function RefreshAllSkinning()
-        if _G.QUI_RefreshKeystoneColors then _G.QUI_RefreshKeystoneColors() end
-        if _G.QUI_RefreshAlertColors then _G.QUI_RefreshAlertColors() end
-        if _G.QUI_RefreshLootColors then _G.QUI_RefreshLootColors() end
-        if _G.QUI_RefreshMPlusTimerColors then _G.QUI_RefreshMPlusTimerColors() end
-        if _G.QUI_RefreshCharacterFrameColors then _G.QUI_RefreshCharacterFrameColors() end
-        if _G.QUI_RefreshInspectColors then _G.QUI_RefreshInspectColors() end
-        if _G.QUI_RefreshPowerBarAltColors then _G.QUI_RefreshPowerBarAltColors() end
+        if ns.Registry then
+            ns.Registry:RefreshAll("skinning")
+        end
         if _G.QUI_RefreshStatusTrackingBarSkin then _G.QUI_RefreshStatusTrackingBarSkin() end
-        if _G.QUI_RefreshGameMenuColors then _G.QUI_RefreshGameMenuColors() end
-        if _G.QUI_RefreshOverrideActionBarColors then _G.QUI_RefreshOverrideActionBarColors() end
-        if _G.QUI_RefreshObjectiveTrackerColors then _G.QUI_RefreshObjectiveTrackerColors() end
-        if _G.QUI_RefreshInstanceFramesColors then _G.QUI_RefreshInstanceFramesColors() end
-        if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end
     end
 
     -- Helper to apply accent color to header elements + theme + skinning
@@ -5927,90 +5968,202 @@ function GUI:CreateMainFrame()
         RefreshAllSkinning()
     end
 
-    -- "Class" toggle — use player class color as the accent
-    local classToggle = CreateFrame("Button", nil, titleBar)
-    classToggle:SetSize(50, 14)
-    classToggle:SetPoint("LEFT", accentLabel, "RIGHT", 8, 0)
+    -- Theme preset dropdown
+    local themeLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(themeLabel, 10, "", C.textMuted)
+    themeLabel:SetText("Theme")
+    themeLabel:SetPoint("LEFT", accentSwatch, "RIGHT", 4, 0)
 
-    local classBox = CreateFrame("Frame", nil, classToggle, "BackdropTemplate")
-    classBox:SetSize(12, 12)
-    classBox:SetPoint("LEFT", 0, 0)
-    classBox:SetBackdrop({
+    local themeDropBtn = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    themeDropBtn:SetSize(110, 16)
+    themeDropBtn:SetPoint("LEFT", themeLabel, "RIGHT", 6, 0)
+    themeDropBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    classBox:SetBackdropColor(0.1, 0.1, 0.1, 1)
-    classBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    themeDropBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
 
-    local classCheck = classBox:CreateTexture(nil, "OVERLAY")
-    classCheck:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-    classCheck:SetPoint("CENTER", 0, 0)
-    classCheck:SetSize(16, 16)
-    classCheck:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    classCheck:SetDesaturated(true)
-    classCheck:Hide()
+    local themeDropText = themeDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(themeDropText, 10, "", C.text)
+    themeDropText:SetPoint("LEFT", 4, 0)
+    themeDropText:SetPoint("RIGHT", -14, 0)
+    themeDropText:SetJustifyH("LEFT")
+    themeDropText:SetWordWrap(false)
 
-    local classLabel = classToggle:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(classLabel, 10, "", C.textMuted)
-    classLabel:SetText("Class")
-    classLabel:SetPoint("LEFT", classBox, "RIGHT", 3, 0)
+    local themeDropArrow = themeDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(themeDropArrow, 8, "", C.textMuted)
+    themeDropArrow:SetText("v")
+    themeDropArrow:SetPoint("RIGHT", -3, 0)
 
-    local function GetClassColor()
-        local _, class = UnitClass("player")
-        local color = RAID_CLASS_COLORS[class]
-        if color then return color.r, color.g, color.b end
-        return 0.204, 0.827, 0.6
+    -- Build the full preset list (static + computed)
+    local function GetAllPresetNames()
+        local names = {}
+        for _, p in ipairs(GUI.ThemePresets) do
+            names[#names + 1] = p.name
+        end
+        names[#names + 1] = "Class Colored"
+        names[#names + 1] = "Faction Auto"
+        names[#names + 1] = "Custom"
+        return names
     end
 
-    local function UpdateAccentFromDB()
+    local function GetCurrentPreset()
+        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+        return db and db.themePreset or "Sky Blue"
+    end
+
+    local function SetCurrentPreset(presetName)
         local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
         if not db then return end
-        local useClass = db.skinUseClassColor
-        if useClass then
-            local cr, cg, cb = GetClassColor()
-            ApplyAccentToAll(cr, cg, cb)
-            accentSwatch:SetAlpha(0.5)
-            classCheck:Show()
-        else
-            local c = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
-            ApplyAccentToAll(c[1], c[2], c[3])
-            accentSwatch:SetAlpha(1)
-            classCheck:Hide()
-        end
-    end
-
-    -- Initialize class toggle state
-    local initDB = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
-    if initDB and initDB.skinUseClassColor then
-        local cr, cg, cb = GetClassColor()
-        ApplyAccentToAll(cr, cg, cb)
-        accentSwatch:SetAlpha(0.5)
-        classCheck:Show()
-    end
-
-    classToggle:SetScript("OnClick", function()
-        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
-        if not db then return end
-        db.skinUseClassColor = not db.skinUseClassColor
-        -- Update theme tables first, then rebuild panel
-        if db.skinUseClassColor then
-            local cr, cg, cb = GetClassColor()
-            GUI:ApplyAccentColor(cr, cg, cb)
-        else
-            local c = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
-            GUI:ApplyAccentColor(c[1], c[2], c[3])
-        end
+        db.themePreset = presetName
+        -- Keep legacy flag in sync
+        db.skinUseClassColor = (presetName == "Class Colored")
+        -- Resolve and apply
+        local r, g, b = GUI:ResolveThemePreset(presetName)
+        db.addonAccentColor = {r, g, b, 1}
+        GUI:ApplyAccentColor(r, g, b)
+        accentSwatch:SetBackdropColor(r, g, b, 1)
+        accentSwatch:SetAlpha(presetName == "Custom" and 1 or 0.5)
+        themeDropText:SetText(presetName)
         GUI:RefreshAccentColor()
-        -- Defer skinning refresh to next frame to reduce lag spike
         C_Timer.After(0, RefreshAllSkinning)
+    end
+
+    -- Dropdown menu frame
+    local themeMenu = CreateFrame("Frame", nil, themeDropBtn, "BackdropTemplate")
+    themeMenu:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    themeMenu:SetBackdropColor(0.08, 0.08, 0.12, 0.95)
+    themeMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    themeMenu:SetFrameStrata("TOOLTIP")
+    themeMenu:Hide()
+
+    local function BuildThemeMenu()
+        -- Clear old children
+        for _, child in ipairs({themeMenu:GetChildren()}) do
+            child:Hide()
+            child:SetParent(nil)
+        end
+
+        local presets = GetAllPresetNames()
+        local itemH = 18
+        themeMenu:SetSize(themeDropBtn:GetWidth(), #presets * itemH + 4)
+        themeMenu:ClearAllPoints()
+        themeMenu:SetPoint("TOPLEFT", themeDropBtn, "BOTTOMLEFT", 0, -2)
+
+        local currentPreset = GetCurrentPreset()
+        for i, name in ipairs(presets) do
+            local item = CreateFrame("Button", nil, themeMenu)
+            item:SetSize(themeDropBtn:GetWidth() - 4, itemH)
+            item:SetPoint("TOPLEFT", 2, -(2 + (i - 1) * itemH))
+
+            local itemBg = item:CreateTexture(nil, "BACKGROUND")
+            itemBg:SetAllPoints()
+            itemBg:SetColorTexture(0, 0, 0, 0)
+
+            -- Color swatch for static presets
+            local presetColor
+            for _, p in ipairs(GUI.ThemePresets) do
+                if p.name == name then presetColor = p.color; break end
+            end
+            if name == "Class Colored" then
+                local _, class = UnitClass("player")
+                local cc = RAID_CLASS_COLORS[class]
+                if cc then presetColor = {cc.r, cc.g, cc.b} end
+            elseif name == "Faction Auto" then
+                local faction = UnitFactionGroup("player")
+                if faction == "Horde" then
+                    presetColor = {0.780, 0.192, 0.192}
+                else
+                    presetColor = {0.267, 0.467, 0.800}
+                end
+            end
+
+            if presetColor then
+                local swatch = item:CreateTexture(nil, "ARTWORK")
+                swatch:SetSize(10, 10)
+                swatch:SetPoint("LEFT", 4, 0)
+                swatch:SetColorTexture(presetColor[1], presetColor[2], presetColor[3], 1)
+            end
+
+            local itemText = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            SetFont(itemText, 10, "", name == currentPreset and C.accent or C.text)
+            itemText:SetText(name)
+            itemText:SetPoint("LEFT", presetColor and 18 or 4, 0)
+
+            item:SetScript("OnEnter", function()
+                itemBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
+            end)
+            item:SetScript("OnLeave", function()
+                itemBg:SetColorTexture(0, 0, 0, 0)
+            end)
+            item:SetScript("OnClick", function()
+                themeMenu:Hide()
+                if name == "Custom" then
+                    SetCurrentPreset("Custom")
+                    -- Open color picker for custom
+                    local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+                    if not db then return end
+                    local cur = db.addonAccentColor or {0.376, 0.647, 0.980, 1}
+                    local pickerWatcher = CreateFrame("Frame")
+                    pickerWatcher:SetScript("OnUpdate", function(self)
+                        if not ColorPickerFrame:IsShown() then
+                            self:SetScript("OnUpdate", nil)
+                            self:Hide()
+                            GUI:RefreshAccentColor()
+                            C_Timer.After(0, RefreshAllSkinning)
+                        end
+                    end)
+                    pickerWatcher:Show()
+                    ColorPickerFrame:SetupColorPickerAndShow({
+                        r = cur[1], g = cur[2], b = cur[3], opacity = 1,
+                        hasOpacity = false,
+                        swatchFunc = function()
+                            local r, g, b = ColorPickerFrame:GetColorRGB()
+                            db.addonAccentColor = {r, g, b, 1}
+                            GUI:ApplyAccentColor(r, g, b)
+                            accentSwatch:SetBackdropColor(r, g, b, 1)
+                            title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+                            version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+                        end,
+                        cancelFunc = function(prev)
+                            local r, g, b = prev.r, prev.g, prev.b
+                            db.addonAccentColor = {r, g, b, 1}
+                            GUI:ApplyAccentColor(r, g, b)
+                        end,
+                    })
+                else
+                    SetCurrentPreset(name)
+                end
+            end)
+        end
+    end
+
+    themeDropBtn:SetScript("OnClick", function()
+        if themeMenu:IsShown() then
+            themeMenu:Hide()
+        else
+            BuildThemeMenu()
+            themeMenu:Show()
+        end
+    end)
+    themeDropBtn:SetScript("OnEnter", function()
+        themeDropBtn:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    end)
+    themeDropBtn:SetScript("OnLeave", function()
+        if not themeMenu:IsShown() then
+            themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        end
     end)
 
-    classToggle:SetScript("OnEnter", function()
-        classBox:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    end)
-    classToggle:SetScript("OnLeave", function()
-        classBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    -- Close dropdown when clicking elsewhere
+    themeMenu:SetScript("OnHide", function()
+        themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     end)
 
     accentSwatch:SetScript("OnEnter", function(self)
@@ -6020,22 +6173,18 @@ function GUI:CreateMainFrame()
         pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
     end)
 
-    local pickerWatcher = CreateFrame("Frame")
-    pickerWatcher:Hide()
+    -- Clicking the swatch opens color picker in Custom mode
     accentSwatch:SetScript("OnClick", function()
         local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
         if not db then return end
-        -- Don't open picker if class color is active
-        if db.skinUseClassColor then return end
-        local cur = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
-        -- Schedule panel rebuild when ColorPickerFrame closes
+        SetCurrentPreset("Custom")
+        local cur = db.addonAccentColor or {0.376, 0.647, 0.980, 1}
+        local pickerWatcher = CreateFrame("Frame")
         pickerWatcher:SetScript("OnUpdate", function(self)
             if not ColorPickerFrame:IsShown() then
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
-                -- Rebuild panel to apply new accent everywhere
                 GUI:RefreshAccentColor()
-                -- Defer skinning refresh to next frame to reduce lag spike
                 C_Timer.After(0, RefreshAllSkinning)
             end
         end)
@@ -6046,7 +6195,6 @@ function GUI:CreateMainFrame()
             swatchFunc = function()
                 local r, g, b = ColorPickerFrame:GetColorRGB()
                 db.addonAccentColor = {r, g, b, 1}
-                -- Live-preview on header only (full rebuild happens on close)
                 GUI:ApplyAccentColor(r, g, b)
                 accentSwatch:SetBackdropColor(r, g, b, 1)
                 title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
@@ -6060,10 +6208,30 @@ function GUI:CreateMainFrame()
         })
     end)
 
+    local function UpdateAccentFromDB()
+        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+        if not db then return end
+        local preset = db.themePreset or "Sky Blue"
+        themeDropText:SetText(preset)
+        local r, g, b = GUI:ResolveThemePreset(preset)
+        ApplyAccentToAll(r, g, b)
+        accentSwatch:SetAlpha(preset == "Custom" and 1 or 0.5)
+    end
+
+    -- Initialize theme from DB
+    do
+        local initDB = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+        local preset = initDB and initDB.themePreset or "Sky Blue"
+        themeDropText:SetText(preset)
+        local r, g, b = GUI:ResolveThemePreset(preset)
+        ApplyAccentToAll(r, g, b)
+        accentSwatch:SetAlpha(preset == "Custom" and 1 or 0.5)
+    end
+
     -- Panel Scale (compact inline: label + editbox + slider)
     local scaleContainer = CreateFrame("Frame", nil, titleBar)
     scaleContainer:SetSize(160, 20)
-    scaleContainer:SetPoint("LEFT", classToggle, "RIGHT", 14, 0)
+    scaleContainer:SetPoint("LEFT", themeDropBtn, "RIGHT", 14, 0)
 
     local scaleLabel = scaleContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(scaleLabel, 10, "", C.textMuted)
