@@ -13,5 +13,6 @@
     <Script file="font_system.lua"/>
     <Script file="scaling.lua"/>
     <Script file="uikit.lua"/>
+    <Script file="settings_builders.lua"/>
     <Script file="rangeutils.lua"/>
 </Ui>
