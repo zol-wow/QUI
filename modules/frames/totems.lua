@@ -201,7 +201,11 @@ local function StyleButton(btn)
     if not db or not btn then return end
 
     local size = db.iconSize or 36
-    btn:SetSize(size, size)
+    -- Buttons carry secure attributes (click-through to Blizzard totem
+    -- buttons), so SetSize is protected during combat.
+    if not InCombatLockdown() then
+        btn:SetSize(size, size)
+    end
 
     -- Icon texcoord crop + zoom
     local zoom = db.zoom or 0

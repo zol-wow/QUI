@@ -586,17 +586,16 @@ HookTooltipOnShow = function(tooltip)
 
         tooltip:HookScript("OnShow", function(self)
             if not IsEnabled() then return end
-            if IsProtectedTooltip(self) then
-                -- Protected context: let Blizzard handle it
-                local sf = styleFrames[self]
-                if sf then sf:Hide() end
-                return
-            end
-            if InCombatLockdown() then
-                CombatRefreshTooltip(self)
-            else
-                StyleTooltip(self)
-            end
+            -- TAINT SAFETY: Never call StyleTooltip synchronously from
+            -- GameTooltip:OnShow.  Secure callers (AreaPoiUtil, etc.)
+            -- call Show() then AddWidgetSet() in one Lua stack; any
+            -- addon property writes here taint the execution context,
+            -- causing secret-value errors in widget layout geometry.
+            -- Only C-side operations (Hide/Show/SetFrameLevel) are safe.
+            HideNineSlice(self)
+            local sf = styleFrames[self]
+            if sf then pcall(sf.Show, sf) end
+            pendingGameTooltipRestyle = true
         end)
 
         return
