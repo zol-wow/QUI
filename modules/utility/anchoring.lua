@@ -1294,8 +1294,12 @@ local FRAME_RESOLVERS = {
         if owned then return owned end
         return _G["BagsBar"]
     end,
-    extraActionButton = function() return _G["ExtraActionBarFrame"] end,
-    zoneAbility = function() return _G["ZoneAbilityFrame"] end,
+    extraActionButton = function()
+        return _G["QUI_extraActionButtonHolder"] or _G["ExtraActionBarFrame"]
+    end,
+    zoneAbility = function()
+        return _G["QUI_zoneAbilityHolder"] or _G["ZoneAbilityFrame"]
+    end,
     -- QoL
     brezCounter = function() return _G["QUI_BrezCounter"] end,
     combatTimer = function() return _G["QUI_CombatTimer"] end,

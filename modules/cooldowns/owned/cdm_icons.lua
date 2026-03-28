@@ -2924,11 +2924,20 @@ local RANGE_POLL_INTERVAL_IDLE = 2.0   -- relaxed OOC (range matters less)
 local rangePollElapsed = 0
 local rangePollInCombat = false
 
+-- Resolve effective unit for range checks: hard target > soft enemy.
+-- Blizzard's IsActionInRange handles soft targeting on the C side; we
+-- replicate the same priority for C_Spell.IsSpellInRange.
+local function GetRangeUnit()
+    if UnitExists("target") then return "target" end
+    if UnitExists("softenemy") then return "softenemy" end
+    return nil
+end
+
 -- Safe wrapper: C_Spell.IsSpellInRange can return secret values in Midnight.
 -- Calls pcall directly (no closure allocation).
-local function SafeIsSpellInRange(spellID)
-    if not spellID or not C_Spell or not C_Spell.IsSpellInRange then return nil end
-    local ok, inRange = pcall(C_Spell.IsSpellInRange, spellID, "target")
+local function SafeIsSpellInRange(spellID, unit)
+    if not spellID or not unit or not C_Spell or not C_Spell.IsSpellInRange then return nil end
+    local ok, inRange = pcall(C_Spell.IsSpellInRange, spellID, unit)
     if not ok then return nil end
     if inRange == false then return false end
     if inRange == true then return true end
@@ -3007,8 +3016,10 @@ local function UpdateIconVisualState(icon, cachedDB)
     ---------------------------------------------------------------------------
     local newVisualState = "normal"
 
-    -- Priority 1: Out of range (red tint) — only when target exists + ranged
-    if rangeEnabled and UnitExists("target") then
+    -- Priority 1: Out of range (red tint) — only when attackable unit exists
+    -- Respects soft targeting: hard target > soft enemy.
+    local rangeUnit = rangeEnabled and GetRangeUnit() or nil
+    if rangeUnit then
         -- Per-cycle dedup: skip redundant C_Spell API calls for shared spellIDs
         local hasRange = _hasRangeCycleCache[spellID]
         if hasRange == nil then
@@ -3021,7 +3032,7 @@ local function UpdateIconVisualState(icon, cachedDB)
             if cached ~= nil then
                 inRange = cached ~= "nil" and cached or nil
             else
-                inRange = SafeIsSpellInRange(spellID)
+                inRange = SafeIsSpellInRange(spellID, rangeUnit)
                 _rangeCycleCache[spellID] = inRange == nil and "nil" or inRange
             end
             if inRange == false then
@@ -3126,6 +3137,7 @@ cdEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
 cdEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 cdEventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+cdEventFrame:RegisterEvent("PLAYER_SOFT_ENEMY_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 cdEventFrame:RegisterEvent("UPDATE_MACROS")
@@ -3177,6 +3189,10 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Target debuffs (e.g. Reaper's Mark) need a CDM refresh when target changes
         ns.CDMSpellData:InvalidateChildMap()
         ScheduleCDMUpdate()
+        return
+    end
+    if event == "PLAYER_SOFT_ENEMY_CHANGED" then
+        CDMIcons:UpdateAllIconRanges()
         return
     end
     if event == "PLAYER_EQUIPMENT_CHANGED" then

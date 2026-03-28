@@ -2201,8 +2201,8 @@ do
 
         local DISPLAY_ELEMENTS = {
             { key = "objectiveTracker", label = "Objective Tracker", frame = "ObjectiveTrackerFrame", order = 2 },
-            { key = "extraActionButton", label = "Extra Ability",   frame = "ExtraActionBarFrame",    order = 5 },
-            { key = "zoneAbility",     label = "Zone Ability",      frame = "ZoneAbilityFrame",       order = 6 },
+            { key = "extraActionButton", label = "Extra Ability",   frame = "ExtraActionBarFrame", holder = "QUI_extraActionButtonHolder", order = 5 },
+            { key = "zoneAbility",     label = "Zone Ability",      frame = "ZoneAbilityFrame",    holder = "QUI_zoneAbilityHolder",      order = 6 },
         }
 
         for _, info in ipairs(DISPLAY_ELEMENTS) do
@@ -2212,7 +2212,7 @@ do
                 group = "Display",
                 order = info.order,
                 getFrame = function()
-                    return _G[info.frame]
+                    return (info.holder and _G[info.holder]) or _G[info.frame]
                 end,
             })
         end

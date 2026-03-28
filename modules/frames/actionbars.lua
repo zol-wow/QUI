@@ -4216,6 +4216,17 @@ InitializeExtraButtons = function()
         ApplyExtraButtonSettings("extraActionButton")
         ApplyExtraButtonSettings("zoneAbility")
         HookExtraButtonPositioning()
+        -- If the frame anchoring system manages these frames, let it
+        -- reposition the holders now that they exist.
+        local ApplyAnchor = _G.QUI_ApplyFrameAnchor
+        if ApplyAnchor then
+            if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("extraActionButton") then
+                ApplyAnchor("extraActionButton")
+            end
+            if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("zoneAbility") then
+                ApplyAnchor("zoneAbility")
+            end
+        end
     end)
 end
 
