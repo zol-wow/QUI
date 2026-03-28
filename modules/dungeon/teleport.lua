@@ -33,13 +33,31 @@ local function CreateSecureOverlay(dungeonIcon)
 
     -- Get teleport spell from shared dungeon data
     local spellID = _G.QUI_DungeonData and _G.QUI_DungeonData.GetTeleportSpellID(dungeonIcon.mapID)
+    local overlay = iconOverlays[dungeonIcon]
+
+    if overlay then
+        overlay.dungeonIcon = dungeonIcon
+        overlay.mapID = dungeonIcon.mapID
+        overlay.spellID = spellID
+
+        if spellID then
+            overlay:SetAttribute("type", "spell")
+            overlay:SetAttribute("spell", spellID)
+            overlay:EnableMouse(true)
+            overlay:Show()
+        else
+            overlay:SetAttribute("spell", nil)
+            overlay:EnableMouse(false)
+            overlay:Hide()
+        end
+
+        return overlay
+    end
+
     if not spellID then return end
 
-    -- Check if overlay already exists
-    if iconOverlays[dungeonIcon] then return end
-
     -- Create secure button overlay
-    local overlay = CreateFrame("Button", nil, dungeonIcon, "SecureActionButtonTemplate")
+    overlay = CreateFrame("Button", nil, dungeonIcon, "SecureActionButtonTemplate")
     overlay:SetAllPoints(dungeonIcon)
     overlay:SetFrameLevel(dungeonIcon:GetFrameLevel() + 10)
 
@@ -49,6 +67,7 @@ local function CreateSecureOverlay(dungeonIcon)
 
     -- Store reference
     overlay.spellID = spellID
+    overlay.mapID = dungeonIcon.mapID
     overlay.dungeonIcon = dungeonIcon
 
     -- Create highlight texture for hover effect
@@ -60,20 +79,24 @@ local function CreateSecureOverlay(dungeonIcon)
 
     -- Visual indicator on hover
     overlay:SetScript("OnEnter", function(self)
+        local currentSpellID = self.spellID
+        local icon = self.dungeonIcon
+
         -- Show highlight if spell is known
-        if IsSpellKnown(spellID) then
+        if currentSpellID and IsSpellKnown(currentSpellID) then
             highlight:Show()
         end
         -- Trigger original tooltip
-        if dungeonIcon.OnEnter then
-            dungeonIcon:OnEnter()
+        if icon and icon.OnEnter then
+            icon:OnEnter()
         end
     end)
 
     overlay:SetScript("OnLeave", function(self)
         highlight:Hide()
-        if dungeonIcon.OnLeave then
-            dungeonIcon:OnLeave()
+        local icon = self.dungeonIcon
+        if icon and icon.OnLeave then
+            icon:OnLeave()
         end
     end)
 
