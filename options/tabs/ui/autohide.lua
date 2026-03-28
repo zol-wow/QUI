@@ -18,7 +18,7 @@ local function BuildAutohideTab(tabContent)
     local P = Helpers.PlaceRow
     local db = Shared.GetDB()
 
-    GUI:SetSearchContext({tabIndex = 7, tabName = "Skinning & Autohide", subTabIndex = 1, subTabName = "Autohide"})
+    GUI:SetSearchContext({tabIndex = 10, tabName = "Skinning & Autohide", subTabIndex = 1, subTabName = "Autohide"})
 
     local function RefreshUIHider()
         if _G.QUI_RefreshUIHider then _G.QUI_RefreshUIHider() end

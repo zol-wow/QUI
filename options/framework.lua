@@ -7,7 +7,6 @@
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local QUICore = ns.Addon
-local UIKit = ns.UIKit
 local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Create GUI namespace
@@ -108,55 +107,6 @@ function GUI:ApplyAccentColor(r, g, b)
     C.sectionHeader[1], C.sectionHeader[2], C.sectionHeader[3] = C.accentLight[1], C.accentLight[2], C.accentLight[3]
     -- Refresh cached color components after accent derivation
     RefreshCachedColors()
-end
-
----------------------------------------------------------------------------
--- THEME PRESETS
----------------------------------------------------------------------------
-GUI.ThemePresets = {
-    { name = "Sky Blue",     color = {0.376, 0.647, 0.980} },
-    { name = "Classic Mint", color = {0.204, 0.827, 0.600} },
-    { name = "Horde",        color = {0.780, 0.192, 0.192} },
-    { name = "Alliance",     color = {0.267, 0.467, 0.800} },
-    { name = "Midnight",     color = {0.580, 0.490, 0.890} },
-    { name = "Amber",        color = {0.961, 0.620, 0.043} },
-    { name = "Rose",         color = {0.914, 0.349, 0.518} },
-    { name = "Emerald",      color = {0.196, 0.804, 0.494} },
-}
--- Computed presets (not in the table — handled by name):
--- "Class Colored"  — uses RAID_CLASS_COLORS for the player's class
--- "Faction Auto"   — Horde or Alliance based on player faction
--- "Custom"         — user picks via color picker (stored in addonAccentColor)
-
---- Resolve a theme preset name to RGB values.
---- @param presetName string
---- @return number r, number g, number b
-function GUI:ResolveThemePreset(presetName)
-    -- Static presets
-    for _, preset in ipairs(self.ThemePresets) do
-        if preset.name == presetName then
-            return preset.color[1], preset.color[2], preset.color[3]
-        end
-    end
-    -- Dynamic presets
-    if presetName == "Class Colored" then
-        local _, class = UnitClass("player")
-        local color = RAID_CLASS_COLORS[class]
-        if color then return color.r, color.g, color.b end
-        return 0.376, 0.647, 0.980
-    end
-    if presetName == "Faction Auto" then
-        local faction = UnitFactionGroup("player")
-        if faction == "Horde" then return 0.780, 0.192, 0.192 end
-        return 0.267, 0.467, 0.800
-    end
-    if presetName == "Custom" then
-        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile
-        local c = db and db.general and db.general.addonAccentColor
-        if c then return c[1], c[2], c[3] end
-    end
-    -- Fallback
-    return 0.376, 0.647, 0.980
 end
 
 -- Panel dimensions (used for widget sizing)
@@ -707,15 +657,6 @@ local function CreateBackdrop(frame, bgColor, borderColor)
     })
     frame:SetBackdropColor(unpack(bgColor or C.bg))
     frame:SetBackdropBorderColor(unpack(borderColor or C.border))
-end
-
-local function BindWidgetMethod(container, fn)
-    return function(selfOrFirst, ...)
-        if selfOrFirst == container then
-            return fn(...)
-        end
-        return fn(selfOrFirst, ...)
-    end
 end
 
 local function SetFont(fontString, size, flags, color)
@@ -1324,49 +1265,6 @@ function GUI:CreateSectionBox(parent, title)
 end
 
 ---------------------------------------------------------------------------
--- HELPER: CreateVectorCaret (needed by CreateCollapsibleSection fallback)
----------------------------------------------------------------------------
-local function CreateVectorCaret(parent, xOffset)
-    if UIKit and UIKit.CreateChevronCaret then
-        return UIKit.CreateChevronCaret(parent, {
-            point = "RIGHT",
-            relativeTo = parent,
-            relativePoint = "RIGHT",
-            xPixels = xOffset or -8,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-        })
-    end
-
-    local caret = CreateFrame("Frame", nil, parent)
-    local function Pixels(value)
-        if QUICore and QUICore.Pixels then
-            return QUICore:Pixels(value, caret)
-        end
-        return value
-    end
-
-    caret:SetSize(Pixels(10), Pixels(10))
-    if QUICore and QUICore.SetSnappedPoint then
-        QUICore:SetSnappedPoint(caret, "RIGHT", parent, "RIGHT", xOffset or -8, 0)
-    else
-        caret:SetPoint("RIGHT", parent, "RIGHT", xOffset or -8, 0)
-    end
-
-    caret.line1 = caret:CreateTexture(nil, "OVERLAY")
-    caret.line1:SetSize(Pixels(6), Pixels(1))
-    caret.line1:SetColorTexture(1, 1, 1, 1)
-
-    caret.line2 = caret:CreateTexture(nil, "OVERLAY")
-    caret.line2:SetSize(Pixels(6), Pixels(1))
-    caret.line2:SetColorTexture(1, 1, 1, 1)
-
-    return caret
-end
-
----------------------------------------------------------------------------
 -- WIDGET: COLLAPSIBLE SECTION
 -- Expandable/collapsible container with clickable header
 ---------------------------------------------------------------------------
@@ -1389,29 +1287,10 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     header:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
 
     -- Chevron indicator
-    local chevron
-    if UIKit and UIKit.CreateChevronCaret then
-        chevron = UIKit.CreateChevronCaret(header, {
-            point = "LEFT",
-            relativeTo = header,
-            relativePoint = "LEFT",
-            xPixels = 10,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = isExpanded,
-            collapsedDirection = "right",
-            r = C.accent[1],
-            g = C.accent[2],
-            b = C.accent[3],
-            a = 1,
-        })
-    else
-        chevron = CreateVectorCaret(header, 0)
-        chevron:ClearAllPoints()
-        chevron:SetPoint("LEFT", header, "LEFT", 10, 0)
-    end
+    local chevron = header:CreateFontString(nil, "OVERLAY")
+    chevron:SetFont(GetFontPath(), 12, "")
+    chevron:SetPoint("LEFT", 10, 0)
+    chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
     -- Title text
     local titleText = header:CreateFontString(nil, "OVERLAY")
@@ -1450,110 +1329,45 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     end
 
     -- Content area
-    local contentClip = CreateFrame("ScrollFrame", nil, container)
-    contentClip:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
-    contentClip:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-    contentClip:SetHeight(0)
-    contentClip:SetShown(isExpanded)
-
-    local content = CreateFrame("Frame", nil, contentClip)
-    content:SetHeight(1)
-    content:SetWidth(1)
-    contentClip:SetScrollChild(content)
-    contentClip:SetScript("OnSizeChanged", function(self, width)
-        content:SetWidth(math.max(width or 1, 1))
-    end)
+    local content = CreateFrame("Frame", nil, container)
+    content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
+    content:SetPoint("RIGHT", container, "RIGHT", 0, 0)
     content._hasContent = false
-    content:SetAlpha(isExpanded and 1 or 0)
-
-    local function UpdateChevronVisual()
-        if UIKit and UIKit.SetChevronCaretExpanded and UIKit.SetChevronCaretColor then
-            UIKit.SetChevronCaretExpanded(chevron, isExpanded)
-            UIKit.SetChevronCaretColor(chevron, C.accent[1], C.accent[2], C.accent[3], 1)
-        elseif chevron and chevron.SetText then
-            chevron:SetText(isExpanded and "v" or ">")
-            chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-        end
-    end
 
     -- Update function
-    local function ApplyState(currentHeight)
-        local height = math.max(0, currentHeight or 0)
-        contentClip:SetHeight(height)
-        container:SetHeight(header:GetHeight() + height + (height > 0 and 4 or 0))
-    end
-
-    local function NotifyExpandChanged()
-        if container.OnExpandChanged then
-            container.OnExpandChanged(isExpanded)
-        end
-    end
-
-    local function UpdateState(skipAnimation)
-        local targetHeight = isExpanded and (content:GetHeight() or 0) or 0
-        UpdateChevronVisual()
+    local function UpdateState()
         if isExpanded then
-            contentClip:Show()
+            chevron:SetText("v")  -- Down arrow
+            content:Show()
+            container:SetHeight(header:GetHeight() + 4 + (content:GetHeight() or 0))
+        else
+            chevron:SetText(">")  -- Right arrow
+            content:Hide()
+            container:SetHeight(header:GetHeight())
         end
-
-        if skipAnimation or not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
-            if UIKit and UIKit.CancelValueAnimation then
-                UIKit.CancelValueAnimation(container, "helpCollapsible")
-            end
-            ApplyState(targetHeight)
-            content:SetAlpha(isExpanded and 1 or 0)
-            if not isExpanded then
-                contentClip:Hide()
-            end
-            NotifyExpandChanged()
-            return
-        end
-
-        UIKit.CancelValueAnimation(container, "helpCollapsible")
-        UIKit.AnimateValue(container, "helpCollapsible", {
-            fromValue = contentClip:GetHeight() or 0,
-            toValue = targetHeight,
-            duration = (GUI._sidebarAnimDuration or 0.16),
-            onUpdate = function(_, progressHeight)
-                local totalRange = math.max(content:GetHeight() or 0, 1)
-                local ratio = math.max(0, math.min(1, progressHeight / totalRange))
-                ApplyState(progressHeight)
-                content:SetAlpha(ratio)
-                NotifyExpandChanged()
-            end,
-            onFinish = function(_, finalHeight)
-                ApplyState(finalHeight)
-                content:SetAlpha(isExpanded and 1 or 0)
-                if not isExpanded then
-                    contentClip:Hide()
-                end
-                NotifyExpandChanged()
-            end,
-        })
     end
 
     -- Click handler
     header:SetScript("OnClick", function()
         isExpanded = not isExpanded
         UpdateState()
+        if container.OnExpandChanged then
+            container.OnExpandChanged(isExpanded)
+        end
     end)
 
     -- Hover effects
     header:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
-        if UIKit and UIKit.SetChevronCaretColor then
-            UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
-        end
     end)
     header:SetScript("OnLeave", function(self)
         self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
-        UpdateChevronVisual()
     end)
 
     -- API methods
-    container.SetExpanded = function(self, expanded, skipAnimation)
+    container.SetExpanded = function(self, expanded)
         isExpanded = expanded
-        UpdateState(skipAnimation)
+        UpdateState()
     end
 
     container.GetExpanded = function()
@@ -1561,7 +1375,7 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     end
 
     container.UpdateHeight = function()
-        UpdateState(true)
+        UpdateState()
     end
 
     container.SetTitle = function(self, newTitle)
@@ -1579,7 +1393,7 @@ function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeC
     container.header = header
     container.badge = badge
 
-    UpdateState(true)
+    UpdateState()
     return container
 end
 
@@ -2032,7 +1846,7 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange)
     end
     
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     SetValue(GetValue())
     
     box:SetScript("OnClick", function() SetValue(not GetValue()) end)
@@ -2107,7 +1921,7 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange)
     end
     
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     SetValue(GetValue())
     
     box:SetScript("OnClick", function() SetValue(not GetValue()) end)
@@ -2455,7 +2269,7 @@ function GUI:CreateSlider(parent, label, min, max, step, dbKey, dbTable, onChang
     end
 
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
 
     -- Slider drag callback
     slider:SetScript("OnValueChanged", function(self, value)
@@ -2785,7 +2599,7 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
     end
     
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     
     -- Initialize with current value
     SetValue(GetValue(), true)
@@ -3029,7 +2843,7 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
     end
     
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     SetValue(GetValue(), true)
     
     -- Dropdown menu (parented to UIParent to avoid scroll frame clipping)
@@ -3253,7 +3067,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     end
 
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     container.UpdateVisual = UpdateVisual
 
     -- Register for cross-widget sync
@@ -3566,7 +3380,7 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
     end
 
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     container.UpdateVisual = UpdateVisual
 
     -- Register for cross-widget sync
@@ -3745,7 +3559,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     end
 
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     container.UpdateVisual = UpdateVisual
 
     RegisterWidgetInstance(container, dbTable, dbKey)
@@ -4044,7 +3858,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     end
 
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     container.UpdateVisual = UpdateVisual
 
     -- Register for cross-widget sync
@@ -4433,7 +4247,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
 
     container.GetValue = GetValue
-    container.SetValue = BindWidgetMethod(container, SetValue)
+    container.SetValue = SetValue
     container.SetOptions = SetOptions
     container.UpdateVisual = UpdateVisual
 
@@ -5392,50 +5206,41 @@ local function PlayCaretToggleAnimation(caret)
     caret._toggleAnim:Play()
 end
 
+local function CreateVectorCaret(parent, xOffset)
+    local caret = CreateFrame("Frame", nil, parent)
+    caret:SetSize(11, 11)
+    caret:SetPoint("RIGHT", parent, "RIGHT", xOffset or -8, 0)
+
+    caret.line1 = caret:CreateTexture(nil, "OVERLAY")
+    caret.line1:SetSize(7, 2)
+    caret.line1:SetColorTexture(1, 1, 1, 1)
+
+    caret.line2 = caret:CreateTexture(nil, "OVERLAY")
+    caret.line2:SetSize(7, 2)
+    caret.line2:SetColorTexture(1, 1, 1, 1)
+
+    return caret
+end
+
 local function SetCaretVisual(caret, isExpanded, useAccent)
     if not caret then return end
-    if UIKit and UIKit.SetChevronCaretExpanded and UIKit.SetChevronCaretColor then
-        UIKit.SetChevronCaretExpanded(caret, isExpanded)
-        if useAccent then
-            UIKit.SetChevronCaretColor(caret, C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-        else
-            UIKit.SetChevronCaretColor(caret, C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-        end
-        return
-    end
-
-    local function Pixels(value)
-        if QUICore and QUICore.Pixels then
-            return QUICore:Pixels(value, caret)
-        end
-        return value
-    end
-
-    caret:SetSize(Pixels(10), Pixels(10))
-    if caret.line1 then
-        caret.line1:SetSize(Pixels(6), Pixels(1))
-    end
-    if caret.line2 then
-        caret.line2:SetSize(Pixels(6), Pixels(1))
-    end
-
     if caret.line1 and caret.line2 then
         if isExpanded then
             -- Down chevron (v)
             caret.line1:SetRotation(math.rad(-45))
             caret.line1:ClearAllPoints()
-            caret.line1:SetPoint("CENTER", caret, "CENTER", -Pixels(2), 0)
+            caret.line1:SetPoint("CENTER", caret, "CENTER", -2, 0)
             caret.line2:SetRotation(math.rad(45))
             caret.line2:ClearAllPoints()
-            caret.line2:SetPoint("CENTER", caret, "CENTER", Pixels(2), 0)
+            caret.line2:SetPoint("CENTER", caret, "CENTER", 2, 0)
         else
             -- Right chevron (>)
             caret.line1:SetRotation(math.rad(45))
             caret.line1:ClearAllPoints()
-            caret.line1:SetPoint("CENTER", caret, "CENTER", -Pixels(1), Pixels(2))
+            caret.line1:SetPoint("CENTER", caret, "CENTER", -1, 2)
             caret.line2:SetRotation(math.rad(-45))
             caret.line2:ClearAllPoints()
-            caret.line2:SetPoint("CENTER", caret, "CENTER", -Pixels(1), -Pixels(2))
+            caret.line2:SetPoint("CENTER", caret, "CENTER", -1, -2)
         end
     end
     if useAccent then
@@ -5870,15 +5675,9 @@ function GUI:CreateMainFrame()
     local db = QUI.QUICore and QUI.QUICore.db
     local profile = db and db.profile
     local general = profile and profile.general
-    local preset = general and general.themePreset
-    if preset and GUI.ResolveThemePreset then
-        local r, g, b = GUI:ResolveThemePreset(preset)
-        GUI:ApplyAccentColor(r, g, b)
-    else
-        local accentDB = general and general.addonAccentColor
-        if accentDB and accentDB[1] and accentDB[2] and accentDB[3] then
-            GUI:ApplyAccentColor(accentDB[1], accentDB[2], accentDB[3])
-        end
+    local accentDB = general and general.addonAccentColor
+    if accentDB and accentDB[1] and accentDB[2] and accentDB[3] then
+        GUI:ApplyAccentColor(accentDB[1], accentDB[2], accentDB[3])
     end
 
     local FRAME_WIDTH = GUI.PANEL_WIDTH
@@ -5954,12 +5753,26 @@ function GUI:CreateMainFrame()
     accentSwatch:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 1)
     accentSwatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 
+    local accentLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(accentLabel, 10, "", C.textMuted)
+    accentLabel:SetText("Accent")
+    accentLabel:SetPoint("LEFT", accentSwatch, "RIGHT", 4, 0)
+
     -- Helper to refresh all skinned in-game elements
     local function RefreshAllSkinning()
-        if ns.Registry then
-            ns.Registry:RefreshAll("skinning")
-        end
+        if _G.QUI_RefreshKeystoneColors then _G.QUI_RefreshKeystoneColors() end
+        if _G.QUI_RefreshAlertColors then _G.QUI_RefreshAlertColors() end
+        if _G.QUI_RefreshLootColors then _G.QUI_RefreshLootColors() end
+        if _G.QUI_RefreshMPlusTimerColors then _G.QUI_RefreshMPlusTimerColors() end
+        if _G.QUI_RefreshCharacterFrameColors then _G.QUI_RefreshCharacterFrameColors() end
+        if _G.QUI_RefreshInspectColors then _G.QUI_RefreshInspectColors() end
+        if _G.QUI_RefreshPowerBarAltColors then _G.QUI_RefreshPowerBarAltColors() end
         if _G.QUI_RefreshStatusTrackingBarSkin then _G.QUI_RefreshStatusTrackingBarSkin() end
+        if _G.QUI_RefreshGameMenuColors then _G.QUI_RefreshGameMenuColors() end
+        if _G.QUI_RefreshOverrideActionBarColors then _G.QUI_RefreshOverrideActionBarColors() end
+        if _G.QUI_RefreshObjectiveTrackerColors then _G.QUI_RefreshObjectiveTrackerColors() end
+        if _G.QUI_RefreshInstanceFramesColors then _G.QUI_RefreshInstanceFramesColors() end
+        if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end
     end
 
     -- Helper to apply accent color to header elements + theme + skinning
@@ -5971,202 +5784,90 @@ function GUI:CreateMainFrame()
         RefreshAllSkinning()
     end
 
-    -- Theme preset dropdown
-    local themeLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(themeLabel, 10, "", C.textMuted)
-    themeLabel:SetText("Theme")
-    themeLabel:SetPoint("LEFT", accentSwatch, "RIGHT", 4, 0)
+    -- "Class" toggle — use player class color as the accent
+    local classToggle = CreateFrame("Button", nil, titleBar)
+    classToggle:SetSize(50, 14)
+    classToggle:SetPoint("LEFT", accentLabel, "RIGHT", 8, 0)
 
-    local themeDropBtn = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
-    themeDropBtn:SetSize(110, 16)
-    themeDropBtn:SetPoint("LEFT", themeLabel, "RIGHT", 6, 0)
-    themeDropBtn:SetBackdrop({
+    local classBox = CreateFrame("Frame", nil, classToggle, "BackdropTemplate")
+    classBox:SetSize(12, 12)
+    classBox:SetPoint("LEFT", 0, 0)
+    classBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    themeDropBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    classBox:SetBackdropColor(0.1, 0.1, 0.1, 1)
+    classBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 
-    local themeDropText = themeDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(themeDropText, 10, "", C.text)
-    themeDropText:SetPoint("LEFT", 4, 0)
-    themeDropText:SetPoint("RIGHT", -14, 0)
-    themeDropText:SetJustifyH("LEFT")
-    themeDropText:SetWordWrap(false)
+    local classCheck = classBox:CreateTexture(nil, "OVERLAY")
+    classCheck:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    classCheck:SetPoint("CENTER", 0, 0)
+    classCheck:SetSize(16, 16)
+    classCheck:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    classCheck:SetDesaturated(true)
+    classCheck:Hide()
 
-    local themeDropArrow = themeDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(themeDropArrow, 8, "", C.textMuted)
-    themeDropArrow:SetText("v")
-    themeDropArrow:SetPoint("RIGHT", -3, 0)
+    local classLabel = classToggle:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(classLabel, 10, "", C.textMuted)
+    classLabel:SetText("Class")
+    classLabel:SetPoint("LEFT", classBox, "RIGHT", 3, 0)
 
-    -- Build the full preset list (static + computed)
-    local function GetAllPresetNames()
-        local names = {}
-        for _, p in ipairs(GUI.ThemePresets) do
-            names[#names + 1] = p.name
-        end
-        names[#names + 1] = "Class Colored"
-        names[#names + 1] = "Faction Auto"
-        names[#names + 1] = "Custom"
-        return names
+    local function GetClassColor()
+        local _, class = UnitClass("player")
+        local color = RAID_CLASS_COLORS[class]
+        if color then return color.r, color.g, color.b end
+        return 0.204, 0.827, 0.6
     end
 
-    local function GetCurrentPreset()
-        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
-        return db and db.themePreset or "Sky Blue"
-    end
-
-    local function SetCurrentPreset(presetName)
+    local function UpdateAccentFromDB()
         local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
         if not db then return end
-        db.themePreset = presetName
-        -- Keep legacy flag in sync
-        db.skinUseClassColor = (presetName == "Class Colored")
-        -- Resolve and apply
-        local r, g, b = GUI:ResolveThemePreset(presetName)
-        db.addonAccentColor = {r, g, b, 1}
-        GUI:ApplyAccentColor(r, g, b)
-        accentSwatch:SetBackdropColor(r, g, b, 1)
-        accentSwatch:SetAlpha(presetName == "Custom" and 1 or 0.5)
-        themeDropText:SetText(presetName)
-        GUI:RefreshAccentColor()
-        C_Timer.After(0, RefreshAllSkinning)
-    end
-
-    -- Dropdown menu frame
-    local themeMenu = CreateFrame("Frame", nil, themeDropBtn, "BackdropTemplate")
-    themeMenu:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    themeMenu:SetBackdropColor(0.08, 0.08, 0.12, 0.95)
-    themeMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    themeMenu:SetFrameStrata("TOOLTIP")
-    themeMenu:Hide()
-
-    local function BuildThemeMenu()
-        -- Clear old children
-        for _, child in ipairs({themeMenu:GetChildren()}) do
-            child:Hide()
-            child:SetParent(nil)
-        end
-
-        local presets = GetAllPresetNames()
-        local itemH = 18
-        themeMenu:SetSize(themeDropBtn:GetWidth(), #presets * itemH + 4)
-        themeMenu:ClearAllPoints()
-        themeMenu:SetPoint("TOPLEFT", themeDropBtn, "BOTTOMLEFT", 0, -2)
-
-        local currentPreset = GetCurrentPreset()
-        for i, name in ipairs(presets) do
-            local item = CreateFrame("Button", nil, themeMenu)
-            item:SetSize(themeDropBtn:GetWidth() - 4, itemH)
-            item:SetPoint("TOPLEFT", 2, -(2 + (i - 1) * itemH))
-
-            local itemBg = item:CreateTexture(nil, "BACKGROUND")
-            itemBg:SetAllPoints()
-            itemBg:SetColorTexture(0, 0, 0, 0)
-
-            -- Color swatch for static presets
-            local presetColor
-            for _, p in ipairs(GUI.ThemePresets) do
-                if p.name == name then presetColor = p.color; break end
-            end
-            if name == "Class Colored" then
-                local _, class = UnitClass("player")
-                local cc = RAID_CLASS_COLORS[class]
-                if cc then presetColor = {cc.r, cc.g, cc.b} end
-            elseif name == "Faction Auto" then
-                local faction = UnitFactionGroup("player")
-                if faction == "Horde" then
-                    presetColor = {0.780, 0.192, 0.192}
-                else
-                    presetColor = {0.267, 0.467, 0.800}
-                end
-            end
-
-            if presetColor then
-                local swatch = item:CreateTexture(nil, "ARTWORK")
-                swatch:SetSize(10, 10)
-                swatch:SetPoint("LEFT", 4, 0)
-                swatch:SetColorTexture(presetColor[1], presetColor[2], presetColor[3], 1)
-            end
-
-            local itemText = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            SetFont(itemText, 10, "", name == currentPreset and C.accent or C.text)
-            itemText:SetText(name)
-            itemText:SetPoint("LEFT", presetColor and 18 or 4, 0)
-
-            item:SetScript("OnEnter", function()
-                itemBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
-            end)
-            item:SetScript("OnLeave", function()
-                itemBg:SetColorTexture(0, 0, 0, 0)
-            end)
-            item:SetScript("OnClick", function()
-                themeMenu:Hide()
-                if name == "Custom" then
-                    SetCurrentPreset("Custom")
-                    -- Open color picker for custom
-                    local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
-                    if not db then return end
-                    local cur = db.addonAccentColor or {0.376, 0.647, 0.980, 1}
-                    local pickerWatcher = CreateFrame("Frame")
-                    pickerWatcher:SetScript("OnUpdate", function(self)
-                        if not ColorPickerFrame:IsShown() then
-                            self:SetScript("OnUpdate", nil)
-                            self:Hide()
-                            GUI:RefreshAccentColor()
-                            C_Timer.After(0, RefreshAllSkinning)
-                        end
-                    end)
-                    pickerWatcher:Show()
-                    ColorPickerFrame:SetupColorPickerAndShow({
-                        r = cur[1], g = cur[2], b = cur[3], opacity = 1,
-                        hasOpacity = false,
-                        swatchFunc = function()
-                            local r, g, b = ColorPickerFrame:GetColorRGB()
-                            db.addonAccentColor = {r, g, b, 1}
-                            GUI:ApplyAccentColor(r, g, b)
-                            accentSwatch:SetBackdropColor(r, g, b, 1)
-                            title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-                            version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-                        end,
-                        cancelFunc = function(prev)
-                            local r, g, b = prev.r, prev.g, prev.b
-                            db.addonAccentColor = {r, g, b, 1}
-                            GUI:ApplyAccentColor(r, g, b)
-                        end,
-                    })
-                else
-                    SetCurrentPreset(name)
-                end
-            end)
-        end
-    end
-
-    themeDropBtn:SetScript("OnClick", function()
-        if themeMenu:IsShown() then
-            themeMenu:Hide()
+        local useClass = db.skinUseClassColor
+        if useClass then
+            local cr, cg, cb = GetClassColor()
+            ApplyAccentToAll(cr, cg, cb)
+            accentSwatch:SetAlpha(0.5)
+            classCheck:Show()
         else
-            BuildThemeMenu()
-            themeMenu:Show()
+            local c = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
+            ApplyAccentToAll(c[1], c[2], c[3])
+            accentSwatch:SetAlpha(1)
+            classCheck:Hide()
         end
-    end)
-    themeDropBtn:SetScript("OnEnter", function()
-        themeDropBtn:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    end)
-    themeDropBtn:SetScript("OnLeave", function()
-        if not themeMenu:IsShown() then
-            themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    end
+
+    -- Initialize class toggle state
+    local initDB = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+    if initDB and initDB.skinUseClassColor then
+        local cr, cg, cb = GetClassColor()
+        ApplyAccentToAll(cr, cg, cb)
+        accentSwatch:SetAlpha(0.5)
+        classCheck:Show()
+    end
+
+    classToggle:SetScript("OnClick", function()
+        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+        if not db then return end
+        db.skinUseClassColor = not db.skinUseClassColor
+        -- Update theme tables first, then rebuild panel
+        if db.skinUseClassColor then
+            local cr, cg, cb = GetClassColor()
+            GUI:ApplyAccentColor(cr, cg, cb)
+        else
+            local c = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
+            GUI:ApplyAccentColor(c[1], c[2], c[3])
         end
+        GUI:RefreshAccentColor()
+        -- Defer skinning refresh to next frame to reduce lag spike
+        C_Timer.After(0, RefreshAllSkinning)
     end)
 
-    -- Close dropdown when clicking elsewhere
-    themeMenu:SetScript("OnHide", function()
-        themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    classToggle:SetScript("OnEnter", function()
+        classBox:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    end)
+    classToggle:SetScript("OnLeave", function()
+        classBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     end)
 
     accentSwatch:SetScript("OnEnter", function(self)
@@ -6176,18 +5877,22 @@ function GUI:CreateMainFrame()
         pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
     end)
 
-    -- Clicking the swatch opens color picker in Custom mode
+    local pickerWatcher = CreateFrame("Frame")
+    pickerWatcher:Hide()
     accentSwatch:SetScript("OnClick", function()
         local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
         if not db then return end
-        SetCurrentPreset("Custom")
-        local cur = db.addonAccentColor or {0.376, 0.647, 0.980, 1}
-        local pickerWatcher = CreateFrame("Frame")
+        -- Don't open picker if class color is active
+        if db.skinUseClassColor then return end
+        local cur = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
+        -- Schedule panel rebuild when ColorPickerFrame closes
         pickerWatcher:SetScript("OnUpdate", function(self)
             if not ColorPickerFrame:IsShown() then
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
+                -- Rebuild panel to apply new accent everywhere
                 GUI:RefreshAccentColor()
+                -- Defer skinning refresh to next frame to reduce lag spike
                 C_Timer.After(0, RefreshAllSkinning)
             end
         end)
@@ -6198,6 +5903,7 @@ function GUI:CreateMainFrame()
             swatchFunc = function()
                 local r, g, b = ColorPickerFrame:GetColorRGB()
                 db.addonAccentColor = {r, g, b, 1}
+                -- Live-preview on header only (full rebuild happens on close)
                 GUI:ApplyAccentColor(r, g, b)
                 accentSwatch:SetBackdropColor(r, g, b, 1)
                 title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
@@ -6211,30 +5917,10 @@ function GUI:CreateMainFrame()
         })
     end)
 
-    local function UpdateAccentFromDB()
-        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
-        if not db then return end
-        local preset = db.themePreset or "Sky Blue"
-        themeDropText:SetText(preset)
-        local r, g, b = GUI:ResolveThemePreset(preset)
-        ApplyAccentToAll(r, g, b)
-        accentSwatch:SetAlpha(preset == "Custom" and 1 or 0.5)
-    end
-
-    -- Initialize theme from DB
-    do
-        local initDB = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
-        local preset = initDB and initDB.themePreset or "Sky Blue"
-        themeDropText:SetText(preset)
-        local r, g, b = GUI:ResolveThemePreset(preset)
-        ApplyAccentToAll(r, g, b)
-        accentSwatch:SetAlpha(preset == "Custom" and 1 or 0.5)
-    end
-
     -- Panel Scale (compact inline: label + editbox + slider)
     local scaleContainer = CreateFrame("Frame", nil, titleBar)
     scaleContainer:SetSize(160, 20)
-    scaleContainer:SetPoint("LEFT", themeDropBtn, "RIGHT", 14, 0)
+    scaleContainer:SetPoint("LEFT", classToggle, "RIGHT", 14, 0)
 
     local scaleLabel = scaleContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(scaleLabel, 10, "", C.textMuted)
