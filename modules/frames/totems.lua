@@ -24,6 +24,32 @@ local MAX_SLOTS = MAX_TOTEMS or 4
 local BASE_CROP = 0.08
 
 ---------------------------------------------------------------------------
+-- COMBAT-SAFE SHOW / HIDE FOR SECURE BUTTONS
+-- SecureActionButtonTemplate frames can't call Show()/Hide() in combat.
+-- Use SetAlpha as a visual stand-in, then reconcile on combat end.
+---------------------------------------------------------------------------
+local pendingReconcile = false
+
+local function SafeShowButton(btn)
+    if InCombatLockdown() then
+        btn:SetAlpha(1)
+        pendingReconcile = true
+    else
+        btn:Show()
+        btn:SetAlpha(1)
+    end
+end
+
+local function SafeHideButton(btn)
+    if InCombatLockdown() then
+        btn:SetAlpha(0)
+        pendingReconcile = true
+    else
+        btn:Hide()
+    end
+end
+
+---------------------------------------------------------------------------
 -- DATABASE ACCESS
 ---------------------------------------------------------------------------
 local GetDB = Helpers.CreateDBGetter("totemBar")
@@ -341,11 +367,11 @@ local function UpdateTotems()
                 pcall(cd.SetCooldown, cd, startTime, duration)
             end
             StyleButton(btn)
-            btn:Show()
+            SafeShowButton(btn)
             hasActive = true
         else
             btn.cooldown:Clear()
-            btn:Hide()
+            SafeHideButton(btn)
         end
     end
 
@@ -665,8 +691,16 @@ local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 initFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 initFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_ENTERING_WORLD" then
+    if event == "PLAYER_REGEN_ENABLED" then
+        -- Reconcile secure button Show/Hide state after combat
+        if pendingReconcile and TotemBar.enabled then
+            pendingReconcile = false
+            UpdateTotems()
+        end
+        return
+    elseif event == "PLAYER_ENTERING_WORLD" then
         if QUICore then
             QUICore.TotemBar = TotemBar
         end

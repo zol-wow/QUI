@@ -34,6 +34,8 @@ local VIEWER_NAMES = {
     trackedBar  = "BuffBarCooldownViewer",
 }
 
+
+
 ---------------------------------------------------------------------------
 -- STATE
 ---------------------------------------------------------------------------
@@ -620,6 +622,7 @@ function CDMSpellData:ResolveAuraState(params)
         auraUnit = blzChild.auraDataUnit or "player"
     end
 
+
     if not InCombatLockdown() then
         -----------------------------------------------------------------
         -- OOC: API is the reliable source
@@ -645,6 +648,17 @@ function CDMSpellData:ResolveAuraState(params)
                     childAuraInstID = ad2.auraInstanceID
                     auraUnit = "player"
                     r.auraData = ad2
+                end
+            end
+            -- Also try entryID — owned entries may have ability ID as
+            -- spellID/entrySpellID and the actual buff as entryID.
+            if not isActive and entryID and entryID ~= auraSpellID and entryID ~= entrySpellID then
+                local ok3, ad3 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, entryID)
+                if ok3 and ad3 and ad3.auraInstanceID and ad3.isHelpful == true then
+                    isActive = true
+                    childAuraInstID = ad3.auraInstanceID
+                    auraUnit = "player"
+                    r.auraData = ad3
                 end
             end
         end
@@ -700,11 +714,6 @@ function CDMSpellData:ResolveAuraState(params)
         -- Combat: hook cache + API fallbacks
         -----------------------------------------------------------------
         -- 1. Hook cache truthiness — gated on child auraInstanceID.
-        -- When Blizzard removes an aura, the child's auraInstanceID is
-        -- set to nil.  A nil check is safe (not a value comparison, no
-        -- secret-value taint).  The Hide hook also clears the cache, but
-        -- the child may be recycled rather than hidden — auraInstanceID
-        -- nil-check catches that case.
         local childAlive = blzChild and blzChild.auraInstanceID ~= nil
         if not childAlive and blzBarChild then
             childAlive = blzBarChild.auraInstanceID ~= nil
@@ -1674,14 +1683,27 @@ local function ResolveOwnedEntry(entry, containerKey, index)
         if C_Spell and C_Spell.GetSpellCharges then
             local checkID = resolved.overrideSpellID or displayID
             local ok, ci = pcall(C_Spell.GetSpellCharges, checkID)
-            if ok and ci then
-                local maxC = Helpers.SafeToNumber(ci.maxCharges, 0)
-                if maxC and maxC > 1 then
-                    resolved.hasCharges = true
+            local apiReadable = false
+            if ok then
+                if ci then
+                    local maxC = Helpers.SafeToNumber(ci.maxCharges, 0)
+                    if maxC then
+                        apiReadable = true
+                        if maxC > 1 then
+                            resolved.hasCharges = true
+                        end
+                    end
+                    -- ci exists but maxCharges is secret — apiReadable stays false
+                else
+                    -- API returned nil = spell has no charge mechanic.
+                    -- This is a definitive answer, not a failure.
+                    apiReadable = true
                 end
             end
-            -- Combat fallback: if API returned secret values, check persisted cache
-            if not resolved.hasCharges and checkID then
+            -- Combat fallback: only when API call failed (pcall error) or
+            -- returned secret maxCharges.  A nil result (no charges) and a
+            -- readable maxCharges <= 1 are both authoritative — skip cache.
+            if not apiReadable and not resolved.hasCharges and checkID then
                 local gdb = QUI and QUI.db and QUI.db.global
                 local svCharges = gdb and gdb.cdmChargeSpells
                 if svCharges and svCharges[checkID] then

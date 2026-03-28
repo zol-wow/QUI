@@ -132,12 +132,23 @@ local function TickCacheGetCharges(spellID)
     if cached ~= nil then return cached or nil end
     local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID) or nil
     _tickChargeCache[spellID] = chargeInfo or false
-    -- Persist multi-charge detection OOC for combat fallback
-    if chargeInfo and not InCombatLockdown() then
-        local maxC = SafeToNumber(chargeInfo.maxCharges, nil)
-        if maxC and maxC > 1 then
+    -- Persist multi-charge detection OOC for combat fallback.
+    -- Also clean up stale cache entries when API returns no charges or <= 1.
+    if not InCombatLockdown() then
+        if chargeInfo then
+            local maxC = SafeToNumber(chargeInfo.maxCharges, nil)
+            if maxC and maxC > 1 then
+                local svDB = GetChargeMetadataDB()
+                if svDB then svDB[spellID] = maxC end
+            elseif maxC then
+                -- API returned readable maxCharges <= 1 — remove stale cache
+                local svDB = GetChargeMetadataDB()
+                if svDB and svDB[spellID] then svDB[spellID] = nil end
+            end
+        else
+            -- API returned nil = no charge mechanic — remove stale cache
             local svDB = GetChargeMetadataDB()
-            if svDB then svDB[spellID] = maxC end
+            if svDB and svDB[spellID] then svDB[spellID] = nil end
         end
     end
     return chargeInfo
@@ -850,6 +861,7 @@ local function SyncStackText(state)
         local eqOk, eqResult = pcall(function() return state.appText == "" end)
         if eqOk and eqResult then hasApp = false end
     end
+
     -- For cooldown icons, skip application stacks unless Blizzard is
     -- actively showing the Applications frame (appVisible).  Without
     -- this guard, cooldown icons show irrelevant aura stacks (e.g.,
@@ -877,10 +889,13 @@ local function SyncStackText(state)
             hasCharge = false
         else
             -- Forward charge text for multi-charge spells (maxCharges > 1) or
-            -- resource overlay spells (chargeVisible = true, e.g., Soul Fragments,
-            -- Holy Power).  Single-charge spells without a resource overlay can
-            -- show misleading counts from empowerment mechanics (e.g., Wake of
-            -- Ashes showing "2" from Hammer of Light transformation).
+            -- resource overlay spells where Blizzard is actively updating the
+            -- ChargeCount frame.  Accept when chargeVisible is true (Show fired)
+            -- or when lastHookTime is within the current frame (SetText fired as
+            -- part of Blizzard's synchronous Hide→SetText→Show refresh — Show
+            -- hasn't restored chargeVisible yet but will in the same frame).
+            -- Without the freshness check, recycled viewer children leak stale
+            -- charge text from previously-mapped spells.
             local sid = entry and (entry.overrideSpellID or entry.spellID or entry.id)
             local isMulti = false
             if sid and C_Spell and C_Spell.GetSpellCharges then
@@ -889,7 +904,14 @@ local function SyncStackText(state)
                     isMulti = true
                 end
             end
-            if not isMulti and not state.chargeVisible then hasCharge = false end
+            if not isMulti then
+                -- Accept if chargeVisible (Show already fired) or if the hook
+                -- fired this frame (SetText is mid-cycle, Show is imminent).
+                local hookFresh = state.lastHookTime and (GetTime() - state.lastHookTime) < 0.1
+                if not state.chargeVisible and not hookFresh then
+                    hasCharge = false
+                end
+            end
         end
     end
     if hasCharge then
@@ -937,6 +959,18 @@ local function HookBlizzStackText(icon, blizzChild)
         state = {}
         blizzStackState[blizzChild] = state
     end
+    -- When the child is reassigned to a different icon (spec change, pool
+    -- rebuild), clear stale text state from the previous mapping.  Without
+    -- this, chargeText/appText from the old spell leaks into the new icon
+    -- because the hook state survives child recycling.
+    if state.icon ~= icon then
+        state.chargeText = nil
+        state.appText = nil
+        state.chargeVisible = nil
+        state.appVisible = nil
+        state._hookHadContent = false
+        state.lastHookTime = nil
+    end
     state.icon = icon
     state.blizzChild = blizzChild  -- Track child for stale mapping guard
 
@@ -946,6 +980,7 @@ local function HookBlizzStackText(icon, blizzChild)
         -- Log what children exist on this blizzChild
         local chargeFrame = blizzChild.ChargeCount
         local appFrame = blizzChild.Applications
+
         -- Hook ChargeCount (e.g., DH Soul Fragments on Soul Cleave)
         -- Only SetText hooks drive the display — Show/Hide track visibility
         -- state but do NOT call SyncStackText.  Blizzard's viewer refresh
@@ -1984,6 +2019,7 @@ local function UpdateIconCooldown(icon)
             and icon._durObjHookSync
             and (_batchTime - icon._durObjHookSync) < 10
 
+
         if icon.Cooldown then
             -- isActive (non-secret, 12.0.5+) is the authoritative signal for
             -- whether the UI should render a cooldown.  It handles overrides,
@@ -2001,12 +2037,14 @@ local function UpdateIconCooldown(icon)
                 -- Exception: when GCD swipe is enabled, apply so it renders.
                 if not icon._isOnGCD or gcdSwipeWanted then
                     pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, false)
+                else
                 end
             elseif not mirrorActive and startTime and duration
                    and IsSafeNumeric(startTime) and IsSafeNumeric(duration) then
                 if not icon._isOnGCD or gcdSwipeWanted then
                     pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
                 end
+            else
             end
 
             -- Reapply swipe styling when GCD state transitions so
@@ -2077,6 +2115,8 @@ local function UpdateIconCooldown(icon)
                 and _cachedChargeInfo.maxCharges
                 and _cachedChargeInfo.maxCharges > 1
 
+
+
             if isMultiCharge then
                 -- GetSpellDisplayCount is the canonical charge display API.
                 if spellID and C_Spell.GetSpellDisplayCount then
@@ -2122,7 +2162,6 @@ local function UpdateIconCooldown(icon)
                     if etOk and etEq then hasText = false end
                 end
                 if hasText then
-
                     pcall(icon.StackText.SetText, icon.StackText, displayText)
                     icon.StackText:Show()
                 else

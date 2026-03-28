@@ -1110,6 +1110,8 @@ function CDMBars:UpdateOwnedBarAura(bar)
     local r = ns.CDMSpellData:ResolveAuraState(p)
     if r.blizzChild then bar._blizzIconChild = r.blizzChild end
 
+    local _bname = entry and entry.name
+
     if r.isActive then
         bar._active = true
         bar._auraDataUnit = r.auraUnit
@@ -1508,6 +1510,7 @@ barTimerGroup:SetScript("OnLoop", function()
                     end
                 else
                     -- OOC expired: remaining is nil or 0
+                    local _bn = bar._spellEntry and bar._spellEntry.name
                     bar._active = false
                     anyDeactivated = true
                     bar._durObj = nil
