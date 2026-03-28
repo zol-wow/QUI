@@ -869,21 +869,28 @@ local function SyncStackText(state)
     -- every viewer child on every refresh (even buffs without charges),
     -- which would race with the API path and cause flicker.
     if hasCharge then
-        -- Forward charge text for multi-charge spells (maxCharges > 1) or
-        -- resource overlay spells (chargeVisible = true, e.g., Soul Fragments,
-        -- Holy Power).  Single-charge spells without a resource overlay can
-        -- show misleading counts from empowerment mechanics (e.g., Wake of
-        -- Ashes showing "2" from Hammer of Light transformation).
         local entry = icon._spellEntry
-        local sid = entry and (entry.overrideSpellID or entry.spellID or entry.id)
-        local isMulti = false
-        if sid and C_Spell and C_Spell.GetSpellCharges then
-            local ok, ci = pcall(C_Spell.GetSpellCharges, sid)
-            if ok and ci and ci.maxCharges and ci.maxCharges > 1 then
-                isMulti = true
+        -- For aura entries, ChargeCount represents the ability's charges
+        -- (e.g., Death Charge 1/2), not the aura's stacks.  Aura stacks
+        -- come from Applications or the API — never from ChargeCount.
+        if entry and entry.isAura then
+            hasCharge = false
+        else
+            -- Forward charge text for multi-charge spells (maxCharges > 1) or
+            -- resource overlay spells (chargeVisible = true, e.g., Soul Fragments,
+            -- Holy Power).  Single-charge spells without a resource overlay can
+            -- show misleading counts from empowerment mechanics (e.g., Wake of
+            -- Ashes showing "2" from Hammer of Light transformation).
+            local sid = entry and (entry.overrideSpellID or entry.spellID or entry.id)
+            local isMulti = false
+            if sid and C_Spell and C_Spell.GetSpellCharges then
+                local ok, ci = pcall(C_Spell.GetSpellCharges, sid)
+                if ok and ci and ci.maxCharges and ci.maxCharges > 1 then
+                    isMulti = true
+                end
             end
+            if not isMulti and not state.chargeVisible then hasCharge = false end
         end
-        if not isMulti and not state.chargeVisible then hasCharge = false end
     end
     if hasCharge then
         pcall(icon.StackText.SetText, icon.StackText, state.chargeText)
@@ -1892,7 +1899,7 @@ local function UpdateIconCooldown(icon)
                 end
             end
         else
-            if entry._blizzChild then
+            if entry._blizzChild and not entry.hasCharges then
                 local sid = entry.overrideSpellID or entry.spellID or entry.id
 
                 -- Chain: GetOverrideSpell → C-side APIs.
@@ -2084,19 +2091,13 @@ local function UpdateIconCooldown(icon)
                 end
             end
 
-            -- Resource overlay count: essential/utility viewer children have
-            -- no Applications frame — only ChargeCount.  Read ChargeCount
-            -- directly, gated on IsShown to avoid stale text from spells
-            -- that don't use resource overlays.  Text and IsShown may be
-            -- secret in combat — GetText forwards to C-side SetText via
-            -- TruncateWhenZero; IsShown is checked safely (secret = shown).
+            -- Resource overlay count: read ChargeCount directly, gated on
+            -- IsShown.  Secret-safe (secret IsShown = treat as shown).
             if not stackVal and not isMultiCharge and entry._blizzChild then
                 local cc = entry._blizzChild.ChargeCount
                 if cc and cc.Current then
                     local okS, vis = pcall(cc.IsShown, cc)
                     if okS then
-                        -- vis may be secret boolean — can't use in if/not.
-                        -- IsSecretValue detects it; non-secret false → skip.
                         local skip = not IsSecretValue(vis) and vis == false
                         if not skip then
                             local okT, text = pcall(cc.Current.GetText, cc.Current)
