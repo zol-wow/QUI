@@ -5940,16 +5940,12 @@ function GUI:CreateMainFrame()
     local thumb
 
     -- Accent Color swatch (parented to titleBar so it receives clicks above the drag region)
-    local accentSwatch = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    local accentSwatch = CreateFrame("Button", nil, titleBar)
     accentSwatch:SetSize(14, 14)
     accentSwatch:SetPoint("TOPLEFT", titleBar, "TOPLEFT", SIDEBAR_W + 14, -8)
-    accentSwatch:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    accentSwatch:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    accentSwatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    accentSwatch._bg = UIKit.CreateBackground(accentSwatch, C.accent[1], C.accent[2], C.accent[3], 1)
+    UIKit.CreateBorderLines(accentSwatch)
+    UIKit.UpdateBorderLines(accentSwatch, 1, 0.4, 0.4, 0.4, 1)
 
     -- Helper to refresh all skinned in-game elements
     local function RefreshAllSkinning()
@@ -5962,7 +5958,7 @@ function GUI:CreateMainFrame()
     -- Helper to apply accent color to header elements + theme + skinning
     local function ApplyAccentToAll(r, g, b)
         GUI:ApplyAccentColor(r, g, b)
-        accentSwatch:SetBackdropColor(r, g, b, 1)
+        accentSwatch._bg:SetVertexColor(r, g, b, 1)
         title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
         version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
         RefreshAllSkinning()
@@ -5974,16 +5970,12 @@ function GUI:CreateMainFrame()
     themeLabel:SetText("Theme")
     themeLabel:SetPoint("LEFT", accentSwatch, "RIGHT", 4, 0)
 
-    local themeDropBtn = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    local themeDropBtn = CreateFrame("Button", nil, titleBar)
     themeDropBtn:SetSize(110, 16)
     themeDropBtn:SetPoint("LEFT", themeLabel, "RIGHT", 6, 0)
-    themeDropBtn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    themeDropBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    UIKit.CreateBackground(themeDropBtn, 0.1, 0.1, 0.1, 0.8)
+    UIKit.CreateBorderLines(themeDropBtn)
+    UIKit.UpdateBorderLines(themeDropBtn, 1, 0.3, 0.3, 0.3, 1)
 
     local themeDropText = themeDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(themeDropText, 10, "", C.text)
@@ -6024,7 +6016,7 @@ function GUI:CreateMainFrame()
         local r, g, b = GUI:ResolveThemePreset(presetName)
         db.addonAccentColor = {r, g, b, 1}
         GUI:ApplyAccentColor(r, g, b)
-        accentSwatch:SetBackdropColor(r, g, b, 1)
+        accentSwatch._bg:SetVertexColor(r, g, b, 1)
         accentSwatch:SetAlpha(presetName == "Custom" and 1 or 0.5)
         themeDropText:SetText(presetName)
         GUI:RefreshAccentColor()
@@ -6032,14 +6024,10 @@ function GUI:CreateMainFrame()
     end
 
     -- Dropdown menu frame
-    local themeMenu = CreateFrame("Frame", nil, themeDropBtn, "BackdropTemplate")
-    themeMenu:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    themeMenu:SetBackdropColor(0.08, 0.08, 0.12, 0.95)
-    themeMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    local themeMenu = CreateFrame("Frame", nil, themeDropBtn)
+    UIKit.CreateBackground(themeMenu, 0.08, 0.08, 0.12, 0.95)
+    UIKit.CreateBorderLines(themeMenu)
+    UIKit.UpdateBorderLines(themeMenu, 1, 0.3, 0.3, 0.3, 1)
     themeMenu:SetFrameStrata("TOOLTIP")
     themeMenu:Hide()
 
@@ -6127,7 +6115,7 @@ function GUI:CreateMainFrame()
                             local r, g, b = ColorPickerFrame:GetColorRGB()
                             db.addonAccentColor = {r, g, b, 1}
                             GUI:ApplyAccentColor(r, g, b)
-                            accentSwatch:SetBackdropColor(r, g, b, 1)
+                            accentSwatch._bg:SetVertexColor(r, g, b, 1)
                             title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
                             version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
                         end,
@@ -6153,24 +6141,24 @@ function GUI:CreateMainFrame()
         end
     end)
     themeDropBtn:SetScript("OnEnter", function()
-        themeDropBtn:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        UIKit.UpdateBorderLines(themeDropBtn, 1, C.accent[1], C.accent[2], C.accent[3], 1)
     end)
     themeDropBtn:SetScript("OnLeave", function()
         if not themeMenu:IsShown() then
-            themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+            UIKit.UpdateBorderLines(themeDropBtn, 1, 0.3, 0.3, 0.3, 1)
         end
     end)
 
     -- Close dropdown when clicking elsewhere
     themeMenu:SetScript("OnHide", function()
-        themeDropBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        UIKit.UpdateBorderLines(themeDropBtn, 1, 0.3, 0.3, 0.3, 1)
     end)
 
     accentSwatch:SetScript("OnEnter", function(self)
-        pcall(self.SetBackdropBorderColor, self, C_accentLight_r, C_accentLight_g, C_accentLight_b, C_accentLight_a)
+        UIKit.UpdateBorderLines(self, 1, C_accentLight_r, C_accentLight_g, C_accentLight_b, C_accentLight_a)
     end)
     accentSwatch:SetScript("OnLeave", function(self)
-        pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
+        UIKit.UpdateBorderLines(self, 1, 0.4, 0.4, 0.4, 1)
     end)
 
     -- Clicking the swatch opens color picker in Custom mode
@@ -6196,7 +6184,7 @@ function GUI:CreateMainFrame()
                 local r, g, b = ColorPickerFrame:GetColorRGB()
                 db.addonAccentColor = {r, g, b, 1}
                 GUI:ApplyAccentColor(r, g, b)
-                accentSwatch:SetBackdropColor(r, g, b, 1)
+                accentSwatch._bg:SetVertexColor(r, g, b, 1)
                 title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
                 version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
             end,
@@ -6238,17 +6226,12 @@ function GUI:CreateMainFrame()
     scaleLabel:SetText("Panel Scale:")
     scaleLabel:SetPoint("LEFT", scaleContainer, "LEFT", 0, 0)
 
-    local scaleEditBox = CreateFrame("EditBox", nil, scaleContainer, "BackdropTemplate")
+    local scaleEditBox = CreateFrame("EditBox", nil, scaleContainer)
     scaleEditBox:SetSize(38, 16)
     scaleEditBox:SetPoint("LEFT", scaleLabel, "RIGHT", 5, 0)
-    local px = QUICore:GetPixelSize(scaleEditBox)
-    scaleEditBox:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    scaleEditBox:SetBackdropColor(0.08, 0.08, 0.08, 1)
-    scaleEditBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+    UIKit.CreateBackground(scaleEditBox, 0.08, 0.08, 0.08, 1)
+    UIKit.CreateBorderLines(scaleEditBox)
+    UIKit.UpdateBorderLines(scaleEditBox, 1, 0.25, 0.25, 0.25, 1)
     scaleEditBox:SetFont(GetFontPath(), 10, "")
     scaleEditBox:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a)
     scaleEditBox:SetJustifyH("CENTER")
@@ -6325,11 +6308,11 @@ function GUI:CreateMainFrame()
     end)
 
     scaleEditBox:SetScript("OnEditFocusGained", function(self)
-        pcall(self.SetBackdropBorderColor, self, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
+        UIKit.UpdateBorderLines(self, 1, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
     end)
 
     scaleEditBox:SetScript("OnEditFocusLost", function(self)
-        pcall(self.SetBackdropBorderColor, self, 0.25, 0.25, 0.25, 1)
+        UIKit.UpdateBorderLines(self, 1, 0.25, 0.25, 0.25, 1)
         local val = tonumber(self:GetText())
         if not val then
             self:SetText(string.format("%.2f", scaleSlider:GetValue()))
@@ -6337,16 +6320,12 @@ function GUI:CreateMainFrame()
     end)
 
     -- Close button [x]
-    local close = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    local close = CreateFrame("Button", nil, titleBar)
     close:SetSize(22, 22)
     close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -5)
-    close:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    close:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
-    close:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+    close._bg = UIKit.CreateBackground(close, 0.08, 0.08, 0.08, 0.6)
+    UIKit.CreateBorderLines(close)
+    UIKit.UpdateBorderLines(close, 1, C.border[1], C.border[2], C.border[3], 1)
 
     -- X drawn with two rotated lines
     local LINE_LEN, LINE_W = 10, 1.5
@@ -6364,14 +6343,14 @@ function GUI:CreateMainFrame()
 
     close:SetScript("OnClick", function() frame:Hide() end)
     close:SetScript("OnEnter", function(self)
-        pcall(self.SetBackdropBorderColor, self, C.accent[1], C.accent[2], C.accent[3], 1)
-        self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
+        UIKit.UpdateBorderLines(self, 1, C.accent[1], C.accent[2], C.accent[3], 1)
+        self._bg:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
         xLine1:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
         xLine2:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
     end)
     close:SetScript("OnLeave", function(self)
-        pcall(self.SetBackdropBorderColor, self, C.border[1], C.border[2], C.border[3], 1)
-        self:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+        UIKit.UpdateBorderLines(self, 1, C.border[1], C.border[2], C.border[3], 1)
+        self._bg:SetVertexColor(0.08, 0.08, 0.08, 0.6)
         xLine1:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
         xLine2:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
     end)
