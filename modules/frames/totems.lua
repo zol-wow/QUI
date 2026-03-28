@@ -125,7 +125,7 @@ TotemBar.enabled = false
 
 -- Create one button per totem slot
 for i = 1, MAX_SLOTS do
-    local btn = CreateFrame("Button", "QUI_TotemBarButton" .. i, container)
+    local btn = CreateFrame("Button", "QUI_TotemBarButton" .. i, container, "SecureActionButtonTemplate")
     btn:SetSize(36, 36)
     btn:RegisterForClicks("RightButtonUp")
     btn:Hide()
@@ -158,12 +158,10 @@ for i = 1, MAX_SLOTS do
         GameTooltip:Hide()
     end)
 
-    -- Right-click dismiss (DestroyTotem is protected in combat)
-    btn:SetScript("OnClick", function(self, button)
-        if button == "RightButton" and self.slot and not InCombatLockdown() then
-            DestroyTotem(self.slot)
-        end
-    end)
+    -- Right-click dismiss is handled via secure click-through to
+    -- Blizzard's totem buttons (DestroyTotem is protected; the secure
+    -- handler performs it natively even during combat).
+    -- Attributes are set in UpdateTotems when OOC.
 
     btn.slot = nil
     TotemBar.buttons[i] = btn
@@ -291,6 +289,17 @@ local function UpdateTotems()
         local slot = priorities[displayIndex] or displayIndex
         local btn = TotemBar.buttons[displayIndex]
         btn.slot = slot
+
+        -- OOC: set up secure click-through to Blizzard's totem button
+        -- so right-click dismiss works even during combat
+        if not InCombatLockdown() then
+            local blizzBtns = TotemFrame and TotemFrame.totemButtons
+            local blizzBtn = blizzBtns and blizzBtns[displayIndex]
+            if blizzBtn then
+                btn:SetAttribute("type2", "click")
+                btn:SetAttribute("clickbutton2", blizzBtn)
+            end
+        end
 
         local haveTotem, name, startTime, duration, icon = GetTotemInfo(slot)
         -- Detect active totem: OOC values are readable, combat values are secret.
@@ -436,10 +445,22 @@ end
 local function StealEvents()
     local tf = TotemFrame
     if not tf then return end
+    -- Keep PLAYER_TOTEM_UPDATE so Blizzard's buttons maintain their .slot
+    -- values (needed for secure click-through DestroyTotem)
     for _, event in ipairs(STOLEN_EVENTS) do
-        pcall(tf.UnregisterEvent, tf, event)
+        if event ~= "PLAYER_TOTEM_UPDATE" then
+            pcall(tf.UnregisterEvent, tf, event)
+        end
     end
-    tf:Hide()
+    -- Alpha 0 hides TotemFrame visually while keeping it "shown" so its
+    -- event handler runs.  Disable mouse to prevent invisible click targets.
+    tf:SetAlpha(0)
+    tf:EnableMouse(false)
+    if tf.totemButtons then
+        for _, tbtn in ipairs(tf.totemButtons) do
+            pcall(tbtn.EnableMouse, tbtn, false)
+        end
+    end
 end
 
 local function RestoreEvents()
@@ -447,6 +468,13 @@ local function RestoreEvents()
     if not tf then return end
     for _, event in ipairs(STOLEN_EVENTS) do
         pcall(tf.RegisterEvent, tf, event)
+    end
+    tf:SetAlpha(1)
+    tf:EnableMouse(true)
+    if tf.totemButtons then
+        for _, tbtn in ipairs(tf.totemButtons) do
+            pcall(tbtn.EnableMouse, tbtn, true)
+        end
     end
     tf:Show()
     -- Trigger Blizzard's own update so it catches up
