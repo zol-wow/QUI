@@ -89,23 +89,28 @@ function GUI:InitializeOptions()
     GUI:AddTab(frame, "Welcome", ns.QUI_WelcomeOptions.CreateWelcomePage)
     local generalTab = GUI:AddTab(frame, "General & QoL", ns.QUI_GeneralOptions.CreateGeneralQoLPage)
     local anchoringTab = GUI:AddTab(frame, "Frame Positioning", ns.QUI_FrameAnchoringOptions.CreateFrameAnchoringPage)
-    -- Cooldown Manager settings moved to Layout Mode settings panels
+    local cdmTab = GUI:AddTab(frame, "Cooldown Manager", ns.QUI_NCDMOptions.CreateCDMSetupPage)
     local unitFramesTab = GUI:AddTab(frame, "Unit Frames", ns.QUI_UnitFramesOptions.CreateUnitFramesPage)
+    local groupFramesTab = GUI:AddTab(frame, "Group Frames", ns.QUI_GroupFramesDesignerOptions.CreateGroupFramesPage)
     local clickCastTab = GUI:AddTab(frame, "Click-Cast", ns.QUI_GroupFramesOptions.CreateClickCastPage)
     local actionBarsTab = GUI:AddTab(frame, "Action Bars", ns.QUI_ActionBarsOptions.CreateActionBarsPage)
-    -- Minimap & Datatext settings moved to Layout Mode settings panels
+    local minimapTab = GUI:AddTab(frame, "Minimap & Datatext", ns.QUI_MinimapPageOptions.CreateMinimapPage)
     local skinningTab = GUI:AddTab(frame, "Skinning & Autohide", ns.QUI_AutohidesOptions.CreateAutohidesPage)
-    -- Custom CDM Bars settings moved to Layout Mode (Composer)
-    -- Prey Tracker settings moved to Layout Mode settings panels
+    local customTrackersTab = GUI:AddTab(frame, "Custom Trackers", ns.QUI_CustomTrackersOptions.CreateCustomTrackersPage)
     GUI:AddTab(frame, "Frame Levels", ns.QUI_HUDLayeringOptions.CreateHUDLayeringPage)
     GUI:AddTab(frame, "Profiles", ns.QUI_ProfilesOptions.CreateSpecProfilesPage)
     local importExportTab = GUI:AddTab(frame, "Import & Export Strings", ns.QUI_ImportOptions.CreateImportExportPage)
 
     -- Hint caret visibility on first load for tabs that have level-2 entries.
     generalTab._hasSubTabsHint = true
-    -- Group Frames settings moved to Layout Mode (Composer + settings panels)
+    anchoringTab._hasSubTabsHint = true
+    cdmTab._hasSubTabsHint = true
+    unitFramesTab._hasSubTabsHint = true
+    groupFramesTab._hasSubTabsHint = true
     actionBarsTab._hasSubTabsHint = true
+    minimapTab._hasSubTabsHint = true
     skinningTab._hasSubTabsHint = true
+    customTrackersTab._hasSubTabsHint = true
     importExportTab._hasSubTabsHint = true
     -- Bottom sidebar items (Search tab, Help tab, action buttons)
     local searchTab = GUI:AddTab(frame, "Search", CreateSearchPage, true)  -- isBottomItem = true

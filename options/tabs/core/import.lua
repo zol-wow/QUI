@@ -99,7 +99,7 @@ local function BuildImportExportTab(tabContent)
     local y = -10
     local PAD = 10
 
-    GUI:SetSearchContext({tabIndex = 13, tabName = "Import & Export Strings", subTabIndex = 1, subTabName = "Import/Export"})
+    GUI:SetSearchContext({tabIndex = 14, tabName = "Import & Export Strings", subTabIndex = 1, subTabName = "Import/Export"})
 
     local info = GUI:CreateLabel(tabContent, "Import and export QUI profiles", 11, C.textMuted)
     info:SetPoint("TOPLEFT", PAD, y)
@@ -563,7 +563,7 @@ local function BuildQuaziiStringsTab(tabContent)
     local SECTION_HEIGHT = BOX_HEIGHT + 8 + 24 + 12  -- textbox + gap + button + pad
     local CreateCollapsiblePage = Shared.CreateCollapsiblePage
 
-    GUI:SetSearchContext({tabIndex = 13, tabName = "Import & Export Strings", subTabIndex = 2, subTabName = "Quazii's Strings"})
+    GUI:SetSearchContext({tabIndex = 14, tabName = "Import & Export Strings", subTabIndex = 2, subTabName = "Quazii's Strings"})
 
     -- Disclaimer banner
     local warnBg = CreateFrame("Frame", nil, tabContent)
