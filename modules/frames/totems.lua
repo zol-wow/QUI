@@ -273,19 +273,26 @@ local function LayoutButtons()
     local visibleCount = 0
     for i = 1, MAX_SLOTS do
         local btn = TotemBar.buttons[i]
+        btn:SetSize(iconSize, iconSize)
+        btn:ClearAllPoints()
+        local offset
         if btn.active then
             visibleCount = visibleCount + 1
-            btn:ClearAllPoints()
-            local offset = (visibleCount - 1) * (iconSize + spacing)
-            if growDir == "RIGHT" then
-                btn:SetPoint("LEFT", container, "LEFT", offset, 0)
-            elseif growDir == "LEFT" then
-                btn:SetPoint("RIGHT", container, "RIGHT", -offset, 0)
-            elseif growDir == "DOWN" then
-                btn:SetPoint("TOP", container, "TOP", 0, -offset)
-            elseif growDir == "UP" then
-                btn:SetPoint("BOTTOM", container, "BOTTOM", 0, offset)
-            end
+            offset = (visibleCount - 1) * (iconSize + spacing)
+        else
+            -- Pre-position inactive buttons at their slot offset so they have
+            -- anchor points if they become active during combat (SetPoint is
+            -- protected on secure frames).  They are alpha 0, so invisible.
+            offset = (i - 1) * (iconSize + spacing)
+        end
+        if growDir == "RIGHT" then
+            btn:SetPoint("LEFT", container, "LEFT", offset, 0)
+        elseif growDir == "LEFT" then
+            btn:SetPoint("RIGHT", container, "RIGHT", -offset, 0)
+        elseif growDir == "DOWN" then
+            btn:SetPoint("TOP", container, "TOP", 0, -offset)
+        elseif growDir == "UP" then
+            btn:SetPoint("BOTTOM", container, "BOTTOM", 0, offset)
         end
     end
 
@@ -412,7 +419,7 @@ local function UpdateTotems()
                 if not tdb or tdb.hideDurationText then return end
                 for j = 1, MAX_SLOTS do
                     local b = TotemBar.buttons[j]
-                    if b:IsShown() and b.slot and b.duration then
+                    if b.active and b.slot and b.duration then
                         -- GetTotemTimeLeft returns secret values in combat.
                         -- Use DurationObject API when available, fallback to
                         -- SetFormattedText which handles secrets C-side.

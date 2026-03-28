@@ -671,17 +671,21 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 -- and overwrites the API's charge recharge swipe.  The API
                 -- path (GetBestSpellCooldown + isActive) handles charged
                 -- cooldowns correctly without mirror interference.
+                -- Also skip when the icon is in aura-active mode — the tick
+                -- function drives the aura swipe via ResolveAuraState and
+                -- forwarding the cooldown DurationObject would overwrite it.
                 local cd = targetIcon.Cooldown
                 local tSkipCharge = tEntry and tEntry.hasCharges
+                local tSkipAura = targetIcon._auraActive
 
-                if not tSkipCharge and cd and cd.SetCooldownFromDurationObject then
+                if not tSkipCharge and not tSkipAura and cd and cd.SetCooldownFromDurationObject then
                     pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
                     -- Track that this hook successfully forwarded a DurationObject
                     -- so the API path can skip competing CooldownFrame writes.
                     targetIcon._durObjHookSync = GetTime()
                 end
 
-                if not tSkipCharge then
+                if not tSkipCharge and not tSkipAura then
                     SyncMirroredCooldownState(targetIcon, self, true)
                 end
                 RefreshIconGCDState(targetIcon)
@@ -1937,24 +1941,99 @@ local function UpdateIconCooldown(icon)
             if entry._blizzChild and not entry.hasCharges then
                 local sid = entry.overrideSpellID or entry.spellID or entry.id
 
+                -- Non-charged abilities may have an aura phase (e.g.,
+                -- defensive CDs that grant a buff). Detect active aura
+                -- and show it; mirror hook is suppressed via _auraActive
+                -- so the cooldown DurationObject doesn't overwrite it.
+                -- Many utility/defensive CDs grant a buff with the same
+                -- spell ID but aren't in Blizzard's buff CDM categories,
+                -- so we always try ResolveAuraState (not gated on the
+                -- _abilityToAuraSpellID mapping).
+                local _ncAuraActive = false
+                if ns.CDMSpellData then
+                    local p = icon._auraParams or {}
+                    icon._auraParams = p
+                    p.spellID = sid
+                    p.entrySpellID = entry.spellID
+                    p.entryID = entry.id
+                    p.entryName = entry.name
+                    p.viewerType = entry.viewerType
+                    p.blizzChild = entry._blizzChild
+                    p.blizzBarChild = nil
+
+                    local r = ns.CDMSpellData:ResolveAuraState(p)
+
+                    if r.isActive then
+                        _ncAuraActive = true
+                        icon._auraActive = true
+                        if icon.Cooldown then
+                            local swipeSet = false
+                            if r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
+                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                                swipeSet = true
+                            end
+                            if not swipeSet and r.hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
+                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.hookDurObj, true)
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                                swipeSet = true
+                            end
+                            if not swipeSet and r.hookStart and r.hookDur
+                               and IsSafeNumeric(r.hookStart) and IsSafeNumeric(r.hookDur) then
+                                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, r.hookStart, r.hookDur)
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                            end
+                            ReapplySwipeStyle(icon.Cooldown, icon)
+                        end
+                    else
+                        -- Combat debounce: hook cache still populated →
+                        -- transient miss, keep current aura state.
+                        if InCombatLockdown() and icon._auraActive
+                           and (r.hookDurObj or (r.hookStart and r.hookDur)) then
+                            _ncAuraActive = true
+                        else
+                            if icon._auraActive then
+                                icon._auraActive = false
+                                if icon.Cooldown then
+                                    pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
+                                end
+                            end
+                        end
+                    end
+                end
+
                 -- Chain: GetOverrideSpell → C-side APIs.
                 -- Override ID may be secret in combat — pass directly to
                 -- C-side functions which handle secrets natively.
                 local cdSid = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(sid) or sid
 
-                -- Cooldown state + DurationObject from the override spell
-                local childCi = C_Spell.GetSpellCooldown(cdSid)
-                if childCi and childCi.isActive ~= nil then
-                    apiIsActive = childCi.isActive
+                if not _ncAuraActive then
+                    -- Cooldown state + DurationObject from the override spell
+                    local childCi = C_Spell.GetSpellCooldown(cdSid)
+                    if childCi and childCi.isActive ~= nil then
+                        apiIsActive = childCi.isActive
+                    end
+                    -- Refresh _isOnGCD from per-tick API data.  Hooks alone can
+                    -- leave it stale after GCD ends (Blizzard may not fire a new
+                    -- SetCooldownFromDurationObject when transitioning from GCD
+                    -- to real CD on the viewer child).
+                    if childCi and not IsSecretValue(childCi.isOnGCD) then
+                        icon._isOnGCD = childCi.isOnGCD or false
+                    end
+                    durObj = C_Spell.GetSpellCooldownDuration(cdSid)
+                else
+                    -- Aura active: still refresh GCD + cooldown activity
+                    -- from API so desaturation clears when the CD ends.
+                    -- Do NOT set the local apiIsActive — that would cause
+                    -- the CooldownFrame write to overwrite the aura swipe.
+                    local childCi = C_Spell.GetSpellCooldown(cdSid)
+                    if childCi and not IsSecretValue(childCi.isOnGCD) then
+                        icon._isOnGCD = childCi.isOnGCD or false
+                    end
+                    if childCi and childCi.isActive ~= nil then
+                        icon._hasCooldownActive = childCi.isActive
+                    end
                 end
-                -- Refresh _isOnGCD from per-tick API data.  Hooks alone can
-                -- leave it stale after GCD ends (Blizzard may not fire a new
-                -- SetCooldownFromDurationObject when transitioning from GCD
-                -- to real CD on the viewer child).
-                if childCi and not IsSecretValue(childCi.isOnGCD) then
-                    icon._isOnGCD = childCi.isOnGCD or false
-                end
-                durObj = C_Spell.GetSpellCooldownDuration(cdSid)
 
                 -- Texture from the override spell (C-side handles secrets).
                 -- Sets _desiredTexture so the Blizzard SetTexture hook doesn't
@@ -1967,8 +2046,78 @@ local function UpdateIconCooldown(icon)
                     end
                 end
             else
-                -- Custom entry without viewer child: full API resolution.
-                startTime, duration, durObj, apiIsActive = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+                -- Charged entries may have an aura phase (e.g., utility
+                -- abilities that grant a timed buff before the recharge
+                -- timer begins). Detect active aura via ResolveAuraState
+                -- and show it; when the aura fades, fall through to the
+                -- normal charge-recharge display via GetBestSpellCooldown.
+                local _chargedAuraActive = false
+                if entry.hasCharges and ns.CDMSpellData then
+                    local _cBaseID = entry.overrideSpellID or entry.spellID or entry.id
+
+                    local p = icon._auraParams or {}
+                    icon._auraParams = p
+                    p.spellID = _cBaseID
+                    p.entrySpellID = entry.spellID
+                    p.entryID = entry.id
+                    p.entryName = entry.name
+                    p.viewerType = entry.viewerType
+                    p.blizzChild = entry._blizzChild
+                    p.blizzBarChild = nil
+
+                    local r = ns.CDMSpellData:ResolveAuraState(p)
+
+                    if r.isActive then
+                        _chargedAuraActive = true
+                        icon._auraActive = true
+                        -- Swipe priority: durObj → hookDurObj → raw start/dur
+                        if icon.Cooldown then
+                            local swipeSet = false
+                            if r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
+                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                                swipeSet = true
+                            end
+                            if not swipeSet and r.hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
+                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.hookDurObj, true)
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                                swipeSet = true
+                            end
+                            if not swipeSet and r.hookStart and r.hookDur
+                               and IsSafeNumeric(r.hookStart) and IsSafeNumeric(r.hookDur) then
+                                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, r.hookStart, r.hookDur)
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+                            end
+                            ReapplySwipeStyle(icon.Cooldown, icon)
+                        end
+                    else
+                        -- Combat debounce: hook cache still populated means
+                        -- Blizzard hasn't cleared the child yet — transient miss.
+                        if InCombatLockdown() and icon._auraActive
+                           and (r.hookDurObj or (r.hookStart and r.hookDur)) then
+                            _chargedAuraActive = true
+                        else
+                            if icon._auraActive then
+                                icon._auraActive = false
+                                if icon.Cooldown then
+                                    pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if not _chargedAuraActive then
+                    -- Custom entry / charged recharge: full API resolution.
+                    startTime, duration, durObj, apiIsActive = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+                else
+                    -- Aura active: keep _hasCooldownActive in sync so
+                    -- desaturation clears when the recharge completes.
+                    local _, _, _, _auraApiActive = GetBestSpellCooldown(entry.overrideSpellID or entry.spellID or entry.id)
+                    if _auraApiActive ~= nil then
+                        icon._hasCooldownActive = _auraApiActive
+                    end
+                end
                 -- Refresh _isOnGCD from tick-cached API data (same query
                 -- GetBestSpellCooldown already performed via TickCacheGetCooldown).
                 local _tickCi = TickCacheGetCooldown(entry.overrideSpellID or entry.spellID or entry.id)
