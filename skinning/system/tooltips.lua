@@ -160,7 +160,9 @@ end
 
 local styleFrames = Helpers.CreateStateTable()   -- tooltip → overlay frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
+local hookedNineSlices = Helpers.CreateStateTable() -- NineSlice → true
 local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
+local suppressNSHook = false                      -- suppress NineSlice hook during intentional re-show
 
 ---------------------------------------------------------------------------
 -- NineSlice Management
@@ -187,6 +189,27 @@ local function HideNineSlice(tooltip)
     -- Do NOT call SetAlpha(0) here — it can propagate taint into
     -- Blizzard's layout code, making GetWidth() return secret values
     -- even after combat ends.
+end
+
+-- Hook NineSlice:Show() directly so that ANY Blizzard code path that
+-- re-shows NineSlice (not just SharedTooltip_SetBackdropStyle) is caught
+-- and immediately reversed.  C-side Hide/Show/SetFrameLevel do not taint,
+-- so this is safe even inside a secure call stack.
+local function HookNineSlice(tooltip)
+    local ns = tooltip and tooltip.NineSlice
+    if not ns or hookedNineSlices[ns] then return end
+    hookedNineSlices[ns] = true
+
+    hooksecurefunc(ns, "Show", function(self)
+        if suppressNSHook then return end
+        if not IsEnabled() then return end
+
+        pcall(self.Hide, self)
+        pcall(self.SetFrameLevel, self, 0)
+
+        local sf = styleFrames[tooltip]
+        if sf then pcall(sf.Show, sf) end
+    end)
 end
 
 ---------------------------------------------------------------------------
@@ -288,11 +311,14 @@ local function StyleTooltip(tooltip)
         -- an infinite per-frame loop.  Our overlay at the same frame level
         -- covers the tooltip's own backdrop anyway.
 
-        -- Fall back to NineSlice if dimensions are inaccessible (secret values)
+        -- Fall back to NineSlice if dimensions are inaccessible (secret values).
+        -- Suppress the NineSlice:Show hook so we don't fight our own fallback.
         local dimOk = pcall(function() local _ = tooltip:GetWidth() + 0 end)
         if not dimOk then
+            suppressNSHook = true
             local ns = tooltip.NineSlice
             if ns then pcall(ns.Show, ns) end
+            suppressNSHook = false
             local sf = styleFrames[tooltip]
             if sf then sf:Hide() end
             return
@@ -415,7 +441,16 @@ end
 -- Dispatch: combat vs normal path
 local function OnTooltipShow(tooltip)
     if not IsEnabled() then return end
-    if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then return end
+    -- MoneyFrame children can taint tooltip width arithmetic during
+    -- SetBackdrop, but we still suppress NineSlice and show our overlay.
+    if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then
+        pcall(function()
+            HideNineSlice(tooltip)
+            local sf = styleFrames[tooltip]
+            if sf then sf:Show() end
+        end)
+        return
+    end
     if InCombatLockdown() then
         CombatRefreshTooltip(tooltip)
     else
@@ -547,6 +582,7 @@ HookTooltipOnShow = function(tooltip)
     -- to avoid tainting Blizzard's secure execution context.
     if tooltip == GameTooltip then
         hookedTooltips[tooltip] = true
+        HookNineSlice(tooltip)
 
         tooltip:HookScript("OnShow", function(self)
             if not IsEnabled() then return end
@@ -592,6 +628,7 @@ HookTooltipOnShow = function(tooltip)
     end)
 
     hookedTooltips[tooltip] = true
+    HookNineSlice(tooltip)
 end
 
 local function HookAllTooltips()
@@ -880,10 +917,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 return
             end
 
-            -- Skip if already styled (NineSlice hidden, overlay showing)
-            local _ns = GameTooltip.NineSlice
+            -- Always re-suppress NineSlice — Blizzard may have re-shown it
+            -- through a code path our SharedTooltip hook didn't catch.
+            HideNineSlice(GameTooltip)
+
             local _sf = styleFrames[GameTooltip]
-            if not (_sf and _sf:IsShown() and (not _ns or not _ns:IsShown())) then
+            if not (_sf and _sf:IsShown()) then
                 if not IsProtectedTooltip(GameTooltip) then
                     OnTooltipShow(GameTooltip)
                 end
