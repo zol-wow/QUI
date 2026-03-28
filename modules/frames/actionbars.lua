@@ -155,6 +155,9 @@ local ActionBarsOwned = {
 }
 ns.ActionBarsOwned = ActionBarsOwned
 
+-- Forward declaration: defined ~line 3296, called from SafeUpdate (below)
+local UpdateAssistedCombatRotationFrame
+
 -- Backward compat alias for any code referencing mirrorButtons
 ActionBarsOwned.mirrorButtons = ActionBarsOwned.nativeButtons
 
@@ -244,6 +247,9 @@ function ActionBarsOwned.SafeUpdate(self)
         if self.UpdateFlyout then
             pcall(self.UpdateFlyout, self)
         end
+
+        -- Assisted combat rotation arrow (one-button rotation)
+        UpdateAssistedCombatRotationFrame(self)
 
         -- Level link lock
         if self.LevelLinkLockIcon and C_LevelLink and C_LevelLink.IsActionLocked then
@@ -3233,6 +3239,98 @@ function ActionBarsOwned.UpdateOverlayGlow(button)
     HideActionButtonGlow(button)
 end
 
+---------------------------------------------------------------------------
+-- SPELLBOOK HOVER HIGHLIGHT
+-- When hovering a spell in the spellbook, highlight matching buttons.
+---------------------------------------------------------------------------
+
+local spellHighlight = { type = nil, id = nil }
+
+local function UpdateSpellHighlight(button)
+    local shown = false
+    if spellHighlight.type == "spell" then
+        local btnSpellId = GetButtonSpellId(button)
+        if btnSpellId and btnSpellId == spellHighlight.id then
+            shown = true
+        end
+    elseif spellHighlight.type == "flyout" then
+        local action = button.action
+        if action then
+            local ok, actionType, actionId = pcall(GetActionInfo, action)
+            if ok and actionType == "flyout" and actionId == spellHighlight.id then
+                shown = true
+            end
+        end
+    end
+
+    if shown then
+        if button.SpellHighlightTexture then
+            button.SpellHighlightTexture:Show()
+        end
+        if button.SpellHighlightAnim then
+            button.SpellHighlightAnim:Play()
+        end
+    else
+        if button.SpellHighlightTexture then
+            button.SpellHighlightTexture:Hide()
+        end
+        if button.SpellHighlightAnim then
+            button.SpellHighlightAnim:Stop()
+        end
+    end
+end
+
+local function UpdateAllSpellHighlights()
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        local btns = ActionBarsOwned.nativeButtons[barKey]
+        if btns then
+            for _, btn in ipairs(btns) do
+                UpdateSpellHighlight(btn)
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- ASSISTED COMBAT ROTATION
+-- Show arrow overlay on buttons with the one-button rotation action.
+---------------------------------------------------------------------------
+
+UpdateAssistedCombatRotationFrame = function(button)
+    if not (C_ActionBar and C_ActionBar.IsAssistedCombatAction) then return end
+    local action = button.action
+    if not action or not HasAction(action) then
+        local frame = button.AssistedCombatRotationFrame
+        if frame then frame:Hide() end
+        return
+    end
+    local ok, show = pcall(C_ActionBar.IsAssistedCombatAction, action)
+    if not ok then show = false end
+    local frame = button.AssistedCombatRotationFrame
+    if show and not frame then
+        frame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatRotationTemplate")
+        button.AssistedCombatRotationFrame = frame
+    end
+    if frame then
+        if show then
+            frame:UpdateState()
+        else
+            frame:Hide()
+        end
+    end
+end
+
+local function UpdateAllAssistedCombatRotation()
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        local btns = ActionBarsOwned.nativeButtons[barKey]
+        if btns then
+            for _, btn in ipairs(btns) do
+                UpdateAssistedCombatRotationFrame(btn)
+            end
+        end
+    end
+end
+
 -- Update overlay glows on all owned action buttons.
 function ActionBarsOwned.UpdateAllOverlayGlows()
     for _, barKey in ipairs(STANDARD_BAR_KEYS) do
@@ -3733,24 +3831,26 @@ ownedEventFrame:SetScript("OnEvent", OnOwnedEvent)
 -- EXTRA BUTTON CUSTOMIZATION (Extra Action Button & Zone Ability)
 ---------------------------------------------------------------------------
 
-local extraActionHolder = nil
-local extraActionMover = nil
-local zoneAbilityHolder = nil
-local zoneAbilityMover = nil
-local extraButtonMoversVisible = false
-local hookingSetPoint = false
-local extraActionSetPointHooked = false
-local zoneAbilitySetPointHooked = false
-local hookingSetParent = false
-local extraActionSetParentHooked = false
-local zoneAbilitySetParentHooked = false
-local extraActionShowHooked = false
-local zoneAbilityShowHooked = false
-local pageArrowShowHooked = {}
-local pageArrowRetryTimer = nil
-local pageArrowRetryAttempts = 0
-local PAGE_ARROW_RETRY_MAX_ATTEMPTS = 15
-local PAGE_ARROW_RETRY_DELAY = 0.2
+local extraBtnState = {
+    extraActionHolder = nil,
+    extraActionMover = nil,
+    zoneAbilityHolder = nil,
+    zoneAbilityMover = nil,
+    moversVisible = false,
+    hookingSetPoint = false,
+    extraActionSetPointHooked = false,
+    zoneAbilitySetPointHooked = false,
+    hookingSetParent = false,
+    extraActionSetParentHooked = false,
+    zoneAbilitySetParentHooked = false,
+    extraActionShowHooked = false,
+    zoneAbilityShowHooked = false,
+    pageArrowShowHooked = {},
+    pageArrowRetryTimer = nil,
+    pageArrowRetryAttempts = 0,
+    PAGE_ARROW_RETRY_MAX_ATTEMPTS = 15,
+    PAGE_ARROW_RETRY_DELAY = 0.2,
+}
 
 local function GetExtraButtonDB(buttonType)
     local core = GetCore()
@@ -3925,10 +4025,10 @@ local function ApplyExtraButtonSettings(buttonType)
 
     if buttonType == "extraActionButton" then
         blizzFrame = ExtraActionBarFrame
-        holder = extraActionHolder
+        holder = extraBtnState.extraActionHolder
     else
         blizzFrame = ZoneAbilityFrame
-        holder = zoneAbilityHolder
+        holder = extraBtnState.zoneAbilityHolder
     end
 
     if not blizzFrame or not holder then return end
@@ -3951,13 +4051,13 @@ local function ApplyExtraButtonSettings(buttonType)
     if not extraButtonOriginalParents[buttonType] then
         extraButtonOriginalParents[buttonType] = blizzFrame:GetParent()
     end
-    hookingSetParent = true
+    extraBtnState.hookingSetParent = true
     blizzFrame:SetParent(holder)
-    hookingSetParent = false
-    hookingSetPoint = true
+    extraBtnState.hookingSetParent = false
+    extraBtnState.hookingSetPoint = true
     blizzFrame:ClearAllPoints()
     blizzFrame:SetPoint("CENTER", holder, "CENTER", offsetX, offsetY)
-    hookingSetPoint = false
+    extraBtnState.hookingSetPoint = false
 
     local width = Helpers.SafeToNumber(blizzFrame:GetWidth(), 64) * scale
     local height = Helpers.SafeToNumber(blizzFrame:GetHeight(), 64) * scale
@@ -4010,28 +4110,28 @@ end
 -- but other Blizzard code (e.g. ability grant, zone transition) may call
 -- SetPoint directly.  The hooks re-anchor to our holder after each attempt.
 local function HookExtraButtonPositioning()
-    if ExtraActionBarFrame and not extraActionSetPointHooked then
-        extraActionSetPointHooked = true
+    if ExtraActionBarFrame and not extraBtnState.extraActionSetPointHooked then
+        extraBtnState.extraActionSetPointHooked = true
         hooksecurefunc(ExtraActionBarFrame, "SetPoint", function(self)
-            if hookingSetPoint then return end
+            if extraBtnState.hookingSetPoint then return end
             C_Timer.After(0, function()
-                if hookingSetPoint or InCombatLockdown() then return end
+                if extraBtnState.hookingSetPoint or InCombatLockdown() then return end
                 local settings = GetExtraButtonDB("extraActionButton")
-                if extraActionHolder and settings and settings.enabled then
+                if extraBtnState.extraActionHolder and settings and settings.enabled then
                     QueueExtraButtonReanchor("extraActionButton")
                 end
             end)
         end)
     end
 
-    if ZoneAbilityFrame and not zoneAbilitySetPointHooked then
-        zoneAbilitySetPointHooked = true
+    if ZoneAbilityFrame and not extraBtnState.zoneAbilitySetPointHooked then
+        extraBtnState.zoneAbilitySetPointHooked = true
         hooksecurefunc(ZoneAbilityFrame, "SetPoint", function(self)
-            if hookingSetPoint then return end
+            if extraBtnState.hookingSetPoint then return end
             C_Timer.After(0, function()
-                if hookingSetPoint or InCombatLockdown() then return end
+                if extraBtnState.hookingSetPoint or InCombatLockdown() then return end
                 local settings = GetExtraButtonDB("zoneAbility")
-                if zoneAbilityHolder and settings and settings.enabled then
+                if extraBtnState.zoneAbilityHolder and settings and settings.enabled then
                     QueueExtraButtonReanchor("zoneAbility")
                 end
             end)
@@ -4043,39 +4143,39 @@ local function HookExtraButtonPositioning()
     local function HookSetParentForType(blizzFrame, buttonType, holder)
         if not blizzFrame then return end
         hooksecurefunc(blizzFrame, "SetParent", function(self, newParent)
-            if hookingSetParent then return end
+            if extraBtnState.hookingSetParent then return end
             if newParent == holder then return end
             C_Timer.After(0, function()
-                if hookingSetParent or InCombatLockdown() then return end
+                if extraBtnState.hookingSetParent or InCombatLockdown() then return end
                 local settings = GetExtraButtonDB(buttonType)
                 if holder and settings and settings.enabled then
-                    hookingSetParent = true
+                    extraBtnState.hookingSetParent = true
                     blizzFrame:SetParent(holder)
-                    hookingSetParent = false
+                    extraBtnState.hookingSetParent = false
                     QueueExtraButtonReanchor(buttonType)
                 end
             end)
         end)
     end
-    if ExtraActionBarFrame and not extraActionSetParentHooked then
-        extraActionSetParentHooked = true
-        HookSetParentForType(ExtraActionBarFrame, "extraActionButton", extraActionHolder)
+    if ExtraActionBarFrame and not extraBtnState.extraActionSetParentHooked then
+        extraBtnState.extraActionSetParentHooked = true
+        HookSetParentForType(ExtraActionBarFrame, "extraActionButton", extraBtnState.extraActionHolder)
     end
-    if ZoneAbilityFrame and not zoneAbilitySetParentHooked then
-        zoneAbilitySetParentHooked = true
-        HookSetParentForType(ZoneAbilityFrame, "zoneAbility", zoneAbilityHolder)
+    if ZoneAbilityFrame and not extraBtnState.zoneAbilitySetParentHooked then
+        extraBtnState.zoneAbilitySetParentHooked = true
+        HookSetParentForType(ZoneAbilityFrame, "zoneAbility", extraBtnState.zoneAbilityHolder)
     end
 
     -- Hook Show to recapture frames when Blizzard makes them visible
     -- (e.g., zone ability appearing upon entering a new zone).
-    if ExtraActionBarFrame and not extraActionShowHooked then
-        extraActionShowHooked = true
+    if ExtraActionBarFrame and not extraBtnState.extraActionShowHooked then
+        extraBtnState.extraActionShowHooked = true
         hooksecurefunc(ExtraActionBarFrame, "Show", function()
             QueueExtraButtonReanchor("extraActionButton")
         end)
     end
-    if ZoneAbilityFrame and not zoneAbilityShowHooked then
-        zoneAbilityShowHooked = true
+    if ZoneAbilityFrame and not extraBtnState.zoneAbilityShowHooked then
+        extraBtnState.zoneAbilityShowHooked = true
         hooksecurefunc(ZoneAbilityFrame, "Show", function()
             QueueExtraButtonReanchor("zoneAbility")
         end)
@@ -4083,19 +4183,19 @@ local function HookExtraButtonPositioning()
 end
 
 local function ShowExtraButtonMovers()
-    extraButtonMoversVisible = true
-    if extraActionMover then extraActionMover:Show() end
-    if zoneAbilityMover then zoneAbilityMover:Show() end
+    extraBtnState.moversVisible = true
+    if extraBtnState.extraActionMover then extraBtnState.extraActionMover:Show() end
+    if extraBtnState.zoneAbilityMover then extraBtnState.zoneAbilityMover:Show() end
 end
 
 local function HideExtraButtonMovers()
-    extraButtonMoversVisible = false
-    if extraActionMover then extraActionMover:Hide() end
-    if zoneAbilityMover then zoneAbilityMover:Hide() end
+    extraBtnState.moversVisible = false
+    if extraBtnState.extraActionMover then extraBtnState.extraActionMover:Hide() end
+    if extraBtnState.zoneAbilityMover then extraBtnState.zoneAbilityMover:Hide() end
 end
 
 local function ToggleExtraButtonMovers()
-    if extraButtonMoversVisible then
+    if extraBtnState.moversVisible then
         HideExtraButtonMovers()
     else
         ShowExtraButtonMovers()
@@ -4109,8 +4209,8 @@ InitializeExtraButtons = function()
         return
     end
 
-    extraActionHolder, extraActionMover = CreateExtraButtonHolder("extraActionButton", "Extra Action Button")
-    zoneAbilityHolder, zoneAbilityMover = CreateExtraButtonHolder("zoneAbility", "Zone Ability")
+    extraBtnState.extraActionHolder, extraBtnState.extraActionMover = CreateExtraButtonHolder("extraActionButton", "Extra Action Button")
+    extraBtnState.zoneAbilityHolder, extraBtnState.zoneAbilityMover = CreateExtraButtonHolder("zoneAbility", "Zone Ability")
 
     C_Timer.After(0.5, function()
         ApplyExtraButtonSettings("extraActionButton")
@@ -4914,14 +5014,16 @@ end
 
 
 -- Usability indicator state tracking
-local usabilityCheckFrame = nil
--- Range check interval (only used when range indicator is enabled).
 -- PERF: Relaxed from 250ms/100ms to 500ms.  State-change gating in
 -- UpdateButtonUsability means visual updates only happen when the tint
 -- actually changes, so polling less often has no visible impact.
-local RANGE_CHECK_INTERVAL_COMBAT = 0.5   -- 500ms in combat
-local RANGE_CHECK_INTERVAL_IDLE = 2.0     -- 2s OOC (range matters less)
-local actionBarRangeInCombat = false
+local usabilityState = {
+    checkFrame = nil,
+    INTERVAL_COMBAT = 0.5,   -- 500ms in combat
+    INTERVAL_IDLE = 2.0,     -- 2s OOC (range matters less)
+    inCombat = false,
+    updatePending = false,
+}
 
 -- Get or create a QUI-owned tint overlay for range/usability coloring.
 -- Uses MOD (multiplicative) blend on ARTWORK sublevel 1, so it renders
@@ -5059,12 +5161,11 @@ local function UpdateAllButtonUsability()
 end
 
 -- Debounced event handler (prevents rapid-fire updates)
-local usabilityUpdatePending = false
 local function ScheduleUsabilityUpdate()
-    if usabilityUpdatePending then return end
-    usabilityUpdatePending = true
+    if usabilityState.updatePending then return end
+    usabilityState.updatePending = true
     C_Timer.After(0.05, function()
-        usabilityUpdatePending = false
+        usabilityState.updatePending = false
         UpdateAllButtonUsability()
     end)
 end
@@ -5091,29 +5192,31 @@ local function UpdateUsabilityPolling()
     local rangeEnabled = settings and settings.rangeIndicator
 
     -- Create frame if needed
-    if not usabilityCheckFrame then
-        usabilityCheckFrame = CreateFrame("Frame")
-        usabilityCheckFrame.elapsed = 0
+    if not usabilityState.checkFrame then
+        usabilityState.checkFrame = CreateFrame("Frame")
+        usabilityState.checkFrame.elapsed = 0
     end
+
+    local checkFrame = usabilityState.checkFrame
 
     -- Event-driven usability updates (very efficient)
     if usabilityEnabled or rangeEnabled then
-        usabilityCheckFrame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
-        usabilityCheckFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
-        usabilityCheckFrame:RegisterEvent("SPELL_UPDATE_USABLE")
-        usabilityCheckFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
-        usabilityCheckFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
-        usabilityCheckFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-        usabilityCheckFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-        usabilityCheckFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        checkFrame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
+        checkFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+        checkFrame:RegisterEvent("SPELL_UPDATE_USABLE")
+        checkFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
+        checkFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
+        checkFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+        checkFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+        checkFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
-        usabilityCheckFrame:SetScript("OnEvent", function(self, event, ...)
+        checkFrame:SetScript("OnEvent", function(self, event, ...)
             if event == "PLAYER_REGEN_DISABLED" then
-                actionBarRangeInCombat = true
+                usabilityState.inCombat = true
                 self.elapsed = 0  -- reset so combat interval kicks in immediately
                 return
             elseif event == "PLAYER_REGEN_ENABLED" then
-                actionBarRangeInCombat = false
+                usabilityState.inCombat = false
                 ScheduleUsabilityUpdate()  -- one-shot refresh after combat
                 return
             end
@@ -5123,8 +5226,8 @@ local function UpdateUsabilityPolling()
         -- Initial update
         ScheduleUsabilityUpdate()
     else
-        usabilityCheckFrame:UnregisterAllEvents()
-        usabilityCheckFrame:SetScript("OnEvent", nil)
+        checkFrame:UnregisterAllEvents()
+        checkFrame:SetScript("OnEvent", nil)
     end
 
     -- Range requires polling (no "player moved" event exists).
@@ -5132,20 +5235,20 @@ local function UpdateUsabilityPolling()
     -- UpdateButtonUsability skips overlay work when tint is unchanged,
     -- so less frequent polling has no visible impact.
     if rangeEnabled then
-        usabilityCheckFrame:SetScript("OnUpdate", function(self, elapsed)
+        checkFrame:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = self.elapsed + elapsed
-            local interval = actionBarRangeInCombat and RANGE_CHECK_INTERVAL_COMBAT or RANGE_CHECK_INTERVAL_IDLE
+            local interval = usabilityState.inCombat and usabilityState.INTERVAL_COMBAT or usabilityState.INTERVAL_IDLE
             if self.elapsed < interval then return end
             self.elapsed = 0
             UpdateAllButtonUsability()
         end)
-        usabilityCheckFrame:Show()
+        checkFrame:Show()
     else
-        usabilityCheckFrame:SetScript("OnUpdate", nil)
-        usabilityCheckFrame.elapsed = 0
+        checkFrame:SetScript("OnUpdate", nil)
+        checkFrame.elapsed = 0
         -- Don't hide - events still need to work if usability is enabled
         if not usabilityEnabled then
-            usabilityCheckFrame:Hide()
+            checkFrame:Hide()
             ResetAllButtonTints()
         end
     end
@@ -6311,10 +6414,10 @@ local function CollectPageArrowFrames()
 end
 
 local function SchedulePageArrowVisibilityRetry()
-    if pageArrowRetryTimer or pageArrowRetryAttempts >= PAGE_ARROW_RETRY_MAX_ATTEMPTS then return end
-    pageArrowRetryAttempts = pageArrowRetryAttempts + 1
-    pageArrowRetryTimer = C_Timer.NewTimer(PAGE_ARROW_RETRY_DELAY, function()
-        pageArrowRetryTimer = nil
+    if extraBtnState.pageArrowRetryTimer or extraBtnState.pageArrowRetryAttempts >= extraBtnState.PAGE_ARROW_RETRY_MAX_ATTEMPTS then return end
+    extraBtnState.pageArrowRetryAttempts = extraBtnState.pageArrowRetryAttempts + 1
+    extraBtnState.pageArrowRetryTimer = C_Timer.NewTimer(extraBtnState.PAGE_ARROW_RETRY_DELAY, function()
+        extraBtnState.pageArrowRetryTimer = nil
         local db = GetDB()
         if db and db.bars and db.bars.bar1 then
             ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
@@ -6331,17 +6434,17 @@ ApplyPageArrowVisibility = function(hide)
         return
     end
 
-    pageArrowRetryAttempts = 0
-    if pageArrowRetryTimer then
-        pageArrowRetryTimer:Cancel()
-        pageArrowRetryTimer = nil
+    extraBtnState.pageArrowRetryAttempts = 0
+    if extraBtnState.pageArrowRetryTimer then
+        extraBtnState.pageArrowRetryTimer:Cancel()
+        extraBtnState.pageArrowRetryTimer = nil
     end
 
     if hide then
         for _, frame in ipairs(frames) do
             frame:Hide()
-            if not pageArrowShowHooked[frame] then
-                pageArrowShowHooked[frame] = true
+            if not extraBtnState.pageArrowShowHooked[frame] then
+                extraBtnState.pageArrowShowHooked[frame] = true
                 -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(frame, "Show", function(self)
                     C_Timer.After(0, function()
@@ -6521,6 +6624,37 @@ function ActionBarsOwned:Initialize()
 
     -- Blizzard bars are fully disposed (hidden + events unregistered).
     -- QUI creates fresh buttons with SetOverrideBindingClick for keybinds.
+
+    -- Spellbook hover highlight — show which action bar button has a spell
+    -- when hovering that spell in the spellbook.
+    if _G.UpdateOnBarHighlightMarksBySpell then
+        hooksecurefunc("UpdateOnBarHighlightMarksBySpell", function(spellID)
+            spellHighlight.type = "spell"
+            spellHighlight.id = tonumber(spellID)
+        end)
+    end
+    if _G.UpdateOnBarHighlightMarksByFlyout then
+        hooksecurefunc("UpdateOnBarHighlightMarksByFlyout", function(flyoutID)
+            spellHighlight.type = "flyout"
+            spellHighlight.id = tonumber(flyoutID)
+        end)
+    end
+    if _G.ClearOnBarHighlightMarks then
+        hooksecurefunc("ClearOnBarHighlightMarks", function()
+            spellHighlight.type = nil
+            spellHighlight.id = nil
+        end)
+    end
+    if _G.ActionBarController_UpdateAllSpellHighlights then
+        hooksecurefunc("ActionBarController_UpdateAllSpellHighlights", UpdateAllSpellHighlights)
+    end
+
+    -- Assisted combat rotation (one-button rotation arrow overlay).
+    if EventRegistry and EventRegistry.RegisterCallback then
+        EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
+            UpdateAllAssistedCombatRotation()
+        end, "QUI_ActionBars_AssistedCombat")
+    end
 
     -- No overlay scaling hooks needed — buttons stay at their natural 45x45
     -- size and the container's SetScale handles visual resize. Blizzard overlays
