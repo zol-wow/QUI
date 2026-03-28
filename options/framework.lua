@@ -5888,7 +5888,7 @@ function GUI:CreateMainFrame()
     local savedWidth = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile.configPanelWidth or FRAME_WIDTH
     if savedWidth < 750 then savedWidth = 750 end  -- Migration: clamp old narrow panels
 
-    local frame = CreateFrame("Frame", "QUI_Options", UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", "QUI_Options", UIParent)
     frame:SetSize(savedWidth, FRAME_HEIGHT)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
@@ -5897,11 +5897,12 @@ function GUI:CreateMainFrame()
     frame:SetClampedToScreen(true)
     frame:SetToplevel(true)
     frame:EnableMouse(true)
-    CreateBackdrop(frame, C.bg, C.border)
 
     -- Apply saved panel alpha
     local savedAlpha = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile.configPanelAlpha or 0.97
-    frame:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], savedAlpha)
+    frame._bg = UIKit.CreateBackground(frame, C.bg[1], C.bg[2], C.bg[3], savedAlpha)
+    UIKit.CreateBorderLines(frame)
+    UIKit.UpdateBorderLines(frame, 1, C.border[1], C.border[2], C.border[3], C.border[4] or 1)
 
     self.MainFrame = frame
 
@@ -6238,7 +6239,7 @@ function GUI:CreateMainFrame()
     scaleEditBox:SetAutoFocus(false)
     scaleEditBox:SetMaxLetters(4)
 
-    local scaleSlider = CreateFrame("Slider", nil, scaleContainer, "BackdropTemplate")
+    local scaleSlider = CreateFrame("Slider", nil, scaleContainer)
     scaleSlider:SetSize(70, 12)
     scaleSlider:SetPoint("LEFT", scaleEditBox, "RIGHT", 5, 0)
     scaleSlider:SetOrientation("HORIZONTAL")
@@ -6246,8 +6247,7 @@ function GUI:CreateMainFrame()
     scaleSlider:SetValueStep(0.05)
     scaleSlider:SetObeyStepOnDrag(true)
     scaleSlider:EnableMouse(true)
-    scaleSlider:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
-    scaleSlider:SetBackdropColor(0.22, 0.22, 0.22, 0.9)
+    UIKit.CreateBackground(scaleSlider, 0.22, 0.22, 0.22, 0.9)
     thumb = scaleSlider:CreateTexture(nil, "OVERLAY")
     thumb:SetSize(8, 14)
     thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
@@ -6365,7 +6365,7 @@ function GUI:CreateMainFrame()
     ---------------------------------------------------------------------------
     -- SIDEBAR (vertical tab list on the left)
     ---------------------------------------------------------------------------
-    local sidebar = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    local sidebar = CreateFrame("Frame", nil, frame)
     sidebar:SetPoint("TOPLEFT", 10, -35)
     sidebar:SetPoint("BOTTOMLEFT", 10, 10)
     sidebar:SetWidth(SIDEBAR_W)
@@ -6438,7 +6438,7 @@ function GUI:CreateMainFrame()
     ---------------------------------------------------------------------------
     -- SUB-TAB BAR (sticky bar above scroll content, hidden by default)
     ---------------------------------------------------------------------------
-    local subTabBar = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    local subTabBar = CreateFrame("Frame", nil, frame)
     subTabBar:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 5, 0)
     subTabBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -35)
     subTabBar:SetHeight(30)
@@ -6463,7 +6463,7 @@ function GUI:CreateMainFrame()
     ---------------------------------------------------------------------------
     -- CONTENT AREA (right of sidebar, below sub-tab bar when visible)
     ---------------------------------------------------------------------------
-    local contentArea = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    local contentArea = CreateFrame("Frame", nil, frame)
     contentArea:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 5, 0)
     contentArea:SetPoint("BOTTOMRIGHT", -10, 10)
     contentArea:EnableMouse(false)
