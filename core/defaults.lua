@@ -298,7 +298,7 @@ local defaults = {
         ncdm = {
             engine = "owned",  -- CDM engine: "classic" (Blizzard hooks) or "owned" (addon-owned frames)
             _snapshotVersion = 0,   -- Incremented each time ownedSpells are snapshotted
-            _specProfiles = nil,    -- Future: per-spec owned spell profiles
+            _specProfiles = nil,    -- Legacy shared per-spec spell profiles (migration fallback only)
             essential = {
                 enabled = true,
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)

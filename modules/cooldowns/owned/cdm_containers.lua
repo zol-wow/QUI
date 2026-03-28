@@ -130,6 +130,156 @@ local function GetCurrentSpecID()
     return nil
 end
 
+local function GetCurrentProfileName()
+    local core = Helpers.GetCore()
+    if core and core.db and core.db.GetCurrentProfile then
+        local ok, profileName = pcall(core.db.GetCurrentProfile, core.db)
+        if ok and type(profileName) == "string" and profileName ~= "" then
+            return profileName
+        end
+    end
+    return "Default"
+end
+
+local function GetCharacterNCDMState()
+    local core = Helpers.GetCore()
+    if not (core and core.db and core.db.char) then
+        return nil
+    end
+    if type(core.db.char.ncdm) ~= "table" then
+        core.db.char.ncdm = {}
+    end
+    return core.db.char.ncdm
+end
+
+local function GetCharacterSpecProfiles()
+    local charNCDM = GetCharacterNCDMState()
+    if not charNCDM then
+        return nil
+    end
+    if type(charNCDM.specProfilesByProfile) ~= "table" then
+        charNCDM.specProfilesByProfile = {}
+    end
+    local profileName = GetCurrentProfileName()
+    if type(charNCDM.specProfilesByProfile[profileName]) ~= "table" then
+        charNCDM.specProfilesByProfile[profileName] = {}
+    end
+    return charNCDM.specProfilesByProfile[profileName]
+end
+
+local function GetSpecProfileKey(specID)
+    if not specID then
+        return nil
+    end
+    return tostring(specID)
+end
+
+local function GetCurrentCharacterIdentity()
+    local guid = UnitGUID and UnitGUID("player")
+    if type(guid) == "string" and guid ~= "" then
+        return guid
+    end
+
+    local name = UnitName and UnitName("player")
+    local realm = GetRealmName and GetRealmName()
+    local _, classFile = UnitClass and UnitClass("player")
+    if type(name) ~= "string" or name == "" then
+        return nil
+    end
+    return table.concat({
+        name,
+        realm or "",
+        classFile or "",
+    }, "-")
+end
+
+local function BuildCurrentSpellStateSnapshot()
+    local specData = {}
+    local containerKeys = CDMContainers_API:GetAllContainerKeys()
+
+    for _, key in ipairs(containerKeys) do
+        local containerDB = GetTrackerSettings(key)
+        if containerDB and containerDB.ownedSpells ~= nil then
+            specData[key] = {
+                ownedSpells = CopyTable(containerDB.ownedSpells),
+                removedSpells = CopyTable(containerDB.removedSpells or {}),
+                dormantSpells = CopyTable(containerDB.dormantSpells or {}),
+            }
+        end
+    end
+
+    return specData
+end
+
+local function ResetTrackedSpellState(containerDB)
+    if not containerDB then
+        return
+    end
+    containerDB.ownedSpells = nil
+    containerDB.removedSpells = {}
+    containerDB.dormantSpells = {}
+end
+
+local function ApplySpellStateSnapshot(savedProfile)
+    local containerKeys = CDMContainers_API:GetAllContainerKeys()
+
+    for _, key in ipairs(containerKeys) do
+        local containerDB = GetTrackerSettings(key)
+        if containerDB then
+            ResetTrackedSpellState(containerDB)
+
+            local savedContainer = savedProfile and savedProfile[key]
+            if savedContainer then
+                containerDB.ownedSpells = CopyTable(savedContainer.ownedSpells)
+                containerDB.removedSpells = CopyTable(savedContainer.removedSpells or {})
+                containerDB.dormantSpells = CopyTable(savedContainer.dormantSpells or {})
+            end
+        end
+    end
+end
+
+local function TrySeedCharacterSpecProfileFromLegacy(specID, allowLegacySharedSeed)
+    local specKey = GetSpecProfileKey(specID)
+    local specProfiles = GetCharacterSpecProfiles()
+    if not specKey or not specProfiles or specProfiles[specKey] ~= nil then
+        return specProfiles and specProfiles[specKey], false
+    end
+
+    if not allowLegacySharedSeed then
+        return nil, false
+    end
+
+    local db = GetDB()
+    if not db then
+        return nil, false
+    end
+
+    local legacyProfile = db._specProfiles and (db._specProfiles[specID] or db._specProfiles[specKey])
+    if type(legacyProfile) == "table" then
+        specProfiles[specKey] = CopyTable(legacyProfile)
+        return specProfiles[specKey], true
+    end
+
+    if db._lastSpecID and db._lastSpecID == specID then
+        local workingCopy = BuildCurrentSpellStateSnapshot()
+        if next(workingCopy) ~= nil then
+            specProfiles[specKey] = workingCopy
+            return specProfiles[specKey], true
+        end
+    end
+
+    return nil, false
+end
+
+local function InvalidateSpellProfileCaches()
+    if ns.InvalidateCDMFrameCache then
+        ns.InvalidateCDMFrameCache()
+    end
+    if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
+        ns.CDMSpellData:InvalidateLearnedCache()
+    end
+end
+
 local function SaveCurrentSpecProfile()
     -- Use _previousSpecID, not GetCurrentSpecID(). By the time
     -- PLAYER_SPECIALIZATION_CHANGED fires the current spec is already
@@ -140,94 +290,40 @@ local function SaveCurrentSpecProfile()
         return
     end
 
-    local db = GetDB()
-    if not db then
+    local specProfiles = GetCharacterSpecProfiles()
+    local specKey = GetSpecProfileKey(specID)
+    if not specProfiles or not specKey then
         return
     end
 
-
-    -- Ensure _specProfiles table exists
-    if not db._specProfiles then
-        db._specProfiles = {}
-    end
-
-    local specData = {}
-    local containerKeys = CDMContainers_API:GetAllContainerKeys()
-
-    for _, key in ipairs(containerKeys) do
-        local containerDB = GetTrackerSettings(key)
-        if containerDB and containerDB.ownedSpells ~= nil then
-            local ownedCount = type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells or 0
-            local removedCount = 0
-            if type(containerDB.removedSpells) == "table" then
-                for _ in pairs(containerDB.removedSpells) do removedCount = removedCount + 1 end
-            end
-            local dormantCount = 0
-            if type(containerDB.dormantSpells) == "table" then
-                for _ in pairs(containerDB.dormantSpells) do dormantCount = dormantCount + 1 end
-            end
-            specData[key] = {
-                ownedSpells = CopyTable(containerDB.ownedSpells),
-                removedSpells = CopyTable(containerDB.removedSpells or {}),
-                dormantSpells = CopyTable(containerDB.dormantSpells or {}),
-            }
-        end
-    end
-
-    db._specProfiles[specID] = specData
+    specProfiles[specKey] = BuildCurrentSpellStateSnapshot()
 end
 
-local function LoadOrSnapshotSpecProfile(specID)
+local function LoadOrSnapshotSpecProfile(specID, allowLegacySharedSeed)
     if not specID then
         return
     end
 
-    local db = GetDB()
-    if not db then
-        return
+    local specKey = GetSpecProfileKey(specID)
+    local specProfiles = GetCharacterSpecProfiles()
+    local savedProfile = specProfiles and specKey and specProfiles[specKey]
+    if not savedProfile then
+        savedProfile = select(1, TrySeedCharacterSpecProfileFromLegacy(specID, allowLegacySharedSeed))
     end
 
-    local containerKeys = CDMContainers_API:GetAllContainerKeys()
-    local savedProfile = db._specProfiles and db._specProfiles[specID]
+    ApplySpellStateSnapshot(savedProfile)
 
-    if savedProfile then
-        -- Restore each container's ownedSpells, removedSpells, and dormantSpells from saved profile
-        for _, key in ipairs(containerKeys) do
-            local containerDB = GetTrackerSettings(key)
-            if containerDB then
-                local savedContainer = savedProfile[key]
-                if savedContainer then
-                    local ownedCount = type(savedContainer.ownedSpells) == "table" and #savedContainer.ownedSpells or 0
-                    local dormantCount = 0
-                    if type(savedContainer.dormantSpells) == "table" then
-                        for _ in pairs(savedContainer.dormantSpells) do dormantCount = dormantCount + 1 end
-                    end
-                    containerDB.ownedSpells = CopyTable(savedContainer.ownedSpells)
-                    containerDB.removedSpells = CopyTable(savedContainer.removedSpells)
-                    containerDB.dormantSpells = CopyTable(savedContainer.dormantSpells or {})
-                else
-                end
-            end
-        end
-    else
+    if not savedProfile then
         -- No saved profile for this spec — fresh snapshot from Blizzard CDM
         if ns.CDMSpellData then
-            for _, key in ipairs(containerKeys) do
-                local containerDB = GetTrackerSettings(key)
-                if containerDB then
-                    -- Clear ownedSpells so SnapshotBlizzardCDM will re-snapshot
-                    containerDB.ownedSpells = nil
-                end
-            end
-            -- Force scan so snapshot has data
+            local containerKeys = CDMContainers_API:GetAllContainerKeys()
             ns.CDMSpellData:ForceScan()
             for _, key in ipairs(containerKeys) do
                 ns.CDMSpellData:SnapshotBlizzardCDM(key)
-                -- Log the result
-                local cDB = GetTrackerSettings(key)
-                local count = (cDB and type(cDB.ownedSpells) == "table") and #cDB.ownedSpells or 0
             end
-        else
+            if specProfiles and specKey then
+                specProfiles[specKey] = BuildCurrentSpellStateSnapshot()
+            end
         end
     end
 
@@ -246,26 +342,43 @@ local function RunCrossSessionDetection(specID)
     local db = GetDB()
     if not db or not specID or specID == 0 then return false end
 
+    local specProfiles = GetCharacterSpecProfiles()
+    local specKey = GetSpecProfileKey(specID)
     local lastSpecID = db._lastSpecID
-    if lastSpecID and lastSpecID ~= specID then
-        -- Save stale ownedSpells under the old spec before overwriting
-        local oldPrevious = _previousSpecID
-        _previousSpecID = lastSpecID
-        SaveCurrentSpecProfile()
-        _previousSpecID = oldPrevious
+    local currentIdentity = GetCurrentCharacterIdentity()
+    local lastIdentity = db._lastCharacterIdentity
+    local sameCharacter = (currentIdentity ~= nil and currentIdentity == lastIdentity)
+    local allowLegacySharedSeed = sameCharacter or lastIdentity == nil
+    local hasSpecProfile = specProfiles and specKey and specProfiles[specKey] ~= nil
+    local seededLegacy = false
 
-        -- Invalidate caches — old spec data is stale
-        if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
-        if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
-            ns.CDMSpellData:InvalidateLearnedCache()
+    if not hasSpecProfile then
+        local seededProfile
+        seededProfile, seededLegacy = TrySeedCharacterSpecProfileFromLegacy(specID, allowLegacySharedSeed)
+        hasSpecProfile = seededProfile ~= nil
+    end
+
+    local requiresRestore = (not sameCharacter) or lastSpecID ~= specID or not hasSpecProfile or seededLegacy
+    if requiresRestore then
+        -- Save stale ownedSpells under the old spec before overwriting
+        if sameCharacter and lastSpecID and lastSpecID ~= specID then
+            local oldPrevious = _previousSpecID
+            _previousSpecID = lastSpecID
+            SaveCurrentSpecProfile()
+            _previousSpecID = oldPrevious
         end
 
+        -- Invalidate caches — old spec or character data is stale
+        InvalidateSpellProfileCaches()
+
         -- Load the correct spec profile (or fresh snapshot if first time)
-        LoadOrSnapshotSpecProfile(specID)
+        LoadOrSnapshotSpecProfile(specID, allowLegacySharedSeed)
     end
-    -- Persist the current spec ID for next session
+
+    -- Persist the active working copy owner for the next session
     db._lastSpecID = specID
-    return lastSpecID ~= nil and lastSpecID ~= specID
+    db._lastCharacterIdentity = currentIdentity
+    return requiresRestore
 end
 
 local function InitSpecTracking()
@@ -2356,18 +2469,18 @@ function ownedEngine:Initialize()
                 else
                 end
                 -- Invalidate caches immediately — old spec data is stale
-                if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
-                if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
-                    ns.CDMSpellData:InvalidateLearnedCache()
-                end
+                InvalidateSpellProfileCaches()
                 -- Load the new spec profile synchronously so the DB is never in a
                 -- stale state. This eliminates the race where SPELLS_CHANGED fires
                 -- before the profile swap and corrupts spell lists.
-                LoadOrSnapshotSpecProfile(newSpecID)
+                LoadOrSnapshotSpecProfile(newSpecID, true)
                 _previousSpecID = newSpecID
                 -- Persist for cross-session detection
                 local specDB = GetDB()
-                if specDB then specDB._lastSpecID = newSpecID end
+                if specDB then
+                    specDB._lastSpecID = newSpecID
+                    specDB._lastCharacterIdentity = GetCurrentCharacterIdentity()
+                end
                 -- Profile is now correct — SPELLS_CHANGED can safely run
                 -- dormant/reconcile on the new spec's data.
                 buffFingerprint = nil
