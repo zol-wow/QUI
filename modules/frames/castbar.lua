@@ -507,7 +507,7 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
     local anchor = castSettings.anchor or "none"
 
     -- Skip if anchoring system has overridden this frame
-    if anchorFrame.unitKey and _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(anchorFrame) then return end
+    if anchorFrame.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorFrame.unitKey .. "Castbar") then return end
 
     anchorFrame:ClearAllPoints()
     
@@ -1547,7 +1547,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
         castbar:SetClampedToScreen(true)
         
         castbar:SetScript("OnDragStart", function(self)
-            if self.unitKey and _G.QUI_IsFrameOverridden and _G.QUI_IsFrameOverridden(self) then return end
+            if self.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(self.unitKey .. "Castbar") then return end
             self:StartMoving()
         end)
         

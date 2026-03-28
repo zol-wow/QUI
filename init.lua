@@ -214,14 +214,10 @@ function QUI:SlashCommandPull(input)
 end
 
 function QUI:OnEnable()
-    -- Re-run the shared profile normalization once all addon modules are fully
-    -- initialized. This keeps login, profile switches, and imports on the same
-    -- migration path while remaining safe to call repeatedly.
-    if self.QUICore and self.QUICore.NormalizeActiveProfile then
-        self.QUICore:NormalizeActiveProfile({ source = "enable" })
-    else
-        self:BackwardsCompat()
-    end
+    -- Run backward-compatibility migrations now that QUICore:OnInitialize()
+    -- has created the real profile database (QUIDB → QUI.db).
+    -- OnEnable runs after all OnInitialize calls but still during ADDON_LOADED.
+    self:BackwardsCompat()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("PLAYER_REGEN_ENABLED")

@@ -5,7 +5,6 @@
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local UIKit = ns.UIKit
 
 local QUI_LayoutMode_Settings = {}
 ns.QUI_LayoutMode_Settings = QUI_LayoutMode_Settings
@@ -62,13 +61,6 @@ end
 -- PANEL CREATION
 ---------------------------------------------------------------------------
 
-local function GetPixelLineSize(frame)
-    local core = ns.Addon
-    local pixel = (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-    local scaled = (core and core.Pixels and core:Pixels(BORDER_SIZE, frame)) or BORDER_SIZE
-    return math.max(pixel, scaled)
-end
-
 local function CreateBorderLine(parent, p1, r1, p2, r2, isHoriz, r, g, b, a)
     local line = parent:CreateTexture(nil, "BORDER")
     line:SetColorTexture(r or ACCENT_R, g or ACCENT_G, b or ACCENT_B, a or 0.6)
@@ -76,9 +68,9 @@ local function CreateBorderLine(parent, p1, r1, p2, r2, isHoriz, r, g, b, a)
     line:SetPoint(p1, parent, r1, 0, 0)
     line:SetPoint(p2, parent, r2, 0, 0)
     if isHoriz then
-        line:SetHeight(GetPixelLineSize(parent))
+        line:SetHeight(BORDER_SIZE)
     else
-        line:SetWidth(GetPixelLineSize(parent))
+        line:SetWidth(BORDER_SIZE)
     end
     return line
 end
@@ -155,35 +147,20 @@ local function CreatePanel()
     panel:Hide()
 
     -- Background
-    local bg
-    if UIKit and UIKit.CreateBackground then
-        bg = UIKit.CreateBackground(panel, 0.067, 0.094, 0.153, 0.97)
-    else
-        bg = panel:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0.067, 0.094, 0.153, 0.97)
-    end
+    local bg = panel:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.067, 0.094, 0.153, 0.97)
 
     -- Border
-    if UIKit and UIKit.CreateBorderLines and UIKit.UpdateBorderLines then
-        UIKit.CreateBorderLines(panel)
-        UIKit.UpdateBorderLines(panel, BORDER_SIZE, ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
-    else
-        CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
-        CreateBorderLine(panel, "BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
-        CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
-        CreateBorderLine(panel, "TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
-    end
+    CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true)
+    CreateBorderLine(panel, "BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true)
+    CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false)
+    CreateBorderLine(panel, "TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
     -- Title bar background
     local titleBg = panel:CreateTexture(nil, "ARTWORK")
-    if UIKit and UIKit.SetInsetPointsPx then
-        titleBg:SetPoint("TOPLEFT", panel, "TOPLEFT", GetPixelLineSize(panel), -GetPixelLineSize(panel))
-        titleBg:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -GetPixelLineSize(panel), -GetPixelLineSize(panel))
-    else
-        titleBg:SetPoint("TOPLEFT", BORDER_SIZE, -BORDER_SIZE)
-        titleBg:SetPoint("TOPRIGHT", -BORDER_SIZE, -BORDER_SIZE)
-    end
+    titleBg:SetPoint("TOPLEFT", BORDER_SIZE, -BORDER_SIZE)
+    titleBg:SetPoint("TOPRIGHT", -BORDER_SIZE, -BORDER_SIZE)
     titleBg:SetHeight(TITLE_HEIGHT)
     titleBg:SetColorTexture(0.04, 0.06, 0.1, 1)
 
@@ -191,7 +168,7 @@ local function CreatePanel()
     local titleLine = panel:CreateTexture(nil, "ARTWORK", nil, 1)
     titleLine:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT")
     titleLine:SetPoint("TOPRIGHT", titleBg, "BOTTOMRIGHT")
-    titleLine:SetHeight(GetPixelLineSize(panel))
+    titleLine:SetHeight(BORDER_SIZE)
     titleLine:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.4)
 
     -- Title text
@@ -511,7 +488,7 @@ local function BuildContent(panel, key)
         label:SetText("Anchoring Details")
 
         local underline = btn:CreateTexture(nil, "ARTWORK")
-        underline:SetHeight(GetPixelLineSize(btn))
+        underline:SetHeight(1)
         underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
         underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
         underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)

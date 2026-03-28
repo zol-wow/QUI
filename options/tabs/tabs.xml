@@ -25,7 +25,7 @@
     <Script file="core/profiles.lua"/>
     <Script file="core/import.lua"/>
     <Script file="trackers/customtrackers.lua"/>
-    <Script file="trackers/preytracker.lua"/>
+    <!-- Prey Tracker settings moved to Layout Mode settings panels -->
     <Script file="frames/unitframes.lua"/>
     <Script file="frames/clickcast.lua"/>
     <Script file="frames/actionbars.lua"/>
