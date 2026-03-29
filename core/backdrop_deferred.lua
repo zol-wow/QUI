@@ -27,9 +27,8 @@ local function _CheckFrameHasValidSize(frame)
     return false
 end
 
--- Max retries for deferred backdrop processing before giving up (50 * 0.1s = 5 seconds)
+-- Max retries per frame before giving up (50 * 0.1s = 5 seconds)
 local BACKDROP_MAX_RETRIES = 50
-local _backdropRetryCount = 0
 
 -- Global SafeSetBackdrop function that defers SetBackdrop calls when frame dimensions
 -- are secret values (Midnight 12.0 protection) or when in combat lockdown.
@@ -67,21 +66,6 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor, bgColor)
                 if elapsed < 0.1 then return end  -- Check every 0.1s
                 elapsed = 0
 
-                -- Max-retry: give up after ~5 seconds to prevent infinite polling
-                _backdropRetryCount = _backdropRetryCount + 1
-                if _backdropRetryCount > BACKDROP_MAX_RETRIES then
-                    -- Abandon remaining pending frames to stop the poller
-                    if QUICore.__pendingBackdrops then
-                        for pf in pairs(QUICore.__pendingBackdrops) do
-                            _pendingBackdropData[pf] = nil
-                        end
-                        wipe(QUICore.__pendingBackdrops)
-                    end
-                    self:SetScript("OnUpdate", nil)
-                    self:Hide()
-                    return
-                end
-
                 -- Performance: reuse module-level scratch table instead of allocating per tick.
                 -- Track total vs processed count to avoid a second pairs() scan to check emptiness.
                 local processed = QUICore.__backdropProcessed
@@ -95,22 +79,30 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor, bgColor)
                     totalCount = totalCount + 1
                     local pendingData = _pendingBackdropData[pendingFrame]
                     if pendingFrame and pendingData then
-                        -- Re-check if dimensions are now valid (reuse named function)
-                        local checkOk, checkResult = pcall(_CheckFrameHasValidSize, pendingFrame)
+                        -- Per-frame retry tracking: abandon individual frames after
+                        -- max retries instead of blocking the entire batch.
+                        pendingData.retries = (pendingData.retries or 0) + 1
+                        if pendingData.retries > BACKDROP_MAX_RETRIES then
+                            _pendingBackdropData[pendingFrame] = nil
+                            processed[#processed + 1] = pendingFrame
+                        else
+                            -- Re-check if dimensions are now valid (reuse named function)
+                            local checkOk, checkResult = pcall(_CheckFrameHasValidSize, pendingFrame)
 
-                        if checkOk and checkResult and not InCombatLockdown() then
-                            local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
-                            if setOk then
-                                if pendingData.info and pendingData.borderColor then
-                                    local c = pendingData.borderColor
-                                    pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
+                            if checkOk and checkResult and not InCombatLockdown() then
+                                local setOk = pcall(pendingFrame.SetBackdrop, pendingFrame, pendingData.info)
+                                if setOk then
+                                    if pendingData.info and pendingData.borderColor then
+                                        local c = pendingData.borderColor
+                                        pendingFrame:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
+                                    end
+                                    if pendingData.info and pendingData.bgColor then
+                                        local c = pendingData.bgColor
+                                        pendingFrame:SetBackdropColor(c[1], c[2], c[3], c[4] or 1)
+                                    end
+                                    _pendingBackdropData[pendingFrame] = nil
+                                    processed[#processed + 1] = pendingFrame
                                 end
-                                if pendingData.info and pendingData.bgColor then
-                                    local c = pendingData.bgColor
-                                    pendingFrame:SetBackdropColor(c[1], c[2], c[3], c[4] or 1)
-                                end
-                                _pendingBackdropData[pendingFrame] = nil
-                                processed[#processed + 1] = pendingFrame
                             end
                         end
                     else
@@ -124,7 +116,6 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor, bgColor)
 
                 -- Stop OnUpdate if no more pending (SetScript nil to avoid per-frame CPU cost)
                 if #processed >= totalCount then
-                    _backdropRetryCount = 0
                     self:SetScript("OnUpdate", nil)
                     self:Hide()
                 end
@@ -132,7 +123,7 @@ function QUICore.SafeSetBackdrop(frame, backdropInfo, borderColor, bgColor)
             QUICore.__backdropUpdateHandler = updateFrame:GetScript("OnUpdate")
             QUICore.__backdropUpdateFrame = updateFrame
         end
-        _backdropRetryCount = 0  -- reset retry count for new batch
+        -- Per-frame retry count is tracked in pendingData.retries (no global reset needed)
         if QUICore.__backdropUpdateHandler then
             QUICore.__backdropUpdateFrame:SetScript("OnUpdate", QUICore.__backdropUpdateHandler)
         end

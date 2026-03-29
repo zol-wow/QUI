@@ -170,9 +170,25 @@ ActionBarsOwned.mirrorButtons = ActionBarsOwned.nativeButtons
 -- also installed as an instance shadow so any residual mixin path that
 -- reaches UpdateAction hits this safe version.
 function ActionBarsOwned.SafeSyncAction(self)
+    local oldAction = self.action
     local action = self:GetAttribute("action")
     if action then
         self.action = action
+        -- Keep slotMap in sync when bar 1 pages (action ID changes)
+        local slotMap = ActionBarsOwned.slotMap
+        if slotMap then
+            if oldAction and oldAction ~= action then
+                slotMap[oldAction] = nil
+            end
+            if action > 0 then
+                local entry = slotMap[action]
+                if entry then
+                    entry.button = self
+                else
+                    slotMap[action] = { button = self, barKey = "bar1" }
+                end
+            end
+        end
     end
     ActionBarsOwned.SafeUpdate(self)
 end
@@ -2607,6 +2623,14 @@ local function BuildBar(barKey)
 
     ActionBarsOwned.nativeButtons[barKey] = buttons
 
+    -- Build slot→{button, barKey} lookup for O(1) ACTIONBAR_SLOT_CHANGED dispatch
+    if not ActionBarsOwned.slotMap then ActionBarsOwned.slotMap = {} end
+    for _, btn in ipairs(buttons) do
+        if btn.action and btn.action > 0 then
+            ActionBarsOwned.slotMap[btn.action] = { button = btn, barKey = barKey }
+        end
+    end
+
     -- Standard action bars (bar1-8): suppress Blizzard's event handling
     -- and shadow mixin methods with taint-safe versions.
     --
@@ -3108,20 +3132,39 @@ do
         local action = button.action or button:GetAttribute("action")
         if not action or action == 0 then return end
 
+        -- Skip empty slots entirely — avoids 3+ API calls on buttons with no spell
+        if not HasAction(action) then return end
+
         local cooldown = button.cooldown or button.Cooldown
         if not cooldown then return end
 
         if USE_DURATION_OBJECTS then
-            local cdInfo  = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
+            -- Fast path: check primary cooldown first (1 API call).
+            -- If not active, skip charges/LoC entirely (saves 2 API calls per
+            -- button for the majority of buttons not on cooldown at any moment).
+            local cdInfo = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
+            if not cdInfo.isActive then
+                -- Not on cooldown — clear everything quickly
+                cooldown:Clear()
+                if button.chargeCooldown then button.chargeCooldown:Clear() end
+                if button.lossOfControlCooldown then button.lossOfControlCooldown:Clear() end
+                return
+            end
+
+            -- Button IS on cooldown — now check charges and LoC (2 more API calls)
             local chgInfo = C_ActionBar.GetActionCharges(action) or DEFAULT_CHG_INFO
             local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action) or DEFAULT_LOC_INFO
 
             local showLoC    = locInfo.isActive
             local showCharge = not locInfo.shouldReplaceNormalCooldown and chgInfo.isActive
-            local showNormal = not locInfo.shouldReplaceNormalCooldown and cdInfo.isActive
+            local showNormal = not locInfo.shouldReplaceNormalCooldown
 
-            -- Normal cooldown
-            SetOrClearCooldown(cooldown, showNormal, C_ActionBar.GetActionCooldownDuration(action))
+            -- Normal cooldown (only fetch DurationObject when needed)
+            if showNormal then
+                SetOrClearCooldown(cooldown, true, C_ActionBar.GetActionCooldownDuration(action))
+            else
+                cooldown:Clear()
+            end
 
             -- Charge cooldown (lazy-create frame)
             if showCharge then
@@ -3144,12 +3187,23 @@ do
         end
     end
 
+    local _lastCdUpdateTime = 0
     function ActionBarsOwned.UpdateAllCooldowns()
+        -- Hard throttle: max once per frame (prevents duplicate work when
+        -- multiple code paths trigger cooldown updates in the same frame)
+        local now = GetTime()
+        if now == _lastCdUpdateTime then return end
+        _lastCdUpdateTime = now
+
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            local buttons = ActionBarsOwned.nativeButtons[barKey]
-            if buttons then
-                for _, btn in ipairs(buttons) do
-                    ActionBarsOwned.UpdateCooldown(btn)
+            -- Skip bars that are fully faded out
+            local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
+            if not fadeState or fadeState.currentAlpha > 0 then
+                local buttons = ActionBarsOwned.nativeButtons[barKey]
+                if buttons then
+                    for _, btn in ipairs(buttons) do
+                        ActionBarsOwned.UpdateCooldown(btn)
+                    end
                 end
             end
         end
@@ -3383,47 +3437,121 @@ end
 
 -- Full visual refresh for all owned action buttons via SafeUpdate.
 -- Uses only truthiness tests on API returns — safe during combat.
+local _lastVisualUpdateTime = 0
 function ActionBarsOwned.UpdateAllButtonVisuals()
+    -- Hard throttle: max once per frame
+    local now = GetTime()
+    if now == _lastVisualUpdateTime then return end
+    _lastVisualUpdateTime = now
+
     for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-        local btns = ActionBarsOwned.nativeButtons[barKey]
-        if btns then
-            for _, btn in ipairs(btns) do
-                pcall(ActionBarsOwned.SafeUpdate, btn)
+        -- Skip bars that are fully faded out
+        local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
+        if not fadeState or fadeState.currentAlpha > 0 then
+            local btns = ActionBarsOwned.nativeButtons[barKey]
+            if btns then
+                for _, btn in ipairs(btns) do
+                    pcall(ActionBarsOwned.SafeUpdate, btn)
+                end
             end
         end
     end
+end
+
+---------------------------------------------------------------------------
+-- EVENT COALESCING (frame-based Show/Hide — zero allocation)
+---------------------------------------------------------------------------
+-- High-frequency events coalesced via frame Show/Hide pattern:
+-- Show() on an already-shown frame is a no-op (auto-dedup).
+-- OnUpdate fires once at the start of the next frame, then self:Hide().
+-- Zero closure allocation, zero C_Timer overhead.
+
+local abCooldownFrame = CreateFrame("Frame")
+abCooldownFrame:Hide()
+abCooldownFrame:SetScript("OnUpdate", function(self)
+    self:Hide()
+    ActionBarsOwned.UpdateAllCooldowns()
+end)
+
+local function ScheduleABCooldownUpdate()
+    abCooldownFrame:Show()
+end
+
+local abVisualFrame = CreateFrame("Frame")
+abVisualFrame:Hide()
+abVisualFrame:SetScript("OnUpdate", function(self)
+    self:Hide()
+    ActionBarsOwned.UpdateAllButtonVisuals()
+end)
+
+local function ScheduleABVisualUpdate()
+    abVisualFrame:Show()
+end
+
+-- ACTIONBAR_SLOT_CHANGED: only needed for drag/drop (specific slot > 0).
+-- Slot 0 ("all changed") is ignored — already covered by SPELLS_CHANGED,
+-- SafeSyncAction, PLAYER_ENTERING_WORLD, etc.
+-- Specific slots during paging are also suppressed: UPDATE_SHAPESHIFT_FORM
+-- and SafeSyncAction already handle those buttons.
+local abDirtySlots = {}
+local abSlotFrame = CreateFrame("Frame")
+abSlotFrame:Hide()
+local _lastPagingTime = 0
+
+abSlotFrame:SetScript("OnUpdate", function(self)
+    self:Hide()
+    local slotMap = ActionBarsOwned.slotMap
+    for slot in pairs(abDirtySlots) do
+        if slotMap then
+            local entry = slotMap[slot]
+            if entry then
+                local btn, barKey = entry.button, entry.barKey
+                pcall(ActionBarsOwned.SafeUpdate, btn)
+                ActionBarsOwned.UpdateCooldown(btn)
+                ActionBarsOwned.UpdateOverlayGlow(btn)
+                if not InCombatLockdown() then
+                    local settings = GetEffectiveSettings(barKey)
+                    if settings then
+                        UpdateEmptySlotVisibility(btn, settings)
+                    end
+                end
+            end
+        end
+    end
+    wipe(abDirtySlots)
+    if InCombatLockdown() then
+        ActionBarsOwned.pendingSlotUpdate = true
+    end
+end)
+
+local function ScheduleSlotUpdate(slot)
+    -- Ignore slot 0 (full refresh) — redundant with companion events
+    if not slot or slot < 1 then return end
+    -- Suppress during paging window (form changes, stealth, vehicle).
+    -- UPDATE_SHAPESHIFT_FORM + SafeSyncAction already refresh these buttons.
+    if GetTime() - _lastPagingTime < 0.5 then return end
+    abDirtySlots[slot] = true
+    abSlotFrame:Show()
 end
 
 local function OnOwnedEvent(self, event, ...)
     if not ActionBarsOwned.initialized then return end
 
     if event == "ACTIONBAR_SLOT_CHANGED" then
-        -- Slot contents changed (talent swap, spell move, etc.).  Refresh
-        -- visuals via the mixin (safe: GetActionCount suppressed), then
-        -- cooldowns via DurationObject path.
-        ActionBarsOwned.UpdateAllButtonVisuals()
-        ActionBarsOwned.UpdateAllCooldowns()
-        if InCombatLockdown() then
-            ActionBarsOwned.pendingSlotUpdate = true
-            return
-        end
-        C_Timer.After(0.1, function()
-            for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-                local buttons = ActionBarsOwned.nativeButtons[barKey]
-                local settings = GetEffectiveSettings(barKey)
-                if buttons and settings then
-                    for _, btn in ipairs(buttons) do
-                        UpdateEmptySlotVisibility(btn, settings)
-                    end
-                end
-            end
-        end)
+        -- Debounced: collect dirty slots, process in one batch after 50ms.
+        -- Talent swaps fire 96 events, bar paging fires 12, zone transitions
+        -- fire slot 0 — all coalesced into a single update pass.
+        local slot = ...
+        ScheduleSlotUpdate(slot)
 
     elseif event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR"
         or event == "UPDATE_SHAPESHIFT_FORM"
         or event == "UPDATE_SHAPESHIFT_FORMS"
         or event == "UPDATE_STEALTH" then
+        -- Mark paging window so ScheduleSlotUpdate suppresses the redundant
+        -- ACTIONBAR_SLOT_CHANGED burst that Blizzard fires after paging.
+        _lastPagingTime = GetTime()
         -- Paging is handled by state driver: _childupdate-offset sets the
         -- action attribute and calls CallMethod("SafeSyncAction") which
         -- syncs self.action and refreshes visuals on each button.
@@ -3661,14 +3789,16 @@ local function OnOwnedEvent(self, event, ...)
         -- Centralized cooldown update for all owned action buttons.
         -- Per-button OnEvent is suppressed (addon-created frames are
         -- tainted).  DurationObject path is secret-safe.
-        ActionBarsOwned.UpdateAllCooldowns()
+        -- Debounced: fires 20+/sec in combat, coalesced to ~20/sec max.
+        ScheduleABCooldownUpdate()
 
     elseif event == "ACTIONBAR_UPDATE_USABLE"
         or event == "ACTIONBAR_UPDATE_STATE"
         or event == "SPELL_UPDATE_ICON" then
         -- Usability, checked state, or icon changes.  Per-button events
         -- are unregistered, so dispatch centrally via SafeUpdate.
-        ActionBarsOwned.UpdateAllButtonVisuals()
+        -- Debounced: coalesced to ~20/sec max.
+        ScheduleABVisualUpdate()
 
     elseif event == "SPELL_UPDATE_CHARGES" then
         -- Charge count changed (e.g. Arcane Charges, Chi).
@@ -3682,8 +3812,11 @@ local function OnOwnedEvent(self, event, ...)
         end
 
     elseif event == "ACTIONBAR_SHOWGRID" then
-        -- Dragging from spellbook — show empty slot grid
+        -- Dragging from spellbook — show empty slot grid.
+        -- Temporarily register ACTIONBAR_SLOT_CHANGED so we catch the
+        -- specific slot the player drops onto.
         ActionBarsOwned._showGrid = true
+        self:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
             local btns = ActionBarsOwned.nativeButtons[barKey]
             if btns then
@@ -3694,8 +3827,10 @@ local function OnOwnedEvent(self, event, ...)
         end
 
     elseif event == "ACTIONBAR_HIDEGRID" then
-        -- Drag ended — restore empty slot visibility
+        -- Drag ended — restore empty slot visibility and unregister
+        -- ACTIONBAR_SLOT_CHANGED (fires constantly even while idle).
         ActionBarsOwned._showGrid = nil
+        self:UnregisterEvent("ACTIONBAR_SLOT_CHANGED")
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
             local buttons = ActionBarsOwned.nativeButtons[barKey]
             local settings = GetEffectiveSettings(barKey)
@@ -3708,18 +3843,19 @@ local function OnOwnedEvent(self, event, ...)
 
     elseif event == "PLAYER_ENTER_COMBAT" or event == "PLAYER_LEAVE_COMBAT" then
         -- Auto-attack flash state changes (SafeUpdate handles flash now)
-        ActionBarsOwned.UpdateAllButtonVisuals()
+        ScheduleABVisualUpdate()
 
     elseif event == "START_AUTOREPEAT_SPELL" or event == "STOP_AUTOREPEAT_SPELL" then
         -- Auto-shot/wand toggle — refresh flash state on all buttons
-        ActionBarsOwned.UpdateAllButtonVisuals()
+        ScheduleABVisualUpdate()
 
     elseif event == "SPELLS_CHANGED"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" then
         -- Talent swap, respec, new spell learned — full refresh of icons,
         -- usability, cooldowns, flyouts, and empty slot visibility.
-        ActionBarsOwned.UpdateAllButtonVisuals()
-        ActionBarsOwned.UpdateAllCooldowns()
+        -- Coalesced: SPELLS_CHANGED fires more often than expected in 12.0+.
+        ScheduleABVisualUpdate()
+        ScheduleABCooldownUpdate()
         ActionBarsOwned.UpdateAllOverlayGlows()
         -- Update flyout data on all buttons
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
@@ -3760,7 +3896,7 @@ local function OnOwnedEvent(self, event, ...)
 
     elseif event == "SPELL_UPDATE_USABLE" then
         -- Spell usability changed (e.g. resource gained/spent, GCD ended)
-        ActionBarsOwned.UpdateAllButtonVisuals()
+        ScheduleABVisualUpdate()
 
     elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
         local spellId = ...
@@ -3771,9 +3907,9 @@ local function OnOwnedEvent(self, event, ...)
         ActionBarsOwned.OnSpellActivationGlowHide(spellId)
 
     elseif event == "UPDATE_VEHICLE_ACTIONBAR" then
-        -- Vehicle action bar data changed — full refresh
-        ActionBarsOwned.UpdateAllButtonVisuals()
-        ActionBarsOwned.UpdateAllCooldowns()
+        -- Vehicle action bar data changed — full refresh (coalesced)
+        ScheduleABVisualUpdate()
+        ScheduleABCooldownUpdate()
         ActionBarsOwned.UpdateAllOverlayGlows()
         ApplyBar1OverrideBindings()
 
@@ -3785,13 +3921,13 @@ local function OnOwnedEvent(self, event, ...)
         -- Equipment changed — items on action bars may need icon/cooldown refresh
         local unit = ...
         if unit == "player" then
-            ActionBarsOwned.UpdateAllButtonVisuals()
-            ActionBarsOwned.UpdateAllCooldowns()
+            ScheduleABVisualUpdate()
+            ScheduleABCooldownUpdate()
         end
 
     elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
         -- Mount display changed — icon refresh for mount abilities
-        ActionBarsOwned.UpdateAllButtonVisuals()
+        ScheduleABVisualUpdate()
 
     elseif event == "PET_BATTLE_OPENING_START" then
         -- Clear all override bindings so the pet battle UI gets keys.
@@ -5213,7 +5349,10 @@ local function UpdateUsabilityPolling()
     -- Event-driven usability updates (very efficient)
     if usabilityEnabled or rangeEnabled then
         checkFrame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
-        checkFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+        -- ACTIONBAR_UPDATE_COOLDOWN intentionally omitted: ownedEventFrame
+        -- already handles cooldowns, and ACTIONBAR_UPDATE_USABLE fires when
+        -- usability state changes (e.g. cooldown ends).  Eliminates double
+        -- handler invocation on every cooldown tick (20+/sec in combat).
         checkFrame:RegisterEvent("SPELL_UPDATE_USABLE")
         checkFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
         checkFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
@@ -6488,7 +6627,10 @@ function ActionBarsOwned:Initialize()
     PatchLibKeyBoundForMidnight()
 
     -- Re-register events
-    ownedEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+    -- ACTIONBAR_SLOT_CHANGED not registered here — only registered during
+    -- drag operations (ACTIONBAR_SHOWGRID).  Blizzard fires slot 0 constantly
+    -- even while idle, and all non-drag scenarios are already covered by
+    -- SPELLS_CHANGED, SafeSyncAction, UPDATE_SHAPESHIFT_FORM, etc.
     ownedEventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
     ownedEventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
     ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")

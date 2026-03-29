@@ -43,6 +43,28 @@ function SkinBase.GetSkinBarColor(moduleSettings, prefix)
 end
 
 ---------------------------------------------------------------------------
+-- Per-frame OnBackdropSizeChanged fix
+-- BackdropTemplateMixin.SetupPieceVisuals re-creates backdrop texture pieces
+-- with default white vertex color but does NOT re-apply stored colors.
+-- Instead of hooking the global mixin (which fires for EVERY BackdropTemplate
+-- resize in the entire UI — hundreds/sec in raids), we hook individual
+-- QUI-skinned frames in CreateBackdrop / ApplyFullBackdrop.
+---------------------------------------------------------------------------
+local function HookBackdropSizeChanged(frame)
+    if not frame or frame._quiSizeHooked then return end
+    frame._quiSizeHooked = true
+    if not frame.OnBackdropSizeChanged then return end
+    hooksecurefunc(frame, "OnBackdropSizeChanged", function(self)
+        if self._quiBgR then
+            pcall(self.SetBackdropColor, self, self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA or 1)
+        end
+        if self._quiBorderR then
+            pcall(self.SetBackdropBorderColor, self, self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA or 1)
+        end
+    end)
+end
+
+---------------------------------------------------------------------------
 -- CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 -- Creates (or updates) a pixel-perfect QUI backdrop on the given frame.
 -- Stores the backdrop in a local weak-keyed table (NOT on the frame itself)
@@ -78,6 +100,7 @@ function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     })
     backdrop:SetBackdropColor(backdrop._quiBgR, backdrop._quiBgG, backdrop._quiBgB, backdrop._quiBgA)
     backdrop:SetBackdropBorderColor(backdrop._quiBorderR, backdrop._quiBorderG, backdrop._quiBorderB, backdrop._quiBorderA)
+    HookBackdropSizeChanged(backdrop)
 end
 
 ---------------------------------------------------------------------------
@@ -107,6 +130,7 @@ function SkinBase.ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     })
     frame:SetBackdropColor(frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA)
     frame:SetBackdropBorderColor(frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA)
+    HookBackdropSizeChanged(frame)
 end
 
 ---------------------------------------------------------------------------
@@ -171,32 +195,4 @@ function SkinBase.StripTextures(frame)
     end
 end
 
----------------------------------------------------------------------------
--- Global OnBackdropSizeChanged fix
--- BackdropTemplateMixin.SetupPieceVisuals re-creates backdrop texture pieces
--- with default white vertex color but does NOT re-apply the stored
--- backdropColor/backdropBorderColor. This hook ensures colors are always
--- re-applied after piece recreation on ANY BackdropTemplate frame.
----------------------------------------------------------------------------
-if BackdropTemplateMixin and BackdropTemplateMixin.OnBackdropSizeChanged then
-    hooksecurefunc(BackdropTemplateMixin, "OnBackdropSizeChanged", function(self)
-        -- Fast exit for frames with no stored colors (most Blizzard frames).
-        -- Without this guard the hook fires for EVERY BackdropTemplate resize
-        -- in the entire UI — hundreds of times/sec in raids.
-        if not self.backdropColor and not self._quiBgR
-           and not self.backdropBorderColor and not self._quiBorderR then
-            return
-        end
-        if self.backdropColor then
-            pcall(self.SetBackdropColor, self, self.backdropColor:GetRGBA())
-        elseif self._quiBgR then
-            pcall(self.SetBackdropColor, self, self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA or 1)
-        end
-        if self.backdropBorderColor then
-            pcall(self.SetBackdropBorderColor, self, self.backdropBorderColor:GetRGBA())
-        elseif self._quiBorderR then
-            pcall(self.SetBackdropBorderColor, self, self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA or 1)
-        end
-    end)
-end
 

@@ -1023,6 +1023,20 @@ visibilityEventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
 
 local _pendingSetupTimer = nil
 
+-- Frame-based event coalescing: burst-prone events (GROUP_ROSTER_UPDATE,
+-- ZONE_CHANGED_NEW_AREA, etc.) fire multiple times in the same frame.
+-- Instead of running 4 visibility updates per event, coalesce into one
+-- update on the next frame.  Show/Hide pattern auto-deduplicates.
+local visCoalesceFrame = CreateFrame("Frame")
+visCoalesceFrame:Hide()
+visCoalesceFrame:SetScript("OnUpdate", function(self)
+    self:Hide()
+    UpdateCDMVisibility()
+    UpdateUnitframesVisibility()
+    UpdateActionBarsVisibility()
+    UpdateChatVisibility()
+end)
+
 visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_FLAGS_CHANGED" then
         local unit = ...
@@ -1065,12 +1079,9 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         end)
     end
 
-    -- Always try an immediate update too (works for events where frames
-    -- already exist, e.g. target changes, combat, zone transitions).
-    UpdateCDMVisibility()
-    UpdateUnitframesVisibility()
-    UpdateActionBarsVisibility()
-    UpdateChatVisibility()
+    -- Coalesce visibility updates: if multiple events fire in the same
+    -- frame (e.g. GROUP_ROSTER_UPDATE bursts), only one update runs.
+    visCoalesceFrame:Show()
 end)
 
 ---------------------------------------------------------------------------
