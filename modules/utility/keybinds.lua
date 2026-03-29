@@ -1476,12 +1476,15 @@ eventFrame:SetScript("OnEvent", function(self, event)
     end
 
     if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_SLOT_CHANGED" then
-        -- Clear stored keybinds when bindings or action bar changes
-        wipe(iconKeybindCache)
-        ClearAllStoredKeybinds()
+        -- Mark cache dirty — actual wipe/rebuild deferred to ThrottledUpdate.
+        -- ACTIONBAR_SLOT_CHANGED fires constantly (even idle); doing
+        -- wipe + ClearAllStoredKeybinds on every event was expensive.
+        if not updatePending then
+            wipe(iconKeybindCache)
+            ClearAllStoredKeybinds()
+        end
     end
 
-    -- Throttle other events
     ThrottledUpdate()
 end)
 

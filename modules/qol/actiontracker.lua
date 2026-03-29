@@ -1148,7 +1148,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 
     if event == "ACTIONBAR_SLOT_CHANGED" or event == "UPDATE_MACROS" or event == "SPELLS_CHANGED" then
-        RefreshActionBarSpellCache()
+        -- Debounce: ACTIONBAR_SLOT_CHANGED fires constantly (even idle).
+        -- RefreshActionBarSpellCache iterates 180 slots — expensive.
+        if not state._cacheRefreshPending then
+            state._cacheRefreshPending = true
+            C_Timer.After(0.2, function()
+                state._cacheRefreshPending = false
+                RefreshActionBarSpellCache()
+            end)
+        end
         return
     end
 
