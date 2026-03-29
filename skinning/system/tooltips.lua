@@ -1,19 +1,16 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local SkinBase = ns.SkinBase
+local UIKit = ns.UIKit
 local GetCore = Helpers.GetCore
 local issecretvalue = issecretvalue
 
 ---------------------------------------------------------------------------
 -- TOOLTIP SKINNING
--- Hides Blizzard's NineSlice via :Hide(), renders a QUI-owned
--- BackdropTemplate overlay. Falls back to NineSlice when styling fails
+-- Hides Blizzard's NineSlice via :Hide(), renders QUI-owned
+-- manual chrome (background + border lines). Falls back to NineSlice when styling fails
 -- (combat secret values, forbidden frames, errors).
 ---------------------------------------------------------------------------
 
-local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
-
----------------------------------------------------------------------------
 -- Settings
 ---------------------------------------------------------------------------
 
@@ -158,7 +155,7 @@ end
 -- State Tables
 ---------------------------------------------------------------------------
 
-local styleFrames = Helpers.CreateStateTable()   -- tooltip → overlay frame
+local styleFrames = Helpers.CreateStateTable()   -- tooltip → chrome frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
 local hookedNineSlices = Helpers.CreateStateTable() -- NineSlice → true
 local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
@@ -216,60 +213,42 @@ end
 -- Style Frame
 ---------------------------------------------------------------------------
 
+local function HideStyleFrame(tooltip)
+    local frame = tooltip and styleFrames[tooltip]
+    if frame then frame:Hide() end
+end
+
+local function FallbackToNineSlice(tooltip)
+    suppressNSHook = true
+    local ns = tooltip and tooltip.NineSlice
+    if ns then pcall(ns.Show, ns) end
+    suppressNSHook = false
+    HideStyleFrame(tooltip)
+end
+
+local function HasAccessibleDimensions(tooltip)
+    if not tooltip then return false end
+    local okWidth, width = pcall(tooltip.GetWidth, tooltip)
+    if not okWidth or type(width) ~= "number" or (issecretvalue and issecretvalue(width)) then
+        return false
+    end
+    local okHeight, height = pcall(tooltip.GetHeight, tooltip)
+    if not okHeight or type(height) ~= "number" or (issecretvalue and issecretvalue(height)) then
+        return false
+    end
+    return width >= 0 and height >= 0
+end
+
 local function GetStyleFrame(tooltip)
     local frame = styleFrames[tooltip]
     if frame then return frame end
 
-    frame = CreateFrame("Frame", nil, tooltip, "BackdropTemplate")
+    frame = CreateFrame("Frame", nil, tooltip)
     frame:SetAllPoints()
     frame.ignoreInLayout = true
-    if frame.SetSnapToPixelGrid then frame:SetSnapToPixelGrid(true) end
-    if frame.SetTexelSnappingBias then frame:SetTexelSnappingBias(0) end
-
-    -- Guard backdrop methods against secret-value arithmetic in combat.
-    -- The C engine fires OnBackdropSizeChanged as a cached script handler,
-    -- bypassing Lua table overrides. But self:SetupTextureCoordinates() and
-    -- self:SetupPieceVisuals() inside it use normal Lua method dispatch, so
-    -- overriding these on the frame instance intercepts the error path.
-    local origSetupTexCoords = frame.SetupTextureCoordinates
-    local origSetupVisuals = frame.SetupPieceVisuals
-    if origSetupTexCoords then
-        frame.SetupTextureCoordinates = function(self)
-            if issecretvalue then
-                local ok, w = pcall(self.GetWidth, self)
-                if not ok or issecretvalue(w) then return end
-            end
-            return origSetupTexCoords(self)
-        end
-    end
-    if origSetupVisuals then
-        frame.SetupPieceVisuals = function(self)
-            if issecretvalue then
-                local ok, w = pcall(self.GetWidth, self)
-                if not ok or issecretvalue(w) then return end
-            end
-            return origSetupVisuals(self)
-        end
-    end
-
-    -- Re-apply colors after piece recreation on resize (SetupPieceVisuals
-    -- creates pieces with raw WHITE8x8 color, losing stored colors).
-    -- Use HookScript to run after the C-dispatched handler completes.
-    pcall(frame.HookScript, frame, "OnBackdropSizeChanged", function(self)
-        if issecretvalue then
-            local ok, w = pcall(self.GetWidth, self)
-            if not ok or issecretvalue(w) then return end
-        end
-        if self.backdropColor then
-            pcall(self.SetBackdropColor, self, self.backdropColor:GetRGBA())
-        end
-        if self.backdropBorderColor then
-            pcall(self.SetBackdropBorderColor, self, self.backdropBorderColor:GetRGBA())
-        end
-    end)
-
-    -- Mark as QUI-owned for global OnBackdropSizeChanged fallback
-    frame._quiBgR = 0.05
+    frame:EnableMouse(false)
+    frame.bg = UIKit.CreateBackground(frame, 0.05, 0.05, 0.05, 0.95)
+    UIKit.CreateBorderLines(frame)
 
     styleFrames[tooltip] = frame
     return frame
@@ -289,122 +268,77 @@ end
 -- Skin Application
 ---------------------------------------------------------------------------
 
+local function ApplyTooltipChrome(tooltip)
+    if not tooltip then return end
+
+    -- Embedded tooltips: strip border, no overlay (parent has one)
+    if IsEmbedded(tooltip) then
+        HideNineSlice(tooltip)
+        if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
+        HideStyleFrame(tooltip)
+        return
+    end
+
+    HideNineSlice(tooltip)
+    -- Do NOT call tooltip:SetBackdrop(nil) here.  Clearing the tooltip's
+    -- own backdrop triggers Blizzard to re-call SharedTooltip_SetBackdropStyle
+    -- which re-shows NineSlice and sets pendingGameTooltipRestyle, creating
+    -- an infinite per-frame loop.  Our chrome frame at the same frame level
+    -- covers the tooltip's own backdrop anyway.
+
+    -- Fall back to NineSlice if dimensions are inaccessible (secret values).
+    -- Suppress the NineSlice:Show hook so we don't fight our own fallback.
+    if not HasAccessibleDimensions(tooltip) then
+        FallbackToNineSlice(tooltip)
+        return
+    end
+
+    local frame = GetStyleFrame(tooltip)
+    local ok, level = pcall(tooltip.GetFrameLevel, tooltip)
+    if ok and type(level) == "number" then
+        frame:SetFrameLevel(level)
+    end
+
+    local okStrata, strata = pcall(tooltip.GetFrameStrata, tooltip)
+    if okStrata and strata then
+        frame:SetFrameStrata(strata)
+    end
+
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
+    local thickness = math.max(GetEffectiveBorderThickness(), 1)
+
+    if frame.bg then
+        frame.bg:SetVertexColor(bgr, bgg, bgb, bga)
+    end
+    UIKit.UpdateBorderLines(frame, thickness, sr, sg, sb, sa, sa <= 0)
+    frame:Show()
+
+    -- Strip CompareHeader on shopping tooltips
+    if tooltip.CompareHeader then
+        local h = tooltip.CompareHeader
+        if h.SetBackdrop then pcall(h.SetBackdrop, h, nil) end
+        if h.NineSlice then pcall(h.NineSlice.Hide, h.NineSlice) end
+    end
+end
+
 local function StyleTooltip(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not IsEnabled() then return end
 
     pcall(function()
-        -- Embedded tooltips: strip border, no overlay (parent has one)
-        if IsEmbedded(tooltip) then
-            HideNineSlice(tooltip)
-            if tooltip.SetBackdrop then pcall(tooltip.SetBackdrop, tooltip, nil) end
-            local sf = styleFrames[tooltip]
-            if sf then sf:Hide() end
-            return
-        end
-
-        HideNineSlice(tooltip)
-        -- Do NOT call tooltip:SetBackdrop(nil) here.  Clearing the tooltip's
-        -- own backdrop triggers Blizzard to re-call SharedTooltip_SetBackdropStyle
-        -- which re-shows NineSlice and sets pendingGameTooltipRestyle, creating
-        -- an infinite per-frame loop.  Our overlay at the same frame level
-        -- covers the tooltip's own backdrop anyway.
-
-        -- Fall back to NineSlice if dimensions are inaccessible (secret values).
-        -- Suppress the NineSlice:Show hook so we don't fight our own fallback.
-        local dimOk = pcall(function() local _ = tooltip:GetWidth() + 0 end)
-        if not dimOk then
-            suppressNSHook = true
-            local ns = tooltip.NineSlice
-            if ns then pcall(ns.Show, ns) end
-            suppressNSHook = false
-            local sf = styleFrames[tooltip]
-            if sf then sf:Hide() end
-            return
-        end
-
-        -- Create/get overlay and apply backdrop
-        local frame = GetStyleFrame(tooltip)
-        -- Set overlay to the tooltip's own frame level.  NineSlice was
-        -- dropped to level 0 by HideNineSlice above, so our overlay at
-        -- the tooltip's level (typically 1) is strictly above it.
-        -- Tooltip FontStrings (text) are regions at this same level in
-        -- the ARTWORK draw layer, which is above our BACKGROUND/BORDER.
-        local ok, level = pcall(tooltip.GetFrameLevel, tooltip)
-        if ok and type(level) == "number" then
-            frame:SetFrameLevel(level)
-        end
-
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-        local thickness = GetEffectiveBorderThickness()
-        local px = SkinBase.GetPixelSize(tooltip, 1)
-        local edge = math.max(thickness, 1) * px
-
-        -- Only re-set backdrop when edge size changes (avoids piece recreation)
-        if frame._lastEdge ~= edge or not frame.backdropInfo then
-            frame:SetBackdrop({
-                bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE,
-                edgeSize = edge,
-                insets = { left = edge, right = edge, top = edge, bottom = edge },
-            })
-            frame._lastEdge = edge
-        end
-
-        frame:SetBackdropColor(bgr, bgg, bgb, bga)
-        frame:SetBackdropBorderColor(sr, sg, sb, sa)
-        -- Store for global OnBackdropSizeChanged fallback
-        frame._quiBgR = bgr or 0.05
-        frame._quiBgG = bgg or 0.05
-        frame._quiBgB = bgb or 0.05
-        frame._quiBgA = bga or 0.95
-        frame._quiBorderR = sr or 0
-        frame._quiBorderG = sg or 0
-        frame._quiBorderB = sb or 0
-        frame._quiBorderA = sa or 1
-        frame:Show()
-
-        -- Strip CompareHeader on shopping tooltips
-        if tooltip.CompareHeader then
-            local h = tooltip.CompareHeader
-            if h.SetBackdrop then pcall(h.SetBackdrop, h, nil) end
-            if h.NineSlice then pcall(h.NineSlice.Hide, h.NineSlice) end
-        end
+        ApplyTooltipChrome(tooltip)
     end)
 end
 
--- Combat-safe: re-hide NineSlice and refresh colors on addon-owned overlay.
--- All operations are C-side or target addon-owned frames (never taint-restricted).
+-- Combat-safe: refresh addon-owned chrome without touching Blizzard's backdrop.
 local function CombatRefreshTooltip(tooltip)
     if not tooltip then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not IsEnabled() then return end
 
     pcall(function()
-        HideNineSlice(tooltip)
-
-        local frame = styleFrames[tooltip]
-        if not frame then
-            -- First encounter in combat: create overlay (addon-owned, always safe)
-            frame = GetStyleFrame(tooltip)
-            local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-            local edge = math.max(GetEffectiveBorderThickness(), 1)
-            frame:SetBackdrop({
-                bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE,
-                edgeSize = edge,
-                insets = { left = edge, right = edge, top = edge, bottom = edge },
-            })
-            frame._lastEdge = edge
-            frame:SetBackdropColor(bgr, bgg, bgb, bga)
-            frame:SetBackdropBorderColor(sr, sg, sb, sa)
-            frame._quiBgR = bgr or 0.05
-        else
-            -- Existing overlay: just refresh colors
-            local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
-            frame:SetBackdropColor(bgr, bgg, bgb, bga)
-            frame:SetBackdropBorderColor(sr, sg, sb, sa)
-        end
-        frame:Show()
+        ApplyTooltipChrome(tooltip)
     end)
 end
 
@@ -438,11 +372,71 @@ local function HasActiveMoneyFrame(tooltip)
     return ok and result == true
 end
 
+local function HasActiveWidgetContainer(tooltip)
+    if not tooltip or not tooltip.GetChildren then return false end
+
+    local ok, result = pcall(function()
+        for i = 1, select("#", tooltip:GetChildren()) do
+            local child = select(i, tooltip:GetChildren())
+            if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
+                local widgetSetID = child.widgetSetID
+                if widgetSetID ~= nil then
+                    return true
+                end
+
+                local shownWidgetCount = child.shownWidgetCount
+                if shownWidgetCount ~= nil then
+                    if Helpers.IsSecretValue(shownWidgetCount) then
+                        return true
+                    end
+                    shownWidgetCount = tonumber(shownWidgetCount)
+                    if shownWidgetCount and shownWidgetCount > 0 then
+                        return true
+                    end
+                end
+
+                local numWidgetsShowing = child.numWidgetsShowing
+                if numWidgetsShowing ~= nil then
+                    if Helpers.IsSecretValue(numWidgetsShowing) then
+                        return true
+                    end
+                    numWidgetsShowing = tonumber(numWidgetsShowing)
+                    if numWidgetsShowing and numWidgetsShowing > 0 then
+                        return true
+                    end
+                end
+
+                if child.IsShown and child:IsShown() then
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+
+    return ok and result == true
+end
+
+local function RefreshTooltipLayout(tooltip)
+    if not tooltip or not (tooltip.IsShown and tooltip:IsShown()) then return end
+    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+
+    if tooltip == GameTooltip then
+        if HasActiveMoneyFrame(tooltip) or HasActiveWidgetContainer(tooltip) then
+            return
+        end
+    end
+
+    if type(tooltip.UpdateTooltipSize) == "function" then
+        pcall(tooltip.UpdateTooltipSize, tooltip)
+    end
+end
+
 -- Dispatch: combat vs normal path
 local function OnTooltipShow(tooltip)
     if not IsEnabled() then return end
-    -- MoneyFrame children can taint tooltip width arithmetic during
-    -- SetBackdrop, but we still suppress NineSlice and show our overlay.
+    -- MoneyFrame children can taint tooltip width arithmetic on some Blizzard
+    -- GameTooltip update paths, so keep the conservative show-existing-chrome path.
     if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then
         pcall(function()
             HideNineSlice(tooltip)
@@ -540,6 +534,7 @@ local function _FlushPendingFonts()
         _pendingFontSet[tt] = nil
         if tt.IsShown and tt:IsShown() and not InCombatLockdown() then
             pcall(ApplyFontSize, tt)
+            RefreshTooltipLayout(tt)
         end
     end
 end
@@ -822,10 +817,6 @@ end
 
 local function RefreshAllColors()
     if InCombatLockdown() then return end
-    -- Clear edge cache to force backdrop recreation on next style
-    for _, frame in pairs(styleFrames) do
-        if frame then frame._lastEdge = nil end
-    end
     -- Re-style all visible tooltips
     for tooltip in pairs(styleFrames) do
         if tooltip.IsShown and tooltip:IsShown() then
@@ -845,7 +836,10 @@ local function RefreshAllFonts()
     if InCombatLockdown() then return end
     for _, name in ipairs(tooltipsToSkin) do
         local tooltip = _G[name]
-        if tooltip then ApplyFontSize(tooltip) end
+        if tooltip then
+            ApplyFontSize(tooltip)
+            RefreshTooltipLayout(tooltip)
+        end
     end
 end
 
@@ -863,19 +857,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         return
     end
 
-    -- Post-combat: restore full tooltip styling.  During combat the degraded
-    -- CombatRefreshTooltip path is used (unscaled edges, no font sizing, no
-    -- backdrop clear on the tooltip frame itself).  Force a full restyle now
-    -- that combat restrictions are lifted.
+    -- Post-combat: restore full tooltip styling and deferred font/layout sync.
     if event == "PLAYER_REGEN_ENABLED" then
         _FlushHookQueue()
         pendingGameTooltipRestyle = false
         if IsEnabled() then
-            -- Clear combat-path edge cache so backdrop is recreated with
-            -- correct pixel-scaled edge sizes.
-            for _, frame in pairs(styleFrames) do
-                if frame then frame._lastEdge = nil end
-            end
             -- Full restyle of all visible tooltips (both named and dynamic)
             for _, name in ipairs(tooltipsToSkin) do
                 local tooltip = _G[name]
