@@ -1061,6 +1061,40 @@ local function GetCurrentSpecID()
     return GetSpecializationInfo(spec) or 0
 end
 
+-- Text setting keys eligible for per-spec override
+local TEXT_SPEC_KEYS = {
+    "showText", "showPercent", "hidePercentSymbol", "textAlign",
+    "textSize", "textX", "textY", "textUseClassColor", "textCustomColor",
+}
+
+-- Ensure per-spec text overrides exist for the given spec, seeding from base config
+local function EnsureTextSpecOverrides(cfg, specID)
+    if not cfg.textSpecOverrides then cfg.textSpecOverrides = {} end
+    if not cfg.textSpecOverrides[specID] then
+        local base = {}
+        for _, k in ipairs(TEXT_SPEC_KEYS) do
+            local v = cfg[k]
+            -- Deep-copy table values (e.g. textCustomColor) to avoid shared references
+            if type(v) == "table" then
+                local copy = {}
+                for tk, tv in pairs(v) do copy[tk] = tv end
+                v = copy
+            end
+            base[k] = v
+        end
+        cfg.textSpecOverrides[specID] = base
+    end
+    return cfg.textSpecOverrides[specID]
+end
+
+-- Return the effective text config table (per-spec overrides if enabled, otherwise base cfg)
+local function GetSecondaryTextConfig(cfg)
+    if not cfg or not cfg.textPerSpec then return cfg end
+    local specID = GetCurrentSpecID()
+    if specID == 0 then return cfg end
+    return EnsureTextSpecOverrides(cfg, specID)
+end
+
 local function SanitizeIndicatorValues(values, maxValue)
     if type(values) ~= "table" or not maxValue or maxValue <= 0 then
         return {}
@@ -2743,6 +2777,7 @@ end
 
 function QUICore:UpdateSecondaryPowerBar()
     local cfg = self.db.profile.secondaryPowerBar
+    local textCfg = GetSecondaryTextConfig(cfg)
 
     -- Always ensure the frame exists so the global name "QUISecondaryPowerBar"
     -- is available for Edit Mode layout anchoring even when the bar is disabled.
@@ -3289,8 +3324,8 @@ function QUICore:UpdateSecondaryPowerBar()
     if valueType == "shards" then
         -- Destruction Warlock: show decimal shards (e.g., 3.4)
         bar.TextValue:SetText(string_format("%.1f", displayValue or 0))
-    elseif valueType == "percent" and cfg.showPercent then
-        bar.TextValue:SetText(FormatPercentValue(displayValue, cfg))
+    elseif valueType == "percent" and textCfg.showPercent then
+        bar.TextValue:SetText(FormatPercentValue(displayValue, textCfg))
     elseif valueType == "percent" then
         -- Stagger with showPercent off: show raw stagger amount
         local stagger = UnitStagger("player") or 0
@@ -3305,41 +3340,43 @@ function QUICore:UpdateSecondaryPowerBar()
     end
 end
 
-    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
-    bar.TextValue:SetShadowOffset(0, 0)
-    ApplyPowerBarTextPlacement(bar, cfg)
+    -- Apply text styling (pcall-guarded so errors here cannot prevent the bar from showing)
+    pcall(function()
+        bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(textCfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
+        bar.TextValue:SetShadowOffset(0, 0)
+        ApplyPowerBarTextPlacement(bar, textCfg)
 
-    -- Apply text color
-    if cfg.textUseClassColor then
-        local _, class = UnitClass("player")
-        local classColor = RAID_CLASS_COLORS[class]
-        if classColor then
-            bar.TextValue:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
-        end
-    else
-        local c = cfg.textCustomColor or { 1, 1, 1, 1 }
-        bar.TextValue:SetTextColor(c[1], c[2], c[3], c[4] or 1)
-    end
-
-    if bar.SoulShardDecimal then
-        bar.SoulShardDecimal:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
-        bar.SoulShardDecimal:SetShadowOffset(0, 0)
-        -- Apply same text color to soul shard decimal
-        if cfg.textUseClassColor then
+        -- Apply text color
+        if textCfg.textUseClassColor then
             local _, class = UnitClass("player")
             local classColor = RAID_CLASS_COLORS[class]
             if classColor then
-                bar.SoulShardDecimal:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
+                bar.TextValue:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
             end
         else
-            local c = cfg.textCustomColor or { 1, 1, 1, 1 }
-            bar.SoulShardDecimal:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+            local c = textCfg.textCustomColor or { 1, 1, 1, 1 }
+            bar.TextValue:SetTextColor(c[1], c[2], c[3], c[4] or 1)
         end
-    end
 
+        if bar.SoulShardDecimal then
+            bar.SoulShardDecimal:SetFont(GetGeneralFont(), QUICore:PixelRound(textCfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
+            bar.SoulShardDecimal:SetShadowOffset(0, 0)
+            if textCfg.textUseClassColor then
+                local _, class = UnitClass("player")
+                local classColor = RAID_CLASS_COLORS[class]
+                if classColor then
+                    bar.SoulShardDecimal:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
+                end
+            else
+                local c = textCfg.textCustomColor or { 1, 1, 1, 1 }
+                bar.SoulShardDecimal:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+            end
+        end
 
-    -- Show text
-    bar.TextFrame:SetShown(cfg.showText ~= false)
+    end)
+
+    -- Show/hide text (outside pcall so it always applies)
+    bar.TextFrame:SetShown(textCfg.showText ~= false)
 
     if not fragmentedPowerTypes[resource] then
         self:UpdateSecondaryPowerBarTicks(bar, resource, max)
@@ -3883,27 +3920,67 @@ do
             end, sections, relayout)
 
             -- Text
-            U.CreateCollapsible(content, "Text", 7 * FORM_ROW + 8, function(body)
+            -- Proxy table: dynamically routes reads/writes to the per-spec override
+            -- table when textPerSpec is enabled, otherwise to the base config.
+            -- This avoids the need to rebuild the panel when the toggle changes.
+            local textProxy = setmetatable({}, {
+                __index = function(_, k)
+                    if secondary.textPerSpec then
+                        local specID = GetCurrentSpecID()
+                        if specID ~= 0 then
+                            return EnsureTextSpecOverrides(secondary, specID)[k]
+                        end
+                    end
+                    return secondary[k]
+                end,
+                __newindex = function(_, k, v)
+                    if secondary.textPerSpec then
+                        local specID = GetCurrentSpecID()
+                        if specID ~= 0 then
+                            EnsureTextSpecOverrides(secondary, specID)[k] = v
+                            return
+                        end
+                    end
+                    secondary[k] = v
+                end,
+            })
+
+            U.CreateCollapsible(content, "Text", 9 * FORM_ROW + 8, function(body)
                 local sy = -4
-                local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", secondary, RefreshPowerBars)
+
+                -- Per-spec toggle (always writes to base config)
+                local perSpecCheck = GUI:CreateFormCheckbox(body, "Per-Spec Text Settings", "textPerSpec", secondary, RefreshPowerBars)
+                sy = U.PlaceRow(perSpecCheck, body, sy)
+
+                -- Show current spec label when per-spec is active
+                if secondary.textPerSpec then
+                    local specName = select(2, GetSpecializationInfo(GetSpecialization() or 0)) or "Unknown"
+                    local specLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    specLabel:SetPoint("TOPLEFT", body, "TOPLEFT", 4, sy - 2)
+                    specLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
+                    specLabel:SetText("Editing: " .. specName)
+                    sy = sy - 16
+                end
+
+                local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", textProxy, RefreshPowerBars)
                 sy = U.PlaceRow(showTextCheck, body, sy)
 
-                local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", secondary, RefreshPowerBars)
+                local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", textProxy, RefreshPowerBars)
                 sy = U.PlaceRow(showPctCheck, body, sy)
 
-                local hidePctSymbolCheck = GUI:CreateFormCheckbox(body, "Hide % Symbol", "hidePercentSymbol", secondary, RefreshPowerBars)
+                local hidePctSymbolCheck = GUI:CreateFormCheckbox(body, "Hide % Symbol", "hidePercentSymbol", textProxy, RefreshPowerBars)
                 sy = U.PlaceRow(hidePctSymbolCheck, body, sy)
 
-                local textAlignDD = GUI:CreateFormDropdown(body, "Text Alignment", textAlignOptions, "textAlign", secondary, RefreshPowerBars)
+                local textAlignDD = GUI:CreateFormDropdown(body, "Text Alignment", textAlignOptions, "textAlign", textProxy, RefreshPowerBars)
                 sy = U.PlaceRow(textAlignDD, body, sy)
 
-                local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", secondary, RefreshPowerBars)
+                local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", textProxy, RefreshPowerBars)
                 sy = U.PlaceRow(textSizeSlider, body, sy)
 
-                local textXSlider = GUI:CreateFormSlider(body, "Text X Offset", -50, 50, 1, "textX", secondary, RefreshPowerBars)
+                local textXSlider = GUI:CreateFormSlider(body, "Text X Offset", -50, 50, 1, "textX", textProxy, RefreshPowerBars)
                 sy = U.PlaceRow(textXSlider, body, sy)
 
-                local textYSlider = GUI:CreateFormSlider(body, "Text Y Offset", -50, 50, 1, "textY", secondary, RefreshPowerBars)
+                local textYSlider = GUI:CreateFormSlider(body, "Text Y Offset", -50, 50, 1, "textY", textProxy, RefreshPowerBars)
                 U.PlaceRow(textYSlider, body, sy)
             end, sections, relayout)
 

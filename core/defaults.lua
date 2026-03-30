@@ -1023,6 +1023,8 @@ local defaults = {
             orientation   = "AUTO",   -- Bar orientation
             visibility    = "always",  -- "always", "combat", "hostile"
             showFragmentedPowerBarText = false,  -- Show text on fragmented power bars
+            textPerSpec = false,           -- When true, text settings are saved per specialization
+            textSpecOverrides = {},        -- [specID] = { showText, showPercent, ... }
         },
         -- Power Colors (global, used by both Primary and Secondary power bars)
         powerColors = {
