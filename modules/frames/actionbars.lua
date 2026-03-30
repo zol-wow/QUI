@@ -6594,10 +6594,14 @@ local function CollectSpellFlyoutButtons(flyout)
     end
 
     if flyout and flyout.GetChildren then
-        for _, child in ipairs({flyout:GetChildren()}) do
+        local nChildren = select('#', flyout:GetChildren())
+        for i = 1, nChildren do
+            local child = select(i, flyout:GetChildren())
             AddButton(child)
             if child and child.GetChildren then
-                for _, grandChild in ipairs({child:GetChildren()}) do
+                local nGrand = select('#', child:GetChildren())
+                for j = 1, nGrand do
+                    local grandChild = select(j, child:GetChildren())
                     AddButton(grandChild)
                 end
             end

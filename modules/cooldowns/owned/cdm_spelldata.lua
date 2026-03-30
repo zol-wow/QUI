@@ -1042,12 +1042,15 @@ end
 -- Disable mouse on all children of a viewer so they can't show tooltips.
 -- Blizzard creates children dynamically, so the alpha enforcer re-runs this.
 local function DisableViewerChildrenMouse(viewer)
-    local ok, children = pcall(function() return { viewer:GetChildren() } end)
-    if not ok or not children then return end
-    for _, child in ipairs(children) do
-        if child.EnableMouse then child:EnableMouse(false) end
-        if child.SetMouseClickEnabled then child:SetMouseClickEnabled(false) end
-        if child.SetMouseMotionEnabled then child:SetMouseMotionEnabled(false) end
+    local ok, n = pcall(select, '#', viewer:GetChildren())
+    if not ok or not n then return end
+    for i = 1, n do
+        local child = select(i, viewer:GetChildren())
+        if child then
+            if child.EnableMouse then child:EnableMouse(false) end
+            if child.SetMouseClickEnabled then child:SetMouseClickEnabled(false) end
+            if child.SetMouseMotionEnabled then child:SetMouseMotionEnabled(false) end
+        end
     end
 end
 

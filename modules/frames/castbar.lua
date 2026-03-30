@@ -215,7 +215,11 @@ local function UpdateThrottledText(castbar, elapsed, text, value)
     if castbar.textThrottle >= 0.1 then
         castbar.textThrottle = 0
         if text then
-            text:SetText(string_format("%.1f", value))
+            local rounded = math_floor(value * 10)
+            if rounded ~= castbar._lastTextRounded then
+                castbar._lastTextRounded = rounded
+                text:SetText(string_format("%.1f", value))
+            end
         end
         return true
     end

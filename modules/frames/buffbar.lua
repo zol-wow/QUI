@@ -640,14 +640,13 @@ local function GetTrackedBarRuntimeEntries()
 
     local entries = {}
     local selection = viewer.Selection
-    local okChildren, children = pcall(function()
-        return { viewer:GetChildren() }
-    end)
-    if not okChildren or not children then
+    local okN, numChildren = pcall(function() return select('#', viewer:GetChildren()) end)
+    if not okN or not numChildren or numChildren == 0 then
         return entries
     end
 
-    for _, child in ipairs(children) do
+    for ci = 1, numChildren do
+        local child = select(ci, viewer:GetChildren())
         if child and child ~= selection and child.IsObjectType and child:IsObjectType("Frame")
             and child.Bar and child.Bar.IsObjectType and child.Bar:IsObjectType("StatusBar")
             and (child.cooldownID or child.layoutIndex) then
@@ -799,7 +798,9 @@ local function GetBuffIconFrames()
 
     local all = {}
 
-    for _, child in ipairs({ viewer:GetChildren() }) do
+    local numChildren = select('#', viewer:GetChildren())
+    for ci = 1, numChildren do
+        local child = select(ci, viewer:GetChildren())
         if child then
             -- Skip Selection frame (Edit Mode)
             if child == viewer.Selection then
@@ -2671,7 +2672,9 @@ local function CheckIconChanges()
             end
         end
     else
-        for _, child in ipairs({ viewer:GetChildren() }) do
+        local numC = select('#', viewer:GetChildren())
+        for ci = 1, numC do
+            local child = select(ci, viewer:GetChildren())
             if child and child ~= viewer.Selection then
                 if (child.icon or child.Icon) and child:IsShown() then
                     visibleCount = visibleCount + 1
@@ -2974,7 +2977,9 @@ local function Initialize()
                         end
                     end
                 else
-                    for _, child in ipairs({ iv2:GetChildren() }) do
+                    local numC2 = select('#', iv2:GetChildren())
+                    for ci = 1, numC2 do
+                        local child = select(ci, iv2:GetChildren())
                         if child and child ~= iv2.Selection then
                             if (child.icon or child.Icon) and child:IsShown() then
                                 currentCount = currentCount + 1
@@ -3030,7 +3035,10 @@ local function Initialize()
         -- Subscribe to centralized aura dispatcher for bar layout (player only)
         if ns.AuraEvents then
             ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
-                barAuraCoalesce:Show()
+                local bv = _G["BuffBarCooldownViewer"]
+                if bv and bv:IsShown() then
+                    barAuraCoalesce:Show()
+                end
             end)
         end
     end

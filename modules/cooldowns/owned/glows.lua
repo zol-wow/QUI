@@ -24,6 +24,36 @@ local overlayedSpells = {}  -- [spellID] = true
 -- Track which icons currently have active glows
 local activeGlowIcons = {}  -- [icon] = true
 
+-- Reverse lookup: spellID → list of icons that track it.
+-- Allows O(1) dispatch on SHOW/HIDE events instead of scanning all icons.
+local spellIdToGlowIcons = {}  -- [spellID] = {icon, ...}
+
+local function RebuildGlowSpellMap()
+    wipe(spellIdToGlowIcons)
+    local CDMIcons = ns.CDMIcons
+    if not CDMIcons then return end
+    for _, viewerType in ipairs({"essential", "utility"}) do
+        local pool = CDMIcons:GetIconPool(viewerType)
+        for _, icon in ipairs(pool) do
+            if icon._spellEntry then
+                local ids = {}
+                if icon._spellEntry.spellID then ids[#ids + 1] = icon._spellEntry.spellID end
+                if icon._spellEntry.overrideSpellID and icon._spellEntry.overrideSpellID ~= icon._spellEntry.spellID then
+                    ids[#ids + 1] = icon._spellEntry.overrideSpellID
+                end
+                for _, id in ipairs(ids) do
+                    local list = spellIdToGlowIcons[id]
+                    if not list then
+                        list = {}
+                        spellIdToGlowIcons[id] = list
+                    end
+                    list[#list + 1] = icon
+                end
+            end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
@@ -361,6 +391,74 @@ local function ScanAllGlows()
 end
 
 ---------------------------------------------------------------------------
+-- TARGETED GLOW UPDATE FOR A SINGLE SPELL ID
+-- O(1) lookup via reverse map instead of scanning all icons.
+---------------------------------------------------------------------------
+local function ScanGlowsForSpell(spellID)
+    if not spellID then ScanAllGlows(); return end
+
+    local CDMIcons = ns.CDMIcons
+    if not CDMIcons then return end
+    local CDMSpellData = ns.CDMSpellData
+
+    -- Collect all candidate spellIDs to look up
+    local candidates = { spellID }
+    if C_Spell and C_Spell.GetOverrideSpell then
+        local ov = C_Spell.GetOverrideSpell(spellID)
+        if ov and ov ~= spellID then candidates[#candidates + 1] = ov end
+    end
+
+    -- Deduplicate icons across candidates
+    local visited = {}
+    for _, id in ipairs(candidates) do
+        local icons = spellIdToGlowIcons[id]
+        if icons then
+            for _, icon in ipairs(icons) do
+                if not visited[icon] then
+                    visited[icon] = true
+                    if icon:IsShown() and icon._spellEntry then
+                        local viewerType = icon._spellEntry.viewerType
+                        local baseID = icon._spellEntry.spellID
+                        local overrideID = icon._spellEntry.overrideSpellID
+
+                        local spellOvr = nil
+                        if CDMSpellData and viewerType then
+                            local lookupID = baseID or icon._spellEntry.id
+                            if lookupID then
+                                spellOvr = CDMSpellData:GetSpellOverride(viewerType, lookupID)
+                            end
+                        end
+
+                        local shouldGlow
+                        if spellOvr and spellOvr.glowEnabled == false then
+                            shouldGlow = false
+                        elseif spellOvr and spellOvr.glowEnabled == true then
+                            shouldGlow = true
+                        else
+                            shouldGlow = IsOverlayed(baseID)
+                                or (overrideID and overrideID ~= baseID and IsOverlayed(overrideID))
+                            if not shouldGlow and C_Spell and C_Spell.GetOverrideSpell then
+                                local currentOverride = C_Spell.GetOverrideSpell(baseID)
+                                if currentOverride and currentOverride ~= baseID
+                                    and currentOverride ~= overrideID then
+                                    shouldGlow = IsOverlayed(currentOverride)
+                                end
+                            end
+                        end
+
+                        if shouldGlow and not activeGlowIcons[icon] then
+                            StartGlow(icon, spellOvr)
+                        elseif not shouldGlow and activeGlowIcons[icon] then
+                            StopGlow(icon)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- REFRESH ALL GLOWS (called when settings change)
 ---------------------------------------------------------------------------
 local function RefreshAllGlows()
@@ -374,7 +472,8 @@ local function RefreshAllGlows()
     end
     wipe(activeGlowIcons)
 
-    -- Re-scan to apply with current settings
+    -- Rebuild reverse lookup and re-scan with current settings
+    RebuildGlowSpellMap()
     ScanAllGlows()
 end
 
@@ -395,13 +494,14 @@ eventFrame:SetScript("OnEvent", function(_, event, spellID)
 
     if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" and spellID then
         overlayedSpells[spellID] = true
-        -- Also track override spell so icon lookup hits
         if C_Spell and C_Spell.GetOverrideSpell then
             local overrideID = C_Spell.GetOverrideSpell(spellID)
             if overrideID and overrideID ~= spellID then
                 overlayedSpells[overrideID] = true
             end
         end
+        ScanGlowsForSpell(spellID)
+        return
     elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" and spellID then
         overlayedSpells[spellID] = nil
         if C_Spell and C_Spell.GetOverrideSpell then
@@ -410,6 +510,8 @@ eventFrame:SetScript("OnEvent", function(_, event, spellID)
                 overlayedSpells[overrideID] = nil
             end
         end
+        ScanGlowsForSpell(spellID)
+        return
     elseif event == "PLAYER_ENTERING_WORLD" then
         wipe(overlayedSpells)
     end
@@ -432,6 +534,7 @@ ns._OwnedGlows = {
     StartGlow = StartGlow,
     StopGlow = StopGlow,
     RefreshAllGlows = RefreshAllGlows,
+    RebuildGlowSpellMap = RebuildGlowSpellMap,
     GetViewerType = GetViewerType,
     activeGlowIcons = activeGlowIcons,
     ScheduleGlowScan = ScanAllGlows,

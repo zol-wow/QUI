@@ -3011,7 +3011,9 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "SPELL_UPDATE_COOLDOWN" or event == "ACTIONBAR_UPDATE_COOLDOWN" then
         -- Frame-show coalescing: batches rapid cooldown events within the
         -- same render frame into a single DoUpdate pass (zero allocation).
-        _ctCoalesceFrame:Show()
+        if next(CustomTrackers.activeBars) then
+            _ctCoalesceFrame:Show()
+        end
         return
     end
 

@@ -79,6 +79,7 @@ QUI_GF.editMode = false
 -- State tables for taint safety (weak-keyed)
 local frameState, GetFrameState = Helpers.CreateStateTable()
 local _unitGuidCache = {}  -- frame → last-known GUID (for OnAttributeChanged skip)
+local _cachedMarkers = {}  -- [unitToken] → markerIndex (RAID_TARGET_UPDATE short-circuit)
 
 local powerThrottle = {}      -- unitToken → last update time
 local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
@@ -3793,6 +3794,7 @@ local function GRU_DeferredWork()
     end
     wipe(_range.cache)  -- Fresh map — force re-evaluate all units
     wipe(_range.cacheTime)
+    wipe(_cachedMarkers)
     -- Evict stale aura cache entries for units no longer in the group
     local GFA = ns.QUI_GroupFrameAuras
     if GFA and GFA.PruneAuraCache then GFA.PruneAuraCache() end
@@ -4015,7 +4017,11 @@ local function OnEvent(self, event, arg1, ...)
 
     elseif event == "RAID_TARGET_UPDATE" then
         for _, frame in pairs(QUI_GF.unitFrameMap) do
-            UpdateTargetMarker(frame)
+            local marker = frame.unit and GetRaidTargetIndex(frame.unit)
+            if marker ~= _cachedMarkers[frame.unit] then
+                _cachedMarkers[frame.unit] = marker
+                UpdateTargetMarker(frame)
+            end
         end
 
     elseif event == "PARTY_LEADER_CHANGED" then

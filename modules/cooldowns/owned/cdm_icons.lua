@@ -3496,6 +3496,12 @@ local function RangePollOnUpdate(self, elapsed)
     local interval = rangePollInCombat and RANGE_POLL_INTERVAL_COMBAT or RANGE_POLL_INTERVAL_IDLE
     if rangePollElapsed < interval then return end
     rangePollElapsed = 0
+
+    -- Skip when all viewers are hidden (HUD visibility, mouseover mode, etc.)
+    local essViewer = _G["EssentialCooldownViewer"]
+    local utiViewer = _G["UtilityCooldownViewer"]
+    if not ((essViewer and essViewer:IsShown()) or (utiViewer and utiViewer:IsShown())) then return end
+
     CDMIcons:UpdateAllIconRanges()
 end
 

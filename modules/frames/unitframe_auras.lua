@@ -635,12 +635,8 @@ local function SetupAuraTracking(frame)
         end
     end)
 
-    -- Multiple initial updates to catch auras after load
-    C_Timer.After(0.1, function()
-        lastAuraUpdate[unit] = 0
-        UpdateAuras(frame)
-    end)
-    C_Timer.After(0.5, function()
+    -- Initial updates to catch auras after load
+    C_Timer.After(0.2, function()
         lastAuraUpdate[unit] = 0
         UpdateAuras(frame)
     end)

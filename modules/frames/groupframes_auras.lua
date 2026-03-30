@@ -258,6 +258,10 @@ local function SharedTimerOnUpdate(self, dt)
     if timerElapsed < TIMER_INTERVAL then return end
     timerElapsed = 0
 
+    -- Skip when no group frames are active (solo play)
+    local GF = ns.QUI_GroupFrames
+    if not GF or not next(GF.unitFrameMap) then return end
+
     local now = GetTime()
     local db = GetDB()
     -- Pre-compute aura settings for both contexts (avoids per-icon table walks)
@@ -931,6 +935,8 @@ local function UpdateFrameAuras(frame)
                 framePrevDebuffCount[frame] = vc
             end
         end
+        local fontPath = GetFontPath()
+        local durationFontSize = auraSettings.durationFontSize or 9
         for i = 1, maxDebuffs do
             local auraData = sortedAuras[i]
             if not frame.debuffIcons[i] then
@@ -945,8 +951,7 @@ local function UpdateFrameAuras(frame)
                 frame.debuffIcons[i]:SetSize(iconSize, iconSize)
                 -- Apply duration font size from settings
                 if frame.debuffIcons[i].durationText then
-                    local dfs = auraSettings.durationFontSize or 9
-                    frame.debuffIcons[i].durationText:SetFont(GetFontPath(), dfs, "OUTLINE")
+                    frame.debuffIcons[i].durationText:SetFont(fontPath, durationFontSize, "OUTLINE")
                 end
             end
             local icon = frame.debuffIcons[i]
@@ -1101,6 +1106,8 @@ local function UpdateFrameAuras(frame)
                 framePrevBuffCount[frame] = vc
             end
         end
+        local fontPath = GetFontPath()
+        local buffFontSize = auraSettings.durationFontSize or 9
         for i = 1, maxBuffs do
             local auraData = sortedAuras[i]
             if not frame.buffIcons[i] then
@@ -1115,8 +1122,7 @@ local function UpdateFrameAuras(frame)
                 frame.buffIcons[i]:SetSize(iconSize, iconSize)
                 -- Apply duration font size from settings
                 if frame.buffIcons[i].durationText then
-                    local bfs = auraSettings.durationFontSize or 9
-                    frame.buffIcons[i].durationText:SetFont(GetFontPath(), bfs, "OUTLINE")
+                    frame.buffIcons[i].durationText:SetFont(fontPath, buffFontSize, "OUTLINE")
                 end
             end
             local bIcon = frame.buffIcons[i]
@@ -1147,8 +1153,9 @@ end
 ---------------------------------------------------------------------------
 -- EVENT HOOKUP: Listen to UNIT_AURA via the group frame event system
 ---------------------------------------------------------------------------
-local function FixIconMouse(icon)
-    if not icon or InCombatLockdown() then return end
+local function FixIconMouse(icon, skipCombatCheck)
+    if not icon then return end
+    if not skipCombatCheck and InCombatLockdown() then return end
     pcall(function()
         icon:EnableMouse(true)
         if icon.SetPropagateMouseMotion then icon:SetPropagateMouseMotion(true) end
@@ -1163,10 +1170,10 @@ local function FixAllIconMouse()
     if not GF then return end
     for _, frame in pairs(GF.unitFrameMap) do
         if frame.debuffIcons then
-            for _, icon in ipairs(frame.debuffIcons) do FixIconMouse(icon) end
+            for _, icon in ipairs(frame.debuffIcons) do FixIconMouse(icon, true) end
         end
         if frame.buffIcons then
-            for _, icon in ipairs(frame.buffIcons) do FixIconMouse(icon) end
+            for _, icon in ipairs(frame.buffIcons) do FixIconMouse(icon, true) end
         end
     end
     pendingMouseFix = false
