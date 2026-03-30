@@ -118,7 +118,8 @@ local NAME_TO_SHORT = {
 
     -- Midnight (12.x)
     ["Windrunner Spire"] = "WIND",
-    ["Magisters' Terrace"] = "MAGI",
+    ["Magister's Terrace"] = "MAGI",
+    ["Magisters' Terrace"] = "MAGI", -- legacy/datamined variant
     ["Nexus-Point Xenas"] = "XENAS",
     ["Maisara Caverns"] = "CAVNS",
     ["Murder Row"] = "MURDR",
@@ -222,15 +223,29 @@ local MAPID_TO_SPELL = {
     [456] = 424142,   -- Throne of Tides
 
     -- Midnight
-    [557] = 1254840,  -- Windrunner Spire
+    [557] = 1254400,  -- Windrunner Spire
     [558] = 1254572,  -- Magisters' Terrace
     [559] = 1254563,  -- Nexus-Point Xenas
-    [560] = 1255247,  -- Maisara Caverns
+    [560] = 1254559,  -- Maisara Caverns
     -- Legacy datamined mapIDs (compatibility)
-    [15808] = 1254840,
+    [15808] = 1254400,
     [15829] = 1254572,
     [16573] = 1254563,
-    [16395] = 1255247,
+    [16395] = 1254559,
+}
+
+-- Current seasonal dungeons can be remapped to different challenge mode mapIDs
+-- between expansions/patches, so resolve their teleport by dungeon name first.
+local NAME_TO_SPELL = {
+    ["Windrunner Spire"] = 1254400,
+    ["Magister's Terrace"] = 1254572,
+    ["Magisters' Terrace"] = 1254572, -- legacy/datamined variant
+    ["Nexus-Point Xenas"] = 1254563,
+    ["Maisara Caverns"] = 1254559,
+    ["Skyreach"] = 159898,
+    ["Pit of Saron"] = 1254555,
+    ["Seat of the Triumvirate"] = 1254551,
+    ["Algeth'ar Academy"] = 393273,
 }
 
 ---------------------------------------------------------------------------
@@ -238,9 +253,13 @@ local MAPID_TO_SPELL = {
 ---------------------------------------------------------------------------
 
 -- Get short name for a dungeon mapID
+local function GetDungeonName(mapID)
+    return mapID and C_ChallengeMode.GetMapUIInfo(mapID)
+end
+
 local function GetShortName(mapID)
     -- Get dungeon name from WoW API (handles expansion-specific mapID remaps)
-    local name = C_ChallengeMode.GetMapUIInfo(mapID)
+    local name = GetDungeonName(mapID)
     if name then
         -- Look up short name by dungeon name
         local short = NAME_TO_SHORT[name]
@@ -259,16 +278,17 @@ end
 
 -- Get teleport spell ID for a dungeon mapID
 local function GetTeleportSpellID(mapID)
-    return MAPID_TO_SPELL[mapID]
+    local name = GetDungeonName(mapID)
+    return (name and NAME_TO_SPELL[name]) or MAPID_TO_SPELL[mapID]
 end
 
 -- Get full dungeon data for a mapID (legacy compatibility)
 local function GetDungeonData(mapID)
-    local name = C_ChallengeMode.GetMapUIInfo(mapID)
+    local name = GetDungeonName(mapID)
     if name then
         return {
             short = NAME_TO_SHORT[name] or name:sub(1, 4):upper(),
-            spellID = MAPID_TO_SPELL[mapID]
+            spellID = GetTeleportSpellID(mapID)
         }
     end
     return nil
@@ -276,7 +296,7 @@ end
 
 -- Check if a dungeon has a teleport spell
 local function HasTeleport(mapID)
-    return MAPID_TO_SPELL[mapID] ~= nil
+    return GetTeleportSpellID(mapID) ~= nil
 end
 
 -- Get key level color (shared utility)
@@ -295,6 +315,7 @@ end
 
 ns.DungeonData = {
     nameToShort = NAME_TO_SHORT,
+    nameToSpell = NAME_TO_SPELL,
     mapIdToSpell = MAPID_TO_SPELL,
     GetShortName = GetShortName,
     GetTeleportSpellID = GetTeleportSpellID,
