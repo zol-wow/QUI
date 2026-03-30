@@ -1607,14 +1607,9 @@ local function GetRotationHelperOverlay(icon)
     return overlay
 end
 
--- Apply rotation helper overlay to a single icon
-local function ApplyRotationHelperToIcon(icon, viewerName, nextSpellID)
-    local core = GetCore()
-    if not core or not core.db or not core.db.profile then return end
-    
-    local viewers = core.db.profile.viewers
-    if not viewers then return end
-    local settings = viewers[VIEWER_DB_KEY[viewerName] or viewerName]
+-- Apply rotation helper overlay to a single icon.
+-- `settings` is pre-resolved by the caller to avoid per-icon DB lookups.
+local function ApplyRotationHelperToIcon(icon, settings, nextSpellID)
     if not settings or not settings.showRotationHelper then
         -- Hide overlay if disabled
         local iks = iconKeybindState[icon]
@@ -1623,7 +1618,7 @@ local function ApplyRotationHelperToIcon(icon, viewerName, nextSpellID)
         end
         return
     end
-    
+
     -- Get the icon's spell ID
     local iconSpellID
     local ok, result = pcall(function()
@@ -1700,17 +1695,43 @@ local function ApplyRotationHelperToIcon(icon, viewerName, nextSpellID)
     end
 end
 
--- Update rotation helper on all icons in a viewer
+-- Update rotation helper on all icons in a viewer.
+-- Resolves DB settings once per viewer, then uses CDMIcons pool directly
+-- to avoid the table allocation of { container:GetChildren() }.
 local function UpdateViewerRotationHelper(viewerName, nextSpellID)
+    -- Resolve settings once for all icons in this viewer
+    local settings
+    local core = GetCore()
+    if core and core.db and core.db.profile then
+        local viewers = core.db.profile.viewers
+        if viewers then
+            settings = viewers[VIEWER_DB_KEY[viewerName] or viewerName]
+        end
+    end
+
+    -- Use CDMIcons pool directly (avoids GetChildren table allocation + GC)
+    local CDMIcons = QUI.CDMIcons
+    if CDMIcons then
+        local pool = CDMIcons:GetIconPool(viewerName)
+        if pool then
+            for _, icon in ipairs(pool) do
+                if icon:IsShown() then
+                    ApplyRotationHelperToIcon(icon, settings, nextSpellID)
+                end
+            end
+            return
+        end
+    end
+
+    -- Fallback: use GetChildren if CDMIcons pool is unavailable
     local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
     if not viewer then return end
-    
     local container = viewer.viewerFrame or viewer
-    local children = { container:GetChildren() }
-    
-    for _, child in ipairs(children) do
-        if child:IsShown() then
-            ApplyRotationHelperToIcon(child, viewerName, nextSpellID)
+    local n = select('#', container:GetChildren())
+    for i = 1, n do
+        local child = select(i, container:GetChildren())
+        if child and child:IsShown() then
+            ApplyRotationHelperToIcon(child, settings, nextSpellID)
         end
     end
 end
@@ -1757,13 +1778,12 @@ local function ShouldRunRotationHelper()
 end
 
 -- Rotation helper ticker interval (Performance: uses ticker instead of OnUpdate)
-local ROTATION_HELPER_INTERVAL = 0.1 -- Update every 100ms
+local ROTATION_HELPER_INTERVAL = 0.2 -- Update every 200ms (GCD is 750ms+; 200ms is imperceptible)
 
 local function StartRotationHelperTicker()
     if rotationHelperTicker then rotationHelperTicker:Cancel() end
     rotationHelperTicker = C_Timer.NewTicker(ROTATION_HELPER_INTERVAL, function()
         if not rotationHelperEnabled then return end
-        if not ShouldRunRotationHelper() then return end
         UpdateAllRotationHelpers()
     end)
 end

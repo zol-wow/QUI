@@ -178,7 +178,7 @@ function RangeUtils.IsOutOfMidRange()
             local slot = midSlots[abilityID]
             if slot then
                 local inRange = IsActionInRange(slot)
-                if inRange == false then foundOutOfRange = true end
+                if inRange == false then foundOutOfRange = true; break end
                 if inRange == true then return false end
             end
         end

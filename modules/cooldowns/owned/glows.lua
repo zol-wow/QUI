@@ -311,7 +311,9 @@ local function ScanAllGlows()
     for _, viewerType in ipairs({"essential", "utility"}) do
         local pool = CDMIcons:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
-            if icon._spellEntry then
+            if not icon:IsShown() then -- skip hidden icons (glow re-applied on layout refresh)
+                -- noop: skip
+            elseif icon._spellEntry then
                 local baseID = icon._spellEntry.spellID
                 local overrideID = icon._spellEntry.overrideSpellID
 
@@ -416,7 +418,7 @@ end)
 
 -- Low-frequency fallback scan to catch edge cases (e.g. icon replaced
 -- with an already-active proc, no SHOW event fires for it)
-C_Timer.NewTicker(3, function()
+C_Timer.NewTicker(5, function()
     if IsOwnedEngineSelected() then
         ScanAllGlows()
     end

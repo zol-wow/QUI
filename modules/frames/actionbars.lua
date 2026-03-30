@@ -3235,7 +3235,12 @@ do
                 local buttons = ActionBarsOwned.nativeButtons[barKey]
                 if buttons then
                     for _, btn in ipairs(buttons) do
-                        ActionBarsOwned.UpdateCooldown(btn)
+                        -- Skip empty slots at loop level to avoid function call +
+                        -- attribute lookups (UpdateCooldown also checks HasAction
+                        -- internally, but this avoids the overhead for 40-60 empty buttons)
+                        if HasAction(btn.action or 0) then
+                            ActionBarsOwned.UpdateCooldown(btn)
+                        end
                     end
                 end
             end
@@ -3291,6 +3296,45 @@ local function ButtonFlyoutContainsSpell(button, spellId)
         if fok and has then return true end
     end
     return false
+end
+
+---------------------------------------------------------------------------
+-- SPELL-TO-BUTTONS REVERSE LOOKUP
+---------------------------------------------------------------------------
+-- Maps spellId → {btn1, btn2, ...} for O(1) glow event dispatch instead of
+-- scanning all ~96 buttons on every proc event.  Rebuilt when action bar
+-- content changes (visual update, slot change).
+local spellIdToButtons = {}
+local flyoutButtons = {}  -- buttons with flyout actions (checked as fallback)
+
+local function RebuildSpellIdMap()
+    wipe(spellIdToButtons)
+    wipe(flyoutButtons)
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        local btns = ActionBarsOwned.nativeButtons[barKey]
+        if btns then
+            for _, btn in ipairs(btns) do
+                local spellId = GetButtonSpellId(btn)
+                if spellId then
+                    local list = spellIdToButtons[spellId]
+                    if not list then
+                        list = {}
+                        spellIdToButtons[spellId] = list
+                    end
+                    list[#list + 1] = btn
+                else
+                    -- Check if this is a flyout button (rare but possible)
+                    local action = btn.action
+                    if action and HasAction(action) then
+                        local ok, actionType = pcall(GetActionInfo, action)
+                        if ok and actionType == "flyout" then
+                            flyoutButtons[#flyoutButtons + 1] = btn
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function ShowActionButtonGlow(button)
@@ -3507,40 +3551,38 @@ function ActionBarsOwned.UpdateAllOverlayGlows()
     end
 end
 
--- Handle SPELL_ACTIVATION_OVERLAY_GLOW_SHOW: find all buttons with this
--- spell and show glow.
+-- Handle SPELL_ACTIVATION_OVERLAY_GLOW_SHOW: O(1) lookup via reverse map,
+-- flyout fallback for rare flyout-containing-spell case.
 function ActionBarsOwned.OnSpellActivationGlowShow(spellId)
     if not spellId then return end
-    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-        local btns = ActionBarsOwned.nativeButtons[barKey]
-        if btns then
-            for _, btn in ipairs(btns) do
-                local btnSpellId = GetButtonSpellId(btn)
-                if btnSpellId and btnSpellId == spellId then
-                    ShowActionButtonGlow(btn)
-                elseif ButtonFlyoutContainsSpell(btn, spellId) then
-                    ShowActionButtonGlow(btn)
-                end
-            end
+    local btns = spellIdToButtons[spellId]
+    if btns then
+        for _, btn in ipairs(btns) do
+            ShowActionButtonGlow(btn)
+        end
+    end
+    -- Flyout fallback: check the small set of flyout buttons
+    for _, btn in ipairs(flyoutButtons) do
+        if ButtonFlyoutContainsSpell(btn, spellId) then
+            ShowActionButtonGlow(btn)
         end
     end
 end
 
--- Handle SPELL_ACTIVATION_OVERLAY_GLOW_HIDE: find all buttons with this
--- spell and hide glow.
+-- Handle SPELL_ACTIVATION_OVERLAY_GLOW_HIDE: O(1) lookup via reverse map,
+-- flyout fallback for rare flyout-containing-spell case.
 function ActionBarsOwned.OnSpellActivationGlowHide(spellId)
     if not spellId then return end
-    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-        local btns = ActionBarsOwned.nativeButtons[barKey]
-        if btns then
-            for _, btn in ipairs(btns) do
-                local btnSpellId = GetButtonSpellId(btn)
-                if btnSpellId and btnSpellId == spellId then
-                    HideActionButtonGlow(btn)
-                elseif ButtonFlyoutContainsSpell(btn, spellId) then
-                    HideActionButtonGlow(btn)
-                end
-            end
+    local btns = spellIdToButtons[spellId]
+    if btns then
+        for _, btn in ipairs(btns) do
+            HideActionButtonGlow(btn)
+        end
+    end
+    -- Flyout fallback: check the small set of flyout buttons
+    for _, btn in ipairs(flyoutButtons) do
+        if ButtonFlyoutContainsSpell(btn, spellId) then
+            HideActionButtonGlow(btn)
         end
     end
 end
@@ -3561,11 +3603,28 @@ function ActionBarsOwned.UpdateAllButtonVisuals()
             local btns = ActionBarsOwned.nativeButtons[barKey]
             if btns then
                 for _, btn in ipairs(btns) do
-                    pcall(ActionBarsOwned.SafeUpdate, btn)
+                    local action = btn.action or 0
+                    if HasAction(action) then
+                        -- Button has an action — always update visuals
+                        local state = GetFrameState(btn)
+                        state.wasEmpty = false
+                        pcall(ActionBarsOwned.SafeUpdate, btn)
+                    else
+                        -- Empty slot — run SafeUpdate once to clear visuals
+                        -- on the transition, then skip on subsequent ticks
+                        local state = GetFrameState(btn)
+                        if not state.wasEmpty then
+                            state.wasEmpty = true
+                            pcall(ActionBarsOwned.SafeUpdate, btn)
+                        end
+                    end
                 end
             end
         end
     end
+
+    -- Rebuild spell-to-button reverse lookup for glow events
+    RebuildSpellIdMap()
 end
 
 ---------------------------------------------------------------------------
@@ -3578,34 +3637,44 @@ end
 -- frame.  Zero closure allocation.
 local AB_MIN_UPDATE_INTERVAL = 0.1  -- 100ms = max 10 updates/sec
 
-local abCooldownFrame = CreateFrame("Frame")
-abCooldownFrame:Hide()
-abCooldownFrame._last = 0
-abCooldownFrame:SetScript("OnUpdate", function(self)
+-- Unified update frame: merges cooldown and visual update into a single
+-- OnUpdate handler with dirty flags.  When visuals are dirty, SafeUpdate
+-- already calls UpdateCooldown() internally (line 259), so we skip the
+-- separate cooldown pass.  When only cooldowns are dirty (most common in
+-- combat), the lightweight UpdateAllCooldowns runs alone.
+local abUpdateFrame = CreateFrame("Frame")
+abUpdateFrame:Hide()
+abUpdateFrame._last = 0
+abUpdateFrame._dirtyCooldowns = false
+abUpdateFrame._dirtyVisuals = false
+
+abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
     if now - self._last < AB_MIN_UPDATE_INTERVAL then return end
     self:Hide()
     self._last = now
-    ActionBarsOwned.UpdateAllCooldowns()
+
+    local doVis = self._dirtyVisuals
+    local doCd  = self._dirtyCooldowns
+    self._dirtyCooldowns = false
+    self._dirtyVisuals = false
+
+    if doVis then
+        -- SafeUpdate includes cooldown update internally
+        ActionBarsOwned.UpdateAllButtonVisuals()
+    elseif doCd then
+        ActionBarsOwned.UpdateAllCooldowns()
+    end
 end)
 
 local function ScheduleABCooldownUpdate()
-    abCooldownFrame:Show()
+    abUpdateFrame._dirtyCooldowns = true
+    abUpdateFrame:Show()
 end
 
-local abVisualFrame = CreateFrame("Frame")
-abVisualFrame:Hide()
-abVisualFrame._last = 0
-abVisualFrame:SetScript("OnUpdate", function(self)
-    local now = GetTime()
-    if now - self._last < AB_MIN_UPDATE_INTERVAL then return end
-    self:Hide()
-    self._last = now
-    ActionBarsOwned.UpdateAllButtonVisuals()
-end)
-
 local function ScheduleABVisualUpdate()
-    abVisualFrame:Show()
+    abUpdateFrame._dirtyVisuals = true
+    abUpdateFrame:Show()
 end
 
 -- ACTIONBAR_SLOT_CHANGED: only needed for drag/drop (specific slot > 0).
@@ -3639,6 +3708,8 @@ abSlotFrame:SetScript("OnUpdate", function(self)
         end
     end
     wipe(abDirtySlots)
+    -- Rebuild spell-to-button map after slot content changes (drag/drop)
+    RebuildSpellIdMap()
     if InCombatLockdown() then
         ActionBarsOwned.pendingSlotUpdate = true
     end
