@@ -879,14 +879,23 @@ function M.functions.createHooks(root, entry)
 			strip.onDragStartCallback = function() return false end
 			strip.onDragStopCallback = function() return false end
 		end)
+		local function layoutStrip()
+			strip:SetAllPoints(anchor)
+			if strip.SetFrameStrata and anchor.GetFrameStrata then
+				strip:SetFrameStrata(anchor:GetFrameStrata())
+			end
+			local anchorLevel = anchor.GetFrameLevel and anchor:GetFrameLevel() or 0
+			strip:SetFrameLevel(math.max(anchorLevel + 60, 60))
+		end
 		strip.target = root
-		strip:SetAllPoints(anchor)
-		strip:SetFrameLevel(anchor:GetFrameLevel() + 1)
+		strip._QUI_layout = layoutStrip
+		layoutStrip()
 		if not InCombatLockdown() then
 			if strip.SetPropagateMouseMotion then strip:SetPropagateMouseMotion(true) end
 			if strip.SetPropagateMouseClicks then strip:SetPropagateMouseClicks(true) end
 		end
 		if strip.EnableMouse then strip:EnableMouse(true) end
+		if strip.RegisterForDrag then strip:RegisterForDrag("LeftButton") end
 		strip:HookScript("OnDragStart", beginDrag)
 		strip:HookScript("OnDragStop", endDrag)
 		registerDragHandle(strip)
@@ -1067,6 +1076,7 @@ function M.functions.createHooks(root, entry)
 
 	local function setStripVisible(strip, on)
 		if not strip then return end
+		if on and strip._QUI_layout then strip._QUI_layout() end
 		if strip.EnableMouse then strip:EnableMouse(on) end
 		if strip.SetShown then strip:SetShown(on) end
 	end
