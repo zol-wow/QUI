@@ -645,24 +645,25 @@ local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, ico
     statusBar:SetHeight(barHeight)
     statusBar:ClearAllPoints()
 
-    -- Inset statusBar by borderSize so border is visible around it (like unit frames)
+    -- Backdrop borders are drawn outside their parent frame, so keep the fill
+    -- flush with the anchor frame instead of shrinking it inward.
     if ShouldShowIcon(anchorFrame, castSettings) then
         local iconSizePx = iconSize * iconScale
         local iconSpacing = QUICore:PixelRound(castSettings.iconSpacing or 0, anchorFrame)
         local iconAnchor = castSettings.iconAnchor or "TOPLEFT"
         if iconAnchor:find("LEFT") then
-            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", iconSizePx + iconSpacing + borderSize, -borderSize)
-            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
+            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", iconSizePx + iconSpacing, 0)
+            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
         elseif iconAnchor:find("RIGHT") then
-            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", borderSize, -borderSize)
-            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -iconSizePx - iconSpacing - borderSize, borderSize)
+            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
+            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -iconSizePx - iconSpacing, 0)
         else
-            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", borderSize, -borderSize)
-            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
+            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
+            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
         end
     else
-        statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", borderSize, -borderSize)
-        statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
+        statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
+        statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
     end
     
     local r, g, b, a = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
