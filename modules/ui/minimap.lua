@@ -3017,6 +3017,47 @@ end
 
 
 ---=================================================================================
+--- ZOOM PERSISTENCE
+--- Blizzard stores indoor and outdoor minimap zoom separately. Keep them in sync
+--- so a player's chosen zoom level survives relogs regardless of where they log in.
+---=================================================================================
+
+local zoomPersistenceHooked = false
+
+local function PersistMinimapZoom(zoom)
+    local normalizedZoom = math.max(0, math.floor((zoom or 0) + 0.5))
+    local indoorZoom = math.min(normalizedZoom, 3)
+
+    if C_CVar and C_CVar.SetCVar then
+        C_CVar.SetCVar("minimapZoom", tostring(normalizedZoom))
+        C_CVar.SetCVar("minimapInsideZoom", tostring(indoorZoom))
+    elseif SetCVar then
+        SetCVar("minimapZoom", normalizedZoom)
+        SetCVar("minimapInsideZoom", indoorZoom)
+    end
+end
+
+local function SetupZoomPersistence()
+    if zoomPersistenceHooked then return end
+    zoomPersistenceHooked = true
+
+    local function PersistCurrentZoom()
+        C_Timer.After(0, function()
+            if Minimap and Minimap.GetZoom then
+                PersistMinimapZoom(Minimap:GetZoom())
+            end
+        end)
+    end
+
+    if Minimap.ZoomIn then
+        Minimap.ZoomIn:HookScript("OnClick", PersistCurrentZoom)
+    end
+    if Minimap.ZoomOut then
+        Minimap.ZoomOut:HookScript("OnClick", PersistCurrentZoom)
+    end
+end
+
+---=================================================================================
 --- MOUSE WHEEL ZOOM
 ---=================================================================================
 
@@ -3045,6 +3086,7 @@ local function SetupAutoZoom()
     local function ZoomOut()
         autoZoomCurrent = autoZoomCurrent + 1
         if autoZoomTimer == autoZoomCurrent then
+            PersistMinimapZoom(0)
             Minimap:SetZoom(0)
             if Minimap.ZoomIn then Minimap.ZoomIn:Enable() end
             if Minimap.ZoomOut then Minimap.ZoomOut:Disable() end
@@ -3160,6 +3202,7 @@ function Minimap_Module:Initialize()
     SetupAddonButtonHiding()
     SetupButtonDrawer()
     UpdateDungeonEyePosition()
+    SetupZoomPersistence()
     SetupMouseWheelZoom()
     SetupMiddleClickMenu()
     SetupAutoZoom()
