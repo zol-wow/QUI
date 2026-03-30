@@ -815,6 +815,9 @@ local function ReleaseBar(bar)
     bar._spellID = nil
     bar._active = false
     bar._cSideFill = nil
+    bar._lastPosKey = nil
+    bar._lastAnchor = nil
+    bar._desiredTexture = nil
     bar.NameText:SetText("")
     bar.DurationText:SetText("")
     bar.IconTexture:SetTexture(nil)
@@ -1067,11 +1070,11 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
             if texID then
                 pcall(bar.IconTexture.SetTexture, bar.IconTexture, texID)
-                -- Only lock texture for cooldown entries — aura bars rely on
-                -- the Blizzard texture hook for the correct aura icon.
-                if not entry.isAura then
-                    bar._desiredTexture = texID
-                end
+                -- Lock texture for all entries.  Aura bars previously relied
+                -- on the Blizzard mirror hook for the icon, but the hook also
+                -- fires SetTexture(nil) when the Blizzard child hides/recycles,
+                -- clearing the owned bar's icon during combat.
+                bar._desiredTexture = texID
             end
         end
 
@@ -1331,33 +1334,52 @@ function CDMBars:LayoutBars(container, settings)
         end
 
         if shouldShow then
-            bar:ClearAllPoints()
             local offsetIndex = visibleIndex
 
+            -- Compute desired anchor point and offset, then skip
+            -- ClearAllPoints+SetPoint when the bar is already there.
+            -- Redundant point writes cause layout invalidation every tick,
+            -- which is the primary visual source of bar flickering.
+            local anchor, relAnchor, offsetX, offsetY
             if isVertical then
-                local x
                 if growFromBottom then
-                    x = QUICore:PixelRound(offsetIndex * (effectiveBarWidth + spacing))
-                    bar:SetPoint("LEFT", container, "LEFT", x, 0)
+                    anchor, relAnchor = "LEFT", "LEFT"
+                    offsetX = QUICore:PixelRound(offsetIndex * (effectiveBarWidth + spacing))
+                    offsetY = 0
                 else
-                    x = QUICore:PixelRound(-offsetIndex * (effectiveBarWidth + spacing))
-                    bar:SetPoint("RIGHT", container, "RIGHT", x, 0)
+                    anchor, relAnchor = "RIGHT", "RIGHT"
+                    offsetX = QUICore:PixelRound(-offsetIndex * (effectiveBarWidth + spacing))
+                    offsetY = 0
                 end
             else
-                local y
                 if growFromBottom then
-                    y = QUICore:PixelRound(offsetIndex * (effectiveBarHeight + spacing))
-                    bar:SetPoint("BOTTOM", container, "BOTTOM", 0, y)
+                    anchor, relAnchor = "BOTTOM", "BOTTOM"
+                    offsetX = 0
+                    offsetY = QUICore:PixelRound(offsetIndex * (effectiveBarHeight + spacing))
                 else
-                    y = QUICore:PixelRound(-offsetIndex * (effectiveBarHeight + spacing))
-                    bar:SetPoint("TOP", container, "TOP", 0, y)
+                    anchor, relAnchor = "TOP", "TOP"
+                    offsetX = 0
+                    offsetY = QUICore:PixelRound(-offsetIndex * (effectiveBarHeight + spacing))
                 end
+            end
+
+            local posKey = offsetIndex
+            if bar._lastPosKey ~= posKey or bar._lastAnchor ~= anchor
+                or not bar:IsShown() then
+                bar._lastPosKey = posKey
+                bar._lastAnchor = anchor
+                bar:ClearAllPoints()
+                bar:SetPoint(anchor, container, relAnchor, offsetX, offsetY)
             end
 
             bar:Show()
             visibleIndex = visibleIndex + 1
         else
-            bar:Hide()
+            if bar:IsShown() then
+                bar._lastPosKey = nil
+                bar._lastAnchor = nil
+                bar:Hide()
+            end
         end
     end
 
@@ -1377,11 +1399,18 @@ function CDMBars:LayoutBars(container, settings)
     end
     totalW = QUICore:PixelRound(totalW)
     totalH = QUICore:PixelRound(totalH)
-    container:SetSize(totalW, totalH)
 
-    -- Write calculated dimensions to viewer state for proxy sizing
-    if _G.QUI_SetCDMViewerBounds then
-        _G.QUI_SetCDMViewerBounds(container, totalW, totalH)
+    -- Skip SetSize when dimensions haven't changed to avoid layout invalidation.
+    local lastW = container._lastBarLayoutW
+    local lastH = container._lastBarLayoutH
+    if lastW ~= totalW or lastH ~= totalH then
+        container._lastBarLayoutW = totalW
+        container._lastBarLayoutH = totalH
+        container:SetSize(totalW, totalH)
+        -- Write calculated dimensions to viewer state for proxy sizing
+        if _G.QUI_SetCDMViewerBounds then
+            _G.QUI_SetCDMViewerBounds(container, totalW, totalH)
+        end
     end
 end
 
@@ -1441,18 +1470,15 @@ end
 
 ---------------------------------------------------------------------------
 -- OWNED BAR TIMER: 100ms AnimationGroup loop for duration text + bar fill.
--- Uses DurationObject:GetRemainingDuration() for remaining time and
--- bar._totalDuration (cached from auraData OOC) for the fill ratio.
--- MirrorBlizzBar hooks handle fill when a Blizzard bar child exists;
--- this timer handles owned bars that have no Blizzard bar child,
--- or supplements the mirror during combat when hooks may lag.
--- AnimationGroup:SetLooping("REPEAT") is C-side driven — no Lua elapsed
--- accumulator overhead compared to raw OnUpdate.
+-- This loop is ONLY responsible for visual updates (text, fill).
+-- Active-state management and layout are owned exclusively by
+-- UpdateOwnedBars (called from the 250ms safety ticker + event debounce).
+-- Keeping one owner for state+layout prevents the two systems from
+-- competing and causing flickering.
 ---------------------------------------------------------------------------
 barTimerGroup:SetScript("OnLoop", function()
     local Helpers = ns.Helpers
     local anyActive = false
-    local anyDeactivated = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._active and bar:IsShown() then
             -- When MirrorBlizzBar hooks are actively driving fill,
@@ -1461,79 +1487,69 @@ barTimerGroup:SetScript("OnLoop", function()
                 and (GetTime() - bar._lastMirrorFill) < 5
             if mirrorFillActive then
                 anyActive = true
-            elseif true then
-            local durObj = bar._durObj
-            if durObj and durObj.GetRemainingDuration then
-                anyActive = true
-                local rok, remaining = pcall(durObj.GetRemainingDuration, durObj)
-                local isSecret = remaining and Helpers.IsSecretValue(remaining)
-                if rok and remaining and not isSecret and remaining > 0 then
-                    -- OOC: readable remaining — update text in Lua
-                    if bar.DurationText then
-                        if remaining >= 60 then
-                            local text = string_format("%.0fm", remaining / 60)
-                            if text ~= bar._lastDurationText then
-                                bar._lastDurationText = text
-                                bar.DurationText:SetText(text)
+            else
+                local durObj = bar._durObj
+                if durObj and durObj.GetRemainingDuration then
+                    local rok, remaining = pcall(durObj.GetRemainingDuration, durObj)
+                    local isSecret = remaining and Helpers.IsSecretValue(remaining)
+                    if rok and remaining and not isSecret and remaining > 0 then
+                        anyActive = true
+                        -- OOC: readable remaining — update text in Lua
+                        if bar.DurationText then
+                            if remaining >= 60 then
+                                local text = string_format("%.0fm", remaining / 60)
+                                if text ~= bar._lastDurationText then
+                                    bar._lastDurationText = text
+                                    bar.DurationText:SetText(text)
+                                end
+                            else
+                                local text = string_format("%.1f", remaining)
+                                if text ~= bar._lastDurationText then
+                                    bar._lastDurationText = text
+                                    bar.DurationText:SetText(text)
+                                end
                             end
-                        else
-                            local text = string_format("%.1f", remaining)
-                            if text ~= bar._lastDurationText then
-                                bar._lastDurationText = text
-                                bar.DurationText:SetText(text)
+                        end
+                        -- Update bar fill ONLY if C-side SetTimerDuration isn't driving it.
+                        if not bar._cSideFill then
+                            local total = bar._totalDuration
+                            if (not total or total <= 0) and remaining > 1 then
+                                bar._totalDuration = remaining
+                                total = remaining
+                            end
+                            if total and total > 0 and bar.StatusBar then
+                                local fill = remaining / total
+                                if fill > 1 then fill = 1 end
+                                pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                                pcall(bar.StatusBar.SetValue, bar.StatusBar, fill)
                             end
                         end
-                    end
-                    -- Update bar fill ONLY if C-side SetTimerDuration isn't driving it.
-                    if not bar._cSideFill then
-                        local total = bar._totalDuration
-                        if (not total or total <= 0) and remaining > 1 then
-                            bar._totalDuration = remaining
-                            total = remaining
+                    elseif isSecret then
+                        -- Combat: C-side SetTimerDuration drives bar fill.
+                        -- Pass secret remaining to C-side SetFormattedText for text.
+                        anyActive = true
+                        if bar.DurationText then
+                            pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
                         end
-                        if total and total > 0 and bar.StatusBar then
-                            local fill = remaining / total
-                            if fill > 1 then fill = 1 end
-                            pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
-                            pcall(bar.StatusBar.SetValue, bar.StatusBar, fill)
+                    else
+                        -- Expired (remaining nil or 0): clear visuals immediately
+                        -- so the bar doesn't show stale text, but do NOT set
+                        -- _active = false or call LayoutBars — UpdateOwnedBars
+                        -- owns state transitions and layout.
+                        anyActive = true  -- keep ticking until UpdateOwnedBars confirms
+                        bar._durObj = nil
+                        bar._cSideFill = nil
+                        bar._lastDurationText = nil
+                        if bar.DurationText then
+                            bar.DurationText:SetText("")
                         end
-                    end
-                elseif isSecret then
-                    -- Combat: C-side SetTimerDuration drives bar fill.
-                    -- Pass secret remaining to C-side SetFormattedText for text.
-                    -- Expiry detection relies on the child Hide hook in
-                    -- cdm_spelldata.lua clearing the durObj cache — the next
-                    -- UpdateOwnedBars cycle will see no active aura.
-                    anyActive = true
-                    if bar.DurationText then
-                        pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
-                    end
-                else
-                    -- OOC expired: remaining is nil or 0
-                    local _bn = bar._spellEntry and bar._spellEntry.name
-                    bar._active = false
-                    anyDeactivated = true
-                    bar._durObj = nil
-                    bar._cSideFill = nil
-                    bar._lastDurationText = nil
-                    if bar.DurationText then
-                        bar.DurationText:SetText("")
-                    end
-                    if bar.StatusBar then
-                        pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                        if bar.StatusBar then
+                            pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                        end
                     end
                 end
             end
         end
-        end
-    end
-    -- Re-layout ONLY when a bar actually deactivated during THIS tick.
-    -- The old scan checked all bars for `not _active and IsShown()`, which
-    -- matched intentionally-shown inactive bars (inactiveMode "always"/"fade")
-    -- and triggered a full LayoutBars (with ConfigureBar re-applying textures,
-    -- points, alpha on every bar) every 100ms — causing visible flickering.
-    if anyDeactivated and _lastContainer and _lastSettings then
-        CDMBars:LayoutBars(_lastContainer, _lastSettings)
     end
     -- Stop the animation when no bars need ticking to avoid idle CPU cost.
     if not anyActive then
