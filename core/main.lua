@@ -707,6 +707,14 @@ function QUICore:OnInitialize()
         end
     end
 
+	self._didInitialize = true
+	for _, callback in ipairs(self._postInitializeCallbacks or {}) do
+		local ok, err = pcall(callback, self)
+		if not ok and geterrorhandler then
+			geterrorhandler()(err)
+		end
+	end
+
 end
 
 function QUICore:OnProfileChanged(event, db, profileKey)
@@ -939,6 +947,7 @@ end
 
 QUICore._editModeEnterCallbacks = {}
 QUICore._editModeExitCallbacks = {}
+QUICore._postInitializeCallbacks = QUICore._postInitializeCallbacks or {}
 QUICore._postEnableCallbacks = QUICore._postEnableCallbacks or {}
 
 function QUICore:RegisterEditModeEnter(callback)
@@ -958,6 +967,20 @@ function QUICore:RegisterEditModeExit(callback)
     else
         table.insert(self._editModeExitCallbacks, callback)
     end
+end
+
+function QUICore:RegisterPostInitialize(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+    if self._didInitialize then
+        local ok, err = pcall(callback, self)
+        if not ok and geterrorhandler then
+            geterrorhandler()(err)
+        end
+        return
+    end
+    table.insert(self._postInitializeCallbacks, callback)
 end
 
 function QUICore:RegisterLayoutModeEnter(callback)
