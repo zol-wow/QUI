@@ -49,16 +49,31 @@ local DEFAULTS = {
     buffGrowLeft = false,
     buffGrowUp = false,
     buffInvertSwipeDarkening = false,
+    buffRowSpacing = 0,
     debuffIconsPerRow = 0,
     debuffIconSpacing = 0,
     debuffIconSize = 0,
     debuffGrowLeft = false,
     debuffGrowUp = false,
     debuffInvertSwipeDarkening = false,
+    debuffRowSpacing = 0,
     buffBottomPadding = 10,
     debuffBottomPadding = 10,
     showStacks = true,
     hideSwipe = false,
+    -- Text positioning (per-frame)
+    buffStackTextAnchor = "BOTTOMRIGHT",
+    buffStackTextOffsetX = -1,
+    buffStackTextOffsetY = 1,
+    buffDurationTextAnchor = "CENTER",
+    buffDurationTextOffsetX = 0,
+    buffDurationTextOffsetY = 0,
+    debuffStackTextAnchor = "BOTTOMRIGHT",
+    debuffStackTextOffsetX = -1,
+    debuffStackTextOffsetY = 1,
+    debuffDurationTextAnchor = "CENTER",
+    debuffDurationTextOffsetX = 0,
+    debuffDurationTextOffsetY = 0,
 }
 
 local function GetSettings()
@@ -179,7 +194,7 @@ local function CreateAuraIcon(parent)
 
     -- .Stacks text (OVERLAY, bottom-right)
     icon.Stacks = icon.TextOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
-    icon.Stacks:SetPoint("BOTTOMRIGHT", -1, 1)
+    icon.Stacks:SetPoint("BOTTOMRIGHT", icon.TextOverlay, "BOTTOMRIGHT", -1, 1)
 
     -- Default font
     local defaultFont = GetGeneralFont()
@@ -369,11 +384,34 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
     local fontSize = settings.fontSize or 12
     icon.Stacks:SetFont(font, fontSize, outline)
 
-    -- Style Blizzard's auto-managed countdown FontString
+    -- Stack text positioning (per-frame keys)
+    local tp = isBuff and "buff" or "debuff"
+    local stackAnchor = settings[tp .. "StackTextAnchor"] or "BOTTOMRIGHT"
+    local stackOffX = settings[tp .. "StackTextOffsetX"]
+    if stackOffX == nil then stackOffX = -1 end
+    local stackOffY = settings[tp .. "StackTextOffsetY"]
+    if stackOffY == nil then stackOffY = 1 end
+    icon.Stacks:ClearAllPoints()
+    icon.Stacks:SetPoint(stackAnchor, icon.TextOverlay, stackAnchor, stackOffX, stackOffY)
+    -- Adjust text justification based on anchor
+    if stackAnchor == "TOPLEFT" or stackAnchor == "LEFT" or stackAnchor == "BOTTOMLEFT" then
+        icon.Stacks:SetJustifyH("LEFT")
+    elseif stackAnchor == "TOPRIGHT" or stackAnchor == "RIGHT" or stackAnchor == "BOTTOMRIGHT" then
+        icon.Stacks:SetJustifyH("RIGHT")
+    else
+        icon.Stacks:SetJustifyH("CENTER")
+    end
+
+    -- Style and position Blizzard's auto-managed countdown FontString
     if icon.Cooldown.GetCountdownFontString then
         local cdText = icon.Cooldown:GetCountdownFontString()
         if cdText and cdText.SetFont then
             cdText:SetFont(font, fontSize, outline)
+            local cdAnchor = settings[tp .. "DurationTextAnchor"] or "CENTER"
+            local cdOffX = settings[tp .. "DurationTextOffsetX"] or 0
+            local cdOffY = settings[tp .. "DurationTextOffsetY"] or 0
+            pcall(cdText.ClearAllPoints, cdText)
+            pcall(cdText.SetPoint, cdText, cdAnchor, icon.Cooldown, cdAnchor, cdOffX, cdOffY)
         end
     end
 end
@@ -435,6 +473,9 @@ local function LayoutIcons(container, sortedIcons, settings, prefix)
     local spacing = settings[prefix .. "IconSpacing"] or 0
     if spacing <= 0 then spacing = 2 end
 
+    local rowSpacing = settings[prefix .. "RowSpacing"] or 0
+    if rowSpacing <= 0 then rowSpacing = spacing end
+
     local growLeft = settings[prefix .. "GrowLeft"]
     local growUp = settings[prefix .. "GrowUp"]
 
@@ -470,15 +511,16 @@ local function LayoutIcons(container, sortedIcons, settings, prefix)
         end
     end
 
-    local step = iconSize + spacing
+    local colStep = iconSize + spacing
+    local rowStep = iconSize + rowSpacing
 
     for i, icon in ipairs(sortedIcons) do
         local idx = i - 1
         local col = idx % iconsPerRow
         local row = math.floor(idx / iconsPerRow)
 
-        local xOff = growLeft and -(col * step) or (col * step)
-        local yOff = growUp and (row * step) or -(row * step)
+        local xOff = growLeft and -(col * colStep) or (col * colStep)
+        local yOff = growUp and (row * rowStep) or -(row * rowStep)
 
         icon:SetSize(iconSize, iconSize)
         icon:ClearAllPoints()
@@ -490,7 +532,7 @@ local function LayoutIcons(container, sortedIcons, settings, prefix)
     local numRows = math.ceil(count / iconsPerRow)
     local totalW = numCols * iconSize + math.max(0, numCols - 1) * spacing
     local bottomPadding = settings[prefix .. "BottomPadding"] or 10
-    local totalH = numRows * iconSize + math.max(0, numRows - 1) * spacing + bottomPadding
+    local totalH = numRows * iconSize + math.max(0, numRows - 1) * rowSpacing + bottomPadding
     container:SetSize(totalW, totalH)
 end
 
