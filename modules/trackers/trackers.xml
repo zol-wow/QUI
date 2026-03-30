@@ -3,4 +3,5 @@
     <Script file="spellscanner.lua"/>
     <Script file="customtrackers.lua"/>
     <Script file="preytracker.lua"/>
+    <Script file="atonement_counter.lua"/>
 </Ui>

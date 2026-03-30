@@ -2846,6 +2846,32 @@ local defaults = {
             font = nil,
         },
 
+        -- Atonement Counter (displays active player-cast Atonements)
+        atonementCounter = {
+            enabled = true,
+            locked = true,
+            showOnlyInInstance = false,
+            hideIcon = false,
+            width = 50,
+            height = 50,
+            fontSize = 24,
+            xOffset = 500,
+            yOffset = 10,
+            showBackdrop = true,
+            backdropColor = { 0, 0, 0, 0.6 },
+            activeCountColor = { 1.0, 0.82, 0.2, 1 },
+            zeroCountColor = { 1, 1, 1, 0.55 },
+            useClassColorText = false,
+            borderSize = 1,
+            hideBorder = false,
+            borderColor = { 0, 0, 0, 1 },
+            useClassColorBorder = false,
+            useAccentColorBorder = false,
+            borderTexture = "None",
+            useCustomFont = false,
+            font = nil,
+        },
+
         -- Combat Timer (displays elapsed combat time)
         combatTimer = {
             enabled = false,       -- Opt-in feature (disabled by default)

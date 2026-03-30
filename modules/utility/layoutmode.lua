@@ -2393,6 +2393,14 @@ do
                 previewOff = function() if _G.QUI_ToggleBrezCounterPreview then _G.QUI_ToggleBrezCounterPreview(false) end end,
             },
             {
+                key = "atonementCounter", label = "Atonement Counter", group = "QoL", order = 9.5,
+                frame = "QUI_AtonementCounter",
+                dbKey = "atonementCounter", enabledField = "enabled",
+                refresh = "QUI_RefreshAtonementCounter",
+                previewOn  = function() if _G.QUI_ToggleAtonementCounterPreview then _G.QUI_ToggleAtonementCounterPreview(true) end end,
+                previewOff = function() if _G.QUI_ToggleAtonementCounterPreview then _G.QUI_ToggleAtonementCounterPreview(false) end end,
+            },
+            {
                 key = "mplusTimer", label = "M+ Timer", group = "Instance", order = 2,
                 frame = "QUI_MPlusTimerFrame",
                 dbKey = "mplusTimer", enabledField = "enabled",
@@ -3350,6 +3358,7 @@ C_Timer.After(1, function()
     HookRefreshForLayoutSync("QUI_RefreshBuffBar")
     HookRefreshForLayoutSync("QUI_RefreshCustomTrackers")
     HookRefreshForLayoutSync("QUI_RefreshBrezCounter")
+    HookRefreshForLayoutSync("QUI_RefreshAtonementCounter")
     HookRefreshForLayoutSync("QUI_RefreshCombatTimer")
     HookRefreshForLayoutSync("QUI_RefreshXPTracker")
     HookRefreshForLayoutSync("QUI_RefreshBuffBorders")
