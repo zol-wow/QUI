@@ -363,6 +363,7 @@ local DEFAULT_FRAME_ANCHORING = {
     bar6            = { parent = "bar3",            point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
     bossFrames      = { parent = "datatextPanel",   point = "TOPLEFT",      relative = "BOTTOMLEFT" },
     brezCounter     = { parent = "combatTimer",     point = "BOTTOM",       relative = "TOP" },
+    atonementCounter = { parent = "brezCounter",    point = "BOTTOM",       relative = "TOP" },
     buffFrame       = { parent = "minimap",         point = "TOPRIGHT",     relative = "TOPLEFT" },
     buffIcon        = { parent = "cdmEssential",    point = "BOTTOM",       relative = "TOP" },
     cdmUtility      = { parent = "secondaryPower",  point = "TOP",          relative = "BOTTOM" },

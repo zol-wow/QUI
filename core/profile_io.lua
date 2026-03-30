@@ -781,6 +781,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             "mplusTimer",
             "combatText",
             "brzCounter",
+            "atonementCounter",
             "combatTimer",
             "xpTracker",
             "totemBar",

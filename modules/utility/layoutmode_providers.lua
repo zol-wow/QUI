@@ -151,6 +151,42 @@ local function RegisterAllProviders()
     end })
 
     ---------------------------------------------------------------------------
+    -- ATONEMENT COUNTER
+    ---------------------------------------------------------------------------
+    settingsPanel:RegisterProvider("atonementCounter", { build = function(content, key, width)
+        local db = U.GetProfileDB()
+        if not db or not db.atonementCounter then return 80 end
+        local ac = db.atonementCounter
+        local sections = {}
+        local function relayout() U.StandardRelayout(content, sections) end
+        local function Refresh() if _G.QUI_RefreshAtonementCounter then _G.QUI_RefreshAtonementCounter() end end
+
+        U.CreateCollapsible(content, "General", 7 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Lock Frame", "locked", ac, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Only In Dungeons/Raids", "showOnlyInInstance", ac, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Hide Spell Icon", "hideIcon", ac, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Width", 30, 100, 1, "width", ac, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Height", 30, 100, 1, "height", ac, Refresh), body, sy)
+            P(GUI:CreateFormSlider(body, "Count Font Size", 10, 36, 1, "fontSize", ac, Refresh), body, sy)
+        end, sections, relayout)
+
+        U.CreateCollapsible(content, "Colors", 6 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color Text", "useClassColorText", ac, Refresh), body, sy)
+            sy = P(GUI:CreateFormColorPicker(body, "Active Count Color", "activeCountColor", ac, Refresh), body, sy)
+            sy = P(GUI:CreateFormColorPicker(body, "Zero Count Color", "zeroCountColor", ac, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Use Custom Font", "useCustomFont", ac, Refresh), body, sy)
+            local fonts = U.GetFontList(); if #fonts > 0 then P(GUI:CreateFormDropdown(body, "Font", fonts, "font", ac, Refresh), body, sy) end
+        end, sections, relayout)
+
+        U.BuildBackdropBorderSection(content, ac, sections, relayout, Refresh)
+
+        U.BuildPositionCollapsible(content, "atonementCounter", nil, sections, relayout)
+        relayout() return content:GetHeight()
+    end })
+
+    ---------------------------------------------------------------------------
     -- ROTATION ASSIST ICON
     ---------------------------------------------------------------------------
     settingsPanel:RegisterProvider("rotationAssistIcon", { build = function(content, key, width)

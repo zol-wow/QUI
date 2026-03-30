@@ -1302,6 +1302,7 @@ local FRAME_RESOLVERS = {
     end,
     -- QoL
     brezCounter = function() return _G["QUI_BrezCounter"] end,
+    atonementCounter = function() return _G["QUI_AtonementCounter"] end,
     combatTimer = function() return _G["QUI_CombatTimer"] end,
     rangeCheck = function() return _G["QUI_RangeCheckFrame"] end,
     actionTracker = function() return _G["QUI_ActionTracker"] end,
@@ -1481,17 +1482,18 @@ local FRAME_ANCHOR_INFO = {
     extraActionButton = { displayName = "Extra Action Button", category = "Action Bars",       order = 13 },
     zoneAbility     = { displayName = "Zone Ability Button",   category = "Action Bars",       order = 14 },
     brezCounter     = { displayName = "Brez Counter",          category = "QoL",               order = 1 },
-    combatTimer     = { displayName = "Combat Timer",          category = "QoL",               order = 2 },
-    rangeCheck      = { displayName = "Target Distance Bracket Display", category = "QoL",      order = 3 },
-    actionTracker   = { displayName = "Action Tracker",        category = "QoL",               order = 4 },
-    xpTracker       = { displayName = "XP Tracker",            category = "QoL",               order = 5 },
-    skyriding       = { displayName = "Skyriding",             category = "QoL",               order = 6 },
-    petWarning      = { displayName = "Pet Warning",           category = "QoL",               order = 7 },
-    focusCastAlert  = { displayName = "Focus Cast Alert",      category = "QoL",               order = 8 },
-    missingRaidBuffs = { displayName = "Missing Raid Buffs",   category = "QoL",               order = 9 },
-    mplusTimer      = { displayName = "M+ Timer",              category = "QoL",               order = 10 },
-    readyCheck      = { displayName = "Ready Check",           category = "QoL",               order = 11 },
-    preyTracker     = { displayName = "Prey Tracker",          category = "QoL",               order = 12 },
+    atonementCounter = { displayName = "Atonement Counter",    category = "QoL",               order = 2 },
+    combatTimer     = { displayName = "Combat Timer",          category = "QoL",               order = 3 },
+    rangeCheck      = { displayName = "Target Distance Bracket Display", category = "QoL",      order = 4 },
+    actionTracker   = { displayName = "Action Tracker",        category = "QoL",               order = 5 },
+    xpTracker       = { displayName = "XP Tracker",            category = "QoL",               order = 6 },
+    skyriding       = { displayName = "Skyriding",             category = "QoL",               order = 7 },
+    petWarning      = { displayName = "Pet Warning",           category = "QoL",               order = 8 },
+    focusCastAlert  = { displayName = "Focus Cast Alert",      category = "QoL",               order = 9 },
+    missingRaidBuffs = { displayName = "Missing Raid Buffs",   category = "QoL",               order = 10 },
+    mplusTimer      = { displayName = "M+ Timer",              category = "QoL",               order = 11 },
+    readyCheck      = { displayName = "Ready Check",           category = "QoL",               order = 12 },
+    preyTracker     = { displayName = "Prey Tracker",          category = "QoL",               order = 13 },
     partyFrames     = { displayName = "Party Frames",           category = "Group Frames",      order = 1 },
     raidFrames      = { displayName = "Raid Frames",            category = "Group Frames",      order = 2 },
     minimap         = { displayName = "Minimap",               category = "Display",           order = 1 },
@@ -2563,6 +2565,7 @@ HookRefreshGlobal("QUI_RefreshRaidBuffs")
 C_Timer.After(0, function()
     HookRefreshGlobal("QUI_RefreshCustomTrackers")
     HookRefreshGlobal("QUI_RefreshBrezCounter")
+    HookRefreshGlobal("QUI_RefreshAtonementCounter")
     HookRefreshGlobal("QUI_RefreshCombatTimer")
     HookRefreshGlobal("QUI_RefreshRangeCheck")
     HookRefreshGlobal("QUI_RefreshXPTracker")
