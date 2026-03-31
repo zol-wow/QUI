@@ -51,12 +51,6 @@ local lastSpellFingerprints = { essential = "", utility = "", buff = "" }
 local buffChildrenHooked = false  -- one-time hook for buff viewer aura events
 
 -- DurationObject cache: Blizzard child → captured DurationObject/start/duration.
--- Populated by hooks on viewer children's Cooldown frames (SetCooldownFromDurationObject,
--- SetCooldown, Clear).  Consumed by cdm_icons.lua UpdateIconCooldown via entry._blizzChild.
--- Weak-keyed so recycled Blizzard frames don't leak.
-local _durObjCache = Helpers.CreateStateTable()   -- [blizzChild] = durObj
-local _rawStartCache = Helpers.CreateStateTable()  -- [blizzChild] = startTime
-local _rawDurCache = Helpers.CreateStateTable()    -- [blizzChild] = duration
 local _spellIDToChild = {}  -- [spellID] = { child1, child2, ... } (built OOC during scan)
 
 --- Check if a Blizzard viewer child matches a given spell ID.
@@ -284,195 +278,8 @@ CDMSpellData._childBySpellID = _childBySpellID
 -- HOOK CACHE QUERIES
 ---------------------------------------------------------------------------
 
---- Check if any BUFF viewer child for a spell has a populated hook cache.
---- Restricted to BuffIconCooldownViewer and BuffBarCooldownViewer children
---- to avoid false positives from ability cooldown children in essential/utility
---- viewers (whose SetCooldown cache persists independently of the aura).
---- Populated = Blizzard called SetCooldownFromDurationObject or SetCooldown
---- on the child (aura is active).  Nil = Blizzard called Clear() (aura expired).
---- Returns: isActive, durObj, child (child ref for auraInstanceID/auraDataUnit)
-function CDMSpellData:IsSpellHookActive(spellID)
-    if not spellID then return false, nil, nil end
-    local buffViewer = _G["BuffIconCooldownViewer"]
-    local buffBarViewer = _G["BuffBarCooldownViewer"]
-    -- Verify child still tracks this spell via _resolvedIDs (OOC-built, stable).
-    -- Prevents false positives from recycled children whose _spellIDToChild
-    -- mapping is stale (e.g. child was mapped to Icebound Fortitude but now
-    -- tracks Death's Advance).
-    local function isValidBuffChild(ch)
-        local vf = ch.viewerFrame
-        if not (vf and (vf == buffViewer or vf == buffBarViewer)) then return false end
-        -- Child must still represent an active aura (auraInstanceID non-nil).
-        -- Blizzard nils auraInstanceID when the aura expires or the child is
-        -- recycled.  Nil-check is safe in combat (not a value comparison).
-        if ch.auraInstanceID == nil then return false end
-        local ids = ch._resolvedIDs
-        if ids then
-            for k = 1, #ids do
-                if ids[k] == spellID then return true end
-            end
-            return false  -- child exists but doesn't track this spell
-        end
-        -- No _resolvedIDs: fall back to cooldownID check
-        return ChildMatchesSpellID(ch, spellID)
-    end
-    local children = _spellIDToChild[spellID]
-    if children then
-        for _, child in ipairs(children) do
-            if isValidBuffChild(child) then
-                local durObj = _durObjCache[child]
-                if durObj then return true, durObj, child end
-                if _rawStartCache[child] then return true, nil, child end
-            end
-        end
-    end
-    -- Slow path: iterate caches (handles unmapped children)
-    for ch, durObj in pairs(_durObjCache) do
-        if isValidBuffChild(ch) then
-            return true, durObj, ch
-        end
-    end
-    for ch in pairs(_rawStartCache) do
-        if isValidBuffChild(ch) then
-            return true, nil, ch
-        end
-    end
-    return false, nil, nil
-end
 
---- Look up cached DurationObject by spell ID.
---- Uses the OOC-built _spellIDToChild map. Prefers children with a
---- DurationObject (aura viewers) over those with only raw start/dur
---- (cooldown viewers), so aura bars get aura duration, not recharge CD.
---- Returns durObj, rawStart, rawDur (any or all may be nil).
-function CDMSpellData:GetCachedDurObj(spellID)
-    if not spellID then return nil, nil, nil end
 
-    local children = _spellIDToChild[spellID]
-    if children then
-        -- First pass: prefer children with a DurationObject (aura duration)
-        for _, child in ipairs(children) do
-            -- Inline childStillMatches to avoid closure allocation per call
-            local ids = child._resolvedIDs
-            local matches = true
-            if ids then
-                matches = false
-                for k = 1, #ids do
-                    if ids[k] == spellID then matches = true; break end
-                end
-            end
-            if matches then
-                local durObj = _durObjCache[child]
-                if durObj then
-                    return durObj, _rawStartCache[child], _rawDurCache[child]
-                end
-            end
-        end
-        -- Second pass: fall back to raw start/dur (cooldown)
-        for _, child in ipairs(children) do
-            local ids = child._resolvedIDs
-            local matches = true
-            if ids then
-                matches = false
-                for k = 1, #ids do
-                    if ids[k] == spellID then matches = true; break end
-                end
-            end
-            if matches then
-                local start = _rawStartCache[child]
-                if start then
-                    return nil, start, _rawDurCache[child]
-                end
-            end
-        end
-    end
-
-    -- Slow path: iterate caches (handles unmapped children).
-    -- Only attempt once per child-map generation to avoid O(n) scans
-    -- every tick for spells that genuinely have no cached data.
-    if not _childMapDirty then
-        for ch, durObj in pairs(_durObjCache) do
-            if ChildMatchesSpellID(ch, spellID) then
-                return durObj, _rawStartCache[ch], _rawDurCache[ch]
-            end
-        end
-        for ch, start in pairs(_rawStartCache) do
-            if ChildMatchesSpellID(ch, spellID) then
-                return nil, start, _rawDurCache[ch]
-            end
-        end
-    end
-    return nil, nil, nil
-end
-
---- Look up cached DurationObject by spell ID, restricted to buff viewer
---- children only.  Cooldown viewer children have spell cooldown timers
---- (30-45s) which would overwrite aura duration (5-10s) on buff icons/bars.
---- @param spellID number
---- @return table|nil durObj, number|nil rawStart, number|nil rawDur
-function CDMSpellData:GetCachedAuraDurObj(spellID)
-    if not spellID then return nil, nil, nil end
-    local buffViewer = _G["BuffIconCooldownViewer"]
-    local buffBarViewer = _G["BuffBarCooldownViewer"]
-    if not buffViewer and not buffBarViewer then return nil, nil, nil end
-
-    -- Inline isActiveBuffChild to avoid closure allocation per call.
-    -- A child qualifies if it belongs to a buff viewer, has an active aura,
-    -- and its _resolvedIDs include our spellID.
-    local children = _spellIDToChild[spellID]
-    if children then
-        for _, ch in ipairs(children) do
-            local vf = ch.viewerFrame
-            if vf and (vf == buffViewer or vf == buffBarViewer) and ch.auraInstanceID ~= nil then
-                local ids = ch._resolvedIDs
-                local ok = true
-                if ids then
-                    ok = false
-                    for k = 1, #ids do if ids[k] == spellID then ok = true; break end end
-                end
-                if ok then
-                    local durObj = _durObjCache[ch]
-                    if durObj then return durObj, _rawStartCache[ch], _rawDurCache[ch] end
-                end
-            end
-        end
-        for _, ch in ipairs(children) do
-            local vf = ch.viewerFrame
-            if vf and (vf == buffViewer or vf == buffBarViewer) and ch.auraInstanceID ~= nil then
-                local ids = ch._resolvedIDs
-                local ok = true
-                if ids then
-                    ok = false
-                    for k = 1, #ids do if ids[k] == spellID then ok = true; break end end
-                end
-                if ok then
-                    local start = _rawStartCache[ch]
-                    if start then return nil, start, _rawDurCache[ch] end
-                end
-            end
-        end
-    end
-
-    -- Slow path: iterate caches filtered to shown buff children.
-    -- Only attempt once per child-map generation.
-    if not _childMapDirty then
-        for ch, durObj in pairs(_durObjCache) do
-            local vf = ch.viewerFrame
-            if vf and (vf == buffViewer or vf == buffBarViewer)
-               and ch.auraInstanceID ~= nil and ChildMatchesSpellID(ch, spellID) then
-                return durObj, _rawStartCache[ch], _rawDurCache[ch]
-            end
-        end
-        for ch, start in pairs(_rawStartCache) do
-            local vf = ch.viewerFrame
-            if vf and (vf == buffViewer or vf == buffBarViewer)
-               and ch.auraInstanceID ~= nil and ChildMatchesSpellID(ch, spellID) then
-                return nil, start, _rawDurCache[ch]
-            end
-        end
-    end
-    return nil, nil, nil
-end
 
 ---------------------------------------------------------------------------
 -- UNIFIED AURA DETECTION
@@ -486,9 +293,6 @@ local _auraResult = {
     auraInstanceID = nil,
     auraUnit = "player",
     durObj = nil,
-    hookDurObj = nil,
-    hookStart = nil,
-    hookDur = nil,
     blizzChild = nil,
     stacks = nil,
     auraData = nil,
@@ -499,9 +303,6 @@ local function WipeAuraResult()
     _auraResult.auraInstanceID = nil
     _auraResult.auraUnit = "player"
     _auraResult.durObj = nil
-    _auraResult.hookDurObj = nil
-    _auraResult.hookStart = nil
-    _auraResult.hookDur = nil
     _auraResult.blizzChild = nil
     _auraResult.stacks = nil
     _auraResult.auraData = nil
@@ -583,267 +384,145 @@ function CDMSpellData:ResolveAuraState(params)
     r.blizzChild = blzChild
 
     -----------------------------------------------------------------------
-    -- Phase 3: Read hook cache
-    -----------------------------------------------------------------------
-    local hookDurObj, hookStart, hookDur
-    if blzChild then
-        hookDurObj = _durObjCache[blzChild]
-        hookStart = _rawStartCache[blzChild]
-        hookDur = _rawDurCache[blzChild]
-    end
-    -- Also check bar-specific child
-    if blzBarChild then
-        if not hookDurObj then hookDurObj = _durObjCache[blzBarChild] end
-        if not hookStart then hookStart = _rawStartCache[blzBarChild] end
-        if not hookDur then hookDur = _rawDurCache[blzBarChild] end
-    end
-    -- Fallback: search buff viewer children by spell ID
-    if not hookDurObj and not hookStart then
-        hookDurObj, hookStart, hookDur = self:GetCachedAuraDurObj(auraSpellID)
-        if not hookDurObj and not hookStart and entrySpellID and entrySpellID ~= auraSpellID then
-            hookDurObj, hookStart, hookDur = self:GetCachedAuraDurObj(entrySpellID)
-        end
-    end
-
-    r.hookDurObj = hookDurObj
-    r.hookStart = hookStart
-    r.hookDur = hookDur
-
-    -----------------------------------------------------------------------
-    -- Phase 4/5: Active detection
+    -- Phase 3: Direct aura query via child's auraInstanceID
+    -- GetAuraDataByAuraInstanceID returns non-nil when the aura exists
+    -- (nil-check, safe in combat). GetAuraDuration provides the C-side
+    -- DurationObject for display — forwarded to SetCooldownFromDurationObject
+    -- which handles zero/secret values natively on the C side.
     -----------------------------------------------------------------------
     local isActive = false
     local childAuraInstID = nil
     local auraUnit = "player"
 
-    -- Read auraInstanceID + unit from child if available
     if blzChild then
         childAuraInstID = blzChild.auraInstanceID
         auraUnit = blzChild.auraDataUnit or "player"
     end
+    if not childAuraInstID and blzBarChild then
+        childAuraInstID = blzBarChild.auraInstanceID
+        auraUnit = blzBarChild.auraDataUnit or "player"
+    end
 
-
-    if not InCombatLockdown() then
-        -----------------------------------------------------------------
-        -- OOC: API is the reliable source
-        -----------------------------------------------------------------
-        -- 1. Player aura by spell ID
-        -- GetPlayerAuraBySpellID returns both buffs and debuffs (no filter param),
-        -- including passive talent auras and harmful passives that are always
-        -- present. Only match helpful auras here — harmful player debuffs
-        -- (procs like Purgatory) are detected via viewer child / hook cache
-        -- paths; permanent harmful passives (like Perdition) must be excluded.
-        if C_UnitAuras.GetPlayerAuraBySpellID then
-            local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, auraSpellID)
-            if ok and ad and ad.auraInstanceID and ad.isHelpful == true then
-                isActive = true
-                childAuraInstID = ad.auraInstanceID
-                auraUnit = "player"
-                r.auraData = ad
-            end
-            if not isActive and entrySpellID and entrySpellID ~= auraSpellID then
-                local ok2, ad2 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, entrySpellID)
-                if ok2 and ad2 and ad2.auraInstanceID and ad2.isHelpful == true then
-                    isActive = true
-                    childAuraInstID = ad2.auraInstanceID
-                    auraUnit = "player"
-                    r.auraData = ad2
-                end
-            end
-            -- Also try entryID — owned entries may have ability ID as
-            -- spellID/entrySpellID and the actual buff as entryID.
-            if not isActive and entryID and entryID ~= auraSpellID and entryID ~= entrySpellID then
-                local ok3, ad3 = pcall(C_UnitAuras.GetPlayerAuraBySpellID, entryID)
-                if ok3 and ad3 and ad3.auraInstanceID and ad3.isHelpful == true then
-                    isActive = true
-                    childAuraInstID = ad3.auraInstanceID
-                    auraUnit = "player"
-                    r.auraData = ad3
-                end
-            end
-        end
-        -- 2. Player buff by name
-        if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
-            if ok and ad and ad.auraInstanceID then
-                isActive = true
-                childAuraInstID = ad.auraInstanceID
-                auraUnit = "player"
-                r.auraData = ad
-            end
-        end
-        -- 3. Pet buff by name
-        if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "pet", entryName, "HELPFUL")
-            if ok and ad and ad.auraInstanceID then
-                isActive = true
-                childAuraInstID = ad.auraInstanceID
-                auraUnit = "pet"
-                r.auraData = ad
-            end
-        end
-        -- 4. Target debuff by name, then target helpful
-        if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HARMFUL")
-            if ok and ad and ad.auraInstanceID then
-                isActive = true
-                childAuraInstID = ad.auraInstanceID
-                auraUnit = "target"
-                r.auraData = ad
-            end
-            if not isActive then
-                local ok2, ad2 = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HELPFUL")
-                if ok2 and ad2 and ad2.auraInstanceID then
-                    isActive = true
-                    childAuraInstID = ad2.auraInstanceID
-                    auraUnit = "target"
-                    r.auraData = ad2
-                end
-            end
-        end
-        -- 5. Validate child auraInstanceID
-        if not isActive and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
-            local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
-            if vok and vdata then
-                isActive = true
-                r.auraData = vdata
-            end
-        end
-    else
-        -----------------------------------------------------------------
-        -- Combat: hook cache + API fallbacks
-        -----------------------------------------------------------------
-        -- 1. Hook cache truthiness — gated on child auraInstanceID.
-        local childAlive = blzChild and blzChild.auraInstanceID ~= nil
-        if not childAlive and blzBarChild then
-            childAlive = blzBarChild.auraInstanceID ~= nil
-        end
-        if childAlive and (hookDurObj or (hookStart and hookDur)) then
+    if childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
+        local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
+        if vok and vdata then
             isActive = true
-        end
-        -- 2. IsSpellHookActive scan
-        if not isActive then
-            local hookActive, hookDur2, hookChild = self:IsSpellHookActive(auraSpellID)
-            if not hookActive and entrySpellID and entrySpellID ~= auraSpellID then
-                hookActive, hookDur2, hookChild = self:IsSpellHookActive(entrySpellID)
-            end
-            if not hookActive and entryID and entryID ~= auraSpellID then
-                hookActive, hookDur2, hookChild = self:IsSpellHookActive(entryID)
-            end
-            if hookActive then
-                isActive = true
-                if hookDur2 and not hookDurObj then
-                    hookDurObj = hookDur2
-                    r.hookDurObj = hookDurObj
-                end
-                if hookChild then
-                    if not childAuraInstID and hookChild.auraInstanceID then
-                        childAuraInstID = hookChild.auraInstanceID
-                    end
-                    if hookChild.auraDataUnit then
-                        auraUnit = hookChild.auraDataUnit
-                    end
+            r.auraData = vdata
+            if C_UnitAuras.GetAuraDuration then
+                local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, auraUnit, childAuraInstID)
+                if dok and durObj then
+                    r.durObj = durObj
                 end
             end
         end
-        -- 3. Bar-specific: blizzBarChild visibility + hook data + validation
-        if not isActive and blzBarChild then
-            if blzBarChild.auraInstanceID and childTracksSpell(blzBarChild, auraSpellID, entrySpellID, entryID) then
-                local hasHookData = _durObjCache[blzBarChild] or _rawStartCache[blzBarChild]
-                if hasHookData then
-                    local bok, bshown = pcall(blzBarChild.IsShown, blzBarChild)
-                    if bok and bshown then
-                        childAuraInstID = blzBarChild.auraInstanceID
-                        auraUnit = blzBarChild.auraDataUnit or "player"
+    end
+
+    -----------------------------------------------------------------------
+    -- Phase 4: API fallbacks (unified OOC/combat)
+    -- GetPlayerAuraBySpellID and GetAuraDataBySpellName work in both
+    -- states. In combat, isHelpful may be secret — allow when not false.
+    -- Reject harmful passives (always-present talent auras like Perdition).
+    -----------------------------------------------------------------------
+    -- 1. Player aura by spell ID (helpful only)
+    if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
+        for tryIdx = 1, 3 do
+            if isActive then break end
+            local tryID = tryIdx == 1 and auraSpellID
+                or tryIdx == 2 and entrySpellID or entryID
+            if tryID then
+                local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
+                if ok and ad and ad.auraInstanceID then
+                    local helpful = Helpers.SafeValue(ad.isHelpful, nil)
+                    if helpful ~= false then
                         isActive = true
-                    end
-                end
-            end
-            -- Visibility-only fallback (bar children reliably show/hide)
-            if not isActive then
-                local bok, bshown = pcall(blzBarChild.IsShown, blzBarChild)
-                if bok and bshown then
-                    isActive = true
-                    if _durObjCache[blzBarChild] then
-                        hookDurObj = _durObjCache[blzBarChild]
-                        r.hookDurObj = hookDurObj
+                        childAuraInstID = ad.auraInstanceID
+                        auraUnit = "player"
+                        r.auraData = ad
                     end
                 end
             end
         end
-        -- 4. Validate auraInstanceID
-        if not isActive and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
-            local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
-            if vok and vdata then
-                isActive = true
-            end
+    end
+    -- 2. Player buff by name
+    if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
+        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
+        if ok and ad and ad.auraInstanceID then
+            isActive = true
+            childAuraInstID = ad.auraInstanceID
+            auraUnit = "player"
+            r.auraData = ad
         end
-        -- 5. Player aura by spell ID — only helpful (buffs).
-        -- Harmful player auras (procs) are detected via viewer child / hook
-        -- cache. This fallback must reject harmful passives (always-present
-        -- talent auras like Perdition) that would false-positive as active.
-        if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
-            for tryIdx = 1, 3 do
-                if isActive then break end
-                local tryID = tryIdx == 1 and auraSpellID or tryIdx == 2 and entrySpellID or entryID
-                if tryID then
-                    local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
-                    if ok and ad and ad.auraInstanceID then
-                        local helpful = Helpers.SafeValue(ad.isHelpful, nil)
-                        -- Allow when helpful or when secret (can't confirm passive)
-                        if helpful ~= false then
-                            isActive = true
-                            childAuraInstID = ad.auraInstanceID
-                            auraUnit = "player"
-                        end
-                    end
-                end
-            end
+    end
+    -- 3. Pet buff by name
+    if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
+        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "pet", entryName, "HELPFUL")
+        if ok and ad and ad.auraInstanceID then
+            isActive = true
+            childAuraInstID = ad.auraInstanceID
+            auraUnit = "pet"
+            r.auraData = ad
         end
-        -- 6. Player buff by name
-        if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
-            if ok and ad and ad.auraInstanceID then
-                isActive = true
-                childAuraInstID = ad.auraInstanceID
-                auraUnit = "player"
-            end
+    end
+    -- 4. Target debuff by name, then target helpful
+    if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
+        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HARMFUL")
+        if ok and ad and ad.auraInstanceID then
+            isActive = true
+            childAuraInstID = ad.auraInstanceID
+            auraUnit = "target"
+            r.auraData = ad
         end
-        -- 7. Pet buff by name
-        if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "pet", entryName, "HELPFUL")
-            if ok and ad and ad.auraInstanceID then
-                isActive = true
-                childAuraInstID = ad.auraInstanceID
-                auraUnit = "pet"
-            end
-        end
-        -- 8. Target debuff by name, then target helpful
-        if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HARMFUL")
-            if ok and ad and ad.auraInstanceID then
-                isActive = true
-                childAuraInstID = ad.auraInstanceID
-                auraUnit = "target"
-            end
-            if not isActive then
-                local ok2, ad2 = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HELPFUL")
-                if ok2 and ad2 and ad2.auraInstanceID then
-                    isActive = true
-                    childAuraInstID = ad2.auraInstanceID
-                    auraUnit = "target"
-                end
-            end
-        end
-        -- 9. Dynamic child scan (last resort)
         if not isActive then
-            local dynChild = FindChildForSpell(auraSpellID, entrySpellID, entryID)
-            if dynChild and dynChild.auraInstanceID then
-                local dok, dshown = pcall(dynChild.IsShown, dynChild)
-                if dok and dshown then
-                    isActive = true
-                    childAuraInstID = dynChild.auraInstanceID
-                    auraUnit = dynChild.auraDataUnit or "player"
+            local ok2, ad2 = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HELPFUL")
+            if ok2 and ad2 and ad2.auraInstanceID then
+                isActive = true
+                childAuraInstID = ad2.auraInstanceID
+                auraUnit = "target"
+                r.auraData = ad2
+            end
+        end
+    end
+    -- 5. Validate child auraInstanceID via GetAuraDataByAuraInstanceID
+    if not isActive and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
+        local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
+        if vok and vdata then
+            isActive = true
+            r.auraData = vdata
+        end
+    end
+    -- 6. Bar-specific: blizzBarChild visibility fallback
+    if not isActive and blzBarChild then
+        if blzBarChild.auraInstanceID and childTracksSpell(blzBarChild, auraSpellID, entrySpellID, entryID) then
+            local bok, bshown = pcall(blzBarChild.IsShown, blzBarChild)
+            if bok and bshown then
+                childAuraInstID = blzBarChild.auraInstanceID
+                auraUnit = blzBarChild.auraDataUnit or "player"
+                isActive = true
+            end
+        end
+        if not isActive then
+            local bok, bshown = pcall(blzBarChild.IsShown, blzBarChild)
+            if bok and bshown then
+                isActive = true
+            end
+        end
+    end
+    -- 7. Dynamic child scan (last resort)
+    if not isActive then
+        local dynChild = FindChildForSpell(auraSpellID, entrySpellID, entryID)
+        if dynChild and dynChild.auraInstanceID and C_UnitAuras.GetAuraDataByAuraInstanceID then
+            local dynUnit = dynChild.auraDataUnit or "player"
+            local vok2, vdata2 = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, dynUnit, dynChild.auraInstanceID)
+            if vok2 and vdata2 then
+                isActive = true
+                childAuraInstID = dynChild.auraInstanceID
+                auraUnit = dynUnit
+                r.auraData = vdata2
+                if C_UnitAuras.GetAuraDuration then
+                    local dok2, durObj2 = pcall(C_UnitAuras.GetAuraDuration, dynUnit, dynChild.auraInstanceID)
+                    if dok2 and durObj2 then
+                        r.durObj = durObj2
+                    end
                 end
             end
         end
@@ -1308,9 +987,9 @@ local function OnBuffAuraEvent()
     end)
 end
 
---- Hook a single viewer child to capture DurationObjects.
---- Hooks .Cooldown (icon viewers) and .Bar StatusBar (bar viewer).
---- Called for children of ALL viewer types (essential, utility, buff, trackedBar).
+--- Mark a viewer child as hooked (guard for HookBuffViewerChildren).
+--- Cache-populating hooks have been removed — aura detection now uses
+--- direct C_UnitAuras.GetAuraDuration queries via the child's auraInstanceID.
 local function HookChildCooldown(child)
     if not child then return end
     local hookState = hookedBuffChildren[child]
@@ -1318,63 +997,8 @@ local function HookChildCooldown(child)
         hookState = {}
         hookedBuffChildren[child] = hookState
     end
-    if hookState.cooldown then return end  -- already hooked
+    if hookState.cooldown then return end
     hookState.cooldown = true
-
-    -- Hook .Cooldown (CooldownFrame) — used by icon viewers
-    local cd = child.Cooldown
-    if cd then
-        if cd.SetCooldownFromDurationObject then
-            hooksecurefunc(cd, "SetCooldownFromDurationObject", function(_, durObj)
-                _durObjCache[child] = durObj
-            end)
-        end
-        if cd.SetCooldown then
-            hooksecurefunc(cd, "SetCooldown", function(_, start, dur)
-                _rawStartCache[child] = start
-                _rawDurCache[child] = dur
-            end)
-        end
-        if cd.Clear then
-            hooksecurefunc(cd, "Clear", function()
-                _durObjCache[child] = nil
-                _rawStartCache[child] = nil
-                _rawDurCache[child] = nil
-            end)
-        end
-    end
-
-    -- Hook child Hide — when Blizzard hides a viewer child (aura expired),
-    -- clear its hook cache so stale durObjs don't false-positive as active.
-    -- This is the primary cache invalidation during combat where
-    -- GetRemainingDuration always returns secret values from addon code.
-    hooksecurefunc(child, "Hide", function()
-        _durObjCache[child] = nil
-        _rawStartCache[child] = nil
-        _rawDurCache[child] = nil
-    end)
-
-    -- Hook .Bar (StatusBar) — used by BuffBarCooldownViewer children.
-    -- Blizzard may call SetTimerDuration on the StatusBar for aura-driven bars.
-    local bar = child.Bar
-    if bar then
-        if bar.SetTimerDuration then
-            hooksecurefunc(bar, "SetTimerDuration", function(_, durObj)
-                _durObjCache[child] = durObj
-            end)
-        end
-        if bar.SetMinMaxValues then
-            hooksecurefunc(bar, "SetMinMaxValues", function(_, minVal, maxVal)
-                -- maxVal is the duration — store as raw dur for fallback
-                _rawDurCache[child] = maxVal
-            end)
-        end
-        if bar.SetValue then
-            hooksecurefunc(bar, "SetValue", function(_, val)
-                _rawStartCache[child] = val  -- remaining value, not start time
-            end)
-        end
-    end
 end
 
 --- Hook Cooldown frames on ALL children of a given viewer type.
@@ -3365,13 +2989,30 @@ function CDMSpellData:Initialize()
     end)
 end
 
+--- Find a viewer child for a spell ID via the OOC-built _spellIDToChild map.
+--- Returns the first matching child with a non-nil auraInstanceID, or nil.
+function CDMSpellData:FindChildForSpellID(spellID)
+    if not spellID then return nil end
+    local children = _spellIDToChild[spellID]
+    if not children then return nil end
+    for _, child in ipairs(children) do
+        if child.auraInstanceID ~= nil then
+            local ids = child._resolvedIDs
+            if ids then
+                for k = 1, #ids do
+                    if ids[k] == spellID then return child end
+                end
+            else
+                return child
+            end
+        end
+    end
+    return nil
+end
+
 ---------------------------------------------------------------------------
 -- NAMESPACE EXPORT
 ---------------------------------------------------------------------------
--- Expose DurationObject caches for cdm_icons.lua / cdm_bars.lua
-CDMSpellData._durObjCache = _durObjCache
-CDMSpellData._rawStartCache = _rawStartCache
-CDMSpellData._rawDurCache = _rawDurCache
 CDMSpellData._spellIDToChild = _spellIDToChild
 CDMSpellData._abilityToAuraSpellID = _abilityToAuraSpellID
 

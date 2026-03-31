@@ -362,17 +362,6 @@ local function UpdateTotems()
             end
         end
 
-        -- Debug: log totem slot data
-        if QUI.DEBUG_MODE then
-            local secretH = Helpers.IsSecretValue(haveTotem) and "[secret]" or tostring(haveTotem)
-            local secretD = Helpers.IsSecretValue(duration) and "[secret]" or tostring(duration)
-            local secretI = Helpers.IsSecretValue(icon) and "[secret]" or tostring(icon)
-            QUI:DebugPrint(string_format(
-                "|cff34D399[TotemBar]|r slot=%d have=%s icon=%s dur=%s active=%s combat=%s",
-                slot, secretH, secretI, secretD, tostring(isActive),
-                tostring(InCombatLockdown())
-            ))
-        end
 
         if isActive then
             pcall(btn.icon.SetTexture, btn.icon, icon)

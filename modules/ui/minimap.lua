@@ -1703,19 +1703,27 @@ end
 
 local dungeonEyeOriginalParent = nil
 local dungeonEyeOriginalPoint = nil
-local dungeonEyeHooked = false
+local dungeonEyeOriginalUpdatePosition = nil
 
 local function RestoreDungeonEye()
     local btn = QueueStatusButton
     if not btn then return end
+
+    -- Restore original UpdatePosition so Blizzard can manage the button again
+    if dungeonEyeOriginalUpdatePosition then
+        btn.UpdatePosition = dungeonEyeOriginalUpdatePosition
+        dungeonEyeOriginalUpdatePosition = nil
+    end
 
     -- Restore original parent if we saved it
     if dungeonEyeOriginalParent then
         btn:SetParent(dungeonEyeOriginalParent)
     end
 
-    -- Restore original position if we saved it
-    if dungeonEyeOriginalPoint then
+    -- Let Blizzard re-anchor via its own method now that it's restored
+    if btn.UpdatePosition then
+        btn:UpdatePosition()
+    elseif dungeonEyeOriginalPoint then
         btn:ClearAllPoints()
         local point, relativeTo, relativePoint, x, y = unpack(dungeonEyeOriginalPoint)
         if point and relativePoint then
@@ -1729,7 +1737,6 @@ local function RestoreDungeonEye()
 end
 
 local function UpdateDungeonEyePosition()
-    if InCombatLockdown() and not inInitSafeWindow then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
@@ -1749,6 +1756,13 @@ local function UpdateDungeonEyePosition()
     end
 
     if eyeSettings.enabled then
+        -- Suppress Blizzard's UpdatePosition so it can't tear off our anchor.
+        -- QueueStatusButton is not a protected frame so this is taint-safe.
+        if not dungeonEyeOriginalUpdatePosition and btn.UpdatePosition then
+            dungeonEyeOriginalUpdatePosition = btn.UpdatePosition
+            btn.UpdatePosition = function() end
+        end
+
         -- Reparent to Minimap - Blizzard controls visibility based on queue status
         btn:SetParent(Minimap)
         btn:ClearAllPoints()
@@ -1777,25 +1791,6 @@ local function UpdateDungeonEyePosition()
     else
         -- Restore original position
         RestoreDungeonEye()
-    end
-end
-
-local function SetupDungeonEyeHook()
-    if dungeonEyeHooked then return end
-    if not QueueStatusButton then return end
-
-    -- TAINT SAFETY: Defer ALL addon logic to break taint chain from secure context.
-    -- Hook UpdatePosition to re-apply our positioning after Blizzard resets it
-    if QueueStatusButton.UpdatePosition then
-        hooksecurefunc(QueueStatusButton, "UpdatePosition", function()
-            C_Timer.After(0, function()
-                local settings = GetSettings()
-                if settings and settings.dungeonEye and settings.dungeonEye.enabled then
-                    UpdateDungeonEyePosition()
-                end
-            end)
-        end)
-        dungeonEyeHooked = true
     end
 end
 
@@ -3164,7 +3159,6 @@ function Minimap_Module:Initialize()
     UpdateButtonVisibility()
     SetupAddonButtonHiding()
     SetupButtonDrawer()
-    SetupDungeonEyeHook()
     UpdateDungeonEyePosition()
     SetupMouseWheelZoom()
     SetupMiddleClickMenu()

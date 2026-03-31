@@ -443,11 +443,20 @@ local function GetBestSpellCooldown(spellID)
         return nil, nil, bestDurObj, isActive
     end
     -- Secret fallback: no longer forward raw secrets to SetCooldown (12.0.5+).
-    -- Try hook cache DurationObject from Blizzard viewer children.
-    if secretStart and ns.CDMSpellData and ns.CDMSpellData.GetCachedDurObj then
-        local hookDurObj = ns.CDMSpellData:GetCachedDurObj(spellID)
-        if hookDurObj then
-            return nil, nil, hookDurObj, isActive
+    -- Query aura DurationObject from viewer child's auraInstanceID.
+    -- Validate aura still exists via GetAuraDataByAuraInstanceID (nil-check),
+    -- then get DurationObject for C-side display.
+    if secretStart and ns.CDMSpellData and ns.CDMSpellData.FindChildForSpellID then
+        local child = ns.CDMSpellData:FindChildForSpellID(spellID)
+        if child and child.auraInstanceID and C_UnitAuras.GetAuraDataByAuraInstanceID then
+            local cUnit = child.auraDataUnit or "player"
+            local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, cUnit, child.auraInstanceID)
+            if vok and vdata and C_UnitAuras.GetAuraDuration then
+                local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, cUnit, child.auraInstanceID)
+                if dok and durObj then
+                    return nil, nil, durObj, isActive
+                end
+            end
         end
     end
     return nil, nil, nil, isActive
@@ -843,83 +852,10 @@ end
 -- first updates the frames (next charge/aura change after BuildIcons).
 ---------------------------------------------------------------------------
 
-local function SyncStackText(state)
-    local icon = state.icon
-    if not icon then return end
-    -- Stale mapping guard: if the icon was remapped to a different
-    -- Blizzard child, this state is orphaned — skip to prevent
-    -- cross-icon stack contamination.
-    if state.blizzChild then
-        local entry = icon._spellEntry
-        if entry and entry._blizzChild and entry._blizzChild ~= state.blizzChild then
-            return
-        end
-    end
-    -- ChargeCount takes priority over Applications.
-    -- chargeText/appText may be secret values — use pcall for comparisons.
-    local hasCharge = state.chargeText ~= nil
-    if hasCharge then
-        local eqOk, eqResult = pcall(function() return state.chargeText == "" end)
-        if eqOk and eqResult then hasCharge = false end
-    end
-    local hasApp = state.appText ~= nil
-    if hasApp and not hasCharge then
-        local eqOk, eqResult = pcall(function() return state.appText == "" end)
-        if eqOk and eqResult then hasApp = false end
-    end
-
-    -- For cooldown icons, skip application stacks unless Blizzard is
-    -- actively showing the Applications frame (appVisible).  Without
-    -- this guard, cooldown icons show irrelevant aura stacks (e.g.,
-    -- Coagulating Blood on Death Strike).  When appVisible is true,
-    -- Blizzard considers the stacks relevant to this spell's display.
-    if hasApp and not hasCharge then
-        local entry = icon._spellEntry
-        if entry and not entry.isAura and not state.appVisible then
-            hasApp = false
-        end
-    end
-
-    -- Write when hooks provide actual content.  Only clear when
-    -- transitioning from content → empty (e.g., charged child recycled
-    -- to a non-charged spell).  Don't clear on repeated empty SetText
-    -- calls — Blizzard spams SetText("") on ChargeCount.Current for
-    -- every viewer child on every refresh (even buffs without charges),
-    -- which would race with the API path and cause flicker.
-    if hasCharge then
-        local entry = icon._spellEntry
-        -- For aura entries, ChargeCount represents the ability's charges
-        -- (e.g., Death Charge 1/2), not the aura's stacks.  Aura stacks
-        -- come from Applications or the API — never from ChargeCount.
-        if entry and entry.isAura then
-            hasCharge = false
-        else
-            -- Mirror the Blizzard viewer child's ChargeCount visibility.
-            -- chargeVisible tracks Show/Hide hooks — true when Blizzard's
-            -- refresh cycle called ChargeCount:Show(), false after Hide().
-            -- hookFresh covers the mid-cycle window: Blizzard calls
-            -- Hide→SetText→Show synchronously, so SetText fires before
-            -- Show restores chargeVisible.
-            local hookFresh = state.lastHookTime and (GetTime() - state.lastHookTime) < 0.1
-            if not state.chargeVisible and not hookFresh then
-                hasCharge = false
-            end
-        end
-    end
-    if hasCharge then
-        pcall(icon.StackText.SetText, icon.StackText, state.chargeText)
-        icon.StackText:Show()
-        state._hookHadContent = true
-    elseif hasApp then
-        pcall(icon.StackText.SetText, icon.StackText, state.appText)
-        icon.StackText:Show()
-        state._hookHadContent = true
-    elseif state._hookHadContent then
-        icon.StackText:SetText("")
-        icon.StackText:Hide()
-        state._hookHadContent = false
-    end
-end
+-- SyncStackText is no longer used — Show/Hide/SetText hooks forward
+-- directly to the icon's StackText. Kept as a no-op so existing hook
+-- callbacks that reference it don't error.
+local function SyncStackText(state) end
 
 --- Check whether hooks are actively driving stack text for an icon.
 --- When true, API-based stack writes in UpdateIconCooldown should yield
@@ -973,95 +909,70 @@ local function HookBlizzStackText(icon, blizzChild)
         local chargeFrame = blizzChild.ChargeCount
         local appFrame = blizzChild.Applications
 
-        -- Hook ChargeCount (e.g., DH Soul Fragments on Soul Cleave)
-        -- Only SetText hooks drive the display — Show/Hide track visibility
-        -- state but do NOT call SyncStackText.  Blizzard's viewer refresh
-        -- cycle (RefreshSpellChargeInfo) calls Hide→SetText→Show in sequence
-        -- on every UNIT_AURA event.  Calling SyncStackText from Hide clears
-        -- _hookHadContent, defeats IsHookStackActive, and causes the API path
-        -- to overwrite — creating a clear/set alternation flicker every tick.
-        -- Show calls SyncStackText so resource overlays (Soul Fragments,
-        -- Holy Power) update after chargeVisible is restored.  Hide does NOT
-        -- call SyncStackText — the three calls are synchronous in the same
-        -- frame, so _hookHadContent is restored before the next batch tick.
+        -- Hook ChargeCount (e.g., charged spells, dynamic transforms like
+        -- Mind Blast → Void Blast). Show/Hide forward directly to control
+        -- StackText visibility. SetText forwards the charge count blindly.
+        -- Blizzard uses Show/Hide on ChargeCount to toggle charge display.
         if chargeFrame then
             hooksecurefunc(chargeFrame, "Show", function()
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
-                s.chargeVisible = true
-                SyncStackText(s)
+                local entry = s.icon._spellEntry
+                if entry and entry._blizzChild ~= blizzChild then return end
+                if entry and entry.isAura then return end
+                s.icon.StackText:Show()
             end)
             hooksecurefunc(chargeFrame, "Hide", function()
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
-                s.chargeVisible = false
+                local entry = s.icon._spellEntry
+                if entry and entry._blizzChild ~= blizzChild then return end
+                s.icon.StackText:Hide()
             end)
             if chargeFrame.Current then
                 hooksecurefunc(chargeFrame.Current, "SetText", function(_, text)
                     local s = blizzStackState[blizzChild]
                     if not s or not s.icon then return end
-                    s.lastHookTime = GetTime()
+                    local entry = s.icon._spellEntry
+                    if entry and entry._blizzChild ~= blizzChild then return end
+                    if entry and entry.isAura then return end
+                    -- Mark hook as active so the tick update uses
+                    -- cooldownChargesCount (gated) instead of the API path.
                     s.chargeText = text
-                    SyncStackText(s)
+                    s.lastHookTime = GetTime()
                 end)
             end
         end
 
         -- Hook Applications (e.g., Soul Fragments, Renewing Mists stacks)
-        -- Same pattern as ChargeCount: Show calls SyncStackText so the
-        -- appVisible condition passes after Hide→SetText→Show.  Hide does
-        -- NOT call SyncStackText to avoid clear/set flicker.
+        -- Same direct forwarding pattern as ChargeCount.
         if appFrame then
             hooksecurefunc(appFrame, "Show", function()
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
-                s.appVisible = true
-                SyncStackText(s)
+                local entry = s.icon._spellEntry
+                if entry and entry._blizzChild ~= blizzChild then return end
+                s.icon.StackText:Show()
             end)
             hooksecurefunc(appFrame, "Hide", function()
                 local s = blizzStackState[blizzChild]
                 if not s or not s.icon then return end
-                s.appVisible = false
+                local entry = s.icon._spellEntry
+                if entry and entry._blizzChild ~= blizzChild then return end
+                s.icon.StackText:Hide()
             end)
             if appFrame.Applications then
                 hooksecurefunc(appFrame.Applications, "SetText", function(_, text)
                     local s = blizzStackState[blizzChild]
                     if not s or not s.icon then return end
-                    s.lastHookTime = GetTime()
-                    s.appText = text
-                    SyncStackText(s)
+                    local entry = s.icon._spellEntry
+                    if entry and entry._blizzChild ~= blizzChild then return end
+                    pcall(s.icon.StackText.SetText, s.icon.StackText, text)
                 end)
             end
         end
     end
 
-    -- Seed ChargeCount state, but only if the child actually belongs to
-    -- this icon's spell.  Viewer children may be stale from a previous
-    -- assignment — validate via _resolvedIDs before reading.
-    local chargeFrame = blizzChild.ChargeCount
-    if chargeFrame and icon._spellEntry then
-        local sid = icon._spellEntry.overrideSpellID or icon._spellEntry.spellID or icon._spellEntry.id
-        local ids = blizzChild._resolvedIDs
-        local childMatchesSpell = false
-        if sid and ids then
-            for k = 1, #ids do
-                if ids[k] == sid then childMatchesSpell = true; break end
-            end
-        end
-        if childMatchesSpell then
-            local okS, vis = pcall(chargeFrame.IsShown, chargeFrame)
-            if okS and not IsSecretValue(vis) and vis then
-                state.chargeVisible = true
-            end
-            if chargeFrame.Current then
-                local okT, txt = pcall(chargeFrame.Current.GetText, chargeFrame.Current)
-                if okT and txt and not IsSecretValue(txt) then
-                    state.chargeText = txt
-                end
-            end
-        end
-    end
-    SyncStackText(state)
 end
 
 local function UnhookBlizzStackText(icon)
@@ -1784,21 +1695,8 @@ local function UpdateIconCooldown(icon)
                         icon._auraActive = true
                         icon._auraUnit = r.auraUnit
 
-                        -- Swipe priority: durObj → hookDurObj → raw start/dur
-                        local swipeSet = false
                         if icon.Cooldown and r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
                             pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
-                            pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                            swipeSet = true
-                        end
-                        if not swipeSet and icon.Cooldown and r.hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
-                            pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.hookDurObj, true)
-                            pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                            swipeSet = true
-                        end
-                        if not swipeSet and icon.Cooldown and r.hookStart and r.hookDur
-                           and IsSafeNumeric(r.hookStart) and IsSafeNumeric(r.hookDur) then
-                            pcall(icon.Cooldown.SetCooldown, icon.Cooldown, r.hookStart, r.hookDur)
                             pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
                         end
 
@@ -1836,24 +1734,19 @@ local function UpdateIconCooldown(icon)
                         ReapplySwipeStyle(icon.Cooldown, icon)
                         return  -- Aura path complete
                     else
-                        -- Combat debounce: if hook cache still has data for this
-                        -- spell, Blizzard's viewer child hasn't been hidden/cleared
-                        -- yet — the aura is still present.  isActive detection can
-                        -- briefly return false due to auraInstanceID nil-check
-                        -- timing races with the viewer update cycle.  Skip the
-                        -- inactive transition to prevent the entire icon from
-                        -- flickering (visibility code hides icon when _auraActive
-                        -- is false).  Once Blizzard actually expires the aura, the
-                        -- Hide/Clear hooks clear the cache and the next tick
-                        -- transitions cleanly.
-                        if InCombatLockdown() and (r.hookDurObj or (r.hookStart and r.hookDur)) then
-                            return  -- transient miss, keep current icon state
-                        end
                         icon._auraActive = false
                         if icon.Cooldown then icon.Cooldown:Clear() end
 
-                        icon.StackText:SetText("")
-                        icon.StackText:Hide()
+                        -- Only clear stack text if the charge hook isn't driving.
+                        -- Dynamic charge spells (Mind Blast → Void Blast) have
+                        -- their StackText set by the ChargeCount.SetText hook.
+                        local _auraClearBss = entry._blizzChild and blizzStackState[entry._blizzChild]
+                        local _auraChargeHook = _auraClearBss and _auraClearBss.lastHookTime
+                            and (GetTime() - _auraClearBss.lastHookTime) < 2
+                        if not _auraChargeHook then
+                            icon.StackText:SetText("")
+                            icon.StackText:Hide()
+                        end
                         return  -- Aura path complete
                     end
                 end
@@ -1957,38 +1850,17 @@ local function UpdateIconCooldown(icon)
                         _ncAuraActive = true
                         icon._auraActive = true
                         icon._auraUnit = r.auraUnit
-                        if icon.Cooldown then
-                            local swipeSet = false
-                            if r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
-                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
-                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                                swipeSet = true
-                            end
-                            if not swipeSet and r.hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
-                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.hookDurObj, true)
-                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                                swipeSet = true
-                            end
-                            if not swipeSet and r.hookStart and r.hookDur
-                               and IsSafeNumeric(r.hookStart) and IsSafeNumeric(r.hookDur) then
-                                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, r.hookStart, r.hookDur)
-                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                            end
+                        if icon.Cooldown and r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
+                            pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
+                            pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
                             ReapplySwipeStyle(icon.Cooldown, icon)
                         end
                     else
-                        -- Combat debounce: hook cache still populated →
-                        -- transient miss, keep current aura state.
-                        if InCombatLockdown() and icon._auraActive
-                           and (r.hookDurObj or (r.hookStart and r.hookDur)) then
-                            _ncAuraActive = true
-                        else
-                            if icon._auraActive then
-                                icon._auraActive = false
-                                if icon.Cooldown then
-                                    pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
-                                    pcall(icon.Cooldown.Clear, icon.Cooldown)
-                                end
+                        if icon._auraActive then
+                            icon._auraActive = false
+                            if icon.Cooldown then
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
+                                pcall(icon.Cooldown.Clear, icon.Cooldown)
                             end
                         end
                     end
@@ -2069,39 +1941,17 @@ local function UpdateIconCooldown(icon)
                         _chargedAuraActive = true
                         icon._auraActive = true
                         icon._auraUnit = r.auraUnit
-                        -- Swipe priority: durObj → hookDurObj → raw start/dur
-                        if icon.Cooldown then
-                            local swipeSet = false
-                            if r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
-                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
-                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                                swipeSet = true
-                            end
-                            if not swipeSet and r.hookDurObj and icon.Cooldown.SetCooldownFromDurationObject then
-                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.hookDurObj, true)
-                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                                swipeSet = true
-                            end
-                            if not swipeSet and r.hookStart and r.hookDur
-                               and IsSafeNumeric(r.hookStart) and IsSafeNumeric(r.hookDur) then
-                                pcall(icon.Cooldown.SetCooldown, icon.Cooldown, r.hookStart, r.hookDur)
-                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
-                            end
+                        if icon.Cooldown and r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
+                            pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
+                            pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
                             ReapplySwipeStyle(icon.Cooldown, icon)
                         end
                     else
-                        -- Combat debounce: hook cache still populated means
-                        -- Blizzard hasn't cleared the child yet — transient miss.
-                        if InCombatLockdown() and icon._auraActive
-                           and (r.hookDurObj or (r.hookStart and r.hookDur)) then
-                            _chargedAuraActive = true
-                        else
-                            if icon._auraActive then
-                                icon._auraActive = false
-                                if icon.Cooldown then
-                                    pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
-                                    pcall(icon.Cooldown.Clear, icon.Cooldown)
-                                end
+                        if icon._auraActive then
+                            icon._auraActive = false
+                            if icon.Cooldown then
+                                pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
+                                pcall(icon.Cooldown.Clear, icon.Cooldown)
                             end
                         end
                     end
@@ -2165,6 +2015,7 @@ local function UpdateIconCooldown(icon)
         -- when it successfully forwards a DurationObject to our CooldownFrame.
         -- Charged entries are excluded: mirror hooks skip them (tSkipCharge).
         local mirrorActive = not entry.hasCharges
+            and not _chargeHookDriving
             and icon._durObjHookSync
             and (_batchTime - icon._durObjHookSync) < 10
 
@@ -2246,10 +2097,58 @@ local function UpdateIconCooldown(icon)
     -- hooks in the same frame — API writes would overwrite the correct
     -- hook-driven values, causing visible flicker every tick.
     local _hookActive = IsHookStackActive(entry, icon)
-    if _hookActive then
 
+
+    -- If the charge hook has fired recently for this icon, it's the sole
+    -- driver for stack text — skip the API path to prevent stale data
+    -- from overwriting the hook's live text (e.g., Mind Blast → Void Blast).
+    local _chargeHookDriving = false
+    if entry._blizzChild then
+        local bss = blizzStackState[entry._blizzChild]
+        if bss and bss.lastHookTime and (GetTime() - bss.lastHookTime) < 2 then
+            _chargeHookDriving = true
+        end
     end
-    if not _hookActive then
+    if _hookActive or _chargeHookDriving then
+        -- Forward the child's cooldownChargesCount directly to SetText.
+        -- This is Blizzard's live charge count, updated C-side. Secret in
+        -- combat but SetText accepts secrets natively.
+        -- Forward cooldownChargesCount from the Blizzard child.
+        -- Gate: cooldownChargesShown was true OOC (static charge spells
+        -- like Tentacle Slam), OR the live override spell has maxCharges > 1
+        -- (dynamic transforms like Mind Blast → Void Blast).
+        -- maxCharges is non-secret (12.0.5+). Single-charge spells (max=1)
+        -- like SW:D, Leap of Faith are excluded.
+        if _chargeHookDriving and entry._blizzChild then
+            local child = entry._blizzChild
+            local showCharges = entry._oocChargesShown
+            if not showCharges then
+                -- Check live override for dynamic charge gain.
+                -- GetOverrideSpell may return secret IDs — pcall the
+                -- entire check to avoid secret boolean tests.
+                pcall(function()
+                    local sid = entry.overrideSpellID or entry.spellID or entry.id
+                    if sid and C_Spell.GetOverrideSpell then
+                        local ovId = C_Spell.GetOverrideSpell(sid)
+                        if ovId and ovId ~= sid then
+                            local ci = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(ovId)
+                            if ci and ci.maxCharges and ci.maxCharges > 1 then
+                                showCharges = true
+                            end
+                        end
+                    end
+                end)
+            end
+            if showCharges then
+                local ccc = child.cooldownChargesCount
+                if ccc ~= nil then
+                    pcall(icon.StackText.SetText, icon.StackText, ccc)
+                    icon.StackText:Show()
+                end
+            end
+        end
+    end
+    if not _hookActive and not _chargeHookDriving then
         if entry.type == "item" then
             -- Item stack text was already set above in the cooldown section;
             -- nothing to do here — just prevent the else clause from clearing it.
@@ -2282,21 +2181,6 @@ local function UpdateIconCooldown(icon)
                 end
             end
 
-            -- Resource overlay count: read ChargeCount directly, gated on
-            -- IsShown.  Secret-safe (secret IsShown = treat as shown).
-            if not stackVal and not isMultiCharge and entry._blizzChild then
-                local cc = entry._blizzChild.ChargeCount
-                if cc and cc.Current then
-                    local okS, vis = pcall(cc.IsShown, cc)
-                    if okS then
-                        local skip = not IsSecretValue(vis) and vis == false
-                        if not skip then
-                            local okT, text = pcall(cc.Current.GetText, cc.Current)
-                            if okT and text then stackVal = text end
-                        end
-                    end
-                end
-            end
 
             -- Forward to C-side for display. Multi-charge spells always
             -- show their count (including "0" when depleted). Non-charge
@@ -2743,6 +2627,97 @@ function CDMIcons:BuildIcons(viewerType, container)
             MirrorBlizzCooldown(icon, entry._blizzChild)
             HookBlizzTexture(icon, entry._blizzChild)
             HookBlizzStackText(icon, entry._blizzChild)
+            -- Snapshot OOC charge display state for the tick-update gate.
+            -- cooldownChargesShown is secret in combat — pcall the comparison.
+            -- Only set when not already snapshotted.
+            if entry._oocChargesShown == nil then
+                local ok, val = pcall(function() return entry._blizzChild.cooldownChargesShown == true end)
+                if ok then
+                    entry._oocChargesShown = val
+                end
+            end
+            -- DEBUG: child dump (safe for combat — checks secrets)
+            if QUI.DEBUG_MODE then
+                local child = entry._blizzChild
+                local sid = entry.overrideSpellID or entry.spellID or entry.id
+                local parts = {format("[CDM Child] %s (id=%s)", tostring(entry.name or "?"), tostring(sid))}
+                -- Charge-related fields
+                local fields = {"cooldownChargesCount", "cooldownChargesShown", "previousCooldownChargesCount",
+                    "cooldownShowSwipe", "cooldownEnabled", "cooldownPaused", "cooldownDesaturated",
+                    "isActive", "isOnGCD", "needsRangeCheck", "wasSetFromCharges", "wasSetFromAura",
+                    "wasSetFromCooldown", "wasSetFromEditMode", "hideWhenInactive", "allowHideWhenInactive"}
+                for _, f in ipairs(fields) do
+                    local v = child[f]
+                    if v ~= nil then
+                        if Helpers.IsSecretValue(v) then
+                            parts[#parts+1] = format(" %s=[s]", f)
+                        else
+                            parts[#parts+1] = format(" %s=%s", f, tostring(v))
+                        end
+                    end
+                end
+                -- ChargeCount sub-frame
+                local cc = child.ChargeCount
+                if cc then
+                    local ccShownStr = "?"
+                    pcall(function()
+                        local v = cc:IsShown()
+                        ccShownStr = Helpers.IsSecretValue(v) and "[s]" or tostring(v)
+                    end)
+                    local ccTextStr = "n/a"
+                    if cc.Current then
+                        pcall(function()
+                            local t = cc.Current:GetText()
+                            ccTextStr = Helpers.IsSecretValue(t) and "[s]" or tostring(t or "nil")
+                        end)
+                    end
+                    parts[#parts+1] = format(" CC:{shown=%s text=%s}", ccShownStr, ccTextStr)
+                end
+                -- Applications sub-frame
+                local app = child.Applications
+                if app then
+                    local appShownStr = "?"
+                    pcall(function()
+                        local v = app:IsShown()
+                        appShownStr = Helpers.IsSecretValue(v) and "[s]" or tostring(v)
+                    end)
+                    local appTextStr = "n/a"
+                    if app.Applications then
+                        pcall(function()
+                            local t = app.Applications:GetText()
+                            appTextStr = Helpers.IsSecretValue(t) and "[s]" or tostring(t or "nil")
+                        end)
+                    end
+                    parts[#parts+1] = format(" App:{shown=%s text=%s}", appShownStr, appTextStr)
+                end
+                -- GetSpellCharges for base and override spell
+                if sid and C_Spell.GetSpellCharges then
+                    local ci = C_Spell.GetSpellCharges(sid)
+                    if ci then
+                        local maxC = ci.maxCharges
+                        local curC = ci.currentCharges
+                        local maxStr = (maxC and not Helpers.IsSecretValue(maxC)) and tostring(maxC) or "[s]"
+                        local curStr = (curC and not Helpers.IsSecretValue(curC)) and tostring(curC) or "[s]"
+                        parts[#parts+1] = format(" Charges(base):{max=%s cur=%s}", maxStr, curStr)
+                    end
+                    -- Override spell charges
+                    if C_Spell.GetOverrideSpell then
+                        local ovOk, ovId = pcall(C_Spell.GetOverrideSpell, sid)
+                        if ovOk and ovId and ovId ~= sid then
+                            local oci = C_Spell.GetSpellCharges(ovId)
+                            local ovrStr = Helpers.IsSecretValue(ovId) and "[s]" or tostring(ovId)
+                            if oci then
+                                local oMaxStr = (oci.maxCharges and not Helpers.IsSecretValue(oci.maxCharges)) and tostring(oci.maxCharges) or "[s]"
+                                local oCurStr = (oci.currentCharges and not Helpers.IsSecretValue(oci.currentCharges)) and tostring(oci.currentCharges) or "[s]"
+                                parts[#parts+1] = format(" Charges(ovr=%s):{max=%s cur=%s}", ovrStr, oMaxStr, oCurStr)
+                            else
+                                parts[#parts+1] = format(" Charges(ovr=%s):nil", ovrStr)
+                            end
+                        end
+                    end
+                end
+                QUI:DebugPrint(table.concat(parts))
+            end
             -- Buff icons are always auras — initialize _auraActive so the
             -- swipe module classifies them correctly before the
             -- SetCooldownFromDurationObject hook fires.

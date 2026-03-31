@@ -1132,7 +1132,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
         end
 
         -- Bar fill via DurationObject
-        local durObj = r.durObj or r.hookDurObj
+        local durObj = r.durObj
         if durObj then
             bar._durObj = durObj
             local mirrorFillActive = bar._lastMirrorFill

@@ -3041,6 +3041,31 @@ local function CreateHeaders()
         groupHeader:SetMovable(true)
         groupHeader:SetClampedToScreen(true)
 
+        -- Set child layout attributes BEFORE pre-creation Show() so the
+        -- SecureGroupHeaderTemplate positions children correctly on the
+        -- very first layout pass.  Without this, children get the template's
+        -- default positioning and may not fully reposition on /reload.
+        local layoutDB = GetLayoutSettings(true)
+        local preGrow = layoutDB and layoutDB.growDirection or "DOWN"
+        local preSpacing = layoutDB and layoutDB.spacing or 2
+        if preGrow == "DOWN" then
+            groupHeader:SetAttribute("point", "TOP")
+            groupHeader:SetAttribute("xOffset", 0)
+            groupHeader:SetAttribute("yOffset", -preSpacing)
+        elseif preGrow == "UP" then
+            groupHeader:SetAttribute("point", "BOTTOM")
+            groupHeader:SetAttribute("xOffset", 0)
+            groupHeader:SetAttribute("yOffset", preSpacing)
+        elseif preGrow == "RIGHT" then
+            groupHeader:SetAttribute("point", "LEFT")
+            groupHeader:SetAttribute("xOffset", preSpacing)
+            groupHeader:SetAttribute("yOffset", 0)
+        elseif preGrow == "LEFT" then
+            groupHeader:SetAttribute("point", "RIGHT")
+            groupHeader:SetAttribute("xOffset", -preSpacing)
+            groupHeader:SetAttribute("yOffset", 0)
+        end
+
         -- Pre-create 5 children per group header (40 total across 8 headers).
         -- Force showPlayer + showSolo so the header has at least 1 managed unit.
         groupHeader:SetAttribute("showPlayer", true)

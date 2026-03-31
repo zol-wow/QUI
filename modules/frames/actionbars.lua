@@ -313,6 +313,9 @@ function ActionBarsOwned.SafeUpdate(self)
                 pcall(ActionButton_StopFlash, self)
             end
         end
+        -- Clean up overlays that belong to the departed action
+        UpdateAssistedCombatRotationFrame(self)
+        ActionBarsOwned.UpdateOverlayGlow(self)
     end
 end
 
@@ -1031,12 +1034,27 @@ end
 -- refresh button visuals after the secure handler completes.
 local function OwnedButton_PostDrag(self)
     ActionBarsOwned.SafeUpdate(self)
-    -- Slot data may lag by one frame after pickup/place
+    -- Immediate re-skin to prevent blank flash between SafeUpdate stripping
+    -- Blizzard artwork and the deferred SkinButton restoring QUI textures.
+    local bk = GetBarKeyFromButton(self)
+    local s = bk and GetEffectiveSettings(bk)
+    if s then
+        local st = GetFrameState(self)
+        st.sk_sz = nil
+        SkinButton(self, s)
+        UpdateButtonText(self, s)
+        UpdateEmptySlotVisibility(self, s)
+    end
+    -- Slot data may lag by one frame after pickup/place — refresh again
     C_Timer.After(0, function()
         ActionBarsOwned.SafeUpdate(self)
-        local bk = GetBarKeyFromButton(self)
-        local s = bk and GetEffectiveSettings(bk)
-        if s then UpdateEmptySlotVisibility(self, s) end
+        if s then
+            local st = GetFrameState(self)
+            st.sk_sz = nil
+            SkinButton(self, s)
+            UpdateButtonText(self, s)
+            UpdateEmptySlotVisibility(self, s)
+        end
     end)
 end
 
@@ -3430,24 +3448,22 @@ end
 UpdateAssistedCombatRotationFrame = function(button)
     if not (C_ActionBar and C_ActionBar.IsAssistedCombatAction) then return end
     local action = button.action
-    if not action or not HasAction(action) then
-        local frame = button.AssistedCombatRotationFrame
-        if frame then frame:Hide() end
-        return
+    local ok, show = false, false
+    if action and HasAction(action) then
+        ok, show = pcall(C_ActionBar.IsAssistedCombatAction, action)
+        if not ok then show = false end
     end
-    local ok, show = pcall(C_ActionBar.IsAssistedCombatAction, action)
-    if not ok then show = false end
     local frame = button.AssistedCombatRotationFrame
+    -- Only create the template frame when needed (first time it should show).
     if show and not frame then
         frame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatRotationTemplate")
         button.AssistedCombatRotationFrame = frame
     end
+    -- Always delegate to UpdateState — the template manages its own
+    -- show/hide and has internal event handlers that can re-show the
+    -- frame if we only call Hide() manually.
     if frame then
-        if show then
-            frame:UpdateState()
-        else
-            frame:Hide()
-        end
+        frame:UpdateState()
     end
 end
 
@@ -3701,6 +3717,10 @@ abSlotFrame:SetScript("OnUpdate", function(self)
                 if not InCombatLockdown() then
                     local settings = GetEffectiveSettings(barKey)
                     if settings then
+                        local st = GetFrameState(btn)
+                        st.sk_sz = nil
+                        SkinButton(btn, settings)
+                        UpdateButtonText(btn, settings)
                         UpdateEmptySlotVisibility(btn, settings)
                     end
                 end
@@ -4765,7 +4785,9 @@ end
 
 -- Apply QUI skin to a single button
 SkinButton = function(button, settings)
-    if not button or not settings or not settings.skinEnabled then return end
+    if not button or not settings or not settings.skinEnabled then
+        return
+    end
     local state = GetFrameState(button)
 
     -- Skip if already skinned with same settings (direct field comparison,
