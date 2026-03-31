@@ -1438,27 +1438,42 @@ local function SetOwnedBarAlpha(barKey, alpha)
     container:SetAlpha(alpha)
 
     if buttons then
-        -- At full alpha QUI textures should be visible; below full alpha
-        -- they must be hidden because ADD/MOD blend textures (gloss,
-        -- tintOverlay) do not inherit parent alpha, and MOD textures
-        -- don't fade linearly (they approach white, not transparent).
-        -- Hiding all QUI overlay textures during the fade keeps the
-        -- button clean — only the icon + Blizzard chrome fade smoothly.
-        local fullyHidden = alpha <= 0
-        local fading = alpha < 1
-
         for _, btn in ipairs(buttons) do
             local state = GetFrameState(btn)
-            if fullyHidden or state.hiddenEmpty or fading then
+            local hidden = alpha <= 0 or state.hiddenEmpty
+            if hidden then
+                -- Fully invisible: hide all QUI textures + effects so
+                -- ADD/MOD blend textures don't bleed through at alpha 0.
                 if not state.fadeHidden then
                     FadeHideTextures(state, btn)
                 end
-            elseif state.fadeHidden then
-                FadeShowTextures(state, btn)
-                -- Restore button-level alpha: UpdateEmptySlotVisibility or
-                -- prior fade cycles may have set it to 0.  The container
-                -- handles the actual fade opacity.
-                btn:SetAlpha(1)
+            else
+                if state.fadeHidden then
+                    FadeShowTextures(state, btn)
+                    -- Restore button-level alpha that
+                    -- UpdateEmptySlotVisibility may have set to 0.
+                    btn:SetAlpha(1)
+                end
+                -- Container alpha handles BLEND textures (icon, backdrop,
+                -- border) via normal inheritance.  ADD/MOD textures ignore
+                -- parent alpha — hide them while fading, show at full alpha.
+                -- MOD blend fades toward white (not transparent), so
+                -- SetAlpha looks wrong; clean hide/show is better.
+                if alpha < 1 then
+                    if state.gloss and state.gloss:IsShown() then
+                        state.gloss:Hide(); state._fadeGloss = true
+                    end
+                    if state.tintOverlay and state.tintOverlay:IsShown() then
+                        state.tintOverlay:Hide(); state._fadeTint = true
+                    end
+                else
+                    if state._fadeGloss and state.gloss then
+                        state.gloss:Show(); state._fadeGloss = nil
+                    end
+                    if state._fadeTint and state.tintOverlay then
+                        state.tintOverlay:Show(); state._fadeTint = nil
+                    end
+                end
             end
         end
     end
