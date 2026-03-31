@@ -1898,6 +1898,7 @@ local function UpdateIconCooldown(icon)
                             if icon.Cooldown then
                                 pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                                 pcall(icon.Cooldown.Clear, icon.Cooldown)
+                                ReapplySwipeStyle(icon.Cooldown, icon)
                             end
                         end
                     end
@@ -1994,6 +1995,7 @@ local function UpdateIconCooldown(icon)
                             if icon.Cooldown then
                                 pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                                 pcall(icon.Cooldown.Clear, icon.Cooldown)
+                                ReapplySwipeStyle(icon.Cooldown, icon)
                             end
                         end
                     end
@@ -2089,13 +2091,20 @@ local function UpdateIconCooldown(icon)
             else
             end
 
-            -- Reapply swipe styling when GCD state transitions so
-            -- SetDrawSwipe and colors update (e.g., GCD → cooldown mode
-            -- re-hides the swipe when radial darkening is off).
+            -- Reapply swipe styling when GCD or cooldown-active state
+            -- transitions so SetDrawSwipe/SetDrawEdge and colors update.
+            -- GCD transition: e.g., GCD → cooldown mode re-hides the swipe
+            -- when radial darkening is off.
+            -- isActive transition: ensures edge/color switches correctly
+            -- when a cooldown starts (ready → active) or ends (active → ready)
+            -- without waiting for a mirror hook that may not fire.
             local prevGCD = icon._wasOnGCD or false
             local curGCD = icon._isOnGCD or false
-            if prevGCD ~= curGCD then
+            local prevActive = icon._wasApiActive
+            local curActive = apiIsActive
+            if prevGCD ~= curGCD or prevActive ~= curActive then
                 icon._wasOnGCD = curGCD
+                icon._wasApiActive = curActive
                 ReapplySwipeStyle(icon.Cooldown, icon)
             end
 
