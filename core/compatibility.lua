@@ -520,6 +520,19 @@ function QUI:BackwardsCompat()
         MigrateUnitFrames(self.db.profile)
     end
 
+    if self.db and self.db.profile and self.db.profile.quiGroupFrames then
+        local gf = self.db.profile.quiGroupFrames
+        if gf.selfFirst ~= nil then
+            if gf.partySelfFirst == nil then
+                gf.partySelfFirst = gf.selfFirst
+            end
+            if gf.raidSelfFirst == nil then
+                gf.raidSelfFirst = gf.selfFirst
+            end
+            gf.selfFirst = nil
+        end
+    end
+
     -- Remove orphaned keys that no longer have runtime consumers
     if self.db and self.db.profile then
         CleanOrphanKeys(self.db.profile)
