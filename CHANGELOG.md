@@ -4,6 +4,47 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v2.56.0-alpha.5
+
+### CDM (Cooldown Manager)
+- **Removed hook cache layer** (~500 lines) — aura detection now uses direct `C_UnitAuras.GetAuraDuration` queries via the child's `auraInstanceID`, eliminating stale cache bugs
+- Unified OOC/combat aura resolution into a single code path
+- Fixed charge display for dynamic transforms (Mind Blast → Void Blast) — uses `GetSpellCharges` on base spell ID which updates dynamically when override gains charges
+- Fixed hook empty-text spam — ChargeCount/Applications `SetText("")` no longer overwrites valid stack text
+- Fixed Applications hook forwarding "0" from buff viewer overwriting charge count on charged entries
+- Fixed charged aura path blocking normal cooldown when no DurationObject available — falls through to recharge swipe
+- Replaced `SyncStackText` with direct Show/Hide/SetText forwarding from Blizzard hooks
+- Removed debug child dump logging
+- Composer: refresh add list after restore/remove/hide/unhide dormant entries
+
+### Performance
+- Reduced action bar CPU overhead in combat with 7 targeted optimizations
+- Reduced addon-wide CPU overhead: gate hidden-element processing, eliminate hot-path allocations, O(1) glow dispatch
+
+### New Features
+- Active Atonement counter (Discipline Priest tracker)
+- Per-spec text settings for secondary resource bar
+- Configurable text positioning, row spacing, and section headers for buff/debuff frames
+- Invert swipe darkening toggles for buff and debuff frames
+
+### Action Bars
+- Immediate SkinButton + UpdateButtonText on drag to prevent blank flash
+- AssistedCombatRotationFrame cleanup on empty slots
+- Renamed internal secure attributes to kebab-case convention
+- Slot change handler now re-skins buttons
+
+### Group Frames
+- Set child layout attributes before pre-creation Show() so SecureGroupHeaderTemplate positions children correctly on first layout pass
+
+### Buff/Debuff Frames
+- Allow owned engine icon/bar layout during edit mode (Composer add/remove repositions immediately)
+
+### Fixes
+- Fixed castbar border regression
+- Fixed dungeon portals mapping
+- Fixed Blizzard mover in QUI-next
+- Minimap: replaced dungeon eye hooksecurefunc with direct UpdatePosition override
+
 ## v2.56.0-alpha.4
 
 ### New: Consumable Macros
