@@ -25,6 +25,7 @@ local math_max = math.max
 local table_insert = table.insert
 local table_remove = table.remove
 local wipe = wipe
+local CopyTable = CopyTable
 local pairs = pairs
 local ipairs = ipairs
 local pcall = pcall
@@ -85,6 +86,9 @@ local BASE_CROP = 0.08  -- Standard WoW icon crop
 
 -- Performance: reusable scratch table for LayoutVisibleIcons (avoids per-call allocation)
 local _visibleIconsScratch = {}
+
+-- Forward declaration: shared by startup registration and dynamic tracker creation
+local RegisterTrackerLayoutElement
 
 -- Forward declaration: tracks whether active state events are needed
 -- (set by UpdateEventRegistrations, checked by aura dispatcher subscription)
@@ -356,6 +360,102 @@ local function GetAllClassSpecs()
     end
     
     return specs
+end
+
+local function GetTrackerBarConfigAndIndex(barID)
+    local db = GetDB()
+    if not db or not db.bars or not barID then
+        return nil, nil
+    end
+
+    for index, barConfig in ipairs(db.bars) do
+        if barConfig.id == barID then
+            return barConfig, index
+        end
+    end
+
+    return nil, nil
+end
+
+local function GetNextTrackerBarName()
+    local db = GetDB()
+    local usedNames = {}
+
+    if db and db.bars then
+        for _, barConfig in ipairs(db.bars) do
+            if type(barConfig.name) == "string" and barConfig.name ~= "" then
+                usedNames[barConfig.name] = true
+            end
+        end
+    end
+
+    local index = 1
+    while true do
+        local candidate = "Tracker " .. index
+        if not usedNames[candidate] then
+            return candidate
+        end
+        index = index + 1
+    end
+end
+
+local function CreateFreshBarConfig(barID, displayName)
+    local defaults = ns.defaults
+        and ns.defaults.profile
+        and ns.defaults.profile.customTrackers
+        and ns.defaults.profile.customTrackers.bars
+    local template = defaults and defaults[1]
+    local barConfig = (template and CopyTable and CopyTable(template)) or {
+        enabled = false,
+        locked = false,
+        offsetX = -406,
+        offsetY = -152,
+        growDirection = "RIGHT",
+        iconSize = 28,
+        spacing = 4,
+        borderSize = 2,
+        aspectRatioCrop = 1.0,
+        zoom = 0,
+        durationSize = 13,
+        durationColor = {1, 1, 1, 1},
+        durationAnchor = "CENTER",
+        durationOffsetX = 0,
+        durationOffsetY = 0,
+        hideDurationText = false,
+        stackSize = 9,
+        stackColor = {1, 1, 1, 1},
+        stackAnchor = "BOTTOMRIGHT",
+        stackOffsetX = 3,
+        stackOffsetY = -1,
+        hideStackText = false,
+        showItemCharges = true,
+        bgOpacity = 0,
+        bgColor = {0, 0, 0, 1},
+        hideGCD = true,
+        hideNonUsable = false,
+        showOnlyOnCooldown = false,
+        showOnlyWhenActive = false,
+        showOnlyWhenOffCooldown = false,
+        showOnlyInCombat = false,
+        clickableIcons = false,
+        showActiveState = true,
+        activeGlowEnabled = true,
+        activeGlowType = "Pixel Glow",
+        activeGlowColor = {1, 0.85, 0.3, 1},
+        entries = {},
+    }
+
+    barConfig.id = barID
+    barConfig.name = displayName or GetNextTrackerBarName()
+    barConfig.enabled = true
+    barConfig.entries = {}
+    barConfig.specSpecificSpells = false
+
+    if barConfig.dynamicLayout and barConfig.clickableIcons then
+        barConfig.clickableIcons = false
+    end
+
+    return barConfig
 end
 
 -- Get entries for a bar, resolving spec-specific storage if enabled
@@ -2594,6 +2694,79 @@ function CustomTrackers:RefreshAll()
     end
 end
 
+function CustomTrackers:CreateNewBar(displayName)
+    local db = GetDB()
+    if not db then
+        return nil, nil, "Custom tracker database is not available."
+    end
+
+    db.bars = db.bars or {}
+
+    local core = GetCore()
+    local barID = (core and core.GenerateUniqueTrackerID and core:GenerateUniqueTrackerID())
+        or ("tracker" .. tostring(GetTime()):gsub("%D", ""))
+    local barConfig = CreateFreshBarConfig(barID, displayName)
+
+    table_insert(db.bars, barConfig)
+    self:CreateBar(barID, barConfig)
+
+    if self.UpdateEventRegistrations then
+        self.UpdateEventRegistrations()
+    end
+
+    self:RegisterDynamicLayoutElement(barID)
+
+    if ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAllFrameTargets then
+        ns.QUI_Anchoring:RegisterAllFrameTargets()
+    end
+    if _G.QUI_ApplyAllFrameAnchors then
+        _G.QUI_ApplyAllFrameAnchors()
+    end
+    if _G.QUI_RefreshCustomTrackersVisibility then
+        _G.QUI_RefreshCustomTrackersVisibility()
+    end
+
+    return barConfig, #db.bars
+end
+
+function CustomTrackers:RegisterDynamicLayoutElement(barID)
+    local elementKey = RegisterTrackerLayoutElement and RegisterTrackerLayoutElement(barID)
+    local uiModule = ns.QUI_LayoutMode_UI
+    if uiModule and uiModule._RebuildDrawer then
+        uiModule:_RebuildDrawer()
+    end
+    return elementKey
+end
+
+function CustomTrackers:UnregisterDynamicLayoutElement(barID)
+    if type(barID) ~= "string" or barID == "" then
+        return
+    end
+
+    local elementKey = "customTracker:" .. barID
+    local um = ns.QUI_LayoutMode
+    if um then
+        um:UnregisterElement(elementKey)
+    end
+
+    local settingsPanel = ns.QUI_LayoutMode_Settings
+    if settingsPanel and settingsPanel._providers then
+        settingsPanel._providers[elementKey] = nil
+        if settingsPanel._currentKey == elementKey then
+            settingsPanel._currentKey = nil
+        end
+    end
+
+    if ns.FRAME_ANCHOR_INFO then
+        ns.FRAME_ANCHOR_INFO[elementKey] = nil
+    end
+
+    local uiModule = ns.QUI_LayoutMode_UI
+    if uiModule and uiModule._RebuildDrawer then
+        uiModule:_RebuildDrawer()
+    end
+end
+
 local function ProcessPendingBarOperations()
     if InCombatLockdown() then return end
 
@@ -3578,7 +3751,7 @@ end
 ---------------------------------------------------------------------------
 
 --- Register a settings provider for a custom tracker bar in layout mode.
---- Called from both startup registration and dynamic "Add CDM Bar" button.
+--- Called from both startup registration and dynamic tracker creation.
 local function RegisterCustomTrackerProvider(barID, elementKey)
     local settingsPanel = ns.QUI_LayoutMode_Settings
     if not settingsPanel then return end
@@ -3968,6 +4141,110 @@ local function RegisterCustomTrackerProvider(barID, elementKey)
     end })
 end
 
+RegisterTrackerLayoutElement = function(barID)
+    local barConfig, order = GetTrackerBarConfigAndIndex(barID)
+    if not barConfig then return nil end
+
+    local elementKey = "customTracker:" .. barID
+    local capturedID = barID
+    local um = ns.QUI_LayoutMode
+
+    if um then
+        um:RegisterElement({
+            key = elementKey,
+            label = barConfig.name or ("Tracker " .. order),
+            group = "Cooldown Manager & Custom Tracker Bars",
+            order = order,
+            isOwned = false,  -- proxy mover (LOW strata)
+            getSize = function()
+                -- Compute size from config to avoid feedback loop
+                -- (frame may be reparented to mover via SetAllPoints)
+                local db2 = GetDB()
+                if not db2 or not db2.bars then return nil end
+                local cfg = nil
+                for _, bc in ipairs(db2.bars) do
+                    if bc.id == capturedID then cfg = bc; break end
+                end
+                if not cfg or not cfg.entries then return nil end
+                local iconSize = cfg.iconSize or 28
+                local spacing = cfg.spacing or 4
+                local numEntries = #cfg.entries
+                if numEntries == 0 then numEntries = 1 end
+                local crop = cfg.aspectRatioCrop or 1.0
+                local iconW = iconSize
+                local iconH = math.floor(iconSize / crop + 0.5)
+                local dir = cfg.growDirection or "RIGHT"
+                if dir == "RIGHT" or dir == "LEFT" or dir == "CENTER" then
+                    return iconW * numEntries + spacing * (numEntries - 1), iconH
+                else
+                    return iconW, iconH * numEntries + spacing * (numEntries - 1)
+                end
+            end,
+            isEnabled = function()
+                local db2 = GetDB()
+                if not db2 or not db2.bars then return false end
+                for _, bc in ipairs(db2.bars) do
+                    if bc.id == capturedID then return bc.enabled ~= false end
+                end
+                return false
+            end,
+            setEnabled = function(val)
+                local db2 = GetDB()
+                if not db2 or not db2.bars then return end
+                for _, bc in ipairs(db2.bars) do
+                    if bc.id == capturedID then
+                        bc.enabled = val
+                        break
+                    end
+                end
+                -- Show/hide the bar
+                local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                if bar then
+                    if val then
+                        SetBarShownForPreview(bar, true)
+                    else
+                        SetBarShownForPreview(bar, false)
+                    end
+                end
+            end,
+            getFrame = function()
+                return CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+            end,
+            onOpen = function()
+                -- Show bar for preview during layout mode
+                local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                if bar then
+                    SetBarShownForPreview(bar, true)
+                    bar:SetAlpha(bar.config and bar.config.enabled and 1 or 0.5)
+                end
+            end,
+            onClose = function()
+                -- Restore normal visibility
+                local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                if bar then
+                    local shouldShow = bar.config and bar.config.enabled
+                    SetBarShownForPreview(bar, shouldShow == true)
+                    if shouldShow and bar:IsShown() then
+                        bar:SetAlpha(1)
+                    end
+                end
+            end,
+        })
+    end
+
+    RegisterCustomTrackerProvider(barID, elementKey)
+
+    if ns.FRAME_ANCHOR_INFO then
+        ns.FRAME_ANCHOR_INFO[elementKey] = {
+            displayName = barConfig.name or ("Tracker " .. order),
+            category = "Cooldown Manager & Custom Tracker Bars",
+            order = order,
+        }
+    end
+
+    return elementKey
+end
+
 -- Expose for dynamic registration
 CustomTrackers.RegisterProvider = RegisterCustomTrackerProvider
 
@@ -3976,9 +4253,6 @@ CustomTrackers.RegisterProvider = RegisterCustomTrackerProvider
 ---------------------------------------------------------------------------
 do
     local function RegisterLayoutModeElements()
-        local um = ns.QUI_LayoutMode
-        if not um then return end
-
         local function GetTrackerDB()
             local core = ns.Helpers.GetCore()
             return core and core.db and core.db.profile and core.db.profile.customTrackers
@@ -3988,104 +4262,10 @@ do
         if not trackerDB or not trackerDB.bars then return end
 
         -- Register each tracker bar from DB
-        for i, barConfig in ipairs(trackerDB.bars) do
+        for _, barConfig in ipairs(trackerDB.bars) do
             local barID = barConfig.id
             if barID then
-                local elementKey = "customTracker:" .. barID
-                local capturedID = barID
-
-                um:RegisterElement({
-                    key = elementKey,
-                    label = barConfig.name or ("CDM Bar " .. barID),
-                    group = "Cooldown Manager",
-                    order = i,
-                    isOwned = false,  -- proxy mover (LOW strata)
-                    getSize = function()
-                        -- Compute size from config to avoid feedback loop
-                        -- (frame may be reparented to mover via SetAllPoints)
-                        local db2 = GetTrackerDB()
-                        if not db2 or not db2.bars then return nil end
-                        local cfg = nil
-                        for _, bc in ipairs(db2.bars) do
-                            if bc.id == capturedID then cfg = bc; break end
-                        end
-                        if not cfg or not cfg.entries then return nil end
-                        local iconSize = cfg.iconSize or 28
-                        local spacing = cfg.spacing or 4
-                        local numEntries = #cfg.entries
-                        if numEntries == 0 then numEntries = 1 end
-                        local crop = cfg.aspectRatioCrop or 1.0
-                        local iconW = iconSize
-                        local iconH = math.floor(iconSize / crop + 0.5)
-                        local dir = cfg.growDirection or "RIGHT"
-                        if dir == "RIGHT" or dir == "LEFT" or dir == "CENTER" then
-                            return iconW * numEntries + spacing * (numEntries - 1), iconH
-                        else
-                            return iconW, iconH * numEntries + spacing * (numEntries - 1)
-                        end
-                    end,
-                    isEnabled = function()
-                        local db2 = GetTrackerDB()
-                        if not db2 or not db2.bars then return false end
-                        for _, bc in ipairs(db2.bars) do
-                            if bc.id == capturedID then return bc.enabled ~= false end
-                        end
-                        return false
-                    end,
-                    setEnabled = function(val)
-                        local db2 = GetTrackerDB()
-                        if not db2 or not db2.bars then return end
-                        for _, bc in ipairs(db2.bars) do
-                            if bc.id == capturedID then
-                                bc.enabled = val
-                                break
-                            end
-                        end
-                        -- Show/hide the bar
-                        local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
-                        if bar then
-                            if val then
-                                SetBarShownForPreview(bar, true)
-                            else
-                                SetBarShownForPreview(bar, false)
-                            end
-                        end
-                    end,
-                    getFrame = function()
-                        return CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
-                    end,
-                    onOpen = function()
-                        -- Show bar for preview during layout mode
-                        local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
-                        if bar then
-                            SetBarShownForPreview(bar, true)
-                            bar:SetAlpha(bar.config and bar.config.enabled and 1 or 0.5)
-                        end
-                    end,
-                    onClose = function()
-                        -- Restore normal visibility
-                        local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
-                        if bar then
-                            local shouldShow = bar.config and bar.config.enabled
-                            SetBarShownForPreview(bar, shouldShow == true)
-                            if shouldShow and bar:IsShown() then
-                                bar:SetAlpha(1)
-                            end
-                        end
-                    end,
-                })
-
-                -- Register settings provider
-                RegisterCustomTrackerProvider(barID, elementKey)
-
-                -- Add to FRAME_ANCHOR_INFO
-                if ns.FRAME_ANCHOR_INFO then
-                    ns.FRAME_ANCHOR_INFO[elementKey] = {
-                        displayName = barConfig.name or ("CDM Bar " .. barID),
-                        category = "Cooldown Manager",
-                        order = i,
-                    }
-                end
+                RegisterTrackerLayoutElement(barID)
             end
         end
     end

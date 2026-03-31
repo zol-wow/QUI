@@ -136,6 +136,9 @@ local function CreateCustomTrackersPage(parent)
     local bars = db.customTrackers.bars
     local PAD = 10
     local FORM_ROW = 32
+    local ACTION_ROW_HEIGHT = 28
+    local TRACKER_HOST_HEIGHT = (#bars > 0) and 1210 or 100
+    local PAGE_HEIGHT = math.max(TRACKER_HOST_HEIGHT + 80, 1250)
 
     ---------------------------------------------------------------------------
     -- Helper: Calculate offset relative to QUI_Player frame's top-left corner
@@ -165,6 +168,38 @@ local function CreateCustomTrackersPage(parent)
         local offsetY = math.floor(barCenterY - screenCenterY + 0.5)
 
         return offsetX, offsetY
+    end
+
+    local function RebuildCustomTrackersPage(selectedBarIndex)
+        C_Timer.After(0, function()
+            local mainFrame = GUI and GUI.MainFrame
+            if not mainFrame then return end
+
+            local page = mainFrame.pages and mainFrame.pages[11]
+            if not page then return end
+
+            if page._subTabGroup then
+                page._subTabGroup:Hide()
+                page._subTabGroup:SetParent(nil)
+                page._subTabGroup = nil
+                page._subTabDefs = nil
+            end
+
+            if page.frame then
+                page.frame:Hide()
+                page.frame:SetParent(nil)
+                page.frame = nil
+            end
+
+            page.built = false
+            GUI._lastSubTabGroup = nil
+
+            if selectedBarIndex and selectedBarIndex > 0 then
+                GUI:NavigateTo(11, selectedBarIndex)
+            else
+                GUI:SelectTab(mainFrame, 11)
+            end
+        end)
     end
 
     ---------------------------------------------------------------------------
@@ -296,7 +331,7 @@ local function CreateCustomTrackersPage(parent)
     ---------------------------------------------------------------------------
     -- Build tab content for a single tracker bar
     ---------------------------------------------------------------------------
-    local function BuildTrackerBarTab(tabContent, barConfig, barIndex, subTabsRef)
+    local function BuildTrackerBarTab(tabContent, barConfig, barIndex, subTabsRef, rebuildPage)
         GUI:SetSearchContext({tabIndex = 11, tabName = "Custom Trackers", subTabIndex = barIndex, subTabName = barConfig.name or ("Bar " .. barIndex)})
         local y = -10
 
@@ -307,11 +342,6 @@ local function CreateCustomTrackersPage(parent)
             if QUICore and QUICore.CustomTrackers then
                 QUICore.CustomTrackers:UpdateBar(barConfig.id)
             end
-        end
-
-        -- Refresh position callback
-        local function RefreshPosition()
-            RefreshTrackerPosition(barConfig.id)
         end
 
         -----------------------------------------------------------------------
@@ -338,13 +368,13 @@ local function CreateCustomTrackersPage(parent)
         -- Bar Name (editable, updates tab text instantly)
         local nameRow = GUI:CreateFormEditBox(tabContent, "Bar Name", nil, nil, nil, {
             width = 200,
-            value = barConfig.name or "CDM Bar",
+            value = barConfig.name or "Tracker Bar",
             commitOnEnter = false,
             commitOnFocusLost = false,
             live = true,
             onTextChanged = function(self)
                 local newName = self:GetText()
-                if newName == "" then newName = "CDM Bar" end
+                if newName == "" then newName = "Tracker Bar" end
                 barConfig.name = newName
 
                 if subTabsRef and subTabsRef.tabButtons and subTabsRef.tabButtons[barIndex] then
@@ -353,6 +383,12 @@ local function CreateCustomTrackersPage(parent)
                         displayName = displayName:sub(1, 17) .. "..."
                     end
                     subTabsRef.tabButtons[barIndex].text:SetText(displayName)
+                end
+                if subTabsRef and subTabsRef.subTabDefs and subTabsRef.subTabDefs[barIndex] then
+                    subTabsRef.subTabDefs[barIndex].name = newName
+                    if GUI and GUI.MainFrame and GUI.RefreshSidebarTree then
+                        GUI:RefreshSidebarTree(GUI.MainFrame)
+                    end
                 end
             end,
             onEscapePressed = function(self)
@@ -365,22 +401,21 @@ local function CreateCustomTrackersPage(parent)
 
         -- Export This Bar button
         y = y - 10
-        local actualBarIndex = barIndex - 1  -- barIndex is subTabIndex (Spell Scanner is tab 1), actual bar index is -1
         local exportBarBtn = GUI:CreateButton(tabContent, "Export This Bar", 130, 26, function()
-            local exportStr, err = QUICore:ExportSingleTrackerBar(actualBarIndex)
+            local exportStr, err = QUICore:ExportSingleTrackerBar(barIndex)
             if not exportStr then
                 print("|cffff0000QUI:|r " .. (err or "Export failed"))
                 return
             end
-            GUI:ShowExportPopup("Export CDM Bar", exportStr)
+            GUI:ShowExportPopup("Export Tracker Bar", exportStr)
         end)
         exportBarBtn:SetPoint("TOPLEFT", PAD, y)
 
         -- Delete Bar button
         local deleteBtn = GUI:CreateButton(tabContent, "Delete Bar", 120, 26, function()
             GUI:ShowConfirmation({
-                title = "Delete CDM Bar?",
-                message = "Delete this CDM bar?",
+                title = "Delete Tracker Bar?",
+                message = "Delete this custom tracker bar?",
                 warningText = "This cannot be undone.",
                 acceptText = "Delete",
                 cancelText = "Cancel",
@@ -396,15 +431,26 @@ local function CreateCustomTrackersPage(parent)
                     -- Delete the active bar frame
                     if QUICore and QUICore.CustomTrackers then
                         QUICore.CustomTrackers:DeleteBar(barConfig.id)
+                        if QUICore.CustomTrackers.UnregisterDynamicLayoutElement then
+                            QUICore.CustomTrackers:UnregisterDynamicLayoutElement(barConfig.id)
+                        end
+                        if QUICore.CustomTrackers.UpdateEventRegistrations then
+                            QUICore.CustomTrackers.UpdateEventRegistrations()
+                        end
                     end
-                    -- Prompt reload to rebuild tabs
-                    GUI:ShowConfirmation({
-                        title = "Reload UI?",
-                        message = "CDM bar deleted. Reload UI to see changes?",
-                        acceptText = "Reload",
-                        cancelText = "Later",
-                onAccept = function() QUI:SafeReload() end,
-                    })
+                    if QUI and QUI.db and QUI.db.global and QUI.db.global.specTrackerSpells then
+                        QUI.db.global.specTrackerSpells[barConfig.id] = nil
+                    end
+                    if ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAllFrameTargets then
+                        ns.QUI_Anchoring:RegisterAllFrameTargets()
+                    end
+                    if rebuildPage then
+                        local nextIndex = nil
+                        if db.customTrackers.bars and #db.customTrackers.bars > 0 then
+                            nextIndex = math.max(1, math.min(barIndex, #db.customTrackers.bars))
+                        end
+                        rebuildPage(nextIndex)
+                    end
                 end,
             })
         end)
@@ -816,322 +862,26 @@ local function CreateCustomTrackersPage(parent)
         y = y - FORM_ROW
 
         -----------------------------------------------------------------------
-        -- POSITIONING SECTION (moved to lowerContainer for better flow)
+        -- POSITION SECTION
         -----------------------------------------------------------------------
-        local posHeader = GUI:CreateSectionHeader(lowerContainer, "Positioning")
+        local posHeader = GUI:CreateSectionHeader(lowerContainer, "Position")
         posHeader:SetPoint("TOPLEFT", 0, y)
         y = y - posHeader.gap
 
-        local posHint = GUI:CreateLabel(lowerContainer, "Hint: You can place your custom bar ANYWHERE on screen. Simply toggle off Prevent Mouse Dragging, then left-click drag the bar. Locking to Player Frame is merely for convenience.", 11, C.textMuted)
-        posHint:SetPoint("TOPLEFT", 0, y)
-        posHint:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
-        posHint:SetJustifyH("LEFT")
-        posHint:SetWordWrap(true)
-        posHint:SetHeight(45)
-        y = y - 55
-
-        -- Ensure offset fields exist (migration)
-        if not barConfig.offsetX then barConfig.offsetX = 0 end
-        if not barConfig.offsetY then barConfig.offsetY = -300 end
-
-        -- Store slider references for external updates (when bar is dragged)
-        local xOffsetSlider, yOffsetSlider
-
-        -- Register callback to update sliders when bar is dragged
-        if trackerModule then
-            trackerModule.onPositionChanged = function(draggedBarID, newX, newY)
-                if draggedBarID == barConfig.id and xOffsetSlider and yOffsetSlider then
-                    if xOffsetSlider.SetValue then xOffsetSlider.SetValue(newX, true) end
-                    if yOffsetSlider.SetValue then yOffsetSlider.SetValue(newY, true) end
-                end
-            end
+        local AnchorOpts = ns.QUI_Anchoring_Options
+        if AnchorOpts and AnchorOpts.BuildAnchoringSection then
+            y = AnchorOpts:BuildAnchoringSection(lowerContainer, "customTracker:" .. barConfig.id, {
+                noHeader = true,
+            }, y)
+        else
+            local posFallback = GUI:CreateLabel(lowerContainer, "Position controls are unavailable because the shared anchoring options module is missing.", 11, C.textMuted)
+            posFallback:SetPoint("TOPLEFT", 0, y)
+            posFallback:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
+            posFallback:SetJustifyH("LEFT")
+            posFallback:SetWordWrap(true)
+            posFallback:SetHeight(30)
+            y = y - 38
         end
-
-        -- Lock to Player Frame section
-        local btnGap = 4
-        local rowGap = 4
-
-        local lockContainer = CreateFrame("Frame", nil, lowerContainer)
-        lockContainer:SetHeight(FORM_ROW + 22 + rowGap)
-        lockContainer:SetPoint("TOPLEFT", 0, y)
-        lockContainer:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
-
-        local lockLabel = lockContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        lockLabel:SetPoint("LEFT", 0, 0)
-        lockLabel:SetText("Lock to Player Frame")
-        lockLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-        -- Store button references for state updates
-        local lockButtons = {}
-
-        -- Function to update slider enabled state based on lock
-        local function UpdateLockState()
-            -- No-op: sliders always enabled for fine-tuning locked positions
-        end
-
-        -- Function to update button border colors and text based on lock state
-        local function UpdateLockButtonStates()
-            local currentPos = barConfig.lockedToPlayer and barConfig.lockPosition or nil
-            for pos, btn in pairs(lockButtons) do
-                if pos == currentPos then
-                    SetTrackerSurfaceBorderColor(btn, C.accent[1], C.accent[2], C.accent[3], 1)
-                    btn.textObj:SetText("Unlock " .. btn.label)
-                else
-                    SetTrackerSurfaceBorderColor(btn, C.border[1], C.border[2], C.border[3], 1)
-                    btn.textObj:SetText(btn.label)
-                end
-            end
-        end
-
-        -- Forward declaration for mutual exclusion (defined in target lock section)
-        local UpdateTargetLockButtonStates
-
-        -- Toggle lock: click same button to unlock
-        local function LockToPlayer(corner)
-            if barConfig.lockedToPlayer and barConfig.lockPosition == corner then
-                local bar = QUICore and QUICore.CustomTrackers and QUICore.CustomTrackers.activeBars and QUICore.CustomTrackers.activeBars[barConfig.id]
-                if bar then
-                    local scX, scY = UIParent:GetCenter()
-                    local bX, bY = bar:GetCenter()
-                    if bX and bY and scX and scY then
-                        barConfig.offsetX = math.floor(bX - scX + 0.5)
-                        barConfig.offsetY = math.floor(bY - scY + 0.5)
-                    end
-                end
-                barConfig.lockedToPlayer = false
-                barConfig.lockPosition = nil
-                if xOffsetSlider and xOffsetSlider.SetValue then xOffsetSlider.SetValue(barConfig.offsetX, true) end
-                if yOffsetSlider and yOffsetSlider.SetValue then yOffsetSlider.SetValue(barConfig.offsetY, true) end
-            else
-                local playerFrame = _G["QUI_Player"]
-
-                if not playerFrame then
-                    local findPlayer = Helpers.FindAnchorFrame("player")
-                    if findPlayer then playerFrame = findPlayer end
-                end
-                if not playerFrame then
-                    print("|cffff6666[QUI]|r Player frame not found")
-                    return
-                end
-                if barConfig.lockedToTarget then
-                    barConfig.lockedToTarget = false
-                    barConfig.targetLockPosition = nil
-                    UpdateTargetLockButtonStates()
-                end
-                barConfig.lockedToPlayer = true
-                barConfig.lockPosition = corner
-                barConfig.offsetX = 0
-                barConfig.offsetY = 0
-                if xOffsetSlider and xOffsetSlider.SetValue then xOffsetSlider.SetValue(0, true) end
-                if yOffsetSlider and yOffsetSlider.SetValue then yOffsetSlider.SetValue(0, true) end
-            end
-            RefreshPosition()
-            UpdateLockState()
-            UpdateLockButtonStates()
-        end
-
-        -- Helper to create lock button
-        local function CreateLockButton(parent, label, corner)
-            local btn = CreateTrackerSurfaceButton(parent, 75, 22, function()
-                LockToPlayer(corner)
-            end, {
-                text = label,
-                textColor = {C.text[1], C.text[2], C.text[3], 1},
-                bgColor = {0.15, 0.15, 0.15, 1},
-                borderColor = {C.border[1], C.border[2], C.border[3], 1},
-                hoverBorderColor = {C.accent[1], C.accent[2], C.accent[3], 1},
-            })
-            btn.label = label
-            btn.textObj = btn.text
-            btn:HookScript("OnLeave", function(self)
-                if not (barConfig.lockedToPlayer and barConfig.lockPosition == corner) then
-                    SetTrackerSurfaceBorderColor(self, C.border[1], C.border[2], C.border[3], 1)
-                else
-                    SetTrackerSurfaceBorderColor(self, C.accent[1], C.accent[2], C.accent[3], 1)
-                end
-            end)
-            lockButtons[corner] = btn
-            return btn
-        end
-
-        local lockTLBtn = CreateLockButton(lockContainer, "Top Left", "topleft")
-        local lockTCBtn = CreateLockButton(lockContainer, "Top Center", "topcenter")
-        local lockTRBtn = CreateLockButton(lockContainer, "Top Right", "topright")
-        local lockBLBtn = CreateLockButton(lockContainer, "Btm Left", "bottomleft")
-        local lockBCBtn = CreateLockButton(lockContainer, "Btm Center", "bottomcenter")
-        local lockBRBtn = CreateLockButton(lockContainer, "Btm Right", "bottomright")
-
-        local lockRow1Y = (22 + rowGap) / 2
-        lockTLBtn:SetPoint("LEFT", lockContainer, "LEFT", 180, lockRow1Y)
-        lockTCBtn:SetPoint("LEFT", lockTLBtn, "RIGHT", btnGap, 0)
-        lockTRBtn:SetPoint("LEFT", lockTCBtn, "RIGHT", btnGap, 0)
-        local lockRow2Y = -lockRow1Y
-        lockBLBtn:SetPoint("LEFT", lockContainer, "LEFT", 180, lockRow2Y)
-        lockBCBtn:SetPoint("LEFT", lockBLBtn, "RIGHT", btnGap, 0)
-        lockBRBtn:SetPoint("LEFT", lockBCBtn, "RIGHT", btnGap, 0)
-
-        local function UpdateLockButtonWidths()
-            local containerWidth = lockContainer:GetWidth()
-            if containerWidth and containerWidth > 0 then
-                local availableWidth = containerWidth - 180
-                local totalGaps = 2 * btnGap
-                local lockBtnWidth = (availableWidth - totalGaps) / 3
-                if lockBtnWidth > 20 then
-                    lockTLBtn:SetWidth(lockBtnWidth)
-                    lockTCBtn:SetWidth(lockBtnWidth)
-                    lockTRBtn:SetWidth(lockBtnWidth)
-                    lockBLBtn:SetWidth(lockBtnWidth)
-                    lockBCBtn:SetWidth(lockBtnWidth)
-                    lockBRBtn:SetWidth(lockBtnWidth)
-                end
-            end
-        end
-        lockContainer:HookScript("OnSizeChanged", function() UpdateLockButtonWidths() end)
-        C_Timer.After(0, function() UpdateLockButtonWidths() UpdateLockButtonStates() end)
-
-        y = y - (FORM_ROW + 22 + rowGap + 4)
-
-        -- Lock to Target Frame section
-        local targetLockContainer = CreateFrame("Frame", nil, lowerContainer)
-        targetLockContainer:SetHeight(FORM_ROW + 22 + rowGap)
-        targetLockContainer:SetPoint("TOPLEFT", 0, y)
-        targetLockContainer:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
-
-        local targetLockLabel = targetLockContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        targetLockLabel:SetPoint("LEFT", 0, 0)
-        targetLockLabel:SetText("Lock to Target Frame")
-        targetLockLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-        local targetLockButtons = {}
-
-        UpdateTargetLockButtonStates = function()
-            local currentPos = barConfig.lockedToTarget and barConfig.targetLockPosition or nil
-            for pos, btn in pairs(targetLockButtons) do
-                if pos == currentPos then
-                    SetTrackerSurfaceBorderColor(btn, C.accent[1], C.accent[2], C.accent[3], 1)
-                    btn.textObj:SetText("Unlock " .. btn.label)
-                else
-                    SetTrackerSurfaceBorderColor(btn, C.border[1], C.border[2], C.border[3], 1)
-                    btn.textObj:SetText(btn.label)
-                end
-            end
-        end
-
-        local function LockToTarget(corner)
-            if barConfig.lockedToTarget and barConfig.targetLockPosition == corner then
-                local bar = QUICore and QUICore.CustomTrackers and QUICore.CustomTrackers.activeBars and QUICore.CustomTrackers.activeBars[barConfig.id]
-                if bar then
-                    local scX, scY = UIParent:GetCenter()
-                    local bX, bY = bar:GetCenter()
-                    if bX and bY and scX and scY then
-                        barConfig.offsetX = math.floor(bX - scX + 0.5)
-                        barConfig.offsetY = math.floor(bY - scY + 0.5)
-                    end
-                end
-                barConfig.lockedToTarget = false
-                barConfig.targetLockPosition = nil
-                if xOffsetSlider and xOffsetSlider.SetValue then xOffsetSlider.SetValue(barConfig.offsetX, true) end
-                if yOffsetSlider and yOffsetSlider.SetValue then yOffsetSlider.SetValue(barConfig.offsetY, true) end
-            else
-                local targetFrame = _G["QUI_Target"]
-
-                if not targetFrame then
-                    local findTarget = Helpers.FindAnchorFrame("target")
-                    if findTarget then targetFrame = findTarget end
-                end
-
-                if not targetFrame then
-                    print("|cffff6666[QUI]|r Target frame not found")
-                    return
-                end
-                if barConfig.lockedToPlayer then
-                    barConfig.lockedToPlayer = false
-                    barConfig.lockPosition = nil
-                    UpdateLockButtonStates()
-                end
-                barConfig.lockedToTarget = true
-                barConfig.targetLockPosition = corner
-                barConfig.offsetX = 0
-                barConfig.offsetY = 0
-                if xOffsetSlider and xOffsetSlider.SetValue then xOffsetSlider.SetValue(0, true) end
-                if yOffsetSlider and yOffsetSlider.SetValue then yOffsetSlider.SetValue(0, true) end
-            end
-            RefreshPosition()
-            UpdateTargetLockButtonStates()
-        end
-
-        local function CreateTargetLockButton(parent, label, corner)
-            local btn = CreateTrackerSurfaceButton(parent, 75, 22, function()
-                LockToTarget(corner)
-            end, {
-                text = label,
-                textColor = {C.text[1], C.text[2], C.text[3], 1},
-                bgColor = {0.15, 0.15, 0.15, 1},
-                borderColor = {C.border[1], C.border[2], C.border[3], 1},
-                hoverBorderColor = {C.accent[1], C.accent[2], C.accent[3], 1},
-            })
-            btn.label = label
-            btn.textObj = btn.text
-            btn:HookScript("OnLeave", function(self)
-                if not (barConfig.lockedToTarget and barConfig.targetLockPosition == corner) then
-                    SetTrackerSurfaceBorderColor(self, C.border[1], C.border[2], C.border[3], 1)
-                else
-                    SetTrackerSurfaceBorderColor(self, C.accent[1], C.accent[2], C.accent[3], 1)
-                end
-            end)
-            targetLockButtons[corner] = btn
-            return btn
-        end
-
-        local targetLockTLBtn = CreateTargetLockButton(targetLockContainer, "Top Left", "topleft")
-        local targetLockTCBtn = CreateTargetLockButton(targetLockContainer, "Top Center", "topcenter")
-        local targetLockTRBtn = CreateTargetLockButton(targetLockContainer, "Top Right", "topright")
-        local targetLockBLBtn = CreateTargetLockButton(targetLockContainer, "Btm Left", "bottomleft")
-        local targetLockBCBtn = CreateTargetLockButton(targetLockContainer, "Btm Center", "bottomcenter")
-        local targetLockBRBtn = CreateTargetLockButton(targetLockContainer, "Btm Right", "bottomright")
-
-        local targetLockRow1Y = (22 + rowGap) / 2
-        targetLockTLBtn:SetPoint("LEFT", targetLockContainer, "LEFT", 180, targetLockRow1Y)
-        targetLockTCBtn:SetPoint("LEFT", targetLockTLBtn, "RIGHT", btnGap, 0)
-        targetLockTRBtn:SetPoint("LEFT", targetLockTCBtn, "RIGHT", btnGap, 0)
-        local targetLockRow2Y = -targetLockRow1Y
-        targetLockBLBtn:SetPoint("LEFT", targetLockContainer, "LEFT", 180, targetLockRow2Y)
-        targetLockBCBtn:SetPoint("LEFT", targetLockBLBtn, "RIGHT", btnGap, 0)
-        targetLockBRBtn:SetPoint("LEFT", targetLockBCBtn, "RIGHT", btnGap, 0)
-
-        local function UpdateTargetLockButtonWidths()
-            local containerWidth = targetLockContainer:GetWidth()
-            if containerWidth and containerWidth > 0 then
-                local availableWidth = containerWidth - 180
-                local totalGaps = 2 * btnGap
-                local btnWidth = (availableWidth - totalGaps) / 3
-                if btnWidth > 20 then
-                    targetLockTLBtn:SetWidth(btnWidth)
-                    targetLockTCBtn:SetWidth(btnWidth)
-                    targetLockTRBtn:SetWidth(btnWidth)
-                    targetLockBLBtn:SetWidth(btnWidth)
-                    targetLockBCBtn:SetWidth(btnWidth)
-                    targetLockBRBtn:SetWidth(btnWidth)
-                end
-            end
-        end
-        targetLockContainer:HookScript("OnSizeChanged", function() UpdateTargetLockButtonWidths() end)
-        C_Timer.After(0, function() UpdateTargetLockButtonWidths() UpdateTargetLockButtonStates() end)
-
-        y = y - (FORM_ROW + 22 + rowGap + 8)
-
-        -- X/Y Offset sliders
-        xOffsetSlider = GUI:CreateFormSlider(lowerContainer, "X Offset", -2000, 2000, 1, "offsetX", barConfig, RefreshPosition)
-        xOffsetSlider:SetPoint("TOPLEFT", 0, y)
-        xOffsetSlider:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        yOffsetSlider = GUI:CreateFormSlider(lowerContainer, "Y Offset", -2000, 2000, 1, "offsetY", barConfig, RefreshPosition)
-        yOffsetSlider:SetPoint("TOPLEFT", 0, y)
-        yOffsetSlider:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
-        UpdateLockState()
 
         -- Prevent Mouse Dragging checkbox
         local lockCheck = GUI:CreateFormCheckbox(lowerContainer, "Prevent Mouse Dragging", "locked", barConfig)
@@ -1641,17 +1391,13 @@ local function CreateCustomTrackersPage(parent)
     end
 
     ---------------------------------------------------------------------------
-    -- Build sub-tabs dynamically from bars
-    local Helpers = ns.Helpers
-    local P = Helpers.PlaceRow
-
-    local sections, relayout, CreateCollapsible = Shared.CreateCollapsiblePage(content, PAD)
-
+    -- EXTRA PAGES
     ---------------------------------------------------------------------------
-    -- SPELL SCANNER (collapsible)
-    ---------------------------------------------------------------------------
-    CreateCollapsible("Setup Custom Buff Tracking", 550, function(tabContent)
-        GUI:SetSearchContext({tabIndex = 11, tabName = "Custom Trackers"})
+    local scannerSubTabIndex
+    local importSubTabIndex
+
+    local function BuildSpellScannerTab(tabContent)
+        GUI:SetSearchContext({tabIndex = 11, tabName = "Custom Trackers", subTabIndex = scannerSubTabIndex, subTabName = "Setup Custom Buff Tracking"})
         local y = -4
         local scanner = QUI.SpellScanner
             local scannedListFrame  -- Forward declaration for refresh
@@ -1676,14 +1422,14 @@ local function CreateCustomTrackersPage(parent)
             y = y - 32
 
             -- Step 2
-            local step2 = GUI:CreateLabel(tabContent, "2. Add those spells/items to a Custom CDM Bar", 11, C.text)
+            local step2 = GUI:CreateLabel(tabContent, "2. Add those spells/items to a Custom Tracker Bar", 11, C.text)
             step2:SetPoint("TOPLEFT", PAD, y)
             step2:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             step2:SetJustifyH("LEFT")
             y = y - 20
 
             -- Step 3
-            local step3 = GUI:CreateLabel(tabContent, "3. The icons on your Custom Bars will now show accurate custom buff timers in combat", 11, C.text)
+            local step3 = GUI:CreateLabel(tabContent, "3. The icons on your Custom Tracker Bars will now show accurate custom buff timers in combat", 11, C.text)
             step3:SetPoint("TOPLEFT", PAD, y)
             step3:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             step3:SetJustifyH("LEFT")
@@ -1911,36 +1657,34 @@ local function CreateCustomTrackersPage(parent)
             importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 10, 0)
 
             tabContent:SetHeight(550)
-    end)
+    end
 
-    ---------------------------------------------------------------------------
-    -- IMPORT / EXPORT (collapsible)
-    ---------------------------------------------------------------------------
-    CreateCollapsible("Import / Export CDM Bars", 80, function(body)
+    local function BuildImportExportTab(body)
+        GUI:SetSearchContext({tabIndex = 11, tabName = "Custom Trackers", subTabIndex = importSubTabIndex, subTabName = "Import / Export Tracker Bars"})
         local desc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         desc:SetPoint("TOPLEFT", 4, -4)
         desc:SetPoint("RIGHT", body, "RIGHT", -4, 0)
         desc:SetTextColor(0.6, 0.6, 0.6, 0.8)
-        desc:SetText("Per-bar settings are in Layout Mode (/qui layout)")
+        desc:SetText("Per-bar settings are available above and in Layout Mode (/qui layout)")
         desc:SetJustifyH("LEFT")
 
         local exportAllBtn = GUI:CreateButton(body, "Export All Bars", 120, 24, function()
             local exportStr, err = QUICore:ExportAllTrackerBars()
             if not exportStr then print("|cffff0000QUI:|r " .. (err or "Export failed")); return end
-            GUI:ShowExportPopup("Export All CDM Bars", exportStr)
+            GUI:ShowExportPopup("Export All Tracker Bars", exportStr)
         end)
         exportAllBtn:SetPoint("TOPLEFT", 4, -24)
 
         local importBarsBtn = GUI:CreateButton(body, "Import Bars", 120, 24, function()
             GUI:ShowImportPopup({
-                title = "Import CDM Bars",
+                title = "Import Tracker Bars",
                 hint = "Paste the export string below. 'Merge' adds to existing bars, 'Replace All' overwrites.",
                 hasMerge = true,
                 onImport = function(str) return QUICore:ImportAllTrackerBars(str, false) end,
                 onReplace = function(str) return QUICore:ImportAllTrackerBars(str, true) end,
                 onSuccess = function()
                     GUI:ShowConfirmation({
-                        title = "Reload UI?", message = "CDM bars imported. Reload UI to see changes?",
+                        title = "Reload UI?", message = "Tracker bars imported. Reload UI to see changes?",
                         acceptText = "Reload", cancelText = "Later",
                         onAccept = function() QUI:SafeReload() end,
                     })
@@ -1951,13 +1695,13 @@ local function CreateCustomTrackersPage(parent)
 
         local importSingleBtn = GUI:CreateButton(body, "Import Single Bar", 120, 24, function()
             GUI:ShowImportPopup({
-                title = "Import Single CDM Bar",
+                title = "Import Single Tracker Bar",
                 hint = "Paste a single bar export string below",
                 hasMerge = false,
                 onImport = function(str) return QUICore:ImportSingleTrackerBar(str) end,
                 onSuccess = function()
                     GUI:ShowConfirmation({
-                        title = "Reload UI?", message = "CDM bar imported. Reload UI to see changes?",
+                        title = "Reload UI?", message = "Tracker bar imported. Reload UI to see changes?",
                         acceptText = "Reload", cancelText = "Later",
                         onAccept = function() QUI:SafeReload() end,
                     })
@@ -1965,9 +1709,78 @@ local function CreateCustomTrackersPage(parent)
             })
         end)
         importSingleBtn:SetPoint("LEFT", importBarsBtn, "RIGHT", 8, 0)
-    end)
+        body:SetHeight(100)
+    end
 
-    relayout()
+    ---------------------------------------------------------------------------
+    -- Build sub-tabs dynamically from bars
+    ---------------------------------------------------------------------------
+    local actionsRow = CreateFrame("Frame", nil, content)
+    actionsRow:SetHeight(ACTION_ROW_HEIGHT)
+    actionsRow:SetPoint("TOPLEFT", PAD, -10)
+    actionsRow:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+
+    local addTrackerBtn = GUI:CreateButton(actionsRow, "Add Tracker", 120, 24, function()
+        local trackerModule = QUICore and QUICore.CustomTrackers
+        if not trackerModule or not trackerModule.CreateNewBar then
+            print("|cffff0000QUI:|r Custom tracker creation is unavailable right now.")
+            return
+        end
+
+        local _, newIndex, err = trackerModule:CreateNewBar()
+        if newIndex then
+            RebuildCustomTrackersPage(newIndex)
+        elseif err then
+            print("|cffff0000QUI:|r " .. err)
+        end
+    end)
+    addTrackerBtn:SetPoint("TOPRIGHT", actionsRow, "TOPRIGHT", 0, -2)
+
+    local actionHint = GUI:CreateLabel(actionsRow, "Create and edit tracker bars here. Spell Scanner and import/export each have their own pages.", 11, C.textMuted)
+    actionHint:SetPoint("LEFT", 0, 0)
+    actionHint:SetPoint("RIGHT", addTrackerBtn, "LEFT", -10, 0)
+    actionHint:SetJustifyH("LEFT")
+
+    local subTabHost = CreateFrame("Frame", nil, content)
+    subTabHost:SetPoint("TOPLEFT", actionsRow, "BOTTOMLEFT", 0, -12)
+    subTabHost:SetPoint("BOTTOMRIGHT", 0, 0)
+
+    local subTabsRef = {}
+    local trackerTabs = {}
+
+    for barIndex, barConfig in ipairs(bars) do
+        local displayName = barConfig.name or ("Tracker " .. barIndex)
+        if #displayName > 20 then
+            displayName = displayName:sub(1, 17) .. "..."
+        end
+
+        table.insert(trackerTabs, {
+            name = displayName,
+            builder = function(tabContent)
+                BuildTrackerBarTab(tabContent, barConfig, barIndex, subTabsRef, RebuildCustomTrackersPage)
+            end,
+        })
+    end
+
+    scannerSubTabIndex = #trackerTabs + 1
+    table.insert(trackerTabs, {
+        name = "Setup Custom Buff Tracking",
+        builder = BuildSpellScannerTab,
+    })
+
+    importSubTabIndex = #trackerTabs + 1
+    table.insert(trackerTabs, {
+        name = "Import / Export",
+        builder = BuildImportExportTab,
+    })
+
+    local trackerSubTabs = GUI:CreateSubTabs(subTabHost, trackerTabs)
+    subTabsRef.tabButtons = trackerSubTabs.tabButtons
+    subTabsRef.tabContents = trackerSubTabs.tabContents
+    subTabsRef.subTabDefs = trackerSubTabs.subTabDefs
+    subTabsRef.SelectTab = trackerSubTabs.SelectTab
+
+    content:SetHeight(PAGE_HEIGHT)
 end
 
 ---------------------------------------------------------------------------

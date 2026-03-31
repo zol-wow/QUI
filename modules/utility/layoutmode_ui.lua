@@ -2153,8 +2153,8 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             allRows[#allRows + 1] = { frame = addRow, group = group, isHeader = false }
         end
 
-        -- "+ Add CDM Container" button in Cooldown Manager group
-        if group == "Cooldown Manager" then
+        -- "+ Add CDM Container" button in the shared CDM / tracker group
+        if group == "Cooldown Manager & Custom Tracker Bars" then
             local addTrackerRow = CreateFrame("Button", nil, content)
             addTrackerRow:SetSize(contentWidth, DRAWER_ROW_HEIGHT)
             drawer._rows[#drawer._rows + 1] = addTrackerRow

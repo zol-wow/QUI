@@ -1499,14 +1499,15 @@ end
 ---=================================================================================
 
 -- Generate a collision-safe unique tracker ID
-GenerateUniqueTrackerID = function()
+function QUICore:GenerateUniqueTrackerID()
+    local db = self and self.db or QUICore.db
     local used = {}
-    local bars = QUICore.db.profile.customTrackers and QUICore.db.profile.customTrackers.bars or {}
+    local bars = db and db.profile and db.profile.customTrackers and db.profile.customTrackers.bars or {}
     for _, b in ipairs(bars) do
         if b.id then used[b.id] = true end
     end
-    if QUICore.db.global and QUICore.db.global.specTrackerSpells then
-        for id in pairs(QUICore.db.global.specTrackerSpells) do
+    if db and db.global and db.global.specTrackerSpells then
+        for id in pairs(db.global.specTrackerSpells) do
             used[id] = true
         end
     end
@@ -1515,6 +1516,10 @@ GenerateUniqueTrackerID = function()
         id = "tracker" .. time() .. math.random(1000, 9999)
     until not used[id]
     return id
+end
+
+GenerateUniqueTrackerID = function()
+    return QUICore:GenerateUniqueTrackerID()
 end
 
 -- Export a single tracker bar (with its spec-specific entries if enabled)

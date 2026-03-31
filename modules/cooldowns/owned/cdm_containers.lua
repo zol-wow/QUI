@@ -650,7 +650,7 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
     um:RegisterElement({
         key = elementKey,
         label = settings.name or containerKey,
-        group = "Cooldown Manager",
+        group = "Cooldown Manager & Custom Tracker Bars",
         order = 100,  -- custom containers sort after built-in
         isOwned = true,
         isEnabled = function()
@@ -676,7 +676,7 @@ function CDMContainers_API:RegisterDynamicFrameResolver(containerKey, settings)
         _G.QUI_RegisterFrameResolver(resolverKey, {
             resolver = function() return containers[containerKey] end,
             displayName = settings.name or containerKey,
-            category = "Cooldown Manager",
+            category = "Cooldown Manager & Custom Tracker Bars",
             order = 100,
         })
     end
@@ -2572,7 +2572,7 @@ do
             um:RegisterElement({
                 key = info.key,
                 label = info.label,
-                group = "Cooldown Manager",
+                group = "Cooldown Manager & Custom Tracker Bars",
                 order = info.order,
                 isOwned = true,
                 isEnabled = function()

@@ -1389,7 +1389,7 @@ local FRAME_RESOLVERS = {
 }
 
 local CUSTOM_TRACKER_ANCHOR_PREFIX = "customTracker:"
-local CUSTOM_TRACKER_ANCHOR_CATEGORY = "Cooldown Manager"
+local CUSTOM_TRACKER_ANCHOR_CATEGORY = "Cooldown Manager & Custom Tracker Bars"
 local CUSTOM_TRACKER_ANCHOR_CATEGORY_ORDER = 90
 
 local function GetCustomTrackerBarIDFromAnchorKey(key)
@@ -1449,11 +1449,11 @@ local UNSAFE_BLIZZARD_MANAGED_OVERRIDES = {
 
 -- Frame display info for anchor target registration
 local FRAME_ANCHOR_INFO = {
-    cdmEssential    = { displayName = "CDM Essential Viewer",  category = "Cooldown Manager",  order = 1 },
-    cdmUtility      = { displayName = "CDM Utility Viewer",    category = "Cooldown Manager",  order = 2 },
-    buffIcon        = { displayName = "CDM Buff Icons",        category = "Cooldown Manager",  order = 3 },
-    buffBar         = { displayName = "CDM Buff Bars",         category = "Cooldown Manager",  order = 4 },
-    rotationAssistIcon = { displayName = "CDM Rotation Assist Icon", category = "Cooldown Manager", order = 5 },
+    cdmEssential    = { displayName = "CDM Essential Viewer",  category = "Cooldown Manager & Custom Tracker Bars",  order = 1 },
+    cdmUtility      = { displayName = "CDM Utility Viewer",    category = "Cooldown Manager & Custom Tracker Bars",  order = 2 },
+    buffIcon        = { displayName = "CDM Buff Icons",        category = "Cooldown Manager & Custom Tracker Bars",  order = 3 },
+    buffBar         = { displayName = "CDM Buff Bars",         category = "Cooldown Manager & Custom Tracker Bars",  order = 4 },
+    rotationAssistIcon = { displayName = "CDM Rotation Assist Icon", category = "Cooldown Manager & Custom Tracker Bars", order = 5 },
     primaryPower    = { displayName = "Primary Power Bar",     category = "Resource Bars",     order = 1 },
     secondaryPower  = { displayName = "Secondary Power Bar",   category = "Resource Bars",     order = 2 },
     playerFrame     = { displayName = "Player Frame",          category = "Unit Frames",       order = 1 },
@@ -1519,12 +1519,12 @@ _G.QUI_RegisterFrameResolver = function(key, info)
     if info.displayName then
         FRAME_ANCHOR_INFO[key] = {
             displayName = info.displayName,
-            category = info.category or "Cooldown Manager",
+            category = info.category or "Cooldown Manager & Custom Tracker Bars",
             order = info.order or 100,
         }
     end
     -- CDM containers use logical sizing from viewerState
-    if info.category == "Cooldown Manager" and CDM_LOGICAL_SIZE_KEYS then
+    if info.category == "Cooldown Manager & Custom Tracker Bars" and CDM_LOGICAL_SIZE_KEYS then
         CDM_LOGICAL_SIZE_KEYS[key] = true
     end
     -- Immediately register as anchor target so it appears in dropdowns
@@ -1534,7 +1534,7 @@ _G.QUI_RegisterFrameResolver = function(key, info)
         if frame then
             QUI_Anchoring:RegisterAnchorTarget(key, frame, {
                 displayName = info.displayName or key,
-                category = info.category or "Cooldown Manager",
+                category = info.category or "Cooldown Manager & Custom Tracker Bars",
                 categoryOrder = info.order or 100,
                 order = info.order or 100,
             })

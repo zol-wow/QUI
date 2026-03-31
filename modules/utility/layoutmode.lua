@@ -2483,7 +2483,7 @@ do
                 previewOff = function() local r = ns.RaidBuffs; if r and r.DisablePreview then r:DisablePreview() end end,
             },
             {
-                key = "rotationAssistIcon", label = "Rotation Assist Icon", group = "Cooldown Manager", order = 5,
+                key = "rotationAssistIcon", label = "Rotation Assist Icon", group = "Cooldown Manager & Custom Tracker Bars", order = 5,
                 frame = "QUI_RotationAssistIcon",
                 dbKey = "rotationAssistIcon", enabledField = "enabled",
                 refresh = "QUI_RefreshRotationAssistIcon",
