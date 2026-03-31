@@ -207,6 +207,16 @@ function QUICore:OnInitialize()
     -- Migrate flat group frame visual settings → party/raid containers
     local gf = profile.quiGroupFrames
     if gf then
+        if gf.selfFirst ~= nil then
+            if gf.partySelfFirst == nil then
+                gf.partySelfFirst = gf.selfFirst
+            end
+            if gf.raidSelfFirst == nil then
+                gf.raidSelfFirst = gf.selfFirst
+            end
+            gf.selfFirst = nil
+        end
+
         -- Keys that should live under party/raid containers
         local VISUAL_KEYS = {
             "general", "layout", "health", "power", "name", "absorbs", "healPrediction",

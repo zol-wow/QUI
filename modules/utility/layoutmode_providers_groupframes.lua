@@ -209,7 +209,7 @@ local function BuildFrameSettings(content, contextMode, sections, relayout)
         if not isRaid then
             sy = P(GUI:CreateFormCheckbox(body, "Show Player in Group", "showPlayer", layout, onChange), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Show Player Frame When Solo", "showSolo", layout, onChange), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Always Show Self First", "selfFirst", gfdb, onChange), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Always Show Self First", "partySelfFirst", gfdb, onChange), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Sort by Role (Tank > Healer > DPS)", "sortByRole", layout, onChange), body, sy)
         end
 
@@ -220,6 +220,7 @@ local function BuildFrameSettings(content, contextMode, sections, relayout)
                 sy = P(GUI:CreateFormSlider(body, "Units Per Column", 1, 40, 1, "unitsPerFlat", layout, onChange), body, sy)
             end
             sy = P(GUI:CreateFormDropdown(body, "Sort Method", SORT_OPTIONS, "sortMethod", layout, onChange), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Always Show Self First", "raidSelfFirst", gfdb, onChange), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Sort by Role (Tank > Healer > DPS)", "sortByRole", layout, onChange), body, sy)
         end
 

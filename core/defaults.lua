@@ -2442,8 +2442,10 @@ local defaults = {
             position = { offsetX = -400, offsetY = 0 },      -- party position
             raidPosition = { offsetX = -400, offsetY = 0 },   -- raid position (always separate)
 
-            -- Self-first (shared) — shows player in a separate header above party/raid
-            selfFirst = false,
+            -- Self-first toggles split by mode. Party keeps the separate self header;
+            -- raid uses its own ordering path and should never render a duplicate lead block.
+            partySelfFirst = false,
+            raidSelfFirst = false,
 
             -------------------------------------------------------------------
             -- Party visual settings

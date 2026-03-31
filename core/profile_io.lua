@@ -603,7 +603,8 @@ local PROFILE_IMPORT_CATEGORIES = {
                 paths = {
                     "quiGroupFrames.enabled",
                     "quiGroupFrames.unifiedPosition",
-                    "quiGroupFrames.selfFirst",
+                    "quiGroupFrames.partySelfFirst",
+                    "quiGroupFrames.raidSelfFirst",
                     "quiGroupFrames.clickCast",
                 },
             },
