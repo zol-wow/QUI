@@ -408,7 +408,12 @@ local function ApplyBarColor(bar, indicator, remaining)
     local a = color[4] or 1
     bar:SetStatusBarColor(r, g, b, a)
     if bar.background then
-        bar.background:SetColorTexture(r, g, b, 0.18)
+        local bg = indicator.backgroundColor
+        if type(bg) == "table" then
+            bar.background:SetColorTexture(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.18)
+        else
+            bar.background:SetColorTexture(r, g, b, 0.18)
+        end
     end
 end
 

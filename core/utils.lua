@@ -175,6 +175,7 @@ local function CreateDefaultAuraIndicatorRecord(indicatorType, index)
         record.offsetX = 0
         record.offsetY = 0
         record.color = { 0.2, 0.8, 0.2, 1 }
+        record.backgroundColor = { 0.2, 0.8, 0.2, 0.18 }
         record.borderSize = 1
         record.borderColor = { 0, 0, 0, 1 }
         record.hideBorder = false
@@ -222,6 +223,9 @@ local function NormalizeAuraIndicatorRecord(record, entryIndex, indicatorIndex)
         record.offsetY = tonumber(record.offsetY) or 0
         if type(record.color) ~= "table" then
             record.color = DeepCopyDefaults(defaults.color)
+        end
+        if type(record.backgroundColor) ~= "table" then
+            record.backgroundColor = DeepCopyDefaults(defaults.backgroundColor)
         end
         if type(record.borderColor) ~= "table" then
             record.borderColor = DeepCopyDefaults(defaults.borderColor)
