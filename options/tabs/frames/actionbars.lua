@@ -36,10 +36,16 @@ local function CreateActionBarsPage(parent)
     local fade = actionBars.fade
     local bars = actionBars.bars
 
-    -- Refresh callback
+    -- Refresh callbacks
     local function RefreshActionBars()
         if _G.QUI_RefreshActionBars then
             _G.QUI_RefreshActionBars()
+        end
+    end
+    -- Lightweight: only re-evaluate mouseover fade state (no full bar rebuild)
+    local function RefreshActionBarFade()
+        if _G.QUI_RefreshActionBarFade then
+            _G.QUI_RefreshActionBarFade()
         end
     end
 
@@ -58,16 +64,16 @@ local function CreateActionBarsPage(parent)
         -- Fade Settings
         CreateCollapsible("Fade Settings", 10 * FORM_ROW + 50, function(body)
             local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Enable Mouseover Hide", "enabled", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Fade In Speed (sec)", 0.1, 1.0, 0.05, "fadeInDuration", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Fade Out Speed (sec)", 0.1, 1.0, 0.05, "fadeOutDuration", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Faded Opacity", 0, 1, 0.05, "fadeOutAlpha", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Fade Out Delay (sec)", 0, 2.0, 0.1, "fadeOutDelay", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Do Not Hide In Combat", "alwaysShowInCombat", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Bars While Spellbook Open", "showWhenSpellBookOpen", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Keep Leave Vehicle Button Visible", "keepLeaveVehicleVisible", fade, RefreshActionBars), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Disable Below Max Level", "disableBelowMaxLevel", fade, RefreshActionBars), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Link Bars 1-8 on Mouseover", "linkBars1to8", fade, RefreshActionBars), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Enable Mouseover Hide", "enabled", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Fade In Speed (sec)", 0.1, 1.0, 0.05, "fadeInDuration", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Fade Out Speed (sec)", 0.1, 1.0, 0.05, "fadeOutDuration", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Faded Opacity", 0, 1, 0.05, "fadeOutAlpha", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Fade Out Delay (sec)", 0, 2.0, 0.1, "fadeOutDelay", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Do Not Hide In Combat", "alwaysShowInCombat", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Bars While Spellbook Open", "showWhenSpellBookOpen", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Keep Leave Vehicle Button Visible", "keepLeaveVehicleVisible", fade, RefreshActionBarFade), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Disable Below Max Level", "disableBelowMaxLevel", fade, RefreshActionBarFade), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Link Bars 1-8 on Mouseover", "linkBars1to8", fade, RefreshActionBarFade), body, sy)
         end)
 
         -- Always Show Bars
@@ -88,7 +94,7 @@ local function CreateActionBarsPage(parent)
             for _, barInfo in ipairs(alwaysShowBars) do
                 local barDB = bars[barInfo.key]
                 if barDB then
-                    sy = P(GUI:CreateFormCheckbox(body, barInfo.label, "alwaysShow", barDB, RefreshActionBars), body, sy)
+                    sy = P(GUI:CreateFormCheckbox(body, barInfo.label, "alwaysShow", barDB, RefreshActionBarFade), body, sy)
                 end
             end
         end)

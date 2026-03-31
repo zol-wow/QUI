@@ -1363,7 +1363,13 @@ local function RestoreContainerPosition(barKey)
     if not container then return false end
 
     -- Fallback: copy Blizzard frame's position when no frameAnchoring override exists
-    if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(barKey) then
+    -- Map internal bar keys to anchoring system keys where they differ
+    local anchorKey = (barKey == "pet" and "petBar")
+        or (barKey == "stance" and "stanceBar")
+        or (barKey == "microbar" and "microMenu")
+        or (barKey == "bags" and "bagBar")
+        or barKey
+    if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorKey) then
         return true
     end
 
@@ -3017,6 +3023,13 @@ UpdatePetBarVisibility = function()
         -- original bar is suppressed, so QUI drives visuals directly).
         ActionBarsOwned.UpdateAllPetButtons()
         LayoutNativeButtons("pet")
+        -- Re-evaluate mouseover fade so alwaysShow / fade alpha are correct
+        SetupOwnedBarMouseover("pet")
+    elseif inInitSafeWindow and InCombatLockdown() then
+        -- During a combat reload, pet data may not be available yet at PEW
+        -- time (HasPetUI returns false). Don't hide — defer to
+        -- PLAYER_REGEN_ENABLED so pet events have a chance to populate.
+        ActionBarsOwned.pendingPetUpdate = true
     else
         container:Hide()
     end
@@ -3050,6 +3063,12 @@ UpdateStanceBarLayout = function()
     if not buttons then return end
 
     if numForms == 0 then
+        if inInitSafeWindow and InCombatLockdown() then
+            -- During a combat reload, shapeshift data may not be available
+            -- yet at PEW time. Don't hide — defer to PLAYER_REGEN_ENABLED.
+            ActionBarsOwned.pendingStanceUpdate = true
+            return
+        end
         container:Hide()
         if wasShown and _G.QUI_UpdateFramesAnchoredTo then
             _G.QUI_UpdateFramesAnchoredTo("stanceBar")
@@ -3073,6 +3092,9 @@ UpdateStanceBarLayout = function()
     else
         LayoutNativeButtons("stance")
     end
+
+    -- Re-evaluate mouseover fade so alwaysShow / fade alpha are correct
+    SetupOwnedBarMouseover("stance")
 
     -- Notify anchoring system when visibility changed
     if not wasShown and _G.QUI_UpdateFramesAnchoredTo then
@@ -3275,6 +3297,7 @@ end -- do block (cooldown ownership)
 -- SPELL_ACTIVATION_OVERLAY_GLOW_SHOW/HIDE events.  Uses LibCustomGlow
 -- for the visual effect (same library used by CDM glows).
 ---------------------------------------------------------------------------
+do -- spell glow / highlight / assisted rotation
 
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
@@ -3603,6 +3626,14 @@ function ActionBarsOwned.OnSpellActivationGlowHide(spellId)
     end
 end
 
+ActionBarsOwned.RebuildSpellIdMap = RebuildSpellIdMap
+ActionBarsOwned.UpdateAllSpellHighlights = UpdateAllSpellHighlights
+ActionBarsOwned.ShowActionButtonGlow = ShowActionButtonGlow
+ActionBarsOwned.HideActionButtonGlow = HideActionButtonGlow
+ActionBarsOwned.UpdateAllAssistedCombatRotation = UpdateAllAssistedCombatRotation
+
+end -- do (spell glow / highlight / assisted rotation)
+
 -- Full visual refresh for all owned action buttons via SafeUpdate.
 -- Uses only truthiness tests on API returns — safe during combat.
 local _lastVisualUpdateTime = 0
@@ -3640,7 +3671,7 @@ function ActionBarsOwned.UpdateAllButtonVisuals()
     end
 
     -- Rebuild spell-to-button reverse lookup for glow events
-    RebuildSpellIdMap()
+    ActionBarsOwned.RebuildSpellIdMap()
 end
 
 ---------------------------------------------------------------------------
@@ -3729,7 +3760,7 @@ abSlotFrame:SetScript("OnUpdate", function(self)
     end
     wipe(abDirtySlots)
     -- Rebuild spell-to-button map after slot content changes (drag/drop)
-    RebuildSpellIdMap()
+    ActionBarsOwned.RebuildSpellIdMap()
     if InCombatLockdown() then
         ActionBarsOwned.pendingSlotUpdate = true
     end
@@ -3914,6 +3945,8 @@ local function OnOwnedEvent(self, event, ...)
         ActionBarsOwned.UpdateAllPetButtons()
         if not InCombatLockdown() then
             UpdatePetBarVisibility()
+        else
+            ActionBarsOwned.pendingPetUpdate = true
         end
 
     elseif event == "PET_UI_UPDATE" or event == "UNIT_PET" then
@@ -3935,11 +3968,22 @@ local function OnOwnedEvent(self, event, ...)
         -- protected calls are still allowed. Set the flag so all sub-functions
         -- bypass their combat guards.
         inInitSafeWindow = true
+        -- Also set the namespace-level flag so the anchoring system can
+        -- reposition bar containers during this safe window. During
+        -- ADDON_LOADED the containers may not have existed yet, so the
+        -- anchoring system resolved the Blizzard frames instead.
+        ns._inInitSafeWindow = true
         if isReload then
             ApplyAllBarSpacing()
             -- Safety net: Blizzard's Layout() may fire after safe window
             -- closes. Mark pending so PLAYER_REGEN_ENABLED reapplies.
             ActionBarsOwned.pendingSpacing = true
+        end
+        -- Re-apply frame anchoring now that containers exist. The
+        -- ADDON_LOADED pass may have missed them (created after the
+        -- core init safe window closed).
+        if ns.QUI_Anchoring and ns.QUI_Anchoring.ApplyAllFrameAnchors then
+            ns.QUI_Anchoring:ApplyAllFrameAnchors(true)
         end
         -- Do layout immediately during the safe period so the UI is correct
         for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
@@ -3951,6 +3995,7 @@ local function OnOwnedEvent(self, event, ...)
         UpdatePetBarVisibility()
         UpdateStanceBarLayout()
         inInitSafeWindow = false
+        ns._inInitSafeWindow = false
         -- Second pass after Blizzard frames settle; defer if safe period ended
         C_Timer.After(0.2, function()
             if InCombatLockdown() then
@@ -4178,6 +4223,7 @@ ownedEventFrame:SetScript("OnEvent", OnOwnedEvent)
 ---------------------------------------------------------------------------
 -- EXTRA BUTTON CUSTOMIZATION (Extra Action Button & Zone Ability)
 ---------------------------------------------------------------------------
+do
 
 local extraBtnState = {
     extraActionHolder = nil,
@@ -4593,10 +4639,14 @@ end
 
 _G.QUI_ToggleExtraButtonMovers = ToggleExtraButtonMovers
 _G.QUI_RefreshExtraButtons = RefreshExtraButtons
+ActionBarsOwned.extraBtnState = extraBtnState
+
+end -- do (extra buttons)
 
 ---------------------------------------------------------------------------
 -- BUTTON SKINNING
 ---------------------------------------------------------------------------
+do -- button skinning / usability / bar spacing
 
 -- Get the icon texture from a button, handling stance/pet buttons
 -- that use NormalTexture as the icon source.
@@ -5909,6 +5959,12 @@ ApplyAllBarSpacing = function()
     end
 end
 
+ActionBarsOwned.SuppressButtonProcVisuals = SuppressButtonProcVisuals
+ActionBarsOwned.UpdateUsabilityPolling = UpdateUsabilityPolling
+ActionBarsOwned.DRAG_PREVIEW_ALPHA = DRAG_PREVIEW_ALPHA
+
+end -- do (button skinning / usability / bar spacing)
+
 ---------------------------------------------------------------------------
 -- MOUSEOVER FADE SYSTEM
 ---------------------------------------------------------------------------
@@ -5948,7 +6004,7 @@ local function SetBarAlpha(barKey, alpha)
         local state = GetFrameState(button)
         -- Respect hide empty slots setting - keep empty buttons hidden
         if hideEmptyEnabled and state.hiddenEmpty then
-            button:SetAlpha(ActionBarsOwned.dragPreviewActive and (DRAG_PREVIEW_ALPHA * alpha) or 0)
+            button:SetAlpha(ActionBarsOwned.dragPreviewActive and (ActionBarsOwned.DRAG_PREVIEW_ALPHA * alpha) or 0)
         else
             button:SetAlpha(alpha)
         end
@@ -6571,7 +6627,7 @@ local function SkinBar(barKey)
             end)
             button:HookScript("OnShow", function(self)
                 local st = GetFrameState(self)
-                SuppressButtonProcVisuals(self)
+                ActionBarsOwned.SuppressButtonProcVisuals(self)
                 local key = GetBarKeyFromButton(self)
                 local fadeState = key and ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[key]
                 local hideEmptyEnabled = GetGlobalSettings() and GetGlobalSettings().hideEmptySlots
@@ -6587,6 +6643,8 @@ local function SkinBar(barKey)
         end
     end
 end
+
+do -- spell flyout skinning
 
 local spellFlyoutSkinHooked = false
 
@@ -6751,9 +6809,14 @@ local function HookSpellFlyoutSkinning()
     end)
 end
 
+ActionBarsOwned.HookSpellFlyoutSkinning = HookSpellFlyoutSkinning
+
+end -- do (spell flyout skinning)
+
 ---------------------------------------------------------------------------
 -- PAGE ARROW VISIBILITY
 ---------------------------------------------------------------------------
+do
 
 local function CollectPageArrowFrames()
     local seen, frames = {}, {}
@@ -6782,10 +6845,11 @@ local function CollectPageArrowFrames()
 end
 
 local function SchedulePageArrowVisibilityRetry()
-    if extraBtnState.pageArrowRetryTimer or extraBtnState.pageArrowRetryAttempts >= extraBtnState.PAGE_ARROW_RETRY_MAX_ATTEMPTS then return end
-    extraBtnState.pageArrowRetryAttempts = extraBtnState.pageArrowRetryAttempts + 1
-    extraBtnState.pageArrowRetryTimer = C_Timer.NewTimer(extraBtnState.PAGE_ARROW_RETRY_DELAY, function()
-        extraBtnState.pageArrowRetryTimer = nil
+    local ebs = ActionBarsOwned.extraBtnState
+    if ebs.pageArrowRetryTimer or ebs.pageArrowRetryAttempts >= ebs.PAGE_ARROW_RETRY_MAX_ATTEMPTS then return end
+    ebs.pageArrowRetryAttempts = ebs.pageArrowRetryAttempts + 1
+    ebs.pageArrowRetryTimer = C_Timer.NewTimer(ebs.PAGE_ARROW_RETRY_DELAY, function()
+        ebs.pageArrowRetryTimer = nil
         local db = GetDB()
         if db and db.bars and db.bars.bar1 then
             ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
@@ -6802,17 +6866,18 @@ ApplyPageArrowVisibility = function(hide)
         return
     end
 
-    extraBtnState.pageArrowRetryAttempts = 0
-    if extraBtnState.pageArrowRetryTimer then
-        extraBtnState.pageArrowRetryTimer:Cancel()
-        extraBtnState.pageArrowRetryTimer = nil
+    local ebs = ActionBarsOwned.extraBtnState
+    ebs.pageArrowRetryAttempts = 0
+    if ebs.pageArrowRetryTimer then
+        ebs.pageArrowRetryTimer:Cancel()
+        ebs.pageArrowRetryTimer = nil
     end
 
     if hide then
         for _, frame in ipairs(frames) do
             frame:Hide()
-            if not extraBtnState.pageArrowShowHooked[frame] then
-                extraBtnState.pageArrowShowHooked[frame] = true
+            if not ebs.pageArrowShowHooked[frame] then
+                ebs.pageArrowShowHooked[frame] = true
                 -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(frame, "Show", function(self)
                     C_Timer.After(0, function()
@@ -6832,6 +6897,8 @@ ApplyPageArrowVisibility = function(hide)
 end
 
 _G.QUI_ApplyPageArrowVisibility = ApplyPageArrowVisibility
+
+end -- do (page arrow visibility)
 
 ---------------------------------------------------------------------------
 -- PUBLIC API
@@ -7017,13 +7084,13 @@ function ActionBarsOwned:Initialize()
         end)
     end
     if _G.ActionBarController_UpdateAllSpellHighlights then
-        hooksecurefunc("ActionBarController_UpdateAllSpellHighlights", UpdateAllSpellHighlights)
+        hooksecurefunc("ActionBarController_UpdateAllSpellHighlights", ActionBarsOwned.UpdateAllSpellHighlights)
     end
 
     -- Assisted combat rotation (one-button rotation arrow overlay).
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
-            UpdateAllAssistedCombatRotation()
+            ActionBarsOwned.UpdateAllAssistedCombatRotation()
         end, "QUI_ActionBars_AssistedCombat")
 
         -- Assisted combat highlight (marching ants on the next-cast button).
@@ -7057,7 +7124,7 @@ function ActionBarsOwned:Initialize()
     end
 
     -- Setup usability polling
-    UpdateUsabilityPolling()
+    ActionBarsOwned.UpdateUsabilityPolling()
 
     -- Register Edit Mode callbacks
     local core = GetCore()
@@ -7171,7 +7238,7 @@ function ActionBarsOwned:Refresh()
         if type(ActionButton_ShowOverlayGlow) == "function" then
             hooksecurefunc("ActionButton_ShowOverlayGlow", function(button)
                 if ActionBarsOwned.skinnedButtons[button] then
-                    SuppressButtonProcVisuals(button)
+                    ActionBarsOwned.SuppressButtonProcVisuals(button)
                 end
             end)
         end
@@ -7181,7 +7248,7 @@ function ActionBarsOwned:Refresh()
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         SkinBar(barKey)
     end
-    HookSpellFlyoutSkinning()
+    ActionBarsOwned.HookSpellFlyoutSkinning()
 
     -- Apply bar layout settings (spacing, empty slot visibility)
     ApplyAllBarSpacing()
@@ -7199,7 +7266,7 @@ function ActionBarsOwned:Refresh()
     UpdatePetBarVisibility()
     UpdateStanceBarLayout()
 
-    UpdateUsabilityPolling()
+    ActionBarsOwned.UpdateUsabilityPolling()
     if self.RefreshTooltipSuppressCache then self:RefreshTooltipSuppressCache() end
 end
 
@@ -7216,6 +7283,18 @@ _G.QUI_RefreshActionBars = function()
     ActionBarsOwned:Refresh()
 end
 
+-- Lightweight refresh: only re-evaluate mouseover fade state for all bars.
+-- Used by fade/alwaysShow settings that don't need a full bar rebuild.
+_G.QUI_RefreshActionBarFade = function()
+    if not ActionBarsOwned.initialized then return end
+    for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
+        local state = GetOwnedBarFadeState(barKey)
+        state.isFading = false
+        CancelOwnedBarFadeTimers(state)
+        SetupOwnedBarMouseover(barKey)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
@@ -7228,7 +7307,7 @@ initFrame:SetScript("OnEvent", function(self, event, addonName)
         if not db or not db.enabled then return end
         ActionBarsOwned:Initialize()
     elseif addonName == "Blizzard_ActionBar" then
-        HookSpellFlyoutSkinning()
+        ActionBarsOwned.HookSpellFlyoutSkinning()
         C_Timer.After(0, SkinSpellFlyoutButtons)
         local db = GetDB()
         if db and db.bars and db.bars.bar1 then
