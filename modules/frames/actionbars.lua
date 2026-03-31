@@ -1438,25 +1438,27 @@ local function SetOwnedBarAlpha(barKey, alpha)
     container:SetAlpha(alpha)
 
     if buttons then
+        -- At full alpha QUI textures should be visible; below full alpha
+        -- they must be hidden because ADD/MOD blend textures (gloss,
+        -- tintOverlay) do not inherit parent alpha, and MOD textures
+        -- don't fade linearly (they approach white, not transparent).
+        -- Hiding all QUI overlay textures during the fade keeps the
+        -- button clean — only the icon + Blizzard chrome fade smoothly.
+        local fullyHidden = alpha <= 0
+        local fading = alpha < 1
+
         for _, btn in ipairs(buttons) do
             local state = GetFrameState(btn)
-            local hidden = alpha <= 0 or state.hiddenEmpty
-            if hidden then
-                FadeHideTextures(state, btn)
-            else
-                if state.fadeHidden then
-                    FadeShowTextures(state, btn)
-                    -- Restore button-level alpha: UpdateEmptySlotVisibility or
-                    -- prior fade cycles may have set it to 0.  The container
-                    -- handles the actual fade opacity.
-                    btn:SetAlpha(1)
+            if fullyHidden or state.hiddenEmpty or fading then
+                if not state.fadeHidden then
+                    FadeHideTextures(state, btn)
                 end
-                -- ADD/MOD blend textures (gloss, tintOverlay) do not inherit
-                -- parent alpha — apply the fade alpha directly so they track
-                -- the container fade instead of staying fully visible and
-                -- popping off at alpha 0.
-                if state.gloss then state.gloss:SetAlpha(alpha) end
-                if state.tintOverlay then state.tintOverlay:SetAlpha(alpha) end
+            elseif state.fadeHidden then
+                FadeShowTextures(state, btn)
+                -- Restore button-level alpha: UpdateEmptySlotVisibility or
+                -- prior fade cycles may have set it to 0.  The container
+                -- handles the actual fade opacity.
+                btn:SetAlpha(1)
             end
         end
     end
@@ -3440,9 +3442,10 @@ end
 -- When hovering a spell in the spellbook, highlight matching buttons.
 ---------------------------------------------------------------------------
 
-local spellHighlight = { type = nil, id = nil }
+ActionBarsOwned.spellHighlight = { type = nil, id = nil }
 
 local function UpdateSpellHighlight(button)
+    local spellHighlight = ActionBarsOwned.spellHighlight
     local shown = false
     if spellHighlight.type == "spell" then
         local btnSpellId = GetButtonSpellId(button)
@@ -7096,20 +7099,20 @@ function ActionBarsOwned:Initialize()
     -- when hovering that spell in the spellbook.
     if _G.UpdateOnBarHighlightMarksBySpell then
         hooksecurefunc("UpdateOnBarHighlightMarksBySpell", function(spellID)
-            spellHighlight.type = "spell"
-            spellHighlight.id = tonumber(spellID)
+            ActionBarsOwned.spellHighlight.type = "spell"
+            ActionBarsOwned.spellHighlight.id = tonumber(spellID)
         end)
     end
     if _G.UpdateOnBarHighlightMarksByFlyout then
         hooksecurefunc("UpdateOnBarHighlightMarksByFlyout", function(flyoutID)
-            spellHighlight.type = "flyout"
-            spellHighlight.id = tonumber(flyoutID)
+            ActionBarsOwned.spellHighlight.type = "flyout"
+            ActionBarsOwned.spellHighlight.id = tonumber(flyoutID)
         end)
     end
     if _G.ClearOnBarHighlightMarks then
         hooksecurefunc("ClearOnBarHighlightMarks", function()
-            spellHighlight.type = nil
-            spellHighlight.id = nil
+            ActionBarsOwned.spellHighlight.type = nil
+            ActionBarsOwned.spellHighlight.id = nil
         end)
     end
     if _G.ActionBarController_UpdateAllSpellHighlights then
