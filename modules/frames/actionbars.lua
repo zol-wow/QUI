@@ -2916,6 +2916,20 @@ function ActionBarsOwned.UpdatePetButton(btn)
         if btn.StopFlash then btn:StopFlash() end
         btn:SetChecked(false)
     end
+    -- Orange active-stance border (Assist/Defensive/Passive indicator)
+    local isPetAttack = IsPetAttackAction and IsPetAttackAction(id)
+    local showOrangeBorder = isActive and not isPetAttack
+    if showOrangeBorder then
+        if not btn.QUI_ActiveBorder then
+            btn.QUI_ActiveBorder = btn:CreateTexture(nil, "OVERLAY", nil, 3)
+            btn.QUI_ActiveBorder:SetTexture(TEXTURES.normal)
+            btn.QUI_ActiveBorder:SetAllPoints(btn)
+        end
+        btn.QUI_ActiveBorder:SetVertexColor(1.0, 0.6, 0.0, 1.0)
+        btn.QUI_ActiveBorder:Show()
+    elseif btn.QUI_ActiveBorder then
+        btn.QUI_ActiveBorder:Hide()
+    end
     if btn.AutoCastOverlay then
         btn.AutoCastOverlay:SetShown(autoCastAllowed and true or false)
         btn.AutoCastOverlay:ShowAutoCastEnabled(autoCastEnabled and true or false)
