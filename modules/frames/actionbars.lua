@@ -1443,8 +1443,20 @@ local function SetOwnedBarAlpha(barKey, alpha)
             local hidden = alpha <= 0 or state.hiddenEmpty
             if hidden then
                 FadeHideTextures(state, btn)
-            elseif state.fadeHidden then
-                FadeShowTextures(state, btn)
+            else
+                if state.fadeHidden then
+                    FadeShowTextures(state, btn)
+                    -- Restore button-level alpha: UpdateEmptySlotVisibility or
+                    -- prior fade cycles may have set it to 0.  The container
+                    -- handles the actual fade opacity.
+                    btn:SetAlpha(1)
+                end
+                -- ADD/MOD blend textures (gloss, tintOverlay) do not inherit
+                -- parent alpha — apply the fade alpha directly so they track
+                -- the container fade instead of staying fully visible and
+                -- popping off at alpha 0.
+                if state.gloss then state.gloss:SetAlpha(alpha) end
+                if state.tintOverlay then state.tintOverlay:SetAlpha(alpha) end
             end
         end
     end
@@ -3283,18 +3295,16 @@ do
         _lastCdUpdateTime = now
 
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            -- Skip bars that are fully faded out
-            local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
-            if not fadeState or fadeState.currentAlpha > 0 then
-                local buttons = ActionBarsOwned.nativeButtons[barKey]
-                if buttons then
-                    for _, btn in ipairs(buttons) do
-                        -- Skip empty slots at loop level to avoid function call +
-                        -- attribute lookups (UpdateCooldown also checks HasAction
-                        -- internally, but this avoids the overhead for 40-60 empty buttons)
-                        if HasAction(btn.action or 0) then
-                            ActionBarsOwned.UpdateCooldown(btn)
-                        end
+            -- Always update even when faded — cooldown state must be current
+            -- so swipes render correctly on fade-in.
+            local buttons = ActionBarsOwned.nativeButtons[barKey]
+            if buttons then
+                for _, btn in ipairs(buttons) do
+                    -- Skip empty slots at loop level to avoid function call +
+                    -- attribute lookups (UpdateCooldown also checks HasAction
+                    -- internally, but this avoids the overhead for 40-60 empty buttons)
+                    if HasAction(btn.action or 0) then
+                        ActionBarsOwned.UpdateCooldown(btn)
                     end
                 end
             end
@@ -3658,26 +3668,26 @@ function ActionBarsOwned.UpdateAllButtonVisuals()
     _lastVisualUpdateTime = now
 
     for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-        -- Skip bars that are fully faded out
-        local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
-        if not fadeState or fadeState.currentAlpha > 0 then
-            local btns = ActionBarsOwned.nativeButtons[barKey]
-            if btns then
-                for _, btn in ipairs(btns) do
-                    local action = btn.action or 0
-                    if HasAction(action) then
-                        -- Button has an action — always update visuals
-                        local state = GetFrameState(btn)
-                        state.wasEmpty = false
+        -- Always update even when the bar is faded out.  Mouseover-hidden
+        -- bars still need current icon/action data so they render correctly
+        -- on fade-in.  Events like SPELLS_CHANGED fire after reload and
+        -- must not be silently dropped for hidden bars.
+        local btns = ActionBarsOwned.nativeButtons[barKey]
+        if btns then
+            for _, btn in ipairs(btns) do
+                local action = btn.action or 0
+                if HasAction(action) then
+                    -- Button has an action — always update visuals
+                    local state = GetFrameState(btn)
+                    state.wasEmpty = false
+                    pcall(ActionBarsOwned.SafeUpdate, btn)
+                else
+                    -- Empty slot — run SafeUpdate once to clear visuals
+                    -- on the transition, then skip on subsequent ticks
+                    local state = GetFrameState(btn)
+                    if not state.wasEmpty then
+                        state.wasEmpty = true
                         pcall(ActionBarsOwned.SafeUpdate, btn)
-                    else
-                        -- Empty slot — run SafeUpdate once to clear visuals
-                        -- on the transition, then skip on subsequent ticks
-                        local state = GetFrameState(btn)
-                        if not state.wasEmpty then
-                            state.wasEmpty = true
-                            pcall(ActionBarsOwned.SafeUpdate, btn)
-                        end
                     end
                 end
             end
@@ -5381,27 +5391,30 @@ UpdateEmptySlotVisibility = function(button, settings)
     if not settings then return end
     local state = GetFrameState(button)
 
-    -- Get the bar's current fade alpha (respects mouseover hide)
     local barKey = GetBarKeyFromButton(button)
-    local fadeState = barKey and ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
-    local targetAlpha = fadeState and fadeState.currentAlpha or 1
 
     -- Stance/pet buttons are not standard action slots and can report action
     -- data that does not map cleanly to HasAction(). Never apply hide-empty
     -- logic to them.
+    -- Button-level alpha handles only empty-slot hiding.  The mouseover
+    -- fade effect is applied on the *container*, so buttons should be at
+    -- alpha 1 when they have content.  Using the container's currentAlpha
+    -- here would leave buttons stuck at 0 after a fade-in because
+    -- SetOwnedBarAlpha only animates the container, not individual buttons.
+
     if barKey == "stance" or barKey == "pet" then
         if state.hiddenEmpty then
             state.hiddenEmpty = nil
             FadeShowTextures(state, button)
         end
-        button:SetAlpha(targetAlpha)
+        button:SetAlpha(1)
         return
     end
 
     if not settings.hideEmptySlots then
-        -- Restore visibility if setting is off (respect fade state)
+        -- Restore visibility if setting is off
         if state.hiddenEmpty then
-            button:SetAlpha(targetAlpha)
+            button:SetAlpha(1)
             state.hiddenEmpty = nil
             FadeShowTextures(state, button)
         end
@@ -5413,7 +5426,7 @@ UpdateEmptySlotVisibility = function(button, settings)
     if action then
         local hasAction = SafeHasAction(action)
         if hasAction then
-            button:SetAlpha(targetAlpha)
+            button:SetAlpha(1)
             if state.hiddenEmpty then
                 state.hiddenEmpty = nil
                 FadeShowTextures(state, button)
@@ -5421,7 +5434,7 @@ UpdateEmptySlotVisibility = function(button, settings)
         else
             -- Show at preview alpha while dragging a placeable action
             if ActionBarsOwned.dragPreviewActive then
-                button:SetAlpha(DRAG_PREVIEW_ALPHA * targetAlpha)
+                button:SetAlpha(DRAG_PREVIEW_ALPHA)
             else
                 button:SetAlpha(0)
             end
@@ -5431,7 +5444,7 @@ UpdateEmptySlotVisibility = function(button, settings)
             end
         end
     else
-        button:SetAlpha(targetAlpha)
+        button:SetAlpha(1)
         if state.hiddenEmpty then
             state.hiddenEmpty = nil
             FadeShowTextures(state, button)
