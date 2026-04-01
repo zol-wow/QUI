@@ -820,17 +820,20 @@ local function UpdatePower(frame)
     local power = UnitPower(unit)
     local maxPower = UnitPowerMax(unit)
 
-    -- Secret values have type() == "number" but can't be compared or used
-    -- in arithmetic. Guard with IsSecretValue before any Lua-side operations.
-    if IsSecretValue(power) or IsSecretValue(maxPower) then
+    -- UnitPower/UnitPowerMax return nil for arena opponents — hide the bar.
+    if type(power) ~= "number" or type(maxPower) ~= "number" then
         frame.powerBar:Hide()
         return
     end
 
-    -- C-side SetMinMaxValues/SetValue handle values natively — no pcall needed.
+    -- C-side SetMinMaxValues/SetValue handle secret values natively.
     -- Only update SetMinMaxValues when maxPower actually changes (rare: buffs/talents).
-    if maxPower ~= frame._lastMaxPower then
-        frame._lastMaxPower = maxPower
+    -- Guard the Lua-side comparison with IsSecretValue to avoid errors from
+    -- taint-propagated secret values.
+    if IsSecretValue(maxPower) or maxPower ~= frame._lastMaxPower then
+        if not IsSecretValue(maxPower) then
+            frame._lastMaxPower = maxPower
+        end
         frame.powerBar:SetMinMaxValues(0, maxPower)
     end
     frame.powerBar:SetValue(power)
@@ -2315,26 +2318,23 @@ local function DecorateGroupFrame(frame)
             QUI_GF.unitFrameMap[value] = self
 
             -- GUID comparison: detect whether the actual player changed.
-            -- UnitGUID returns secret strings during combat — never store
-            -- or compare secret values (poisons the cache for future calls).
-            local newGuid = UnitGUID(value)
+            -- UnitGUID returns secret strings during combat — coerce to nil
+            -- so we never store or compare secret values.
+            local rawGuid = UnitGUID(value)
+            local newGuid = (rawGuid and not IsSecretValue(rawGuid)) and rawGuid or nil
             local oldGuid = _unitGuidCache[self]
-
-            if IsSecretValue(newGuid) then
-                -- Can't determine identity in combat — fall through to full update
-                -- Don't cache the secret value (would poison future comparisons)
-            else
+            if newGuid then
                 _unitGuidCache[self] = newGuid
+            end
 
-                if oldGuid and not IsSecretValue(oldGuid) and newGuid and oldGuid == newGuid then
-                    if oldUnit == value then
-                        -- Level 1: same unit, same player — nothing changed
-                        return
-                    end
-                    -- Level 2: slot moved (e.g., raid3 → raid5), same player.
-                    -- Map is already updated; skip full refresh.
+            if oldGuid and newGuid and oldGuid == newGuid then
+                if oldUnit == value then
+                    -- Level 1: same unit, same player — nothing changed
                     return
                 end
+                -- Level 2: slot moved (e.g., raid3 → raid5), same player.
+                -- Map is already updated; skip full refresh.
+                return
             end
 
             -- Level 3: genuinely different player (or first assignment)
