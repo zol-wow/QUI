@@ -30,19 +30,24 @@ end
 -- Fallback to bundled Quazii font (always available, loaded early in media.lua)
 local QUAZII_FONT_PATH = [[Interface\AddOns\QUI\assets\Quazii.ttf]]
 
--- TAINT SAFETY: Shared Font object modification is FUNDAMENTALLY UNSAFE.
--- Calling SetFont() on ANY shared Font object from addon code permanently
--- taints that object and ALL derived FontStrings for the entire session.
--- During combat, Blizzard's secure code calls GetStringHeight(),
--- GetStringWidth(), etc. on those FontStrings and gets secret/tainted
--- values, causing arithmetic errors in:
---   - UIWidgetTemplateTextWithState (inherits GameFontNormal) — tooltip
---     widget Setup() fails with "secret number value tainted by 'QUI'"
---   - ActionButton Count/Name text (inherits NumberFontNormal)
---   - Any other secure frame that reads FontString metrics during combat
+-- TAINT SAFETY: Some shared Font objects are unsafe to modify.
+-- Calling SetFont() on Font objects used by secure UI systems (e.g.,
+-- GameFontNormal → UIWidgetTemplateTextWithState, NumberFontNormal →
+-- ActionButton Count) taints ALL derived FontStrings. During combat,
+-- Blizzard's secure code calls GetStringHeight()/GetStringWidth() on
+-- those FontStrings and gets secret/tainted values → arithmetic errors.
 --
--- All font overrides are applied PER-INSTANCE instead:
---   - Tooltips: skinning/system/tooltips.lua (ApplyTooltipFontSizeToFrame)
+-- EXCEPTION: Tooltip-specific Font objects (GameTooltipHeaderText,
+-- GameTooltipText) are safe to modify. Their derived FontStrings are
+-- NOT read by secure UIWidget code, so GetStringWidth() remains
+-- non-secret. Calling SetFont() on the Font object (NOT on individual
+-- FontStrings) propagates size changes without per-FontString taint.
+-- See skinning/system/tooltips.lua ApplyFontSizeViaFontObjects().
+--
+-- Directly calling SetFont() on individual FontStrings (e.g.,
+-- GameTooltipTextLeft1) DOES taint them — avoid this for GameTooltip.
+--
+-- All non-tooltip font overrides are applied PER-INSTANCE:
 --   - Chat frames: per-frame SetFont below
 --   - ObjectiveTracker: per-frame ApplyFontToFrameRecursive below
 

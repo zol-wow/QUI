@@ -84,9 +84,16 @@ end
 
 ---------------------------------------------------------------------------
 -- Font Sizing
--- NOTE: Do NOT modify shared global font objects (GameTooltipText, etc.).
--- Blizzard's UIWidget templates inherit their FontStrings from these.
--- Font sizing is applied per-tooltip via ApplyFontSize() instead.
+-- TAINT SAFETY: GameTooltip uses Font-object-level sizing ONLY.
+-- Calling SetFont() directly on GameTooltipTextLeft* FontStrings taints
+-- them permanently; Blizzard's secure code (QuestMapLogTitleButton_OnEnter
+-- etc.) later calls GetStringWidth() on those FontStrings and gets secret
+-- values during combat → arithmetic errors. Modifying the Font objects
+-- (GameTooltipHeaderText, GameTooltipText) instead propagates the size
+-- change to derived FontStrings WITHOUT tainting them individually.
+-- Other tooltips (ItemRefTooltip, ShoppingTooltip, etc.) are safe to
+-- modify per-FontString since Blizzard doesn't call GetStringWidth() on
+-- their lines from secure code.
 ---------------------------------------------------------------------------
 
 local function GetEffectiveFontSize()
@@ -109,9 +116,49 @@ local function SetFontStringSize(fs, size)
     pcall(fs.SetFont, fs, path, size, flags or "")
 end
 
+-- Cache default Font object metrics for reset
+local defaultHeaderFont, defaultHeaderSize, defaultHeaderFlag
+local defaultBodyFont, defaultBodySize, defaultBodyFlag
+local function CacheDefaultFontMetrics()
+    if defaultHeaderFont then return end
+    if GameTooltipHeaderText then
+        defaultHeaderFont, defaultHeaderSize, defaultHeaderFlag = GameTooltipHeaderText:GetFont()
+    end
+    if GameTooltipText then
+        defaultBodyFont, defaultBodySize, defaultBodyFlag = GameTooltipText:GetFont()
+    end
+end
+
+-- Apply font size via Font objects for GameTooltip (taint-safe).
+-- Modifying the Font object propagates to derived FontStrings without
+-- tainting them individually, so GetStringWidth() remains non-secret.
+local function ApplyFontSizeViaFontObjects(size)
+    CacheDefaultFontMetrics()
+    local headerSize = size + 2
+    if GameTooltipHeaderText and defaultHeaderFont then
+        local _, curSize = GameTooltipHeaderText:GetFont()
+        if not curSize or math.abs(curSize - headerSize) >= 0.5 then
+            GameTooltipHeaderText:SetFont(defaultHeaderFont, headerSize, defaultHeaderFlag or "")
+        end
+    end
+    if GameTooltipText and defaultBodyFont then
+        local _, curSize = GameTooltipText:GetFont()
+        if not curSize or math.abs(curSize - size) >= 0.5 then
+            GameTooltipText:SetFont(defaultBodyFont, size, defaultBodyFlag or "")
+        end
+    end
+end
+
 local function ApplyFontSize(tooltip)
     if not tooltip then return end
     local base = GetEffectiveFontSize()
+
+    -- GameTooltip: use Font-object-level sizing to avoid tainting FontStrings
+    if tooltip == GameTooltip then
+        ApplyFontSizeViaFontObjects(base)
+        return
+    end
+
     local header = base + 2
     local name
     if tooltip.GetName then
