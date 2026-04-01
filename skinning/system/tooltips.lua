@@ -579,14 +579,17 @@ HookTooltipOnShow = function(tooltip)
         hookedTooltips[tooltip] = true
         HookNineSlice(tooltip)
 
-        tooltip:HookScript("OnShow", function(self)
+        -- TAINT SAFETY: Must use hooksecurefunc, NOT HookScript("OnShow").
+        -- HookScript runs addon code INSIDE the Show() call, tainting the
+        -- caller's execution context.  When secure callers (AreaPoiUtil,
+        -- etc.) do Show() then AddWidgetSet() in one Lua stack, the taint
+        -- propagates into widget processing — GetStringHeight() returns
+        -- secret values and UIWidgetTemplateTextWithState:Setup() errors.
+        -- hooksecurefunc runs in a separate taint bubble that does NOT
+        -- propagate back, while still firing before the next rendered frame
+        -- (no 1-frame NineSlice flash).
+        hooksecurefunc(tooltip, "Show", function(self)
             if not IsEnabled() then return end
-            -- TAINT SAFETY: Never call StyleTooltip synchronously from
-            -- GameTooltip:OnShow.  Secure callers (AreaPoiUtil, etc.)
-            -- call Show() then AddWidgetSet() in one Lua stack; any
-            -- addon property writes here taint the execution context,
-            -- causing secret-value errors in widget layout geometry.
-            -- Only C-side operations (Hide/Show/SetFrameLevel) are safe.
             HideNineSlice(self)
             local sf = styleFrames[self]
             if sf then pcall(sf.Show, sf) end
