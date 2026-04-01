@@ -820,8 +820,9 @@ local function UpdatePower(frame)
     local power = UnitPower(unit)
     local maxPower = UnitPowerMax(unit)
 
-    -- If values are secret (not numbers), hide the bar (matches QUI pattern)
-    if type(power) ~= "number" or type(maxPower) ~= "number" then
+    -- Secret values have type() == "number" but can't be compared or used
+    -- in arithmetic. Guard with IsSecretValue before any Lua-side operations.
+    if IsSecretValue(power) or IsSecretValue(maxPower) then
         frame.powerBar:Hide()
         return
     end
@@ -2313,19 +2314,27 @@ local function DecorateGroupFrame(frame)
             -- Register new mapping immediately (so events dispatch correctly)
             QUI_GF.unitFrameMap[value] = self
 
-            -- GUID comparison: detect whether the actual player changed
+            -- GUID comparison: detect whether the actual player changed.
+            -- UnitGUID returns secret strings during combat — never store
+            -- or compare secret values (poisons the cache for future calls).
             local newGuid = UnitGUID(value)
             local oldGuid = _unitGuidCache[self]
-            _unitGuidCache[self] = newGuid
 
-            if oldGuid and newGuid and oldGuid == newGuid then
-                if oldUnit == value then
-                    -- Level 1: same unit, same player — nothing changed
+            if IsSecretValue(newGuid) then
+                -- Can't determine identity in combat — fall through to full update
+                -- Don't cache the secret value (would poison future comparisons)
+            else
+                _unitGuidCache[self] = newGuid
+
+                if oldGuid and not IsSecretValue(oldGuid) and newGuid and oldGuid == newGuid then
+                    if oldUnit == value then
+                        -- Level 1: same unit, same player — nothing changed
+                        return
+                    end
+                    -- Level 2: slot moved (e.g., raid3 → raid5), same player.
+                    -- Map is already updated; skip full refresh.
                     return
                 end
-                -- Level 2: slot moved (e.g., raid3 → raid5), same player.
-                -- Map is already updated; skip full refresh.
-                return
             end
 
             -- Level 3: genuinely different player (or first assignment)
@@ -2572,8 +2581,50 @@ local function UpdateAnchorFrames()
     local partyX, partyY = GetAnchorPosition("party", db)
     local raidX, raidY = GetAnchorPosition("raid", db)
 
-    -- Position roots: delegate to the anchoring system when it owns the frame
-    -- (preserves size-stable CENTER anchoring), otherwise fall back to legacy.
+    -- Resize roots FIRST so that size-stable CENTER anchoring in
+    -- ApplyFrameAnchor uses the correct dimensions. Previously the
+    -- external position was computed before the resize, causing a
+    -- CENTER offset mismatch that ApplyAllFrameAnchors would later
+    -- "correct" — producing visible jumps during combat.
+    local selfHdr = QUI_GF.headers.self
+    local selfOnParty = selfHdr and selfHdr:IsShown() and not IsInRaid()
+
+    UpdateAnchorRoot("party", QUI_GF.headers.party, selfOnParty and selfHdr or nil, false)
+
+    if UseRaidSectionHeaders(db) and IsInRaid() then
+        local root = raidRoot
+
+        local mW, mH = GetMultiHeaderTotalSize()
+        local anyVisible = mW > 1 or mH > 1
+
+        if not anyVisible then
+            root:ClearAllPoints()
+            root:Hide()
+            -- Still position both roots even when raid sections are invisible
+            local applyAnchor = _G.QUI_ApplyFrameAnchor
+            local hasAnchor = _G.QUI_HasFrameAnchor
+            if hasAnchor and hasAnchor("partyFrames") and applyAnchor then
+                applyAnchor("partyFrames")
+            elseif partyRoot:GetNumPoints() == 0 then
+                partyRoot:SetPoint("CENTER", UIParent, "CENTER", partyX, partyY)
+            end
+            if hasAnchor and hasAnchor("raidFrames") and applyAnchor then
+                applyAnchor("raidFrames")
+            elseif raidRoot:GetNumPoints() == 0 then
+                raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidX, raidY)
+            end
+            return
+        end
+
+        root:SetSize(math_max(1, mW), math_max(1, mH))
+        root:Show()
+    else
+        UpdateAnchorRoot("raid", QUI_GF.headers.raid, nil, true)
+    end
+
+    -- Position roots AFTER resize: delegate to the anchoring system when it
+    -- owns the frame (preserves size-stable CENTER anchoring), otherwise
+    -- fall back to legacy.
     local applyAnchor = _G.QUI_ApplyFrameAnchor
     local hasAnchor = _G.QUI_HasFrameAnchor
     if hasAnchor and hasAnchor("partyFrames") and applyAnchor then
@@ -2585,31 +2636,6 @@ local function UpdateAnchorFrames()
         applyAnchor("raidFrames")
     elseif raidRoot:GetNumPoints() == 0 then
         raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidX, raidY)
-    end
-
-    local selfHdr = QUI_GF.headers.self
-    local selfOnParty = selfHdr and selfHdr:IsShown() and not IsInRaid()
-
-    UpdateAnchorRoot("party", QUI_GF.headers.party, selfOnParty and selfHdr or nil, false)
-
-    if UseRaidSectionHeaders(db) and IsInRaid() then
-        -- In section-header mode, compute root size from all visible raid sections.
-        local root = raidRoot
-
-        local mW, mH = GetMultiHeaderTotalSize()
-        local anyVisible = mW > 1 or mH > 1
-
-        if not anyVisible then
-            root:ClearAllPoints()
-            root:Hide()
-            return
-        end
-
-        root:SetSize(math_max(1, mW), math_max(1, mH))
-
-        root:Show()
-    else
-        UpdateAnchorRoot("raid", QUI_GF.headers.raid, nil, true)
     end
 end
 
