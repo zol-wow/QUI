@@ -1870,9 +1870,9 @@ local function IsMinimapButton(frame)
     if name:match("Minimap$") then return true end
     -- Reject names ending in digits (pin/node/tracking frames)
     if name:match("%d$") then return false end
-    -- Accept if it has click handlers and is a child of Minimap
+    -- Accept if it has click handlers and is a child of a minimap container
     local parent = frame:GetParent()
-    if parent and (parent == Minimap or parent == MinimapBackdrop) then
+    if parent and (parent == Minimap or parent == MinimapBackdrop or parent == MinimapCluster) then
         local ok, hasClick = pcall(function() return frame:HasScript("OnClick") and frame:GetScript("OnClick") end)
         local ok2, hasMouseUp = pcall(function() return frame:HasScript("OnMouseUp") and frame:GetScript("OnMouseUp") end)
         local ok3, hasMouseDown = pcall(function() return frame:HasScript("OnMouseDown") and frame:GetScript("OnMouseDown") end)
@@ -2595,6 +2595,7 @@ local function CollectButton(frame, name)
             mtSetAlpha(self, 1)
         end
     end
+    frame.SetParent = function() end  -- Prevent addons from re-parenting out of drawer
     -- Force visible using metatable methods (bypass our overrides for initial set)
     if mtSetAlpha then mtSetAlpha(frame, 1) end
     if mt and mt.__index then mt.__index.Show(frame) end
@@ -2642,6 +2643,27 @@ local function ScanAndCollectButtons()
             end
         end
     end
+    -- Scan MinimapCluster children (some addons parent buttons here)
+    if MinimapCluster then
+        for _, child in ipairs({ MinimapCluster:GetChildren() }) do
+            if IsMinimapButton(child) then
+                local name = child:GetName()
+                if name and not ShouldSkipDrawerButton(name) then
+                    CollectButton(child, name)
+                end
+            end
+        end
+    end
+    -- Scan UIParent children for minimap buttons parented outside the
+    -- minimap hierarchy (some addons parent their button to UIParent)
+    for _, child in ipairs({ UIParent:GetChildren() }) do
+        local ok, name = pcall(child.GetName, child)
+        if ok and name and not collectedButtons[name] and IsMinimapButton(child) then
+            if not ShouldSkipDrawerButton(name) then
+                CollectButton(child, name)
+            end
+        end
+    end
 
     LayoutDrawerButtons()
 end
@@ -2658,6 +2680,7 @@ local function ReleaseAllButtons()
             frame.Hide = nil
             frame.SetShown = nil
             frame.SetAlpha = nil
+            frame.SetParent = nil
             -- Restore hidden overlay/border textures for LibDBIcon buttons
             if data.hiddenRegions then
                 for _, region in ipairs(data.hiddenRegions) do
