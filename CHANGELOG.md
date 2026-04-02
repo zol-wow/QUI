@@ -4,6 +4,67 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v2.56.0-alpha.7
+
+### New: Click-Cast Per-Loadout Bindings
+- Per-loadout binding support — separate click-cast bindings per talent loadout
+- Spell override resolution via C_Spell.GetSpellName on stored spellID for dynamic talent overrides
+- Options panel: loadout toggle, loadout dropdown, copy/clear loadout actions
+
+### New: Searchable Dropdown Widget
+- Added CreateSearchableDropdown to the GUI framework with text filter, scrollable results, and keyboard navigation
+
+### CDM (Cooldown Manager)
+- Reapply swipe style on aura deactivation and cooldown-active state transitions — fixes edge/color not updating when cooldowns start or end
+
+### Action Bars
+- Fixed fade/empty slot alpha layering — button-level alpha decoupled from container fade
+- Hide ADD/MOD blend textures (gloss, tintOverlay) during fade — MOD blend fades toward white, not transparent
+- Added orange active-stance border for pet bar buttons (Assist/Defensive/Passive indicator)
+- Call UpdateAllButtonVisuals during PEW init and deferred retry
+- Fix spellHighlight scoping for do-block accessibility
+
+### Group Frames
+- Fixed selfFirst showing player as duplicate in raid — separate party/raid self-first settings
+- Self header now uses raid dimensions when in raid
+- Fixed power bar secret value handling — pass secrets to C-side SetMinMaxValues/SetValue, guard Lua-side cache comparison
+- Fixed power bar nil handling for arena opponents (UnitPower returns nil)
+- Fixed GUID cache poisoning from secret UnitGUID during combat
+- Fixed anchor resize ordering — resize roots before applying position anchors to prevent CENTER offset jumps
+
+### Tooltips
+- Replaced HookScript("OnShow") with hooksecurefunc("Show") to prevent taint propagation from secure callers
+- Use Font object sizing for GameTooltip instead of per-FontString SetFont to prevent taint on GetStringWidth()
+
+### Fixes
+- Anchoring: fix frame anchor key lookup for layout mode handle positioning
+
+## v2.56.0-alpha.6
+
+### Breaking
+- Removed classic CDM engine support — owned engine is now the only engine
+
+### Action Bars
+- do-block scoping for spell glow, extra buttons, skinning, and flyout sections to limit local scope
+- Fixed anchor key mapping — pet/stance/microbar/bags now map to correct anchoring system keys
+- Combat reload safety: defer pet bar and stance bar hide when data unavailable at PEW time
+- Re-apply frame anchoring during PEW init safe window (containers may not exist at ADDON_LOADED)
+- Added lightweight `QUI_RefreshActionBarFade` for fade-only refresh without full bar rebuild
+- Fade/alwaysShow settings now use lightweight refresh
+- Updated defaults: 30px buttons, 0px spacing, better text positions
+
+### Group Frames
+- Added option to reverse the CD swipe on auras
+- Added drag-n-drop rearrangement for aura indicators
+- Added new aura indicator types (bars, healthbar color)
+
+### New Features
+- Option to select a default chat tab on login/reload
+- Custom tracker bars restored
+
+### Fixes
+- Fixed minimap zoom not being persistent
+
 ## v2.56.0-alpha.5
 
 ### CDM (Cooldown Manager)
