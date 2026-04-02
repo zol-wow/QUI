@@ -26,6 +26,59 @@ local PAD = 10
 local PREVIEW_SCALE = 2
 local UIKit = ns.UIKit
 
+---------------------------------------------------------------------------
+-- SPELL CACHE: Enumerate known non-passive spells from spellbook
+---------------------------------------------------------------------------
+local spellCache = {}  -- { { spellID, name, icon, tab }, ... }
+local spellCacheBuilt = false
+
+local function RebuildSpellCache()
+    wipe(spellCache)
+    spellCacheBuilt = false
+    if not C_SpellBook or not C_SpellBook.GetNumSpellBookSkillLines then return end
+    local ok, numTabs = pcall(C_SpellBook.GetNumSpellBookSkillLines)
+    if not ok or not numTabs then return end
+    for tab = 1, numTabs do
+        local okL, sli = pcall(C_SpellBook.GetSpellBookSkillLineInfo, tab)
+        if okL and sli then
+            local offset = sli.itemIndexOffset or 0
+            for i = 1, (sli.numSpellBookItems or 0) do
+                local okI, info = pcall(C_SpellBook.GetSpellBookItemInfo, offset + i, Enum.SpellBookSpellBank.Player)
+                if okI and info and info.spellID then
+                    local isPassive = false
+                    if C_SpellBook.IsSpellBookItemPassive then
+                        local okP, p = pcall(C_SpellBook.IsSpellBookItemPassive, offset + i, Enum.SpellBookSpellBank.Player)
+                        if okP then isPassive = p end
+                    end
+                    if not isPassive and not info.isOffSpec then
+                        -- Only include spells the player currently knows for active spec
+                        local isKnown = IsPlayerSpell and IsPlayerSpell(info.spellID)
+                        if isKnown then
+                            local name = C_Spell.GetSpellName(info.spellID)
+                            if name then
+                                local spellInfo = C_Spell.GetSpellInfo(info.spellID)
+                                local icon = spellInfo and spellInfo.iconID
+                                table.insert(spellCache, { spellID = info.spellID, name = name, icon = icon, tab = sli.name or "General" })
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Sort alphabetically within each tab group
+    table.sort(spellCache, function(a, b)
+        if a.tab == b.tab then return a.name < b.name end
+        return a.tab < b.tab
+    end)
+    spellCacheBuilt = true
+end
+
+local function EnsureSpellCache()
+    if not spellCacheBuilt then RebuildSpellCache() end
+    return spellCache
+end
+
 local function SetSizePx(frame, widthPixels, heightPixels)
     if UIKit and UIKit.SetSizePx then
         UIKit.SetSizePx(frame, widthPixels, heightPixels)
@@ -210,6 +263,24 @@ local function BuildClickCastGeneral(content, cc, refreshClickCast, startY, stat
     perSpecCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
 
+    local perLoadoutCheck = GUI:CreateFormCheckbox(content, "Per-Loadout Bindings (separate bindings per talent loadout)", "perLoadout", cc, refreshClickCast)
+    perLoadoutCheck:SetPoint("TOPLEFT", PAD + 16, y)
+    perLoadoutCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    -- Only visible/enabled when perSpec is on
+    local function UpdatePerLoadoutVisibility()
+        if cc.perSpec then
+            perLoadoutCheck:Show()
+        else
+            perLoadoutCheck:Hide()
+        end
+    end
+    UpdatePerLoadoutVisibility()
+    if not cc.perSpec then
+        y = y  -- Don't consume space when hidden
+    else
+        y = y - FORM_ROW
+    end
+
     local smartResCheck = GUI:CreateFormCheckbox(content, "Smart Resurrection (auto-swap to res on dead targets)", "smartRes", cc, RefreshGF)
     smartResCheck:SetPoint("TOPLEFT", PAD, y)
     smartResCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
@@ -244,7 +315,11 @@ local function BuildClickCastGeneral(content, cc, refreshClickCast, startY, stat
         y = y - FORM_ROW
     end
 
-    if state then state.perSpecCheck = perSpecCheck end
+    if state then
+        state.perSpecCheck = perSpecCheck
+        state.perLoadoutCheck = perLoadoutCheck
+        state.UpdatePerLoadoutVisibility = UpdatePerLoadoutVisibility
+    end
     content:SetHeight(math.abs(y) + 10)
     return y
 end
@@ -573,7 +648,17 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
             if specIndex then
                 local _, specName = GetSpecializationInfo(specIndex)
                 if specName then
-                    specLabel:SetText("Editing bindings for: " .. specName)
+                    local labelText = "Editing bindings for: " .. specName
+                    if cc.perLoadout and C_ClassTalents then
+                        local configID = C_ClassTalents.GetActiveConfigID()
+                        if configID and C_Traits and C_Traits.GetConfigInfo then
+                            local configInfo = C_Traits.GetConfigInfo(configID)
+                            if configInfo and configInfo.name then
+                                labelText = labelText .. " \226\128\148 " .. configInfo.name
+                            end
+                        end
+                    end
+                    specLabel:SetText(labelText)
                     specLabel:Show()
                     return
                 end
@@ -798,7 +883,7 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
     actionDrop:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
     ay = ay - FORM_ROW
 
-    -- Spell name editbox
+    -- Spell name editbox with autocomplete + browse
     spellInputContainer = CreateFrame("Frame", nil, addContainer)
     spellInputContainer:SetHeight(FORM_ROW)
     spellInputContainer:SetPoint("TOPLEFT", 0, ay)
@@ -809,9 +894,24 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
     spellLabel:SetText("Spell Name")
     spellLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
+    -- Browse button (right side)
+    local browseBtn = CreateFrame("Button", nil, spellInputContainer, "BackdropTemplate")
+    SetSizePx(browseBtn, 64, 24)
+    browseBtn:SetPoint("RIGHT", spellInputContainer, "RIGHT", 0, 0)
+    ApplyPixelBackdrop(browseBtn, 1, true)
+    browseBtn:SetBackdropColor(0.12, 0.12, 0.12, 1)
+    browseBtn:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+    local browseBtnText = browseBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    browseBtnText:SetPoint("CENTER", 0, 0)
+    browseBtnText:SetText("Browse")
+    browseBtnText:SetFont(GUI.FONT_PATH, 10, "")
+    browseBtnText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    browseBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
+    browseBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1) end)
+
     local spellInputBg = CreateFrame("Frame", nil, spellInputContainer, "BackdropTemplate")
     spellInputBg:SetPoint("LEFT", spellInputContainer, "LEFT", 180, 0)
-    spellInputBg:SetPoint("RIGHT", spellInputContainer, "RIGHT", 0, 0)
+    spellInputBg:SetPoint("RIGHT", browseBtn, "LEFT", -6, 0)
     SetHeightPx(spellInputBg, 24)
     ApplyPixelBackdrop(spellInputBg, 1, true)
     spellInputBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
@@ -825,11 +925,388 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
     spellInput:SetFont(GUI.FONT_PATH, 11, "")
     spellInput:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     spellInput:SetText("")
-    spellInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    spellInput:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    spellInput:SetScript("OnTextChanged", function(self) addState.spellName = self:GetText() end)
+
+    -----------------------------------------------------------------------
+    -- AUTOCOMPLETE DROPDOWN: shows matching spells below the input
+    -----------------------------------------------------------------------
+    local MAX_AC_ROWS = 8
+    local AC_ROW_HEIGHT = 22
+
+    local acMenu = CreateFrame("Frame", nil, spellInputBg, "BackdropTemplate")
+    acMenu:SetPoint("TOPLEFT", spellInputBg, "BOTTOMLEFT", 0, -2)
+    acMenu:SetPoint("RIGHT", spellInputBg, "RIGHT", 0, 0)
+    acMenu:SetHeight(AC_ROW_HEIGHT * MAX_AC_ROWS + 4)
+    acMenu:SetFrameStrata("DIALOG")
+    ApplyPixelBackdrop(acMenu, 1, true)
+    acMenu:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    acMenu:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.6)
+    acMenu:Hide()
+
+    local acRows = {}
+    for ri = 1, MAX_AC_ROWS do
+        local row = CreateFrame("Button", nil, acMenu)
+        row:SetHeight(AC_ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", acMenu, "TOPLEFT", 2, -2 - (ri - 1) * AC_ROW_HEIGHT)
+        row:SetPoint("RIGHT", acMenu, "RIGHT", -2, 0)
+
+        local rowIcon = row:CreateTexture(nil, "ARTWORK")
+        rowIcon:SetSize(18, 18)
+        rowIcon:SetPoint("LEFT", 2, 0)
+        rowIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.icon = rowIcon
+
+        local rowText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        rowText:SetPoint("LEFT", rowIcon, "RIGHT", 4, 0)
+        rowText:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        rowText:SetJustifyH("LEFT")
+        rowText:SetFont(GUI.FONT_PATH, 11, "")
+        rowText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+        row.text = rowText
+
+        local rowHl = row:CreateTexture(nil, "HIGHLIGHT")
+        rowHl:SetAllPoints()
+        rowHl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
+
+        row:SetScript("OnClick", function(self)
+            if self.spellName then
+                spellInput:SetText(self.spellName)
+                addState.spellName = self.spellName
+                acMenu:Hide()
+                spellInput:ClearFocus()
+            end
+        end)
+
+        row:Hide()
+        acRows[ri] = row
+    end
+
+    local acDebounceTimer = nil
+    local function ShowAutocomplete(searchText)
+        if not searchText or #searchText < 2 then acMenu:Hide() return end
+        local spells = EnsureSpellCache()
+        local lower = searchText:lower()
+        local matches = {}
+        for _, entry in ipairs(spells) do
+            if entry.name:lower():find(lower, 1, true) then
+                matches[#matches + 1] = entry
+                if #matches >= MAX_AC_ROWS then break end
+            end
+        end
+        if #matches == 0 then acMenu:Hide() return end
+        for ri = 1, MAX_AC_ROWS do
+            local row = acRows[ri]
+            local m = matches[ri]
+            if m then
+                row.icon:SetTexture(m.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                row.text:SetText(m.name)
+                row.spellName = m.name
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+        acMenu:SetHeight(#matches * AC_ROW_HEIGHT + 4)
+        acMenu:Show()
+    end
+
+    spellInput:SetScript("OnEscapePressed", function(self) acMenu:Hide() self:ClearFocus() end)
+    spellInput:SetScript("OnEnterPressed", function(self) acMenu:Hide() self:ClearFocus() end)
+    spellInput:SetScript("OnTextChanged", function(self, userInput)
+        addState.spellName = self:GetText()
+        if not userInput then return end
+        if acDebounceTimer then acDebounceTimer:Cancel() end
+        acDebounceTimer = C_Timer.NewTimer(0.15, function()
+            acDebounceTimer = nil
+            ShowAutocomplete(self:GetText())
+        end)
+    end)
     spellInput:SetScript("OnEditFocusGained", function() spellInputBg:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
-    spellInput:SetScript("OnEditFocusLost", function() spellInputBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1) end)
+    spellInput:SetScript("OnEditFocusLost", function()
+        spellInputBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+        -- Delay hide so row OnClick fires first
+        C_Timer.After(0.1, function() acMenu:Hide() end)
+    end)
+
+    -----------------------------------------------------------------------
+    -- BROWSE SPELLS POPUP: scrollable grouped spell list with search
+    -----------------------------------------------------------------------
+    local browsePopup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    browsePopup:SetSize(320, 400)
+    browsePopup:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    browsePopup:SetFrameStrata("FULLSCREEN_DIALOG")
+    browsePopup:SetFrameLevel(200)
+    browsePopup:SetMovable(true)
+    browsePopup:EnableMouse(true)
+    browsePopup:RegisterForDrag("LeftButton")
+    browsePopup:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    browsePopup:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    ApplyPixelBackdrop(browsePopup, 1, true)
+    browsePopup:SetBackdropColor(0.06, 0.06, 0.06, 0.97)
+    browsePopup:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
+    browsePopup:Hide()
+
+    -- Title
+    local browseTitle = browsePopup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    browseTitle:SetPoint("TOPLEFT", 10, -8)
+    browseTitle:SetText("Browse Spells")
+    browseTitle:SetFont(GUI.FONT_PATH, 12, "")
+    browseTitle:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+
+    -- Close button
+    local browseCloseBtn = CreateFrame("Button", nil, browsePopup)
+    browseCloseBtn:SetSize(20, 20)
+    browseCloseBtn:SetPoint("TOPRIGHT", -6, -6)
+    local browseCloseText = browseCloseBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    browseCloseText:SetPoint("CENTER", 0, 0)
+    browseCloseText:SetText("X")
+    browseCloseText:SetFont(GUI.FONT_PATH, 11, "")
+    browseCloseText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+    browseCloseBtn:SetScript("OnEnter", function() browseCloseText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
+    browseCloseBtn:SetScript("OnLeave", function() browseCloseText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1) end)
+    browseCloseBtn:SetScript("OnClick", function() browsePopup:Hide() end)
+
+    -- Search box
+    local browseSearchBg = CreateFrame("Frame", nil, browsePopup, "BackdropTemplate")
+    browseSearchBg:SetPoint("TOPLEFT", 8, -28)
+    browseSearchBg:SetPoint("RIGHT", browsePopup, "RIGHT", -8, 0)
+    SetHeightPx(browseSearchBg, 24)
+    ApplyPixelBackdrop(browseSearchBg, 1, true)
+    browseSearchBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
+    browseSearchBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+
+    local browseSearch = CreateFrame("EditBox", nil, browseSearchBg)
+    browseSearch:SetPoint("LEFT", 8, 0)
+    browseSearch:SetPoint("RIGHT", -8, 0)
+    browseSearch:SetHeight(22)
+    browseSearch:SetAutoFocus(false)
+    browseSearch:SetFont(GUI.FONT_PATH, 11, "")
+    browseSearch:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+    browseSearch:SetText("")
+
+    local browseSearchPlaceholder = browseSearchBg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    browseSearchPlaceholder:SetPoint("LEFT", 8, 0)
+    browseSearchPlaceholder:SetText("Search spells...")
+    browseSearchPlaceholder:SetFont(GUI.FONT_PATH, 11, "")
+    browseSearchPlaceholder:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6)
+    browseSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    -- Scroll frame for spell list (custom styled, no UIPanelScrollFrameTemplate)
+    local SCROLLBAR_WIDTH = 4
+    local SCROLL_STEP = 24
+
+    local browseScroll = CreateFrame("ScrollFrame", nil, browsePopup)
+    browseScroll:SetPoint("TOPLEFT", 8, -58)
+    browseScroll:SetPoint("BOTTOMRIGHT", -(8 + SCROLLBAR_WIDTH + 2), 8)
+
+    local browseScrollChild = CreateFrame("Frame", nil, browseScroll)
+    browseScrollChild:SetWidth(browseScroll:GetWidth() or 296)
+    browseScrollChild:SetHeight(1)
+    browseScroll:SetScrollChild(browseScrollChild)
+
+    -- Thin accent-colored scrollbar thumb (matches framework dropdown style)
+    local browseScrollBar = CreateFrame("Frame", nil, browsePopup)
+    browseScrollBar:SetWidth(SCROLLBAR_WIDTH)
+    browseScrollBar:SetPoint("TOPRIGHT", browsePopup, "TOPRIGHT", -8, -58)
+    browseScrollBar:SetPoint("BOTTOMRIGHT", browsePopup, "BOTTOMRIGHT", -8, 8)
+    browseScrollBar:Hide()
+
+    local browseThumb = browseScrollBar:CreateTexture(nil, "OVERLAY")
+    browseThumb:SetWidth(SCROLLBAR_WIDTH)
+    browseThumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
+
+    local function UpdateBrowseThumb()
+        local contentH = browseScrollChild:GetHeight()
+        local frameH = browseScroll:GetHeight()
+        if contentH <= frameH or frameH <= 0 then
+            browseScrollBar:Hide()
+            return
+        end
+        browseScrollBar:Show()
+        local trackH = browseScrollBar:GetHeight()
+        if trackH <= 0 then return end
+        local thumbH = math.max(20, (frameH / contentH) * trackH)
+        browseThumb:SetHeight(thumbH)
+        local scrollMax = contentH - frameH
+        local okScroll, scrollCur = pcall(browseScroll.GetVerticalScroll, browseScroll)
+        scrollCur = (okScroll and scrollCur) or 0
+        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
+        local yOff = -ratio * (trackH - thumbH)
+        browseThumb:ClearAllPoints()
+        browseThumb:SetPoint("TOP", browseScrollBar, "TOP", 0, yOff)
+    end
+
+    browseScroll:EnableMouseWheel(true)
+    browseScroll:SetScript("OnMouseWheel", function(self, delta)
+        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
+        if not okCur then return end
+        local contentH = browseScrollChild:GetHeight()
+        local frameH = self:GetHeight()
+        local maxScroll = math.max(0, contentH - frameH)
+        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
+        pcall(self.SetVerticalScroll, self, newScroll)
+        UpdateBrowseThumb()
+    end)
+    browseScroll:SetScript("OnScrollRangeChanged", function() UpdateBrowseThumb() end)
+
+    -- Ensure child width matches scroll frame after layout
+    browseScroll:SetScript("OnSizeChanged", function(self, w)
+        browseScrollChild:SetWidth(w or 296)
+    end)
+
+    local BROWSE_ROW_H = 24
+    local browseRows = {}
+    local browseRowIndex = 0
+    local expandedTabs = {}  -- [tabName] = true when expanded (default: collapsed)
+
+    local function GetOrCreateSpellRow()
+        browseRowIndex = browseRowIndex + 1
+        local row = browseRows[browseRowIndex]
+        if row and row.isSpellRow then
+            row:ClearAllPoints()
+            row:Show()
+            return row
+        end
+        row = CreateFrame("Button", nil, browseScrollChild)
+        row.isSpellRow = true
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(18, 18)
+        row.icon:SetPoint("LEFT", 4, 0)
+        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.text:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+        row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.text:SetJustifyH("LEFT")
+        row.text:SetFont(GUI.FONT_PATH, 11, "")
+        local hl = row:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
+        row:SetScript("OnClick", function(self)
+            if self.spellName then
+                spellInput:SetText(self.spellName)
+                addState.spellName = self.spellName
+                browsePopup:Hide()
+            end
+        end)
+        browseRows[browseRowIndex] = row
+        return row
+    end
+
+    local function GetOrCreateHeaderRow()
+        browseRowIndex = browseRowIndex + 1
+        local row = browseRows[browseRowIndex]
+        if row and not row.isSpellRow then
+            row:ClearAllPoints()
+            row:Show()
+            return row
+        end
+        row = CreateFrame("Button", nil, browseScrollChild)
+        row.isSpellRow = false
+
+        -- Chevron indicator
+        row.chevron = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.chevron:SetPoint("LEFT", 2, 0)
+        row.chevron:SetFont(GUI.FONT_PATH, 10, "")
+        row.chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.6)
+
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.text:SetPoint("LEFT", row.chevron, "RIGHT", 4, 0)
+        row.text:SetFont(GUI.FONT_PATH, 10, "")
+
+        local hl = row:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.08)
+
+        browseRows[browseRowIndex] = row
+        return row
+    end
+
+    local BuildBrowseList  -- forward declaration for header click
+
+    local function BuildBrowseListImpl(filter)
+        -- Hide old rows
+        for _, row in ipairs(browseRows) do row:Hide() end
+        browseRowIndex = 0
+
+        local spells = EnsureSpellCache()
+        local lower = filter and filter ~= "" and filter:lower() or nil
+        local by = 0
+        local currentTab = nil
+
+        -- When searching, ignore collapsed state so all matches show
+        local ignoreCollapse = lower ~= nil
+
+        for _, entry in ipairs(spells) do
+            if not lower or entry.name:lower():find(lower, 1, true) then
+                -- Tab header
+                if entry.tab ~= currentTab then
+                    currentTab = entry.tab
+                    local isCollapsed = not ignoreCollapse and not expandedTabs[currentTab]
+                    local headerRow = GetOrCreateHeaderRow()
+                    headerRow:SetHeight(BROWSE_ROW_H)
+                    headerRow:SetPoint("TOPLEFT", 0, by)
+                    headerRow:SetPoint("RIGHT", browseScrollChild, "RIGHT", 0, 0)
+                    headerRow.text:SetText(currentTab)
+                    headerRow.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
+                    headerRow.chevron:SetText(isCollapsed and ">" or "v")
+                    headerRow.tabName = currentTab
+                    headerRow:SetScript("OnClick", function(self)
+                        expandedTabs[self.tabName] = not expandedTabs[self.tabName]
+                        BuildBrowseList(browseSearch:GetText())
+                    end)
+                    by = by - BROWSE_ROW_H
+                end
+
+                -- Spell row (skip if tab is collapsed and not searching)
+                if not (not ignoreCollapse and not expandedTabs[currentTab]) then
+                    local row = GetOrCreateSpellRow()
+                    row:SetHeight(BROWSE_ROW_H)
+                    row:SetPoint("TOPLEFT", 0, by)
+                    row:SetPoint("RIGHT", browseScrollChild, "RIGHT", 0, 0)
+                    row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                    row.text:SetText(entry.name)
+                    row.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                    row.spellName = entry.name
+                    by = by - BROWSE_ROW_H
+                end
+            end
+        end
+
+        browseScrollChild:SetHeight(math.max(1, math.abs(by)))
+        -- Reset scroll to top and update thumb
+        pcall(browseScroll.SetVerticalScroll, browseScroll, 0)
+        C_Timer.After(0, UpdateBrowseThumb)
+    end
+
+    BuildBrowseList = BuildBrowseListImpl
+
+    local browseSearchTimer = nil
+    browseSearch:SetScript("OnTextChanged", function(self, userInput)
+        local txt = self:GetText()
+        browseSearchPlaceholder:SetShown(not txt or txt == "")
+        if not userInput then return end
+        if browseSearchTimer then browseSearchTimer:Cancel() end
+        browseSearchTimer = C_Timer.NewTimer(0.15, function()
+            browseSearchTimer = nil
+            BuildBrowseList(txt)
+        end)
+    end)
+
+    browseBtn:SetScript("OnClick", function()
+        if browsePopup:IsShown() then
+            browsePopup:Hide()
+            return
+        end
+        RebuildSpellCache()
+        browseSearch:SetText("")
+        BuildBrowseList(nil)
+        browsePopup:Show()
+    end)
+
+    browsePopup:SetScript("OnHide", function()
+        browseSearch:SetText("")
+        browseSearchPlaceholder:Show()
+    end)
+
     ay = ay - FORM_ROW
 
     -- Macro text editbox
@@ -921,7 +1398,11 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
             if not name or name == "" then print("|cFFFF5555[QUI]|r Enter a spell name.") return end
             local spellID = C_Spell.GetSpellIDForSpellIdentifier(name)
             if not spellID then print("|cFFFF5555[QUI]|r Spell not found: " .. name) return end
-            newBinding.spell = C_Spell.GetSpellName(spellID) or name
+            -- Store root spell ID so binding survives talent overrides
+            local baseID = C_Spell.GetBaseSpell and C_Spell.GetBaseSpell(spellID) or spellID
+            newBinding.spellID = baseID
+            local rootName = C_Spell.GetSpellName(baseID)
+            newBinding.spell = rootName or C_Spell.GetSpellName(spellID) or name
         elseif actionType == "macro" then
             local text = addState.macroText
             if not text or text == "" then print("|cFFFF5555[QUI]|r Enter macro text.") return end
@@ -970,6 +1451,12 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
                 if type(actionType) ~= "string" then actionType = "spell" end
                 local spellName = binding.spell
                 if type(spellName) ~= "string" then spellName = nil end
+                -- Resolve current spell name from root spellID (shows override if active)
+                local resolvedSpellID = binding.spellID
+                if resolvedSpellID and actionType == "spell" then
+                    local currentName = C_Spell.GetSpellName(resolvedSpellID)
+                    if currentName then spellName = currentName end
+                end
                 local row = CreateFrame("Frame", nil, bindingListFrame)
                 row:SetSize(400, 28)
                 row:SetPoint("TOPLEFT", 0, listY)
@@ -978,9 +1465,9 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
                 iconTex:SetPoint("LEFT", 0, 0)
                 iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 if actionType == "spell" and spellName then
-                    local spellID = C_Spell.GetSpellIDForSpellIdentifier(spellName)
-                    if spellID then
-                        local info = C_Spell.GetSpellInfo(spellID)
+                    local lookupID = resolvedSpellID or C_Spell.GetSpellIDForSpellIdentifier(spellName)
+                    if lookupID then
+                        local info = C_Spell.GetSpellInfo(lookupID)
                         iconTex:SetTexture(info and info.iconID or "Interface\\Icons\\INV_Misc_QuestionMark")
                     else
                         iconTex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
@@ -1044,6 +1531,8 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
         state.macroInput = macroInput
         state.keyCaptureBtn = keyCaptureBtn
         state.RefreshBindingList = RefreshBindingList
+        state.browsePopup = browsePopup
+        state.acMenu = acMenu
     end
 
     return y
@@ -1112,9 +1601,17 @@ local function CreateClickCastPage(parent)
         end)
     end)
 
-    -- Wire cross-section: per-spec toggle refreshes binding list
+    -- Wire cross-section: per-spec toggle refreshes binding list + perLoadout visibility
     if state.perSpecCheck and state.RefreshBindingList then
         state.perSpecCheck.track:HookScript("OnClick", function()
+            C_Timer.After(0.05, function()
+                if state.UpdatePerLoadoutVisibility then state.UpdatePerLoadoutVisibility() end
+                state.RefreshBindingList()
+            end)
+        end)
+    end
+    if state.perLoadoutCheck and state.RefreshBindingList then
+        state.perLoadoutCheck.track:HookScript("OnClick", function()
             C_Timer.After(0.05, function() state.RefreshBindingList() end)
         end)
     end
@@ -1125,6 +1622,8 @@ local function CreateClickCastPage(parent)
     content:HookScript("OnHide", function()
         if state.spellInput then state.spellInput:ClearFocus() end
         if state.macroInput then state.macroInput:ClearFocus() end
+        if state.browsePopup then state.browsePopup:Hide() end
+        if state.acMenu then state.acMenu:Hide() end
         if state.keyCaptureBtn and state.keyCaptureBtn.isCapturing then
             state.keyCaptureBtn.isCapturing = false
             state.keyCaptureBtn:EnableKeyboard(false)

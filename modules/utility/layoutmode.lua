@@ -2201,12 +2201,14 @@ do
 
         local DISPLAY_ELEMENTS = {
             { key = "objectiveTracker", label = "Objective Tracker", frame = "ObjectiveTrackerFrame", order = 2 },
+            { key = "topCenterWidgets", label = "Top Center Widgets", frame = "UIWidgetTopCenterContainerFrame", order = 14, minWidth = 160, minHeight = 24 },
+            { key = "belowMinimapWidgets", label = "Below Minimap Widgets", frame = "UIWidgetBelowMinimapContainerFrame", order = 15, minWidth = 180, minHeight = 24 },
             { key = "extraActionButton", label = "Extra Ability",   frame = "ExtraActionBarFrame", holder = "QUI_extraActionButtonHolder", order = 5 },
             { key = "zoneAbility",     label = "Zone Ability",      frame = "ZoneAbilityFrame",    holder = "QUI_zoneAbilityHolder",      order = 6 },
         }
 
         for _, info in ipairs(DISPLAY_ELEMENTS) do
-            um:RegisterElement({
+            local regDef = {
                 key = info.key,
                 label = info.label,
                 group = "Display",
@@ -2214,7 +2216,24 @@ do
                 getFrame = function()
                     return (info.holder and _G[info.holder]) or _G[info.frame]
                 end,
-            })
+            }
+            -- Widget containers may have zero size when not in relevant content
+            -- (M+, BG, etc.). Provide a minimum so the mover fits its label.
+            if info.minWidth then
+                regDef.getSize = function()
+                    local minW = info.minWidth
+                    local minH = info.minHeight or 24
+                    local f = _G[info.frame]
+                    if f then
+                        local fw = Helpers.SafeToNumber(f:GetWidth(), 0)
+                        local fh = Helpers.SafeToNumber(f:GetHeight(), 0)
+                        if fw > minW then minW = fw end
+                        if fh > minH then minH = fh end
+                    end
+                    return minW, minH
+                end
+            end
+            um:RegisterElement(regDef)
         end
 
         -- Chat frame — child overlay so the handle matches the Blizzard
@@ -2228,7 +2247,7 @@ do
             key = "chatFrame1",
             label = "Chat Frame",
             group = "Display",
-            order = 4,
+            order = 7,
             isOwned = true,
             isEnabled = function()
                 local db = ChatDB()

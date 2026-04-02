@@ -288,8 +288,44 @@ local function ClearFrameKeyAttributes(frame)
 end
 
 ---------------------------------------------------------------------------
--- BINDING RESOLUTION: Build active binding set for current spec
+-- BINDING RESOLUTION: Build active binding set for current spec/loadout
 ---------------------------------------------------------------------------
+
+-- Resolve the current spell name from a binding's spellID (root spell).
+-- If a talent override is active, GetSpellName returns the override name,
+-- which is what /cast needs. Falls back to stored spell name string.
+local function ResolveSpellName(binding)
+    if binding.spellID then
+        local name = C_Spell.GetSpellName(binding.spellID)
+        if name then return name end
+    end
+    return binding.spell
+end
+
+-- Look up the correct binding table for the current spec/loadout settings.
+local function GetActiveBindingTable()
+    local db = GetDB()
+    if not db or not db.clickCast then return nil end
+    local cc = db.clickCast
+
+    if cc.perSpec then
+        local specID = GetSpecializationInfo(GetSpecialization() or 1)
+        if specID then
+            if cc.perLoadout then
+                local configID = C_ClassTalents and C_ClassTalents.GetActiveConfigID() or 0
+                if configID and cc.loadoutBindings and cc.loadoutBindings[specID] then
+                    return cc.loadoutBindings[specID][configID]
+                end
+                return nil
+            end
+            local specBindings = cc.specBindings and cc.specBindings[specID]
+            if specBindings then return specBindings end
+        end
+    end
+
+    return cc.bindings
+end
+
 local function ResolveBindings()
     wipe(activeBindings)
     wipe(keyboardBindings)
@@ -297,33 +333,23 @@ local function ResolveBindings()
     local db = GetDB()
     if not db or not db.clickCast or not db.clickCast.enabled then return end
 
-    local bindings = db.clickCast.bindings
+    local bindings = GetActiveBindingTable()
     if not bindings then return end
-
-    -- If per-spec, filter to current spec
-    if db.clickCast.perSpec then
-        local specID = GetSpecializationInfo(GetSpecialization() or 1)
-        if specID then
-            -- Look for spec-specific bindings
-            local specBindings = db.clickCast.specBindings and db.clickCast.specBindings[specID]
-            if specBindings then
-                bindings = specBindings
-            end
-        end
-    end
 
     for _, binding in ipairs(bindings) do
         -- A binding needs a trigger (key or button) and either a spell, macro,
         -- or a non-spell action type (target/focus/assist/menu/ping).
         local actionType = binding.actionType or "spell"
         local hasAction = binding.spell or binding.macro or actionType ~= "spell"
+        -- Resolve current spell name from root spellID at apply-time
+        local spellName = (actionType == "spell") and ResolveSpellName(binding) or binding.spell
 
         if binding.key and hasAction then
             -- Keyboard binding
             table_insert(keyboardBindings, {
                 key = binding.key,
                 modifiers = binding.modifiers or "",
-                spell = binding.spell,
+                spell = spellName,
                 macro = binding.macro,
                 actionType = actionType,
             })
@@ -334,7 +360,7 @@ local function ResolveBindings()
                 table_insert(keyboardBindings, {
                     key = scrollKey,
                     modifiers = binding.modifiers or "",
-                    spell = binding.spell,
+                    spell = spellName,
                     macro = binding.macro,
                     actionType = actionType,
                 })
@@ -343,7 +369,7 @@ local function ResolveBindings()
                 table_insert(activeBindings, {
                     button = binding.button,
                     modifiers = binding.modifiers or "",
-                    spell = binding.spell,
+                    spell = spellName,
                     macro = binding.macro,
                     actionType = actionType,
                 })
@@ -673,6 +699,15 @@ function QUI_GFCC:GetEditableBindings()
     if cc.perSpec then
         local specID = GetSpecializationInfo(GetSpecialization() or 1)
         if specID then
+            if cc.perLoadout then
+                local configID = C_ClassTalents and C_ClassTalents.GetActiveConfigID() or 0
+                if configID then
+                    if not cc.loadoutBindings then cc.loadoutBindings = {} end
+                    if not cc.loadoutBindings[specID] then cc.loadoutBindings[specID] = {} end
+                    if not cc.loadoutBindings[specID][configID] then cc.loadoutBindings[specID][configID] = {} end
+                    return cc.loadoutBindings[specID][configID]
+                end
+            end
             if not cc.specBindings then cc.specBindings = {} end
             if not cc.specBindings[specID] then cc.specBindings[specID] = {} end
             return cc.specBindings[specID]
@@ -738,12 +773,62 @@ end
 -- No SecureActionButtons needed — the UI binds keys to these native actions.
 
 ---------------------------------------------------------------------------
--- EVENTS: Spec change and combat end
+-- ROOT SPELL MIGRATION: Convert stored spell names to root spellIDs
+---------------------------------------------------------------------------
+local function MigrateBindingsToRootSpells(bindingTable)
+    if not bindingTable then return end
+    for _, binding in ipairs(bindingTable) do
+        if (binding.actionType or "spell") == "spell" and not binding.spellID and binding.spell then
+            local spellID = C_Spell.GetSpellIDForSpellIdentifier(binding.spell)
+            if spellID then
+                local baseID = C_Spell.GetBaseSpell and C_Spell.GetBaseSpell(spellID) or spellID
+                binding.spellID = baseID
+                local rootName = C_Spell.GetSpellName(baseID)
+                if rootName then binding.spell = rootName end
+            end
+        end
+    end
+end
+
+local function RunRootSpellMigration()
+    local db = GetDB()
+    if not db or not db.clickCast then return end
+    local cc = db.clickCast
+    if cc.rootSpellMigrationDone then return end
+
+    -- Migrate shared bindings
+    MigrateBindingsToRootSpells(cc.bindings)
+
+    -- Migrate per-spec bindings
+    if cc.specBindings then
+        for _, specTable in pairs(cc.specBindings) do
+            MigrateBindingsToRootSpells(specTable)
+        end
+    end
+
+    -- Migrate per-loadout bindings
+    if cc.loadoutBindings then
+        for _, specTable in pairs(cc.loadoutBindings) do
+            for _, loadoutTable in pairs(specTable) do
+                MigrateBindingsToRootSpells(loadoutTable)
+            end
+        end
+    end
+
+    cc.rootSpellMigrationDone = true
+end
+
+---------------------------------------------------------------------------
+-- EVENTS: Spec/loadout change and combat end
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+eventFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
+
+local loadoutDebounceTimer = nil
 
 eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -768,6 +853,9 @@ eventFrame:SetScript("OnEvent", function(self, event)
             if key2 then SetBinding(key2, nativeAction); didMigrate = true end
         end
         if didMigrate then SaveBindings(GetCurrentBindingSet()) end
+
+        -- Migrate existing bindings to store root spellIDs
+        RunRootSpellMigration()
 
         -- After /reload or zone transition, re-register all frames.
         -- Spec data and group composition may not be fully available during
@@ -794,6 +882,23 @@ eventFrame:SetScript("OnEvent", function(self, event)
         C_Timer.After(0.5, function()
             if not InCombatLockdown() then
                 QUI_GFCC:RefreshBindings()
+            else
+                QUI_GFCC.pendingRefresh = true
+            end
+        end)
+    elseif event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_COMBAT_CONFIG_CHANGED" then
+        -- Loadout changed within same spec — only relevant if perLoadout is on
+        local db = GetDB()
+        if not db or not db.clickCast or not db.clickCast.perLoadout then return end
+
+        -- Debounce: talent API may not be ready immediately
+        if loadoutDebounceTimer then loadoutDebounceTimer:Cancel() end
+        loadoutDebounceTimer = C_Timer.NewTimer(0.5, function()
+            loadoutDebounceTimer = nil
+            if not InCombatLockdown() then
+                QUI_GFCC:RefreshBindings()
+            else
+                QUI_GFCC.pendingRefresh = true
             end
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then

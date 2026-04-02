@@ -382,7 +382,7 @@ function QUI_Anchoring_Options:CreateAnchorDropdown(parent, label, settingsDB, a
     local anchorOptions = GetAnchorOptions()
     
     -- Create dropdown using GUI helper (pass optionsFunction for dynamic updates)
-    local dropdown = GUI:CreateFormDropdown(parent, label, anchorOptions, anchorKey, settingsDB, onChange, nil, nil, GetAnchorOptions)
+    local dropdown = GUI:CreateFormDropdown(parent, label, anchorOptions, anchorKey, settingsDB, onChange, nil, { searchable = true, collapsible = true })
     -- Anchor targets may not be registered yet when options build; preserve the saved
     -- value in the display text instead of clearing it.
     dropdown.preserveUnknownValue = true

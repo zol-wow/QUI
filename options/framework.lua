@@ -4115,8 +4115,12 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     return container
 end
 
-function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange, registryInfo)
+function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange, registryInfo, opts)
     if parent._hasContent ~= nil then parent._hasContent = true end
+    opts = opts or {}
+    local searchable = opts.searchable or false
+    local collapsible = opts.collapsible or false
+    local SEARCH_BOX_HEIGHT = 28
     local UIKit = ns.UIKit
     local useUIKitBorders = UIKit
         and UIKit.CreateBackground
@@ -4243,9 +4247,73 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     local scrollFrame, scrollContent, scrollBar, updateThumb = CreateDropdownScrollBody(menuFrame)
     menuFrame.scrollContent = scrollContent
 
+    -- Search box for searchable dropdowns (above scroll content)
+    local searchBox
+    if searchable then
+        scrollFrame:SetPoint("TOPLEFT", 0, -SEARCH_BOX_HEIGHT)
+
+        local searchContainer = CreateFrame("Frame", nil, menuFrame)
+        searchContainer:SetHeight(SEARCH_BOX_HEIGHT)
+        searchContainer:SetPoint("TOPLEFT", 0, 0)
+        searchContainer:SetPoint("TOPRIGHT", 0, 0)
+
+        local searchBg = searchContainer:CreateTexture(nil, "BACKGROUND")
+        searchBg:SetAllPoints()
+        searchBg:SetColorTexture(0.06, 0.06, 0.06, 1)
+
+        local searchBorder = searchContainer:CreateTexture(nil, "ARTWORK")
+        searchBorder:SetHeight(1)
+        searchBorder:SetPoint("BOTTOMLEFT", searchContainer, "BOTTOMLEFT", 0, 0)
+        searchBorder:SetPoint("BOTTOMRIGHT", searchContainer, "BOTTOMRIGHT", 0, 0)
+        searchBorder:SetColorTexture(0.25, 0.25, 0.25, 1)
+
+        searchBox = CreateFrame("EditBox", nil, searchContainer)
+        searchBox:SetPoint("TOPLEFT", 8, -2)
+        searchBox:SetPoint("BOTTOMRIGHT", -8, 2)
+        searchBox:SetAutoFocus(false)
+        searchBox:SetFontObject(GameFontNormal)
+        SetFont(searchBox, 11, "", C.text)
+        searchBox:SetMaxLetters(50)
+
+        local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        SetFont(placeholder, 11, "", C.textMuted or {0.6, 0.6, 0.6})
+        placeholder:SetText("Search...")
+        placeholder:SetPoint("LEFT", 0, 0)
+        placeholder:SetJustifyH("LEFT")
+        searchBox.placeholder = placeholder
+
+        searchBox:SetScript("OnEditFocusGained", function(self)
+            searchBorder:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.6)
+        end)
+        searchBox:SetScript("OnEditFocusLost", function(self)
+            searchBorder:SetColorTexture(0.25, 0.25, 0.25, 1)
+        end)
+        searchBox:SetScript("OnEscapePressed", function(self)
+            self:SetText("")
+            self:ClearFocus()
+        end)
+        searchBox:SetScript("OnEnterPressed", function(self)
+            self:ClearFocus()
+        end)
+
+        searchContainer.searchBox = searchBox
+    end
+
     container.dropdown = dropdown
     container.menuFrame = menuFrame
     container.options = options or {}
+    container.collapsedHeaders = {}
+    container.searchText = ""
+    container.searchBox = searchBox
+
+    -- Default all headers to collapsed when collapsible is enabled
+    if collapsible then
+        for _, opt in ipairs(container.options) do
+            if opt.isHeader then
+                container.collapsedHeaders[opt.text] = true
+            end
+        end
+    end
 
     local function GetValue()
         if dbTable and dbKey then return dbTable[dbKey] end
@@ -4278,52 +4346,235 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         end
     end
 
+    -- Frame pools for BuildMenu to avoid creating frames on every rebuild
+    local headerPool = {}
+    local buttonPool = {}
+    local headerPoolIdx, buttonPoolIdx = 0, 0
+
+    local function AcquireHeader()
+        headerPoolIdx = headerPoolIdx + 1
+        local f = headerPool[headerPoolIdx]
+        if not f then
+            f = CreateFrame("Button", nil, scrollContent)
+            f._headerText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            f._headerText:SetPoint("LEFT", 4, 0)
+            if collapsible then
+                f._chevron1 = f:CreateTexture(nil, "OVERLAY")
+                f._chevron1:SetSize(5, 1)
+                f._chevron2 = f:CreateTexture(nil, "OVERLAY")
+                f._chevron2:SetSize(5, 1)
+            end
+            headerPool[headerPoolIdx] = f
+        end
+        f:ClearAllPoints()
+        f:Show()
+        return f
+    end
+
+    local function AcquireButton()
+        buttonPoolIdx = buttonPoolIdx + 1
+        local f = buttonPool[buttonPoolIdx]
+        if not f then
+            f = CreateFrame("Button", nil, scrollContent)
+            f._btnText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            f._btnText:SetPoint("LEFT", 4, 0)
+            buttonPool[buttonPoolIdx] = f
+        end
+        f:ClearAllPoints()
+        f:Show()
+        return f
+    end
+
     local function BuildMenu()
-        -- Clear existing children from scroll content
+        -- Hide all pooled frames and reset indices
+        for i = 1, headerPoolIdx do headerPool[i]:Hide() end
+        for i = 1, buttonPoolIdx do buttonPool[i]:Hide() end
+        headerPoolIdx = 0
+        buttonPoolIdx = 0
+        -- Also hide any non-pooled children (e.g. "no results" text from previous builds)
         for _, child in ipairs({scrollContent:GetChildren()}) do child:Hide() end
 
         local yOff = -4
         local itemHeight = 20
         local headerHeight = 18
         local maxVisibleItems = DROPDOWN_MAX_VISIBLE_ITEMS
+        local filterText = searchable and container.searchText and container.searchText:lower() or ""
+        local isFiltering = filterText ~= ""
+        local visibleCount = 0
+        local currentHeader = nil
+        local mutedColor = C.textMuted or {0.6, 0.6, 0.6}
+
+        -- Reset scroll to top when filtering
+        if isFiltering then
+            pcall(scrollFrame.SetVerticalScroll, scrollFrame, 0)
+        end
 
         for i, opt in ipairs(container.options) do
             if opt.isHeader then
-                local header = CreateFrame("Frame", nil, scrollContent)
-                if i > 1 then yOff = yOff - 4 end
-                header:SetHeight(headerHeight)
-                header:SetPoint("TOPLEFT", 4, yOff)
-                header:SetPoint("TOPRIGHT", -4, yOff)
-                local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                SetFont(headerText, 10, "", C.textMuted or {0.6, 0.6, 0.6})
-                headerText:SetText(opt.text)
-                headerText:SetPoint("LEFT", 4, 0)
-                yOff = yOff - headerHeight
+                currentHeader = opt.text
+
+                -- When filtering, skip headers with no matching children
+                if isFiltering then
+                    local hasMatch = false
+                    for j = i + 1, #container.options do
+                        local nxt = container.options[j]
+                        if nxt.isHeader then break end
+                        if nxt.text:lower():find(filterText, 1, true) then
+                            hasMatch = true
+                            break
+                        end
+                    end
+                    if not hasMatch then
+                        -- Skip this header entirely; items will be skipped below
+                    else
+                        -- Render header (no collapse during search)
+                        local header = AcquireHeader()
+                        if visibleCount > 0 then yOff = yOff - 4 end
+                        header:SetHeight(headerHeight)
+                        header:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, yOff)
+                        header:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, yOff)
+                        SetFont(header._headerText, 10, "", mutedColor)
+                        header._headerText:SetText(opt.text)
+                        header._headerText:SetPoint("LEFT", 4, 0)
+                        header:SetScript("OnClick", nil)
+                        header:SetScript("OnEnter", nil)
+                        header:SetScript("OnLeave", nil)
+                        if header._chevron1 then header._chevron1:Hide() end
+                        if header._chevron2 then header._chevron2:Hide() end
+                        yOff = yOff - headerHeight
+                        visibleCount = visibleCount + 1
+                    end
+                else
+                    -- Normal (non-filtering) mode
+                    local isCollapsed = collapsible and container.collapsedHeaders[currentHeader]
+                    local header = AcquireHeader()
+                    if visibleCount > 0 then yOff = yOff - 4 end
+                    header:SetHeight(headerHeight)
+                    header:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, yOff)
+                    header:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, yOff)
+                    SetFont(header._headerText, 10, "", mutedColor)
+                    header._headerText:SetText(opt.text)
+
+                    if collapsible then
+                        -- Chevron indicator: v (expanded) or > (collapsed)
+                        header._headerText:SetPoint("LEFT", 14, 0)
+                        local c1, c2 = header._chevron1, header._chevron2
+                        c1:Show()
+                        c2:Show()
+                        c1:SetColorTexture(mutedColor[1], mutedColor[2], mutedColor[3], 0.8)
+                        c2:SetColorTexture(mutedColor[1], mutedColor[2], mutedColor[3], 0.8)
+                        if isCollapsed then
+                            -- Right-pointing chevron >
+                            c1:SetSize(5, 1)
+                            c1:ClearAllPoints()
+                            c1:SetPoint("LEFT", header, "LEFT", 4, 2)
+                            c1:SetRotation(math.rad(-45))
+                            c2:SetSize(5, 1)
+                            c2:ClearAllPoints()
+                            c2:SetPoint("LEFT", header, "LEFT", 4, -2)
+                            c2:SetRotation(math.rad(45))
+                        else
+                            -- Down-pointing chevron v
+                            c1:SetSize(5, 1)
+                            c1:ClearAllPoints()
+                            c1:SetPoint("LEFT", header, "LEFT", 2, 0)
+                            c1:SetRotation(math.rad(-45))
+                            c2:SetSize(5, 1)
+                            c2:ClearAllPoints()
+                            c2:SetPoint("LEFT", header, "LEFT", 6, 0)
+                            c2:SetRotation(math.rad(45))
+                        end
+
+                        local headerName = currentHeader
+                        header:SetScript("OnClick", function()
+                            container.collapsedHeaders[headerName] = not container.collapsedHeaders[headerName]
+                            BuildMenu()
+                            C_Timer.After(0, function() updateThumb(); UpdateScrollInset() end)
+                        end)
+                        header:SetScript("OnEnter", function()
+                            header._headerText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, 0.8)
+                            c1:SetColorTexture(C_accent_r, C_accent_g, C_accent_b, 0.8)
+                            c2:SetColorTexture(C_accent_r, C_accent_g, C_accent_b, 0.8)
+                        end)
+                        header:SetScript("OnLeave", function()
+                            header._headerText:SetTextColor(mutedColor[1], mutedColor[2], mutedColor[3], 1)
+                            c1:SetColorTexture(mutedColor[1], mutedColor[2], mutedColor[3], 0.8)
+                            c2:SetColorTexture(mutedColor[1], mutedColor[2], mutedColor[3], 0.8)
+                        end)
+                    else
+                        header._headerText:SetPoint("LEFT", 4, 0)
+                        header:SetScript("OnClick", nil)
+                        header:SetScript("OnEnter", nil)
+                        header:SetScript("OnLeave", nil)
+                    end
+
+                    yOff = yOff - headerHeight
+                    visibleCount = visibleCount + 1
+                end
             else
-                local btn = CreateFrame("Button", nil, scrollContent)
-                btn:SetHeight(itemHeight)
-                btn:SetPoint("TOPLEFT", 4, yOff)
-                btn:SetPoint("TOPRIGHT", -4, yOff)
-                local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                SetFont(btnText, 11, "", C.text)
-                btnText:SetText(opt.text)
-                btnText:SetPoint("LEFT", 4, 0)
-                btn:SetScript("OnClick", function()
-                    SetValue(opt.value)
-                    menuFrame:Hide()
-                end)
-                btn:SetScript("OnEnter", function() btnText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a) end)
-                btn:SetScript("OnLeave", function() btnText:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a) end)
-                yOff = yOff - itemHeight
+                -- Regular item
+                local isCollapsed = collapsible and not isFiltering and currentHeader
+                    and container.collapsedHeaders[currentHeader]
+                if isCollapsed then
+                    -- Skip collapsed items
+                elseif isFiltering and not opt.text:lower():find(filterText, 1, true) then
+                    -- Skip non-matching items during search
+                else
+                    local btn = AcquireButton()
+                    btn:SetHeight(itemHeight)
+                    btn:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, yOff)
+                    btn:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, yOff)
+                    SetFont(btn._btnText, 11, "", C.text)
+                    btn._btnText:SetText(opt.text)
+                    btn._btnText:SetPoint("LEFT", 4, 0)
+                    btn:SetScript("OnClick", function()
+                        SetValue(opt.value)
+                        menuFrame:Hide()
+                    end)
+                    btn:SetScript("OnEnter", function() btn._btnText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a) end)
+                    btn:SetScript("OnLeave", function() btn._btnText:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a) end)
+                    yOff = yOff - itemHeight
+                    visibleCount = visibleCount + 1
+                end
             end
+        end
+
+        -- "No matches" message when filtering yields nothing
+        if isFiltering and visibleCount == 0 then
+            local noMatch = AcquireButton()
+            noMatch:SetHeight(itemHeight)
+            noMatch:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, -10)
+            noMatch:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, -10)
+            SetFont(noMatch._btnText, 11, "", mutedColor)
+            noMatch._btnText:SetText("No matches")
+            noMatch._btnText:SetPoint("CENTER", 0, 0)
+            noMatch:SetScript("OnClick", nil)
+            noMatch:SetScript("OnEnter", nil)
+            noMatch:SetScript("OnLeave", nil)
+            yOff = -40
         end
 
         local totalHeight = math.abs(yOff) + 4
         local maxHeight = (maxVisibleItems * itemHeight) + 8
+        local searchOffset = searchable and SEARCH_BOX_HEIGHT or 0
 
         scrollContent:SetHeight(totalHeight)
         scrollContent:SetWidth(dropdown:GetWidth() - 4)
-        menuFrame:SetHeight(math.min(totalHeight, maxHeight))
+        menuFrame:SetHeight(math.min(totalHeight, maxHeight) + searchOffset)
+    end
+
+    -- Wire up search box OnTextChanged (after BuildMenu is defined)
+    if searchBox then
+        searchBox:SetScript("OnTextChanged", function(self, userInput)
+            if not userInput then return end
+            local txt = self:GetText()
+            container.searchText = txt or ""
+            if self.placeholder then
+                self.placeholder:SetShown(txt == nil or txt == "")
+            end
+            BuildMenu()
+            C_Timer.After(0, function() updateThumb(); UpdateScrollInset() end)
+        end)
     end
 
     dropdown:SetScript("OnClick", function()
@@ -4348,6 +4599,12 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
             local deltaTime = self.__checkElapsed
             self.__checkElapsed = 0
 
+            -- Don't auto-close while user is typing in search
+            if searchBox and searchBox:HasFocus() then
+                closeTimer = 0
+                return
+            end
+
             local isOverDropdown = dropdown:IsMouseOver()
             local isOverMenu = self:IsMouseOver()
             if not isOverDropdown and not isOverMenu then
@@ -4364,10 +4621,23 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     menuFrame:HookScript("OnHide", function()
         menuFrame:SetScript("OnUpdate", nil)
         closeTimer = 0
+        if searchBox then
+            searchBox:SetText("")
+            searchBox:ClearFocus()
+            container.searchText = ""
+        end
     end)
 
     local function SetOptions(newOptions)
         container.options = newOptions or {}
+        -- Default new headers to collapsed
+        if collapsible then
+            for _, opt in ipairs(container.options) do
+                if opt.isHeader and container.collapsedHeaders[opt.text] == nil then
+                    container.collapsedHeaders[opt.text] = true
+                end
+            end
+        end
         -- Check if current value still exists in new options (skip headers)
         local currentVal = GetValue()
         local found = false
@@ -4421,7 +4691,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                 subTabName = GUI._searchContext.subTabName,
                 sectionName = GUI._searchContext.sectionName,
                 widgetBuilder = function(p)
-                    return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange)
+                    return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange, nil, opts)
                 end,
             })
         end
