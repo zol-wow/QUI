@@ -1006,11 +1006,33 @@ local HasFrameResolverForKey
 local ResolveApplyFrameForKey
 
 local _anchorGuardedFrames = {}  -- [frame] = true, prevents double-hooking
+local _setPointGuardedFrames = {} -- [frame] = true, prevents double-hooking SetPoint guards
 
 -- Layer 1: Hook ApplySystemAnchor on a single Blizzard frame
 local function InstallAnchorGuard(frame, key)
     if _anchorGuardedFrames[frame] then return end
-    if not frame.ApplySystemAnchor then return end
+    if not frame.ApplySystemAnchor then
+        -- Frames without ApplySystemAnchor (e.g. UIWidget containers) get
+        -- repositioned by Blizzard layout code via direct SetPoint calls.
+        -- Hook SetPoint instead so QUI's anchor overrides stick.
+        if _setPointGuardedFrames[frame] then return end
+        _setPointGuardedFrames[frame] = true
+        hooksecurefunc(frame, "SetPoint", function()
+            if _editModeReapplyGuard then return end
+            C_Timer.After(0, function()
+                if InCombatLockdown() then
+                    pendingAnchoredFrameUpdateAfterCombat = true
+                    return
+                end
+                local anchoringDB = QUICore.db and QUICore.db.profile
+                    and QUICore.db.profile.frameAnchoring
+                if anchoringDB and anchoringDB[key] then
+                    QUI_Anchoring:ApplyFrameAnchor(key, anchoringDB[key])
+                end
+            end)
+        end)
+        return
+    end
     _anchorGuardedFrames[frame] = true
     hooksecurefunc(frame, "ApplySystemAnchor", function()
         if _editModeReapplyGuard then return end

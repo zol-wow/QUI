@@ -963,6 +963,26 @@ local function RegisterAllProviders()
     end })
 
     ---------------------------------------------------------------------------
+    -- TOP CENTER WIDGETS
+    ---------------------------------------------------------------------------
+    settingsPanel:RegisterProvider("topCenterWidgets", { build = function(content, key, width)
+        local sections = {}
+        local function relayout() U.StandardRelayout(content, sections) end
+        U.BuildPositionCollapsible(content, "topCenterWidgets", nil, sections, relayout)
+        relayout() return content:GetHeight()
+    end })
+
+    ---------------------------------------------------------------------------
+    -- BELOW MINIMAP WIDGETS
+    ---------------------------------------------------------------------------
+    settingsPanel:RegisterProvider("belowMinimapWidgets", { build = function(content, key, width)
+        local sections = {}
+        local function relayout() U.StandardRelayout(content, sections) end
+        U.BuildPositionCollapsible(content, "belowMinimapWidgets", nil, sections, relayout)
+        relayout() return content:GetHeight()
+    end })
+
+    ---------------------------------------------------------------------------
     -- TOTEM BAR
     ---------------------------------------------------------------------------
     settingsPanel:RegisterProvider("totemBar", { build = function(content, key, width)
