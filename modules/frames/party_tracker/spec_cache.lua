@@ -149,6 +149,18 @@ C_Timer.After(0, function()
     eventFrame:RegisterEvent("INSPECT_READY")
     eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+
+    local function QueueAllPartyInspects()
+        local numGroup = GetNumGroupMembers() or 0
+        if numGroup > 0 then
+            local prefix = IsInRaid() and "raid" or "party"
+            local max = IsInRaid() and numGroup or (numGroup - 1)
+            for i = 1, max do
+                SpecCache.RequestInspect(prefix .. i)
+            end
+        end
+    end
 
     eventFrame:SetScript("OnEvent", function(_, event, arg1)
         if event == "INSPECT_READY" then
@@ -163,15 +175,20 @@ C_Timer.After(0, function()
                 end
             end
 
-        elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
-            local numGroup = GetNumGroupMembers() or 0
-            if numGroup > 0 then
-                local prefix = IsInRaid() and "raid" or "party"
-                local max = IsInRaid() and numGroup or (numGroup - 1)
-                for i = 1, max do
-                    SpecCache.RequestInspect(prefix .. i)
-                end
+        elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+            -- Party member changed spec mid-dungeon — invalidate their
+            -- cached spec and re-inspect. Fires for any unit in the group.
+            if arg1 and UnitExists(arg1) then
+                local guid = UnitGUID(arg1)
+                if guid then cache[guid] = nil end
+                SpecCache.RequestInspect(arg1)
+            else
+                -- No unit arg or unknown — re-inspect all party members
+                QueueAllPartyInspects()
             end
+
+        elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+            QueueAllPartyInspects()
         end
     end)
 end)
