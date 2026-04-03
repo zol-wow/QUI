@@ -4,6 +4,37 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v2.56.0-alpha.9
+
+### Party Tracker
+- MiniCC-style aura classification via `C_UnitAuras.IsAuraFilteredOutByInstanceID` (BIG_DEFENSIVE, EXTERNAL_DEFENSIVE, IMPORTANT) — handles secret values natively in combat
+- Immediate cooldown detection on aura appearance with refined match on aura removal
+- Per-candidate cast snapshot evidence prevents cross-unit false matches for external defensives
+- GUID-based kick attribution via `interruptedBy` parameter, with time-matching fallback
+- Full update reconciliation preserves tracking across aura instance ID reassignment
+- Spec cache invalidation on `PLAYER_SPECIALIZATION_CHANGED` for mid-dungeon spec swaps
+
+### Raid Buffs
+- Self-buff tracking: Shaman weapon/shield enchants + Lightning/Water Shield, Paladin rites, Rogue poisons
+- Click-to-cast on missing buff icons via SecureActionButtonTemplate overlay
+- `buffIDs` variant detection for talent/expansion spell ID differences (e.g., Arcane Intellect)
+- Self-buffs bypass group/instance filters (relevant solo)
+- New "Show Class Self-Buffs" toggle in layout mode settings
+
+### Consumable Check
+- Persistent mode option to always show the consumable bar (survives reload/combat)
+- Layout mode provider upgraded with Display section (persistent toggle, scale slider)
+- Added Void-Touched Augment Rune to tracked rune buffs
+
+### CDM (Cooldown Manager)
+- Master toggle element in layout mode with gameplay hide support
+- `procOnUsable` glow persists through GCD (skip hasCooldownActive check when isOnGCD)
+
+### Bug Fixes
+- Group frame aura secret value handling improvements
+- Consumable combat guard for safe show/hide transitions
+- Observer feign death check restricted to Hunters only (prevents false matches on other classes)
+
 ## v2.56.0-alpha.8
 
 ### New: Party Tracker
