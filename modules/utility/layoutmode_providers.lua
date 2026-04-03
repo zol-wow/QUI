@@ -1500,11 +1500,12 @@ local function RegisterAllProviders()
         end
 
         -- General
-        U.CreateCollapsible(content, "General", 5 * FORM_ROW + 8, function(body)
+        U.CreateCollapsible(content, "General", 6 * FORM_ROW + 8, function(body)
             local sy = -4
             sy = P(GUI:CreateFormCheckbox(body, "Show Only When In Group", "showOnlyInGroup", settings, Refresh), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Show Only In Dungeons/Raids", "showOnlyInInstance", settings, Refresh), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Show Class Self-Buffs (poisons, enchants, shields)", "showSelfBuffs", settings, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Provider Mode (only buffs you can cast)", "providerMode", settings, Refresh), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Hide Label Bar", "hideLabelBar", settings, Refresh), body, sy)
 
             local growOptions = {

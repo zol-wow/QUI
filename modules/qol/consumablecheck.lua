@@ -76,6 +76,7 @@ for _, itemID in ipairs(FLASK_ITEMS) do
 end
 
 local RUNE_ITEMS = {
+    259085,  -- Void-Touched Augment Rune (Midnight)
     243191,  -- Ethereal Augment Rune (infinite)
     224572,  -- Crystallized Augment Rune (TWW)
     201325,  -- Draconic Augment Rune (DF)
@@ -87,6 +88,9 @@ local OIL_ITEMS = {
     243733, 243734, -- Thalassian Phoenix Oil
     243735, 243736, -- Oil of Dawn
     243737, 243738, -- Smuggler's Enchanted Edge
+    -- Midnight Stones
+    237370, 237371, -- Refulgent Whetstone
+    237367, 237369, -- Refulgent Weightstone
     -- TWW Oils
     222502, 222503, 222504,
     222508, 222509, 222510,
@@ -102,6 +106,14 @@ local OIL_ITEMS = {
     191933, 191939, 191940,
     191943, 191944, 191945,
     191948, 191949, 191950,
+}
+
+local AMMO_ITEMS = {
+    -- Midnight Hunter Ammo (Engineering)
+    257746, 257745, -- Farstrider's Hawkeye (Crit)
+    257748, 257747, -- Smuggler's Lynxeye (Mastery)
+    257750, 257749, -- Laced Zoomshots (Nature DoT)
+    257752, 257751, -- Weighted Boomshots (AoE Fire)
 }
 
 local WEAPON_ENCHANTS = {

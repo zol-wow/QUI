@@ -220,6 +220,7 @@ local DEFAULTS = {
     enabled = true,
     showOnlyInGroup = true,
     showOnlyInInstance = false,  -- Only show in dungeon/raid instances
+    providerMode = false,         -- Only show buffs the player can cast
     hideLabelBar = false,        -- Hide the "Raid Buffs" label bar
     iconSize = 32,
     labelFontSize = 12,
@@ -633,10 +634,18 @@ local function GetRelevantBuffs()
         ScanGroupClasses()
 
         for _, buff in ipairs(RAID_BUFFS) do
-            -- Only show if a provider class is in the group
-            if groupClasses[buff.providerClass] then
-                buff._hasBuff = PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs)
-                table_insert(result, buff)
+            if settings.providerMode then
+                -- Provider mode: only show buffs the player's class can provide
+                if buff.providerClass == playerClass then
+                    buff._hasBuff = PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs)
+                    table_insert(result, buff)
+                end
+            else
+                -- Default: show all buffs where provider class is in the group
+                if groupClasses[buff.providerClass] then
+                    buff._hasBuff = PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs)
+                    table_insert(result, buff)
+                end
             end
         end
     end
