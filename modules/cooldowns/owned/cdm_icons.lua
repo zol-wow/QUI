@@ -3217,6 +3217,32 @@ function CustomCDM:MoveEntry(trackerKey, fromIndex, direction)
     if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
 end
 
+function CustomCDM:TransferEntry(fromTrackerKey, entryIndex, toTrackerKey)
+    local fromData = GetCustomData(fromTrackerKey)
+    if not fromData or not fromData.entries then return end
+    if entryIndex < 1 or entryIndex > #fromData.entries then return end
+
+    local entry = fromData.entries[entryIndex]
+
+    local toData = GetCustomData(toTrackerKey)
+    if not toData then return end
+    if not toData.entries then toData.entries = {} end
+
+    -- Duplicate check in destination
+    for _, existing in ipairs(toData.entries) do
+        if entry.type == "macro" then
+            if existing.type == "macro" and existing.macroName == entry.macroName then return end
+        else
+            if existing.type == entry.type and existing.id == entry.id then return end
+        end
+    end
+
+    table.remove(fromData.entries, entryIndex)
+    toData.entries[#toData.entries + 1] = entry
+
+    if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
+end
+
 
 -- Legacy compat: GetIcons returns the pool for a viewer name.
 -- Return empty for unknown viewer names so external callers cannot adopt and
