@@ -219,7 +219,6 @@ local DEFAULTS = {
     enabled = true,
     showOnlyInGroup = true,
     showOnlyInInstance = false,  -- Only show in dungeon/raid instances
-    providerMode = false,
     hideLabelBar = false,        -- Hide the "Missing Buffs" label bar
     iconSize = 32,
     labelFontSize = 12,
@@ -635,17 +634,15 @@ local function GetMissingBuffs()
         for _, buff in ipairs(RAID_BUFFS) do
             local buffRange = buff.range or 40
 
-            if settings.providerMode then
-                if buff.providerClass == playerClass then
-                    if not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) or AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange, buff.buffIDs) then
-                        table_insert(missing, buff)
-                    end
+            if buff.providerClass == playerClass then
+                -- Player's own class buffs: show if player or any group member is missing it
+                if not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) or AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange, buff.buffIDs) then
+                    table_insert(missing, buff)
                 end
             else
-                if groupClasses[buff.providerClass] and not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) then
-                    if IsProviderClassInRange(buff.providerClass, buffRange) then
-                        table_insert(missing, buff)
-                    end
+                -- Other class buffs: show if player is missing it
+                if not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) then
+                    table_insert(missing, buff)
                 end
             end
         end
@@ -1042,6 +1039,15 @@ UpdateDisplay = function()
             end
             icon.buffData = buff
 
+            -- Desaturate buffs the player can't cast (visual distinction)
+            local canCast = buff.selfBuff and buff._resolvedSpellName or (not buff.selfBuff and PlayerCanCastBuff(buff))
+            icon.icon:SetDesaturated(not canCast)
+            if canCast then
+                icon.icon:SetVertexColor(1, 1, 1, 1)
+            else
+                icon.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            end
+
             -- Configure click-to-cast — SetAttribute is protected, skip during combat
             if not inCombat then
                 if not previewMode then
@@ -1289,9 +1295,7 @@ if ns.AuraEvents then
     ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
-        if unit == "player" then
-            ThrottledUpdate()
-        elseif settings.providerMode and (unit:match("^party") or unit:match("^raid")) then
+        if unit == "player" or unit:match("^party") or unit:match("^raid") then
             ThrottledUpdate()
         end
     end)
@@ -1340,7 +1344,6 @@ function QUI_RaidBuffs:Debug()
     local lines = {}
     local playerClass = SafeUnitClass("player")
     table_insert(lines, "QUI RaidBuffs Debug")
-    table_insert(lines, "Provider Mode: " .. (settings.providerMode and "ON" or "OFF"))
     table_insert(lines, "Player Class: " .. (playerClass or "UNKNOWN"))
     table_insert(lines, "In Group: " .. (IsInGroup() and "YES" or "NO"))
     table_insert(lines, "In Raid: " .. (IsInRaid() and "YES" or "NO"))
@@ -1420,8 +1423,8 @@ function QUI_RaidBuffs:Debug()
         local providerInfo = " range:" .. buffRange .. "yd canProvide:" .. tostring(canProvide) .. " anyMissing:" .. tostring(anyMissing) .. " providerInRange:" .. tostring(providerInRange)
         table_insert(lines, "  " .. buff.name .. ": " .. status .. " (provider:" .. buff.providerClass .. " inGroup:" .. tostring(hasProvider) .. " hasBuff:" .. tostring(playerHas) .. providerInfo .. ")")
 
-        -- If player can provide this buff and provider mode is on, show who's missing it
-        if canProvide and settings.providerMode and IsInGroup() and not IsInRaid() then
+        -- If player can provide this buff, show who's missing it
+        if canProvide and IsInGroup() and not IsInRaid() then
             for i = 1, numMembers - 1 do
                 local unit = "party" .. i
                 if IsUnitAvailable(unit, buffRange) then

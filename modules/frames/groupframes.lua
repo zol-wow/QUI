@@ -115,6 +115,8 @@ local CalculateRaidSectionHeaderSize
 -- _state.cachedMarkers: [unitToken] → markerIndex (RAID_TARGET_UPDATE short-circuit)
 
 local powerThrottle = {}      -- unitToken → last update time
+local absorbThrottle = {}     -- unitToken → last update time
+local healPredThrottle = {}   -- unitToken → last update time
 local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
 
 ---------------------------------------------------------------------------
@@ -1080,10 +1082,10 @@ local function UpdateHealPrediction(frame, _unit, _maxHP)
     if CreateUnitHealPredictionCalculator then
         if not frame._healPredCalc then
             frame._healPredCalc = CreateUnitHealPredictionCalculator()
+            frame._healPredCalc:SetIncomingHealClampMode(0)
+            frame._healPredCalc:SetIncomingHealOverflowPercent(1.0)
         end
         local calc = frame._healPredCalc
-        calc:SetIncomingHealClampMode(0) -- Clamp to max health
-        calc:SetIncomingHealOverflowPercent(1.0)
         UnitGetDetailedHealPrediction(unit, nil, calc)
         incomingHeals = calc:GetIncomingHeals()
     else
@@ -4205,6 +4207,9 @@ local function GRU_DeferredWork()
     wipe(_range.cache)  -- Fresh map — force re-evaluate all units
     wipe(_range.cacheTime)
     wipe(_state.cachedMarkers)
+    wipe(powerThrottle)
+    wipe(absorbThrottle)
+    wipe(healPredThrottle)
     -- Evict stale aura cache entries for units no longer in the group
     local GFA = ns.QUI_GroupFrameAuras
     if GFA and GFA.PruneAuraCache then GFA.PruneAuraCache() end
@@ -4272,24 +4277,13 @@ local function OnEvent(self, event, arg1, ...)
         if not _state.cachedModuleEnabled then return end
 
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
-            -- No throttle — UNIT_HEALTH is already coalesced by the WoW client.
-            -- Fast path: share unit/dead/maxHP across all three updates to avoid
-            -- redundant UnitExists, UnitIsDeadOrGhost, UnitHealthMax API calls
-            -- (3→1 of each per event in a 20-person raid).
+            -- Fast path: health bar only. Absorbs and heal prediction are handled
+            -- by their own dedicated events (UNIT_ABSORB_AMOUNT_CHANGED,
+            -- UNIT_HEAL_ABSORB_AMOUNT_CHANGED, UNIT_HEAL_PREDICTION) — calling
+            -- them here doubled work in raids (~150-200 UNIT_HEALTH events/sec).
             local unit = frame.unit
             if not unit or not UnitExists(unit) then return end
             UpdateHealth(frame)
-            local isDead = UnitIsDeadOrGhost(unit)
-            if isDead then
-                if frame.absorbBar then frame.absorbBar:Hide() end
-                if frame.healAbsorbBar then frame.healAbsorbBar:Hide() end
-                if frame.healPredictionBar then frame.healPredictionBar:Hide() end
-            else
-                local maxHP = UnitHealthMax(unit)
-                UpdateAbsorbs(frame, unit, maxHP)
-                UpdateHealAbsorb(frame, unit, maxHP)
-                UpdateHealPrediction(frame, unit, maxHP)
-            end
 
         elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" then
             local now = GetTime()
@@ -4302,14 +4296,23 @@ local function OnEvent(self, event, arg1, ...)
             frame._lastMaxPower = nil  -- force SetMinMaxValues refresh
             UpdatePower(frame)
 
-        elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" then
-            UpdateAbsorbs(frame)
-
-        elseif event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
-            UpdateHealAbsorb(frame)
-
-        elseif event == "UNIT_HEAL_PREDICTION" then
-            UpdateHealPrediction(frame)
+        elseif event == "UNIT_ABSORB_AMOUNT_CHANGED"
+            or event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED"
+            or event == "UNIT_HEAL_PREDICTION" then
+            -- Throttle: these events fire 50-100×/sec during raid damage.
+            -- 100ms coalesce per unit matches the power throttle pattern.
+            local now = GetTime()
+            local tbl = (event == "UNIT_HEAL_PREDICTION") and healPredThrottle or absorbThrottle
+            local last = tbl[arg1] or 0
+            if (now - last) < THROTTLE_INTERVAL then return end
+            tbl[arg1] = now
+            if event == "UNIT_ABSORB_AMOUNT_CHANGED" then
+                UpdateAbsorbs(frame)
+            elseif event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
+                UpdateHealAbsorb(frame)
+            else
+                UpdateHealPrediction(frame)
+            end
 
         elseif event == "UNIT_NAME_UPDATE" then
             UpdateName(frame)
@@ -4582,6 +4585,24 @@ UpdateSelectiveEvents = function()
     else
         eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
         eventFrame:RegisterEvent("UNIT_MAXPOWER")
+    end
+
+    -- Absorb/heal-prediction events: unregister when their bars are disabled
+    -- in the current mode. These fire 50-100×/sec during raid damage.
+    local vdb = GetVisualDB(isRaid)
+    local absorbEnabled = vdb and vdb.absorbs and vdb.absorbs.enabled ~= false
+    local healPredEnabled = vdb and vdb.healPrediction and vdb.healPrediction.enabled ~= false
+    if absorbEnabled then
+        eventFrame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
+        eventFrame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
+    else
+        eventFrame:UnregisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
+        eventFrame:UnregisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
+    end
+    if healPredEnabled then
+        eventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")
+    else
+        eventFrame:UnregisterEvent("UNIT_HEAL_PREDICTION")
     end
 
     -- Threat events: UNIT_THREAT_SITUATION_UPDATE fires for ALL units in the

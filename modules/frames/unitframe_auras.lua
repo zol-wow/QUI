@@ -582,8 +582,10 @@ local function SetupAuraTracking(frame)
 
     local unit = frame.unit
 
-    -- Register aura events and unit-change events based on unit type
-    frame:RegisterEvent("UNIT_AURA")
+    -- Register aura events and unit-change events based on unit type.
+    -- Use RegisterUnitEvent for C-level unit filtering instead of global
+    -- RegisterEvent — avoids Lua dispatch for every unit in the raid.
+    frame:RegisterUnitEvent("UNIT_AURA", unit)
     if unit == "target" then
         frame:RegisterEvent("PLAYER_TARGET_CHANGED")
     elseif unit == "focus" then

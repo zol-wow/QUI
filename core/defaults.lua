@@ -193,7 +193,6 @@ local defaults = {
             enabled = true,
             showOnlyInGroup = true,
             showSelfBuffs = true,
-            providerMode = false,
             hideLabelBar = false,  -- Hide the "Missing Buffs" label bar
             iconSize = 32,
             iconSpacing = 4,

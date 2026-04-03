@@ -536,21 +536,19 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-eventFrame:RegisterEvent("UNIT_AURA")
+-- UNIT_AURA: subscribe to centralized dispatcher instead of global RegisterEvent.
+-- Avoids duplicate Lua dispatch for every unit aura event in raids.
+ns.AuraEvents:Subscribe("all", function(unit)
+    if IsRelevantUnit(unit) then
+        QueueRefresh()
+    end
+end)
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
-    if event == "UNIT_AURA" then
-        local unit = ...
-        if IsRelevantUnit(unit) then
-            QueueRefresh()
-        end
-        return
-    end
-
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
         local unit = ...
         if unit ~= "player" then
