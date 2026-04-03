@@ -2851,7 +2851,19 @@ function CDMIcons:UpdateAllCooldowns()
                         if isOnCD then
                             if not icon:IsShown() then icon:Show() end
                         else
-                            if icon:IsShown() then icon:Hide() end
+                            -- Keep icon visible if procOnUsable glow would trigger
+                            local keepForProc = false
+                            if ns._OwnedGlows and ns._OwnedGlows.IsSpellCastable then
+                                local spellOvr = ns.CDMSpellData and ns.CDMSpellData:GetSpellOverride(viewerType, entry.spellID or entry.id)
+                                if spellOvr and spellOvr.procOnUsable then
+                                    keepForProc = ns._OwnedGlows.IsSpellCastable(icon)
+                                end
+                            end
+                            if keepForProc then
+                                if not icon:IsShown() then icon:Show() end
+                            elseif icon:IsShown() then
+                                icon:Hide()
+                            end
                         end
                     end
 

@@ -4075,6 +4075,20 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Initialize value (visual update will happen via OnSizeChanged when layout completes)
     SetValue(GetValue(), true)
 
+    -- EditBox:SetText() doesn't persist when called inside a hidden parent
+    -- hierarchy (e.g. collapsed composer sections with alpha 0). Expose a
+    -- refresh method so parent containers can re-apply the text when the
+    -- widget becomes visible.
+    container._refreshEditBox = function()
+        local val = GetValue()
+        local txt = string.format(formatStr, val)
+        editBox:SetText(txt)
+        -- Force WoW to re-render the EditBox text — SetText updates
+        -- the internal state but the visual FontString may not refresh
+        -- when the EditBox was created inside a hidden parent hierarchy.
+        editBox:SetCursorPosition(0)
+    end
+
     -- Enable/disable the slider (for conditional UI)
     -- Note: Uses self parameter for colon-call syntax (widget:SetEnabled(bool))
     container.SetEnabled = function(self, enabled)

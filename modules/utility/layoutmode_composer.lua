@@ -285,6 +285,7 @@ local VISUAL_DB_KEYS = {
     healer = true, classPower = true, range = true, auras = true,
     privateAuras = true, auraIndicators = true, pinnedAuras = true, castbar = true,
     portrait = true, pets = true, dimensions = true, spotlight = true,
+    partyTracker = true,
 }
 
 local function CreateVisualProxy(gfdb, mode)
@@ -455,6 +456,9 @@ local FAKE_BUFF_ICONS = { 136034, 135940, 136081, 135932, 136063, 135987, 136070
 local FAKE_DEBUFF_ICONS = { 136207, 136130, 135813, 136118, 135959, 136066, 136133, 135835 }
 local FAKE_DEFENSIVE_ICONS = { 135936, 135919, 135874 }  -- Shield Wall, Divine Shield, Ice Block
 local FAKE_AURA_IND_ICONS = { 135928, 136051, 136085, 135907 }  -- Renew, Rejuv, PoM, Riptide
+local FAKE_CC_ICONS = { 136175, 132114, 136183 }  -- Polymorph, Kidney Shot, Fear
+local FAKE_KICK_ICON = { 132219 }  -- Pummel
+local FAKE_PARTY_CD_ICONS = { 135936, 135919, 135874, 136120, 135994, 136048 }  -- Mixed defensive icons
 local FAKE_PRIVATE_AURA_ICON = 136116  -- generic aura
 local FAKE_CLASS = "PALADIN"
 local FAKE_NAME = "Healena"
@@ -661,11 +665,31 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
         section:SetHeight(COLLAPSIBLE_HEADER_H + height)
     end
 
+    -- EditBox:SetText updates internal state but WoW doesn't re-render
+    -- the visual FontString when the EditBox was created inside a hidden
+    -- parent hierarchy. Walk children and call _refreshEditBox (which
+    -- calls SetCursorPosition to force a visual refresh) when the section
+    -- expands. Deferred by one frame so the visibility transition completes.
+    local function RefreshChildEditBoxes(frame)
+        for _, child in pairs({frame:GetChildren()}) do
+            if child._refreshEditBox then child._refreshEditBox() end
+            RefreshChildEditBoxes(child)
+        end
+    end
+
+    local function DeferredRefreshEditBoxes()
+        C_Timer.After(0, function()
+            if not section._expanded then return end
+            RefreshChildEditBoxes(body)
+        end)
+    end
+
     local function UpdateSectionHeight()
         local targetHeight = section._expanded and RefreshContentHeight() or 0
         ApplyExpandedState(targetHeight)
         body:SetAlpha(section._expanded and 1 or 0)
         bodyClip:SetShown(section._expanded)
+        if section._expanded then DeferredRefreshEditBoxes() end
         LogSectionState("update", string.format("target=%s", type(targetHeight) == "number" and string.format("%.1f", targetHeight) or "nil"))
         if masterRelayout then masterRelayout() end
     end
@@ -726,6 +750,7 @@ local function CreateComposerCollapsible(parent, title, buildFn, sections, maste
             UIKit.CancelValueAnimation(section, "composerCollapsible")
             bodyClip:Show()
             body:SetAlpha(1)
+            if section._expanded then DeferredRefreshEditBoxes() end
             UIKit.AnimateValue(section, "composerCollapsible", {
                 fromValue = currentHeight,
                 toValue = targetHeight,
@@ -2825,11 +2850,104 @@ local function BuildPinnedAurasSettings(content, gfdb, onChange)
 end
 
 ---------------------------------------------------------------------------
+-- PARTY TRACKER BUILDERS
+---------------------------------------------------------------------------
+
+local DISPLAY_MODE_OPTIONS = {
+    { value = "static", text = "Static (always visible)" },
+    { value = "active", text = "Active Only (on CD)" },
+}
+
+local FILTER_OPTIONS = {
+    { value = "all",       text = "All Cooldowns" },
+    { value = "defensive", text = "Defensives Only" },
+    { value = "offensive", text = "Offensives Only" },
+}
+
+local function BuildCCIconsSettings(content, gfdb, onChange)
+    local pt = gfdb.partyTracker; if not pt then gfdb.partyTracker = {} pt = gfdb.partyTracker end
+    local cc = pt.ccIcons; if not cc then pt.ccIcons = {} cc = pt.ccIcons end
+    local sections = {}
+    local function relayout() RelayoutComposerSections(content, sections) end
+
+    CreateComposerCollapsible(content, "CC / Defensive Icons", function(body, updateH)
+        local cond = function() return cc.enabled end
+        local L = CreateDynamicLayout(body, updateH)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable CC Icons", "enabled", cc, onChange), FORM_ROW)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Crowd Control", "showCC", cc, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Defensives", "showDefensives", cc, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Important", "showImportant", cc, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Max Icons", 1, 5, 1, "maxIcons", cc, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", cc, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", cc, onChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", cc, onChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", cc, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "offsetX", cc, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "offsetY", cc, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", cc, onChange), FORM_ROW, cond)
+        L:Finish()
+    end, sections, relayout)
+
+    relayout()
+end
+
+local function BuildKickTimerSettings(content, gfdb, onChange)
+    local pt = gfdb.partyTracker; if not pt then gfdb.partyTracker = {} pt = gfdb.partyTracker end
+    local kick = pt.kickTimer; if not kick then pt.kickTimer = {} kick = pt.kickTimer end
+    local sections = {}
+    local function relayout() RelayoutComposerSections(content, sections) end
+
+    CreateComposerCollapsible(content, "Kick Timer", function(body, updateH)
+        local cond = function() return kick.enabled end
+        local L = CreateDynamicLayout(body, updateH)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Kick Timer", "enabled", kick, onChange), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", kick, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", kick, onChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "offsetX", kick, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "offsetY", kick, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", kick, onChange), FORM_ROW, cond)
+        L:Finish()
+    end, sections, relayout)
+
+    relayout()
+end
+
+local function BuildPartyCooldownsSettings(content, gfdb, onChange)
+    local pt = gfdb.partyTracker; if not pt then gfdb.partyTracker = {} pt = gfdb.partyTracker end
+    local pcd = pt.partyCooldowns; if not pcd then pt.partyCooldowns = {} pcd = pt.partyCooldowns end
+    local sections = {}
+    local function relayout() RelayoutComposerSections(content, sections) end
+
+    CreateComposerCollapsible(content, "Party Cooldowns", function(body, updateH)
+        local cond = function() return pcd.enabled end
+        local staticCond = function() return pcd.enabled and pcd.displayMode == "static" end
+        local L = CreateDynamicLayout(body, updateH)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Party Cooldowns", "enabled", pcd, onChange), FORM_ROW)
+        L:Row(GUI:CreateFormDropdown(body, "Display Mode", DISPLAY_MODE_OPTIONS, "displayMode", pcd, onChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Filter", FILTER_OPTIONS, "filter", pcd, onChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Max Icons", 1, 10, 1, "maxIcons", pcd, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Rows", 1, 3, 1, "iconRows", pcd, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", pcd, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", pcd, onChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", pcd, onChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", pcd, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "offsetX", pcd, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "offsetY", pcd, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Dim Ready Alpha", 0, 1, 0.05, "dimReadyAlpha", pcd, onChange, {precision = 2}), SLIDER_HEIGHT, staticCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", pcd, onChange), FORM_ROW, cond)
+        L:Finish()
+    end, sections, relayout)
+
+    relayout()
+end
+
+---------------------------------------------------------------------------
 -- ELEMENT TABLES
 ---------------------------------------------------------------------------
 local COMPOSER_ELEMENT_KEYS = {
     "health", "power", "name", "buffs", "debuffs",
     "indicators", "healer", "defensive", "auraIndicators", "pinnedAuras", "privateAuras",
+    "ccIcons", "kickTimer", "partyCooldowns",
 }
 
 local ELEMENT_LABELS = {
@@ -2837,6 +2955,7 @@ local ELEMENT_LABELS = {
     buffs = "Buffs", debuffs = "Debuffs", indicators = "Indicators",
     healer = "Healer", defensive = "Defensive",
     auraIndicators = "Aura Ind.", pinnedAuras = "Pinned", privateAuras = "Priv. Auras",
+    ccIcons = "CC Icons", kickTimer = "Kick Timer", partyCooldowns = "Party CDs",
 }
 
 local ELEMENT_BUILDERS = {
@@ -2846,6 +2965,7 @@ local ELEMENT_BUILDERS = {
     healer = BuildHealerSettings, defensive = BuildDefensiveSettings,
     auraIndicators = BuildAuraIndicatorsSettings, pinnedAuras = BuildPinnedAurasSettings,
     privateAuras = BuildPrivateAurasSettings,
+    ccIcons = BuildCCIconsSettings, kickTimer = BuildKickTimerSettings, partyCooldowns = BuildPartyCooldownsSettings,
 }
 
 ---------------------------------------------------------------------------
@@ -3542,6 +3662,53 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         end
     end
 
+    -- Party Tracker: CC Icons preview
+    local ptDB = db.partyTracker or {}
+    local ccDB = ptDB.ccIcons or {}
+    if ccDB.enabled then
+        local ccSize = (ccDB.iconSize or 20) * PREVIEW_SCALE
+        local ccMax = ccDB.maxIcons or 3
+        local ccAnchor = ccDB.anchor or "LEFT"
+        local ccGrow = ccDB.growDirection or "LEFT"
+        local ccSpacing = (ccDB.spacing or 2) * PREVIEW_SCALE
+        local ccOffX = (ccDB.offsetX or -4) * PREVIEW_SCALE
+        local ccOffY = (ccDB.offsetY or 0) * PREVIEW_SCALE
+        if ccAnchor == "BOTTOMLEFT" or ccAnchor == "BOTTOM" or ccAnchor == "BOTTOMRIGHT" then
+            ccOffY = ccOffY + previewBottomPad
+        end
+        CreateIconStrip(frame, FAKE_CC_ICONS, ccMax, ccSize, ccAnchor, ccGrow, ccSpacing, ccOffX, ccOffY, "ccIconsContainer")
+    end
+
+    -- Party Tracker: Kick Timer preview
+    local kickDB = ptDB.kickTimer or {}
+    if kickDB.enabled then
+        local kickSize = (kickDB.iconSize or 20) * PREVIEW_SCALE
+        local kickAnchor = kickDB.anchor or "TOPRIGHT"
+        local kickOffX = (kickDB.offsetX or 2) * PREVIEW_SCALE
+        local kickOffY = (kickDB.offsetY or 2) * PREVIEW_SCALE
+        if kickAnchor == "BOTTOMLEFT" or kickAnchor == "BOTTOM" or kickAnchor == "BOTTOMRIGHT" then
+            kickOffY = kickOffY + previewBottomPad
+        end
+        CreateIconStrip(frame, FAKE_KICK_ICON, 1, kickSize, kickAnchor, kickAnchor, 0, kickOffX, kickOffY, "kickTimerIcon")
+    end
+
+    -- Party Tracker: Party Cooldowns preview
+    local pcdDB = ptDB.partyCooldowns or {}
+    if pcdDB.enabled then
+        local pcdSize = (pcdDB.iconSize or 18) * PREVIEW_SCALE
+        local pcdMax = pcdDB.maxIcons or 6
+        local pcdAnchor = pcdDB.anchor or "BOTTOM"
+        local pcdGrow = pcdDB.growDirection or "RIGHT"
+        local pcdSpacing = (pcdDB.spacing or 2) * PREVIEW_SCALE
+        local pcdOffX = (pcdDB.offsetX or 0) * PREVIEW_SCALE
+        local pcdOffY = (pcdDB.offsetY or -4) * PREVIEW_SCALE
+        if pcdAnchor == "BOTTOMLEFT" or pcdAnchor == "BOTTOM" or pcdAnchor == "BOTTOMRIGHT" then
+            pcdOffY = pcdOffY + previewBottomPad
+        end
+        local pcdCount = math.min(pcdMax, #FAKE_PARTY_CD_ICONS)
+        CreateIconStrip(frame, FAKE_PARTY_CD_ICONS, pcdCount, pcdSize, pcdAnchor, pcdGrow, pcdSpacing, pcdOffX, pcdOffY, "partyCooldownsContainer")
+    end
+
     return wrapper
 end
 
@@ -3823,6 +3990,9 @@ local function BuildComposerContent(contentArea, contextMode)
         if childRefs.leader then MakeOverlay("leader", childRefs.leader, "fill", elemFLvl) end
         if childRefs.targetMarker then MakeOverlay("targetMarker", childRefs.targetMarker, "fill", elemFLvl) end
         if childRefs.phase then MakeOverlay("phase", childRefs.phase, "fill", elemFLvl) end
+        if childRefs.ccIconsContainer then MakeOverlay("ccIcons", childRefs.ccIconsContainer, "fill", elemFLvl) end
+        if childRefs.kickTimerIcon then MakeOverlay("kickTimer", childRefs.kickTimerIcon, "fill", elemFLvl) end
+        if childRefs.partyCooldownsContainer then MakeOverlay("partyCooldowns", childRefs.partyCooldownsContainer, "fill", elemFLvl) end
 
         -- Re-highlight selected element
         if state.selectedElement then SetOverlayHighlights(state.selectedElement, true) end
@@ -3907,6 +4077,17 @@ local function BuildComposerContent(contentArea, contextMode)
             state.settingsPanels[key] = panel
         end
         panel:Show()
+        -- Refresh editbox text — panels are pre-built while hidden, and
+        -- WoW doesn't re-render EditBox text set inside hidden hierarchies.
+        C_Timer.After(0, function()
+            local function walk(f)
+                for _, child in pairs({f:GetChildren()}) do
+                    if child._refreshEditBox then child._refreshEditBox() end
+                    walk(child)
+                end
+            end
+            walk(panel)
+        end)
         -- Resize scroll area to match panel, and keep in sync when collapsibles toggle
         local function SyncScrollHeight(resetToTop)
             local h = panel:GetHeight()

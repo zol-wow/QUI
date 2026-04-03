@@ -1733,7 +1733,9 @@ function QUI_GFEM:GetActiveFrame(frameType)
         end
     end
     if isTestMode then
-        if frameType and testContainers[frameType] then
+        if frameType then
+            -- Return the container for the requested type only — never
+            -- fall through to a different type's container.
             return testContainers[frameType]
         end
         if testContainer then return testContainer end

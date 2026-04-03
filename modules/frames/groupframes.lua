@@ -58,8 +58,20 @@ local GetNumGroupMembers = GetNumGroupMembers
 local GetRaidRosterInfo = GetRaidRosterInfo
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
--- ADDON_LOADED safe window flag for combat /reload support
-local inInitSafeWindow = false
+-- Consolidated state/cache table to stay under Lua's 200-local limit.
+-- Non-hot-path booleans, cached refs, and simple state live here.
+local _state = {
+    inInitSafeWindow = false,
+    gruDeferredPending = false,
+    cachedVDB_party = nil,
+    cachedVDB_raid = nil,
+    cachedModuleEnabled = false,
+    cachedModuleDB = nil,
+    lastMode = nil,
+    rangeCheckTicker = nil,
+    unitGuidCache = {},
+    cachedMarkers = {},
+}
 
 ---------------------------------------------------------------------------
 -- MODULE TABLE
@@ -99,11 +111,31 @@ local MAX_RAID_SECTION_HEADERS = #RAID_SECTION_CLASS_ORDER
 local GetRaidDisplaySections
 local GetRaidSectionUnitsPerColumn
 local CalculateRaidSectionHeaderSize
-local _unitGuidCache = {}  -- frame → last-known GUID (for OnAttributeChanged skip)
-local _cachedMarkers = {}  -- [unitToken] → markerIndex (RAID_TARGET_UPDATE short-circuit)
+-- _state.unitGuidCache: frame → last-known GUID (for OnAttributeChanged skip)
+-- _state.cachedMarkers: [unitToken] → markerIndex (RAID_TARGET_UPDATE short-circuit)
 
 local powerThrottle = {}      -- unitToken → last update time
 local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
+
+---------------------------------------------------------------------------
+-- CACHED BACKDROP TABLES: Avoid allocating a new table every SetBackdrop
+-- call. SetBackdrop does field-by-field comparison, but reusing the same
+-- table reference lets it short-circuit and reduces GC pressure.
+---------------------------------------------------------------------------
+local _backdropCache = {}
+local function GetCachedBackdrop(bgFile, edgeFile, edgeSize)
+    local key = (bgFile or "") .. "|" .. (edgeFile or "") .. "|" .. (edgeSize or 0)
+    local bd = _backdropCache[key]
+    if not bd then
+        bd = {
+            bgFile = bgFile,
+            edgeFile = edgeFile or nil,
+            edgeSize = edgeSize and edgeSize > 0 and edgeSize or nil,
+        }
+        _backdropCache[key] = bd
+    end
+    return bd
+end
 
 ---------------------------------------------------------------------------
 -- GROUP_ROSTER_UPDATE coalescing: GRU fires in bursts of 5-20 during roster
@@ -112,7 +144,7 @@ local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
 ---------------------------------------------------------------------------
 local gruCoalesceFrame = CreateFrame("Frame")
 gruCoalesceFrame:Hide()
-local _gruDeferredPending = false  -- true while the 0.2s deferred timer is active
+-- _state.gruDeferredPending: true while the 0.2s deferred timer is active
 
 -- Font/texture caching
 local _fontCache = {}
@@ -309,23 +341,20 @@ end
 -- Returns the party or raid visual settings sub-table.
 -- Cached per party/raid to avoid 5-6 table lookups per call in hot paths
 -- (UNIT_HEALTH fires for every damaged unit — 4 sub-functions each call this).
-local _cachedVDB_party = nil
-local _cachedVDB_raid = nil
-
 local function GetVisualDB(isRaid)
     if isRaid then
-        if _cachedVDB_raid then return _cachedVDB_raid end
+        if _state.cachedVDB_raid then return _state.cachedVDB_raid end
     else
-        if _cachedVDB_party then return _cachedVDB_party end
+        if _state.cachedVDB_party then return _state.cachedVDB_party end
     end
     local db = GetDB()
     if not db then return nil end
     if isRaid then
-        _cachedVDB_raid = db.raid or db
-        return _cachedVDB_raid
+        _state.cachedVDB_raid = db.raid or db
+        return _state.cachedVDB_raid
     else
-        _cachedVDB_party = db.party or db
-        return _cachedVDB_party
+        _state.cachedVDB_party = db.party or db
+        return _state.cachedVDB_party
     end
 end
 
@@ -459,8 +488,8 @@ end
 
 local function InvalidateCache()
     wipe(_fontCache)
-    _cachedVDB_party = nil
-    _cachedVDB_raid = nil
+    _state.cachedVDB_party = nil
+    _state.cachedVDB_raid = nil
     InvalidateDispelColors()
 end
 
@@ -1822,11 +1851,11 @@ local function DecorateGroupFrame(frame)
     local borderSize = borderPx > 0 and (QUICore.Pixels and QUICore:Pixels(borderPx, frame) or borderPx) or 0
     local px = QUICore.GetPixelSize and QUICore:GetPixelSize(frame) or 1
 
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = borderSize > 0 and "Interface\\Buttons\\WHITE8x8" or nil,
-        edgeSize = borderSize > 0 and borderSize or nil,
-    })
+    frame:SetBackdrop(GetCachedBackdrop(
+        "Interface\\Buttons\\WHITE8x8",
+        borderSize > 0 and "Interface\\Buttons\\WHITE8x8" or nil,
+        borderSize > 0 and borderSize or nil
+    ))
 
     local bgColor, healthOpacity, bgOpacity
     if general and general.darkMode then
@@ -2122,10 +2151,7 @@ local function DecorateGroupFrame(frame)
     threatBorder:SetPoint("TOPLEFT", -px, px)
     threatBorder:SetPoint("BOTTOMRIGHT", px, -px)
     threatBorder:SetFrameLevel(frame:GetFrameLevel() + 3)
-    threatBorder:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = threatBorderPx,
-    })
+    threatBorder:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", threatBorderPx))
     threatBorder:Hide()
     frame.threatBorder = threatBorder
 
@@ -2135,10 +2161,7 @@ local function DecorateGroupFrame(frame)
     targetHighlight:SetPoint("TOPLEFT", -px, px)
     targetHighlight:SetPoint("BOTTOMRIGHT", px, -px)
     targetHighlight:SetFrameLevel(frame:GetFrameLevel() + 4)
-    targetHighlight:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px * 2,
-    })
+    targetHighlight:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", px * 2))
     targetHighlight:Hide()
     frame.targetHighlight = targetHighlight
 
@@ -2216,10 +2239,7 @@ local function DecorateGroupFrame(frame)
         defTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         defIcon.icon = defTex
 
-        defIcon:SetBackdrop({
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
+        defIcon:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", px))
         defIcon:SetBackdropBorderColor(0, 0.8, 0, 1)
 
         local healerDB = GetHealerSettings(isRaid)
@@ -2243,6 +2263,10 @@ local function DecorateGroupFrame(frame)
     -- Keep backward compat alias for single-icon references
     frame.defensiveIcon = frame.defensiveIcons[1]
 
+    -- Party Tracker: store px for lazy icon creation (icons created on
+    -- first use, not at decoration time, to avoid backdrop overhead)
+    frame._partyTrackerPx = px
+
     -- Portrait (optional, side-attached)
     local portraitSettings = GetPortraitSettings(isRaid)
     if portraitSettings and portraitSettings.showPortrait then
@@ -2261,10 +2285,7 @@ local function DecorateGroupFrame(frame)
             portrait:SetPoint("LEFT", frame, "RIGHT", 0, 0)
         end
 
-        portrait:SetBackdrop({
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = portraitBorderPx,
-        })
+        portrait:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", portraitBorderPx))
         portrait:SetBackdropBorderColor(0, 0, 0, 1)
         portrait:SetFrameLevel(frame:GetFrameLevel() + 1)
 
@@ -2310,7 +2331,7 @@ local function DecorateGroupFrame(frame)
 
             if not value then
                 -- Unit cleared (frame hidden by header)
-                _unitGuidCache[self] = nil
+                _state.unitGuidCache[self] = nil
                 return
             end
 
@@ -2322,9 +2343,9 @@ local function DecorateGroupFrame(frame)
             -- so we never store or compare secret values.
             local rawGuid = UnitGUID(value)
             local newGuid = (rawGuid and not IsSecretValue(rawGuid)) and rawGuid or nil
-            local oldGuid = _unitGuidCache[self]
+            local oldGuid = _state.unitGuidCache[self]
             if newGuid then
-                _unitGuidCache[self] = newGuid
+                _state.unitGuidCache[self] = newGuid
             end
 
             if oldGuid and newGuid and oldGuid == newGuid then
@@ -3432,11 +3453,14 @@ CalculateRaidSectionHeaderSize = function(sectionCount, mode, layout)
         leadingCount * frameH + (leadingCount - 1) * spacing
 end
 
+-- Forward declaration: defined after UpdateHeaderVisibility (used in deferred callback)
+local ApplyChildFrameLayout
+
 ---------------------------------------------------------------------------
 -- HEADER: Update header sizes based on current roster
 ---------------------------------------------------------------------------
 local function UpdateHeaderSizes()
-    if InCombatLockdown() and not inInitSafeWindow then return end
+    if InCombatLockdown() and not _state.inInitSafeWindow then return end
     local db = GetSettings()
     if not db then return end
 
@@ -3536,6 +3560,68 @@ local function DecorateHeaderChildren(header)
 end
 
 ---------------------------------------------------------------------------
+-- HEADER: Batched decoration — stagger across ticks to avoid "script ran
+-- too long" when decorating 40+ raid frames at init.
+---------------------------------------------------------------------------
+local function CollectHeaderChildren(header, out)
+    if not header then return end
+    local i = 1
+    while true do
+        local child = header:GetAttribute("child" .. i)
+        if not child then break end
+        out[#out + 1] = child
+        i = i + 1
+    end
+end
+
+local function DecorateBatched(frames, onComplete)
+    local total = #frames
+    if total == 0 then
+        if onComplete then onComplete() end
+        return
+    end
+
+    -- Small groups (party/small raid): decorate all at once — no visible stagger.
+    -- Only batch for 25+ frames to guard against "script ran too long".
+    local BATCH_THRESHOLD = 25
+    local inCombat = InCombatLockdown()
+
+    if total <= BATCH_THRESHOLD then
+        for i = 1, total do
+            DecorateGroupFrame(frames[i])
+            if not inCombat then
+                frames[i]:RegisterForClicks("AnyUp")
+            else
+                _pending.registerClicks = true
+            end
+        end
+        if onComplete then onComplete() end
+        return
+    end
+
+    -- Large raids: batch 20 per tick
+    local idx = 1
+    local function ProcessBatch()
+        local batchEnd = math_min(idx + 19, total)
+        for i = idx, batchEnd do
+            DecorateGroupFrame(frames[i])
+            if not inCombat then
+                frames[i]:RegisterForClicks("AnyUp")
+            else
+                _pending.registerClicks = true
+            end
+        end
+        idx = batchEnd + 1
+        if idx <= total then
+            C_Timer.After(0, ProcessBatch)
+        elseif onComplete then
+            onComplete()
+        end
+    end
+    ProcessBatch()
+end
+
+---------------------------------------------------------------------------
 -- HEADER: Show/hide based on group status
 ---------------------------------------------------------------------------
 -- Show/hide per-group headers; hide single raid header
@@ -3572,7 +3658,7 @@ local function HideRaidGroupHeaders()
 end
 
 local function UpdateHeaderVisibility()
-    if InCombatLockdown() and not inInitSafeWindow then
+    if InCombatLockdown() and not _state.inInitSafeWindow then
         _pending.visibilityUpdate = true
         return
     end
@@ -3648,42 +3734,66 @@ local function UpdateHeaderVisibility()
         end
     end
 
+    -- On first layout (no decorated children yet), hide anchor roots so
+    -- the user never sees unstyled raw rectangles pop in one by one.
+    -- The secure header still creates children (the root is Shown via
+    -- UpdateAnchorFrames), but alpha 0 keeps them invisible until ready.
+    -- Skip for subsequent roster updates when frames are already styled.
+    local needsReveal = not _state.initialLayoutDone
+    if needsReveal then
+        for _, root in pairs(QUI_GF.anchorFrames) do
+            root:SetAlpha(0)
+        end
+    end
+
     UpdateHeaderSizes()
     UpdateAnchorFrames()
 
     -- End safe period before the deferred callback so combat guards apply
     _pending.initSafe = false
 
-    -- Defer decoration + map rebuild to next frame (after header creates children)
-    C_Timer.After(0.1, function()
-        DecorateHeaderChildren(QUI_GF.headers.party)
+    -- Defer decoration + map rebuild to next frame (after header creates children).
+    -- Batched only for 25+ frames to avoid "script ran too long" in large raids.
+    C_Timer.After(0, function()
+        local allChildren = {}
+        CollectHeaderChildren(QUI_GF.headers.party, allChildren)
         if UseRaidSectionHeaders() and IsInRaid() then
             for _, header in ipairs(QUI_GF.raidGroupHeaders) do
-                DecorateHeaderChildren(header)
+                CollectHeaderChildren(header, allChildren)
             end
         else
-            DecorateHeaderChildren(QUI_GF.headers.raid)
+            CollectHeaderChildren(QUI_GF.headers.raid, allChildren)
         end
-        DecorateHeaderChildren(QUI_GF.headers.self)
-        RebuildUnitFrameMap()
-        QUI_GF:RefreshAllFrames()
-        UpdateAnchorFrames()
-        initSafePeriod = false
+        CollectHeaderChildren(QUI_GF.headers.self, allChildren)
+
+        DecorateBatched(allChildren, function()
+            ApplyChildFrameLayout()
+            RebuildUnitFrameMap()
+            QUI_GF:RefreshAllFrames()
+            UpdateAnchorFrames()
+            initSafePeriod = false
+
+            -- Reveal: all frames are now decorated, sized, and populated.
+            if needsReveal then
+                _state.initialLayoutDone = true
+                for _, root in pairs(QUI_GF.anchorFrames) do
+                    root:SetAlpha(1)
+                end
+            end
+        end)
     end)
 end
 
 ---------------------------------------------------------------------------
 -- SCALING: Resize frames based on group size thresholds
 ---------------------------------------------------------------------------
-local lastMode = nil
-
 -- Resize/layout unit buttons and bars. SetSize on the secure unit buttons
 -- themselves is protected, so skip it during combat — the pending resize
 -- will re-apply after combat via PLAYER_REGEN_ENABLED.
 -- Uses per-child dimensions: party/self children get party dims, raid
 -- children get current raid-mode dims. This prevents cross-contamination
 -- when the group transitions between party and raid.
-local function ApplyChildFrameLayout()
+ApplyChildFrameLayout = function()
     local inCombat = InCombatLockdown()
     local partyW, partyH = GetFrameDimensions("party")
     local raidMode = GetGroupMode()
@@ -3742,15 +3852,15 @@ end
 local function UpdateFrameScaling(forceUpdate)
     local mode = GetGroupMode()
 
-    if InCombatLockdown() and not inInitSafeWindow then
+    if InCombatLockdown() and not _state.inInitSafeWindow then
         _pending.resize = true
         _pending.resizeForce = _pending.resizeForce or (forceUpdate and true or false)
         ApplyChildFrameLayout()
         return
     end
 
-    if not forceUpdate and mode == lastMode then return end
-    lastMode = mode
+    if not forceUpdate and mode == _state.lastMode then return end
+    _state.lastMode = mode
 
     -- Per-header-type attributes: party/self get party dims, raid headers
     -- get current raid-mode dims. This ensures initialConfigFunction uses
@@ -3787,7 +3897,7 @@ end
 ---------------------------------------------------------------------------
 -- RANGE CHECK: Ticker-based range dimming (spell-based for combat safety)
 ---------------------------------------------------------------------------
-local rangeCheckTicker = nil
+-- _state.rangeCheckTicker: range check C_Timer ticker
 
 -- Range-check spell lookup tables
 local RANGE_SPELLS = {
@@ -4046,7 +4156,7 @@ local function DoRangeCheck()
 end
 
 local function StartRangeCheck()
-    if rangeCheckTicker then return end
+    if _state.rangeCheckTicker then return end
     -- Start if either party or raid has range checking enabled
     local partyRange = GetRangeSettings(false)
     local raidRange = GetRangeSettings(true)
@@ -4060,13 +4170,13 @@ local function StartRangeCheck()
     -- Slow fallback interval — UNIT_IN_RANGE_UPDATE is the primary driver.
     -- Large raids use a longer interval to reduce per-tick work (40+ frames).
     local interval = GetGroupSize() > 25 and 1.0 or 0.75
-    rangeCheckTicker = C_Timer.NewTicker(interval, DoRangeCheck)
+    _state.rangeCheckTicker = C_Timer.NewTicker(interval, DoRangeCheck)
 end
 
 local function StopRangeCheck()
-    if rangeCheckTicker then
-        rangeCheckTicker:Cancel()
-        rangeCheckTicker = nil
+    if _state.rangeCheckTicker then
+        _state.rangeCheckTicker:Cancel()
+        _state.rangeCheckTicker = nil
     end
     wipe(_range.cache)
     wipe(_range.cacheTime)
@@ -4078,7 +4188,7 @@ end
 -- create/reassign children before we rebuild the unit→frame map.
 ---------------------------------------------------------------------------
 local function GRU_DeferredWork()
-    _gruDeferredPending = false
+    _state.gruDeferredPending = false
     DecorateHeaderChildren(QUI_GF.headers.party)
     if UseRaidSectionHeaders() and IsInRaid() then
         for _, header in ipairs(QUI_GF.raidGroupHeaders) do
@@ -4090,11 +4200,11 @@ local function GRU_DeferredWork()
     RebuildUnitFrameMap()
     -- Refresh GUID cache so OnAttributeChanged skip has fresh data
     for unit, frame in pairs(QUI_GF.unitFrameMap) do
-        _unitGuidCache[frame] = UnitGUID(unit)
+        _state.unitGuidCache[frame] = UnitGUID(unit)
     end
     wipe(_range.cache)  -- Fresh map — force re-evaluate all units
     wipe(_range.cacheTime)
-    wipe(_cachedMarkers)
+    wipe(_state.cachedMarkers)
     -- Evict stale aura cache entries for units no longer in the group
     local GFA = ns.QUI_GroupFrameAuras
     if GFA and GFA.PruneAuraCache then GFA.PruneAuraCache() end
@@ -4115,8 +4225,8 @@ gruCoalesceFrame:SetScript("OnUpdate", function(self)
     -- Cancel-and-reschedule: if a previous timer is still pending from an
     -- earlier burst that hasn't fired yet, this replaces it harmlessly
     -- (the flag prevents double-processing).
-    if not _gruDeferredPending then
-        _gruDeferredPending = true
+    if not _state.gruDeferredPending then
+        _state.gruDeferredPending = true
         C_Timer.After(0.2, GRU_DeferredWork)
     end
 end)
@@ -4128,17 +4238,11 @@ local eventFrame = CreateFrame("Frame")
 
 -- Cached module-enabled flag: refreshed on settings change, avoids
 -- GetSettings() (5-6 table lookups) on every single unit event.
-local _cachedModuleEnabled = false
-local _cachedModuleDB = nil
-
 local function RefreshCachedEnabled()
     local db = GetSettings()
-    _cachedModuleEnabled = db and db.enabled or false
-    _cachedModuleDB = db
+    _state.cachedModuleEnabled = db and db.enabled or false
+    _state.cachedModuleDB = db
 end
-
--- Upvalue for fast string prefix check (replaces per-event regex)
-local sub = string.sub
 
 local function OnEvent(self, event, arg1, ...)
     if not QUI_GF.initialized then return end
@@ -4152,7 +4256,7 @@ local function OnEvent(self, event, arg1, ...)
         if not frame then
             -- Self-healing: rebuild map on miss for party/raid/player units.
             -- Fast prefix check avoids per-event regex (string.sub vs :match).
-            local p4 = sub(arg1, 1, 4)
+            local p4 = arg1:sub(1, 4)
             if p4 == "part" or p4 == "raid" or arg1 == "player" then
                 local now = GetTime()
                 if not QUI_GF.lastMapRebuild or (now - QUI_GF.lastMapRebuild) > 1.0 then
@@ -4165,7 +4269,7 @@ local function OnEvent(self, event, arg1, ...)
         end
 
         -- Matched frame — check cached enabled state
-        if not _cachedModuleEnabled then return end
+        if not _state.cachedModuleEnabled then return end
 
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
             -- No throttle — UNIT_HEALTH is already coalesced by the WoW client.
@@ -4259,7 +4363,7 @@ local function OnEvent(self, event, arg1, ...)
     end  -- end unit event block (type(arg1) == "string")
 
     -- Non-unit events — check enabled via cached flag
-    if not _cachedModuleEnabled then return end
+    if not _state.cachedModuleEnabled then return end
 
     if event == "GROUP_ROSTER_UPDATE" then
         -- Coalesce: show the throttle frame. Multiple GRU events in the same
@@ -4316,11 +4420,16 @@ local function OnEvent(self, event, arg1, ...)
         end)
 
     elseif event == "RAID_TARGET_UPDATE" then
+        local inCombat = InCombatLockdown()
         for _, frame in pairs(QUI_GF.unitFrameMap) do
-            local marker = frame.unit and GetRaidTargetIndex(frame.unit)
-            if marker ~= _cachedMarkers[frame.unit] then
-                _cachedMarkers[frame.unit] = marker
+            if inCombat then
                 UpdateTargetMarker(frame)
+            else
+                local marker = frame.unit and GetRaidTargetIndex(frame.unit)
+                if marker ~= _state.cachedMarkers[frame.unit] then
+                    _state.cachedMarkers[frame.unit] = marker
+                    UpdateTargetMarker(frame)
+                end
             end
         end
 
@@ -4396,9 +4505,9 @@ local function OnEvent(self, event, arg1, ...)
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
-        C_Timer.After(1.0, function()
+        C_Timer.After(0.5, function()
             UpdateHeaderVisibility()
-            UpdateFrameScaling()
+            UpdateFrameScaling(true)
             ResolveRangeSpells()
         end)
 
@@ -4535,6 +4644,14 @@ function QUI_GF:RefreshAllFrames()
     if ns.QUI_GroupFramePrivateAuras and ns.QUI_GroupFramePrivateAuras.RefreshAll then
         ns.QUI_GroupFramePrivateAuras:RefreshAll()
     end
+
+    -- Party Tracker modules
+    local ptCCIcons = ns.PartyTracker_CCIcons
+    if ptCCIcons and ptCCIcons.RefreshAll then ptCCIcons.RefreshAll() end
+    local ptKickTimer = ns.PartyTracker_KickTimer
+    if ptKickTimer and ptKickTimer.RefreshAll then ptKickTimer.RefreshAll() end
+    local ptCDDisplay = ns.PartyTracker_CooldownDisplay
+    if ptCDDisplay and ptCDDisplay.RefreshAll then ptCDDisplay.RefreshAll() end
 end
 
 ---------------------------------------------------------------------------
@@ -4555,7 +4672,7 @@ function QUI_GF:RefreshSettings()
         return
     end
 
-    if InCombatLockdown() and not inInitSafeWindow then
+    if InCombatLockdown() and not _state.inInitSafeWindow then
         _pending.refreshSettings = true
         return
     end
@@ -4670,7 +4787,8 @@ function QUI_GF:Initialize()
 
     -- ADDON_LOADED safe window: protected calls are allowed even though
     -- InCombatLockdown() returns true during a combat /reload.
-    inInitSafeWindow = true
+    _state.inInitSafeWindow = true
+    _state.initialLayoutDone = false
 
     -- Create headers
     CreateHeaders()
@@ -4708,20 +4826,15 @@ function QUI_GF:Initialize()
         ns.QUI_GroupFrameBlizzard:HideBlizzardFrames()
     end
 
-    -- Delayed full refresh
-    C_Timer.After(1.5, function()
-        self:RefreshAllFrames()
-    end)
-
-    inInitSafeWindow = false
+    _state.inInitSafeWindow = false
 end
 
 ---------------------------------------------------------------------------
 -- DISABLE
 ---------------------------------------------------------------------------
 function QUI_GF:Disable()
-    _cachedModuleEnabled = false
-    _cachedModuleDB = nil
+    _state.cachedModuleEnabled = false
+    _state.cachedModuleDB = nil
     UnregisterEvents()
     StopRangeCheck()
 
@@ -4759,22 +4872,12 @@ end
 ---------------------------------------------------------------------------
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 initFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
         self:UnregisterEvent("ADDON_LOADED")
         QUI_GF:Initialize()
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        if QUI_GF.initialized then
-            C_Timer.After(1.0, function()
-                UpdateHeaderVisibility()
-                UpdateFrameScaling(true)
-                QUI_GF:RefreshAllFrames()
-            end)
-        end
     end
 end)
 

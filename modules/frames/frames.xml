@@ -15,6 +15,7 @@
     <Script file="groupframes_clickcast.lua"/>
     <Script file="groupframes_blizzard.lua"/>
     <Script file="groupframes_editmode.lua"/>
+    <Include file="party_tracker\party_tracker.xml"/>
     <Script file="buffbar.lua"/>
     <Script file="raidbuffs.lua"/>
     <Script file="totems.lua"/>

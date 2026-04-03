@@ -21,6 +21,26 @@ local IsSpellOverlayed = (C_SpellActivationOverlay and C_SpellActivationOverlay.
 -- and also used to check override spell IDs that the API might miss.
 local overlayedSpells = {}  -- [spellID] = true
 
+-- Safe wrapper: C_Spell.IsSpellUsable can return secret values in Midnight.
+local function SafeIsSpellUsable(spellID)
+    if not spellID or not C_Spell or not C_Spell.IsSpellUsable then return true, false end
+    local ok, usable, noMana = pcall(C_Spell.IsSpellUsable, spellID)
+    if not ok then return true, false end
+    return usable and true or false, noMana and true or false
+end
+
+-- Check if an icon's spell is fully castable: off cooldown, no active aura, has resources.
+local function IsSpellCastable(icon)
+    if not icon or not icon._spellEntry then return false end
+    if icon._auraActive then return false end
+    if icon._hasCooldownActive then return false end
+    local spellID = icon._cachedOverrideID
+        or icon._spellEntry.overrideSpellID
+        or icon._spellEntry.spellID
+    if not spellID then return false end
+    return SafeIsSpellUsable(spellID)
+end
+
 -- Track which icons currently have active glows
 local activeGlowIcons = {}  -- [icon] = true
 
@@ -361,6 +381,11 @@ local function ScanAllGlows()
                     end
                 end
 
+                -- Per-spell procOnUsable: glow when spell is castable
+                if not shouldGlow and spellOvr and spellOvr.procOnUsable then
+                    shouldGlow = IsSpellCastable(icon)
+                end
+
                 if shouldGlow and not activeGlowIcons[icon] then
                     StartGlow(icon, spellOvr)
                 elseif not shouldGlow and activeGlowIcons[icon] then
@@ -427,6 +452,11 @@ local function ScanGlowsForSpell(spellID)
                             end
                         end
 
+                        -- Per-spell procOnUsable: glow when spell is castable
+                        if not shouldGlow and spellOvr and spellOvr.procOnUsable then
+                            shouldGlow = IsSpellCastable(icon)
+                        end
+
                         if shouldGlow and not activeGlowIcons[icon] then
                             StartGlow(icon, spellOvr)
                         elseif not shouldGlow and activeGlowIcons[icon] then
@@ -468,8 +498,26 @@ eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
 eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+eventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
+
+-- Coalesced usability glow scan: 100ms delay lets CDM's 50ms update finish first
+-- so icon._hasCooldownActive is current when we check IsSpellCastable.
+local _usabilityGlowPending = false
+local function ScheduleUsabilityGlowScan()
+    if _usabilityGlowPending then return end
+    _usabilityGlowPending = true
+    C_Timer.After(0.1, function()
+        _usabilityGlowPending = false
+        ScanAllGlows()
+    end)
+end
 
 eventFrame:SetScript("OnEvent", function(_, event, spellID)
+    if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_USABLE" then
+        ScheduleUsabilityGlowScan()
+        return
+    end
     if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" and spellID then
         overlayedSpells[spellID] = true
         if C_Spell and C_Spell.GetOverrideSpell then
@@ -514,6 +562,7 @@ ns._OwnedGlows = {
     GetViewerType = GetViewerType,
     activeGlowIcons = activeGlowIcons,
     ScheduleGlowScan = ScanAllGlows,
+    IsSpellCastable = IsSpellCastable,
     GetGlowState = function(icon)
         return activeGlowIcons[icon] and { active = true } or nil
     end,

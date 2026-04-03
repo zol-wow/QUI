@@ -979,6 +979,10 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     local glowCheck = GUI:CreateFormCheckbox(overridePanel, "Glow Enabled", "glowEnabled", proxyDB, OnOverrideChange)
     PlaceWidget(glowCheck)
 
+    -- Proc on Usable toggle (glow when spell is castable: off CD + has resources)
+    local procCheck = GUI:CreateFormCheckbox(overridePanel, "Proc on Usable", "procOnUsable", proxyDB, OnOverrideChange)
+    PlaceWidget(procCheck)
+
     -- Glow color
     -- For color pickers, we need a real table reference. Use a temp table synced back.
     local glowColorDB = { glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
@@ -1140,7 +1144,8 @@ local entryListContent = nil
 local dragState = {
     active = false,
     fromIndex = nil,
-    fromRow = nil,
+    fromCell = nil,
+    fromRowNum = nil,  -- row number the dragged entry belongs to
 }
 
 local function BuildEntryListSection(parent)
@@ -1213,7 +1218,7 @@ local function GetOrCreateEntryCell(index)
             GameTooltip:AddLine("Not Learned (Dormant)", 0.9, 0.6, 0.2)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         else
-            GameTooltip:AddLine("Drag to reorder", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("Drag to reorder or move between rows", 0.5, 0.5, 0.5)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         end
         GameTooltip:Show()
@@ -1260,16 +1265,30 @@ local function GetOrCreateDropIndicator()
     return line
 end
 
--- Find which entry index the cursor is nearest in the grid
-local function GetDropTargetIndex()
-    if not entryListContent then return nil end
+-- Find which entry index and row the cursor is nearest in the grid.
+-- Returns targetIdx (insert-before position in ownedSpells), targetRow (row number or nil),
+--         bestCell, bestSide ("left"/"right"), isHeaderDrop (boolean).
+local function GetDropTarget()
+    if not entryListContent then return nil, nil end
     local scale = entryListContent:GetEffectiveScale()
     local cursorX, cursorY = GetCursorPosition()
     cursorX = cursorX / scale
     cursorY = cursorY / scale
 
+    -- Check section headers first — if cursor is over a row header (especially empty rows),
+    -- treat it as a drop target for that row.
+    for _, hdr in ipairs(sectionHeaders) do
+        if hdr:IsShown() and hdr._rowNum and hdr:IsMouseOver() then
+            -- Drop into this row — use a sentinel index; StopDrag handles row-only drops
+            return nil, hdr._rowNum, hdr, nil, true
+        end
+    end
+
     local bestIdx = nil
+    local bestRow = nil
     local bestDist = math.huge
+    local bestCell = nil
+    local bestSide = nil  -- "left" or "right"
     for i, cell in ipairs(entryCells) do
         if cell:IsShown() and cell._entryIndex then
             local cl = cell:GetLeft()
@@ -1280,16 +1299,20 @@ local function GetDropTargetIndex()
                 local dist = (cursorX - cx) * (cursorX - cx) + (cursorY - cy) * (cursorY - cy)
                 if dist < bestDist then
                     bestDist = dist
+                    bestCell = cell
+                    bestRow = cell._rowNum
                     if cursorX < cx then
                         bestIdx = cell._entryIndex
+                        bestSide = "left"
                     else
                         bestIdx = cell._entryIndex + 1
+                        bestSide = "right"
                     end
                 end
             end
         end
     end
-    return bestIdx
+    return bestIdx, bestRow, bestCell, bestSide, false
 end
 
 local function UpdateDropIndicator()
@@ -1299,50 +1322,69 @@ local function UpdateDropIndicator()
         return
     end
 
-    local targetIdx = GetDropTargetIndex()
-    if not targetIdx then
+    local targetIdx, targetRow, bestCell, bestSide, isHeaderDrop = GetDropTarget()
+
+    -- Always clear previously highlighted header first
+    if dragState._highlightedHeader and dragState._highlightedHeader ~= bestCell then
+        local hdr = dragState._highlightedHeader
+        if hdr:GetHeight() <= 18 then
+            hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
+        else
+            hdr:SetBackdropColor(ACCENT_R * 0.1, ACCENT_G * 0.1, ACCENT_B * 0.1, 0.8)
+        end
+        dragState._highlightedHeader = nil
+    end
+
+    if isHeaderDrop and bestCell then
+        -- Hovering over a row header (empty row) — show a horizontal bar
+        indicator:ClearAllPoints()
+        indicator:SetHeight(2)
+        indicator:SetPoint("TOPLEFT", bestCell, "BOTTOMLEFT", 0, -1)
+        indicator:SetPoint("TOPRIGHT", bestCell, "BOTTOMRIGHT", 0, -1)
+        indicator:Show()
+        -- Highlight the header
+        bestCell:SetBackdropColor(ACCENT_R * 0.2, ACCENT_G * 0.2, ACCENT_B * 0.2, 0.9)
+        dragState._highlightedHeader = bestCell
+        return
+    end
+
+    -- Not over a header — clear if still set
+    if dragState._highlightedHeader then
+        local hdr = dragState._highlightedHeader
+        if hdr:GetHeight() <= 18 then
+            hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
+        else
+            hdr:SetBackdropColor(ACCENT_R * 0.1, ACCENT_G * 0.1, ACCENT_B * 0.1, 0.8)
+        end
+        dragState._highlightedHeader = nil
+    end
+
+    if not targetIdx or not bestCell then
         indicator:Hide()
         return
     end
 
-    -- Find anchor cell: the cell at targetIdx (line goes to its left)
-    -- or the cell at targetIdx-1 (line goes to its right)
-    local anchorCell = nil
-    local anchorRight = false
-    for i, cell in ipairs(entryCells) do
-        if cell:IsShown() and cell._entryIndex then
-            if cell._entryIndex == targetIdx then
-                anchorCell = cell
-                anchorRight = false
-                break
-            elseif cell._entryIndex == targetIdx - 1 then
-                anchorCell = cell
-                anchorRight = true
-            end
-        end
-    end
-
-    if anchorCell then
-        indicator:ClearAllPoints()
-        indicator:SetHeight(GRID_CELL_SIZE)
-        if anchorRight then
-            indicator:SetPoint("LEFT", anchorCell, "RIGHT", 0, 0)
-        else
-            indicator:SetPoint("RIGHT", anchorCell, "LEFT", 0, 0)
-        end
-        indicator:Show()
+    -- Anchor centered on the cell edge so the indicator is never clipped
+    -- outside the scroll content area (especially at the first cell in a row)
+    indicator:ClearAllPoints()
+    indicator:SetWidth(2)
+    indicator:SetHeight(GRID_CELL_SIZE)
+    if bestSide == "right" then
+        indicator:SetPoint("CENTER", bestCell, "RIGHT", 0, 0)
     else
-        indicator:Hide()
+        indicator:SetPoint("CENTER", bestCell, "LEFT", 0, 0)
     end
+    indicator:Show()
 end
 
 local StopDrag  -- forward declaration
 
-local function StartDrag(cell, entryIndex)
+local function StartDrag(cell, entryIndex, rowNum)
     if InCombatLockdown() then return end
     dragState.active = true
     dragState.fromIndex = entryIndex
-    dragState.fromRow = cell
+    dragState.fromCell = cell
+    dragState.fromRowNum = rowNum or nil
     -- Highlight the dragged cell
     cell:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     -- Hide highlight textures on all other cells so hover glow doesn't
@@ -1368,7 +1410,8 @@ end
 StopDrag = function()
     if not dragState.active then return end
     local fromIdx = dragState.fromIndex
-    local cell = dragState.fromRow
+    local cell = dragState.fromCell
+    local fromRowNum = dragState.fromRowNum
 
     -- Restore cell border
     if cell then
@@ -1391,22 +1434,92 @@ StopDrag = function()
         entryListContent:SetScript("OnUpdate", nil)
     end
 
-    local targetIdx = GetDropTargetIndex()
+    local targetIdx, targetRow = GetDropTarget()
+
+    -- Clean up all header highlights (reset every header to its default color)
+    for _, hdr in ipairs(sectionHeaders) do
+        if hdr:IsShown() then
+            if hdr:GetHeight() <= 18 then
+                hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
+            else
+                hdr:SetBackdropColor(ACCENT_R * 0.1, ACCENT_G * 0.1, ACCENT_B * 0.1, 0.8)
+            end
+        end
+    end
+    dragState._highlightedHeader = nil
+
     dragState.active = false
     dragState.fromIndex = nil
-    dragState.fromRow = nil
+    dragState.fromCell = nil
+    dragState.fromRowNum = nil
 
-    if not targetIdx or not fromIdx or targetIdx == fromIdx or targetIdx == fromIdx + 1 then
-        return
-    end
-
-    local adjustedTarget = targetIdx
-    if targetIdx > fromIdx then
-        adjustedTarget = targetIdx - 1
-    end
+    if not fromIdx then return end
+    -- Need either a cell target or a row header target
+    if not targetIdx and not targetRow then return end
 
     local spellData = GetCDMSpellData()
-    if spellData and activeContainer then
+    if not spellData or not activeContainer then return end
+
+    local isCooldown = (ResolveContainerType(activeContainer) == "cooldown")
+    local crossRow = isCooldown and targetRow and fromRowNum and targetRow ~= fromRowNum
+
+    if crossRow then
+        -- Cross-row drag: change entry's row and reorder within the target row
+        local db = GetContainerDB(activeContainer)
+        if not db then return end
+
+        -- Capacity check: is the target row full?
+        local rd = db["row" .. targetRow]
+        if rd and rd.iconCount then
+            local firstActiveRow = nil
+            for r = 1, 3 do
+                local rrd = db["row" .. r]
+                if rrd and rrd.iconCount and rrd.iconCount > 0 then
+                    if not firstActiveRow then firstActiveRow = r end
+                end
+            end
+            local count = 0
+            local spells = db.ownedSpells or {}
+            for _, e in ipairs(spells) do
+                if e and (e.row or firstActiveRow) == targetRow then
+                    count = count + 1
+                end
+            end
+            if count >= rd.iconCount then
+                UIErrorsFrame:AddMessage("Row " .. targetRow .. " is full (" .. rd.iconCount .. "/" .. rd.iconCount .. ")", 1.0, 0.3, 0.3, 1.0, 3)
+                UIErrorsFrame:SetFrameStrata("TOOLTIP")
+                return
+            end
+        end
+
+        -- Set the row first
+        spellData:SetEntryRow(activeContainer, fromIdx, targetRow)
+        -- If we have a specific position (cell drop, not header drop), reorder
+        if targetIdx then
+            local adjustedTarget = targetIdx
+            if targetIdx > fromIdx then
+                adjustedTarget = targetIdx - 1
+            end
+            if adjustedTarget ~= fromIdx then
+                spellData:ReorderEntry(activeContainer, fromIdx, adjustedTarget)
+            end
+        end
+        C_Timer.After(0.02, function()
+            RefreshCDM()
+            RefreshEntryList()
+            RefreshPreview()
+        end)
+    else
+        -- Same-row or non-row reorder
+        if not targetIdx or targetIdx == fromIdx or targetIdx == fromIdx + 1 then
+            return
+        end
+
+        local adjustedTarget = targetIdx
+        if targetIdx > fromIdx then
+            adjustedTarget = targetIdx - 1
+        end
+
         spellData:ReorderEntry(activeContainer, fromIdx, adjustedTarget)
         C_Timer.After(0.02, function()
             RefreshCDM()
@@ -1470,53 +1583,83 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
             end
         end }
 
-        -- Row cycle (cooldown containers with 2+ rows)
+        -- Row move (cooldown containers with 2+ rows) — show one item per other row
         if isCooldown then
             local activeRowNums = {}
+            local rowCounts = {}
+            local rowMax = {}
+            local entries_all = db.ownedSpells or {}
             for r = 1, 3 do
                 local rd = db["row" .. r]
                 if rd and rd.iconCount and rd.iconCount > 0 then
                     activeRowNums[#activeRowNums + 1] = r
+                    rowMax[r] = rd.iconCount
+                    rowCounts[r] = 0
+                end
+            end
+            -- Count entries per row
+            for _, e in ipairs(entries_all) do
+                if e then
+                    local r = e.row or (activeRowNums[1] or 1)
+                    if rowCounts[r] then
+                        rowCounts[r] = rowCounts[r] + 1
+                    end
                 end
             end
             if #activeRowNums > 1 then
                 local curRow = entry.row or activeRowNums[1]
-                local nextRow = activeRowNums[1]
-                for ri, rn in ipairs(activeRowNums) do
-                    if rn == curRow and activeRowNums[ri + 1] then
-                        nextRow = activeRowNums[ri + 1]
-                        break
+                for _, rn in ipairs(activeRowNums) do
+                    if rn ~= curRow then
+                        local isFull = rowMax[rn] and rowCounts[rn] and rowCounts[rn] >= rowMax[rn]
+                        local lbl = "Move to Row " .. rn
+                        if isFull then
+                            lbl = lbl .. "  (Full)"
+                        end
+                        items[#items + 1] = {
+                            label = lbl,
+                            color = isFull and { 0.4, 0.4, 0.4 } or { ACCENT_R, ACCENT_G, ACCENT_B },
+                            action = isFull and function()
+                                UIErrorsFrame:AddMessage("Row " .. rn .. " is full (" .. rowMax[rn] .. "/" .. rowMax[rn] .. ")", 1.0, 0.3, 0.3, 1.0, 3)
+                                UIErrorsFrame:SetFrameStrata("TOOLTIP")
+                            end or function()
+                                if InCombatLockdown() then return end
+                                spellData:SetEntryRow(activeContainer, entryIndex, rn)
+                                C_Timer.After(0.02, function()
+                                    RefreshCDM()
+                                    RefreshEntryList()
+                                    RefreshPreview()
+                                end)
+                            end,
+                        }
                     end
                 end
-                items[#items + 1] = { label = "Move to Row " .. nextRow .. "  (R" .. curRow .. ")", color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
+            end
+        end
+
+        -- Move to sibling container — only within the same type family:
+        -- cooldown↔cooldown (essential/utility), aura↔auraBar (buff icons/buff bars)
+        local containerType = ResolveContainerType(activeContainer)
+        local SIBLING_TYPES = {
+            cooldown = { cooldown = true },
+            aura     = { aura = true, auraBar = true },
+            auraBar  = { aura = true, auraBar = true },
+        }
+        local siblings = SIBLING_TYPES[containerType] or {}
+        local allTabKeys = GetAllTabKeys()
+        for _, key in ipairs(allTabKeys) do
+            if key ~= activeContainer and siblings[ResolveContainerType(key)] then
+                items[#items + 1] = { label = "Move to " .. GetContainerLabel(key), color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
                     if InCombatLockdown() then return end
-                    spellData:SetEntryRow(activeContainer, entryIndex, nextRow)
+                    spellData:MoveEntryBetweenContainers(activeContainer, key, entryIndex)
                     C_Timer.After(0.02, function()
                         RefreshCDM()
                         RefreshEntryList()
+                        RefreshAddList()
                         RefreshPreview()
                     end)
                 end }
             end
         end
-
-        -- Move to next container
-        local allTabKeys = GetAllTabKeys()
-        local ci = 0
-        for j, key in ipairs(allTabKeys) do
-            if key == activeContainer then ci = j break end
-        end
-        local targetKey = allTabKeys[(ci % #allTabKeys) + 1]
-        items[#items + 1] = { label = "Move to " .. GetContainerLabel(targetKey), color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
-            if InCombatLockdown() then return end
-            spellData:MoveEntryBetweenContainers(activeContainer, targetKey, entryIndex)
-            C_Timer.After(0.02, function()
-                RefreshCDM()
-                RefreshEntryList()
-                RefreshAddList()
-                RefreshPreview()
-            end)
-        end }
 
         -- Remove
         items[#items + 1] = { label = "Remove", color = { 0.9, 0.3, 0.3 }, action = function()
@@ -1614,6 +1757,7 @@ RefreshEntryList = function()
     for _, hdr in ipairs(sectionHeaders) do
         hdr:Hide()
         hdr:ClearAllPoints()
+        hdr._rowNum = nil
     end
 
     local contentWidth = entryListContent:GetWidth()
@@ -1652,7 +1796,7 @@ RefreshEntryList = function()
         end
     end
 
-    local function RenderSectionHeader(label, isEmpty)
+    local function RenderSectionHeader(label, isEmpty, rowNum)
         FinishRow()
         headerIndex = headerIndex + 1
         local hdr = GetOrCreateSectionHeader(headerIndex)
@@ -1662,6 +1806,7 @@ RefreshEntryList = function()
         hdr:SetPoint("RIGHT", entryListContent, "RIGHT", 0, 0)
         hdr:SetBackdropColor(ACCENT_R * 0.1, ACCENT_G * 0.1, ACCENT_B * 0.1, 0.8)
         hdr._label:SetText(label)
+        hdr._rowNum = rowNum or nil
         if isEmpty then
             hdr._label:SetTextColor(0.4, 0.4, 0.4, 1)
         else
@@ -1672,7 +1817,7 @@ RefreshEntryList = function()
         colPos = 0
     end
 
-    local function RenderEntryCell(entry, idx)
+    local function RenderEntryCell(entry, idx, rowNum)
         local entryName = GetEntryName(entry)
         if hasFilter and not string_find(string_lower(entryName), lowerFilter, 1, true) then
             return
@@ -1683,6 +1828,7 @@ RefreshEntryList = function()
         cell:SetParent(entryListContent)
         cell._entry = entry
         cell._entryIndex = idx
+        cell._rowNum = rowNum or nil
         cell._isDormant = false
 
         cell._icon:SetTexture(GetEntryIcon(entry))
@@ -1692,7 +1838,7 @@ RefreshEntryList = function()
 
         -- Wire drag
         cell:SetScript("OnDragStart", function()
-            StartDrag(cell, idx)
+            StartDrag(cell, idx, rowNum)
         end)
         cell:SetScript("OnDragStop", function()
             StopDrag()
@@ -1729,6 +1875,7 @@ RefreshEntryList = function()
         -- Dormant entries store as { id = spellID, type = "spell" } for context menu
         cell._entry = { id = spellID, type = "spell" }
         cell._entryIndex = nil
+        cell._rowNum = nil
         cell._isDormant = true
 
         local icon = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -1782,9 +1929,16 @@ RefreshEntryList = function()
         for _, rowNum in ipairs(activeRowNums) do
             local rowItems = rowEntries[rowNum]
             local count = rowItems and #rowItems or 0
-            RenderSectionHeader("Row " .. rowNum .. "  (" .. count .. ")", count == 0)
+            local rd = db["row" .. rowNum]
+            local maxCount = rd and rd.iconCount or 0
+            local isFull = count >= maxCount
+            local headerLabel = "Row " .. rowNum .. "  (" .. count .. "/" .. maxCount .. ")"
+            if isFull and count > 0 then
+                headerLabel = headerLabel .. "  |cffff4d4dFull|r"
+            end
+            RenderSectionHeader(headerLabel, count == 0, rowNum)
             if count == 0 then
-                -- Empty hint (as a small header)
+                -- Empty hint (as a small header) — also tagged for drop targeting
                 headerIndex = headerIndex + 1
                 local hdr = GetOrCreateSectionHeader(headerIndex)
                 hdr:SetParent(entryListContent)
@@ -1793,13 +1947,14 @@ RefreshEntryList = function()
                 hdr:SetPoint("RIGHT", entryListContent, "RIGHT", 0, 0)
                 hdr:SetHeight(18)
                 hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
-                hdr._label:SetText("  (empty — right-click icons to move between rows)")
+                hdr._label:SetText("  (empty — drag or right-click icons to move between rows)")
                 hdr._label:SetTextColor(0.35, 0.35, 0.35, 1)
+                hdr._rowNum = rowNum
                 hdr:Show()
                 sy = sy - 18
             else
                 for _, item in ipairs(rowItems) do
-                    RenderEntryCell(item.entry, item.idx)
+                    RenderEntryCell(item.entry, item.idx, rowNum)
                 end
                 FinishRow()
             end
@@ -2066,17 +2221,47 @@ RefreshAddList = function()
                 cell:SetScript("OnClick", function(self, button)
                     if button == "RightButton" then
                         if InCombatLockdown() then return end
+
+                        local containerDB = GetContainerDB(activeContainer)
+                        if not containerDB then return end
+
+                        -- Capacity check for cooldown containers: find first row with room
+                        local targetRow = nil
+                        if ResolveContainerType(activeContainer) == "cooldown" then
+                            local spells = containerDB.ownedSpells or {}
+                            local firstActiveRow = nil
+                            for r = 1, 3 do
+                                local rd = containerDB["row" .. r]
+                                if rd and rd.iconCount and rd.iconCount > 0 then
+                                    if not firstActiveRow then firstActiveRow = r end
+                                    local count = 0
+                                    for _, e in ipairs(spells) do
+                                        if e and (e.row or firstActiveRow) == r then
+                                            count = count + 1
+                                        end
+                                    end
+                                    if count < rd.iconCount and not targetRow then
+                                        targetRow = r
+                                    end
+                                end
+                            end
+                            if not targetRow then
+                                UIErrorsFrame:AddMessage("All rows are full — remove a spell or increase row size", 1.0, 0.3, 0.3, 1.0, 3)
+                                UIErrorsFrame:SetFrameStrata("TOOLTIP")
+                                return
+                            end
+                        end
+
                         local addType = entryRef._entryType or "spell"
                         local addID = entryRef._entryID or entryRef.spellID
 
-                        local containerDB = GetContainerDB(activeContainer)
-                        if containerDB and containerDB.removedSpells and addID then
+                        if containerDB.removedSpells and addID then
                             containerDB.removedSpells[addID] = nil
                         end
 
                         local addResult
                         if addType == "slot" and entryRef._slotID then
-                            if containerDB and containerDB.removedSpells then
+                            if containerDB.removedSpells then
                                 containerDB.removedSpells[entryRef._slotID] = nil
                             end
                             addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID)
@@ -2085,6 +2270,15 @@ RefreshAddList = function()
                         else
                             addResult = spellData:AddSpell(activeContainer, addID)
                         end
+
+                        -- Assign the new entry to the target row (first with capacity)
+                        if addResult and targetRow then
+                            local spells = containerDB.ownedSpells
+                            if spells and #spells > 0 then
+                                spells[#spells].row = targetRow
+                            end
+                        end
+
                         C_Timer.After(0.02, function()
                             RefreshCDM()
                             RefreshEntryList()
