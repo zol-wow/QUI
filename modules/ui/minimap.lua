@@ -1737,6 +1737,12 @@ local function RestoreDungeonEye()
 end
 
 local function UpdateDungeonEyePosition()
+    if InCombatLockdown() then
+        -- Blizzard can relayout the queue eye during combat; retry on the next
+        -- deferred minimap refresh once combat ends.
+        pendingMinimapRefresh = true
+        return
+    end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
@@ -1835,7 +1841,9 @@ local DRAWER_BLACKLIST = {
     ["MinimapBackdrop"] = true,
     ["GameTimeFrame"] = true,
     ["TimeManagerClockButton"] = true,
+    ["QueueStatusButton"] = true,
     ["QueueStatusMinimapButton"] = true,
+    ["MiniMapLFGFrame"] = true,
     ["GarrisonLandingPageMinimapButton"] = true,
     ["ExpansionLandingPageMinimapButton"] = true,
     ["AddonCompartmentFrame"] = true,
@@ -3038,6 +3046,47 @@ end
 --- EDIT MODE SUPPORT
 ---=================================================================================
 
+
+---=================================================================================
+--- ZOOM PERSISTENCE
+--- Blizzard stores indoor and outdoor minimap zoom separately. Keep them in sync
+--- so a player's chosen zoom level survives relogs regardless of where they log in.
+---=================================================================================
+
+local zoomPersistenceHooked = false
+
+local function PersistMinimapZoom(zoom)
+    local normalizedZoom = math.max(0, math.floor((zoom or 0) + 0.5))
+    local indoorZoom = math.min(normalizedZoom, 3)
+
+    if C_CVar and C_CVar.SetCVar then
+        C_CVar.SetCVar("minimapZoom", tostring(normalizedZoom))
+        C_CVar.SetCVar("minimapInsideZoom", tostring(indoorZoom))
+    elseif SetCVar then
+        SetCVar("minimapZoom", normalizedZoom)
+        SetCVar("minimapInsideZoom", indoorZoom)
+    end
+end
+
+local function SetupZoomPersistence()
+    if zoomPersistenceHooked then return end
+    zoomPersistenceHooked = true
+
+    local function PersistCurrentZoom()
+        C_Timer.After(0, function()
+            if Minimap and Minimap.GetZoom then
+                PersistMinimapZoom(Minimap:GetZoom())
+            end
+        end)
+    end
+
+    if Minimap.ZoomIn then
+        Minimap.ZoomIn:HookScript("OnClick", PersistCurrentZoom)
+    end
+    if Minimap.ZoomOut then
+        Minimap.ZoomOut:HookScript("OnClick", PersistCurrentZoom)
+    end
+end
 
 ---=================================================================================
 --- ZOOM PERSISTENCE

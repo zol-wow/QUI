@@ -155,8 +155,22 @@ local function storedScaleValue(panelRow)
 	return nil
 end
 
+local function panelIsSuppressed(panel)
+	panel = resolvePanel(panel)
+	if not panel then return false end
+	if panel.id ~= "QueueStatusButton" then return false end
+
+	local profile = Helpers and Helpers.GetProfile and Helpers.GetProfile()
+	local minimap = profile and profile.minimap
+	return minimap
+		and minimap.enabled
+		and minimap.dungeonEye
+		and minimap.dungeonEye.enabled
+end
+
 local function panelIsActive(panel)
 	if not db or not db.enabled then return false end
+	if panelIsSuppressed(panel) then return false end
 	local row = storageRowForPanel(panel)
 	return row and row.enabled ~= false
 end
