@@ -884,6 +884,15 @@ local function ScanCooldownViewer(viewerType)
                             end
                         end
 
+                        -- Debug: log harvested entry charge state
+                        if _G.QUI_CDM_CHARGE_DEBUG then
+                            print("|cff34D399[CDM-Charge]|r HARVEST", name or "?",
+                                "spellID=", spellID, "overrideSpellID=", overrideSpellID,
+                                "hasCharges=", hasCharges, "isAura=", isAura,
+                                "viewerType=", viewerType,
+                                "child.cooldownChargesCount=", child and child.cooldownChargesCount)
+                        end
+
                         list[#list + 1] = {
                             spellID = spellID,
                             overrideSpellID = overrideSpellID or spellID,
@@ -1371,6 +1380,17 @@ local function ResolveOwnedEntry(entry, containerKey, index)
                 if svCharges and svCharges[checkID] then
                     resolved.hasCharges = true
                 end
+            end
+            -- Debug: log charge resolution at build time
+            if _G.QUI_CDM_CHARGE_DEBUG then
+                local _dbgMaxC = ci and Helpers.SafeToNumber(ci.maxCharges, "secret") or "nil"
+                local _dbgCurC = ci and Helpers.SafeToNumber(ci.currentCharges, "secret") or "nil"
+                print("|cff34D399[CDM-Charge]|r RESOLVE", resolved.name or "?",
+                    "checkID=", checkID, "entryID=", entry.id,
+                    "overrideSpellID=", resolved.overrideSpellID,
+                    "maxCharges=", _dbgMaxC, "currentCharges=", _dbgCurC,
+                    "hasCharges=", resolved.hasCharges,
+                    "apiReadable=", apiReadable, "containerKey=", containerKey)
             end
         end
 

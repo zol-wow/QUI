@@ -974,8 +974,11 @@ end
 
 UpdateDisplay = function()
     local settings = GetSettings()
+    local inCombat = InCombatLockdown()
     if not settings.enabled then
-        if mainFrame then mainFrame:Hide() end
+        if mainFrame then
+            if inCombat then mainFrame:SetAlpha(0) else mainFrame:Hide() end
+        end
         return
     end
 
@@ -987,7 +990,7 @@ UpdateDisplay = function()
     local missing = GetMissingBuffs()
 
     if #missing == 0 then
-        mainFrame:Hide()
+        if inCombat then mainFrame:SetAlpha(0) else mainFrame:Hide() end
         return
     end
 
@@ -1030,18 +1033,24 @@ UpdateDisplay = function()
             end
             icon.buffData = buff
 
-            -- Configure click-to-cast (safe: GetMissingBuffs returns empty in combat)
-            if not previewMode then
-                if buff.selfBuff and buff._resolvedSpellName then
-                    icon.clickButton:SetAttribute("type", "spell")
-                    icon.clickButton:SetAttribute("spell", buff._resolvedSpellName)
-                    icon.isCastable = true
-                elseif not buff.selfBuff and PlayerCanCastBuff(buff) then
-                    local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(buff.castSpellId)
-                    if spellName then
+            -- Configure click-to-cast — SetAttribute is protected, skip during combat
+            if not inCombat then
+                if not previewMode then
+                    if buff.selfBuff and buff._resolvedSpellName then
                         icon.clickButton:SetAttribute("type", "spell")
-                        icon.clickButton:SetAttribute("spell", spellName)
+                        icon.clickButton:SetAttribute("spell", buff._resolvedSpellName)
                         icon.isCastable = true
+                    elseif not buff.selfBuff and PlayerCanCastBuff(buff) then
+                        local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(buff.castSpellId)
+                        if spellName then
+                            icon.clickButton:SetAttribute("type", "spell")
+                            icon.clickButton:SetAttribute("spell", spellName)
+                            icon.isCastable = true
+                        else
+                            icon.clickButton:SetAttribute("type", nil)
+                            icon.clickButton:SetAttribute("spell", nil)
+                            icon.isCastable = false
+                        end
                     else
                         icon.clickButton:SetAttribute("type", nil)
                         icon.clickButton:SetAttribute("spell", nil)
@@ -1052,10 +1061,6 @@ UpdateDisplay = function()
                     icon.clickButton:SetAttribute("spell", nil)
                     icon.isCastable = false
                 end
-            else
-                icon.clickButton:SetAttribute("type", nil)
-                icon.clickButton:SetAttribute("spell", nil)
-                icon.isCastable = false
             end
 
             -- Update buff count display (skip for self-buffs — they're player-only)
@@ -1094,19 +1099,23 @@ UpdateDisplay = function()
                     icon.countText:SetPoint("LEFT", icon, "RIGHT", 2 + offsetX, offsetY)
                 end
 
-                icon.countText:Show()
+                if inCombat then icon.countText:SetAlpha(1) else icon.countText:Show() end
             elseif icon.countText then
-                icon.countText:Hide()
+                if inCombat then icon.countText:SetAlpha(0) else icon.countText:Hide() end
             end
 
-            icon:Show()
+            if inCombat then icon:SetAlpha(1) else icon:Show() end
         else
-            icon:Hide()
-            if icon.countText then
-                icon.countText:Hide()
+            if inCombat then
+                icon:SetAlpha(0)
+            else
+                icon:Hide()
             end
-            -- Clear secure attributes on hidden icons
-            if icon.clickButton then
+            if icon.countText then
+                if inCombat then icon.countText:SetAlpha(0) else icon.countText:Hide() end
+            end
+            -- Clear secure attributes on hidden icons (skip in combat)
+            if not inCombat and icon.clickButton then
                 icon.clickButton:SetAttribute("type", nil)
                 icon.clickButton:SetAttribute("spell", nil)
                 icon.isCastable = false
@@ -1114,83 +1123,86 @@ UpdateDisplay = function()
         end
     end
 
-    -- Update label font size and calculate bar height
-    local fontSize = settings.labelFontSize or 12
-    local labelBarHeight = fontSize + 8  -- Font size + padding
-    local labelBarGap = 2
+    -- Layout, sizing, and positioning use protected APIs — skip during combat
+    if not inCombat then
+        -- Update label font size and calculate bar height
+        local fontSize = settings.labelFontSize or 12
+        local labelBarHeight = fontSize + 8  -- Font size + padding
+        local labelBarGap = 2
 
-    mainFrame.labelBar.text:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
-    mainFrame.labelBar.text:SetText("Missing Buffs")
+        mainFrame.labelBar.text:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
+        mainFrame.labelBar.text:SetText("Missing Buffs")
 
-    -- Resize frames based on orientation
-    local hideLabelBar = settings.hideLabelBar
-    local minIconsSize = (3 * iconSize) + (2 * iconSpacing)  -- 3 icons minimum
-    local minTextWidth = fontSize * 8 + 10  -- Approximate text width + padding
+        -- Resize frames based on orientation
+        local hideLabelBar = settings.hideLabelBar
+        local minIconsSize = (3 * iconSize) + (2 * iconSpacing)  -- 3 icons minimum
+        local minTextWidth = fontSize * 8 + 10  -- Approximate text width + padding
 
-    -- Update icon container and label bar anchoring based on grow direction
-    mainFrame.iconContainer:ClearAllPoints()
-    mainFrame.labelBar:ClearAllPoints()
+        -- Update icon container and label bar anchoring based on grow direction
+        mainFrame.iconContainer:ClearAllPoints()
+        mainFrame.labelBar:ClearAllPoints()
 
-    if isVertical then
-        -- Vertical layout
-        local containerHeight = totalSize
-        local containerWidth = iconSize
-        mainFrame.iconContainer:SetSize(containerWidth, containerHeight)
+        if isVertical then
+            -- Vertical layout
+            local containerHeight = totalSize
+            local containerWidth = iconSize
+            mainFrame.iconContainer:SetSize(containerWidth, containerHeight)
 
-        if hideLabelBar then
-            mainFrame.labelBar:Hide()
-            -- Position container based on vertical grow direction
-            if growDir == "UP" then
-                mainFrame.iconContainer:SetPoint("BOTTOM", mainFrame, "BOTTOM", 0, 0)
-            elseif growDir == "DOWN" then
+            if hideLabelBar then
+                mainFrame.labelBar:Hide()
+                -- Position container based on vertical grow direction
+                if growDir == "UP" then
+                    mainFrame.iconContainer:SetPoint("BOTTOM", mainFrame, "BOTTOM", 0, 0)
+                elseif growDir == "DOWN" then
+                    mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
+                else -- CENTER_V
+                    mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+                end
+                mainFrame:SetSize(containerWidth, containerHeight)
+            else
+                local frameWidth = math.max(containerWidth, minTextWidth)
+                mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
+                mainFrame.labelBar:Show()
+                -- Label bar below icons for vertical
                 mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
-            else -- CENTER_V
-                mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+                mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
+                mainFrame:SetSize(frameWidth, containerHeight + labelBarGap + labelBarHeight)
             end
-            mainFrame:SetSize(containerWidth, containerHeight)
         else
-            local frameWidth = math.max(containerWidth, minTextWidth)
-            mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
-            mainFrame.labelBar:Show()
-            -- Label bar below icons for vertical
-            mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
-            mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
-            mainFrame:SetSize(frameWidth, containerHeight + labelBarGap + labelBarHeight)
-        end
-    else
-        -- Horizontal layout
-        local frameWidth = math.max(totalSize, hideLabelBar and 0 or math.max(minIconsSize, minTextWidth))
-        mainFrame.iconContainer:SetSize(totalSize, iconSize)
+            -- Horizontal layout
+            local frameWidth = math.max(totalSize, hideLabelBar and 0 or math.max(minIconsSize, minTextWidth))
+            mainFrame.iconContainer:SetSize(totalSize, iconSize)
 
-        if hideLabelBar then
-            mainFrame.labelBar:Hide()
-            -- Position container based on horizontal grow direction
-            if growDir == "LEFT" then
-                mainFrame.iconContainer:SetPoint("RIGHT", mainFrame, "RIGHT", 0, 0)
-            elseif growDir == "RIGHT" then
-                mainFrame.iconContainer:SetPoint("LEFT", mainFrame, "LEFT", 0, 0)
-            else -- CENTER_H
-                mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+            if hideLabelBar then
+                mainFrame.labelBar:Hide()
+                -- Position container based on horizontal grow direction
+                if growDir == "LEFT" then
+                    mainFrame.iconContainer:SetPoint("RIGHT", mainFrame, "RIGHT", 0, 0)
+                elseif growDir == "RIGHT" then
+                    mainFrame.iconContainer:SetPoint("LEFT", mainFrame, "LEFT", 0, 0)
+                else -- CENTER_H
+                    mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+                end
+                mainFrame:SetSize(totalSize, iconSize)
+            else
+                mainFrame.iconContainer:SetSize(frameWidth, iconSize)
+                mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
+                mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
+                mainFrame.labelBar:Show()
+                mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
+                mainFrame:SetSize(frameWidth, iconSize + labelBarGap + labelBarHeight)
             end
-            mainFrame:SetSize(totalSize, iconSize)
-        else
-            mainFrame.iconContainer:SetSize(frameWidth, iconSize)
-            mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
-            mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
-            mainFrame.labelBar:Show()
-            mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
-            mainFrame:SetSize(frameWidth, iconSize + labelBarGap + labelBarHeight)
+        end
+
+        -- Restore saved position (skip if anchoring system has overridden this frame)
+        -- Position is saved using grow-direction-appropriate anchor, so icons stay in place
+        if settings.position and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs")) then
+            mainFrame:ClearAllPoints()
+            mainFrame:SetPoint(settings.position.point, UIParent, settings.position.relPoint, settings.position.x, settings.position.y)
         end
     end
 
-    -- Restore saved position (skip if anchoring system has overridden this frame)
-    -- Position is saved using grow-direction-appropriate anchor, so icons stay in place
-    if settings.position and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs")) then
-        mainFrame:ClearAllPoints()
-        mainFrame:SetPoint(settings.position.point, UIParent, settings.position.relPoint, settings.position.x, settings.position.y)
-    end
-
-    mainFrame:Show()
+    if inCombat then mainFrame:SetAlpha(1) else mainFrame:Show() end
 end
 
 local function ThrottledUpdate()

@@ -111,6 +111,39 @@ local blizzTexState = setmetatable({}, { __mode = "k" })
 local blizzStackState = setmetatable({}, { __mode = "k" })
 
 ---------------------------------------------------------------------------
+-- DEBUG: Charge/stack transform debugging.
+-- Enable via:  /run QUI_CDM_CHARGE_DEBUG = true
+-- Disable via: /run QUI_CDM_CHARGE_DEBUG = false
+-- Optionally filter to a specific spell name:
+--   /run QUI_CDM_CHARGE_DEBUG = "Holy Bulwark"
+---------------------------------------------------------------------------
+local _chargeDebugThrottle = {}  -- [key] = lastTime
+local function ChargeDebug(spellName, ...)
+    if not _G.QUI_CDM_CHARGE_DEBUG then return end
+    -- If debug is a string, only log that spell
+    local filter = _G.QUI_CDM_CHARGE_DEBUG
+    if type(filter) == "string" and spellName and not spellName:find(filter) then return end
+    -- Throttle tick-based messages to 1 per second per spell+tag combo
+    local tag = select(1, ...) or ""
+    if tag == "FWD path:" or tag == "SKIP API path:" or tag == "API path:" or tag == "FWD path CLEAR:" then
+        local key = (spellName or "") .. tag
+        local now = GetTime()
+        if _chargeDebugThrottle[key] and now - _chargeDebugThrottle[key] < 1 then return end
+        _chargeDebugThrottle[key] = now
+    end
+    local parts = { "|cff34D399[CDM-Charge]|r", spellName or "?", "-" }
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if issecretvalue and issecretvalue(v) then
+            parts[#parts + 1] = "<secret>"
+        else
+            parts[#parts + 1] = tostring(v)
+        end
+    end
+    print(table.concat(parts, " "))
+end
+
+---------------------------------------------------------------------------
 -- PER-TICK CACHES: wiped at the start of each UpdateAllCooldowns batch.
 -- Avoids redundant C API calls when the same spellID appears in multiple
 -- containers or is queried by both GetBestSpellCooldown and stack/visibility.
@@ -900,6 +933,18 @@ local function HookBlizzStackText(icon, blizzChild)
     state.icon = icon
     state.blizzChild = blizzChild  -- Track child for stale mapping guard
 
+    -- Debug dump on assignment/reassignment
+    if _G.QUI_CDM_CHARGE_DEBUG then
+        local entry = icon._spellEntry
+        local eName = entry and entry.name or "?"
+        ChargeDebug(eName, "HookBlizzStackText ASSIGN",
+            "spellID=", entry and entry.spellID, "overrideSpellID=", entry and entry.overrideSpellID,
+            "hasCharges=", entry and entry.hasCharges,
+            "child.cooldownChargesCount=", blizzChild.cooldownChargesCount,
+            "ChargeCount=", blizzChild.ChargeCount and "exists" or "nil",
+            "Applications=", blizzChild.Applications and "exists" or "nil")
+    end
+
     if not state.hooked then
         state.hooked = true
 
@@ -918,6 +963,8 @@ local function HookBlizzStackText(icon, blizzChild)
                 local entry = s.icon._spellEntry
                 if entry and entry._blizzChild ~= blizzChild then return end
                 if entry and entry.isAura then return end
+                ChargeDebug(entry and entry.name, "HOOK ChargeCount.Show",
+                    "spellID=", entry and entry.spellID, "overrideSpellID=", entry and entry.overrideSpellID)
                 s.icon.StackText:Show()
             end)
             hooksecurefunc(chargeFrame, "Hide", function()
@@ -925,6 +972,8 @@ local function HookBlizzStackText(icon, blizzChild)
                 if not s or not s.icon then return end
                 local entry = s.icon._spellEntry
                 if entry and entry._blizzChild ~= blizzChild then return end
+                ChargeDebug(entry and entry.name, "HOOK ChargeCount.Hide",
+                    "spellID=", entry and entry.spellID, "overrideSpellID=", entry and entry.overrideSpellID)
                 s.icon.StackText:Hide()
             end)
             if chargeFrame.Current then
@@ -946,6 +995,10 @@ local function HookBlizzStackText(icon, blizzChild)
                     if not isEmpty then
                         s.chargeText = text
                         s.lastHookTime = GetTime()
+                        ChargeDebug(entry.name, "HOOK ChargeCount.SetText text=", text,
+                            "hasCharges=", entry.hasCharges,
+                            "spellID=", entry.spellID, "overrideSpellID=", entry.overrideSpellID,
+                            "blizzChild match=", entry._blizzChild == blizzChild)
                         -- Non-charged entries (e.g., Spirit Bomb / Soul Fragments):
                         -- forward ChargeCount text directly to StackText. Charged
                         -- entries are driven by cooldownChargesCount via the FWD path.
@@ -1737,23 +1790,16 @@ local function UpdateIconCooldown(icon)
                             pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
                         end
 
-                        -- Stacks: hooks are authoritative when active —
-                        -- our handler runs after Blizzard's hooks, so
-                        -- API writes would overwrite correct hook values.
-                        local _auraHookActive = IsHookStackActive(entry, icon)
-                        if _auraHookActive then
-
-                        end
-                        if not _auraHookActive then
-                            if r.stacks then
-
-                                pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
-                                icon.StackText:Show()
-                            elseif not InCombatLockdown() then
-
-                                icon.StackText:SetText("")
-                                icon.StackText:Hide()
-                            end
+                        -- Stacks: use r.stacks from ResolveAuraState directly,
+                        -- matching bar behavior. ResolveAuraState reads the
+                        -- canonical aura data — hooks (ChargeCount/Applications)
+                        -- are for cooldown charge forwarding, not aura stacks.
+                        if r.stacks then
+                            pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
+                            icon.StackText:Show()
+                        elseif not InCombatLockdown() then
+                            icon.StackText:SetText("")
+                            icon.StackText:Hide()
                         end
 
                         -- Keep texture showing the tracked aura spell
@@ -2159,12 +2205,25 @@ local function UpdateIconCooldown(icon)
     if entry._blizzChild and C_Spell.GetSpellCharges then
         local baseSid = entry.spellID or entry.id
         local ci = baseSid and C_Spell.GetSpellCharges(baseSid)
+        -- When the base spell transforms (e.g., Holy Bulwark → Sacred Weapon),
+        -- GetSpellCharges on the base ID may return nil/<=1 even though the
+        -- spell is still multi-charge.  Try the override spell ID as fallback.
+        if (not ci or not ci.maxCharges or ci.maxCharges <= 1)
+            and entry.overrideSpellID and entry.overrideSpellID ~= baseSid then
+            local oci = C_Spell.GetSpellCharges(entry.overrideSpellID)
+            if oci and oci.maxCharges and oci.maxCharges > 1 then
+                ci = oci
+                ChargeDebug(entry.name, "FWD override fallback: overrideSpellID=", entry.overrideSpellID,
+                    "maxCharges=", oci.maxCharges, "currentCharges=", oci.currentCharges)
+            end
+        end
         if ci and ci.maxCharges and ci.maxCharges > 1 then
             -- Read cooldownChargesCount from the correct viewer child.
             -- entry._blizzChild can get reassigned to the buff viewer
             -- child (which lacks charge data), so we look up the child
             -- on the matching viewer type directly from _spellIDToChild.
             local ccc = entry._blizzChild.cooldownChargesCount
+            local _dbgCccSource = ccc ~= nil and "direct" or nil
             if ccc == nil and ns.CDMSpellData then
                 local expectedViewer = _G[
                     entry.viewerType == "essential" and "EssentialCooldownViewer"
@@ -2178,25 +2237,52 @@ local function UpdateIconCooldown(icon)
                             local vf = altChild.viewerFrame
                             if vf == expectedViewer and altChild.cooldownChargesCount ~= nil then
                                 ccc = altChild.cooldownChargesCount
+                                _dbgCccSource = "altChild"
                                 break
                             end
                         end
                     end
                 end
             end
+            ChargeDebug(entry.name, "FWD path: baseSid=", baseSid,
+                "maxCharges=", ci.maxCharges, "currentCharges=", ci.currentCharges,
+                "ccc=", ccc, "cccSource=", _dbgCccSource or "nil",
+                "hasCharges=", entry.hasCharges,
+                "overrideSpellID=", entry.overrideSpellID)
             if ccc ~= nil then
                 pcall(icon.StackText.SetText, icon.StackText, ccc)
                 icon.StackText:Show()
                 _chargeCountForwarded = true
             end
         elseif ci and ci.maxCharges then
+            ChargeDebug(entry.name, "FWD path CLEAR: baseSid=", baseSid,
+                "maxCharges=", ci.maxCharges, "(<=1, clearing stacks)",
+                "overrideSpellID=", entry.overrideSpellID)
             icon.StackText:SetText("")
             _chargeCountForwarded = true
         end
     end
 
-    if _hookActive or _chargeCountForwarded then
+    -- Fallback: if the hook is driving (hookActive) but the FWD path failed
+    -- (chargeCountForwarded=false), and this is a charged entry, the hook's
+    -- ChargeCount text is valid but wasn't forwarded to StackText (the hook
+    -- defers to FWD for hasCharges entries).  Forward it now.
+    -- This covers dynamic transforms where neither base nor override spell
+    -- returns charges from GetSpellCharges but Blizzard's viewer still
+    -- updates ChargeCount correctly.
+    if _hookActive and not _chargeCountForwarded and entry.hasCharges then
+        local bss = entry._blizzChild and blizzStackState[entry._blizzChild]
+        if bss and bss.chargeText ~= nil then
+            ChargeDebug(entry.name, "HOOK fallback: forwarding chargeText=", bss.chargeText)
+            pcall(icon.StackText.SetText, icon.StackText, bss.chargeText)
+            icon.StackText:Show()
+            _chargeCountForwarded = true
+        end
+    end
 
+    if _hookActive or _chargeCountForwarded then
+        ChargeDebug(entry.name, "SKIP API path: hookActive=", _hookActive,
+            "chargeCountForwarded=", _chargeCountForwarded)
     end
     if not _hookActive and not _chargeCountForwarded then
         if entry.type == "item" then
@@ -2229,6 +2315,10 @@ local function UpdateIconCooldown(icon)
                 if not stackVal and _cachedChargeInfo.currentCharges then
                     stackVal = _cachedChargeInfo.currentCharges
                 end
+                ChargeDebug(entry.name, "API path: spellID=", spellID,
+                    "maxCharges=", _cachedChargeInfo.maxCharges,
+                    "currentCharges=", _cachedChargeInfo.currentCharges,
+                    "displayCount=", stackVal, "isMultiCharge=", isMultiCharge)
             end
 
 
