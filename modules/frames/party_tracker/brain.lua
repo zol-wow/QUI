@@ -219,7 +219,9 @@ local function CommitCooldown(unit, rule, measuredDuration)
         rule.BigDefensive and "BD" or (rule.ExternalDefensive and "ED" or "IMP"),
         rule.BuffDuration, rule.Cooldown)
 
-    local startTime = GetTime()
+    -- startTime adjusted backward so SetCooldown(startTime, cooldown)
+    -- accurately shows the remaining cooldown from the original cast time
+    local startTime = GetTime() - measuredDuration
     local remaining = cooldown - measuredDuration
     if remaining <= 0 then remaining = cooldown end
 
@@ -287,6 +289,54 @@ function Brain.ProcessAuraDetection(unit, auraTypes, measuredDuration, detection
                 end
             end
         end)
+    end
+end
+
+---------------------------------------------------------------------------
+-- IMMEDIATE DETECTION — called when a classified aura first appears.
+-- Matches rules by aura type + evidence, skipping duration check.
+-- Starts cooldown immediately (before buff drops) for responsive UX.
+---------------------------------------------------------------------------
+
+function Brain.ProcessAuraAppearance(unit, auraTypes)
+    if not unit or not auraTypes or not Rules or not Observer then return end
+
+    local evidence = Observer.GetEvidence(unit)
+    if not evidence or not next(evidence) then return end
+
+    local unitCooldowns = activeCooldowns[unit] or {}
+
+    local function TryRules(ruleList)
+        if not ruleList then return nil end
+        for _, rule in ipairs(ruleList) do
+            if AuraTypeMatchesRule(auraTypes, rule) then
+                if EvidenceMatchesReq(evidence, rule.RequiresEvidence) then
+                    -- Skip if already on CD
+                    local cdKey = rule.SpellId or string.format("%s_%s_%s",
+                        rule.BigDefensive and "BD" or (rule.ExternalDefensive and "ED" or "IMP"),
+                        rule.BuffDuration, rule.Cooldown)
+                    if not unitCooldowns[cdKey] then
+                        return rule
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local specId = SpecCache and SpecCache.GetSpec(unit)
+    local _, classToken = UnitClass(unit)
+    local rule
+
+    if specId and Rules.BySpec[specId] then
+        rule = TryRules(Rules.BySpec[specId])
+    end
+    if not rule and not specId and classToken and Rules.ByClass[classToken] then
+        rule = TryRules(Rules.ByClass[classToken])
+    end
+
+    if rule then
+        CommitCooldown(unit, rule, 0)  -- measuredDuration=0 → full cooldown from now
     end
 end
 

@@ -5,8 +5,13 @@
       - Static: Always show all tracked abilities (dimmed when ready, bright + swirl when on CD)
       - Active: Only show abilities currently on cooldown
 
-    Detection: UNIT_SPELLCAST_SUCCEEDED with pcall table lookup for secret spellIDs.
-    Same approach as kick_timer — no aura scanning or evidence system needed.
+    Detection layers:
+      1. Player: C_Spell.GetSpellCooldownDuration (DurationObject, secret-safe)
+      2. Party out of combat: UNIT_SPELLCAST_SUCCEEDED pcall lookup (spellID is plain)
+      3. Party in combat: UNIT_AURA classification via C_UnitAuras.IsAuraFilteredOutByInstanceID
+         with compound filters (BIG_DEFENSIVE, EXTERNAL_DEFENSIVE, IMPORTANT).
+         C-side functions handle secret values natively. Brain matches rules by
+         aura type + evidence + duration.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -30,6 +35,8 @@ local IsInRaid = IsInRaid
 local GetNumGroupMembers = GetNumGroupMembers
 local IsPlayerSpell = IsPlayerSpell
 
+local C_UnitAuras = C_UnitAuras
+
 local CooldownDisplay = {}
 ns.PartyTracker_CooldownDisplay = CooldownDisplay
 
@@ -37,6 +44,8 @@ local MAX_ICONS = 10
 local GF = nil
 local SpecCache = nil
 local Rules = nil
+local Brain = nil
+local Observer = nil
 
 ---------------------------------------------------------------------------
 -- SPELL TEXTURE CACHE
@@ -503,10 +512,122 @@ end
 -- INIT + EVENT REGISTRATION
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- AURA CLASSIFICATION (MiniCC-style)
+-- Uses C_UnitAuras.IsAuraFilteredOutByInstanceID with compound filters.
+-- These are C-side functions that handle secret values natively.
+---------------------------------------------------------------------------
+
+local trackedAuras = {}  -- unit → { [instanceID] = { types = {}, startTime = number } }
+
+local function ClassifyAura(unit, instanceID)
+    -- Priority: BIG_DEFENSIVE > EXTERNAL_DEFENSIVE > IMPORTANT
+    -- Returns the first matching type (prevents double-classification)
+    local ok1, filtered1 = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, instanceID, "HELPFUL|BIG_DEFENSIVE")
+    if ok1 and filtered1 == false then
+        return { BigDefensive = true }
+    end
+
+    local ok2, filtered2 = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, instanceID, "HELPFUL|EXTERNAL_DEFENSIVE")
+    if ok2 and filtered2 == false then
+        return { ExternalDefensive = true }
+    end
+
+    local ok3, filtered3 = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, instanceID, "HELPFUL|IMPORTANT")
+    if ok3 and filtered3 == false then
+        return { Important = true }
+    end
+
+    return nil
+end
+
+---------------------------------------------------------------------------
+-- BRAIN CALLBACK — fires when Brain detects/expires a cooldown
+---------------------------------------------------------------------------
+
+local function OnBrainCooldown(unit, spellId, startTime, cooldown, isOffensive)
+    if not spellId then return end
+
+    if not startTime then
+        -- Brain says cooldown expired — clean up display entry
+        if activeCooldowns[unit] then
+            local entry = activeCooldowns[unit][spellId]
+            if entry and entry.brainManaged then
+                if entry.timer then entry.timer:Cancel() end
+                activeCooldowns[unit][spellId] = nil
+            end
+        end
+        local frame = GetFrameForUnit(unit)
+        if frame then CooldownDisplay.UpdateFrame(frame) end
+        return
+    end
+
+    if not activeCooldowns[unit] then activeCooldowns[unit] = {} end
+    local unitCDs = activeCooldowns[unit]
+
+    -- Cancel existing timer (Brain refinement replaces earlier detection)
+    if unitCDs[spellId] and unitCDs[spellId].timer then
+        unitCDs[spellId].timer:Cancel()
+    end
+
+    local remaining = cooldown - (GetTime() - startTime)
+    if remaining <= 0 then return end
+
+    unitCDs[spellId] = {
+        startTime = startTime,
+        cooldown = cooldown,
+        unit = unit,
+        spellId = spellId,
+        brainManaged = true,
+        timer = C_Timer.NewTimer(remaining, function()
+            if unitCDs[spellId] then unitCDs[spellId] = nil end
+            local frame = GetFrameForUnit(unit)
+            if frame then CooldownDisplay.UpdateFrame(frame) end
+        end),
+    }
+
+    local frame = GetFrameForUnit(unit)
+    if frame then CooldownDisplay.UpdateFrame(frame) end
+end
+
+---------------------------------------------------------------------------
+-- OBSERVER PARTY UNIT MANAGEMENT
+---------------------------------------------------------------------------
+
+local function WatchPartyUnits()
+    Observer = Observer or ns.PartyTracker_Observer
+    if not Observer then return end
+
+    -- Clear and re-watch all party units
+    Observer.ClearAll()
+    local numGroup = GetNumGroupMembers() or 0
+    if numGroup > 0 then
+        local prefix = IsInRaid() and "raid" or "party"
+        local max = IsInRaid() and numGroup or (numGroup - 1)
+        for i = 1, max do
+            local unit = prefix .. i
+            if UnitExists(unit) then
+                Observer.Watch(unit)
+            end
+        end
+    end
+end
+
 C_Timer.After(0, function()
     Rules = ns.PartyTracker_Rules
     SpecCache = ns.PartyTracker_SpecCache
+    Brain = ns.PartyTracker_Brain
+    Observer = ns.PartyTracker_Observer
     BuildSpellCooldownLookup()
+
+    -- Initialize Brain with our callback
+    if Brain then
+        Brain.Init(OnBrainCooldown)
+    end
+
+    -- Start watching party units for evidence
+    WatchPartyUnits()
+
     CooldownDisplay.RefreshAll()
 end)
 
@@ -544,6 +665,14 @@ C_Timer.After(0, function()
                     activeCooldowns[u] = nil
                 end
             end
+            -- Clear tracked auras for stale units
+            for u in pairs(trackedAuras) do
+                if not UnitExists(u) then
+                    trackedAuras[u] = nil
+                end
+            end
+            -- Re-watch party units for evidence
+            WatchPartyUnits()
             RegisterUnits()
             CooldownDisplay.RefreshAll()
         end
@@ -553,52 +682,59 @@ C_Timer.After(0, function()
 end)
 
 ---------------------------------------------------------------------------
--- AURA-BASED FALLBACK (additional detection layer)
--- Catches defensives/offensives that create buffs. On UNIT_AURA, pcall
--- read spellId from each added aura and match against our rules.
+-- AURA-BASED DETECTION (MiniCC-style, primary combat detection)
+-- Uses C-side aura classification (BIG_DEFENSIVE, EXTERNAL_DEFENSIVE,
+-- IMPORTANT) which handles secret values natively. No spellId lookup needed.
+-- On aura appear → classify + immediate Brain match → start CD.
+-- On aura removed → measure duration + Brain refined match.
 ---------------------------------------------------------------------------
 
 C_Timer.After(0, function()
     if not ns.AuraEvents then return end
-    local C_UnitAuras = C_UnitAuras
 
     ns.AuraEvents:Subscribe("group", function(unit, updateInfo)
-        if not updateInfo or updateInfo.isFullUpdate then return end
-        if not updateInfo.addedAuras then return end
+        if not updateInfo then return end
+        Brain = Brain or ns.PartyTracker_Brain
 
-        Rules = Rules or ns.PartyTracker_Rules
-        if not Rules then return end
+        -- Full update: clear tracked auras (instance IDs reassigned)
+        if updateInfo.isFullUpdate then
+            trackedAuras[unit] = nil
+            return
+        end
 
-        for _, auraData in ipairs(updateInfo.addedAuras) do
-            -- pcall read spellId — may be secret
-            local ok, spellId = pcall(function() return auraData.spellId end)
-            if ok and spellId then
-                -- pcall the lookup — spellId may still be secret as table key
-                local lookupOk, info = pcall(function() return spellCooldownLookup[spellId] end)
-                if lookupOk and info then
-                    -- Found a tracked spell as an aura — start CD if not already active
-                    if not activeCooldowns[unit] then activeCooldowns[unit] = {} end
-                    local unitCDs = activeCooldowns[unit]
-                    if not unitCDs[spellId] then
-                        local startTime = GetTime()
-                        local cooldown = info.cooldown
-
-                        unitCDs[spellId] = {
-                            startTime = startTime,
-                            cooldown = cooldown,
-                            unit = unit,
-                            spellId = spellId,
-                            timer = C_Timer.NewTimer(cooldown, function()
-                                if unitCDs[spellId] then
-                                    unitCDs[spellId] = nil
-                                end
-                                local frame = GetFrameForUnit(unit)
-                                if frame then CooldownDisplay.UpdateFrame(frame) end
-                            end),
+        -- New auras: classify and track
+        if updateInfo.addedAuras then
+            for _, auraData in ipairs(updateInfo.addedAuras) do
+                local instanceID = auraData.auraInstanceID
+                if instanceID then
+                    local auraTypes = ClassifyAura(unit, instanceID)
+                    if auraTypes then
+                        if not trackedAuras[unit] then trackedAuras[unit] = {} end
+                        trackedAuras[unit][instanceID] = {
+                            types = auraTypes,
+                            startTime = GetTime(),
                         }
 
-                        local frame = GetFrameForUnit(unit)
-                        if frame then CooldownDisplay.UpdateFrame(frame) end
+                        -- Immediate detection: try Brain match without duration
+                        if Brain then
+                            Brain.ProcessAuraAppearance(unit, auraTypes)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Removed auras: measure duration, feed to Brain for refined match
+        if updateInfo.removedAuraInstanceIDs and trackedAuras[unit] then
+            for _, instanceID in ipairs(updateInfo.removedAuraInstanceIDs) do
+                local tracked = trackedAuras[unit][instanceID]
+                if tracked then
+                    local measuredDuration = GetTime() - tracked.startTime
+                    trackedAuras[unit][instanceID] = nil
+
+                    -- Brain matches rule by type + duration + evidence → commits cooldown
+                    if Brain then
+                        Brain.ProcessAuraDetection(unit, tracked.types, measuredDuration, tracked.startTime)
                     end
                 end
             end
