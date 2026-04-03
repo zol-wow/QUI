@@ -4,6 +4,26 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v2.56.0-alpha.8
+
+### New: Party Tracker
+- CC icons on party frames showing crowd control and defensive cooldowns with duration swipes
+- Kick timer displaying interrupt cooldown per party member
+- Evidence-based party cooldown tracker with static/active display modes
+- Configurable via Group Composer tab in layout mode
+
+### CDM (Cooldown Manager)
+- Added per-spell `procOnUsable` glow option — glows when spell is off cooldown, no active aura, and has resources
+- Coalesced usability glow scan on SPELL_UPDATE_COOLDOWN/SPELL_UPDATE_USABLE events
+
+### Minimap
+- Scan MinimapCluster and UIParent children for addon buttons parented outside the minimap hierarchy
+- Prevent collected buttons from being re-parented out of the drawer
+
+### Anchoring
+- Hook SetPoint for frames without ApplySystemAnchor (e.g. UIWidget containers) so QUI anchor overrides persist
+- Added layout mode settings providers for topCenterWidgets and belowMinimapWidgets
+
 ## v2.56.0-alpha.7
 
 ### New: Click-Cast Per-Loadout Bindings
