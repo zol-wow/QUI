@@ -194,9 +194,21 @@ end
 local function GetEntryName(entry)
     if not entry then return "Unknown" end
     if entry.type == "spell" then
+        -- Try override spell first (hero talent transforms, e.g.,
+        -- Divine Toll → Holy Bulwark) so the name matches the icon.
         if C_Spell and C_Spell.GetSpellInfo then
-            local ok, info = pcall(C_Spell.GetSpellInfo, entry.id)
+            local displayID = entry.id
+            if C_Spell.GetOverrideSpell then
+                local ook, oid = pcall(C_Spell.GetOverrideSpell, entry.id)
+                if ook and oid and oid ~= entry.id then displayID = oid end
+            end
+            local ok, info = pcall(C_Spell.GetSpellInfo, displayID)
             if ok and info and info.name then return info.name end
+            -- Fallback to base ID if override lookup failed
+            if displayID ~= entry.id then
+                ok, info = pcall(C_Spell.GetSpellInfo, entry.id)
+                if ok and info and info.name then return info.name end
+            end
         end
         return "Spell #" .. tostring(entry.id or "?")
     elseif entry.type == "item" then
