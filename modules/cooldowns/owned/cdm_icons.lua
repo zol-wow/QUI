@@ -1412,7 +1412,7 @@ local function UpdateIconCooldown(icon)
             end
         end
 
-        icon._auraActive = isActiveAura
+        icon._auraActive = isActiveAura and entry.viewerType == "buff"
         RefreshIconGCDState(icon)
 
         if icon.Cooldown then
