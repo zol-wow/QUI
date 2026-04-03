@@ -6953,6 +6953,12 @@ end -- do (page arrow visibility)
 
 function ActionBarsOwned:Initialize()
     if self.initialized then return end
+
+    -- Master enabled check — skip all bar creation if the module is disabled,
+    -- letting Blizzard's default action bars remain untouched.
+    local masterDB = GetDB()
+    if masterDB and masterDB.enabled == false then return end
+
     self.initialized = true
 
     -- Patch LibKeyBound Binder methods to work with unified frameState
@@ -7412,6 +7418,42 @@ do
             microMenu = "microbar", bagBar = "bags",
         }
 
+        -- Master action bars toggle — disabling reverts to Blizzard bars (requires reload)
+        um:RegisterElement({
+            key = "actionBars",
+            label = "Action Bars",
+            group = "Action Bars",
+            order = -1,
+            isOwned = false,
+            noHandle = true,
+            isEnabled = function()
+                local db = GetDB()
+                return db and db.enabled ~= false
+            end,
+            setEnabled = function(val)
+                local db = GetDB()
+                if not db then return end
+                local old = db.enabled ~= false
+                db.enabled = val
+                if (val ~= false) ~= old then
+                    local QUI = _G.QUI
+                    local GUI = QUI and QUI.GUI
+                    if GUI and GUI.ShowConfirmation then
+                        GUI:ShowConfirmation({
+                            title = "Reload UI?",
+                            message = "Enabling or disabling action bars requires a UI reload to take effect.",
+                            acceptText = "Reload",
+                            cancelText = "Later",
+                            onAccept = function() QUI:SafeReload() end,
+                        })
+                    end
+                end
+            end,
+            getFrame = function()
+                return ActionBarsOwned.containers and ActionBarsOwned.containers["bar1"]
+            end,
+        })
+
         -- Leave Vehicle button — standalone proxy mover (not part of the bar loop)
         um:RegisterElement({
             key = "leaveVehicle",
@@ -7433,18 +7475,35 @@ do
                 order = info.order,
                 isOwned = true,
                 isEnabled = function()
+                    local db = GetDB()
+                    if not db or db.enabled == false then return false end
                     local barDB = GetBarSettings(dbKey)
                     return barDB and barDB.enabled ~= false
                 end,
                 setEnabled = function(val)
                     local barDB = GetBarSettings(dbKey)
-                    if barDB then barDB.enabled = val end
+                    if not barDB then return end
+                    local old = barDB.enabled ~= false
+                    barDB.enabled = val
                     local container = ActionBarsOwned.containers and ActionBarsOwned.containers[containerKey]
                     if container then
                         if val then
                             container:Show()
                         else
                             container:Hide()
+                        end
+                    end
+                    if (val ~= false) ~= old then
+                        local QUI = _G.QUI
+                        local GUI = QUI and QUI.GUI
+                        if GUI and GUI.ShowConfirmation then
+                            GUI:ShowConfirmation({
+                                title = "Reload UI?",
+                                message = "Enabling or disabling an action bar requires a UI reload to fully take effect.",
+                                acceptText = "Reload",
+                                cancelText = "Later",
+                                onAccept = function() QUI:SafeReload() end,
+                            })
                         end
                     end
                 end,
@@ -7460,6 +7519,15 @@ do
                         microMenu = "MicroMenuContainer", bagBar = "BagsBar",
                     }
                     return _G[BLIZZARD_FRAMES[info.key]]
+                end,
+                setGameplayHidden = function(hide)
+                    local container = ActionBarsOwned.containers and ActionBarsOwned.containers[containerKey]
+                    if not container then return end
+                    if hide then
+                        container:Hide()
+                    else
+                        container:Show()
+                    end
                 end,
                 onOpen = function()
                     SetEditOverlayVisible(containerKey, true)

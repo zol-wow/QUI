@@ -654,6 +654,9 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
         order = 100,  -- custom containers sort after built-in
         isOwned = true,
         isEnabled = function()
+            local core = ns.Helpers.GetCore()
+            local ncdm = core and core.db and core.db.profile and core.db.profile.ncdm
+            if not ncdm or ncdm.enabled == false then return false end
             local s = GetTrackerSettings(containerKey)
             return s and s.enabled ~= false
         end,
@@ -661,6 +664,12 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
             local s = GetTrackerSettings(containerKey)
             if s then s.enabled = val end
             if _G.QUI_RefreshCDMVisibility then _G.QUI_RefreshCDMVisibility() end
+        end,
+        setGameplayHidden = function(hide)
+            local f = containers[containerKey]
+            if f then
+                if hide then f:Hide() else f:Show() end
+            end
         end,
         getFrame = function()
             return containers[containerKey]
@@ -2563,9 +2572,49 @@ do
             return nil
         end
 
+        local function GetNcdmDB()
+            local core = ns.Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.ncdm
+        end
+
         local function RefreshCDM()
             if _G.QUI_RefreshCDMVisibility then _G.QUI_RefreshCDMVisibility() end
         end
+
+        -- Master CDM toggle — disabling hides all CDM containers
+        um:RegisterElement({
+            key = "cdm",
+            label = "Cooldown Manager",
+            group = "Cooldown Manager & Custom Tracker Bars",
+            order = -1,
+            isOwned = false,
+            noHandle = true,
+            isEnabled = function()
+                local ncdm = GetNcdmDB()
+                return ncdm and ncdm.enabled ~= false
+            end,
+            setEnabled = function(val)
+                local ncdm = GetNcdmDB()
+                if ncdm then ncdm.enabled = val end
+                RefreshCDM()
+            end,
+            setGameplayHidden = function(hide)
+                for _, info2 in ipairs(CDM_ELEMENTS) do
+                    local viewerKey = CDM_VIEWER_MAP[info2.key]
+                    local f = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerKey)
+                    if f then
+                        if hide then f:Hide() else f:Show() end
+                    end
+                end
+            end,
+            getFrame = function()
+                for _, info2 in ipairs(CDM_ELEMENTS) do
+                    local viewerKey = CDM_VIEWER_MAP[info2.key]
+                    local f = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerKey)
+                    if f then return f end
+                end
+            end,
+        })
 
         for _, info in ipairs(CDM_ELEMENTS) do
             um:RegisterElement({
@@ -2575,6 +2624,8 @@ do
                 order = info.order,
                 isOwned = true,
                 isEnabled = function()
+                    local ncdm = GetNcdmDB()
+                    if not ncdm or ncdm.enabled == false then return false end
                     local db = GetCDMDB(info.key)
                     return db and db.enabled ~= false
                 end,
@@ -2582,6 +2633,13 @@ do
                     local db = GetCDMDB(info.key)
                     if db then db.enabled = val end
                     RefreshCDM()
+                end,
+                setGameplayHidden = function(hide)
+                    local viewerKey = CDM_VIEWER_MAP[info.key]
+                    local f = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerKey)
+                    if f then
+                        if hide then f:Hide() else f:Show() end
+                    end
                 end,
                 getFrame = function()
                     local viewerKey = CDM_VIEWER_MAP[info.key]

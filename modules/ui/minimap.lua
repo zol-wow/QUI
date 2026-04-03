@@ -3531,6 +3531,16 @@ do
             label = "Minimap",
             group = "Display",
             order = 1,
+            setGameplayHidden = function(hide)
+                if not Minimap then return end
+                if hide then
+                    Minimap:SetAlpha(0)
+                    Minimap:EnableMouse(false)
+                else
+                    Minimap:SetAlpha(1)
+                    Minimap:EnableMouse(true)
+                end
+            end,
             getFrame = function()
                 return Minimap
             end,
@@ -3561,6 +3571,10 @@ do
                     dt.enabled = val
                     UpdateDatatextPanel()
                 end
+            end,
+            setGameplayHidden = function(hide)
+                if not datatextFrame then return end
+                if hide then datatextFrame:Hide() else datatextFrame:Show() end
             end,
         })
     end

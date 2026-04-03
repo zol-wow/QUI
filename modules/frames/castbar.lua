@@ -3511,8 +3511,28 @@ do
                 end,
                 setEnabled = function(val)
                     local cb = GetCastbarDB(info.unit)
-                    if cb then cb.enabled = val end
+                    if not cb then return end
+                    local old = cb.enabled ~= false
+                    cb.enabled = val
                     if _G.QUI_RefreshCastbar then _G.QUI_RefreshCastbar(info.unit) end
+                    if (val ~= false) ~= old then
+                        local QUI = _G.QUI
+                        local GUI = QUI and QUI.GUI
+                        if GUI and GUI.ShowConfirmation then
+                            GUI:ShowConfirmation({
+                                title = "Reload UI?",
+                                message = "Enabling or disabling castbars requires a UI reload to take effect.",
+                                acceptText = "Reload",
+                                cancelText = "Later",
+                                onAccept = function() QUI:SafeReload() end,
+                            })
+                        end
+                    end
+                end,
+                setGameplayHidden = function(hide)
+                    local f = QUI_Castbar.castbars and QUI_Castbar.castbars[info.unit]
+                    if not f then return end
+                    if hide then f:Hide() else f:Show() end
                 end,
                 getFrame = function()
                     return QUI_Castbar.castbars and QUI_Castbar.castbars[info.unit]

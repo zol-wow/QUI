@@ -4207,6 +4207,11 @@ RegisterTrackerLayoutElement = function(barID)
                     end
                 end
             end,
+            setGameplayHidden = function(hide)
+                local bar = CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
+                if not bar then return end
+                if hide then bar:Hide() else bar:Show() end
+            end,
             getFrame = function()
                 return CustomTrackers.activeBars and CustomTrackers.activeBars[capturedID]
             end,

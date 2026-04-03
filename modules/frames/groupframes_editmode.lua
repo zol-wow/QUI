@@ -2042,6 +2042,20 @@ do
                 end
                 return GF and GF.headers and GF.headers.party
             end,
+            setGameplayHidden = function(hide)
+                local GF = ns.QUI_GroupFrames
+                local root = GF and GF.anchorFrames and GF.anchorFrames.party
+                local header = GF and GF.headers and GF.headers.party
+                local target = root or header
+                if not target then return end
+                if hide then
+                    target:SetAlpha(0)
+                    pcall(target.EnableMouse, target, false)
+                else
+                    target:SetAlpha(1)
+                    pcall(target.EnableMouse, target, true)
+                end
+            end,
             onOpen = function()
                 local GFEM = ns.QUI_GroupFrameEditMode
                 -- Show party preview when solo or in a raid (WoW hides party
@@ -2067,15 +2081,26 @@ do
             setEnabled = function(val)
                 GroupFrameSetEnabled(val, "partyFrames")
             end,
+            setGameplayHidden = function(hide)
+                local GF = ns.QUI_GroupFrames
+                local root = GF and GF.anchorFrames and GF.anchorFrames.raid
+                local header = GF and GF.headers and GF.headers.raid
+                local target = root or header
+                if not target then return end
+                if hide then
+                    target:SetAlpha(0)
+                    pcall(target.EnableMouse, target, false)
+                else
+                    target:SetAlpha(1)
+                    pcall(target.EnableMouse, target, true)
+                end
+            end,
             getFrame = function()
                 local GFEM = ns.QUI_GroupFrameEditMode
                 if GFEM then
                     local active = GFEM:GetActiveFrame("raid")
                     if active then return active end
                 end
-                -- Return the anchor root frame (not the header) so layout mode
-                -- positions the root. Headers are arranged within the root by
-                -- UpdateAnchorRoot.
                 local GF = ns.QUI_GroupFrames
                 if GF and GF.anchorFrames and GF.anchorFrames.raid then
                     return GF.anchorFrames.raid
@@ -2111,6 +2136,16 @@ do
                 if not db.raid then db.raid = {} end
                 if not db.raid.spotlight then db.raid.spotlight = {} end
                 db.raid.spotlight.enabled = val
+            end,
+            setGameplayHidden = function(hide)
+                if not spotlightContainer then return end
+                if hide then
+                    spotlightContainer:SetAlpha(0)
+                    pcall(spotlightContainer.EnableMouse, spotlightContainer, false)
+                else
+                    spotlightContainer:SetAlpha(1)
+                    pcall(spotlightContainer.EnableMouse, spotlightContainer, true)
+                end
             end,
             getFrame = function()
                 return spotlightContainer

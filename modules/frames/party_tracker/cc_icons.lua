@@ -32,6 +32,7 @@ ns.PartyTracker_CCIcons = CCIcons
 
 local MAX_ICONS = 5
 local GF = nil
+local SpecCache = nil
 
 ---------------------------------------------------------------------------
 -- CC SPELL DATABASE — only spells with real cooldowns
@@ -39,8 +40,7 @@ local GF = nil
 ---------------------------------------------------------------------------
 local CC_BY_CLASS = {
     DEATHKNIGHT = {
-        { id = 108194, cd = 45 },  -- Asphyxiate
-        { id = 221562, cd = 45 },  -- Asphyxiate (Blood)
+        { id = 108194, cd = 45 },  -- Asphyxiate (Frost/Unholy talent)
     },
     DEMONHUNTER = {
         { id = 179057, cd = 45 },  -- Chaos Nova
@@ -71,7 +71,6 @@ local CC_BY_CLASS = {
         { id = 20066,  cd = 15 },  -- Repentance
     },
     PRIEST = {
-        { id = 88625,  cd = 60 },  -- Holy Word: Chastise
         { id = 205369, cd = 30 },  -- Mind Bomb
         { id = 8122,   cd = 45 },  -- Psychic Scream
     },
@@ -94,9 +93,26 @@ local CC_BY_CLASS = {
     },
 }
 
+-- Spec-specific CC overrides — used INSTEAD of CC_BY_CLASS when spec is known
+local CC_BY_SPEC = {
+    [250] = { -- Blood DK
+        { id = 221562, cd = 45 },  -- Asphyxiate (Blood)
+    },
+    [257] = { -- Holy Priest
+        { id = 88625,  cd = 60 },  -- Holy Word: Chastise
+        { id = 205369, cd = 30 },  -- Mind Bomb
+        { id = 8122,   cd = 45 },  -- Psychic Scream
+    },
+}
+
 -- Reverse lookup: spellId → { cd }
 local CC_LOOKUP = {}
 for _, spells in pairs(CC_BY_CLASS) do
+    for _, spell in ipairs(spells) do
+        CC_LOOKUP[spell.id] = { cd = spell.cd }
+    end
+end
+for _, spells in pairs(CC_BY_SPEC) do
     for _, spell in ipairs(spells) do
         CC_LOOKUP[spell.id] = { cd = spell.cd }
     end
@@ -234,11 +250,19 @@ local function GetStaticAbilities(unit)
     local _, classToken = UnitClass(unit)
     if not classToken then return {} end
 
-    local classSpells = CC_BY_CLASS[classToken]
-    if not classSpells then return {} end
+    -- Check spec first — use spec-specific CC list if available
+    SpecCache = SpecCache or ns.PartyTracker_SpecCache
+    local specId = SpecCache and SpecCache.GetSpec(unit)
+    local spellList
+    if specId and CC_BY_SPEC[specId] then
+        spellList = CC_BY_SPEC[specId]
+    else
+        spellList = CC_BY_CLASS[classToken]
+    end
+    if not spellList then return {} end
 
     local abilities = {}
-    for _, spell in ipairs(classSpells) do
+    for _, spell in ipairs(spellList) do
         if UnitHasSpell(unit, spell.id) then
             abilities[#abilities + 1] = spell
         end

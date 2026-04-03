@@ -4085,8 +4085,34 @@ do
                 end,
                 setEnabled = function(val)
                     local ufdb = GetUFDB()
-                    if ufdb and ufdb[info.unit] then ufdb[info.unit].enabled = val end
+                    if not ufdb or not ufdb[info.unit] then return end
+                    local old = ufdb[info.unit].enabled ~= false
+                    ufdb[info.unit].enabled = val
                     RefreshUF()
+                    if (val ~= false) ~= old then
+                        local QUI = _G.QUI
+                        local GUI = QUI and QUI.GUI
+                        if GUI and GUI.ShowConfirmation then
+                            GUI:ShowConfirmation({
+                                title = "Reload UI?",
+                                message = "Enabling or disabling unit frames requires a UI reload to take effect.",
+                                acceptText = "Reload",
+                                cancelText = "Later",
+                                onAccept = function() QUI:SafeReload() end,
+                            })
+                        end
+                    end
+                end,
+                setGameplayHidden = function(hide)
+                    local f = QUI_UF.frames and QUI_UF.frames[info.unit]
+                    if not f then return end
+                    if hide then
+                        f:SetAlpha(0)
+                        f:EnableMouse(false)
+                    else
+                        f:SetAlpha(1)
+                        f:EnableMouse(true)
+                    end
                 end,
                 getFrame = function()
                     return QUI_UF.frames and QUI_UF.frames[info.unit]
@@ -4114,8 +4140,23 @@ do
             end,
             setEnabled = function(val)
                 local ufdb = GetUFDB()
-                if ufdb and ufdb.boss then ufdb.boss.enabled = val end
+                if not ufdb or not ufdb.boss then return end
+                local old = ufdb.boss.enabled ~= false
+                ufdb.boss.enabled = val
                 RefreshUF()
+                if (val ~= false) ~= old then
+                    local QUI = _G.QUI
+                    local GUI = QUI and QUI.GUI
+                    if GUI and GUI.ShowConfirmation then
+                        GUI:ShowConfirmation({
+                            title = "Reload UI?",
+                            message = "Enabling or disabling unit frames requires a UI reload to take effect.",
+                            acceptText = "Reload",
+                            cancelText = "Later",
+                            onAccept = function() QUI:SafeReload() end,
+                        })
+                    end
+                end
             end,
             getFrame = function()
                 return QUI_UF.frames and QUI_UF.frames.boss1
@@ -4166,6 +4207,20 @@ do
                 local totalH = top - bottom
                 if totalH <= boss1H then return 0, 0 end
                 return 0, -(totalH - boss1H) / 2
+            end,
+            setGameplayHidden = function(hide)
+                for i = 1, 5 do
+                    local f = QUI_UF.frames and QUI_UF.frames["boss" .. i]
+                    if f then
+                        if hide then
+                            f:SetAlpha(0)
+                            f:EnableMouse(false)
+                        else
+                            f:SetAlpha(1)
+                            f:EnableMouse(true)
+                        end
+                    end
+                end
             end,
             onOpen = function()
                 if _G.QUI_ShowUnitFramePreview then _G.QUI_ShowUnitFramePreview("boss") end

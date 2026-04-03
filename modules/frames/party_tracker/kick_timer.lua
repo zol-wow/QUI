@@ -27,6 +27,7 @@ local KickTimer = {}
 ns.PartyTracker_KickTimer = KickTimer
 
 local GF = nil
+local SpecCache = nil
 
 ---------------------------------------------------------------------------
 -- INTERRUPT SPELL DATABASE — one primary interrupt per class
@@ -47,10 +48,23 @@ local INTERRUPT_BY_CLASS = {
     WARRIOR     = { id = 6552,   cd = 15 },  -- Pummel
 }
 
+-- Spec overrides: false = no interrupt, table = different spell than class default
+local INTERRUPT_BY_SPEC = {
+    [102] = { id = 78675,  cd = 60 },  -- Balance Druid: Solar Beam
+    [105] = false,                       -- Resto Druid: no interrupt
+    [256] = false,                       -- Disc Priest: no interrupt
+    [257] = false,                       -- Holy Priest: no interrupt
+}
+
 -- Reverse lookup for non-secret spellID fast path
 local INTERRUPT_LOOKUP = {}
 for class, info in pairs(INTERRUPT_BY_CLASS) do
     INTERRUPT_LOOKUP[info.id] = { cd = info.cd, class = class }
+end
+for _, info in pairs(INTERRUPT_BY_SPEC) do
+    if info and info.id then
+        INTERRUPT_LOOKUP[info.id] = { cd = info.cd }
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -141,6 +155,18 @@ end
 -- SHOW STATIC ICON (always visible for unit's class interrupt)
 ---------------------------------------------------------------------------
 
+-- Resolve the interrupt info for a unit, checking spec overrides first
+local function GetInterruptInfo(unit)
+    SpecCache = SpecCache or ns.PartyTracker_SpecCache
+    local specId = SpecCache and SpecCache.GetSpec(unit)
+    if specId and INTERRUPT_BY_SPEC[specId] ~= nil then
+        -- false means this spec has no interrupt
+        return INTERRUPT_BY_SPEC[specId]
+    end
+    local _, classToken = UnitClass(unit)
+    return classToken and INTERRUPT_BY_CLASS[classToken]
+end
+
 local function ShowStaticIcon(frame)
     local isRaid = frame._isRaid
     local settings = GetSettings(isRaid)
@@ -155,8 +181,7 @@ local function ShowStaticIcon(frame)
         return
     end
 
-    local _, classToken = UnitClass(unit)
-    local classInfo = classToken and INTERRUPT_BY_CLASS[classToken]
+    local classInfo = GetInterruptInfo(unit)
     if not classInfo then
         if frame._kickIcon then frame._kickIcon:Hide() end
         return
@@ -292,8 +317,7 @@ local function OnSpellcastSucceeded(unit, castGUID, spellID)
     -- Player: don't read spellID. Use event as trigger, check the known
     -- interrupt spell via C_Spell.GetSpellCooldownDuration (C-side).
     if UnitIsUnit(unit, "player") and C_Spell.GetSpellCooldownDuration then
-        local _, classToken = UnitClass("player")
-        local classInfo = classToken and INTERRUPT_BY_CLASS[classToken]
+        local classInfo = GetInterruptInfo(unit)
         if classInfo then
             local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, classInfo.id)
             if ok and durObj then
@@ -340,41 +364,71 @@ local function OnSpellcastSucceeded(unit, castGUID, spellID)
 end
 
 ---------------------------------------------------------------------------
--- COMBAT FALLBACK: UNIT_SPELLCAST_INTERRUPTED
--- When an enemy's cast is interrupted, this event fires on the enemy unit.
--- We match the interrupt to the party member who most recently cast.
--- Then use that member's class interrupt spell + base CD.
--- Same approach as MiniCC/ExwindTools.
+-- INTERRUPT DETECTION (UNIT_SPELLCAST_INTERRUPTED on nameplates/target/focus)
+-- When an enemy's cast is interrupted, find which party member kicked by
+-- matching against recent UNIT_SPELLCAST_SUCCEEDED timestamps.
+-- Same approach as ExwindTools: record party cast times, watch enemy
+-- interrupted casts, time-match within a short window.
 ---------------------------------------------------------------------------
 
-local CAST_MATCH_WINDOW = 0.5  -- seconds
+local CAST_MATCH_WINDOW = 0.15  -- seconds — tight window to reduce false matches
+local pendingInterrupts = {}     -- batched interrupt events
+local processingScheduled = false
 
-local function OnSpellInterrupted()
-    -- Find which party member kicked by checking who cast most recently
+local function ProcessPendingInterrupts()
+    processingScheduled = false
     local now = GetTime()
-    local bestUnit, bestTime = nil, 0
 
+    -- Count pending interrupts — if multiple, it's AoE CC not a kick
+    local count = 0
+    for _ in pairs(pendingInterrupts) do
+        count = count + 1
+        if count > 1 then break end
+    end
+    if count ~= 1 then
+        wipe(pendingInterrupts)
+        return
+    end
+
+    -- Single interrupt — find which party member kicked
+    local interruptTime = nil
+    for _, data in pairs(pendingInterrupts) do
+        interruptTime = data.time
+    end
+    wipe(pendingInterrupts)
+
+    if not interruptTime then return end
+
+    -- Find the party member who cast closest to the interrupt time
+    local bestUnit, bestDiff = nil, CAST_MATCH_WINDOW
     for unit, castTime in pairs(recentCasts) do
-        if (now - castTime) < CAST_MATCH_WINDOW and castTime > bestTime then
+        local diff = math.abs(interruptTime - castTime)
+        if diff <= bestDiff then
             bestUnit = unit
-            bestTime = castTime
+            bestDiff = diff
         end
     end
 
     if not bestUnit then return end
 
-    -- Already tracked via pcall path? Skip.
+    -- Already on CD? Skip.
     local frame = GetFrameForUnit(bestUnit)
     if not frame or not frame._kickIcon then return end
     local state = frame._kickTimer
-    if state and state.active then return end  -- already showing a swirl
+    if state and state.active then return end
 
-    -- Get this unit's class interrupt info
-    local _, classToken = UnitClass(bestUnit)
-    local classInfo = classToken and INTERRUPT_BY_CLASS[classToken]
+    -- Get this unit's interrupt info (spec-aware)
+    local classInfo = GetInterruptInfo(bestUnit)
     if not classInfo then return end
 
     StartKickCooldown(frame, bestUnit, classInfo.id, classInfo.cd)
+end
+
+local function ScheduleInterruptProcessing()
+    if processingScheduled then return end
+    processingScheduled = true
+    -- 30ms delay to batch events and let UNIT_SPELLCAST_SUCCEEDED arrive first
+    C_Timer.After(0.03, ProcessPendingInterrupts)
 end
 
 local registeredFrame = nil
@@ -402,12 +456,18 @@ C_Timer.After(0, function()
     registeredFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     registeredFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Separate frame for UNIT_SPELLCAST_INTERRUPTED on targets
+    -- Watch UNIT_SPELLCAST_INTERRUPTED on ALL units (nameplates, target, focus)
+    -- This catches enemy cast interrupts from any visible enemy, not just target.
     local interruptFrame = CreateFrame("Frame")
-    interruptFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "target", "focus")
-    interruptFrame:SetScript("OnEvent", function()
-        -- Small delay to let UNIT_SPELLCAST_SUCCEEDED arrive first
-        C_Timer.After(0.03, OnSpellInterrupted)
+    interruptFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+    interruptFrame:SetScript("OnEvent", function(_, _, unit)
+        -- Only process enemy unit interrupts (nameplate, target, focus)
+        if not unit then return end
+        local prefix = unit:match("^(%a+)")
+        if prefix ~= "nameplate" and unit ~= "target" and unit ~= "focus" then return end
+
+        pendingInterrupts[unit] = { time = GetTime() }
+        ScheduleInterruptProcessing()
     end)
 
     registeredFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)

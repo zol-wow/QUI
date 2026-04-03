@@ -75,6 +75,72 @@ local function GetHiddenHandlesDB()
 end
 
 ---------------------------------------------------------------------------
+-- GAMEPLAY VISIBILITY ENFORCEMENT
+-- When layout mode "hides" a handle, also hide the actual frame during
+-- normal gameplay.  Each element can provide a `setGameplayHidden(bool)`
+-- callback for module-specific hide/show logic.  Fallback: alpha-0 +
+-- disable mouse.
+---------------------------------------------------------------------------
+local InCombatLockdown = InCombatLockdown
+
+-- Track which keys WE have gameplay-hidden so we only restore those.
+-- Without this, restoring would force-show frames that are naturally
+-- hidden (loot window, pet frame, party keystones, etc.).
+QUI_LayoutMode._gameplayHidden = {}
+
+function QUI_LayoutMode:EnforceGameplayVisibility()
+    if self.isActive then return end  -- layout mode handles its own visibility
+    local hidden = GetHiddenHandlesDB()
+    if not hidden then return end
+
+    for _, key in ipairs(self._elementOrder) do
+        local def = self._elements[key]
+        if not def then break end
+
+        -- Skip disabled elements and master toggles (no visual frame to hide)
+        if def.noHandle then
+            -- noop: master toggles have no visual presence
+        elseif def.isEnabled and not def.isEnabled() then
+            -- noop: disabled elements are already hidden/reverted
+        else
+            local shouldHide = hidden[key] == true
+            local wasHiddenByUs = self._gameplayHidden[key]
+
+            if shouldHide and not wasHiddenByUs then
+                -- Hide this frame
+                self._gameplayHidden[key] = true
+                if def.setGameplayHidden then
+                    pcall(def.setGameplayHidden, true)
+                else
+                    local frame = def.getFrame and def.getFrame()
+                    if frame then
+                        if InCombatLockdown() then
+                            self._deferredGameplayHides = self._deferredGameplayHides or {}
+                            self._deferredGameplayHides[key] = true
+                        else
+                            pcall(frame.SetAlpha, frame, 0)
+                            pcall(frame.EnableMouse, frame, false)
+                        end
+                    end
+                end
+            elseif not shouldHide and wasHiddenByUs then
+                -- Restore only frames WE previously hid
+                self._gameplayHidden[key] = nil
+                if def.setGameplayHidden then
+                    pcall(def.setGameplayHidden, false)
+                else
+                    local frame = def.getFrame and def.getFrame()
+                    if frame then
+                        pcall(frame.SetAlpha, frame, 1)
+                        pcall(frame.EnableMouse, frame, true)
+                    end
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- STATE
 ---------------------------------------------------------------------------
 QUI_LayoutMode.isActive       = false
@@ -191,7 +257,13 @@ function QUI_LayoutMode:SetElementEnabled(key, enabled)
 
     def.setEnabled(enabled)
 
+    -- When re-enabling, clear the hidden state so the frame becomes visible
+    if enabled then
+        self:ClearHiddenState(key)
+    end
+
     if not self.isActive then return end
+    if def.noHandle then return end
 
     if enabled then
         -- Show preview if element has one
@@ -337,7 +409,7 @@ function QUI_LayoutMode:Open()
         local def = self._elements[key]
         local enabled = not def.isEnabled or def.isEnabled()
 
-        if enabled then
+        if enabled and not def.noHandle then
             -- Respect persisted hidden state
             if hidden and hidden[key] then
                 -- Create handle but keep hidden, don't show preview
@@ -637,6 +709,9 @@ function QUI_LayoutMode:Close(skipSaveCheck)
             end
         end
     end
+
+    -- Enforce gameplay visibility (hide frames the user toggled off)
+    self:EnforceGameplayVisibility()
 
     -- Fire exit callbacks
     for _, cb in ipairs(self._exitCallbacks) do
@@ -2213,6 +2288,17 @@ do
                 label = info.label,
                 group = "Display",
                 order = info.order,
+                setGameplayHidden = function(hide)
+                    local f = (info.holder and _G[info.holder]) or _G[info.frame]
+                    if not f then return end
+                    if hide then
+                        f:SetAlpha(0)
+                        pcall(f.EnableMouse, f, false)
+                    else
+                        f:SetAlpha(1)
+                        pcall(f.EnableMouse, f, true)
+                    end
+                end,
                 getFrame = function()
                     return (info.holder and _G[info.holder]) or _G[info.frame]
                 end,
@@ -2257,6 +2343,17 @@ do
                 local db = ChatDB()
                 if db then db.enabled = val end
                 if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end
+            end,
+            setGameplayHidden = function(hide)
+                local f = _G.ChatFrame1
+                if not f then return end
+                if hide then
+                    f:SetAlpha(0)
+                    f:EnableMouse(false)
+                else
+                    f:SetAlpha(1)
+                    f:EnableMouse(true)
+                end
             end,
             getFrame = function()
                 return _G.ChatFrame1
@@ -2585,6 +2682,11 @@ do
                     if info.refresh and _G[info.refresh] then
                         _G[info.refresh]()
                     end
+                end,
+                setGameplayHidden = function(hide)
+                    local f = info.frame and _G[info.frame]
+                    if not f then return end
+                    if hide then f:Hide() else f:Show() end
                 end,
                 getFrame = info.getFrame or function()
                     if info.frame then
@@ -3382,3 +3484,26 @@ C_Timer.After(1, function()
     HookRefreshForLayoutSync("QUI_RefreshXPTracker")
     HookRefreshForLayoutSync("QUI_RefreshBuffBorders")
 end)
+
+---------------------------------------------------------------------------
+-- STARTUP: Enforce hidden-handle visibility on login/reload
+-- Delayed to ensure all modules have registered their elements
+-- (CDM registers at C_Timer.After(2)).
+---------------------------------------------------------------------------
+do
+    local startupFrame = CreateFrame("Frame")
+    startupFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    startupFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    startupFrame:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_ENTERING_WORLD" then
+            C_Timer.After(3, function()
+                QUI_LayoutMode:EnforceGameplayVisibility()
+            end)
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            if QUI_LayoutMode._deferredGameplayHides then
+                QUI_LayoutMode._deferredGameplayHides = nil
+                QUI_LayoutMode:EnforceGameplayVisibility()
+            end
+        end
+    end)
+end

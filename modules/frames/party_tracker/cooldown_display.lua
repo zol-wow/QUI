@@ -232,7 +232,8 @@ local function GetStaticAbilities(unit, filterMode)
     if specId and Rules.BySpec[specId] then
         CollectFromRules(Rules.BySpec[specId])
     end
-    if classToken and Rules.ByClass[classToken] then
+    -- Only fall back to class rules when spec is unknown
+    if not specId and classToken and Rules.ByClass[classToken] then
         CollectFromRules(Rules.ByClass[classToken])
     end
 
@@ -552,9 +553,8 @@ C_Timer.After(0, function()
 end)
 
 ---------------------------------------------------------------------------
--- AURA-BASED FALLBACK (combat detection for party members)
--- When UNIT_SPELLCAST_SUCCEEDED has secret spellIDs, aura detection
--- catches defensives/offensives that create buffs. On UNIT_AURA, pcall
+-- AURA-BASED FALLBACK (additional detection layer)
+-- Catches defensives/offensives that create buffs. On UNIT_AURA, pcall
 -- read spellId from each added aura and match against our rules.
 ---------------------------------------------------------------------------
 

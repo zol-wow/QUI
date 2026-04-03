@@ -308,6 +308,7 @@ local defaults = {
         -- QUI New Cooldown Display Manager (NCDM)
         -- Per-row configuration for Essential and Utility viewers
         ncdm = {
+            enabled = true,         -- Master CDM enable/disable
             _snapshotVersion = 0,   -- Incremented each time ownedSpells are snapshotted
             _specProfiles = nil,    -- Future: per-spec owned spell profiles
             essential = {

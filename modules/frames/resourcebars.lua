@@ -3646,6 +3646,12 @@ do
                 if db then db.enabled = val end
                 if QUICore and QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
             end,
+            setGameplayHidden = function(hide)
+                local f = QUICore and QUICore.powerBar
+                if f then
+                    if hide then f:Hide() else f:Show() end
+                end
+            end,
             getFrame = function()
                 return QUICore and QUICore.powerBar
             end,
@@ -3665,6 +3671,12 @@ do
                 local db = GetPowerDB("secondaryPowerBar")
                 if db then db.enabled = val end
                 if QUICore and QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
+            end,
+            setGameplayHidden = function(hide)
+                local f = QUICore and QUICore.secondaryPowerBar
+                if f then
+                    if hide then f:Hide() else f:Show() end
+                end
             end,
             getFrame = function()
                 return QUICore and QUICore.secondaryPowerBar

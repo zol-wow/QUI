@@ -652,6 +652,11 @@ do
                             end
                         end
                     end,
+                    setGameplayHidden = function(hide)
+                        local panel = Datapanels.activePanels[panelID]
+                        if not panel then return end
+                        if hide then panel:Hide() else panel:Show() end
+                    end,
                 })
 
                 -- Add to FRAME_ANCHOR_INFO and register as anchor target
