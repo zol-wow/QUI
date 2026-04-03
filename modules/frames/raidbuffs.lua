@@ -23,6 +23,7 @@ local GetWeaponEnchantInfo = GetWeaponEnchantInfo
 local GetInventoryItemID = GetInventoryItemID
 local table_insert = table.insert
 local string_format = string.format
+local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 ---------------------------------------------------------------------------
 -- QUI Missing Raid Buffs Display
@@ -219,7 +220,7 @@ local DEFAULTS = {
     enabled = true,
     showOnlyInGroup = true,
     showOnlyInInstance = false,  -- Only show in dungeon/raid instances
-    hideLabelBar = false,        -- Hide the "Missing Buffs" label bar
+    hideLabelBar = false,        -- Hide the "Raid Buffs" label bar
     iconSize = 32,
     labelFontSize = 12,
     labelTextColor = nil,        -- nil = white, otherwise {r, g, b, a}
@@ -598,8 +599,8 @@ local function IsProviderClassInRange(providerClass, rangeYards)
     return false
 end
 
-local function GetMissingBuffs()
-    local missing = {}
+local function GetRelevantBuffs()
+    local result = {}
     local settings = GetSettings()
 
     -- Preview mode: return cached preview buffs (generated once when preview enabled)
@@ -609,12 +610,12 @@ local function GetMissingBuffs()
 
     -- Only show out of combat (always enforced)
     if InCombatLockdown() then
-        return missing
+        return result
     end
 
     -- Disable during M+ keystones - aura data is protected during challenge mode
     if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then
-        return missing
+        return result
     end
 
     local playerClass = GetPlayerClass()
@@ -632,18 +633,10 @@ local function GetMissingBuffs()
         ScanGroupClasses()
 
         for _, buff in ipairs(RAID_BUFFS) do
-            local buffRange = buff.range or 40
-
-            if buff.providerClass == playerClass then
-                -- Player's own class buffs: show if player or any group member is missing it
-                if not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) or AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange, buff.buffIDs) then
-                    table_insert(missing, buff)
-                end
-            else
-                -- Other class buffs: show if player is missing it
-                if not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) then
-                    table_insert(missing, buff)
-                end
+            -- Only show if a provider class is in the group
+            if groupClasses[buff.providerClass] then
+                buff._hasBuff = PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs)
+                table_insert(result, buff)
             end
         end
     end
@@ -653,16 +646,19 @@ local function GetMissingBuffs()
         for _, selfBuff in ipairs(SELF_BUFFS) do
             if selfBuff.providerClass == playerClass then
                 local spellName, resolvedSpellId = ResolveSelfBuffCast(selfBuff)
-                if spellName and not PlayerHasSelfBuff(selfBuff) then
+                if spellName then
                     selfBuff._resolvedSpellName = spellName
                     selfBuff._resolvedSpellId = resolvedSpellId
-                    table_insert(missing, selfBuff)
+                    selfBuff._hasBuff = PlayerHasSelfBuff(selfBuff)
+                    if not selfBuff._hasBuff then
+                        table_insert(result, selfBuff)
+                    end
                 end
             end
         end
     end
 
-    return missing
+    return result
 end
 
 ---------------------------------------------------------------------------
@@ -901,7 +897,7 @@ local function CreateMainFrame()
     mainFrame.labelBar.text = mainFrame.labelBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     mainFrame.labelBar.text:SetPoint("CENTER", 0, 0)
     mainFrame.labelBar.text:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-    mainFrame.labelBar.text:SetText("Missing Buffs")
+    mainFrame.labelBar.text:SetText("Raid Buffs")
 
     -- Pre-create icon slots
     for i = 1, #RAID_BUFFS do
@@ -993,7 +989,7 @@ UpdateDisplay = function()
         ApplySkin()
     end
 
-    local missing = GetMissingBuffs()
+    local missing = GetRelevantBuffs()
 
     if #missing == 0 then
         if inCombat then mainFrame:SetAlpha(0) else mainFrame:Hide() end
@@ -1039,13 +1035,25 @@ UpdateDisplay = function()
             end
             icon.buffData = buff
 
-            -- Desaturate buffs the player can't cast (visual distinction)
+            -- Visual states based on buff status
             local canCast = buff.selfBuff and buff._resolvedSpellName or (not buff.selfBuff and PlayerCanCastBuff(buff))
-            icon.icon:SetDesaturated(not canCast)
-            if canCast then
+            local hasBuff = buff._hasBuff
+
+            if hasBuff then
+                -- Have the buff: saturated, no glow
+                icon.icon:SetDesaturated(false)
                 icon.icon:SetVertexColor(1, 1, 1, 1)
+                if LCG then LCG.AutoCastGlow_Stop(icon) end
+            elseif canCast then
+                -- Missing, player can cast: desaturated + glow
+                icon.icon:SetDesaturated(true)
+                icon.icon:SetVertexColor(1, 1, 1, 1)
+                if LCG then LCG.AutoCastGlow_Start(icon, { 0.2, 1, 0.2, 1 }, 8, 0.25) end
             else
+                -- Missing, someone else provides: desaturated
+                icon.icon:SetDesaturated(true)
                 icon.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+                if LCG then LCG.AutoCastGlow_Stop(icon) end
             end
 
             -- Configure click-to-cast — SetAttribute is protected, skip during combat
@@ -1121,6 +1129,7 @@ UpdateDisplay = function()
 
             if inCombat then icon:SetAlpha(1) else icon:Show() end
         else
+            if LCG then LCG.AutoCastGlow_Stop(icon) end
             if inCombat then
                 icon:SetAlpha(0)
             else
@@ -1146,7 +1155,7 @@ UpdateDisplay = function()
         local labelBarGap = 2
 
         mainFrame.labelBar.text:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
-        mainFrame.labelBar.text:SetText("Missing Buffs")
+        mainFrame.labelBar.text:SetText("Raid Buffs")
 
         -- Resize frames based on orientation
         local hideLabelBar = settings.hideLabelBar
