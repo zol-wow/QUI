@@ -2395,7 +2395,15 @@ local function UpdateIconCooldown(icon)
                         -- Real CD is definitively over — clear desat now
                         icon.Icon:SetDesaturated(false)
                         icon._cdDesaturated = nil
+                    elseif icon._hasCooldownActive == true then
+                        -- Real CD still active during GCD — ensure desat
+                        -- stays set (don't just preserve, actively enforce).
+                        -- Without this, other code paths (mirror hooks, aura
+                        -- transitions) can briefly clear desat during GCD.
+                        icon.Icon:SetDesaturated(true)
+                        icon._cdDesaturated = true
                     end
+                    -- nil / unknown: preserve current state
                     return
                 end
 
@@ -2436,6 +2444,14 @@ local function UpdateIconCooldown(icon)
                     else
                         hasRealCD = true
                     end
+                end
+
+                -- apiIsActive (non-secret, 12.0.5+) is authoritative.
+                -- DurationObject remaining can be secret/stale after procs
+                -- reset the CD.  When apiIsActive is definitively false,
+                -- the CD is over — override the DurationObject signal.
+                if hasRealCD and icon._hasCooldownActive == false then
+                    hasRealCD = false
                 end
 
                 ChargeDebug(entry.name, "DESAT result: hasRealCD=", hasRealCD,
