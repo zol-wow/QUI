@@ -272,11 +272,13 @@ local function SharedTimerOnUpdate(self, dt)
     for icon, state in pairs(timerIcons) do
         hasAny = true
         if not icon:IsShown() then
-            -- Skip hidden icons entirely — avoids SafeToNumber calls for
-            -- overflow icons that exceed maxDebuffs/maxBuffs limits in raids.
+            -- Skip hidden icons entirely — overflow icons that exceed
+            -- maxDebuffs/maxBuffs limits in raids.
         elseif state.expirationTime then
-            local expTime = SafeToNumber(state.expirationTime, 0)
-            local dur = SafeToNumber(state.duration, 0)
+            -- Values are guaranteed non-secret: UpdateAuraIcon only registers
+            -- icons into timerIcons when duration passes IsSecretValue check.
+            local expTime = state.expirationTime
+            local dur = state.duration or 0
             local remaining = expTime - now
 
             if remaining > 0 then
@@ -580,30 +582,34 @@ local function UpdateAuraIcon(icon, auraData, unit)
     end
 
     -- Duration text + timer registration
-    local safeDur = SafeToNumber(displayData.duration, 0)
-    if safeDur > 0 then
+    -- Skip entirely when values are secret (combat) — the cooldown swipe is
+    -- already driven by DurationObject via C-side; Lua text/pulse would just
+    -- SafeToNumber → 0 and do nothing useful.
+    local dur = displayData.duration
+    local expTime = displayData.expirationTime
+    if not IsSecretValue(dur) and dur and dur > 0 then
         RegisterIconTimer(icon, state)
+
+        -- Expiring pulse: uses per-frame cached setting (set by UpdateFrameAuras)
+        -- to avoid calling GetDB() per icon (was ~120 DB lookups per aura batch)
+        local showPulse = icon._cachedShowPulse
+        if showPulse and not IsSecretValue(expTime) then
+            local remaining = expTime - GetTime()
+            if remaining > 0 and remaining < 5 then
+                if icon.pulseGroup and not icon.pulseGroup:IsPlaying() then
+                    icon.pulseGroup:Play()
+                end
+            else
+                if icon.pulseGroup and icon.pulseGroup:IsPlaying() then
+                    icon.pulseGroup:Stop()
+                end
+            end
+        elseif icon.pulseGroup and icon.pulseGroup:IsPlaying() then
+            icon.pulseGroup:Stop()
+        end
     else
         UnregisterIconTimer(icon)
         if icon.durationText then icon.durationText:SetText("") end
-    end
-
-    -- Expiring pulse: uses per-frame cached setting (set by UpdateFrameAuras)
-    -- to avoid calling GetDB() per icon (was ~120 DB lookups per aura batch)
-    local showPulse = icon._cachedShowPulse
-    if showPulse and safeDur > 0 then
-        local safeExp = SafeToNumber(displayData.expirationTime, 0)
-        local remaining = safeExp - GetTime()
-        if remaining > 0 and remaining < 5 then
-            if icon.pulseGroup and not icon.pulseGroup:IsPlaying() then
-                icon.pulseGroup:Play()
-            end
-        else
-            if icon.pulseGroup and icon.pulseGroup:IsPlaying() then
-                icon.pulseGroup:Stop()
-            end
-        end
-    else
         if icon.pulseGroup and icon.pulseGroup:IsPlaying() then
             icon.pulseGroup:Stop()
         end

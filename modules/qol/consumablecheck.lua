@@ -1202,7 +1202,9 @@ end)
 ---------------------------------------------------------------------------
 
 local function PositionConsumablesFrame()
-    ConsumablesFrame:SetScale(GetConsumableScale())
+    if not InCombatLockdown() then
+        ConsumablesFrame:SetScale(GetConsumableScale())
+    end
     ConsumablesFrame:SetParent(UIParent)
     ConsumablesFrame:SetFrameStrata("DIALOG")
     -- Skip repositioning when layout mode owns the frame (avoids fighting the handle system)
@@ -1257,7 +1259,9 @@ local function ShowConsumablesStandalone()
     HideConsumablePicker()
     InitializeButtons()
     UpdateConsumables()
-    ConsumablesFrame:SetScale(GetConsumableScale())
+    if not InCombatLockdown() then
+        ConsumablesFrame:SetScale(GetConsumableScale())
+    end
     ConsumablesFrame:SetAlpha(1)
     ConsumablesFrame:SetParent(UIParent)
     ConsumablesFrame:SetFrameStrata("DIALOG")

@@ -4426,8 +4426,9 @@ local function OnEvent(self, event, arg1, ...)
                 UpdateTargetMarker(frame)
             else
                 local marker = frame.unit and GetRaidTargetIndex(frame.unit)
-                if marker ~= _state.cachedMarkers[frame.unit] then
-                    _state.cachedMarkers[frame.unit] = marker
+                local safeMarker = Helpers.SafeValue(marker, 0)
+                if safeMarker ~= _state.cachedMarkers[frame.unit] then
+                    _state.cachedMarkers[frame.unit] = safeMarker
                     UpdateTargetMarker(frame)
                 end
             end

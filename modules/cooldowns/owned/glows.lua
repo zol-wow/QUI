@@ -33,7 +33,9 @@ end
 local function IsSpellCastable(icon)
     if not icon or not icon._spellEntry then return false end
     if icon._auraActive then return false end
-    if icon._hasCooldownActive then return false end
+    -- GCD-only cooldowns don't make a spell uncastable — skip the check
+    -- so procOnUsable glow persists through the GCD swipe window.
+    if icon._hasCooldownActive and not icon._isOnGCD then return false end
     local spellID = icon._cachedOverrideID
         or icon._spellEntry.overrideSpellID
         or icon._spellEntry.spellID
