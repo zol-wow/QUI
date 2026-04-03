@@ -98,6 +98,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+
+## v2.55.3 - 2026-03-30
+
+### Fixed
+- fix dungeon portals mapping
+- fix minimap zoom not being persistent
+- fix dungeon eye drift
+## v2.55.2 - 2026-03-27
+
+### Added
+- added support for charged combo points (credits: jopierce)
+- made m+ timer background configurable
+
+### Fixed
+- fixed HousingPhotoSharingFrame tooltip issue
 ## v2.55.1 - 2026-03-26
 
 ### Fixed
