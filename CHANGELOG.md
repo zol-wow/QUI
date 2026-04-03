@@ -4,6 +4,21 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v2.56.0-alpha.10
+
+### CDM (Cooldown Manager)
+- Override spell charge fallback: charge forwarding tries overrideSpellID when base spell returns nil/<=1 maxCharges (covers Holy Bulwark ↔ Sacred Weapon transforms)
+- Hook fallback forwards ChargeCount text when FWD path fails but hook is active (dynamic transform edge case)
+- Aura stacks now read directly from ResolveAuraState, matching bar behavior
+- GCD desaturation fix: clear desaturation immediately when real CD is definitively over during GCD, instead of ~1.5s stale visual delay
+- Override/base spell deduplication prevents duplicate entries in owned list and available spells (e.g., Divine Toll + Holy Bulwark)
+- Auto row assignment in SnapshotBlizzardCDM respects per-row iconCount limits
+- Composer shows override spell name for hero talent transforms (e.g., Divine Toll displays as Holy Bulwark)
+- `QUI_CDM_CHARGE_DEBUG` runtime toggle for charge/stack transform debugging
+
+### Raid Buffs
+- Full combat taint safety: SetAlpha instead of Show/Hide during combat, protected API calls deferred to OOC
+
 ## v2.56.0-alpha.9
 
 ### Party Tracker
