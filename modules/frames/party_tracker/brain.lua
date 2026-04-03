@@ -159,18 +159,23 @@ end
 -- MULTI-CANDIDATE SELECTION (for external defensives)
 ---------------------------------------------------------------------------
 
-local function FindBestCandidate(targetUnit, auraTypes, measuredDuration, detectionTime)
+--- Find the best candidate unit for a detected aura.
+--- castSnapshot: optional table of { [unit] = lastCastTime } frozen at aura appearance.
+--- When provided, cast evidence is built PER-CANDIDATE from the snapshot (not live state).
+--- This prevents unit A's cast from satisfying RequiresEvidence="Cast" on unit B.
+local function FindBestCandidate(targetUnit, auraTypes, measuredDuration, detectionTime, castSnapshot)
     if not Observer then return nil, nil end
 
     local bestRule, bestUnit, bestCastTime = nil, nil, nil
 
-    -- Evaluate target unit first
-    local evidence = Observer.GetEvidence(targetUnit, detectionTime)
+    -- Evaluate target unit first — use per-candidate cast time from snapshot
+    local targetCastOverride = castSnapshot and castSnapshot[targetUnit] or nil
+    local evidence = Observer.GetEvidence(targetUnit, detectionTime, targetCastOverride)
     local rule = MatchRule(targetUnit, auraTypes, measuredDuration, evidence)
     if rule then
         bestRule = rule
         bestUnit = targetUnit
-        local castTime = Observer.GetCastTime(targetUnit)
+        local castTime = targetCastOverride or Observer.GetCastTime(targetUnit)
         if castTime and math_abs(castTime - detectionTime) <= EVIDENCE_TOLERANCE then
             bestCastTime = castTime
         end
@@ -180,10 +185,12 @@ local function FindBestCandidate(targetUnit, auraTypes, measuredDuration, detect
     if auraTypes.ExternalDefensive then
         for watchedUnit in pairs(Observer.GetWatchedUnits()) do
             if watchedUnit ~= targetUnit and UnitExists(watchedUnit) then
-                local candidateEvidence = Observer.GetEvidence(watchedUnit, detectionTime)
+                -- Per-candidate cast evidence from snapshot
+                local candidateCastOverride = castSnapshot and castSnapshot[watchedUnit] or nil
+                local candidateEvidence = Observer.GetEvidence(watchedUnit, detectionTime, candidateCastOverride)
                 local candidateRule = MatchRule(watchedUnit, auraTypes, measuredDuration, candidateEvidence)
                 if candidateRule then
-                    local candidateCast = Observer.GetCastTime(watchedUnit)
+                    local candidateCast = candidateCastOverride or Observer.GetCastTime(watchedUnit)
                     local candidateCastTime = candidateCast and math_abs(candidateCast - detectionTime) <= EVIDENCE_TOLERANCE and candidateCast or nil
 
                     -- Prefer candidate with cast evidence (most recent cast wins)
@@ -194,7 +201,7 @@ local function FindBestCandidate(targetUnit, auraTypes, measuredDuration, detect
                             bestCastTime = candidateCastTime
                         end
                     elseif not bestCastTime and not bestUnit then
-                        -- No cast evidence anywhere — take the non-target candidate
+                        -- No cast evidence anywhere — prefer non-target for externals
                         bestRule = candidateRule
                         bestUnit = watchedUnit
                     end
@@ -262,24 +269,25 @@ end
 -- PUBLIC API — Called by CooldownDisplay when auras change
 ---------------------------------------------------------------------------
 
-function Brain.ProcessAuraDetection(unit, auraTypes, measuredDuration, detectionTime)
+--- Process a removed aura: match against rules using measured duration + evidence.
+--- castSnapshot: optional { [unit] = castTime } frozen at aura appearance for per-candidate evidence.
+function Brain.ProcessAuraDetection(unit, auraTypes, measuredDuration, detectionTime, castSnapshot)
     if not unit or not measuredDuration then return end
 
     local dt = detectionTime or GetTime()
 
-    -- Try immediate match
-    local rule, ruleUnit = FindBestCandidate(unit, auraTypes, measuredDuration, dt)
+    -- Try immediate match with per-candidate cast evidence from snapshot
+    local rule, ruleUnit = FindBestCandidate(unit, auraTypes, measuredDuration, dt, castSnapshot)
 
     if rule and ruleUnit then
         CommitCooldown(ruleUnit, rule, measuredDuration)
     else
         -- Deferred backfill: retry after evidence tolerance window
-        -- (late-arriving UNIT_SPELLCAST_SUCCEEDED)
+        -- (late-arriving UNIT_SPELLCAST_SUCCEEDED — snapshot may be stale, use live)
         C_Timer.After(EVIDENCE_TOLERANCE, function()
             if not UnitExists(unit) then return end
-            local retryRule, retryUnit = FindBestCandidate(unit, auraTypes, measuredDuration, dt)
+            local retryRule, retryUnit = FindBestCandidate(unit, auraTypes, measuredDuration, dt, castSnapshot)
             if retryRule and retryUnit then
-                -- Check we haven't already committed this
                 local unitCDs = activeCooldowns[retryUnit]
                 local cdKey = retryRule.SpellId or string.format("%s_%s_%s",
                     retryRule.BigDefensive and "BD" or (retryRule.ExternalDefensive and "ED" or "IMP"),
@@ -298,10 +306,14 @@ end
 -- Starts cooldown immediately (before buff drops) for responsive UX.
 ---------------------------------------------------------------------------
 
-function Brain.ProcessAuraAppearance(unit, auraTypes)
+--- Immediate detection when a classified aura first appears.
+--- castSnapshot: optional frozen cast times for per-candidate evidence.
+function Brain.ProcessAuraAppearance(unit, auraTypes, castSnapshot)
     if not unit or not auraTypes or not Rules or not Observer then return end
 
-    local evidence = Observer.GetEvidence(unit)
+    -- Use snapshot cast time for this unit if available
+    local castOverride = castSnapshot and castSnapshot[unit] or nil
+    local evidence = Observer.GetEvidence(unit, nil, castOverride)
     if not evidence or not next(evidence) then return end
 
     local unitCooldowns = activeCooldowns[unit] or {}

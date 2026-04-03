@@ -13,6 +13,8 @@ local CreateFrame = CreateFrame
 local UnitExists = UnitExists
 local UnitIsEnemy = UnitIsEnemy
 local UnitClass = UnitClass
+local UnitGUID = UnitGUID
+local UnitIsUnit = UnitIsUnit
 local GetTime = GetTime
 local C_Spell = C_Spell
 local C_Timer = C_Timer
@@ -375,9 +377,40 @@ local CAST_MATCH_WINDOW = 0.15  -- seconds — tight window to reduce false matc
 local pendingInterrupts = {}     -- batched interrupt events
 local processingScheduled = false
 
+-- GUID → party unit map for interruptedBy resolution
+local guidToPartyUnit = {}
+
+local function RefreshGUIDMap()
+    wipe(guidToPartyUnit)
+    local playerGUID = UnitGUID("player")
+    if playerGUID then guidToPartyUnit[playerGUID] = "player" end
+
+    local numGroup = GetNumGroupMembers() or 0
+    if numGroup > 0 then
+        local prefix = IsInRaid() and "raid" or "party"
+        local max = IsInRaid() and numGroup or (numGroup - 1)
+        for i = 1, max do
+            local unit = prefix .. i
+            if UnitExists(unit) then
+                local guid = UnitGUID(unit)
+                if guid then guidToPartyUnit[guid] = unit end
+            end
+        end
+    end
+end
+
+--- Try to resolve interrupter from the interruptedBy GUID parameter.
+--- Returns the party unit token if the GUID maps to a known party member.
+local function ResolveInterrupterByGUID(interruptedBy)
+    if not interruptedBy then return nil end
+    -- interruptedBy may be secret in combat — pcall the GUID lookup
+    local ok, unit = pcall(function() return guidToPartyUnit[interruptedBy] end)
+    if ok and unit then return unit end
+    return nil
+end
+
 local function ProcessPendingInterrupts()
     processingScheduled = false
-    local now = GetTime()
 
     -- Count pending interrupts — if multiple, it's AoE CC not a kick
     local count = 0
@@ -390,22 +423,28 @@ local function ProcessPendingInterrupts()
         return
     end
 
-    -- Single interrupt — find which party member kicked
-    local interruptTime = nil
+    -- Single interrupt — extract data
+    local interruptTime, interruptedBy = nil, nil
     for _, data in pairs(pendingInterrupts) do
         interruptTime = data.time
+        interruptedBy = data.interruptedBy
     end
     wipe(pendingInterrupts)
 
     if not interruptTime then return end
 
-    -- Find the party member who cast closest to the interrupt time
-    local bestUnit, bestDiff = nil, CAST_MATCH_WINDOW
-    for unit, castTime in pairs(recentCasts) do
-        local diff = math.abs(interruptTime - castTime)
-        if diff <= bestDiff then
-            bestUnit = unit
-            bestDiff = diff
+    -- Primary: resolve via interruptedBy GUID (ExwindTools-style)
+    local bestUnit = ResolveInterrupterByGUID(interruptedBy)
+
+    -- Fallback: time-match against recent party casts
+    if not bestUnit then
+        local bestDiff = CAST_MATCH_WINDOW
+        for unit, castTime in pairs(recentCasts) do
+            local diff = math.abs(interruptTime - castTime)
+            if diff <= bestDiff then
+                bestUnit = unit
+                bestDiff = diff
+            end
         end
     end
 
@@ -458,22 +497,26 @@ C_Timer.After(0, function()
 
     -- Watch UNIT_SPELLCAST_INTERRUPTED on ALL units (nameplates, target, focus)
     -- This catches enemy cast interrupts from any visible enemy, not just target.
+    -- Event args: unit, castGUID, spellID, interruptedBy
     local interruptFrame = CreateFrame("Frame")
     interruptFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
-    interruptFrame:SetScript("OnEvent", function(_, _, unit)
+    interruptFrame:SetScript("OnEvent", function(_, _, unit, castGUID, spellID, interruptedBy)
         -- Only process enemy unit interrupts (nameplate, target, focus)
         if not unit then return end
         local prefix = unit:match("^(%a+)")
         if prefix ~= "nameplate" and unit ~= "target" and unit ~= "focus" then return end
 
-        pendingInterrupts[unit] = { time = GetTime() }
+        pendingInterrupts[unit] = { time = GetTime(), interruptedBy = interruptedBy }
         ScheduleInterruptProcessing()
     end)
+
+    RefreshGUIDMap()
 
     registeredFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             OnSpellcastSucceeded(arg1, arg2, arg3)
         else
+            RefreshGUIDMap()
             RegisterPartyUnits()
             KickTimer.RefreshAll()
         end

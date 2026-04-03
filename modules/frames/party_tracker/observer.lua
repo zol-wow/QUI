@@ -20,9 +20,11 @@ ns.PartyTracker_Observer = Observer
 local GetTime = GetTime
 local UnitIsFeignDeath = UnitIsFeignDeath
 local UnitIsEnemy = UnitIsEnemy
+local UnitClass = UnitClass
 local CreateFrame = CreateFrame
 local C_UnitAuras = C_UnitAuras
 local math_abs = math.abs
+local pairs = pairs
 
 local EVIDENCE_TOLERANCE = 0.15
 
@@ -32,6 +34,7 @@ local EVIDENCE_TOLERANCE = 0.15
 local unitState = {}  -- unit → { lastCastTime, lastDebuffTime, lastShieldTime, lastUnitFlagsTime, lastFeignDeathTime, lastFeignState }
 local unitFrames = {} -- unit → event frame
 local watchedUnits = {} -- set of active units
+local unitCanFeign = {} -- unit → bool (lazy class check, only Hunters can feign)
 
 ---------------------------------------------------------------------------
 -- GLOBAL ABSORB FRAME
@@ -68,16 +71,25 @@ local function CreateUnitEventFrame(unit)
             end
 
         elseif event == "UNIT_FLAGS" then
-            -- Detect feign death transitions (Hunter-specific)
-            local isFeignDeath = UnitIsFeignDeath(u)
-            if isFeignDeath and not state.lastFeignState then
-                -- Transition into feign death
-                state.lastFeignDeathTime = GetTime()
-            elseif not isFeignDeath then
-                -- Not feigning — record UnitFlags change
+            -- Only check feign death for Hunters (prevents false matches)
+            local canFeign = unitCanFeign[u]
+            if canFeign == nil then
+                local _, classToken = UnitClass(u)
+                canFeign = classToken == "HUNTER"
+                unitCanFeign[u] = canFeign
+            end
+
+            if canFeign then
+                local isFeignDeath = UnitIsFeignDeath(u)
+                if isFeignDeath and not state.lastFeignState then
+                    state.lastFeignDeathTime = GetTime()
+                elseif not isFeignDeath then
+                    state.lastUnitFlagsTime = GetTime()
+                end
+                state.lastFeignState = isFeignDeath
+            else
                 state.lastUnitFlagsTime = GetTime()
             end
-            state.lastFeignState = isFeignDeath
 
         elseif event == "UNIT_AURA" then
             -- Check for HARMFUL aura additions (debuff evidence)
@@ -126,6 +138,7 @@ function Observer.Unwatch(unit)
     if not unit or not watchedUnits[unit] then return end
 
     watchedUnits[unit] = nil
+    unitCanFeign[unit] = nil
 
     local frame = unitFrames[unit]
     if frame then
@@ -136,14 +149,18 @@ function Observer.Unwatch(unit)
     unitState[unit] = nil
 end
 
-function Observer.GetEvidence(unit, detectionTime)
+--- Build evidence set for a unit at a given detection time.
+--- @param castTimeOverride number? If provided, use this instead of live lastCastTime (for per-candidate snapshot-based evidence).
+function Observer.GetEvidence(unit, detectionTime, castTimeOverride)
     local state = unitState[unit]
     if not state then return {} end
 
     local evidence = {}
     local t = detectionTime or GetTime()
 
-    if state.lastCastTime and math_abs(state.lastCastTime - t) <= EVIDENCE_TOLERANCE then
+    -- Cast evidence: use override from snapshot if provided, else live state
+    local castTime = castTimeOverride or state.lastCastTime
+    if castTime and math_abs(castTime - t) <= EVIDENCE_TOLERANCE then
         evidence.Cast = true
     end
     if state.lastDebuffTime and math_abs(state.lastDebuffTime - t) <= EVIDENCE_TOLERANCE then
@@ -166,6 +183,19 @@ end
 function Observer.GetCastTime(unit)
     local state = unitState[unit]
     return state and state.lastCastTime
+end
+
+--- Snapshot ALL watched units' lastCastTime at this moment.
+--- Used to freeze cast state when an aura first appears, so later
+--- evaluation uses the snapshot rather than potentially-shifted live state.
+function Observer.SnapshotCastTimes()
+    local snapshot = {}
+    for unit, state in pairs(unitState) do
+        if state.lastCastTime then
+            snapshot[unit] = state.lastCastTime
+        end
+    end
+    return snapshot
 end
 
 function Observer.GetWatchedUnits()
@@ -191,4 +221,5 @@ function Observer.ClearAll()
     wipe(unitState)
     wipe(unitFrames)
     wipe(watchedUnits)
+    wipe(unitCanFeign)
 end

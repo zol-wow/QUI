@@ -518,7 +518,15 @@ end
 -- These are C-side functions that handle secret values natively.
 ---------------------------------------------------------------------------
 
-local trackedAuras = {}  -- unit → { [instanceID] = { types = {}, startTime = number } }
+local trackedAuras = {}  -- unit → { [instanceID] = { types, startTime, castSnapshot } }
+local pendingReconciliation = {}  -- unit → { [signature] = { tracked1, tracked2, ... } }
+
+local function AuraTypesSignature(types)
+    if types.BigDefensive then return "BD" end
+    if types.ExternalDefensive then return "ED" end
+    if types.Important then return "IMP" end
+    return "UNK"
+end
 
 local function ClassifyAura(unit, instanceID)
     -- Priority: BIG_DEFENSIVE > EXTERNAL_DEFENSIVE > IMPORTANT
@@ -695,14 +703,30 @@ C_Timer.After(0, function()
     ns.AuraEvents:Subscribe("group", function(unit, updateInfo)
         if not updateInfo then return end
         Brain = Brain or ns.PartyTracker_Brain
+        Observer = Observer or ns.PartyTracker_Observer
 
-        -- Full update: clear tracked auras (instance IDs reassigned)
+        -- Full update: move tracked auras to pending reconciliation by signature.
+        -- Subsequent addedAuras will carry new instance IDs that we match by signature
+        -- to recover startTime/castSnapshot (prevents losing in-progress tracking).
         if updateInfo.isFullUpdate then
+            if trackedAuras[unit] and next(trackedAuras[unit]) then
+                local pending = {}
+                for _, tracked in pairs(trackedAuras[unit]) do
+                    local sig = AuraTypesSignature(tracked.types)
+                    if not pending[sig] then pending[sig] = {} end
+                    pending[sig][#pending[sig] + 1] = tracked
+                end
+                pendingReconciliation[unit] = pending
+                -- Timeout: discard unreconciled after 0.5s
+                C_Timer.After(0.5, function()
+                    pendingReconciliation[unit] = nil
+                end)
+            end
             trackedAuras[unit] = nil
-            return
+            -- Don't return — full update may include addedAuras in same event
         end
 
-        -- New auras: classify and track
+        -- New auras: classify, reconcile or track fresh, snapshot cast times
         if updateInfo.addedAuras then
             for _, auraData in ipairs(updateInfo.addedAuras) do
                 local instanceID = auraData.auraInstanceID
@@ -710,21 +734,43 @@ C_Timer.After(0, function()
                     local auraTypes = ClassifyAura(unit, instanceID)
                     if auraTypes then
                         if not trackedAuras[unit] then trackedAuras[unit] = {} end
+
+                        -- Try to reconcile from pending (full update recovery)
+                        local startTime = GetTime()
+                        local castSnapshot = nil
+                        local reconciled = false
+                        local pending = pendingReconciliation[unit]
+                        if pending then
+                            local sig = AuraTypesSignature(auraTypes)
+                            if pending[sig] and #pending[sig] > 0 then
+                                local old = table.remove(pending[sig], 1)
+                                startTime = old.startTime
+                                castSnapshot = old.castSnapshot
+                                reconciled = true
+                            end
+                        end
+
+                        -- Snapshot cast times at aura appearance (frozen state for later evaluation)
+                        if not castSnapshot and Observer then
+                            castSnapshot = Observer.SnapshotCastTimes()
+                        end
+
                         trackedAuras[unit][instanceID] = {
                             types = auraTypes,
-                            startTime = GetTime(),
+                            startTime = startTime,
+                            castSnapshot = castSnapshot,
                         }
 
-                        -- Immediate detection: try Brain match without duration
-                        if Brain then
-                            Brain.ProcessAuraAppearance(unit, auraTypes)
+                        -- Immediate detection (skip for reconciled — already detected)
+                        if not reconciled and Brain then
+                            Brain.ProcessAuraAppearance(unit, auraTypes, castSnapshot)
                         end
                     end
                 end
             end
         end
 
-        -- Removed auras: measure duration, feed to Brain for refined match
+        -- Removed auras: measure duration, feed to Brain with cast snapshot
         if updateInfo.removedAuraInstanceIDs and trackedAuras[unit] then
             for _, instanceID in ipairs(updateInfo.removedAuraInstanceIDs) do
                 local tracked = trackedAuras[unit][instanceID]
@@ -732,9 +778,8 @@ C_Timer.After(0, function()
                     local measuredDuration = GetTime() - tracked.startTime
                     trackedAuras[unit][instanceID] = nil
 
-                    -- Brain matches rule by type + duration + evidence → commits cooldown
                     if Brain then
-                        Brain.ProcessAuraDetection(unit, tracked.types, measuredDuration, tracked.startTime)
+                        Brain.ProcessAuraDetection(unit, tracked.types, measuredDuration, tracked.startTime, tracked.castSnapshot)
                     end
                 end
             end
