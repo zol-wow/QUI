@@ -1623,6 +1623,14 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
                             if sid and not seenIDs[sid] then
                                 seenIDs[sid] = true
                                 owned[#owned + 1] = { type = "spell", id = sid, _layoutIndex = viewerCDIDs[cdID] or 9999 }
+                                -- Also mark the base spellID so the fallback merge
+                                -- (which uses entry.spellID) doesn't re-add the base
+                                -- when the override was already added (e.g., Divine
+                                -- Toll base when Holy Bulwark override is active).
+                                local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
+                                if baseSid and baseSid ~= sid then
+                                    seenIDs[baseSid] = true
+                                end
                             end
                         end
                     end
@@ -1664,6 +1672,35 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
     for _, entry in ipairs(owned) do
         entry._layoutIndex = nil
     end
+
+    -- Auto-assign row fields to respect per-row iconCount limits.
+    -- Without this, all entries land on row 1 and overflow the max.
+    if db.row1 or db.row2 or db.row3 then
+        local activeRows = {}
+        for r = 1, 3 do
+            local rd = db["row" .. r]
+            if rd and rd.iconCount and rd.iconCount > 0 then
+                activeRows[#activeRows + 1] = { rowNum = r, capacity = rd.iconCount }
+            end
+        end
+        if #activeRows > 0 then
+            local rowIdx = 1
+            local placed = 0
+            for _, entry in ipairs(owned) do
+                if rowIdx <= #activeRows then
+                    entry.row = activeRows[rowIdx].rowNum
+                    placed = placed + 1
+                    if placed >= activeRows[rowIdx].capacity then
+                        rowIdx = rowIdx + 1
+                        placed = 0
+                    end
+                end
+                -- Entries beyond all rows' capacity: no row assignment,
+                -- they'll overflow into the last row visually.
+            end
+        end
+    end
+
     db.ownedSpells = owned
     local ncdm = GetNcdmDB()
     if ncdm then
@@ -2533,23 +2570,42 @@ function CDMSpellData:GetAvailableSpells(containerKey)
                         end
                         if sid and not seen[sid] then
                             seen[sid] = true
+                            -- Also mark the base spellID as seen so override/base
+                            -- pairs don't both appear (e.g., Divine Toll + Holy Bulwark).
+                            local baseSid2 = Helpers.SafeValue(cdInfo.spellID, nil)
+                            if baseSid2 and baseSid2 ~= sid then
+                                seen[baseSid2] = true
+                            end
 
                             if not ownedSet[sid] then
-                                local name, icon
-                                if C_Spell and C_Spell.GetSpellInfo then
-                                    local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
-                                    if okI and spellInfo then
-                                        name = spellInfo.name
-                                        icon = spellInfo.iconID
+                                -- Skip spells whose current override is already owned
+                                -- (e.g., Divine Toll base when Holy Bulwark override
+                                -- is already in the owned list).
+                                local overrideOwned = false
+                                if C_Spell and C_Spell.GetOverrideSpell then
+                                    local okOv, ovSid = pcall(C_Spell.GetOverrideSpell, sid)
+                                    if okOv and ovSid and ovSid ~= sid and ownedSet[ovSid] then
+                                        overrideOwned = true
                                     end
                                 end
 
-                                available[#available + 1] = {
-                                    spellID = sid,
-                                    name = name or "",
-                                    icon = icon or 0,
-                                    isKnown = cdInfo.isKnown,
-                                }
+                                if not overrideOwned then
+                                    local name, icon
+                                    if C_Spell and C_Spell.GetSpellInfo then
+                                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                                        if okI and spellInfo then
+                                            name = spellInfo.name
+                                            icon = spellInfo.iconID
+                                        end
+                                    end
+
+                                    available[#available + 1] = {
+                                        spellID = sid,
+                                        name = name or "",
+                                        icon = icon or 0,
+                                        isKnown = cdInfo.isKnown,
+                                    }
+                                end
                             end
                         end
                     end

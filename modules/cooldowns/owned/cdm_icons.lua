@@ -125,7 +125,8 @@ local function ChargeDebug(spellName, ...)
     if type(filter) == "string" and spellName and not spellName:find(filter) then return end
     -- Throttle tick-based messages to 1 per second per spell+tag combo
     local tag = select(1, ...) or ""
-    if tag == "FWD path:" or tag == "SKIP API path:" or tag == "API path:" or tag == "FWD path CLEAR:" then
+    if tag == "FWD path:" or tag == "SKIP API path:" or tag == "API path:" or tag == "FWD path CLEAR:"
+        or tag == "DESAT GCD bail:" or tag == "DESAT charged check:" or tag == "DESAT result:" then
         local key = (spellName or "") .. tag
         local now = GetTime()
         if _chargeDebugThrottle[key] and now - _chargeDebugThrottle[key] < 1 then return end
@@ -2379,15 +2380,22 @@ local function UpdateIconCooldown(icon)
                 shouldDesaturate = false
             end
             if shouldDesaturate then
-                -- GCD-only cooldowns should never desaturate, but preserve
-                -- existing desaturation when a real CD expires mid-GCD.
-                -- _isOnGCD is NeverSecret (always readable in combat),
-                -- refreshed per-tick from C_Spell.GetSpellCooldown.
+                -- GCD-only cooldowns should never desaturate.
+                -- When on GCD AND we know the real CD is over
+                -- (_hasCooldownActive == false, set from the non-secret
+                -- isActive field), clear desaturation immediately instead
+                -- of waiting for the GCD to end (~1.5s visible delay).
+                -- Only preserve existing desaturation during GCD when the
+                -- real CD state is unknown (nil / not yet set).
                 if icon._isOnGCD then
-                    -- Keep whatever desat state exists — clearing it here
-                    -- causes a brief usability flash when a real CD expires
-                    -- during the GCD window.  After GCD ends, the normal
-                    -- desat logic below will clear it if no real CD remains.
+                    ChargeDebug(entry.name, "DESAT GCD bail: _hasCooldownActive=",
+                        icon._hasCooldownActive, "_cdDesaturated=", icon._cdDesaturated,
+                        "hasCharges=", entry.hasCharges)
+                    if icon._hasCooldownActive == false then
+                        -- Real CD is definitively over — clear desat now
+                        icon.Icon:SetDesaturated(false)
+                        icon._cdDesaturated = nil
+                    end
                     return
                 end
 
@@ -2419,10 +2427,23 @@ local function UpdateIconCooldown(icon)
                         if _dsCdInfo and _dsCdInfo.isActive == true then
                             hasRealCD = true
                         end
+                        ChargeDebug(entry.name, "DESAT charged check: _dsSpellID=", _dsSpellID,
+                            "_dsCdInfo=", _dsCdInfo and "exists" or "nil",
+                            "cdInfo.isActive=", _dsCdInfo and _dsCdInfo.isActive,
+                            "_hasCooldownActive=", icon._hasCooldownActive,
+                            "hasRealCD=", hasRealCD,
+                            "hasCharges=", entry.hasCharges)
                     else
                         hasRealCD = true
                     end
                 end
+
+                ChargeDebug(entry.name, "DESAT result: hasRealCD=", hasRealCD,
+                    "durObj=", durObj and "exists" or "nil",
+                    "_hasCooldownActive=", icon._hasCooldownActive,
+                    "hasCharges=", entry.hasCharges,
+                    "_isOnGCD=", icon._isOnGCD,
+                    "viewerType=", entry.viewerType)
 
                 if hasRealCD then
                     icon.Icon:SetDesaturated(true)
