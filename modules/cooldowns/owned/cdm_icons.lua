@@ -126,7 +126,8 @@ local function ChargeDebug(spellName, ...)
     -- Throttle tick-based messages to 1 per second per spell+tag combo
     local tag = select(1, ...) or ""
     if tag == "FWD path:" or tag == "SKIP API path:" or tag == "API path:" or tag == "FWD path CLEAR:"
-        or tag == "DESAT GCD bail:" or tag == "DESAT charged check:" or tag == "DESAT result:" then
+        or tag == "DESAT GCD bail:" or tag == "DESAT charged check:" or tag == "DESAT result:"
+        or tag == "MIRROR hook:" then
         local key = (spellName or "") .. tag
         local now = GetTime()
         if _chargeDebugThrottle[key] and now - _chargeDebugThrottle[key] < 1 then return end
@@ -722,12 +723,21 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 local tSkipCharge = tEntry and tEntry.hasCharges
                 local tSkipAura = targetIcon._auraActive
 
-                if not tSkipCharge and not tSkipAura and cd and cd.SetCooldownFromDurationObject then
+                -- Suppress mirror forwarding when the tick has determined
+                -- the CD is over (apiIsActive=false).  Without this, Blizzard's
+                -- viewer child can fire stale DurationObjects after our Clear(),
+                -- re-applying the swipe and causing a visual delay on procs/resets.
+                local tSkipInactive = (targetIcon._hasCooldownActive == false)
+
+                if not tSkipCharge and not tSkipAura and not tSkipInactive and cd and cd.SetCooldownFromDurationObject then
                     pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
                     -- Track that this hook successfully forwarded a DurationObject
                     -- so the API path can skip competing CooldownFrame writes.
                     targetIcon._durObjHookSync = GetTime()
                 end
+                ChargeDebug(tEntry and tEntry.name, "MIRROR hook: tSkipCharge=", tSkipCharge,
+                    "tSkipAura=", tSkipAura, "tSkipInactive=", tSkipInactive,
+                    "_hasCooldownActive=", targetIcon._hasCooldownActive)
 
                 if not tSkipCharge and not tSkipAura then
                     SyncMirroredCooldownState(targetIcon, self, true)
