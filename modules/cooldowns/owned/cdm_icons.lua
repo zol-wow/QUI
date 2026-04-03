@@ -2398,22 +2398,17 @@ local function UpdateIconCooldown(icon)
                 -- Only preserve existing desaturation during GCD when the
                 -- real CD state is unknown (nil / not yet set).
                 if icon._isOnGCD then
+                    -- isOnGCD == true means the GCD is the dominant cooldown —
+                    -- there is no longer real cooldown underneath.  Always clear
+                    -- desaturation.  (_hasCooldownActive is unreliable here
+                    -- because cdInfo.isActive returns true for GCD itself.)
                     ChargeDebug(entry.name, "DESAT GCD bail: _hasCooldownActive=",
                         icon._hasCooldownActive, "_cdDesaturated=", icon._cdDesaturated,
                         "hasCharges=", entry.hasCharges)
-                    if icon._hasCooldownActive == false then
-                        -- Real CD is definitively over — clear desat now
+                    if icon._cdDesaturated then
                         icon.Icon:SetDesaturated(false)
                         icon._cdDesaturated = nil
-                    elseif icon._hasCooldownActive == true then
-                        -- Real CD still active during GCD — ensure desat
-                        -- stays set (don't just preserve, actively enforce).
-                        -- Without this, other code paths (mirror hooks, aura
-                        -- transitions) can briefly clear desat during GCD.
-                        icon.Icon:SetDesaturated(true)
-                        icon._cdDesaturated = true
                     end
-                    -- nil / unknown: preserve current state
                     return
                 end
 
