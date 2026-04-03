@@ -106,6 +106,15 @@ local RAID_BUFFS = {
         providerClass = "SHAMAN",
         range = 100,
     },
+    {
+        spellId = 465,
+        buffIDs = { 465 },
+        castSpellId = 465,
+        name = "Devotion Aura",
+        stat = "Damage Reduction",
+        providerClass = "PALADIN",
+        range = 40,
+    },
 }
 
 -- Self-buff configuration (class-specific maintenance buffs)
