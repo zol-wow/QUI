@@ -467,6 +467,14 @@ local function BuildGeneralTab(tabContent)
 
             sy = P(GUI:CreateFormCheckbox(body, "Enable Consumable Check", "consumableCheckEnabled", generalDB), body, sy)
 
+            sy = P(GUI:CreateFormCheckbox(body, "Always Show (Persistent Mode)", "consumablePersistent", generalDB, function()
+                if generalDB.consumablePersistent then
+                    if _G.QUI_ShowConsumables then _G.QUI_ShowConsumables() end
+                else
+                    if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end
+                end
+            end), body, sy)
+
             -- Triggers sub-header
             local triggersLabel = GUI:CreateLabel(body, "Triggers", 12, C.accent)
             triggersLabel:SetPoint("TOPLEFT", 0, sy)

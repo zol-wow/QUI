@@ -18,6 +18,9 @@ local GetTime = GetTime
 local UnitExists = UnitExists
 local C_Timer = C_Timer
 local InCombatLockdown = InCombatLockdown
+local IsPlayerSpell = IsPlayerSpell
+local GetWeaponEnchantInfo = GetWeaponEnchantInfo
+local GetInventoryItemID = GetInventoryItemID
 local table_insert = table.insert
 local string_format = string.format
 
@@ -40,15 +43,18 @@ local UPDATE_THROTTLE = 0.5
 local MAX_AURA_INDEX = 40  -- WoW maximum buff slots
 
 -- Raid buffs configuration
--- spellId: Primary spell ID for icon lookup (can be single ID or table of IDs)
+-- spellId: Primary spell ID for icon lookup and detection
+-- buffIDs: All aura spell IDs to check (variant detection for talent/expansion differences)
+-- castSpellId: The ability spell ID to cast (may differ from buff aura ID)
 -- name: Buff name for fallback detection (catches talent variants)
 -- stat: What the buff provides (for tooltip)
 -- providerClass: Which class provides this buff
 -- range: Range in yards for checking if provider/target is reachable
--- NOTE: Name-based fallback catches talent-modified buffs with different spell IDs
 local RAID_BUFFS = {
     {
         spellId = 21562,
+        buffIDs = { 21562 },
+        castSpellId = 21562,
         name = "Power Word: Fortitude",
         stat = "Stamina",
         providerClass = "PRIEST",
@@ -56,6 +62,8 @@ local RAID_BUFFS = {
     },
     {
         spellId = 6673,
+        buffIDs = { 6673 },
+        castSpellId = 6673,
         name = "Battle Shout",
         stat = "Attack Power",
         providerClass = "WARRIOR",
@@ -63,6 +71,8 @@ local RAID_BUFFS = {
     },
     {
         spellId = 1459,
+        buffIDs = { 1459, 432778 },
+        castSpellId = 1459,
         name = "Arcane Intellect",
         stat = "Intellect",
         providerClass = "MAGE",
@@ -70,6 +80,8 @@ local RAID_BUFFS = {
     },
     {
         spellId = 1126,
+        buffIDs = { 1126, 432661 },
+        castSpellId = 1126,
         name = "Mark of the Wild",
         stat = "Versatility",
         providerClass = "DRUID",
@@ -78,6 +90,8 @@ local RAID_BUFFS = {
     {
         -- 381748 is the buff that appears on players, 364342 is the ability
         spellId = 381748,
+        buffIDs = { 381748 },
+        castSpellId = 364342,
         name = "Blessing of the Bronze",
         stat = "Movement Speed",
         providerClass = "EVOKER",
@@ -85,10 +99,82 @@ local RAID_BUFFS = {
     },
     {
         spellId = 462854,
+        buffIDs = { 462854 },
+        castSpellId = 462854,
         name = "Skyfury",
         stat = "Mastery",
         providerClass = "SHAMAN",
         range = 100,
+    },
+}
+
+-- Self-buff configuration (class-specific maintenance buffs)
+-- checkType: "playerAura" checks player buff IDs, "weaponEnchant" checks GetWeaponEnchantInfo
+-- anyBuffIDs: set of aura spell IDs — any match means buff is present (playerAura)
+-- anyEnchantIDs: set of weapon enchant IDs — any match means enchant is present (weaponEnchant)
+-- castPriority: ordered list of spell IDs to try casting (first known wins)
+-- requiresShield: only check if shield equipped in OH slot
+local SELF_BUFFS = {
+    -- Shaman: Main hand weapon enchant
+    {
+        name = "Weapon Enchant",
+        stat = "Main Hand",
+        providerClass = "SHAMAN",
+        selfBuff = true,
+        checkType = "weaponEnchant",
+        anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
+        castPriority = { 318038, 33757, 382021 },  -- Flametongue, Windfury, Earthliving
+    },
+    -- Shaman: Shield enchant (requires shield equipped)
+    {
+        name = "Shield Enchant",
+        stat = "Off Hand",
+        providerClass = "SHAMAN",
+        selfBuff = true,
+        checkType = "weaponEnchant",
+        requiresShield = true,
+        anyEnchantIDs = { [7587] = true, [7528] = true },
+        castPriority = { 462757, 457481 },  -- Thunderstrike Ward, Tidecaller's Guard
+    },
+    -- Shaman: Lightning/Water Shield
+    {
+        name = "Shield",
+        stat = "Self-Buff",
+        providerClass = "SHAMAN",
+        selfBuff = true,
+        checkType = "playerAura",
+        anyBuffIDs = { [192106] = true, [52127] = true },
+        castPriority = { 192106, 52127 },  -- Lightning Shield, Water Shield
+    },
+    -- Paladin: Weapon rite
+    {
+        name = "Weapon Rite",
+        stat = "Main Hand",
+        providerClass = "PALADIN",
+        selfBuff = true,
+        checkType = "weaponEnchant",
+        anyEnchantIDs = { [7143] = true, [7144] = true },
+        castPriority = { 433568, 433583 },  -- Rite of Sanctification, Rite of Adjuration
+    },
+    -- Rogue: Lethal poison
+    {
+        name = "Lethal Poison",
+        stat = "Lethal",
+        providerClass = "ROGUE",
+        selfBuff = true,
+        checkType = "playerAura",
+        anyBuffIDs = { [2823] = true, [315584] = true, [8679] = true, [381664] = true },
+        castPriority = { 2823, 315584, 8679, 381664 },  -- Deadly, Instant, Wound, Amplifying
+    },
+    -- Rogue: Non-lethal poison
+    {
+        name = "Non-Lethal Poison",
+        stat = "Non-Lethal",
+        providerClass = "ROGUE",
+        selfBuff = true,
+        checkType = "playerAura",
+        anyBuffIDs = { [3408] = true, [5761] = true, [381637] = true },
+        castPriority = { 3408, 5761, 381637 },  -- Crippling, Numbing, Atrophic
     },
 }
 
@@ -272,19 +358,25 @@ end
 
 -- Check if a unit has a buff by spell ID, with name-based fallback.
 -- Uses point queries first (O(1)), falls back to iteration only as last resort.
-local function UnitHasBuff(unit, spellId, spellName)
+-- buffIDs: optional table of variant spell IDs to check (e.g., {1459, 432778} for Arcane Intellect)
+local function UnitHasBuff(unit, spellId, spellName, buffIDs)
     if not unit then return false end
     local exists = SafeBooleanCheck(UnitExists(unit))
     if not exists then return false end
 
     -- Method 1: Point query by spell ID (O(1) engine lookup)
-    if spellId and C_UnitAuras then
-        if unit == "player" and C_UnitAuras.GetPlayerAuraBySpellID then
-            local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellId)
-            if ok and auraData then return true end
-        elseif C_UnitAuras.GetAuraDataBySpellName and spellName then
-            local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
-            if ok and auraData then return true end
+    if C_UnitAuras then
+        local idsToCheck = buffIDs or (spellId and { spellId })
+        if idsToCheck then
+            if unit == "player" and C_UnitAuras.GetPlayerAuraBySpellID then
+                for _, id in ipairs(idsToCheck) do
+                    local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
+                    if ok and auraData then return true end
+                end
+            elseif C_UnitAuras.GetAuraDataBySpellName and spellName then
+                local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
+                if ok and auraData then return true end
+            end
         end
     end
 
@@ -296,14 +388,24 @@ local function UnitHasBuff(unit, spellId, spellName)
 
     -- Method 3: ForEachAura iteration (last resort — handles talent variants, spell ID mismatches)
     if AuraUtil and AuraUtil.ForEachAura then
+        local idSet
+        if buffIDs then
+            idSet = {}
+            for _, id in ipairs(buffIDs) do idSet[id] = true end
+        end
         local found = false
         AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(auraData)
             if auraData then
                 local auraSpellId = SafeGetAuraField(auraData, "spellId")
                 local auraName = SafeGetAuraField(auraData, "name")
-                if auraSpellId and auraSpellId == spellId then
-                    found = true
-                elseif spellName and auraName and auraName == spellName then
+                if auraSpellId then
+                    if idSet and idSet[auraSpellId] then
+                        found = true
+                    elseif auraSpellId == spellId then
+                        found = true
+                    end
+                end
+                if not found and spellName and auraName and auraName == spellName then
                     found = true
                 end
             end
@@ -316,14 +418,14 @@ local function UnitHasBuff(unit, spellId, spellName)
 end
 
 -- Check if player has a buff (convenience wrapper)
-local function PlayerHasBuff(spellId, spellName)
-    return UnitHasBuff("player", spellId, spellName)
+local function PlayerHasBuff(spellId, spellName, buffIDs)
+    return UnitHasBuff("player", spellId, spellName, buffIDs)
 end
 
 -- Check if any available group member is missing a specific buff
-local function AnyGroupMemberMissingBuff(spellId, spellName, rangeYards)
+local function AnyGroupMemberMissingBuff(spellId, spellName, rangeYards, buffIDs)
     -- Check player first
-    if not PlayerHasBuff(spellId, spellName) then
+    if not PlayerHasBuff(spellId, spellName, buffIDs) then
         return true
     end
 
@@ -333,7 +435,7 @@ local function AnyGroupMemberMissingBuff(spellId, spellName, rangeYards)
             local unit = "raid" .. i
             local isPlayer = UnitIsUnit(unit, "player")
             if IsUnitAvailable(unit, rangeYards) and not IsSecretValue(isPlayer) and not isPlayer then
-                if not UnitHasBuff(unit, spellId, spellName) then
+                if not UnitHasBuff(unit, spellId, spellName, buffIDs) then
                     return true
                 end
             end
@@ -342,7 +444,7 @@ local function AnyGroupMemberMissingBuff(spellId, spellName, rangeYards)
         for i = 1, GetNumGroupMembers() - 1 do
             local unit = "party" .. i
             if IsUnitAvailable(unit, rangeYards) then
-                if not UnitHasBuff(unit, spellId, spellName) then
+                if not UnitHasBuff(unit, spellId, spellName, buffIDs) then
                     return true
                 end
             end
@@ -353,13 +455,13 @@ local function AnyGroupMemberMissingBuff(spellId, spellName, rangeYards)
 end
 
 -- Count how many group members have a specific buff and total group size
-local function CountBuffedMembers(spellId, spellName)
+local function CountBuffedMembers(spellId, spellName, buffIDs)
     local buffed = 0
     local total = 0
 
     -- Check player
     total = total + 1
-    if PlayerHasBuff(spellId, spellName) then
+    if PlayerHasBuff(spellId, spellName, buffIDs) then
         buffed = buffed + 1
     end
 
@@ -373,7 +475,7 @@ local function CountBuffedMembers(spellId, spellName)
                 local connected = SafeBooleanCheck(UnitIsConnected(unit))
                 if exists and connected then
                     total = total + 1
-                    if UnitHasBuff(unit, spellId, spellName) then
+                    if UnitHasBuff(unit, spellId, spellName, buffIDs) then
                         buffed = buffed + 1
                     end
                 end
@@ -388,7 +490,7 @@ local function CountBuffedMembers(spellId, spellName)
             local connected = SafeBooleanCheck(UnitIsConnected(unit))
             if exists and connected then
                 total = total + 1
-                if UnitHasBuff(unit, spellId, spellName) then
+                if UnitHasBuff(unit, spellId, spellName, buffIDs) then
                     buffed = buffed + 1
                 end
             end
@@ -401,6 +503,66 @@ end
 -- Get player's class
 local function GetPlayerClass()
     return SafeUnitClass("player")
+end
+
+-- Check if the player can cast a specific raid buff (correct class + knows the spell)
+local function PlayerCanCastBuff(buff)
+    if not buff.castSpellId then return false end
+    local playerClass = GetPlayerClass()
+    if buff.providerClass ~= playerClass then return false end
+    if IsPlayerSpell then
+        return IsPlayerSpell(buff.castSpellId)
+    end
+    return false
+end
+
+-- Check if a self-buff requirement is satisfied
+local function PlayerHasSelfBuff(entry)
+    if entry.checkType == "playerAura" then
+        if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+            for id in pairs(entry.anyBuffIDs) do
+                local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
+                if ok and aura then return true end
+            end
+        end
+        return false
+    elseif entry.checkType == "weaponEnchant" then
+        local hasMH, _, _, mhID, hasOH, _, _, ohID = GetWeaponEnchantInfo()
+        if entry.requiresShield then
+            local ohItemID = GetInventoryItemID("player", 17)
+            if not ohItemID then return true end  -- No OH item = skip this check
+            local _, _, _, _, _, _, itemSubClass = C_Item.GetItemInfoInstant(ohItemID)
+            if itemSubClass ~= 6 then return true end  -- Not a shield = skip
+            return hasOH and entry.anyEnchantIDs[ohID] or false
+        end
+        return hasMH and entry.anyEnchantIDs[mhID] or false
+    end
+    return true  -- Unknown check type = assume satisfied
+end
+
+-- Resolve which spell to cast for a self-buff (first known spell from priority list)
+local function ResolveSelfBuffCast(entry)
+    if not entry.castPriority then return nil, nil end
+    for _, id in ipairs(entry.castPriority) do
+        if IsPlayerSpell and IsPlayerSpell(id) then
+            local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)
+            if spellName then return spellName, id end
+        end
+    end
+    return nil, nil
+end
+
+-- Get icon for a self-buff (icon of the first known spell)
+local function GetSelfBuffIcon(entry)
+    if entry._resolvedSpellId then
+        return GetBuffIcon(entry._resolvedSpellId)
+    end
+    for _, id in ipairs(entry.castPriority) do
+        if IsPlayerSpell and IsPlayerSpell(id) then
+            return GetBuffIcon(id)
+        end
+    end
+    return GetBuffIcon(entry.castPriority[1])
 end
 
 -- Check if any unit of a given class is in range (for receiving buffs from them)
@@ -437,16 +599,6 @@ local function GetMissingBuffs()
         return previewBuffs
     end
 
-    -- Check if we should only show in group
-    if settings.showOnlyInGroup and not IsInGroup() then
-        return missing
-    end
-
-    -- Check if we should only show in instance
-    if settings.showOnlyInInstance and not ns.Utils.IsInInstancedContent() then
-        return missing
-    end
-
     -- Only show out of combat (always enforced)
     if InCombatLockdown() then
         return missing
@@ -457,27 +609,48 @@ local function GetMissingBuffs()
         return missing
     end
 
-    -- Scan group composition
-    ScanGroupClasses()
-
     local playerClass = GetPlayerClass()
 
-    -- Check each raid buff
-    for _, buff in ipairs(RAID_BUFFS) do
-        local buffRange = buff.range or 40
+    -- Raid buffs: subject to group/instance filters
+    local showRaidBuffs = true
+    if settings.showOnlyInGroup and not IsInGroup() then
+        showRaidBuffs = false
+    end
+    if settings.showOnlyInInstance and not ns.Utils.IsInInstancedContent() then
+        showRaidBuffs = false
+    end
 
-        if settings.providerMode then
-            -- Provider mode: ONLY show buffs YOU can provide that anyone (including yourself) is missing
-            if buff.providerClass == playerClass then
-                if not PlayerHasBuff(buff.spellId, buff.name) or AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange) then
-                    table_insert(missing, buff)
+    if showRaidBuffs then
+        ScanGroupClasses()
+
+        for _, buff in ipairs(RAID_BUFFS) do
+            local buffRange = buff.range or 40
+
+            if settings.providerMode then
+                if buff.providerClass == playerClass then
+                    if not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) or AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange, buff.buffIDs) then
+                        table_insert(missing, buff)
+                    end
+                end
+            else
+                if groupClasses[buff.providerClass] and not PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs) then
+                    if IsProviderClassInRange(buff.providerClass, buffRange) then
+                        table_insert(missing, buff)
+                    end
                 end
             end
-        else
-            -- Normal mode: show buffs YOU are missing when provider is in group AND in range
-            if groupClasses[buff.providerClass] and not PlayerHasBuff(buff.spellId, buff.name) then
-                if IsProviderClassInRange(buff.providerClass, buffRange) then
-                    table_insert(missing, buff)
+        end
+    end
+
+    -- Self-buffs: bypass group/instance filters (they matter solo)
+    if settings.showSelfBuffs ~= false then
+        for _, selfBuff in ipairs(SELF_BUFFS) do
+            if selfBuff.providerClass == playerClass then
+                local spellName, resolvedSpellId = ResolveSelfBuffCast(selfBuff)
+                if spellName and not PlayerHasSelfBuff(selfBuff) then
+                    selfBuff._resolvedSpellName = spellName
+                    selfBuff._resolvedSpellId = resolvedSpellId
+                    table_insert(missing, selfBuff)
                 end
             end
         end
@@ -491,7 +664,7 @@ end
 ---------------------------------------------------------------------------
 
 local function CreateBuffIcon(parent, index)
-    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    local button = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     button:SetSize(ICON_SIZE, ICON_SIZE)
 
     -- Background/border using backdrop (border settings applied in ApplyIconBorderSettings)
@@ -517,22 +690,36 @@ local function CreateBuffIcon(parent, index)
     button.countText:SetTextColor(1, 1, 1, 1)
     button.countText:Hide()
 
-    -- Tooltip
-    button:SetScript("OnEnter", function(self)
-        if self.buffData then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(self.buffData.name, 1, 1, 1)
-            GameTooltip:AddLine(self.buffData.stat, 0.7, 0.7, 0.7)
+    -- Secure click-to-cast overlay (child of non-secure parent — hiding parent is safe in combat)
+    button.clickButton = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
+    button.clickButton:SetAllPoints()
+    button.clickButton:RegisterForClicks("AnyUp", "AnyDown")
+    button.isCastable = false
+
+    -- Tooltip (on the secure overlay since it receives mouse events)
+    button.clickButton:SetScript("OnEnter", function(self)
+        local icon = self:GetParent()
+        if icon.buffData then
+            GameTooltip:SetOwner(icon, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(icon.buffData.name, 1, 1, 1)
+            GameTooltip:AddLine(icon.buffData.stat, 0.7, 0.7, 0.7)
             GameTooltip:AddLine(" ")
-            local className = LOCALIZED_CLASS_NAMES_MALE[self.buffData.providerClass] or self.buffData.providerClass
-            GameTooltip:AddLine("Provided by: " .. className, 0.5, 0.8, 1)
-            if self.buffCount and self.buffTotal then
-                GameTooltip:AddLine(string_format("Buffed: %d/%d", self.buffCount, self.buffTotal), 0.7, 1, 0.7)
+            if icon.buffData.selfBuff then
+                GameTooltip:AddLine("Self-buff", 0.5, 0.8, 1)
+            else
+                local className = LOCALIZED_CLASS_NAMES_MALE[icon.buffData.providerClass] or icon.buffData.providerClass
+                GameTooltip:AddLine("Provided by: " .. className, 0.5, 0.8, 1)
+                if icon.buffCount and icon.buffTotal then
+                    GameTooltip:AddLine(string_format("Buffed: %d/%d", icon.buffCount, icon.buffTotal), 0.7, 1, 0.7)
+                end
+            end
+            if icon.isCastable then
+                GameTooltip:AddLine("Click to cast", 0.2, 1, 0.2)
             end
             GameTooltip:Show()
         end
     end)
-    button:SetScript("OnLeave", function()
+    button.clickButton:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
 
@@ -835,13 +1022,46 @@ UpdateDisplay = function()
                 icon:SetPoint("CENTER", mainFrame.iconContainer, "CENTER", 0, startY + offset)
             end
 
-            icon.icon:SetTexture(GetBuffIcon(buff.spellId))
+            -- Set icon texture (self-buffs resolve dynamically)
+            if buff.selfBuff then
+                icon.icon:SetTexture(GetSelfBuffIcon(buff))
+            else
+                icon.icon:SetTexture(GetBuffIcon(buff.spellId))
+            end
             icon.buffData = buff
 
-            -- Update buff count display
+            -- Configure click-to-cast (safe: GetMissingBuffs returns empty in combat)
+            if not previewMode then
+                if buff.selfBuff and buff._resolvedSpellName then
+                    icon.clickButton:SetAttribute("type", "spell")
+                    icon.clickButton:SetAttribute("spell", buff._resolvedSpellName)
+                    icon.isCastable = true
+                elseif not buff.selfBuff and PlayerCanCastBuff(buff) then
+                    local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(buff.castSpellId)
+                    if spellName then
+                        icon.clickButton:SetAttribute("type", "spell")
+                        icon.clickButton:SetAttribute("spell", spellName)
+                        icon.isCastable = true
+                    else
+                        icon.clickButton:SetAttribute("type", nil)
+                        icon.clickButton:SetAttribute("spell", nil)
+                        icon.isCastable = false
+                    end
+                else
+                    icon.clickButton:SetAttribute("type", nil)
+                    icon.clickButton:SetAttribute("spell", nil)
+                    icon.isCastable = false
+                end
+            else
+                icon.clickButton:SetAttribute("type", nil)
+                icon.clickButton:SetAttribute("spell", nil)
+                icon.isCastable = false
+            end
+
+            -- Update buff count display (skip for self-buffs — they're player-only)
             local countSettings = settings.buffCount or { show = false }
-            if countSettings.show and icon.countText then
-                local buffed, total = CountBuffedMembers(buff.spellId, buff.name)
+            if not buff.selfBuff and countSettings.show and icon.countText then
+                local buffed, total = CountBuffedMembers(buff.spellId, buff.name, buff.buffIDs)
                 icon.buffCount = buffed
                 icon.buffTotal = total
                 icon.countText:SetText(string_format("%d/%d", buffed, total))
@@ -884,6 +1104,12 @@ UpdateDisplay = function()
             icon:Hide()
             if icon.countText then
                 icon.countText:Hide()
+            end
+            -- Clear secure attributes on hidden icons
+            if icon.clickButton then
+                icon.clickButton:SetAttribute("type", nil)
+                icon.clickButton:SetAttribute("spell", nil)
+                icon.isCastable = false
             end
         end
     end
@@ -1155,9 +1381,9 @@ function QUI_RaidBuffs:Debug()
         local buffRange = buff.range or 40
         local hasProvider = groupClasses[buff.providerClass] and true or false
         local providerInRange = IsProviderClassInRange(buff.providerClass, buffRange)
-        local playerHas = PlayerHasBuff(buff.spellId, buff.name)
-        local canProvide = buff.providerClass == playerClass
-        local anyMissing = AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange)
+        local playerHas = PlayerHasBuff(buff.spellId, buff.name, buff.buffIDs)
+        local canProvide = PlayerCanCastBuff(buff)
+        local anyMissing = AnyGroupMemberMissingBuff(buff.spellId, buff.name, buffRange, buff.buffIDs)
         local status = ""
         if hasProvider and not playerHas then
             if providerInRange then
@@ -1178,7 +1404,7 @@ function QUI_RaidBuffs:Debug()
             for i = 1, numMembers - 1 do
                 local unit = "party" .. i
                 if IsUnitAvailable(unit, buffRange) then
-                    local has = UnitHasBuff(unit, buff.spellId, buff.name)
+                    local has = UnitHasBuff(unit, buff.spellId, buff.name, buff.buffIDs)
                     local name = UnitName(unit) or "?"
                     table_insert(lines, "    -> " .. unit .. " (" .. name .. "): " .. (has and "HAS" or "MISSING"))
                 end
@@ -1216,6 +1442,18 @@ function QUI_RaidBuffs:EnablePreview()
     previewBuffs = {}
     for i, buff in ipairs(RAID_BUFFS) do
         previewBuffs[i] = buff
+    end
+    -- Include self-buffs for current class in preview
+    local playerClass = GetPlayerClass()
+    for _, selfBuff in ipairs(SELF_BUFFS) do
+        if selfBuff.providerClass == playerClass then
+            local spellName, resolvedId = ResolveSelfBuffCast(selfBuff)
+            if spellName then
+                selfBuff._resolvedSpellName = spellName
+                selfBuff._resolvedSpellId = resolvedId
+            end
+            table_insert(previewBuffs, selfBuff)
+        end
     end
     UpdateDisplay()
 end

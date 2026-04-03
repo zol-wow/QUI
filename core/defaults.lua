@@ -149,6 +149,7 @@ local defaults = {
             consumableIconOffset = 5,             -- Icon offset from anchor
             consumableIconSize = 40,              -- Icon size in pixels
             consumableScale = 1,                  -- Frame scale multiplier
+            consumablePersistent = false,         -- Always show consumable bar (persistent mode)
             -- Consumable Macro Automation
             consumableMacros = {
                 enabled = false,              -- Opt-in, OFF by default
@@ -191,6 +192,7 @@ local defaults = {
         raidBuffs = {
             enabled = true,
             showOnlyInGroup = true,
+            showSelfBuffs = true,
             providerMode = false,
             hideLabelBar = false,  -- Hide the "Missing Buffs" label bar
             iconSize = 32,

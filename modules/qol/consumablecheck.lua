@@ -58,6 +58,7 @@ local RUNE_BUFFS = {
     [317065] = true,   -- Lightless Force (SL)
     [1234969] = true,  -- Midnight Augment Rune
     [1242347] = true,  -- Greater Midnight Augment Rune
+    [1264426] = true,  -- Void-Touched Augment Rune (Midnight)
 }
 
 local FLASK_ITEMS = {
@@ -504,6 +505,13 @@ local function EnsureConsumableCombatDeferFrame()
         f:UnregisterEvent("PLAYER_REGEN_ENABLED")
         if hideConsumablesAfterCombat then
             hideConsumablesAfterCombat = false
+            -- In persistent mode, restore visibility instead of hiding
+            local settings = GetSettings()
+            if settings and settings.consumablePersistent and settings.consumableCheckEnabled ~= false then
+                ConsumablesFrame:SetAlpha(1)
+                UpdateConsumables()
+                return
+            end
             HideConsumablesFrameNow()
         end
     end)
@@ -511,6 +519,11 @@ end
 
 RequestHideConsumablesFrame = function()
     HideConsumablePicker()
+    -- In persistent mode, never auto-hide (close button calls HideConsumablesFrameNow directly)
+    local settings = GetSettings()
+    if settings and settings.consumablePersistent and settings.consumableCheckEnabled ~= false then
+        return
+    end
     if InCombatLockdown() then
         hideConsumablesAfterCombat = true
         if ConsumablesFrame:IsShown() then
@@ -1427,6 +1440,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         OnReadyCheckFinished()
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(1, OnInstanceEnter)
+        C_Timer.After(1.5, function()
+            local s = GetSettings()
+            if s and s.consumablePersistent and s.consumableCheckEnabled ~= false then
+                ShowConsumablesStandalone()
+            end
+        end)
         C_Timer.After(2, function()
             if ns.Utils.IsInInstancedContent() then
                 StartExpirationMonitoring()

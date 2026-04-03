@@ -1266,11 +1266,40 @@ local function RegisterAllProviders()
     end })
 
     ---------------------------------------------------------------------------
+    -- CONSUMABLES PROVIDER
+    ---------------------------------------------------------------------------
+    settingsPanel:RegisterProvider("consumables", { build = function(content, key, width)
+        local db = U.GetProfileDB()
+        if not db or not db.general then return 80 end
+        local settings = db.general
+        local sections = {}
+        local function relayout() U.StandardRelayout(content, sections) end
+        local function Refresh()
+            if _G.QUI_RefreshConsumables then _G.QUI_RefreshConsumables() end
+        end
+
+        U.CreateCollapsible(content, "Display", 2 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Always Show (Persistent)", "consumablePersistent", settings, function()
+                if settings.consumablePersistent then
+                    if _G.QUI_ShowConsumables then _G.QUI_ShowConsumables() end
+                else
+                    if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end
+                end
+            end), body, sy)
+            P(GUI:CreateFormSlider(body, "Scale", 0.5, 3, 0.05, "consumableScale", settings, Refresh), body, sy)
+        end, sections, relayout)
+
+        U.BuildPositionCollapsible(content, "consumables", nil, sections, relayout)
+        relayout() return content:GetHeight()
+    end })
+
+    ---------------------------------------------------------------------------
     -- POSITION-ONLY PROVIDERS
     ---------------------------------------------------------------------------
     for _, providerKey in ipairs({"rangeCheck", "crosshair",
             "lootFrame", "lootRollAnchor", "alertAnchor",
-            "toastAnchor", "bnetToastAnchor", "powerBarAlt", "consumables"}) do
+            "toastAnchor", "bnetToastAnchor", "powerBarAlt"}) do
         settingsPanel:RegisterProvider(providerKey, { build = function(content, key, width)
             local sections = {}
             local function relayout() U.StandardRelayout(content, sections) end
@@ -1471,10 +1500,11 @@ local function RegisterAllProviders()
         end
 
         -- General
-        U.CreateCollapsible(content, "General", 5 * FORM_ROW + 8, function(body)
+        U.CreateCollapsible(content, "General", 6 * FORM_ROW + 8, function(body)
             local sy = -4
             sy = P(GUI:CreateFormCheckbox(body, "Show Only When In Group", "showOnlyInGroup", settings, Refresh), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Show Only In Dungeons/Raids", "showOnlyInInstance", settings, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Show Class Self-Buffs (poisons, enchants, shields)", "showSelfBuffs", settings, Refresh), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Provider Mode (buffs you can cast)", "providerMode", settings, Refresh), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Hide Label Bar", "hideLabelBar", settings, Refresh), body, sy)
 
