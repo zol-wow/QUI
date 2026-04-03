@@ -1278,7 +1278,33 @@ local function RegisterAllProviders()
             if _G.QUI_RefreshConsumables then _G.QUI_RefreshConsumables() end
         end
 
-        U.CreateCollapsible(content, "Display", 2 * FORM_ROW + 8, function(body)
+        U.CreateCollapsible(content, "Triggers", 4 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Ready Check", "consumableOnReadyCheck", settings), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Dungeon Entrance", "consumableOnDungeon", settings), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Raid Entrance", "consumableOnRaid", settings), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Instanced Resurrect", "consumableOnResurrect", settings), body, sy)
+        end, sections, relayout)
+
+        local mhLabel = (ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetMHLabel() or "Weapon Oil") .. " (MH)"
+        local ohLabel = (ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetOHLabel() or "Weapon Oil") .. " (OH)"
+        U.CreateCollapsible(content, "Buff Checks", 6 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Food Buff", "consumableFood", settings, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Flask Buff", "consumableFlask", settings, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, mhLabel, "consumableOilMH", settings, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, ohLabel, "consumableOilOH", settings, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Augment Rune", "consumableRune", settings, Refresh), body, sy)
+            P(GUI:CreateFormCheckbox(body, "Healthstones", "consumableHealthstone", settings, Refresh), body, sy)
+        end, sections, relayout)
+
+        U.CreateCollapsible(content, "Expiration Warning", 2 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Warn When Buffs Expiring", "consumableExpirationWarning", settings), body, sy)
+            P(GUI:CreateFormSlider(body, "Warning Threshold (seconds)", 60, 600, 30, "consumableExpirationThreshold", settings), body, sy)
+        end, sections, relayout)
+
+        U.CreateCollapsible(content, "Display", 3 * FORM_ROW + 8, function(body)
             local sy = -4
             sy = P(GUI:CreateFormCheckbox(body, "Always Show (Persistent)", "consumablePersistent", settings, function()
                 if settings.consumablePersistent then
@@ -1287,6 +1313,7 @@ local function RegisterAllProviders()
                     if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end
                 end
             end), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Icon Size", 24, 64, 2, "consumableIconSize", settings, Refresh), body, sy)
             P(GUI:CreateFormSlider(body, "Scale", 0.5, 3, 0.05, "consumableScale", settings, Refresh), body, sy)
         end, sections, relayout)
 

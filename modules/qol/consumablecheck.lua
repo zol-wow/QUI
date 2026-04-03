@@ -179,6 +179,165 @@ local PREFERENCE_KEYS = {
     oilOH = "consumablePreferredOilOH",
 }
 
+---------------------------------------------------------------------------
+-- CLASS-AWARE WEAPON ENHANCEMENT CONFIG
+---------------------------------------------------------------------------
+
+local BuildOwnedItemsFromList  -- forward declaration (defined in utility section below)
+
+local _, playerClass = UnitClass("player")
+
+-- Each class entry has MH and/or OH sub-configs:
+--   source: "spell" (cast via /cast) or "item" (use via /use, default for non-class configs)
+--   label: display name for UI
+--   checkType: "weaponEnchant" (GetWeaponEnchantInfo) or "playerAura" (buff scan)
+--   anyEnchantIDs: set of enchant IDs for weaponEnchant detection
+--   anyBuffIDs: set of aura spell IDs for playerAura detection
+--   spells: ordered list of { spellID, name } for spell-based enhancements
+--   items: item ID list for item-based enhancements (hunter ammo)
+--   requiresShield: only show if shield equipped (shaman OH)
+local CLASS_ENHANCEMENT_CONFIG = {
+    ROGUE = {
+        MH = {
+            source = "spell",
+            label = "Lethal Poison",
+            checkType = "playerAura",
+            anyBuffIDs = { [2823] = true, [315584] = true, [8679] = true, [381664] = true },
+            spells = {
+                { spellID = 2823,   name = "Deadly Poison" },
+                { spellID = 315584, name = "Instant Poison" },
+                { spellID = 8679,   name = "Wound Poison" },
+                { spellID = 381664, name = "Amplifying Poison" },
+            },
+        },
+        OH = {
+            source = "spell",
+            label = "Non-Lethal Poison",
+            checkType = "playerAura",
+            anyBuffIDs = { [3408] = true, [5761] = true, [381637] = true },
+            spells = {
+                { spellID = 3408,   name = "Crippling Poison" },
+                { spellID = 5761,   name = "Numbing Poison" },
+                { spellID = 381637, name = "Atrophic Poison" },
+            },
+        },
+    },
+    SHAMAN = {
+        MH = {
+            source = "spell",
+            label = "Weapon Imbue",
+            checkType = "weaponEnchant",
+            anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
+            spells = {
+                { spellID = 318038, name = "Flametongue Weapon" },
+                { spellID = 33757,  name = "Windfury Weapon" },
+                { spellID = 382021, name = "Earthliving Weapon" },
+            },
+        },
+        OH = {
+            source = "spell",
+            label = "Shield Enchant",
+            checkType = "weaponEnchant",
+            requiresShield = true,
+            anyEnchantIDs = { [7587] = true, [7528] = true },
+            spells = {
+                { spellID = 462757, name = "Thunderstrike Ward" },
+                { spellID = 457481, name = "Tidecaller's Guard" },
+            },
+        },
+    },
+    PALADIN = {
+        MH = {
+            source = "spell",
+            label = "Weapon Rite",
+            checkType = "weaponEnchant",
+            anyEnchantIDs = { [7143] = true, [7144] = true },
+            spells = {
+                { spellID = 433568, name = "Rite of Sanctification" },
+                { spellID = 433583, name = "Rite of Adjuration" },
+            },
+        },
+    },
+    HUNTER = {
+        MH = {
+            source = "item",
+            label = "Ammo",
+            checkType = "weaponEnchant",
+            items = AMMO_ITEMS,
+        },
+    },
+}
+
+local function GetEnhancementConfig(slot)
+    local classConfig = CLASS_ENHANCEMENT_CONFIG[playerClass]
+    if classConfig then
+        return classConfig[slot]
+    end
+    return nil
+end
+
+local function HasShieldEquipped()
+    local ohItemID = GetInventoryItemID("player", INVSLOT_OFFHAND)
+    if not ohItemID then return false end
+    local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(ohItemID)
+    return classID == 4 and subClassID == 6  -- Armor / Shield
+end
+
+local function GetKnownSpellsForConfig(config)
+    if not config or not config.spells then return {} end
+    local result = {}
+    for _, spell in ipairs(config.spells) do
+        if IsPlayerSpell(spell.spellID) then
+            local icon = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spell.spellID)
+            table.insert(result, {
+                itemID = spell.spellID,
+                name = spell.name,
+                count = nil,
+                icon = icon,
+                isSpell = true,
+            })
+        end
+    end
+    return result
+end
+
+local function ResolveDefaultEnhancementIcon(slot)
+    local config = GetEnhancementConfig(slot)
+    if config then
+        if config.source == "spell" then
+            local spells = GetKnownSpellsForConfig(config)
+            if spells[1] and spells[1].icon then return spells[1].icon end
+            -- Fallback: try first spell even if not yet known at load time
+            if config.spells and config.spells[1] then
+                local icon = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(config.spells[1].spellID)
+                if icon then return icon end
+            end
+        elseif config.items then
+            local items = BuildOwnedItemsFromList(config.items)
+            if items[1] and items[1].icon then return items[1].icon end
+            -- Fallback: use first item's icon from game data
+            local icon = select(5, C_Item.GetItemInfoInstant(config.items[1]))
+            if icon then return icon end
+        end
+    end
+    -- Default: try first owned oil icon
+    local oils = BuildOwnedItemsFromList(OIL_ITEMS)
+    if oils[1] and oils[1].icon then return oils[1].icon end
+    return 609892  -- generic fallback
+end
+
+local function GetEnhancementLabel(slot)
+    local config = GetEnhancementConfig(slot)
+    if config and config.label then return config.label end
+    return slot == "MH" and "Weapon Oil" or "Weapon Oil"
+end
+
+-- Export label function for options panel
+ns.ConsumableCheckLabels = {
+    GetMHLabel = function() return GetEnhancementLabel("MH") end,
+    GetOHLabel = function() return GetEnhancementLabel("OH") end,
+}
+
 local UpdateConsumables
 local ToggleConsumablePicker
 local HideConsumablePicker
@@ -330,7 +489,7 @@ local function BuildOwnedItemsFromTotals(totals, fallbackIcon)
     return items
 end
 
-local function BuildOwnedItemsFromList(itemIDs, fallbackIcon)
+BuildOwnedItemsFromList = function(itemIDs, fallbackIcon)
     local totals = {}
     CollectItemTotalsFromList(itemIDs, totals)
     return BuildOwnedItemsFromTotals(totals, fallbackIcon)
@@ -399,6 +558,15 @@ local function GetOwnedItemsForButton(buttonType)
     elseif buttonType == "rune" then
         return BuildOwnedItemsFromList(RUNE_ITEMS)
     elseif buttonType == "oilMH" or buttonType == "oilOH" then
+        local slot = buttonType == "oilMH" and "MH" or "OH"
+        local config = GetEnhancementConfig(slot)
+        if config then
+            if config.source == "spell" then
+                return GetKnownSpellsForConfig(config)
+            elseif config.items then
+                return BuildOwnedItemsFromList(config.items)
+            end
+        end
         return BuildOwnedItemsFromList(OIL_ITEMS)
     end
     return {}
@@ -417,23 +585,28 @@ local function ResolveSelectedOwnedItem(buttonType, ownedItems)
     return ownedItems[1]
 end
 
-local function ConfigureButtonClickItem(button, buttonType, itemData)
-    if not button or not button.click or not itemData then return end
-    button.selectedItemID = itemData.itemID
-    button.click.selectedItemID = itemData.itemID
-    local useToken = itemData.name or ("item:" .. itemData.itemID)
+local function ConfigureButtonClickAction(button, buttonType, data)
+    if not button or not button.click or not data then return end
+    button.selectedItemID = data.itemID
+    button.click.selectedItemID = data.itemID
+
     button.click:SetAttribute("type1", "macro")
-    if buttonType == "oilMH" then
-        button.click:SetAttribute("macrotext1", "/use " .. useToken .. "\n/use " .. INVSLOT_MAINHAND)
-    elseif buttonType == "oilOH" then
-        button.click:SetAttribute("macrotext1", "/use " .. useToken .. "\n/use " .. INVSLOT_OFFHAND)
+    if data.isSpell then
+        button.click:SetAttribute("macrotext1", "/cast " .. data.name)
     else
-        button.click:SetAttribute("macrotext1", "/use " .. useToken)
+        local useToken = data.name or ("item:" .. data.itemID)
+        if buttonType == "oilMH" then
+            button.click:SetAttribute("macrotext1", "/use " .. useToken .. "\n/use " .. INVSLOT_MAINHAND)
+        elseif buttonType == "oilOH" then
+            button.click:SetAttribute("macrotext1", "/use " .. useToken .. "\n/use " .. INVSLOT_OFFHAND)
+        else
+            button.click:SetAttribute("macrotext1", "/use " .. useToken)
+        end
     end
     button.click:Show()
-    button.countText:SetText(tostring(itemData.count))
-    if itemData.icon then
-        button.icon:SetTexture(itemData.icon)
+    button.countText:SetText(data.count and data.count > 0 and tostring(data.count) or "")
+    if data.icon then
+        button.icon:SetTexture(data.icon)
     end
     StartButtonGlow(button)
 end
@@ -444,11 +617,17 @@ local function ApplyPreferredItemIcons(buttons, settings)
     local function apply(buttonType)
         local button = buttons[buttonType]
         if not button then return end
-        local preferredItemID = GetPreferredItemID(buttonType)
-        if not preferredItemID then return end
-        local icon = select(5, C_Item.GetItemInfoInstant(preferredItemID))
-        if icon then
-            button.icon:SetTexture(icon)
+        local preferredID = GetPreferredItemID(buttonType)
+        if not preferredID then return end
+        -- Check if this is a spell preference (for class-based enhancements)
+        local slot = (buttonType == "oilMH" and "MH") or (buttonType == "oilOH" and "OH") or nil
+        local config = slot and GetEnhancementConfig(slot)
+        if config and config.source == "spell" then
+            local icon = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(preferredID)
+            if icon then button.icon:SetTexture(icon) end
+        else
+            local icon = select(5, C_Item.GetItemInfoInstant(preferredID))
+            if icon then button.icon:SetTexture(icon) end
         end
     end
 
@@ -462,8 +641,16 @@ end
 local function ScanPlayerBuffs()
     local result = {
         hasFood = false, hasFlask = false, hasRune = false,
+        hasWeaponMH = false, hasWeaponOH = false,
         foodData = nil, flaskData = nil, runeData = nil,
+        weaponMHData = nil, weaponOHData = nil,
     }
+    -- Check aura-based weapon enhancements (rogues)
+    local mhConfig = GetEnhancementConfig("MH")
+    local ohConfig = GetEnhancementConfig("OH")
+    local checkMHAura = mhConfig and mhConfig.checkType == "playerAura"
+    local checkOHAura = ohConfig and ohConfig.checkType == "playerAura"
+
     for i = 1, 40 do
         local auraData = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not auraData then break end
@@ -481,7 +668,14 @@ local function ScanPlayerBuffs()
             local success, isRune = pcall(function() return RUNE_BUFFS[spellId] end)
             if success and isRune then result.hasRune = true; result.runeData = auraData end
         end
-        if result.hasFood and result.hasFlask and result.hasRune then break end
+        if checkMHAura and not result.hasWeaponMH then
+            local ok, match = pcall(function() return mhConfig.anyBuffIDs[spellId] end)
+            if ok and match then result.hasWeaponMH = true; result.weaponMHData = auraData end
+        end
+        if checkOHAura and not result.hasWeaponOH then
+            local ok, match = pcall(function() return ohConfig.anyBuffIDs[spellId] end)
+            if ok and match then result.hasWeaponOH = true; result.weaponOHData = auraData end
+        end
     end
     return result
 end
@@ -615,15 +809,7 @@ local function CreateConsumableButton(parent, index, buttonType, iconID, isClick
         button.click:SetAllPoints()
         button.click:RegisterForClicks("AnyUp", "AnyDown")
         button.click:Hide()
-        if buttonType == "oilMH" then
-            button.click:SetAttribute("type1", "item")
-            button.click:SetAttribute("target-slot", INVSLOT_MAINHAND)
-        elseif buttonType == "oilOH" then
-            button.click:SetAttribute("type1", "item")
-            button.click:SetAttribute("target-slot", INVSLOT_OFFHAND)
-        else
-            button.click:SetAttribute("type1", "item")
-        end
+        button.click:SetAttribute("type1", "macro")
         button.click:SetScript("OnEnter", function() button:SetAlpha(0.7) end)
         button.click:SetScript("OnLeave", function() button:SetAlpha(1) end)
         button.click:SetScript("PostClick", function(self, mouseButton, down)
@@ -777,21 +963,25 @@ HideConsumablePicker = function()
     end
 end
 
-local function ConfigurePickerRow(row, buttonType, itemData)
+local function ConfigurePickerRow(row, buttonType, data)
     row.buttonType = buttonType
-    row.itemID = itemData.itemID
-    row.icon:SetTexture(itemData.icon or FOOD_ICON_FALLBACK)
-    row.nameText:SetText(itemData.name or ("item:" .. itemData.itemID))
-    row.countText:SetText(tostring(itemData.count or 0))
+    row.itemID = data.itemID
+    row.icon:SetTexture(data.icon or FOOD_ICON_FALLBACK)
+    row.nameText:SetText(data.name or ("item:" .. data.itemID))
+    row.countText:SetText(data.count and data.count > 0 and tostring(data.count) or "")
 
-    local useToken = itemData.name or ("item:" .. itemData.itemID)
     local macroText
-    if buttonType == "oilMH" then
-        macroText = "/use " .. useToken .. "\n/use " .. INVSLOT_MAINHAND
-    elseif buttonType == "oilOH" then
-        macroText = "/use " .. useToken .. "\n/use " .. INVSLOT_OFFHAND
+    if data.isSpell then
+        macroText = "/cast " .. data.name
     else
-        macroText = "/use " .. useToken
+        local useToken = data.name or ("item:" .. data.itemID)
+        if buttonType == "oilMH" then
+            macroText = "/use " .. useToken .. "\n/use " .. INVSLOT_MAINHAND
+        elseif buttonType == "oilOH" then
+            macroText = "/use " .. useToken .. "\n/use " .. INVSLOT_OFFHAND
+        else
+            macroText = "/use " .. useToken
+        end
     end
     row:SetAttribute("type1", "macro")
     row:SetAttribute("macrotext1", macroText)
@@ -900,13 +1090,14 @@ local function InitializeButtons()
         buttons[k] = nil
     end
 
+    local runeIcon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(259085) or 4549102
     local buttonDefs = {
         { "food", FOOD_ICON_FALLBACK, true },
         { "flask", 3566840, true },
-        { "oilMH", 609892, true },
-        { "rune", 4549102, true },
+        { "oilMH", ResolveDefaultEnhancementIcon("MH"), true },
+        { "rune", runeIcon, true },
         { "healthstone", 538745, false },
-        { "oilOH", 609892, true },
+        { "oilOH", ResolveDefaultEnhancementIcon("OH"), true },
     }
 
     for i, def in ipairs(buttonDefs) do
@@ -917,6 +1108,111 @@ local function InitializeButtons()
     end
 
     ConsumablesFrame.buttonSize = buttonSize
+end
+
+---------------------------------------------------------------------------
+-- CLASS-AWARE ENHANCEMENT DETECTION
+---------------------------------------------------------------------------
+
+-- Checks whether a weapon enhancement is active for the given slot.
+-- Returns isActive; also updates the button icon/status/time directly.
+local function CheckEnhancementActive(slot, button, hasEnchant, enchantExpiration, enchantID)
+    local config = GetEnhancementConfig(slot)
+
+    if config and config.checkType == "playerAura" then
+        -- Aura-based detection (rogues)
+        for i = 1, 40 do
+            local auraData = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+            if not auraData then break end
+            local ok, match = pcall(function() return config.anyBuffIDs[auraData.spellId] end)
+            if ok and match then
+                button.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+                button.icon:SetDesaturated(false)
+                if auraData.icon then
+                    button.icon:SetTexture(auraData.icon)
+                end
+                pcall(function()
+                    local expires = auraData.expirationTime
+                    if expires and expires > 0 then
+                        button.timeText:SetText(FormatTimeRemaining(expires - GetTime()))
+                    end
+                end)
+                return true
+            end
+        end
+        return false
+    end
+
+    if config and config.checkType == "weaponEnchant" then
+        -- Enchant-based detection with class-specific enchant IDs (shamans, paladins)
+        if hasEnchant then
+            button.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+            button.icon:SetDesaturated(false)
+            if enchantID and config.anyEnchantIDs and config.anyEnchantIDs[enchantID] then
+                -- Known class enchant - use the spell icon for the active enchant
+                if config.spells then
+                    for _, spell in ipairs(config.spells) do
+                        local icon = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spell.spellID)
+                        if icon then
+                            button.icon:SetTexture(icon)
+                            break
+                        end
+                    end
+                end
+            elseif enchantID and WEAPON_ENCHANTS[enchantID] then
+                -- Fallback: known item enchant (should not happen for class enhancements)
+                local enchantData = WEAPON_ENCHANTS[enchantID]
+                button.icon:SetTexture(enchantData.icon)
+            end
+            if enchantExpiration and enchantExpiration > 0 then
+                button.timeText:SetText(FormatTimeRemaining(enchantExpiration / 1000))
+            end
+            return true
+        end
+        return false
+    end
+
+    -- Default: item-based oil/stone detection via GetWeaponEnchantInfo
+    local invSlot = slot == "MH" and INVSLOT_MAINHAND or INVSLOT_OFFHAND
+    if hasEnchant then
+        button.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+        button.icon:SetDesaturated(false)
+        if enchantID and WEAPON_ENCHANTS[enchantID] then
+            local enchantData = WEAPON_ENCHANTS[enchantID]
+            button.icon:SetTexture(enchantData.icon)
+            SaveLastWeaponEnchant(invSlot, enchantID, enchantData.icon, enchantData.item)
+        end
+        if enchantExpiration and enchantExpiration > 0 then
+            button.timeText:SetText(FormatTimeRemaining(enchantExpiration / 1000))
+        end
+        return true
+    else
+        -- Restore last known icon when enchant has expired
+        local lastEnchant = GetLastWeaponEnchant(invSlot)
+        if lastEnchant and lastEnchant.icon then
+            button.icon:SetTexture(lastEnchant.icon)
+        end
+        return false
+    end
+end
+
+-- Checks whether an OH enhancement button should be visible for the current class
+local function ShouldShowOHButton(settings)
+    if settings.consumableOilOH == false then return false end
+    local config = GetEnhancementConfig("OH")
+    if config then
+        if config.requiresShield then
+            return HasShieldEquipped()
+        end
+        return true
+    end
+    -- No class config for OH: check if class explicitly has no OH (Paladin, Hunter)
+    local classConfig = CLASS_ENHANCEMENT_CONFIG[playerClass]
+    if classConfig and classConfig.MH and not classConfig.OH then
+        return false
+    end
+    -- Default: show if dual wielding
+    return IsDualWielding()
 end
 
 ---------------------------------------------------------------------------
@@ -1015,43 +1311,17 @@ UpdateConsumables = function()
         end
     end
 
-    -- Weapon enchant check (Main Hand)
+    -- Weapon enhancement check (class-aware)
     local hasMainHandEnchant, mainHandExpiration, _, mainHandEnchantID, hasOffHandEnchant, offHandExpiration, _, offHandEnchantID = GetWeaponEnchantInfo()
+    local hasMHEnhancement = false
+    local hasOHEnhancement = false
+
     if settings.consumableOilMH ~= false then
-        if hasMainHandEnchant then
-            buttons.oilMH.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
-            buttons.oilMH.icon:SetDesaturated(false)
-            if mainHandEnchantID and WEAPON_ENCHANTS[mainHandEnchantID] then
-                local enchantData = WEAPON_ENCHANTS[mainHandEnchantID]
-                buttons.oilMH.icon:SetTexture(enchantData.icon)
-                SaveLastWeaponEnchant(INVSLOT_MAINHAND, mainHandEnchantID, enchantData.icon, enchantData.item)
-            end
-            if mainHandExpiration and mainHandExpiration > 0 then
-                buttons.oilMH.timeText:SetText(FormatTimeRemaining(mainHandExpiration / 1000))
-            end
-        else
-            local lastEnchant = GetLastWeaponEnchant(INVSLOT_MAINHAND)
-            if lastEnchant and lastEnchant.icon then buttons.oilMH.icon:SetTexture(lastEnchant.icon) end
-        end
+        hasMHEnhancement = CheckEnhancementActive("MH", buttons.oilMH, hasMainHandEnchant, mainHandExpiration, mainHandEnchantID)
     end
 
-    -- Weapon enchant check (Off Hand)
-    if settings.consumableOilOH ~= false and IsDualWielding() then
-        if hasOffHandEnchant then
-            buttons.oilOH.status:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
-            buttons.oilOH.icon:SetDesaturated(false)
-            if offHandEnchantID and WEAPON_ENCHANTS[offHandEnchantID] then
-                local enchantData = WEAPON_ENCHANTS[offHandEnchantID]
-                buttons.oilOH.icon:SetTexture(enchantData.icon)
-                SaveLastWeaponEnchant(INVSLOT_OFFHAND, offHandEnchantID, enchantData.icon, enchantData.item)
-            end
-            if offHandExpiration and offHandExpiration > 0 then
-                buttons.oilOH.timeText:SetText(FormatTimeRemaining(offHandExpiration / 1000))
-            end
-        else
-            local lastEnchant = GetLastWeaponEnchant(INVSLOT_OFFHAND)
-            if lastEnchant and lastEnchant.icon then buttons.oilOH.icon:SetTexture(lastEnchant.icon) end
-        end
+    if ShouldShowOHButton(settings) then
+        hasOHEnhancement = CheckEnhancementActive("OH", buttons.oilOH, hasOffHandEnchant, offHandExpiration, offHandEnchantID)
     end
 
     -- Healthstone count
@@ -1079,7 +1349,7 @@ UpdateConsumables = function()
             local ownedFoodItems = GetOwnedItemsForButton("food")
             local selectedFood = ResolveSelectedOwnedItem("food", ownedFoodItems)
             if selectedFood then
-                ConfigureButtonClickItem(buttons.food, "food", selectedFood)
+                ConfigureButtonClickAction(buttons.food, "food", selectedFood)
             end
         end
 
@@ -1088,7 +1358,7 @@ UpdateConsumables = function()
             local ownedFlasks = GetOwnedItemsForButton("flask")
             local selectedFlask = ResolveSelectedOwnedItem("flask", ownedFlasks)
             if selectedFlask then
-                ConfigureButtonClickItem(buttons.flask, "flask", selectedFlask)
+                ConfigureButtonClickAction(buttons.flask, "flask", selectedFlask)
             end
         end
 
@@ -1097,25 +1367,25 @@ UpdateConsumables = function()
             local ownedRunes = GetOwnedItemsForButton("rune")
             local selectedRune = ResolveSelectedOwnedItem("rune", ownedRunes)
             if selectedRune then
-                ConfigureButtonClickItem(buttons.rune, "rune", selectedRune)
+                ConfigureButtonClickAction(buttons.rune, "rune", selectedRune)
             end
         end
 
-        -- Clickable oil button (Main Hand)
-        if settings.consumableOilMH ~= false and not hasMainHandEnchant then
-            local ownedOilsMH = GetOwnedItemsForButton("oilMH")
-            local selectedOilMH = ResolveSelectedOwnedItem("oilMH", ownedOilsMH)
-            if selectedOilMH then
-                ConfigureButtonClickItem(buttons.oilMH, "oilMH", selectedOilMH)
+        -- Clickable enhancement button (Main Hand)
+        if settings.consumableOilMH ~= false and not hasMHEnhancement then
+            local ownedMH = GetOwnedItemsForButton("oilMH")
+            local selectedMH = ResolveSelectedOwnedItem("oilMH", ownedMH)
+            if selectedMH then
+                ConfigureButtonClickAction(buttons.oilMH, "oilMH", selectedMH)
             end
         end
 
-        -- Clickable oil button (Off Hand)
-        if settings.consumableOilOH ~= false and IsDualWielding() and not hasOffHandEnchant then
-            local ownedOilsOH = GetOwnedItemsForButton("oilOH")
-            local selectedOilOH = ResolveSelectedOwnedItem("oilOH", ownedOilsOH)
-            if selectedOilOH then
-                ConfigureButtonClickItem(buttons.oilOH, "oilOH", selectedOilOH)
+        -- Clickable enhancement button (Off Hand)
+        if ShouldShowOHButton(settings) and not hasOHEnhancement then
+            local ownedOH = GetOwnedItemsForButton("oilOH")
+            local selectedOH = ResolveSelectedOwnedItem("oilOH", ownedOH)
+            if selectedOH then
+                ConfigureButtonClickAction(buttons.oilOH, "oilOH", selectedOH)
             end
         end
     else
@@ -1163,7 +1433,7 @@ UpdateConsumables = function()
             xOffset = xOffset + buttonSize + BUTTON_SPACING
             visibleCount = visibleCount + 1
         end
-        if settings.consumableOilOH ~= false and IsDualWielding() then
+        if ShouldShowOHButton(settings) then
             buttons.oilOH:ClearAllPoints()
             buttons.oilOH:SetPoint("BOTTOMLEFT", ConsumablesFrame, "BOTTOMLEFT", xOffset, buttonY)
             buttons.oilOH:Show()
@@ -1266,9 +1536,26 @@ local function HasMissingBuffs()
     if settings.consumableFood ~= false and not buffs.hasFood then return true end
     if settings.consumableFlask ~= false and not buffs.hasFlask then return true end
     if settings.consumableRune ~= false and not buffs.hasRune then return true end
+
+    -- Weapon enhancement check (class-aware)
     local hasMainHandEnchant, _, _, _, hasOffHandEnchant = GetWeaponEnchantInfo()
-    if settings.consumableOilMH ~= false and not hasMainHandEnchant then return true end
-    if settings.consumableOilOH ~= false and IsDualWielding() and not hasOffHandEnchant then return true end
+    if settings.consumableOilMH ~= false then
+        local mhConfig = GetEnhancementConfig("MH")
+        if mhConfig and mhConfig.checkType == "playerAura" then
+            if not buffs.hasWeaponMH then return true end
+        else
+            if not hasMainHandEnchant then return true end
+        end
+    end
+    if ShouldShowOHButton(settings) then
+        local ohConfig = GetEnhancementConfig("OH")
+        if ohConfig and ohConfig.checkType == "playerAura" then
+            if not buffs.hasWeaponOH then return true end
+        else
+            if not hasOffHandEnchant then return true end
+        end
+    end
+
     if settings.consumableHealthstone ~= false and HasWarlockInGroup() then
         local hsCount = (C_Item.GetItemCount(5512, false, true) or 0) + (C_Item.GetItemCount(224464, false, true) or 0)
         if hsCount == 0 then return true end
@@ -1384,21 +1671,49 @@ local function CheckExpiringBuffs()
             end
         end
     end
+    -- Weapon enhancement expiration (class-aware)
     if settings.consumableOilMH ~= false then
-        local hasMainHandEnchant, mainHandExpiration = GetWeaponEnchantInfo()
-        if hasMainHandEnchant and mainHandExpiration then
-            local remaining = mainHandExpiration / 1000
-            if remaining > 0 and remaining <= threshold then
-                table.insert(expiringBuffs, { type = "oilMH", remaining = remaining })
+        local mhConfig = GetEnhancementConfig("MH")
+        if mhConfig and mhConfig.checkType == "playerAura" then
+            -- Aura-based (rogues): check aura expiration
+            if buffs.hasWeaponMH and buffs.weaponMHData then
+                local expires = buffs.weaponMHData.expirationTime
+                if expires and expires > 0 then
+                    local remaining = expires - now
+                    if remaining > 0 and remaining <= threshold then
+                        table.insert(expiringBuffs, { type = "oilMH", remaining = remaining })
+                    end
+                end
+            end
+        else
+            local hasMainHandEnchant, mainHandExpiration = GetWeaponEnchantInfo()
+            if hasMainHandEnchant and mainHandExpiration then
+                local remaining = mainHandExpiration / 1000
+                if remaining > 0 and remaining <= threshold then
+                    table.insert(expiringBuffs, { type = "oilMH", remaining = remaining })
+                end
             end
         end
     end
-    if settings.consumableOilOH ~= false and IsDualWielding() then
-        local hasMainHandEnchant, _, _, _, hasOffHandEnchant, offHandExpiration = GetWeaponEnchantInfo()
-        if hasOffHandEnchant and offHandExpiration then
-            local remaining = offHandExpiration / 1000
-            if remaining > 0 and remaining <= threshold then
-                table.insert(expiringBuffs, { type = "oilOH", remaining = remaining })
+    if ShouldShowOHButton(settings) then
+        local ohConfig = GetEnhancementConfig("OH")
+        if ohConfig and ohConfig.checkType == "playerAura" then
+            if buffs.hasWeaponOH and buffs.weaponOHData then
+                local expires = buffs.weaponOHData.expirationTime
+                if expires and expires > 0 then
+                    local remaining = expires - now
+                    if remaining > 0 and remaining <= threshold then
+                        table.insert(expiringBuffs, { type = "oilOH", remaining = remaining })
+                    end
+                end
+            end
+        else
+            local _, _, _, _, hasOffHandEnchant, offHandExpiration = GetWeaponEnchantInfo()
+            if hasOffHandEnchant and offHandExpiration then
+                local remaining = offHandExpiration / 1000
+                if remaining > 0 and remaining <= threshold then
+                    table.insert(expiringBuffs, { type = "oilOH", remaining = remaining })
+                end
             end
         end
     end

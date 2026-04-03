@@ -515,12 +515,14 @@ local function BuildGeneralTab(tabContent)
             consumableFlaskCheck:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             sy = sy - FORM_ROW
 
-            local consumableOilMHCheck = GUI:CreateFormCheckbox(body, "Weapon Oil (Main Hand)", "consumableOilMH", generalDB)
+            local mhLabel = ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetMHLabel() or "Weapon Oil"
+            local consumableOilMHCheck = GUI:CreateFormCheckbox(body, mhLabel .. " (Main Hand)", "consumableOilMH", generalDB)
             consumableOilMHCheck:SetPoint("TOPLEFT", 20, sy)
             consumableOilMHCheck:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             sy = sy - FORM_ROW
 
-            local consumableOilOHCheck = GUI:CreateFormCheckbox(body, "Weapon Oil (Off Hand)", "consumableOilOH", generalDB)
+            local ohLabel = ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetOHLabel() or "Weapon Oil"
+            local consumableOilOHCheck = GUI:CreateFormCheckbox(body, ohLabel .. " (Off Hand)", "consumableOilOH", generalDB)
             consumableOilOHCheck:SetPoint("TOPLEFT", 20, sy)
             consumableOilOHCheck:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             sy = sy - FORM_ROW
