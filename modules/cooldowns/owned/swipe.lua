@@ -143,8 +143,14 @@ local function ApplySwipeToIcon(icon, settings)
     local showEdge = showSwipe and (mode == "aura" or (mode == "cooldown" and settings.showRechargeEdge))
     icon.Cooldown:SetDrawEdge(showEdge)
 
-    -- Apply color and texture based on mode
-    if mode == "aura" then
+    -- Apply color and texture based on mode.
+    -- When swipe is disabled, force alpha-0 color as a failsafe —
+    -- SetCooldownFromDurationObject + SetReverse (aura path) can
+    -- internally re-enable drawSwipe on the C-side animation system,
+    -- so a transparent color ensures the swipe is invisible regardless.
+    if not showSwipe then
+        icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
+    elseif mode == "aura" then
         local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
         if not oR then oR, oG, oB, oA = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
         icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
@@ -171,12 +177,16 @@ local function ApplySwipeToBuffChild(icon, settings)
     icon.Cooldown:SetDrawSwipe(showSwipe)
     icon.Cooldown:SetDrawEdge(showSwipe)
 
-    -- Use overlay color (aura mode) — default to Blizzard yellow
-    local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
-    if not oR then oR, oG, oB, oA = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
+    if not showSwipe then
+        icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
+    else
+        -- Use overlay color (aura mode) — default to Blizzard yellow
+        local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
+        if not oR then oR, oG, oB, oA = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
 
-    icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
-    icon.Cooldown:SetSwipeColor(oR, oG, oB, oA)
+        icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+        icon.Cooldown:SetSwipeColor(oR, oG, oB, oA)
+    end
 end
 
 ---------------------------------------------------------------------------

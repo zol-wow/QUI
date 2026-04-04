@@ -3274,7 +3274,7 @@ do
 
                         sy = U.PlaceRow(GUI:CreateFormCheckbox(body, "Radial Darkening", "showCooldownSwipe", swipeDB, RefreshSwipe), body, sy)
                         sy = U.PlaceRow(GUI:CreateFormCheckbox(body, "GCD Swipe", "showGCDSwipe", swipeDB, RefreshSwipe), body, sy)
-                        sy = U.PlaceRow(GUI:CreateFormCheckbox(body, "Buff Swipe", "showBuffSwipe", swipeDB, RefreshSwipe), body, sy)
+                        sy = U.PlaceRow(GUI:CreateFormCheckbox(body, "Buff/Debuff Swipe", "showBuffSwipe", swipeDB, RefreshSwipe), body, sy)
                         sy = U.PlaceRow(GUI:CreateFormCheckbox(body, "Recharge Edge", "showRechargeEdge", swipeDB, RefreshSwipe), body, sy)
 
                         -- Section: Overlay Color

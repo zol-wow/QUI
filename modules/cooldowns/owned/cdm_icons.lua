@@ -1782,6 +1782,10 @@ local _batchTime = 0
 -- When true, GCD-only cooldowns are allowed through to the CooldownFrame
 -- instead of being cleared, so the GCD swipe animation can render.
 local _showGCDSwipe = false
+-- _showBuffSwipe is hoisted once per batch from swipe module settings.
+-- When false, cooldown-container icons skip aura detection entirely so
+-- the icon shows the recharge/cooldown timer instead of the aura duration.
+local _showBuffSwipe = true
 
 local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
@@ -1963,8 +1967,10 @@ local function UpdateIconCooldown(icon)
                 -- spell ID but aren't in Blizzard's buff CDM categories,
                 -- so we always try ResolveAuraState (not gated on the
                 -- _abilityToAuraSpellID mapping).
+                -- When buff/debuff swipe is disabled, skip aura detection
+                -- so the icon shows the recharge/cooldown timer instead.
                 local _ncAuraActive = false
-                if ns.CDMSpellData then
+                if ns.CDMSpellData and _showBuffSwipe then
                     local p = icon._auraParams or {}
                     icon._auraParams = p
                     p.spellID = sid
@@ -1995,6 +2001,15 @@ local function UpdateIconCooldown(icon)
                                 ReapplySwipeStyle(icon.Cooldown, icon)
                             end
                         end
+                    end
+                elseif not _showBuffSwipe and icon._auraActive then
+                    -- Buff/debuff swipe was just disabled: clear aura state
+                    -- so the mirror hook resumes forwarding cooldown data.
+                    icon._auraActive = false
+                    if icon.Cooldown then
+                        pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
+                        pcall(icon.Cooldown.Clear, icon.Cooldown)
+                        ReapplySwipeStyle(icon.Cooldown, icon)
                     end
                 end
 
@@ -2050,8 +2065,10 @@ local function UpdateIconCooldown(icon)
                 -- timer begins). Detect active aura via ResolveAuraState
                 -- and show it; when the aura fades, fall through to the
                 -- normal charge-recharge display via GetBestSpellCooldown.
+                -- When buff/debuff swipe is disabled, skip aura detection
+                -- so the icon shows the recharge/cooldown timer instead.
                 local _chargedAuraActive = false
-                if entry.hasCharges and ns.CDMSpellData then
+                if entry.hasCharges and ns.CDMSpellData and _showBuffSwipe then
                     local _cBaseID = _runtimeSid
 
                     local p = icon._auraParams or {}
@@ -2089,6 +2106,15 @@ local function UpdateIconCooldown(icon)
                                 ReapplySwipeStyle(icon.Cooldown, icon)
                             end
                         end
+                    end
+                elseif entry.hasCharges and not _showBuffSwipe and icon._auraActive then
+                    -- Buff/debuff swipe was just disabled: clear aura state
+                    -- so the mirror hook resumes forwarding cooldown data.
+                    icon._auraActive = false
+                    if icon.Cooldown then
+                        pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
+                        pcall(icon.Cooldown.Clear, icon.Cooldown)
+                        ReapplySwipeStyle(icon.Cooldown, icon)
                     end
                 end
 
@@ -2912,6 +2938,7 @@ function CDMIcons:UpdateAllCooldowns()
     local _swipeMod = ns._OwnedSwipe
     local _swipeSettings = _swipeMod and _swipeMod.GetSettings and _swipeMod.GetSettings()
     _showGCDSwipe = _swipeSettings and _swipeSettings.showGCDSwipe or false
+    _showBuffSwipe = _swipeSettings and (_swipeSettings.showBuffSwipe ~= false) or false
     local _ncdmContainers = _ncdm and _ncdm.containers
     local inCombat = InCombatLockdown()
 
