@@ -116,7 +116,12 @@ local function BuildImportExportTab(tabContent)
     info:SetJustifyH("LEFT")
     y = y - 28
 
-    local validationNote = GUI:CreateLabel(tabContent, "Import now validates payload structure and may reject incompatible or corrupted strings.", 10, C.textMuted)
+    local validationNote = GUI:CreateLabel(
+        tabContent,
+        "Import validates the decoded profile. If analysis fails, reasons are listed and you can strip incompatible settings from a temporary copy, then import the rest.",
+        10,
+        C.textMuted
+    )
     validationNote:SetPoint("TOPLEFT", PAD, y)
     validationNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     validationNote:SetJustifyH("LEFT")
@@ -227,6 +232,8 @@ local function BuildImportExportTab(tabContent)
         preview = nil,
         selected = {},
         checkboxByID = {},
+        --- When set, selective/full import uses this validated table instead of re-parsing the edit box (required after sanitization).
+        activePayload = nil,
     }
 
     local previewHost = CreateFrame("Frame", nil, tabContent)
@@ -343,7 +350,7 @@ local function BuildImportExportTab(tabContent)
         tabContent:SetHeight(math.abs(previewTopY) + previewHost:GetHeight() + 20)
     end
 
-    local function RenderPreview(title, message, preview, isError)
+    local function RenderPreview(title, message, preview, isError, validationDetail)
         if previewHost.content then
             previewHost.content:Hide()
             previewHost.content:SetParent(nil)
@@ -371,6 +378,71 @@ local function BuildImportExportTab(tabContent)
         )
         banner:SetPoint("TOPLEFT", 0, localY)
         localY = localY - bannerHeight - 14
+
+        if isError and type(validationDetail) == "table" and type(validationDetail.errors) == "table" and #validationDetail.errors > 0 then
+            local stripBtn = GUI:CreateButton(content, "STRIP incompatible settings & re-analyze", 300, 28, function()
+                local core = GetCore()
+                if not core or not core.SanitizeProfileImportString or not core.BuildProfileImportPreviewFromPayload then
+                    print("|cffff0000QUI: Profile sanitization is not available.|r")
+                    return
+                end
+                local ok, payload, prefix, stripped, err = core:SanitizeProfileImportString(importEditBox:GetText())
+                if not ok then
+                    local msg = err
+                        or "Could not produce a compatible profile from this string."
+                    if type(msg) ~= "string" then
+                        msg = tostring(msg)
+                    end
+                    ClearAnalysis(msg, true)
+                    return
+                end
+                local newPreview = core:BuildProfileImportPreviewFromPayload(payload, prefix)
+                if not newPreview then
+                    ClearAnalysis("Sanitization succeeded but preview could not be built.", true)
+                    return
+                end
+                if type(stripped) == "table" and #stripped > 0 then
+                    newPreview.sanitizationLog = stripped
+                end
+                analysisState.preview = newPreview
+                analysisState.activePayload = payload
+                analysisState.selected = {}
+                for _, category in ipairs(newPreview.categories or {}) do
+                    if category.available and category.recommended then
+                        analysisState.selected[category.id] = true
+                    end
+                end
+                local note = "Incompatible keys were removed so this string matches what the current QUI version expects. Review categories below, then import. Other settings from the string are unchanged."
+                RenderPreview("Import ready (sanitized)", note, newPreview, false, nil)
+            end)
+            stripBtn:SetPoint("TOPLEFT", 0, localY)
+            localY = localY - 36
+
+            local stripHint = CreateWrappedLabel(
+                content,
+                "Removes only the listed settings from a temporary copy of the import—your pasted text is not modified. Defaults will apply for anything removed.",
+                10,
+                C.textMuted
+            )
+            stripHint:SetPoint("TOPLEFT", 0, localY)
+            stripHint:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+            localY = localY - (stripHint:GetStringHeight() or 28) - 10
+        end
+
+        if preview and type(preview.sanitizationLog) == "table" and #preview.sanitizationLog > 0 then
+            local removedText = table.concat(preview.sanitizationLog, "\n")
+            local sanBanner, sanH = CreateImportBanner(
+                content,
+                "Removed incompatible settings",
+                removedText,
+                {0.961, 0.620, 0.043, 1},
+                {0.25, 0.18, 0.05, 0.5},
+                {0.961, 0.620, 0.043, 0.5},
+                {0.85, 0.8, 0.72, 1}
+            )
+            sanBanner:SetPoint("TOPLEFT", 0, localY)
+            localY = localY - sanH - 14
+        end
 
         if preview and type(preview.categories) == "table" then
             local summaryHeader = GUI:CreateSectionHeader(content, "Selective Import")
@@ -495,7 +567,20 @@ local function BuildImportExportTab(tabContent)
                     return
                 end
 
-                local ok, err = core:ImportProfileSelectionFromString(importEditBox:GetText(), selectedIDs, GetTargetProfileName())
+                local ok, err
+                if analysisState.activePayload then
+                    ok, err = core:ImportProfileSelectionFromValidatedPayload(
+                        analysisState.activePayload,
+                        selectedIDs,
+                        GetTargetProfileName()
+                    )
+                else
+                    ok, err = core:ImportProfileSelectionFromString(
+                        importEditBox:GetText(),
+                        selectedIDs,
+                        GetTargetProfileName()
+                    )
+                end
                 PrintImportResult(ok, err)
                 if ok then
                     ShowReloadPrompt("Selected profile settings imported. Reload UI to fully apply the changes?")
@@ -523,7 +608,15 @@ local function BuildImportExportTab(tabContent)
                             return
                         end
 
-                        local ok, err = core:ImportProfileFromString(importEditBox:GetText(), targetProfileName)
+                        local ok, err
+                        if analysisState.activePayload then
+                            ok, err = core:ImportProfileFromValidatedPayload(
+                                analysisState.activePayload,
+                                targetProfileName
+                            )
+                        else
+                            ok, err = core:ImportProfileFromString(importEditBox:GetText(), targetProfileName)
+                        end
                         PrintImportResult(ok, err)
                         if ok then
                             ShowReloadPrompt("Full profile imported. Reload UI to fully apply the changes?")
@@ -545,11 +638,13 @@ local function BuildImportExportTab(tabContent)
     local function ClearAnalysis(message, isError)
         analysisState.preview = nil
         analysisState.selected = {}
+        analysisState.activePayload = nil
         RenderPreview(
             isError and "Import Analysis Failed" or "Analyze Import",
             message or "Paste a QUI profile string and click Analyze Import to choose what to import.",
             nil,
-            isError
+            isError,
+            nil
         )
     end
 
@@ -562,12 +657,27 @@ local function BuildImportExportTab(tabContent)
 
         local ok, result = core:AnalyzeProfileImportString(importEditBox:GetText())
         if not ok then
-            ClearAnalysis(result or "Import analysis failed.", true)
+            if type(result) == "table" and result.errors and core.DescribeProfileImportValidationErrors then
+                analysisState.preview = nil
+                analysisState.selected = {}
+                analysisState.activePayload = nil
+                local detailText = core:DescribeProfileImportValidationErrors(result)
+                RenderPreview(
+                    "Import analysis blocked",
+                    detailText,
+                    nil,
+                    true,
+                    result
+                )
+            else
+                ClearAnalysis(result or "Import analysis failed.", true)
+            end
             return
         end
 
         analysisState.preview = result
         analysisState.selected = {}
+        analysisState.activePayload = nil
         for _, category in ipairs(result.categories or {}) do
             if category.available and category.recommended then
                 analysisState.selected[category.id] = true
@@ -578,7 +688,8 @@ local function BuildImportExportTab(tabContent)
             "Import Ready",
             "Choose the parts of the profile you want to import. Leave categories unchecked to preserve your current settings in those areas.",
             result,
-            false
+            false,
+            nil
         )
     end)
     analyzeBtn:SetPoint("TOPLEFT", PAD, y)
@@ -587,7 +698,7 @@ local function BuildImportExportTab(tabContent)
     analyzeHint:SetPoint("LEFT", analyzeBtn, "RIGHT", 12, 0)
 
     importEditBox:SetScript("OnTextChanged", function(_, userInput)
-        if userInput and analysisState.preview then
+        if userInput and (analysisState.preview or analysisState.activePayload) then
             ClearAnalysis("Import string changed. Analyze it again before importing.", false)
         end
     end)

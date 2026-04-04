@@ -13,6 +13,8 @@ local MAX_IMPORT_DEPTH = 20
 local MAX_IMPORT_NODES = 50000
 local MAX_SCHEMA_ERRORS = 8
 local MAX_DISPLAY_SCHEMA_ERRORS = 3
+local MAX_DETAIL_TYPE_MISMATCHES = 64
+local MAX_SANITIZE_STEPS = 128
 
 local function GetDisplayPath(path, rootLabel)
     if type(path) ~= "string" or path == "" then
@@ -105,7 +107,12 @@ local function ValidateImportTree(value, label, state, depth)
     for k, v in pairs(value) do
         local keyType = type(k)
         if keyType ~= "string" and keyType ~= "number" and keyType ~= "boolean" then
-            return false, { kind = "unsupported_key_type", keyType = keyType, path = label or "root" }
+            return false, {
+                kind = "unsupported_key_type",
+                keyType = keyType,
+                path = label or "root",
+                badKey = k,
+            }
         end
         local childLabel = ("%s.%s"):format(label or "root", tostring(k))
         local ok, issue = ValidateImportTree(v, childLabel, state, depth + 1)
@@ -141,24 +148,275 @@ local function ValidateTableTypeShape(candidate, schema, path, errors, depth)
     end
 end
 
-local function ValidateProfilePayload(core, profileData)
+local function ValidateTableTypeShapeDetailed(candidate, schema, path, errors, depth)
+    if #errors >= MAX_DETAIL_TYPE_MISMATCHES then return end
+    depth = depth or 0
+    if depth > MAX_IMPORT_DEPTH then return end
+    if type(candidate) ~= "table" or type(schema) ~= "table" then return end
+
+    for key, schemaValue in pairs(schema) do
+        if #errors >= MAX_DETAIL_TYPE_MISMATCHES then break end
+
+        local candidateValue = candidate[key]
+        if candidateValue ~= nil then
+            local schemaType = type(schemaValue)
+            local candidateType = type(candidateValue)
+            local keyPath = ("%s.%s"):format(path or "profile", tostring(key))
+
+            if schemaType ~= candidateType then
+                table.insert(errors, {
+                    kind = "type_mismatch",
+                    path = keyPath,
+                    expected = schemaType,
+                    actual = candidateType,
+                })
+            elseif schemaType == "table" then
+                ValidateTableTypeShapeDetailed(candidateValue, schemaValue, keyPath, errors, depth + 1)
+            end
+        end
+    end
+end
+
+local function NormalizeTreeIssue(issue)
+    if type(issue) ~= "table" then
+        return { kind = "unknown", path = "profile", detail = "invalid issue" }
+    end
+    local normalized = {
+        kind = issue.kind or "unknown",
+        path = issue.path,
+        limit = issue.limit,
+        expected = issue.expected,
+        actual = issue.actual,
+        valueType = issue.valueType,
+        keyType = issue.keyType,
+        badKey = issue.badKey,
+    }
+    return normalized
+end
+
+local function FormatDetailedLine(err)
+    if type(err) ~= "table" then
+        return tostring(err)
+    end
+    if err.kind == "type_mismatch" and err.path then
+        local where = GetDisplayPath(err.path, "profile")
+        return ("%s — expected %s, got %s"):format(where, tostring(err.expected), tostring(err.actual))
+    end
+    if err.kind == "unsupported_value_type" then
+        local where = GetDisplayPath(err.path or "profile", "profile")
+        return ("%s — unsupported value type %s"):format(where, tostring(err.valueType))
+    end
+    if err.kind == "unsupported_key_type" then
+        local where = GetDisplayPath(err.path or "profile", "profile")
+        return ("%s — table has invalid key type %s"):format(where, tostring(err.keyType))
+    end
+    if err.kind == "depth_limit" then
+        local where = GetDisplayPath(err.path or "profile", "profile")
+        return ("%s — nesting deeper than %s levels"):format(where, tostring(err.limit or MAX_IMPORT_DEPTH))
+    end
+    if err.kind == "node_limit" then
+        return ("Table too large (over %s nodes)"):format(tostring(err.limit or MAX_IMPORT_NODES))
+    end
+    return tostring(err.kind or "validation issue")
+end
+
+local function ValidateProfilePayloadDetailed(core, profileData)
     local ok, issue = ValidateImportTree(profileData, "profile")
     if not ok then
-        return false, FormatTreeValidationError(issue, "profile")
+        local n = NormalizeTreeIssue(issue)
+        return false, {
+            summary = FormatTreeValidationError(issue, "profile"),
+            errors = { n },
+        }
     end
 
     local defaults = core and core.db and core.db.defaults and core.db.defaults.profile
     if type(defaults) ~= "table" then
-        return true
+        return true, nil
     end
 
     local typeErrors = {}
-    ValidateTableTypeShape(profileData, defaults, "profile", typeErrors, 0)
+    ValidateTableTypeShapeDetailed(profileData, defaults, "profile", typeErrors, 0)
     if #typeErrors > 0 then
-        return false, FormatTypeMismatchErrors(typeErrors, "profile")
+        local legacyErrors = {}
+        for _, e in ipairs(typeErrors) do
+            legacyErrors[#legacyErrors + 1] = { path = e.path, expected = e.expected, actual = e.actual }
+        end
+        return false, {
+            summary = FormatTypeMismatchErrors(legacyErrors, "profile"),
+            errors = typeErrors,
+        }
     end
 
+    return true, nil
+end
+
+local function ValidateProfilePayload(core, profileData)
+    local ok, detail = ValidateProfilePayloadDetailed(core, profileData)
+    if not ok then
+        return false, detail and detail.summary or "Import failed profile validation."
+    end
     return true
+end
+
+local function DeleteKeyByDottedPath(root, fullPath)
+    if type(root) ~= "table" or type(fullPath) ~= "string" or fullPath == "" then
+        return false
+    end
+    local segments = {}
+    for segment in fullPath:gmatch("[^.]+") do
+        segments[#segments + 1] = segment
+    end
+    if #segments == 0 then
+        return false
+    end
+    if segments[1] == "profile" then
+        table.remove(segments, 1)
+    end
+    if #segments == 0 then
+        return false
+    end
+    local parent = root
+    for i = 1, #segments - 1 do
+        local seg = segments[i]
+        if type(parent[seg]) ~= "table" then
+            return false
+        end
+        parent = parent[seg]
+    end
+    local lastKey = segments[#segments]
+    parent[lastKey] = nil
+    return true
+end
+
+local function RemoveRawKeyAtPath(root, parentPath, badKey)
+    if type(root) ~= "table" or badKey == nil then
+        return false
+    end
+    local parent = root
+    if type(parentPath) == "string" and parentPath ~= "" and parentPath ~= "root" then
+        local segments = {}
+        for segment in parentPath:gmatch("[^.]+") do
+            segments[#segments + 1] = segment
+        end
+        if segments[1] == "profile" then
+            table.remove(segments, 1)
+        end
+        for i = 1, #segments do
+            local seg = segments[i]
+            if type(parent[seg]) ~= "table" then
+                return false
+            end
+            parent = parent[seg]
+        end
+    end
+    parent[badKey] = nil
+    return true
+end
+
+local function SanitizeProfilePayloadStep(core, working, stripped)
+    local ok, detail = ValidateProfilePayloadDetailed(core, working)
+    if ok then
+        return true, true
+    end
+    if type(detail) ~= "table" or type(detail.errors) ~= "table" or #detail.errors == 0 then
+        return false, false, detail and detail.summary or "Validation failed."
+    end
+
+    local err = detail.errors[1]
+    local removed = false
+
+    if err.kind == "type_mismatch" and err.path then
+        if DeleteKeyByDottedPath(working, err.path) then
+            removed = true
+            stripped[#stripped + 1] = FormatDetailedLine(err) .. " (removed)"
+        end
+    elseif err.kind == "unsupported_value_type" and err.path then
+        if DeleteKeyByDottedPath(working, err.path) then
+            removed = true
+            stripped[#stripped + 1] = FormatDetailedLine(err) .. " (removed)"
+        end
+    elseif err.kind == "unsupported_key_type" then
+        if RemoveRawKeyAtPath(working, err.path or "profile", err.badKey) then
+            removed = true
+            stripped[#stripped + 1] = FormatDetailedLine(err) .. " (removed)"
+        end
+    elseif err.kind == "depth_limit" and err.path then
+        if DeleteKeyByDottedPath(working, err.path) then
+            removed = true
+            stripped[#stripped + 1] = FormatDetailedLine(err) .. " (removed; subtree too deep)"
+        end
+    elseif err.kind == "node_limit" then
+        return false, false, detail.summary or "This profile is too large to import."
+    else
+        return false, false, detail.summary or "Could not automatically remove incompatible settings."
+    end
+
+    if not removed then
+        return false, false, detail.summary or "Could not remove incompatible settings."
+    end
+    return true, false
+end
+
+local function SanitizeProfilePayload(core, profileData)
+    if type(profileData) ~= "table" then
+        return false, nil, {}, "Invalid profile data."
+    end
+    local working = CloneValue(profileData)
+    local stripped = {}
+
+    for _ = 1, MAX_SANITIZE_STEPS do
+        local proceed, done, errMsg = SanitizeProfilePayloadStep(core, working, stripped)
+        if not proceed then
+            return false, working, stripped, errMsg
+        end
+        if done then
+            return true, working, stripped, nil
+        end
+    end
+
+    return false, working, stripped, "Too many incompatible settings; try a fresh export from QUI."
+end
+
+local function DeserializeProfileImportPayload(str)
+    if not AceSerializer or not LibDeflate then
+        return false, nil, nil, "Import requires AceSerializer-3.0 and LibDeflate."
+    end
+    if not str or str == "" then
+        return false, nil, nil, "No data provided."
+    end
+
+    str = str:gsub("%s+", "")
+    if str == "" then
+        return false, nil, nil, "No data provided."
+    end
+
+    local prefix = DetectProfileImportPrefix(str)
+    if prefix then
+        if not SUPPORTED_PROFILE_IMPORT_PREFIXES[prefix] then
+            return false, nil, nil, ("This doesn't appear to be a QUI profile string (%s)."):format(prefix)
+        end
+        str = str:sub(#prefix + 2)
+    else
+        prefix = "QUI1"
+    end
+
+    local compressed = LibDeflate:DecodeForPrint(str)
+    if not compressed then
+        return false, nil, prefix, "Could not decode string (maybe corrupted)."
+    end
+
+    local serialized = LibDeflate:DecompressDeflate(compressed)
+    if not serialized then
+        return false, nil, prefix, "Could not decompress data."
+    end
+
+    local ok, payload = AceSerializer:Deserialize(serialized)
+    if not ok or type(payload) ~= "table" then
+        return false, nil, prefix, "Could not deserialize profile."
+    end
+
+    return true, payload, prefix, nil
 end
 
 local function ValidateTrackerBarPayload(data, multi)
@@ -1066,41 +1324,10 @@ local function ParseProfileImportString(core, str)
     if not core or not core.db or not core.db.profile then
         return false, "No profile loaded."
     end
-    if not AceSerializer or not LibDeflate then
-        return false, "Import requires AceSerializer-3.0 and LibDeflate."
-    end
-    if not str or str == "" then
-        return false, "No data provided."
-    end
 
-    str = str:gsub("%s+", "")
-    if str == "" then
-        return false, "No data provided."
-    end
-
-    local prefix = DetectProfileImportPrefix(str)
-    if prefix then
-        if not SUPPORTED_PROFILE_IMPORT_PREFIXES[prefix] then
-            return false, ("This doesn't appear to be a QUI profile string (%s)."):format(prefix)
-        end
-        str = str:sub(#prefix + 2)
-    else
-        prefix = "QUI1"
-    end
-
-    local compressed = LibDeflate:DecodeForPrint(str)
-    if not compressed then
-        return false, "Could not decode string (maybe corrupted)."
-    end
-
-    local serialized = LibDeflate:DecompressDeflate(compressed)
-    if not serialized then
-        return false, "Could not decompress data."
-    end
-
-    local ok, payload = AceSerializer:Deserialize(serialized)
-    if not ok or type(payload) ~= "table" then
-        return false, "Could not deserialize profile."
+    local ok, payload, prefix, decodeErr = DeserializeProfileImportPayload(str)
+    if not ok then
+        return false, decodeErr or "Could not read import string."
     end
 
     local payloadValid, payloadErr = ValidateProfilePayload(core, payload)
@@ -1287,74 +1514,20 @@ local function PrepareImportTargetProfile(core, requestedProfileName)
     return true, (db.GetCurrentProfile and db:GetCurrentProfile()) or explicitName, true
 end
 
----=================================================================================
---- PROFILE IMPORT/EXPORT
----=================================================================================
-
-function QUICore:ExportProfileToString()
-    if not self.db or not self.db.profile then
-        return "No profile loaded."
-    end
-    if not AceSerializer or not LibDeflate then
-        return "Export requires AceSerializer-3.0 and LibDeflate."
-    end
-
-    local serialized = AceSerializer:Serialize(self.db.profile)
-    if not serialized or type(serialized) ~= "string" then
-        return "Failed to serialize profile."
-    end
-
-    local compressed = LibDeflate:CompressDeflate(serialized)
-    if not compressed then
-        return "Failed to compress profile."
-    end
-
-    local encoded = LibDeflate:EncodeForPrint(compressed)
-    if not encoded then
-        return "Failed to encode profile."
-    end
-
-    return "QUI1:" .. encoded
-end
-
-function QUICore:GetProfileImportCategories()
-    return BuildProfileImportPreview({}, "QUI1").categories or {}
-end
-
-
-function QUICore:AnalyzeProfileImportString(str)
-    local ok, payloadOrErr, prefix = ParseProfileImportString(self, str)
-    if not ok then
-        return false, payloadOrErr
-    end
-
-    return true, BuildProfileImportPreview(payloadOrErr, prefix)
-end
-
-function QUICore:ImportProfileFromString(str, targetProfileName)
-    local ok, payloadOrErr = ParseProfileImportString(self, str)
-    if not ok then
-        return false, payloadOrErr
-    end
-
-    local targetOK, activeProfileName, usingExplicitTarget = PrepareImportTargetProfile(self, targetProfileName)
+local function RunImportFullProfile(core, importedProfile, targetProfileName)
+    local targetOK, activeProfileName, usingExplicitTarget = PrepareImportTargetProfile(core, targetProfileName)
     if not targetOK then
         return false, activeProfileName
     end
 
-    local importOK, message = ApplyFullProfilePayload(self, payloadOrErr)
+    local importOK, message = ApplyFullProfilePayload(core, importedProfile)
     if importOK and usingExplicitTarget then
         return true, ("Profile imported successfully into profile '%s'."):format(activeProfileName)
     end
     return importOK, message
 end
 
-function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targetProfileName)
-    local ok, payloadOrErr = ParseProfileImportString(self, str)
-    if not ok then
-        return false, payloadOrErr
-    end
-
+local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs, targetProfileName)
     if type(selectedCategoryIDs) ~= "table" then
         return false, "Select at least one category to import."
     end
@@ -1407,12 +1580,12 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targ
         return false, "Select at least one category to import."
     end
 
-    local targetOK, activeProfileName, usingExplicitTarget = PrepareImportTargetProfile(self, targetProfileName)
+    local targetOK, activeProfileName, usingExplicitTarget = PrepareImportTargetProfile(core, targetProfileName)
     if not targetOK then
         return false, activeProfileName
     end
 
-    local profile = self.db and self.db.profile
+    local profile = core.db and core.db.profile
     if type(profile) ~= "table" then
         return false, "No profile loaded."
     end
@@ -1485,14 +1658,148 @@ function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targ
 
     if ns.Registry then
         ns.Registry:RefreshByCategories(selectedCategoryIDs)
-    elseif self.RefreshAll then
-        self:RefreshAll()
+    elseif core.RefreshAll then
+        core:RefreshAll()
     end
 
     if usingExplicitTarget then
         return true, ("Imported %s into profile '%s'."):format(table.concat(selectedLabels, ", "), activeProfileName)
     end
     return true, ("Imported %s."):format(table.concat(selectedLabels, ", "))
+end
+
+---=================================================================================
+--- PROFILE IMPORT/EXPORT
+---=================================================================================
+
+function QUICore:ExportProfileToString()
+    if not self.db or not self.db.profile then
+        return "No profile loaded."
+    end
+    if not AceSerializer or not LibDeflate then
+        return "Export requires AceSerializer-3.0 and LibDeflate."
+    end
+
+    local serialized = AceSerializer:Serialize(self.db.profile)
+    if not serialized or type(serialized) ~= "string" then
+        return "Failed to serialize profile."
+    end
+
+    local compressed = LibDeflate:CompressDeflate(serialized)
+    if not compressed then
+        return "Failed to compress profile."
+    end
+
+    local encoded = LibDeflate:EncodeForPrint(compressed)
+    if not encoded then
+        return "Failed to encode profile."
+    end
+
+    return "QUI1:" .. encoded
+end
+
+function QUICore:GetProfileImportCategories()
+    return BuildProfileImportPreview({}, "QUI1").categories or {}
+end
+
+function QUICore:BuildProfileImportPreviewFromPayload(payload, prefix)
+    if type(payload) ~= "table" then
+        return nil
+    end
+    return BuildProfileImportPreview(payload, prefix or "QUI1")
+end
+
+function QUICore:DescribeProfileImportValidationErrors(detail)
+    if type(detail) ~= "table" then
+        return tostring(detail or "Unknown error")
+    end
+    local lines = { detail.summary or "Validation failed.", "" }
+    for _, err in ipairs(detail.errors or {}) do
+        lines[#lines + 1] = "• " .. FormatDetailedLine(err)
+    end
+    return table.concat(lines, "\n")
+end
+
+
+function QUICore:AnalyzeProfileImportString(str)
+    if not self.db or not self.db.profile then
+        return false, "No profile loaded."
+    end
+
+    local ok, payload, prefix, decodeErr = DeserializeProfileImportPayload(str)
+    if not ok then
+        return false, decodeErr or "Could not read import string."
+    end
+
+    local vok, detail = ValidateProfilePayloadDetailed(self, payload)
+    if not vok then
+        return false, detail
+    end
+
+    return true, BuildProfileImportPreview(payload, prefix)
+end
+
+function QUICore:SanitizeProfileImportString(str)
+    if not self.db or not self.db.profile then
+        return false, nil, nil, nil, "No profile loaded."
+    end
+
+    local ok, payload, prefix, decodeErr = DeserializeProfileImportPayload(str)
+    if not ok then
+        return false, nil, nil, nil, decodeErr or "Could not read import string."
+    end
+
+    local sok, sanitized, stripped, serr = SanitizeProfilePayload(self, payload)
+    stripped = stripped or {}
+    if not sok then
+        return false, nil, prefix, stripped, serr or "Could not remove incompatible settings."
+    end
+
+    return true, sanitized, prefix, stripped, nil
+end
+
+function QUICore:ImportProfileFromString(str, targetProfileName)
+    local ok, payloadOrErr = ParseProfileImportString(self, str)
+    if not ok then
+        return false, payloadOrErr
+    end
+
+    return RunImportFullProfile(self, payloadOrErr, targetProfileName)
+end
+
+function QUICore:ImportProfileFromValidatedPayload(payload, targetProfileName)
+    if type(payload) ~= "table" then
+        return false, "Invalid import data."
+    end
+
+    local payloadValid, payloadErr = ValidateProfilePayload(self, payload)
+    if not payloadValid then
+        return false, payloadErr
+    end
+
+    return RunImportFullProfile(self, payload, targetProfileName)
+end
+
+function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targetProfileName)
+    local ok, payloadOrErr = ParseProfileImportString(self, str)
+    if not ok then
+        return false, payloadOrErr
+    end
+
+    return RunImportProfileSelection(self, payloadOrErr, selectedCategoryIDs, targetProfileName)
+end
+
+function QUICore:ImportProfileSelectionFromValidatedPayload(payload, selectedCategoryIDs, targetProfileName)
+    if type(payload) ~= "table" then
+        return false, "Invalid import data."
+    end
+
+    local payloadValid, payloadErr = ValidateProfilePayload(self, payload)
+    if not payloadValid then
+        return false, payloadErr
+    end
+
+    return RunImportProfileSelection(self, payload, selectedCategoryIDs, targetProfileName)
 end
 
 ---=================================================================================
