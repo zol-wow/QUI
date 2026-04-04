@@ -1009,12 +1009,19 @@ local _anchorGuardedFrames = {}  -- [frame] = true, prevents double-hooking
 local _setPointGuardedFrames = {} -- [frame] = true, prevents double-hooking SetPoint guards
 
 -- Layer 1: Hook ApplySystemAnchor on a single Blizzard frame
+local DYNAMIC_REANCHOR_KEYS = { buffFrame = true, debuffFrame = true }
+
 local function InstallAnchorGuard(frame, key)
     if _anchorGuardedFrames[frame] then return end
     if not frame.ApplySystemAnchor then
         -- Frames without ApplySystemAnchor (e.g. UIWidget containers) get
         -- repositioned by Blizzard layout code via direct SetPoint calls.
         -- Hook SetPoint instead so QUI's anchor overrides stick.
+        -- Skip for dynamically re-anchored containers (buff/debuff/buffBar):
+        -- their layout code legitimately changes the anchor point to match
+        -- growth direction, and the guard would fight that re-anchor on
+        -- every aura update, resetting it back to the saved position.
+        if DYNAMIC_REANCHOR_KEYS[key] then return end
         if _setPointGuardedFrames[frame] then return end
         _setPointGuardedFrames[frame] = true
         hooksecurefunc(frame, "SetPoint", function()
