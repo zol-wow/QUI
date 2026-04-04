@@ -37,9 +37,9 @@ local defaults = {
             overrideSCTFont = false,  -- Override scrolling combat text font with QUI font
             autoInsertKey = true,  -- Auto-insert keystone in M+ UI
             skinKeystoneFrame = true,  -- Skin keystone insertion window
-            skinGameMenu = false,  -- Skin ESC menu (opt-in)
+            skinGameMenu = true,  -- Skin ESC menu (opt-in)
             allowReloadInCombat = false,  -- Allow /reload during combat (bypass SafeReload)
-            addQUIButton = false,  -- Add QUI button to ESC menu (opt-in)
+            addQUIButton = true,  -- Add QUI button to ESC menu (opt-in)
             addEditModeButton = true,  -- Add QUI Edit Mode button to ESC menu
             gameMenuFontSize = 12,  -- Game menu button font size
             gameMenuDim = true,  -- Dim background when game menu is open
@@ -60,21 +60,21 @@ local defaults = {
             statusTrackingBarsBarTextOutline = "_inherit",  -- _inherit | _none | OUTLINE | THICKOUTLINE
             statusTrackingBarsBarTextOffsetX = 0,
             statusTrackingBarsBarTextOffsetY = 0,
-            skinOverrideActionBar = false,  -- Skin override/vehicle action bar (opt-in)
-            skinObjectiveTracker = false,  -- Skin objective tracker (opt-in)
+            skinOverrideActionBar = true,  -- Skin override/vehicle action bar (opt-in)
+            skinObjectiveTracker = true,  -- Skin objective tracker (opt-in)
             objectiveTrackerClickThrough = false,  -- Make objective tracker click-through
             objectiveTrackerHeight = 600,  -- Objective tracker max height
             objectiveTrackerModuleFontSize = 12,  -- Module headers (QUESTS, ACHIEVEMENTS, etc.)
             objectiveTrackerTitleFontSize = 10,  -- Quest/achievement titles
             objectiveTrackerTextFontSize = 10,  -- Objective text lines
-            hideObjectiveTrackerBorder = false,  -- Hide the class-colored border
+            hideObjectiveTrackerBorder = true,  -- Hide the class-colored border
             objectiveTrackerModuleColor = { 1.0, 0.82, 0.0, 1.0 },  -- Module header color (Blizzard gold)
             objectiveTrackerTitleColor = { 1.0, 1.0, 1.0, 1.0 },  -- Quest title color (white)
             objectiveTrackerTextColor = { 0.8, 0.8, 0.8, 1.0 },  -- Objective text color (light gray)
             skinInstanceFrames = false,  -- Skin PVE/Dungeon/PVP frames (opt-in)
-            skinAuctionHouse = false,  -- Skin Auction House frame (opt-in)
-            skinCraftingOrders = false,  -- Skin Crafting Orders frame (opt-in)
-            skinProfessions = false,  -- Skin Professions frame (opt-in)
+            skinAuctionHouse = true,  -- Skin Auction House frame (opt-in)
+            skinCraftingOrders = true,  -- Skin Crafting Orders frame (opt-in)
+            skinProfessions = true,  -- Skin Professions frame (opt-in)
             skinBgColor = { 0.008, 0.008, 0.008, 1 },  -- Skinning background color (with alpha)
             skinAlerts = true,  -- Skin alert/toast frames
             skinCharacterFrame = true,  -- Skin Character Frame (Character, Reputation, Currency tabs)
@@ -85,13 +85,13 @@ local defaults = {
             autoRepair = "personal",      -- "off", "personal", "guild"
             autoRoleAccept = true,
             autoAcceptInvites = "all",    -- "off", "all", "friends", "guild", "both"
-            autoAcceptQuest = false,
-            autoTurnInQuest = false,
+            autoAcceptQuest = true,
+            autoTurnInQuest = true,
             questHoldShift = true,
             fastAutoLoot = true,
-            autoSelectGossip = false,  -- Auto-select single gossip options
-            autoCombatLog = false,  -- Auto start/stop combat logging in M+ (opt-in)
-            autoCombatLogRaid = false,  -- Auto start/stop combat logging in raids (opt-in)
+            autoSelectGossip = true,  -- Auto-select single gossip options
+            autoCombatLog = true,  -- Auto start/stop combat logging in M+ (opt-in)
+            autoCombatLogRaid = true,  -- Auto start/stop combat logging in raids (opt-in)
             autoDeleteConfirm = true,  -- Auto-fill DELETE confirmation text
             auctionHouseExpansionFilter = true,  -- Auto-enable current expansion filter in AH
             craftingOrderExpansionFilter = true,  -- Auto-enable current expansion filter in Crafting Orders
@@ -115,7 +115,7 @@ local defaults = {
             petWarningOffsetY = -200,   -- Warning frame Y offset from center
             -- Focus Cast Alert (warn when hostile focus is casting and interrupt is ready)
             focusCastAlert = {
-                enabled = false,
+                enabled = true,
                 text = "Focus is casting. Kick!",
                 anchorTo = "screen", -- "screen", "essential", "focus"
                 offsetX = 0,
@@ -127,7 +127,7 @@ local defaults = {
                 useClassColor = false,
             },
             -- Consumable Check (disabled by default)
-            consumableCheckEnabled = false,       -- Master toggle
+            consumableCheckEnabled = true,       -- Master toggle
             consumableOnReadyCheck = true,        -- Show on ready check
             consumableOnDungeon = false,          -- Show on dungeon entrance
             consumableOnRaid = false,             -- Show on raid entrance
@@ -143,7 +143,7 @@ local defaults = {
             consumablePreferredRune = nil,        -- Preferred rune item ID
             consumablePreferredOilMH = nil,       -- Preferred main hand oil item ID
             consumablePreferredOilOH = nil,       -- Preferred off hand oil item ID
-            consumableExpirationWarning = false,  -- Warn when buffs expiring
+            consumableExpirationWarning = true,  -- Warn when buffs expiring
             consumableExpirationThreshold = 300,  -- Seconds before expiration warning
             consumableAnchorMode = true,          -- Anchor to ready check frame
             consumableIconOffset = 5,             -- Icon offset from anchor
@@ -323,13 +323,13 @@ local defaults = {
                 clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
                 row1 = {
-                    iconCount = 8,      -- How many icons in row 1 (0 = disabled)
+                    iconCount = 12,     -- How many icons in row 1 (0 = disabled)
                     iconSize = 39,      -- Icon size in pixels (width)
                     borderSize = 1,     -- Border thickness around icon (0 to 5)
                     borderColorTable = {0, 0, 0, 1}, -- Border color (RGBA)
                     aspectRatioCrop = 1.0,  -- 1.0 = square, higher = flatter
                     zoom = 0,           -- Icon texture zoom (0 to 0.2)
-                    padding = 2,        -- Spacing between icons (-20 to 20)
+                    padding = 0,        -- Spacing between icons (-20 to 20)
                     xOffset = 0,        -- Horizontal offset for this row
                     yOffset = 0,        -- Vertical offset for this row (-50 to 50)
                     hideDurationText = false, -- Hide duration countdown text on CDM icons
@@ -338,41 +338,20 @@ local defaults = {
                     durationOffsetY = 0, -- Duration text Y offset
                     stackSize = 12,     -- Stack count text font size (8 to 24)
                     stackOffsetX = 0,   -- Stack text X offset
-                    stackOffsetY = 2,   -- Stack text Y offset
+                    stackOffsetY = 0,   -- Stack text Y offset
                     durationTextColor = {1, 1, 1, 1}, -- Duration text color (white default)
                     durationAnchor = "CENTER",        -- Duration text anchor point
                     stackTextColor = {1, 1, 1, 1},    -- Stack text color (white default)
                     stackAnchor = "BOTTOMRIGHT",      -- Stack text anchor point
                 },
                 row2 = {
-                    iconCount = 8,
+                    iconCount = 10,
                     iconSize = 39,
                     borderSize = 1,
                     borderColorTable = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
-                    padding = 2,
-                    xOffset = 0,
-                    yOffset = 3,
-                    durationSize = 16,
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    stackSize = 12,
-                    stackOffsetX = 0,
-                    stackOffsetY = 2,
-                    durationTextColor = {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    stackTextColor = {1, 1, 1, 1},
-                    stackAnchor = "BOTTOMRIGHT",
-                },
-                row3 = {
-                    iconCount = 8,      -- 0 = row disabled by default
-                    iconSize = 39,
-                    borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
-                    aspectRatioCrop = 1.0,
-                    zoom = 0,
-                    padding = 2,
+                    padding = 1,
                     xOffset = 0,
                     yOffset = 0,
                     durationSize = 16,
@@ -380,7 +359,28 @@ local defaults = {
                     durationOffsetY = 0,
                     stackSize = 12,
                     stackOffsetX = 0,
-                    stackOffsetY = 2,
+                    stackOffsetY = 0,
+                    durationTextColor = {1, 1, 1, 1},
+                    durationAnchor = "CENTER",
+                    stackTextColor = {1, 1, 1, 1},
+                    stackAnchor = "BOTTOMRIGHT",
+                },
+                row3 = {
+                    iconCount = 10,     -- 0 = row disabled by default
+                    iconSize = 39,
+                    borderSize = 1,
+                    borderColorTable = {0, 0, 0, 1},
+                    aspectRatioCrop = 1.0,
+                    zoom = 0,
+                    padding = 0,
+                    xOffset = 0,
+                    yOffset = 0,
+                    durationSize = 16,
+                    durationOffsetX = 0,
+                    durationOffsetY = 0,
+                    stackSize = 12,
+                    stackOffsetX = 0,
+                    stackOffsetY = 0,
                     durationTextColor = {1, 1, 1, 1},
                     durationAnchor = "CENTER",
                     stackTextColor = {1, 1, 1, 1},
@@ -407,13 +407,13 @@ local defaults = {
                 clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
                 row1 = {
-                    iconCount = 6,
+                    iconCount = 7,
                     iconSize = 30,
                     borderSize = 1,
                     borderColorTable = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
-                    padding = 2,
+                    padding = 0,
                     xOffset = 0,
                     yOffset = 0,
                     durationSize = 14,
@@ -421,49 +421,49 @@ local defaults = {
                     durationOffsetY = 0,
                     stackSize = 14,
                     stackOffsetX = 0,
-                    stackOffsetY = 0,
+                    stackOffsetY = -1,
                     durationTextColor = {1, 1, 1, 1},
                     durationAnchor = "CENTER",
                     stackTextColor = {1, 1, 1, 1},
                     stackAnchor = "BOTTOMRIGHT",
                 },
                 row2 = {
-                    iconCount = 0,
+                    iconCount = 6,
                     iconSize = 30,
                     borderSize = 1,
                     borderColorTable = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
-                    padding = 2,
+                    padding = 0,
                     xOffset = 0,
-                    yOffset = 8,
+                    yOffset = 0,
                     durationSize = 14,
                     durationOffsetX = 0,
                     durationOffsetY = 0,
                     stackSize = 14,
                     stackOffsetX = 0,
-                    stackOffsetY = 0,
+                    stackOffsetY = -1,
                     durationTextColor = {1, 1, 1, 1},
                     durationAnchor = "CENTER",
                     stackTextColor = {1, 1, 1, 1},
                     stackAnchor = "BOTTOMRIGHT",
                 },
                 row3 = {
-                    iconCount = 0,
+                    iconCount = 6,
                     iconSize = 30,
                     borderSize = 1,
                     borderColorTable = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
-                    padding = 2,
+                    padding = 0,
                     xOffset = 0,
-                    yOffset = 4,
+                    yOffset = 0,
                     durationSize = 14,
                     durationOffsetX = 0,
                     durationOffsetY = 0,
                     stackSize = 14,
                     stackOffsetX = 0,
-                    stackOffsetY = 0,
+                    stackOffsetY = -1,
                     durationTextColor = {1, 1, 1, 1},
                     durationAnchor = "CENTER",
                     stackTextColor = {1, 1, 1, 1},
@@ -485,21 +485,21 @@ local defaults = {
             buff = {
                 enabled = true,
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
-                iconSize = 32,      -- Icon size in pixels
-                borderSize = 1,     -- Border thickness (0 to 8)
+                iconSize = 30,      -- Icon size in pixels
+                borderSize = 0,     -- Border thickness (0 to 8)
                 shape = "square",   -- DEPRECATED: use aspectRatioCrop instead
                 aspectRatioCrop = 1.0,  -- Aspect ratio (0.5-2.0): <1=taller, 1=square, >1=wider
                 growthDirection = "CENTERED_HORIZONTAL",  -- CENTERED_HORIZONTAL, LEFT, or RIGHT
                 zoom = 0,           -- Icon texture zoom (0 to 0.2)
-                padding = 4,        -- Spacing between icons (-20 to 20)
+                padding = 0,        -- Spacing between icons (-20 to 20)
                 hideDurationText = false, -- Hide duration countdown text on CDM icons
-                durationSize = 14,  -- Duration text font size (8 to 24)
+                durationSize = 12,  -- Duration text font size (8 to 24)
                 durationOffsetX = 0,
-                durationOffsetY = 8,
-                durationAnchor = "TOP",
-                stackSize = 14,     -- Stack count text font size (8 to 24)
+                durationOffsetY = 0,
+                durationAnchor = "CENTER",
+                stackSize = 12,     -- Stack count text font size (8 to 24)
                 stackOffsetX = 0,
-                stackOffsetY = -8,
+                stackOffsetY = 0,
                 stackAnchor = "BOTTOM",
                 anchorTo = "disabled",
                 anchorPlacement = "center",
@@ -577,30 +577,30 @@ local defaults = {
                     clickableIcons = false,
                     layoutDirection = "HORIZONTAL",
                     row1 = {
-                        iconCount = 8, iconSize = 39, borderSize = 1,
+                        iconCount = 12, iconSize = 39, borderSize = 1,
                         borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
-                        zoom = 0, padding = 2, xOffset = 0, yOffset = 0,
+                        zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         hideDurationText = false, durationSize = 16,
                         durationOffsetX = 0, durationOffsetY = 0,
-                        stackSize = 12, stackOffsetX = 0, stackOffsetY = 2,
+                        stackSize = 12, stackOffsetX = 0, stackOffsetY = 0,
                         durationTextColor = {1, 1, 1, 1}, durationAnchor = "CENTER",
                         stackTextColor = {1, 1, 1, 1}, stackAnchor = "BOTTOMRIGHT",
                     },
                     row2 = {
-                        iconCount = 8, iconSize = 39, borderSize = 1,
+                        iconCount = 10, iconSize = 39, borderSize = 1,
                         borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
-                        zoom = 0, padding = 2, xOffset = 0, yOffset = 3,
+                        zoom = 0, padding = 1, xOffset = 0, yOffset = 0,
                         durationSize = 16, durationOffsetX = 0, durationOffsetY = 0,
-                        stackSize = 12, stackOffsetX = 0, stackOffsetY = 2,
+                        stackSize = 12, stackOffsetX = 0, stackOffsetY = 0,
                         durationTextColor = {1, 1, 1, 1}, durationAnchor = "CENTER",
                         stackTextColor = {1, 1, 1, 1}, stackAnchor = "BOTTOMRIGHT",
                     },
                     row3 = {
-                        iconCount = 8, iconSize = 39, borderSize = 1,
+                        iconCount = 10, iconSize = 39, borderSize = 1,
                         borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
-                        zoom = 0, padding = 2, xOffset = 0, yOffset = 0,
+                        zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 16, durationOffsetX = 0, durationOffsetY = 0,
-                        stackSize = 12, stackOffsetX = 0, stackOffsetY = 2,
+                        stackSize = 12, stackOffsetX = 0, stackOffsetY = 0,
                         durationTextColor = {1, 1, 1, 1}, durationAnchor = "CENTER",
                         stackTextColor = {1, 1, 1, 1}, stackAnchor = "BOTTOMRIGHT",
                     },
@@ -624,29 +624,29 @@ local defaults = {
                     clickableIcons = false,
                     layoutDirection = "HORIZONTAL",
                     row1 = {
-                        iconCount = 6, iconSize = 30, borderSize = 1,
+                        iconCount = 7, iconSize = 30, borderSize = 1,
                         borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
-                        zoom = 0, padding = 2, xOffset = 0, yOffset = 0,
+                        zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 14, durationOffsetX = 0, durationOffsetY = 0,
-                        stackSize = 14, stackOffsetX = 0, stackOffsetY = 0,
+                        stackSize = 14, stackOffsetX = 0, stackOffsetY = -1,
                         durationTextColor = {1, 1, 1, 1}, durationAnchor = "CENTER",
                         stackTextColor = {1, 1, 1, 1}, stackAnchor = "BOTTOMRIGHT",
                     },
                     row2 = {
-                        iconCount = 0, iconSize = 30, borderSize = 1,
+                        iconCount = 6, iconSize = 30, borderSize = 1,
                         borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
-                        zoom = 0, padding = 2, xOffset = 0, yOffset = 8,
+                        zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 14, durationOffsetX = 0, durationOffsetY = 0,
-                        stackSize = 14, stackOffsetX = 0, stackOffsetY = 0,
+                        stackSize = 14, stackOffsetX = 0, stackOffsetY = -1,
                         durationTextColor = {1, 1, 1, 1}, durationAnchor = "CENTER",
                         stackTextColor = {1, 1, 1, 1}, stackAnchor = "BOTTOMRIGHT",
                     },
                     row3 = {
-                        iconCount = 0, iconSize = 30, borderSize = 1,
+                        iconCount = 6, iconSize = 30, borderSize = 1,
                         borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
-                        zoom = 0, padding = 2, xOffset = 0, yOffset = 4,
+                        zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 14, durationOffsetX = 0, durationOffsetY = 0,
-                        stackSize = 14, stackOffsetX = 0, stackOffsetY = 0,
+                        stackSize = 14, stackOffsetX = 0, stackOffsetY = -1,
                         durationTextColor = {1, 1, 1, 1}, durationAnchor = "CENTER",
                         stackTextColor = {1, 1, 1, 1}, stackAnchor = "BOTTOMRIGHT",
                     },
@@ -665,15 +665,15 @@ local defaults = {
                     containerType = "aura",
                     enabled = true,
                     pos = nil,
-                    iconSize = 32, borderSize = 1,
+                    iconSize = 30, borderSize = 0,
                     shape = "square",
                     aspectRatioCrop = 1.0,
                     growthDirection = "CENTERED_HORIZONTAL",
-                    zoom = 0, padding = 4,
-                    hideDurationText = false, durationSize = 14,
-                    durationOffsetX = 0, durationOffsetY = 8,
-                    durationAnchor = "TOP",
-                    stackSize = 14, stackOffsetX = 0, stackOffsetY = -8,
+                    zoom = 0, padding = 0,
+                    hideDurationText = false, durationSize = 12,
+                    durationOffsetX = 0, durationOffsetY = 0,
+                    durationAnchor = "CENTER",
+                    stackSize = 12, stackOffsetX = 0, stackOffsetY = 0,
                     stackAnchor = "BOTTOM",
                     anchorTo = "disabled",
                     anchorPlacement = "center",
@@ -736,18 +736,18 @@ local defaults = {
         -- CDM Visibility (essentials, utility, buffs, power bars)
         cdmVisibility = {
             showAlways = true,
-            showWhenTargetExists = true,
+            showWhenTargetExists = false,
             showInCombat = false,
             showInGroup = false,
             showInInstance = false,
             showOnMouseover = false,
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
-            hideWhenMounted = false,
+            hideWhenMounted = true,
             hideWhenInVehicle = false,
-            hideWhenFlying = false,
-            hideWhenSkyriding = false,
-            dontHideInDungeonsRaids = false,
+            hideWhenFlying = true,
+            hideWhenSkyriding = true,
+            dontHideInDungeonsRaids = true,
         },
 
         -- Unitframes Visibility (player, target, focus, pet, tot, boss)
@@ -758,14 +758,14 @@ local defaults = {
             showInGroup = false,
             showInInstance = false,
             showOnMouseover = false,
-            showWhenHealthBelow100 = false,
+            showWhenHealthBelow100 = true,
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
-            alwaysShowCastbars = false,  -- When true, castbars ignore UF visibility
-            hideWhenMounted = false,
-            hideWhenFlying = false,
-            hideWhenSkyriding = false,
-            dontHideInDungeonsRaids = false,
+            alwaysShowCastbars = true,  -- When true, castbars ignore UF visibility
+            hideWhenMounted = true,
+            hideWhenFlying = true,
+            hideWhenSkyriding = true,
+            dontHideInDungeonsRaids = true,
         },
 
         -- Custom Trackers Visibility (all custom item/spell bars)
@@ -778,10 +778,10 @@ local defaults = {
             showOnMouseover = false,
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
-            hideWhenMounted = false,
-            hideWhenFlying = false,
-            hideWhenSkyriding = false,
-            dontHideInDungeonsRaids = false,
+            hideWhenMounted = true,
+            hideWhenFlying = true,
+            hideWhenSkyriding = true,
+            dontHideInDungeonsRaids = true,
         },
 
         -- Action Bars Visibility
@@ -794,11 +794,11 @@ local defaults = {
             showOnMouseover = false,
             fadeDuration = 0.2,
             fadeOutAlpha = 0,
-            hideWhenMounted = false,
-            hideWhenInVehicle = false,
-            hideWhenFlying = false,
-            hideWhenSkyriding = false,
-            dontHideInDungeonsRaids = false,
+            hideWhenMounted = true,
+            hideWhenInVehicle = true,
+            hideWhenFlying = true,
+            hideWhenSkyriding = true,
+            dontHideInDungeonsRaids = true,
         },
 
         -- Chat Frames Visibility
@@ -840,16 +840,16 @@ local defaults = {
                 useRowPattern    = false,  -- false = use rowLimit, true = use row pattern
                 rowAlignment     = "CENTER", -- LEFT, CENTER, RIGHT
                 -- Keybind display
-                showKeybinds      = false,
+                showKeybinds      = true,
                 keybindTextSize   = 12,
                 keybindTextColor  = { 1, 0.82, 0, 1 },  -- Gold/Yellow
                 keybindAnchor     = "TOPLEFT",
                 keybindOffsetX    = 2,
                 keybindOffsetY    = 2,
                 -- Rotation Helper overlay (uses C_AssistedCombat)
-                showRotationHelper = false,
+                showRotationHelper = true,
                 rotationHelperColor = { 0, 1, 0.84, 1 },  -- #00FFD6 cyan/mint border
-                rotationHelperThickness = 2,  -- Border thickness in pixels
+                rotationHelperThickness = 1,  -- Border thickness in pixels
             },
             UtilityCooldownViewer = {
                 enabled          = true,
@@ -874,16 +874,16 @@ local defaults = {
                 anchorToEssential = false,  -- When true, Utility anchors below Essential's last row
                 anchorGap         = 10,     -- Gap between Essential and Utility when anchored
                 -- Keybind display
-                showKeybinds      = false,
+                showKeybinds      = true,
                 keybindTextSize   = 12,
                 keybindTextColor  = { 1, 0.82, 0, 1 },  -- Gold/Yellow
                 keybindAnchor     = "TOPLEFT",
                 keybindOffsetX    = 2,
                 keybindOffsetY    = 2,
                 -- Rotation Helper overlay (uses C_AssistedCombat)
-                showRotationHelper = false,
+                showRotationHelper = true,
                 rotationHelperColor = { 0, 1, 0.84, 1 },  -- #00FFD6 cyan/mint border
-                rotationHelperThickness = 2,  -- Border thickness in pixels
+                rotationHelperThickness = 1,  -- Border thickness in pixels
             },
             -- BuffIconCooldownViewer removed - now handled by qui_buffbar.lua
             -- Settings are at db.profile.ncdm.buff instead
@@ -922,10 +922,10 @@ local defaults = {
             standaloneMode    = false,
             attachTo          = "EssentialCooldownViewer",
             height            = 8,
-            borderSize        = 1,
+            borderSize        = 0,
             offsetY           = -204,      -- Snapped to top of Essential CDM (default position)
             offsetX           = 0,
-            width             = 326,       -- Matches Essential CDM width
+            width             = 236,       -- Matches Essential CDM width
             useRawPixels      = true,
             texture           = "Quazii v5",
             colorMode         = "power",  -- "power" = power type color, "class" = class color
@@ -935,15 +935,15 @@ local defaults = {
             showPercent       = true,
             hidePercentSymbol = false,
             showText          = true,
-            textSize          = 16,
+            textSize          = 10,
             textAlign         = "CENTER",
-            textX             = 1,
-            textY             = 3,
+            textX             = 0,
+            textY             = 0,
             textUseClassColor = false,    -- Use class color for text
             textCustomColor   = { 1, 1, 1, 1 },  -- Custom text color (white default)
             bgColor           = { 0.078, 0.078, 0.078, 1 },
             showTicks         = false,    -- Show tick marks for segmented resources (Holy Power, Chi, etc.)
-            tickThickness     = 2,        -- Thickness of tick marks in pixels
+            tickThickness     = 1,        -- Thickness of tick marks in pixels
             tickColor         = { 0, 0, 0, 1 },  -- Color of tick marks (default black)
             indicators        = {
                 enabled   = false,        -- Show custom breakpoint indicator lines
@@ -951,7 +951,7 @@ local defaults = {
                 color     = { 1, 1, 1, 0.9 }, -- Indicator line color
                 perSpec   = {},           -- [specID] = { value1, value2, value3 }
             },
-            lockedToEssential = false,  -- Auto-resize width when Essential CDM changes
+            lockedToEssential = true,  -- Auto-resize width when Essential CDM changes
             lockedToUtility   = false,  -- Auto-resize width when Utility CDM changes
             snapGap           = 5,      -- Gap when snapped to CDM
             orientation       = "HORIZONTAL",  -- Bar orientation
@@ -966,7 +966,7 @@ local defaults = {
             borderSize    = 1,
             offsetY       = 0,        -- User adjustment when locked to primary (0 = no offset)
             offsetX       = 0,
-            width         = 326,      -- Matches Primary bar width
+            width         = 234,      -- Matches Primary bar width
             useRawPixels  = true,
             texture       = "Quazii v5",
             colorMode     = "power",  -- "power" = power type color, "class" = class color
@@ -976,7 +976,7 @@ local defaults = {
             showPercent   = false,
             hidePercentSymbol = false,
             showText      = false,
-            textSize      = 14,
+            textSize      = 8,
             textAlign     = "CENTER",
             textX         = 0,
             textY         = 2,
@@ -984,7 +984,7 @@ local defaults = {
             textCustomColor   = { 1, 1, 1, 1 },  -- Custom text color (white default)
             bgColor       = { 0.078, 0.078, 0.078, 0.83 },
             showTicks     = true,     -- Show tick marks for segmented resources (Holy Power, Chi, etc.)
-            tickThickness = 2,        -- Thickness of tick marks in pixels
+            tickThickness = 4,        -- Thickness of tick marks in pixels
             tickColor     = { 0, 0, 0, 1 },  -- Color of tick marks (default black)
             indicators    = {
                 enabled   = false,        -- Show custom breakpoint indicator lines
@@ -992,9 +992,9 @@ local defaults = {
                 color     = { 1, 1, 1, 0.9 }, -- Indicator line color
                 perSpec   = {},           -- [specID] = { value1, value2, value3 }
             },
-            lockedToEssential = false,  -- Auto-resize width when Essential CDM changes
+            lockedToEssential = true,  -- Auto-resize width when Essential CDM changes
             lockedToUtility   = false,  -- Auto-resize width when Utility CDM changes
-            lockedToPrimary   = true,   -- Position above + match Primary bar width
+            lockedToPrimary   = false,   -- Position above + match Primary bar width
             swapToPrimaryPosition = false,  -- Show secondary bar at primary bar's position (supported specs only)
             hidePrimaryOnSwap = false,      -- Auto-hide primary bar when secondary is swapped to its position
             swapSpecs = {                   -- Per-spec swap enable (all candidates default on)
@@ -1066,12 +1066,12 @@ local defaults = {
         },
         -- Reticle (GCD tracker around cursor)
         reticle = {
-            enabled = false,
+            enabled = true,
             -- Reticle
             reticleStyle = "dot",         -- "dot", "cross", "chevron", "diamond"
             reticleSize = 10,             -- Size in pixels (4-20)
             -- Ring
-            ringStyle = "standard",       -- "thin", "standard", "thick", "solid"
+            ringStyle = "thick",          -- "thin", "standard", "thick", "solid"
             ringSize = 40,                -- Ring diameter (20-80)
             -- Colors
             useClassColor = false,        -- Use class color vs custom
@@ -1079,7 +1079,7 @@ local defaults = {
             -- Visibility
             inCombatAlpha = 1.0,
             outCombatAlpha = 1.0,
-            hideOutOfCombat = false,
+            hideOutOfCombat = true,
             -- Positioning
             offsetX = 0,
             offsetY = 0,
@@ -1242,22 +1242,22 @@ local defaults = {
             enabled = true,                    -- Master toggle for tooltip module
             anchorToCursor = true,             -- Follow cursor vs fixed anchor
             anchorPosition = nil,              -- Saved fixed anchor position {point, relPoint, x, y}
-            cursorAnchor = "TOPLEFT",          -- Tooltip point anchored to cursor
-            cursorOffsetX = 16,                -- Cursor anchor X offset (pixels)
-            cursorOffsetY = -16,               -- Cursor anchor Y offset (pixels)
-            hideInCombat = true,               -- Suppress tooltips during combat
-            classColorName = false,            -- Color player names by class
+            cursorAnchor = "BOTTOMLEFT",       -- Tooltip point anchored to cursor
+            cursorOffsetX = 50,                -- Cursor anchor X offset (pixels)
+            cursorOffsetY = 25,                -- Cursor anchor Y offset (pixels)
+            hideInCombat = false,              -- Suppress tooltips during combat
+            classColorName = true,             -- Color player names by class
             fontSize = 12,                     -- Tooltip text font size
             skinTooltips = true,               -- Apply QUI theme to tooltips
             bgColor = {0.05, 0.05, 0.05, 1},  -- Custom background color
-            bgOpacity = 0.95,                  -- Background opacity (0-1)
+            bgOpacity = 0.75,                  -- Background opacity (0-1)
             showBorder = true,                 -- Toggle border visibility
             borderThickness = 1,               -- Border thickness (1-10)
             borderColor = {0.376, 0.647, 0.980, 1}, -- Border color (default = sky blue accent)
-            borderUseClassColor = false,       -- Use player class color for border
+            borderUseClassColor = true,        -- Use player class color for border
             borderUseAccentColor = false,      -- Use addon accent color for border
-            showSpellIDs = false,              -- Show spell ID and icon ID on buff/debuff tooltips
-            showPlayerItemLevel = false,       -- Show inspected player item level on player tooltips
+            showSpellIDs = true,               -- Show spell ID and icon ID on buff/debuff tooltips
+            showPlayerItemLevel = true,        -- Show inspected player item level on player tooltips
             colorPlayerItemLevel = true,       -- Color tooltip player item level by configured ilvl brackets
             itemLevelBrackets = {
                 white = 245,                   -- White bracket starts here (below = grey)
@@ -1276,7 +1276,7 @@ local defaults = {
                 cdm = "SHOW",                  -- CDM views (Essential, Utility, Buff)
                 customTrackers = "SHOW",       -- Custom Items/Spells bars
             },
-            combatKey = "SHIFT",               -- NONE/SHIFT/CTRL/ALT
+            combatKey = "NONE",                -- NONE/SHIFT/CTRL/ALT
             hideHealthBar = true,              -- Hide the health bar on unit tooltips
             hideServerName = false,            -- Hide server/realm name line from player tooltips
             hidePlayerTitle = false,           -- Hide player title from tooltip name line
@@ -1295,41 +1295,41 @@ local defaults = {
                 iconSize = 36,              -- Base icon size (36x36)
                 iconZoom = 0.05,            -- Icon texture crop (0.05-0.15)
                 showBackdrop = true,        -- Show backdrop behind icons
-                backdropAlpha = 0.8,        -- Backdrop opacity (0-1)
+                backdropAlpha = 0.2,        -- Backdrop opacity (0-1)
                 showGloss = true,           -- Show gloss/shine overlay
-                glossAlpha = 0.6,           -- Gloss opacity (0-1)
+                glossAlpha = 0.3,           -- Gloss opacity (0-1)
                 showFlash = "qui",          -- Pushed texture style: "off", "blizzard", "qui"
                 showBorders = true,         -- Show button borders
                 showKeybinds = true,        -- Show hotkey text
-                showMacroNames = false,     -- Show macro name text
+                showMacroNames = true,     -- Show macro name text
                 showCounts = true,          -- Show stack/charge count
                 hideEmptyKeybinds = false,  -- Hide placeholder keybinds
                 keybindFontSize = 12,       -- Keybind text size
                 keybindColor = {1, 1, 1, 1},-- Keybind text color
-                keybindAnchor = "TOPLEFT",  -- Keybind text anchor point
-                keybindOffsetX = 4,         -- Keybind text X offset
-                keybindOffsetY = -4,        -- Keybind text Y offset
+                keybindAnchor = "TOPRIGHT",  -- Keybind text anchor point
+                keybindOffsetX = 0,         -- Keybind text X offset
+                keybindOffsetY = 0,        -- Keybind text Y offset
                 macroNameFontSize = 10,     -- Macro name text size
                 macroNameColor = {1, 1, 1, 1}, -- Macro name text color
                 macroNameAnchor = "BOTTOM", -- Macro name text anchor point
                 macroNameOffsetX = 0,       -- Macro name text X offset
-                macroNameOffsetY = 4,       -- Macro name text Y offset
+                macroNameOffsetY = 0,       -- Macro name text Y offset
                 countFontSize = 12,         -- Count text size
                 countColor = {1, 1, 1, 1},  -- Count text color
                 countAnchor = "BOTTOMRIGHT", -- Stack count text anchor point
-                countOffsetX = -4,          -- Stack count text X offset
-                countOffsetY = 4,           -- Stack count text Y offset
+                countOffsetX = 0,          -- Stack count text X offset
+                countOffsetY = 0,           -- Stack count text Y offset
                 -- Bar Layout settings
                 barScale = 1.0,             -- Global scale multiplier (0.5 - 2.0)
-                buttonSpacing = nil,        -- Button spacing override (nil = use Blizzard Edit Mode padding)
+                buttonSpacing = 0,        -- Button spacing override (nil = use Blizzard Edit Mode padding)
                 hideEmptySlots = false,     -- Hide buttons with no ability assigned
                 lockButtons = false,        -- Prevent dragging abilities off buttons
                 -- Range indicator settings
-                rangeIndicator = false,     -- Tint out-of-range buttons
+                rangeIndicator = true,     -- Tint out-of-range buttons
                 rangeColor = {0.8, 0.1, 0.1, 1}, -- Red tint color
                 -- Usability indicator settings
-                usabilityIndicator = false,     -- Dim unusable buttons
-                usabilityDesaturate = false,    -- Use desaturation (grey) for unusable
+                usabilityIndicator = true,     -- Dim unusable buttons
+                usabilityDesaturate = true,    -- Use desaturation (grey) for unusable
                 usabilityColor = {0.4, 0.4, 0.4, 1},  -- Fallback color if not desaturating
                 manaColor = {0.5, 0.5, 1.0, 1}, -- Out of mana color (blue tint)
                 fastUsabilityUpdates = false, -- 5x faster range/usability checks (50ms vs 250ms)
@@ -1337,7 +1337,7 @@ local defaults = {
             },
             -- Mouseover fade settings
             fade = {
-                enabled = true,             -- Master toggle for mouseover fade
+                enabled = false,            -- Master toggle for mouseover fade
                 fadeInDuration = 0.2,       -- Fade in speed (seconds)
                 fadeOutDuration = 0.3,      -- Fade out speed (seconds)
                 fadeOutAlpha = 0.0,         -- Alpha when faded out (0-1)
@@ -1346,7 +1346,7 @@ local defaults = {
                 showWhenSpellBookOpen = false, -- Force bars visible while Spellbook is open
                 keepLeaveVehicleVisible = false, -- Keep leave-vehicle button visible when mouseover hide is active
                 disableBelowMaxLevel = false, -- Keep bars visible until character reaches max level
-                linkBars1to8 = false,       -- Link all action bars 1-8 for mouseover
+                linkBars1to8 = true,       -- Link all action bars 1-8 for mouseover
             },
             -- Per-bar settings (nil = use global, value = override)
             -- alwaysShow = true means bar stays visible even when mouseover hide is enabled
@@ -1676,7 +1676,7 @@ local defaults = {
                 absorbs = {
                     enabled = false,
                     color = { 1, 1, 1, 1 },
-                    opacity = 0.3,
+                    opacity = 0.7,
                     texture = "QUI Stripes",
                 },
                 -- Heal prediction (incoming heals)
@@ -1882,7 +1882,7 @@ local defaults = {
                 absorbs = {
                     enabled = true,
                     color = { 1, 1, 1, 1 },
-                    opacity = 0.3,
+                    opacity = 0.7,
                     texture = "QUI Stripes",
                 },
                 -- Heal prediction (incoming heals)
@@ -2439,7 +2439,7 @@ local defaults = {
 
         -- QUI Group Frames (party/raid)
         quiGroupFrames = {
-            enabled = false,          -- Disabled by default (opt-in feature)
+            enabled = true,           -- Enabled by default
 
             -- Position
             position = { offsetX = -400, offsetY = 0 },      -- party position
@@ -2473,7 +2473,7 @@ local defaults = {
                 },
                 layout = {
                     growDirection = "DOWN",
-                    spacing = 2,
+                    spacing = 0,
                     showPlayer = true,
                     showSolo = false,
                     sortMethod = "INDEX",
@@ -2511,7 +2511,7 @@ local defaults = {
                     nameTextUseClassColor = false,
                     nameTextColor = { 1, 1, 1, 1 },
                 },
-                absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.3 },
+                absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.7 },
                 healAbsorbs = { enabled = true, color = { 0.5, 0.1, 0.1 }, opacity = 0.6 },
                 healPrediction = { enabled = true, color = { 0.2, 1, 0.2 }, opacity = 0.5 },
                 indicators = {
@@ -2604,7 +2604,7 @@ local defaults = {
                 },
                 partyTracker = {
                     ccIcons = {
-                        enabled = false,
+                        enabled = true,
                         showCC = true,
                         showDefensives = true,
                         showImportant = true,
@@ -2619,7 +2619,7 @@ local defaults = {
                         showDurationText = true,
                     },
                     kickTimer = {
-                        enabled = false,
+                        enabled = true,
                         iconSize = 20,
                         anchor = "TOPRIGHT",
                         offsetX = 2,
@@ -2628,7 +2628,7 @@ local defaults = {
                         showDurationText = true,
                     },
                     partyCooldowns = {
-                        enabled = false,
+                        enabled = true,
                         displayMode = "static",
                         filter = "all",
                         maxIcons = 6,
@@ -2656,7 +2656,7 @@ local defaults = {
                     anchorGap = 2,
                 },
                 dimensions = {
-                    partyWidth = 200, partyHeight = 40,
+                    partyWidth = 150, partyHeight = 80,
                 },
             },
 
@@ -2723,7 +2723,7 @@ local defaults = {
                     nameTextUseClassColor = false,
                     nameTextColor = { 1, 1, 1, 1 },
                 },
-                absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.3 },
+                absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.7 },
                 healAbsorbs = { enabled = true, color = { 0.5, 0.1, 0.1 }, opacity = 0.6 },
                 healPrediction = { enabled = true, color = { 0.2, 1, 0.2 }, opacity = 0.5 },
                 indicators = {
@@ -2885,7 +2885,7 @@ local defaults = {
 
             -- Click-casting (shared)
             clickCast = {
-                enabled = false,
+                enabled = true,
                 bindings = {},
                 perSpec = true,
                 perLoadout = false,
@@ -2915,8 +2915,8 @@ local defaults = {
         configPanelAlpha = 0.97,
 
         -- Addon Accent Color (drives options panel theme + default fallback for skinned elements)
-        addonAccentColor = {0.376, 0.647, 0.980, 1},  -- #60A5FA Sky Blue
-        themePreset = "Sky Blue",  -- Theme preset name (see GUI.ThemePresets)
+        addonAccentColor = {0.78, 0.192, 0.192, 1},  -- Horde Red
+        themePreset = "Horde",  -- Theme preset name (see GUI.ThemePresets)
 
         -- Combat Text Indicator
         combatText = {
@@ -2984,7 +2984,7 @@ local defaults = {
 
         -- Combat Timer (displays elapsed combat time)
         combatTimer = {
-            enabled = false,       -- Opt-in feature (disabled by default)
+            enabled = true,       -- Opt-in feature (disabled by default)
             xOffset = 0,           -- Horizontal offset from screen center
             yOffset = -150,        -- Vertical offset (below center by default)
             width = 80,            -- Frame width
@@ -3086,11 +3086,11 @@ local defaults = {
         -- Cooldown Manager Effects
         cooldownSwipe = {
             showBuffSwipe = false,      -- Buff/aura duration swipe (Essential/Utility)
-            showBuffIconSwipe = false,  -- BuffIcon viewer swipe (opt-in)
+            showBuffIconSwipe = true,   -- BuffIcon viewer swipe (opt-in)
             showGCDSwipe = false,       -- GCD swipe (~1.5s)
             showCooldownSwipe = false,  -- Actual spell cooldown swipe
 
-            showRechargeEdge = false,   -- Show edge texture on cooldown swipe (recharge edge)
+            showRechargeEdge = true,    -- Show edge texture on cooldown swipe (recharge edge)
 
             showActionSwipe = true,     -- Action bar cooldown swipe
             showNcdmSwipe = true,       -- NCDM cooldown swipe
@@ -3149,21 +3149,21 @@ local defaults = {
             fadeBuffFrame = false,
             fadeDebuffFrame = false,
             fadeOutAlpha = 0,
-            borderSize = 2,
+            borderSize = 1,
             fontSize = 12,
             fontOutline = true,
             -- Layout overrides (0 = use Blizzard default)
-            buffIconsPerRow = 0,
+            buffIconsPerRow = 10,
             buffIconSpacing = 0,
-            buffIconSize = 0,
-            buffGrowLeft = false,
+            buffIconSize = 35,
+            buffGrowLeft = true,
             buffGrowUp = false,
             buffInvertSwipeDarkening = false,
             buffRowSpacing = 0,
-            debuffIconsPerRow = 0,
+            debuffIconsPerRow = 10,
             debuffIconSpacing = 0,
-            debuffIconSize = 0,
-            debuffGrowLeft = false,
+            debuffIconSize = 35,
+            debuffGrowLeft = true,
             debuffGrowUp = false,
             debuffInvertSwipeDarkening = false,
             debuffRowSpacing = 0,
@@ -3225,9 +3225,9 @@ local defaults = {
             
             -- Shape and Size
             shape = "SQUARE",  -- SQUARE or ROUND
-            size = 160,
+            size = 226,
             scale = 1.0,  -- Scale multiplier for minimap frame
-            borderSize = 2,
+            borderSize = 1,
             borderColor = {0, 0, 0, 1},  -- Black border
             useClassColorBorder = false,
             useAccentColorBorder = false,
@@ -3267,14 +3267,14 @@ local defaults = {
             hideBagBar = false,  -- Hide Blizzard bag bar
             
             -- Button Visibility
-            showZoomButtons = false,
-            showMail = false,
+            showZoomButtons = true,
+            showMail = true,
             showCraftingOrder = true,
             showAddonCompartment = false,
-            showDifficulty = false,
-            showMissions = false,
+            showDifficulty = true,
+            showMissions = true,
             showCalendar = true,
-            showTracking = false,
+            showTracking = true,
 
             -- Dungeon Eye (LFG Queue Status Button) - repositions to minimap when in queue
             dungeonEye = {
@@ -3387,7 +3387,7 @@ local defaults = {
             
             -- Time Settings (for Time datatext or legacy mode)
             timeFormat = "local",  -- "local" or "server"
-            use24Hour = true,
+            use24Hour = false,
             useLocalTime = true,  -- For datatext registry
             lockoutCacheMinutes = 5,  -- minutes between lockout data refresh (min 1)
 
@@ -3636,7 +3636,349 @@ local defaults = {
             groupFrames = 4,
             groupPetFrames = 3,
         },
-        frameAnchoring = {},
+        frameAnchoring = {
+            -- CDM-centered HUD layout
+            cdmEssential = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -180,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            primaryPower = {
+                point = "TOP", parent = "cdmEssential", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = true, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            secondaryPower = {
+                point = "TOP", parent = "primaryPower", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = true, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            cdmUtility = {
+                point = "TOP", parent = "secondaryPower", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            buffIcon = {
+                point = "BOTTOM", parent = "cdmEssential", relative = "TOP",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Unit frames anchored to CDM
+            playerFrame = {
+                point = "BOTTOMRIGHT", parent = "cdmEssential", relative = "BOTTOMLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            targetFrame = {
+                point = "BOTTOMLEFT", parent = "cdmEssential", relative = "BOTTOMRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            totFrame = {
+                point = "BOTTOMLEFT", parent = "targetFrame", relative = "BOTTOMRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            petFrame = {
+                point = "BOTTOMRIGHT", parent = "playerFrame", relative = "BOTTOMLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            focusFrame = {
+                point = "BOTTOMLEFT", parent = "playerFrame", relative = "TOPLEFT",
+                offsetX = 0, offsetY = 200,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Castbars anchored to their unit frames
+            playerCastbar = {
+                point = "TOP", parent = "playerFrame", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = true, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            targetCastbar = {
+                point = "TOP", parent = "targetFrame", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = true, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            focusCastbar = {
+                point = "TOP", parent = "focusFrame", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = true, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            petCastbar = {
+                point = "TOP", parent = "petFrame", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            totCastbar = {
+                point = "TOP", parent = "totFrame", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Action bars stacked at bottom
+            bar3 = {
+                point = "BOTTOMRIGHT", parent = "screen", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bar1 = {
+                point = "BOTTOM", parent = "bar3", relative = "TOP",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bar2 = {
+                point = "BOTTOM", parent = "bar1", relative = "TOP",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bar6 = {
+                point = "BOTTOMLEFT", parent = "bar3", relative = "BOTTOMRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bar5 = {
+                point = "BOTTOMLEFT", parent = "bar6", relative = "TOPLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bar4 = {
+                point = "BOTTOMLEFT", parent = "bar5", relative = "TOPLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bar7 = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = -500, offsetY = 144,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bar8 = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = -500, offsetY = 49,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Pet/stance bars
+            petBar = {
+                point = "BOTTOMLEFT", parent = "bar6", relative = "BOTTOMRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            stanceBar = {
+                point = "BOTTOMLEFT", parent = "petBar", relative = "TOPLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Combat timer anchored to bar3
+            combatTimer = {
+                point = "BOTTOMRIGHT", parent = "bar3", relative = "BOTTOMLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            brezCounter = {
+                point = "BOTTOM", parent = "combatTimer", relative = "TOP",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Group frames below utility
+            partyFrames = {
+                point = "TOP", parent = "cdmUtility", relative = "BOTTOM",
+                offsetX = 0, offsetY = -25,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = true,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            raidFrames = {
+                point = "TOP", parent = "cdmUtility", relative = "BOTTOM",
+                offsetX = 0, offsetY = -25,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = true,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Boss frames below datatext
+            bossFrames = {
+                point = "TOPLEFT", parent = "datatextPanel", relative = "BOTTOMLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Minimap and related
+            minimap = {
+                point = "TOPRIGHT", parent = "screen", relative = "TOPRIGHT",
+                offsetX = 0, offsetY = -30,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            datatextPanel = {
+                point = "TOP", parent = "minimap", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            objectiveTracker = {
+                point = "TOPRIGHT", parent = "datatextPanel", relative = "BOTTOMRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            belowMinimapWidgets = {
+                point = "TOP", parent = "datatextPanel", relative = "BOTTOM",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Buff/debuff frames
+            buffFrame = {
+                point = "TOPRIGHT", parent = "minimap", relative = "TOPLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            debuffFrame = {
+                point = "TOPRIGHT", parent = "buffFrame", relative = "BOTTOMRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Micro menu and bags
+            microMenu = {
+                point = "TOPLEFT", parent = "screen", relative = "TOPLEFT",
+                offsetX = 0, offsetY = -30,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            bagBar = {
+                point = "TOPLEFT", parent = "microMenu", relative = "BOTTOMLEFT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Custom tracker anchored to player frame
+            ["customTracker:default_tracker_1"] = {
+                point = "BOTTOMRIGHT", parent = "playerFrame", relative = "TOPRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Skyriding bar
+            skyriding = {
+                point = "CENTER", parent = "screen", relative = "TOP",
+                offsetX = 0, offsetY = -40,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Top center widgets
+            topCenterWidgets = {
+                point = "TOP", parent = "screen", relative = "TOP",
+                offsetX = 0, offsetY = -100,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Focus cast alert
+            focusCastAlert = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -40,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Crosshair
+            crosshair = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- Range check
+            rangeCheck = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- M+ timer anchored to party frames
+            mplusTimer = {
+                point = "BOTTOMLEFT", parent = "partyFrames", relative = "BOTTOMRIGHT",
+                offsetX = 0, offsetY = 0,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = true,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            -- BNet toast anchor
+            bnetToastAnchor = {
+                point = "CENTER", parent = "screen", relative = "TOP",
+                offsetX = 0, offsetY = -125,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = false,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+        },
         -- Blizzard UI panels: modifier-drag reposition (see modules/qol/blizzard_mover.lua)
         blizzardMover = {
             enabled = false,

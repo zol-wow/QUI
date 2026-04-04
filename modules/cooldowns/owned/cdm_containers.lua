@@ -130,12 +130,7 @@ local function GetCurrentSpecID()
     return nil
 end
 
-local function SaveCurrentSpecProfile()
-    -- Use _previousSpecID, not GetCurrentSpecID(). By the time
-    -- PLAYER_SPECIALIZATION_CHANGED fires the current spec is already
-    -- the NEW spec — saving under GetCurrentSpecID() would store the
-    -- outgoing spec's data under the incoming spec's key.
-    local specID = _previousSpecID
+local function SaveSpecProfile(specID)
     if not specID or specID == 0 then
         return
     end
@@ -144,7 +139,6 @@ local function SaveCurrentSpecProfile()
     if not db then
         return
     end
-
 
     -- Ensure _specProfiles table exists
     if not db._specProfiles then
@@ -157,15 +151,6 @@ local function SaveCurrentSpecProfile()
     for _, key in ipairs(containerKeys) do
         local containerDB = GetTrackerSettings(key)
         if containerDB and containerDB.ownedSpells ~= nil then
-            local ownedCount = type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells or 0
-            local removedCount = 0
-            if type(containerDB.removedSpells) == "table" then
-                for _ in pairs(containerDB.removedSpells) do removedCount = removedCount + 1 end
-            end
-            local dormantCount = 0
-            if type(containerDB.dormantSpells) == "table" then
-                for _ in pairs(containerDB.dormantSpells) do dormantCount = dormantCount + 1 end
-            end
             specData[key] = {
                 ownedSpells = CopyTable(containerDB.ownedSpells),
                 removedSpells = CopyTable(containerDB.removedSpells or {}),
@@ -175,6 +160,14 @@ local function SaveCurrentSpecProfile()
     end
 
     db._specProfiles[specID] = specData
+end
+
+local function SaveCurrentSpecProfile()
+    -- Use _previousSpecID, not GetCurrentSpecID(). By the time
+    -- PLAYER_SPECIALIZATION_CHANGED fires the current spec is already
+    -- the NEW spec — saving under GetCurrentSpecID() would store the
+    -- outgoing spec's data under the incoming spec's key.
+    SaveSpecProfile(_previousSpecID)
 end
 
 local function LoadOrSnapshotSpecProfile(specID)
@@ -197,15 +190,9 @@ local function LoadOrSnapshotSpecProfile(specID)
             if containerDB then
                 local savedContainer = savedProfile[key]
                 if savedContainer then
-                    local ownedCount = type(savedContainer.ownedSpells) == "table" and #savedContainer.ownedSpells or 0
-                    local dormantCount = 0
-                    if type(savedContainer.dormantSpells) == "table" then
-                        for _ in pairs(savedContainer.dormantSpells) do dormantCount = dormantCount + 1 end
-                    end
                     containerDB.ownedSpells = CopyTable(savedContainer.ownedSpells)
                     containerDB.removedSpells = CopyTable(savedContainer.removedSpells)
                     containerDB.dormantSpells = CopyTable(savedContainer.dormantSpells or {})
-                else
                 end
             end
         end
@@ -223,11 +210,7 @@ local function LoadOrSnapshotSpecProfile(specID)
             ns.CDMSpellData:ForceScan()
             for _, key in ipairs(containerKeys) do
                 ns.CDMSpellData:SnapshotBlizzardCDM(key)
-                -- Log the result
-                local cDB = GetTrackerSettings(key)
-                local count = (cDB and type(cDB.ownedSpells) == "table") and #cDB.ownedSpells or 0
             end
-        else
         end
     end
 
@@ -2206,7 +2189,6 @@ function ownedEngine:Initialize()
                 end
             end
             if snapshotted then
-                -- Refresh to pick up newly owned spell lists
                 RefreshAll()
             end
         end
@@ -2356,12 +2338,10 @@ function ownedEngine:Initialize()
             local newSpecID = GetCurrentSpecID()
             -- Guard: Blizzard can fire this event multiple times for a single
             -- spec change. Skip the duplicate if we already processed it.
-            if newSpecID and newSpecID == _previousSpecID then
-            else
+            if not newSpecID or newSpecID ~= _previousSpecID then
                 -- Save outgoing spec profile before loading the new one
                 if _previousSpecID and _previousSpecID ~= 0 then
                     SaveCurrentSpecProfile()
-                else
                 end
                 -- Invalidate caches immediately — old spec data is stale
                 if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
@@ -2525,6 +2505,8 @@ ns.CDMContainers = {
     GetContainerSettings = function(key) return CDMContainers_API:GetContainerSettings(key) end,
     GetContainersByType = function(containerType) return CDMContainers_API:GetContainersByType(containerType) end,
     GetAllContainerKeys = function() return CDMContainers_API:GetAllContainerKeys() end,
+    -- Save current spec's ownedSpells to _specProfiles (called after Composer mutations)
+    SaveActiveSpecProfile = function() SaveSpecProfile(GetCurrentSpecID()) end,
 }
 
 ---------------------------------------------------------------------------

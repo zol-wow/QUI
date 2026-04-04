@@ -1217,6 +1217,46 @@ local function IsSpellKnownByPlayer(spellID)
     if WoW_IsSpellKnown and WoW_IsSpellKnown(spellID) then return true end
     -- IsPlayerSpell covers talent-granted spells
     if WoW_IsPlayerSpell and WoW_IsPlayerSpell(spellID) then return true end
+    -- Some talent/hero talent spells aren't recognized by the base APIs
+    -- but have an override mapping. Check the override spell — if IT is
+    -- known, the base spell is effectively available.
+    if C_Spell and C_Spell.GetOverrideSpell then
+        local ok, overrideID = pcall(C_Spell.GetOverrideSpell, spellID)
+        if ok and overrideID and overrideID ~= spellID then
+            if WoW_IsSpellKnown and WoW_IsSpellKnown(overrideID) then return true end
+            if WoW_IsPlayerSpell and WoW_IsPlayerSpell(overrideID) then return true end
+        end
+    end
+    -- Final fallback: if C_Spell.GetSpellInfo returns valid data AND the
+    -- spell exists in Blizzard's CDM viewer, treat it as known. This
+    -- handles edge cases where talent spells are castable but neither
+    -- IsSpellKnown nor IsPlayerSpell recognizes the stored ID.
+    if C_Spell and C_Spell.GetSpellInfo then
+        local ok, info = pcall(C_Spell.GetSpellInfo, spellID)
+        if ok and info and info.name then
+            -- Spell has valid info — check if it's in the CDM viewer
+            -- (Blizzard only lists spells that belong to the current spec)
+            if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet then
+                for cat = 0, 1 do
+                    local okCat, cdIDs = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat)
+                    if okCat and cdIDs then
+                        for _, cdID in ipairs(cdIDs) do
+                            if C_CooldownViewer.GetCooldownViewerCooldownInfo then
+                                local okI, cdInfo = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                                if okI and cdInfo then
+                                    local sid = Helpers.SafeValue(cdInfo.spellID, nil)
+                                    local ov = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
+                                    if sid == spellID or ov == spellID then
+                                        return true
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
     return false
 end
 
@@ -1830,7 +1870,8 @@ function CDMSpellData:CheckDormantSpells(containerKey)
     local toRemove = {}  -- indices to remove (descending order)
     for i, entry in ipairs(ownedSpells) do
         if entry and entry.id and entry.type == "spell" then
-            if not IsSpellKnownByPlayer(entry.id) then
+            local known = IsSpellKnownByPlayer(entry.id)
+            if not known then
                 -- Save slot position AND row assignment so both are restored
                 db.dormantSpells[entry.id] = { slot = i, row = entry.row }
                 toRemove[#toRemove + 1] = i
@@ -1838,13 +1879,6 @@ function CDMSpellData:CheckDormantSpells(containerKey)
         end
     end
     -- Remove from ownedSpells in reverse order to preserve indices
-    if #toRemove > 0 then
-        for _, idx in ipairs(toRemove) do
-            local entry = db.ownedSpells[idx]
-            if entry then
-            end
-        end
-    end
     for j = #toRemove, 1, -1 do
         table.remove(db.ownedSpells, toRemove[j])
     end
@@ -2266,6 +2300,11 @@ end
 FireChangeCallback = function()
     if _G.QUI_OnSpellDataChanged then
         _G.QUI_OnSpellDataChanged()
+    end
+    -- Keep spec profile in sync so /reload or spec-switch never
+    -- overwrites Composer edits with a stale _specProfiles copy.
+    if ns.CDMContainers and ns.CDMContainers.SaveActiveSpecProfile then
+        ns.CDMContainers.SaveActiveSpecProfile()
     end
 end
 

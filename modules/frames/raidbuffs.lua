@@ -491,8 +491,6 @@ local function CountBuffedMembers(spellId, spellName, buffIDs)
                 end
             end
         end
-        -- Adjust total since player is counted in raid roster
-        total = total - 1
     elseif IsInGroup() then
         for i = 1, GetNumGroupMembers() - 1 do
             local unit = "party" .. i
