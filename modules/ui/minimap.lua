@@ -3744,7 +3744,7 @@ do
             label = "Datatext Panel",
             group = "Display",
             order = 2,
-            isOwned = false,  -- proxy mover (frame strata too low for child overlay)
+            isOwned = true,
             getFrame = function()
                 -- Ensure the frame exists (it's lazily created)
                 if not datatextFrame then

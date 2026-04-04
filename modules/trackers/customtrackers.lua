@@ -4148,7 +4148,7 @@ RegisterTrackerLayoutElement = function(barID)
             label = barConfig.name or ("Tracker " .. order),
             group = "Cooldown Manager & Custom Tracker Bars",
             order = order,
-            isOwned = false,  -- proxy mover (LOW strata)
+            isOwned = true,
             getSize = function()
                 -- Compute size from config to avoid feedback loop
                 -- (frame may be reparented to mover via SetAllPoints)

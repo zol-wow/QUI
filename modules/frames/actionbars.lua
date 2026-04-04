@@ -7424,7 +7424,7 @@ do
             label = "Action Bars",
             group = "Action Bars",
             order = -1,
-            isOwned = false,
+            isOwned = true,
             noHandle = true,
             isEnabled = function()
                 local db = GetDB()

@@ -2569,7 +2569,7 @@ do
             label = "Cooldown Manager",
             group = "Cooldown Manager & Custom Tracker Bars",
             order = -1,
-            isOwned = false,
+            isOwned = true,
             noHandle = true,
             isEnabled = function()
                 local ncdm = GetNcdmDB()
