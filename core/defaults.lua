@@ -3526,6 +3526,9 @@ local defaults = {
                 targetPoint = "BOTTOM",
                 offsetX = 0,
                 offsetY = -5,
+                absolutePoint = false,
+                absoluteX = 0,
+                absoluteY = 0,
             },
             raid = {
                 enabled = false,
@@ -3534,6 +3537,9 @@ local defaults = {
                 targetPoint = "BOTTOM",
                 offsetX = 0,
                 offsetY = -5,
+                absolutePoint = false,
+                absoluteX = 0,
+                absoluteY = 0,
             },
             pinned1 = {
                 enabled = false,
@@ -3542,6 +3548,9 @@ local defaults = {
                 targetPoint = "BOTTOM",
                 offsetX = 0,
                 offsetY = -5,
+                absolutePoint = false,
+                absoluteX = 0,
+                absoluteY = 0,
             },
             pinned2 = {
                 enabled = false,
@@ -3550,6 +3559,9 @@ local defaults = {
                 targetPoint = "BOTTOM",
                 offsetX = 0,
                 offsetY = -5,
+                absolutePoint = false,
+                absoluteX = 0,
+                absoluteY = 0,
             },
         },
 
