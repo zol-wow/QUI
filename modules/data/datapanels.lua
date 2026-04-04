@@ -479,7 +479,11 @@ local function RegisterDatapanelProvider(panelID, elementKey)
             local sy = -4
             sy = P(GUI:CreateFormSlider(body, "Width", 100, 800, 1, "width", panelDB, Refresh), body, sy)
             sy = P(GUI:CreateFormSlider(body, "Height", 16, 60, 1, "height", panelDB, Refresh), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Number of Slots", 1, 6, 1, "numSlots", panelDB, Refresh), body, sy)
+            local numSlotsSlider = GUI:CreateFormSlider(body, "Number of Slots", 1, 6, 1, "numSlots", panelDB, Refresh)
+            if GUI.SetWidgetProviderSyncOptions then
+                GUI:SetWidgetProviderSyncOptions(numSlotsSlider, { auto = true, structural = true })
+            end
+            sy = P(numSlotsSlider, body, sy)
             sy = P(GUI:CreateFormSlider(body, "Background Opacity", 0, 100, 5, "bgOpacity", panelDB, Refresh), body, sy)
             sy = P(GUI:CreateFormSlider(body, "Border Size (0=hidden)", 0, 8, 1, "borderSize", panelDB, Refresh), body, sy)
             sy = P(GUI:CreateFormColorPicker(body, "Border Color", "borderColor", panelDB, Refresh), body, sy)

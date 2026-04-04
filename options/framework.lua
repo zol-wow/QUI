@@ -213,6 +213,8 @@ end
 -- Register a widget instance for sync tracking
 local function RegisterWidgetInstance(widget, dbTable, dbKey)
     local widgetKey = GetWidgetKey(dbTable, dbKey)
+    widget._syncDBTable = dbTable
+    widget._syncDBKey = dbKey
     if not widgetKey then return end
     GUI.WidgetInstances[widgetKey] = GUI.WidgetInstances[widgetKey] or {}
     table.insert(GUI.WidgetInstances[widgetKey], widget)
@@ -246,6 +248,88 @@ local function BroadcastToSiblings(widget, val)
             sibling.UpdateVisual(val)
         end
     end
+end
+
+local function GetProviderSyncContext(frame)
+    local current = frame
+    local depth = 0
+    while current and depth < 50 do
+        if current._quiProviderSync then
+            return current._quiProviderSync
+        end
+        if not current.GetParent then
+            break
+        end
+        current = current:GetParent()
+        depth = depth + 1
+    end
+end
+
+local function ApplyWidgetSyncContext(widget, dbTable, dbKey)
+    if not widget then return end
+    widget._syncDBTable = dbTable
+    widget._syncDBKey = dbKey
+    if not widget._providerSyncContext then
+        widget._providerSyncContext = GetProviderSyncContext(widget)
+    end
+end
+
+local function NotifyProviderChangedForWidget(widget, options)
+    if not widget then return end
+    local context = widget._providerSyncContext or GetProviderSyncContext(widget)
+    if not context or not context.providerKey then return end
+
+    local builders = ns.SettingsBuilders
+    if not builders or type(builders.NotifyProviderChanged) ~= "function" then return end
+
+    local providerOptions = widget._providerSyncOptions or {}
+    local structural = options and options.structural
+    if structural == nil then
+        if providerOptions.structural ~= nil then
+            structural = providerOptions.structural == true
+        else
+            structural = not (widget._syncDBTable and widget._syncDBKey)
+        end
+    end
+
+    builders.NotifyProviderChanged(context.providerKey, {
+        sourceSurfaceId = context.surfaceId,
+        structural = structural == true,
+    })
+end
+
+local function MaybeAutoNotifyProviderSync(widget, options)
+    if not widget then return end
+    local context = widget._providerSyncContext or GetProviderSyncContext(widget)
+    if not context then return end
+
+    local providerOptions = widget._providerSyncOptions or {}
+    local auto = providerOptions.auto
+    if auto == nil then
+        auto = not (widget._syncDBTable and widget._syncDBKey)
+    end
+    if not auto then return end
+
+    NotifyProviderChangedForWidget(widget, options)
+end
+
+function GUI:SetWidgetProviderSyncOptions(widget, options)
+    if not widget then return nil end
+    widget._providerSyncOptions = options or {}
+    ApplyWidgetSyncContext(widget, widget._syncDBTable, widget._syncDBKey)
+    return widget
+end
+
+function GUI:NotifyProviderChangedForWidget(widget, options)
+    NotifyProviderChangedForWidget(widget, options)
+end
+
+function GUI:CleanupWidgetTree(root)
+    if not root then return end
+    for _, child in ipairs({root:GetChildren()}) do
+        self:CleanupWidgetTree(child)
+    end
+    UnregisterWidgetInstance(root)
 end
 
 -- Set search context for auto-registration (call at start of page builder)
@@ -3108,6 +3192,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
     local UIKit = ns.UIKit
+    ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     -- Label on left (off-white text, constrained to not overlap toggle)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3207,6 +3292,9 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
         if dbTable and dbKey then dbTable[dbKey] = val end
         BroadcastToSiblings(container, val)
         if onChange and not skipCallback then onChange(val) end
+        if not skipCallback then
+            MaybeAutoNotifyProviderSync(container)
+        end
     end
 
     container.GetValue = GetValue
@@ -3293,6 +3381,7 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
     local UIKit = ns.UIKit
+    ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     -- Label on left (off-white text, constrained to not overlap toggle)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3396,6 +3485,9 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
         if dbTable and dbKey then dbTable[dbKey] = dbVal end
         BroadcastToSiblings(container, isOn)
         if onChange and not skipCallback then onChange(dbVal) end
+        if not skipCallback then
+            MaybeAutoNotifyProviderSync(container)
+        end
     end
 
     container.GetValue = IsOn
@@ -3462,6 +3554,7 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
+    ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     -- Label on left (off-white text, constrained to not overlap checkbox)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3520,6 +3613,9 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
         if dbTable and dbKey then dbTable[dbKey] = val end
         BroadcastToSiblings(container, val)
         if onChange and not skipCallback then onChange(val) end
+        if not skipCallback then
+            MaybeAutoNotifyProviderSync(container)
+        end
     end
 
     container.GetValue = GetValue
@@ -3557,6 +3653,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
 
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
+    ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)
@@ -3699,6 +3796,9 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
         if onChange and not skipOnChange then
             onChange(nextVal)
         end
+        if not skipOnChange then
+            MaybeAutoNotifyProviderSync(container)
+        end
     end
 
     container.GetValue = GetValue
@@ -3800,6 +3900,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
 
     options = options or {}
     local UIKit = ns.UIKit
+    ApplyWidgetSyncContext(container, dbTable, dbKey)
     local useUIKitBorders = UIKit
         and UIKit.CreateBackground
         and UIKit.CreateBorderLines
@@ -3998,6 +4099,9 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         if dbTable and dbKey then dbTable[dbKey] = val end
         BroadcastToSiblings(container, val)
         if not skipOnChange and onChange then onChange(val) end
+        if not skipOnChange then
+            MaybeAutoNotifyProviderSync(container)
+        end
     end
 
     container.GetValue = GetValue
@@ -4019,6 +4123,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
             BroadcastToSiblings(container, value)
             if deferOnDrag and isDragging then return end
             if onChange then onChange(value) end
+            MaybeAutoNotifyProviderSync(container)
         end
     end)
 
@@ -4027,6 +4132,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         if isDragging and deferOnDrag then
             isDragging = false
             if onChange then onChange(slider:GetValue()) end
+            MaybeAutoNotifyProviderSync(container)
         end
         isDragging = false
     end)
@@ -4142,6 +4248,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         and UIKit.UpdateBorderLines
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
+    ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     -- Label on left (off-white text)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -4350,6 +4457,9 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         UpdateVisual(val)
         BroadcastToSiblings(container, val)
         if not skipOnChange and onChange then onChange(val) end
+        if not skipOnChange then
+            MaybeAutoNotifyProviderSync(container)
+        end
     end
 
     local function UpdateScrollInset()
@@ -4726,6 +4836,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
+    ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     -- Label on left (off-white text)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -4791,10 +4902,24 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
             dbTable[dbKey] = {r, g, b, finalAlpha}
         end
         if onChange then onChange(r, g, b, finalAlpha) end
+        BroadcastToSiblings(container, {r, g, b, finalAlpha})
+        MaybeAutoNotifyProviderSync(container)
+    end
+
+    local function UpdateVisual(val)
+        if type(val) == "table" then
+            SetSwatchColor(val[1] or 1, val[2] or 1, val[3] or 1, val[4] or 1)
+            return
+        end
+        local r, g, b, a = GetColor()
+        SetSwatchColor(r, g, b, a)
     end
 
     container.GetColor = GetColor
     container.SetColor = SetColor
+    container.UpdateVisual = UpdateVisual
+
+    RegisterWidgetInstance(container, dbTable, dbKey)
 
     local r, g, b, a = GetColor()
     SetSwatchColor(r, g, b, a)

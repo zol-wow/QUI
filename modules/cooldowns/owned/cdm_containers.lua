@@ -2967,6 +2967,11 @@ do
                         }
                         local placementDD = GUI:CreateFormDropdown(ceBody, "Icon Placement", placementOpts, "placement", cc, Refresh)
                         sy = U.PlaceRow(placementDD, ceBody, sy)
+                        local function NotifyPeerRefresh(widget)
+                            if GUI and GUI.NotifyProviderChangedForWidget then
+                                GUI:NotifyProviderChangedForWidget(widget, { structural = true })
+                            end
+                        end
 
                         -- Drop zone
                         local dropZone = CreateFrame("Button", nil, ceBody, "BackdropTemplate")
@@ -2997,6 +3002,7 @@ do
                                     ns.CustomCDM:AddEntry(dbKey, "item", itemID)
                                     ClearCursor()
                                     rebuildCustomEntries()
+                                    NotifyPeerRefresh(dropZone)
                                 end
                             elseif cursorType == "spell" then
                                 local spellID = id4
@@ -3012,6 +3018,7 @@ do
                                         ns.CustomCDM:AddEntry(dbKey, "spell", spellID)
                                         ClearCursor()
                                         rebuildCustomEntries()
+                                        NotifyPeerRefresh(dropZone)
                                     end
                                 end
                             end
@@ -3056,6 +3063,7 @@ do
                             if ns.CustomCDM then
                                 ns.CustomCDM:AddEntry(dbKey, "trinket", 13)
                                 rebuildCustomEntries()
+                                NotifyPeerRefresh(t1Btn)
                             end
                         end)
                         t1Btn:SetScript("OnEnter", function(self)
@@ -3079,6 +3087,7 @@ do
                             if ns.CustomCDM then
                                 ns.CustomCDM:AddEntry(dbKey, "trinket", 14)
                                 rebuildCustomEntries()
+                                NotifyPeerRefresh(t2Btn)
                             end
                         end)
                         t2Btn:SetScript("OnEnter", function(self)
@@ -3146,6 +3155,7 @@ do
                                 if ns.CustomCDM then
                                     ns.CustomCDM:SetEntryEnabled(dbKey, entryIdx, not (entry.enabled ~= false))
                                     rebuildCustomEntries()
+                                    NotifyPeerRefresh(toggleBtn)
                                 end
                             end)
 
@@ -3164,6 +3174,7 @@ do
                                 if ns.CustomCDM then
                                     ns.CustomCDM:MoveEntry(dbKey, entryIdx, -1)
                                     rebuildCustomEntries()
+                                    NotifyPeerRefresh(upBtn)
                                 end
                             end)
 
@@ -3182,6 +3193,7 @@ do
                                 if ns.CustomCDM then
                                     ns.CustomCDM:MoveEntry(dbKey, entryIdx, 1)
                                     rebuildCustomEntries()
+                                    NotifyPeerRefresh(downBtn)
                                 end
                             end)
 
@@ -3200,6 +3212,7 @@ do
                                 if ns.CustomCDM then
                                     ns.CustomCDM:RemoveEntry(dbKey, entryIdx)
                                     rebuildCustomEntries()
+                                    NotifyPeerRefresh(removeBtn)
                                 end
                             end)
 

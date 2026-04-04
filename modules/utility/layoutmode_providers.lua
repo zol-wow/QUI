@@ -25,6 +25,11 @@ local function RegisterAllProviders()
 
     local P = U.PlaceRow
     local FORM_ROW = U.FORM_ROW
+    local function NotifyProviderFor(widget, opts)
+        if GUI and GUI.NotifyProviderChangedForWidget then
+            GUI:NotifyProviderChangedForWidget(widget, opts)
+        end
+    end
 
     local anchorOptions = {
         {value = "TOPLEFT", text = "Top Left"},
@@ -861,6 +866,7 @@ local function RegisterAllProviders()
                             row._cb:SetScript("OnClick", function(self)
                                 dt.currencyEnabled[cid] = self:GetChecked()
                                 Refresh()
+                                NotifyProviderFor(row._cb, { structural = true })
                             end)
 
                             -- Up button
@@ -871,6 +877,7 @@ local function RegisterAllProviders()
                                     o[capturedIdx], o[capturedIdx - 1] = o[capturedIdx - 1], o[capturedIdx]
                                     RebuildCurrencyRows()
                                     Refresh()
+                                    NotifyProviderFor(row._upBtn, { structural = true })
                                 end
                             end)
                             row._upBtn:SetAlpha(idx > 1 and 1 or 0.3)
@@ -882,6 +889,7 @@ local function RegisterAllProviders()
                                     o[capturedIdx], o[capturedIdx + 1] = o[capturedIdx + 1], o[capturedIdx]
                                     RebuildCurrencyRows()
                                     Refresh()
+                                    NotifyProviderFor(row._downBtn, { structural = true })
                                 end
                             end)
                             row._downBtn:SetAlpha(idx < #dt.currencyOrder and 1 or 0.3)
@@ -1179,6 +1187,7 @@ local function RegisterAllProviders()
                                 local btnText2 = self:GetFontString()
                                 if btnText2 then btnText2:SetText(opt.text) end
                                 RefreshPreview()
+                                NotifyProviderFor(colorModeDropdown)
                             end,
                         })
                     end
@@ -2375,6 +2384,9 @@ local function RegisterAllProviders()
                         RebuildSoundEntries()
                     end
                     local channelDropdown = GUI:CreateFormDropdown(row, "Channel", channelOpts, "channel", entry, OnChannelChange)
+                    if GUI.SetWidgetProviderSyncOptions then
+                        GUI:SetWidgetProviderSyncOptions(channelDropdown, { auto = true, structural = true })
+                    end
                     channelDropdown:SetPoint("TOPLEFT", 0, 0)
                     channelDropdown:SetPoint("RIGHT", row, "RIGHT", -80, 0)
 
@@ -2387,6 +2399,7 @@ local function RegisterAllProviders()
                         table.remove(entries, i)
                         RebuildSoundEntries()
                         Refresh()
+                        NotifyProviderFor(removeBtn, { structural = true })
                     end)
                     removeBtn:SetPoint("RIGHT", row, "RIGHT", 0, -FORM_ROW/2)
 
@@ -2415,6 +2428,7 @@ local function RegisterAllProviders()
                         table.insert(chat.newMessageSound.entries, { channel = channel, sound = "None" })
                         RebuildSoundEntries()
                         Refresh()
+                        NotifyProviderFor(addBtn, { structural = true })
                     end)
                     addBtn:SetPoint("TOPLEFT", 0, -rowY - 4)
                     rowY = rowY + 28

@@ -67,6 +67,15 @@ local function RefreshGF()
     end
 end
 
+local function NotifyProvider(providerKey, structural)
+    local builders = ns.SettingsBuilders
+    if builders and builders.NotifyProviderChanged then
+        builders.NotifyProviderChanged(providerKey, {
+            structural = structural == true,
+        })
+    end
+end
+
 ---------------------------------------------------------------------------
 -- SHARED BUILDER: frame-level collapsibles for a given context
 ---------------------------------------------------------------------------
@@ -214,7 +223,11 @@ local function BuildFrameSettings(content, contextMode, sections, relayout)
         end
 
         if isRaid then
-            sy = P(GUI:CreateFormDropdown(body, "Group By", GROUP_BY_OPTIONS, "groupBy", layout, onChange), body, sy)
+            local groupByDropdown = GUI:CreateFormDropdown(body, "Group By", GROUP_BY_OPTIONS, "groupBy", layout, onChange)
+            if GUI.SetWidgetProviderSyncOptions then
+                GUI:SetWidgetProviderSyncOptions(groupByDropdown, { auto = true, structural = true })
+            end
+            sy = P(groupByDropdown, body, sy)
             local groupBy = layout.groupBy or "GROUP"
             if groupBy == "NONE" then
                 sy = P(GUI:CreateFormSlider(body, "Units Per Column", 1, 40, 1, "unitsPerFlat", layout, onChange), body, sy)
@@ -357,6 +370,8 @@ local function BuildFrameSettings(content, contextMode, sections, relayout)
                         end
                     end
                     RefreshGF()
+                    NotifyProvider("partyFrames", true)
+                    NotifyProvider("raidFrames", true)
                 end,
             })
         end)
@@ -438,6 +453,7 @@ local function RegisterGroupFrameProviders()
                 sp._currentKey = nil
                 sp:Show("spotlightFrames")
             end
+            NotifyProvider("spotlightFrames", true)
         end
 
         -- Filter

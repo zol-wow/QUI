@@ -311,6 +311,8 @@ end
 
 local function ClearContent(panel)
     local content = panel._content
+    local builders = ns.SettingsBuilders
+    local GUI = _G.QUI and _G.QUI.GUI
 
     -- Save collapsible expanded states before clearing
     local expandedStates = {}
@@ -327,6 +329,10 @@ local function ClearContent(panel)
         content.SetHeight = content._origSetHeight
     end
 
+    if GUI and GUI.CleanupWidgetTree then
+        GUI:CleanupWidgetTree(content)
+    end
+
     -- Hide and release children
     for _, child in pairs({content:GetChildren()}) do
         child:Hide()
@@ -339,6 +345,7 @@ local function ClearContent(panel)
         end
     end
     panel._placeholder:Hide()
+    content._quiProviderSync = nil
     content:SetHeight(1)
     pcall(panel._scrollFrame.SetVerticalScroll, panel._scrollFrame, 0)
 end
@@ -405,6 +412,10 @@ local function BuildContent(panel, key)
 
     local content = panel._content
     local contentWidth = content:GetWidth()
+    content._quiProviderSync = {
+        providerKey = key,
+        surfaceId = "layoutmode-settings",
+    }
 
     local provider = QUI_LayoutMode_Settings._providers[key]
     local providerHeight = 0
@@ -698,12 +709,25 @@ function QUI_LayoutMode_Settings:Show(key)
         end
     end
 
+    local builders = ns.SettingsBuilders
+    if builders and builders.RegisterProviderSurface then
+        builders.RegisterProviderSurface(key, "layoutmode-settings", function(meta)
+            self:Refresh(meta)
+        end, function()
+            return panel:IsShown()
+        end)
+    end
+
     panel:Show()
 end
 
 function QUI_LayoutMode_Settings:Hide()
     if self._panel then
         self._panel:Hide()
+    end
+    local builders = ns.SettingsBuilders
+    if builders and builders.UnregisterProviderSurface then
+        builders.UnregisterProviderSurface("layoutmode-settings")
     end
 end
 
@@ -718,12 +742,16 @@ end
 
 
 --- Force rebuild of current content (e.g., after DB change).
-function QUI_LayoutMode_Settings:Refresh()
+function QUI_LayoutMode_Settings:Refresh(meta)
     if not self._currentKey or not self._panel or not self._panel:IsShown() then return end
-    local provider = self._providers[self._currentKey]
-    if provider and provider.refresh then
-        pcall(provider.refresh)
-    end
+    local panel = self._panel
+    local key = (meta and meta.providerKey) or self._currentKey
+    local currentScroll = SafeGetVerticalScroll(panel._scrollFrame)
+
+    BuildContent(panel, key)
+    self._currentKey = key
+    local maxScroll = SafeGetVerticalScrollRange(panel._scrollFrame)
+    pcall(panel._scrollFrame.SetVerticalScroll, panel._scrollFrame, math.max(0, math.min(currentScroll, maxScroll)))
 end
 
 --- Reset state when Layout Mode closes.

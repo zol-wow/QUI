@@ -3787,6 +3787,15 @@ local function RegisterCustomTrackerProvider(barID, elementKey)
                 _G.QUI_LayoutModeSyncHandle(elementKey)
             end
         end
+        local function RebuildSharedSettings(sourceWidget)
+            if settingsPanel then
+                settingsPanel._currentKey = nil
+                settingsPanel:Show(key)
+            end
+            if GUI and GUI.NotifyProviderChangedForWidget then
+                GUI:NotifyProviderChangedForWidget(sourceWidget, { structural = true })
+            end
+        end
 
         -- Items & Spells section
         U.CreateCollapsible(content, "Items & Spells", 6 * FORM_ROW + 40, function(body)
@@ -3821,20 +3830,13 @@ local function RegisterCustomTrackerProvider(barID, elementKey)
                     table_insert(barConfig.entries, { type = "item", id = id })
                     ClearCursor()
                     Refresh()
-                    -- Force rebuild to show new entry
-                    if settingsPanel then
-                        settingsPanel._currentKey = nil
-                        settingsPanel:Show(key)
-                    end
+                    RebuildSharedSettings(dropZone)
                 elseif infoType == "spell" then
                     if not barConfig.entries then barConfig.entries = {} end
                     table_insert(barConfig.entries, { type = "spell", id = id })
                     ClearCursor()
                     Refresh()
-                    if settingsPanel then
-                        settingsPanel._currentKey = nil
-                        settingsPanel:Show(key)
-                    end
+                    RebuildSharedSettings(dropZone)
                 end
             end)
             dropZone:SetScript("OnMouseUp", dropZone:GetScript("OnReceiveDrag"))
@@ -3854,10 +3856,7 @@ local function RegisterCustomTrackerProvider(barID, elementKey)
                 if not barConfig.entries then barConfig.entries = {} end
                 table_insert(barConfig.entries, { type = "slot", id = 13, name = "Trinket 1" })
                 Refresh()
-                if settingsPanel then
-                    settingsPanel._currentKey = nil
-                    settingsPanel:Show(key)
-                end
+                RebuildSharedSettings(trinket1Btn)
             end)
 
             local trinket2Btn = CreateFrame("Button", nil, body)
@@ -3872,10 +3871,7 @@ local function RegisterCustomTrackerProvider(barID, elementKey)
                 if not barConfig.entries then barConfig.entries = {} end
                 table_insert(barConfig.entries, { type = "slot", id = 14, name = "Trinket 2" })
                 Refresh()
-                if settingsPanel then
-                    settingsPanel._currentKey = nil
-                    settingsPanel:Show(key)
-                end
+                RebuildSharedSettings(trinket2Btn)
             end)
 
             sy = sy - 28
@@ -3936,10 +3932,7 @@ local function RegisterCustomTrackerProvider(barID, elementKey)
                     removeBtn:SetScript("OnClick", function()
                         table_remove(barConfig.entries, capturedIdx)
                         Refresh()
-                        if settingsPanel then
-                            settingsPanel._currentKey = nil
-                            settingsPanel:Show(key)
-                        end
+                        RebuildSharedSettings(removeBtn)
                     end)
 
                     sy = sy - 24

@@ -3,8 +3,17 @@ local ADDON_NAME, ns = ...
 local SettingsBuilders = {}
 ns.SettingsBuilders = SettingsBuilders
 
+local surfaceSeq = 0
+local providerSurfaces = {}
+local pendingProviderRefresh = {}
+
 local function GetGUI()
     return _G.QUI and _G.QUI.GUI
+end
+
+local function NextSurfaceId(prefix)
+    surfaceSeq = surfaceSeq + 1
+    return string.format("%s:%d", prefix or "provider", surfaceSeq)
 end
 
 local function ShowProviderUnavailable(parent, message)
@@ -39,6 +48,90 @@ local function GetProvider(providerKey)
     return settingsPanel._providers[providerKey]
 end
 
+local function ClearHost(parent)
+    if not parent then return end
+
+    local GUI = GetGUI()
+    if GUI and GUI.CleanupWidgetTree then
+        GUI:CleanupWidgetTree(parent)
+    end
+
+    for _, child in ipairs({parent:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    for _, region in ipairs({parent:GetRegions()}) do
+        if region.Hide then
+            region:Hide()
+        end
+    end
+
+    if parent.SetHeight then
+        parent:SetHeight(1)
+    end
+end
+
+function SettingsBuilders.RegisterProviderSurface(providerKey, surfaceId, refreshFn, isVisibleFn)
+    if not providerKey or not surfaceId or type(refreshFn) ~= "function" then return end
+    providerSurfaces[surfaceId] = {
+        providerKey = providerKey,
+        refreshFn = refreshFn,
+        isVisibleFn = isVisibleFn,
+    }
+end
+
+function SettingsBuilders.UnregisterProviderSurface(surfaceId)
+    if not surfaceId then return end
+    providerSurfaces[surfaceId] = nil
+end
+
+local function FlushProviderRefresh(providerKey)
+    local pending = pendingProviderRefresh[providerKey]
+    pendingProviderRefresh[providerKey] = nil
+    if not pending then return end
+
+    for surfaceId, surface in pairs(providerSurfaces) do
+        if surface.providerKey == providerKey and (pending.structural or not pending.skipSurfaceIds[surfaceId]) then
+            local isVisible = true
+            if surface.isVisibleFn then
+                local okVisible, visible = pcall(surface.isVisibleFn)
+                isVisible = okVisible and visible ~= false
+            end
+            if isVisible then
+                pcall(surface.refreshFn, {
+                    providerKey = providerKey,
+                    structural = pending.structural == true,
+                })
+            end
+        end
+    end
+end
+
+function SettingsBuilders.NotifyProviderChanged(providerKey, opts)
+    if not providerKey then return end
+    opts = opts or {}
+
+    local pending = pendingProviderRefresh[providerKey]
+    if not pending then
+        pending = {
+            structural = false,
+            skipSurfaceIds = {},
+        }
+        pendingProviderRefresh[providerKey] = pending
+        C_Timer.After(0.05, function()
+            FlushProviderRefresh(providerKey)
+        end)
+    end
+
+    if opts.structural then
+        pending.structural = true
+    end
+    if opts.sourceSurfaceId then
+        pending.skipSurfaceIds[opts.sourceSurfaceId] = true
+    end
+end
+
 local function WithSuppressedPosition(includePosition, fn)
     local U = ns.QUI_LayoutMode_Utils
     local original = U and U.BuildPositionCollapsible
@@ -69,12 +162,55 @@ local function WithSuppressedPosition(includePosition, fn)
 end
 
 local function BuildViaProvider(providerKey, parent, width, options)
+    if not parent then return 80 end
+
+    ClearHost(parent)
+
     local provider = GetProvider(providerKey)
     if not provider or type(provider.build) ~= "function" then
         return ShowProviderUnavailable(parent, "Settings are still initializing. Please reopen this tab in a moment.")
     end
 
     local targetWidth = width or (parent and parent.GetWidth and parent:GetWidth()) or 400
+    local surfaceId = parent._quiProviderSurfaceId or NextSurfaceId("options-provider")
+    parent._quiProviderSurfaceId = surfaceId
+    parent._quiProviderSync = {
+        providerKey = providerKey,
+        surfaceId = surfaceId,
+    }
+
+    local function RefreshSurface()
+        local latestWidth = math.max(300, (parent and parent.GetWidth and parent:GetWidth()) or targetWidth or 400)
+        return BuildViaProvider(providerKey, parent, latestWidth, options)
+    end
+
+    parent._quiProviderSurfaceInfo = {
+        providerKey = providerKey,
+        surfaceId = surfaceId,
+        refreshFn = RefreshSurface,
+    }
+
+    SettingsBuilders.RegisterProviderSurface(providerKey, surfaceId, RefreshSurface, function()
+        return parent:IsShown()
+    end)
+
+    if not parent._quiProviderSurfaceHooks then
+        parent._quiProviderSurfaceHooks = true
+        parent:HookScript("OnHide", function(self)
+            local info = self._quiProviderSurfaceInfo
+            if info then
+                SettingsBuilders.UnregisterProviderSurface(info.surfaceId)
+            end
+        end)
+        parent:HookScript("OnShow", function(self)
+            local info = self._quiProviderSurfaceInfo
+            if not info then return end
+            SettingsBuilders.RegisterProviderSurface(info.providerKey, info.surfaceId, info.refreshFn, function()
+                return self:IsShown()
+            end)
+        end)
+    end
+
     local height = WithSuppressedPosition(options and options.includePosition, function()
         return provider.build(parent, providerKey, targetWidth)
     end)
