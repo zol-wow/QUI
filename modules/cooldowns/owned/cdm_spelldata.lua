@@ -1779,7 +1779,7 @@ end
 -- Phase 1: Move unlearned spells from ownedSpells → dormantSpells, saving slot index.
 -- Phase 2: Re-insert returning dormant spells at their saved position.
 -- Phase 3: Clean obsolete dormant entries for spells removed from game.
--- dormantSpells is a map: { [spellID] = originalSlotIndex }
+-- dormantSpells is a map: { [spellID] = { slot = originalSlotIndex, row = rowNum } }
 function CDMSpellData:CheckDormantSpells(containerKey)
     local db = GetContainerDB(containerKey)
     if not db or type(db.ownedSpells) ~= "table" then
@@ -1831,7 +1831,8 @@ function CDMSpellData:CheckDormantSpells(containerKey)
     for i, entry in ipairs(ownedSpells) do
         if entry and entry.id and entry.type == "spell" then
             if not IsSpellKnownByPlayer(entry.id) then
-                db.dormantSpells[entry.id] = i  -- save slot position
+                -- Save slot position AND row assignment so both are restored
+                db.dormantSpells[entry.id] = { slot = i, row = entry.row }
                 toRemove[#toRemove + 1] = i
             end
         end
@@ -1850,9 +1851,17 @@ function CDMSpellData:CheckDormantSpells(containerKey)
 
     -- Phase 2: Re-insert returning dormant spells at saved positions
     local returning = {}
-    for sid, savedSlot in pairs(db.dormantSpells) do
+    for sid, savedData in pairs(db.dormantSpells) do
         if IsSpellKnownByPlayer(sid) then
-            returning[#returning + 1] = { id = sid, slot = savedSlot }
+            -- Support both legacy (number) and new (table) dormant format
+            local savedSlot, savedRow
+            if type(savedData) == "table" then
+                savedSlot = savedData.slot or 9999
+                savedRow = savedData.row
+            else
+                savedSlot = savedData or 9999
+            end
+            returning[#returning + 1] = { id = sid, slot = savedSlot, row = savedRow }
         end
     end
     -- Sort by saved slot (lowest first) so insertions maintain order
@@ -1862,7 +1871,7 @@ function CDMSpellData:CheckDormantSpells(containerKey)
     for _, info in ipairs(returning) do
         db.dormantSpells[info.id] = nil  -- remove from dormant
         local insertAt = math.min(info.slot, #db.ownedSpells + 1)
-        table.insert(db.ownedSpells, insertAt, { type = "spell", id = info.id })
+        table.insert(db.ownedSpells, insertAt, { type = "spell", id = info.id, row = info.row })
     end
 
     -- Phase 3: Clean obsolete dormant spells no longer in the CDM system
@@ -2212,7 +2221,7 @@ function CDMSpellData:ReconcileAllContainers()
                 end
             end
             if type(db.dormantSpells) == "table" then
-                -- dormantSpells is a map: { [spellID] = savedSlotIndex }
+                -- dormantSpells is a map: { [spellID] = { slot, row } }
                 for sid, _ in pairs(db.dormantSpells) do
                     if type(sid) == "number" then
                         globalTracked["spell:" .. sid] = true
@@ -2385,12 +2394,20 @@ function CDMSpellData:RestoreDormantEntry(containerKey, spellID)
     local db = GetContainerDB(containerKey)
     if not db then return false end
     if type(db.dormantSpells) ~= "table" then return false end
-    local savedSlot = db.dormantSpells[spellID]
-    if not savedSlot then return false end
+    local savedData = db.dormantSpells[spellID]
+    if not savedData then return false end
     db.dormantSpells[spellID] = nil
     if db.ownedSpells == nil then db.ownedSpells = {} end
+    -- Support both legacy (number) and new (table) dormant format
+    local savedSlot, savedRow
+    if type(savedData) == "table" then
+        savedSlot = savedData.slot or 9999
+        savedRow = savedData.row
+    else
+        savedSlot = savedData or 9999
+    end
     local insertAt = math.min(savedSlot, #db.ownedSpells + 1)
-    table.insert(db.ownedSpells, insertAt, { type = "spell", id = spellID })
+    table.insert(db.ownedSpells, insertAt, { type = "spell", id = spellID, row = savedRow })
     FireChangeCallback()
     return true
 end
