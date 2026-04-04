@@ -58,7 +58,14 @@ local function RebuildSpellCache()
                             if name then
                                 local spellInfo = C_Spell.GetSpellInfo(info.spellID)
                                 local icon = spellInfo and spellInfo.iconID
-                                table.insert(spellCache, { spellID = info.spellID, name = name, icon = icon, tab = sli.name or "General" })
+                                -- Resolve base spell so override transforms (e.g. Holy Bulwark → Sacred Weapon) are searchable by either name
+                                local baseID = C_Spell.GetBaseSpell and C_Spell.GetBaseSpell(info.spellID)
+                                local baseName
+                                if baseID and baseID ~= info.spellID then
+                                    baseName = C_Spell.GetSpellName(baseID)
+                                    if baseName == name then baseName = nil end
+                                end
+                                table.insert(spellCache, { spellID = info.spellID, name = name, baseName = baseName, icon = icon, tab = sli.name or "General" })
                             end
                         end
                     end
@@ -1006,7 +1013,7 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
         local lower = searchText:lower()
         local matches = {}
         for _, entry in ipairs(spells) do
-            if entry.name:lower():find(lower, 1, true) then
+            if entry.name:lower():find(lower, 1, true) or (entry.baseName and entry.baseName:lower():find(lower, 1, true)) then
                 matches[#matches + 1] = entry
                 if #matches >= MAX_AC_ROWS then break end
             end
@@ -1017,7 +1024,8 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
             local m = matches[ri]
             if m then
                 row.icon:SetTexture(m.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-                row.text:SetText(m.name)
+                local display = m.baseName and (m.name .. "  |cFF888888(" .. m.baseName .. ")|r") or m.name
+                row.text:SetText(display)
                 row.spellName = m.name
                 row:Show()
             else
@@ -1255,7 +1263,7 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
         local ignoreCollapse = lower ~= nil
 
         for _, entry in ipairs(spells) do
-            if not lower or entry.name:lower():find(lower, 1, true) then
+            if not lower or entry.name:lower():find(lower, 1, true) or (entry.baseName and entry.baseName:lower():find(lower, 1, true)) then
                 -- Tab header
                 if entry.tab ~= currentTab then
                     currentTab = entry.tab
@@ -1282,7 +1290,8 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
                     row:SetPoint("TOPLEFT", 0, by)
                     row:SetPoint("RIGHT", browseScrollChild, "RIGHT", 0, 0)
                     row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-                    row.text:SetText(entry.name)
+                    local display = entry.baseName and (entry.name .. "  |cFF888888(" .. entry.baseName .. ")|r") or entry.name
+                    row.text:SetText(display)
                     row.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
                     row.spellName = entry.name
                     by = by - BROWSE_ROW_H
