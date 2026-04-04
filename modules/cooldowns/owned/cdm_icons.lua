@@ -1200,6 +1200,7 @@ local function CreateIcon(parent, spellEntry)
         local entry = self._spellEntry
         if not entry then return end
         local tooltipSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.tooltip
+        if tooltipSettings and tooltipSettings.hideInCombat and InCombatLockdown() then return end
         if tooltipSettings and tooltipSettings.anchorToCursor then
             local anchorTooltip = ns.QUI_AnchorTooltipToCursor
             if anchorTooltip then
@@ -1210,7 +1211,20 @@ local function CreateIcon(parent, spellEntry)
         else
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         end
-        local sid = entry.overrideSpellID or entry.spellID or (entry.type and entry.id)
+        -- Resolve current spell from the viewer child (reflects dynamic
+        -- transforms like Glacial Spike ↔ Frostbolt that GetOverrideSpell
+        -- does not).  Fall back to entry IDs when no child exists.
+        local sid = nil
+        if entry._blizzChild and entry._blizzChild.GetSpellID then
+            local ok, childSid = pcall(entry._blizzChild.GetSpellID, entry._blizzChild)
+            if ok and childSid then
+                local cmpOk, gt = pcall(function() return childSid > 0 end)
+                if cmpOk and gt then sid = childSid end
+            end
+        end
+        if not sid then
+            sid = entry.overrideSpellID or entry.spellID or entry.id
+        end
         if sid then
             if entry.type == "trinket" or entry.type == "slot" then
                 local itemID = entry.itemID or GetInventoryItemID("player", entry.id)
@@ -2016,10 +2030,14 @@ local function UpdateIconCooldown(icon)
                     end
                 end
 
-                -- Texture from the override spell (C-side handles secrets).
-                -- Sets _desiredTexture so the Blizzard SetTexture hook doesn't
-                -- overwrite with debuff/aura icons from the viewer child.
-                if icon.Icon then
+                -- Texture: when a Blizzard viewer child exists, clear
+                -- _desiredTexture so HookBlizzTexture can forward the
+                -- child's dynamic texture changes (e.g. Glacial Spike ↔
+                -- Frostbolt).  C_Spell.GetSpellInfo never reflects these.
+                -- For custom entries (no blizzChild), resolve explicitly.
+                if icon.Icon and entry._blizzChild then
+                    icon._desiredTexture = nil
+                elseif icon.Icon then
                     local texInfo = C_Spell.GetSpellInfo(cdSid)
                     if texInfo and texInfo.iconID then
                         icon._desiredTexture = texInfo.iconID
@@ -2091,8 +2109,10 @@ local function UpdateIconCooldown(icon)
                 if _tickCi and not IsSecretValue(_tickCi.isOnGCD) then
                     icon._isOnGCD = _tickCi.isOnGCD or false
                 end
-                -- Texture from override chain — already resolved in _runtimeSid.
-                if icon.Icon then
+                -- Texture: let HookBlizzTexture drive when viewer child exists.
+                if icon.Icon and entry._blizzChild then
+                    icon._desiredTexture = nil
+                elseif icon.Icon then
                     local texSid = _runtimeSid
                     local texInfo = C_Spell.GetSpellInfo(texSid)
                     if texInfo and texInfo.iconID then
