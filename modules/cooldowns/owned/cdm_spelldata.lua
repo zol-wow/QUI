@@ -1395,8 +1395,9 @@ local function ResolveOwnedEntry(entry, containerKey, index)
         end
 
     elseif entry.type == "item" then
-        resolved.spellID = entry.id  -- item ID stored as spellID for keying
-        resolved.overrideSpellID = entry.id
+        -- Item IDs must NOT be stored as spellID — they are different ID spaces.
+        -- spellID/overrideSpellID stay nil; item-specific code paths use entry.id.
+        resolved.id = entry.id
         local ok, itemName = pcall(C_Item.GetItemNameByID, entry.id)
         if ok and itemName then
             resolved.name = itemName
@@ -1406,8 +1407,8 @@ local function ResolveOwnedEntry(entry, containerKey, index)
         resolved.id = entry.id
         local itemID = GetInventoryItemID("player", entry.id)
         if itemID then
-            resolved.spellID = itemID
-            resolved.overrideSpellID = itemID
+            -- Store resolved item ID for texture/tooltip but NOT as spellID
+            resolved.itemID = itemID
             local ok, itemName = pcall(C_Item.GetItemNameByID, itemID)
             if ok and itemName then
                 resolved.name = itemName

@@ -291,10 +291,10 @@ local function GetEntryTexture(entry)
         end
         return fallbackTex
     end
-    if entry.type == "trinket" then
-        -- Trinket entries store the equipment slot number (13/14), not the item ID.
+    if entry.type == "trinket" or entry.type == "slot" then
+        -- Trinket/slot entries store the equipment slot number (13/14), not the item ID.
         -- Resolve to the actual equipped item ID before looking up the icon.
-        local itemID = GetInventoryItemID("player", entry.id)
+        local itemID = entry.itemID or GetInventoryItemID("player", entry.id)
         if itemID then
             local _, _, _, _, icon = C_Item.GetItemInfoInstant(itemID)
             return icon
@@ -1204,13 +1204,13 @@ local function CreateIcon(parent, spellEntry)
         end
         local sid = entry.overrideSpellID or entry.spellID or (entry.type and entry.id)
         if sid then
-            if entry.type == "trinket" then
-                local itemID = GetInventoryItemID("player", sid)
+            if entry.type == "trinket" or entry.type == "slot" then
+                local itemID = entry.itemID or GetInventoryItemID("player", entry.id)
                 if itemID then
                     pcall(GameTooltip.SetItemByID, GameTooltip, itemID)
                 end
             elseif entry.type == "item" then
-                pcall(GameTooltip.SetItemByID, GameTooltip, sid)
+                pcall(GameTooltip.SetItemByID, GameTooltip, entry.id)
             else
                 pcall(GameTooltip.SetSpellByID, GameTooltip, sid)
             end
@@ -1465,8 +1465,8 @@ local function UpdateIconSecureAttributes(icon, entry, viewerType)
         btn:SetAttribute("type", "macro")
         btn:SetAttribute("macro", entry.macroName)
         btn:Show()
-    elseif entry.type == "trinket" then
-        local itemID = GetInventoryItemID("player", entry.id)
+    elseif entry.type == "trinket" or entry.type == "slot" then
+        local itemID = entry.itemID or GetInventoryItemID("player", entry.id)
         if itemID then
             local itemName = C_Item.GetItemNameByID(itemID)
             if itemName then
@@ -2667,9 +2667,10 @@ function CDMIcons:BuildIcons(viewerType, container)
             local unpositioned = {}
             for idx, entry in ipairs(customData.entries) do
                 if entry.enabled ~= false then
+                    local isSpellType = (entry.type ~= "item" and entry.type ~= "trinket")
                     local spellEntry = {
-                        spellID = entry.id,
-                        overrideSpellID = entry.id,
+                        spellID = isSpellType and entry.id or nil,
+                        overrideSpellID = isSpellType and entry.id or nil,
                         name = "",
                         isAura = false,
                         layoutIndex = 99000 + idx,
@@ -2784,7 +2785,8 @@ function CDMIcons:BuildIcons(viewerType, container)
             local viewerContainer = viewerGlobal.viewerFrame or viewerGlobal
             for _, icon in ipairs(pool) do
                 local entry = icon._spellEntry
-                if entry and not entry._blizzChild then
+                if entry and not entry._blizzChild
+                    and entry.type ~= "item" and entry.type ~= "trinket" and entry.type ~= "slot" then
                     -- Try all ID variants (same as ResolveOwnedEntry)
                     local searchIDs = {}
                     if entry.overrideSpellID then searchIDs[#searchIDs+1] = entry.overrideSpellID end
@@ -3170,10 +3172,26 @@ function CustomCDM:AddEntry(trackerKey, entryType, entryID)
     end
     if entryType ~= "spell" and entryType ~= "item" and entryType ~= "trinket" and entryType ~= "macro" then return false end
 
-    local customData = GetCustomData(trackerKey)
-    if not customData then return false end
-    if not customData.entries then customData.entries = {} end
+    -- Materialize the path in saved variables. AceDB defaults are accessed
+    -- via metatables — writing to a table returned by __index modifies the
+    -- default in memory but never persists to SavedVariables. Force each
+    -- level into the sv by reading-then-writing through the proxy.
+    local charDB = QUICore.db.char
+    if not rawget(charDB, "ncdm") then
+        charDB.ncdm = {}
+    end
+    local ncdm = charDB.ncdm
+    if not ncdm[trackerKey] then
+        ncdm[trackerKey] = {}
+    end
+    if not ncdm[trackerKey].customEntries then
+        ncdm[trackerKey].customEntries = { enabled = true, placement = "after", entries = {} }
+    end
+    if not ncdm[trackerKey].customEntries.entries then
+        ncdm[trackerKey].customEntries.entries = {}
+    end
 
+    local customData = ncdm[trackerKey].customEntries
     -- Duplicate check
     for _, entry in ipairs(customData.entries) do
         if entryType == "macro" then
@@ -3357,7 +3375,7 @@ local function UpdateIconVisualState(icon, cachedDB)
     if viewerType == "buff" then return end
 
     -- Skip items/trinkets (self-use, no range/usability concept)
-    if entry.type == "item" or entry.type == "trinket" then return end
+    if entry.type == "item" or entry.type == "trinket" or entry.type == "slot" then return end
 
     -- Resolve current spell ID (prefer cached override from cooldown update cycle
     -- to avoid redundant GetOverrideSpell API calls during range polling)
