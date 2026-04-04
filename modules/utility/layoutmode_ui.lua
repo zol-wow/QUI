@@ -127,6 +127,16 @@ function QUI_LayoutMode_UI:Show()
         self._toolbar:Show()
     end
 
+    -- Auto-expand panel + drawer on layout mode entry
+    if self._expandToolbar then
+        self._expandToolbar()
+    end
+    C_Timer.After(0.2, function()
+        if self._drawer and not self._drawer:IsShown() then
+            self:ToggleFramesDrawer()
+        end
+    end)
+
     if self._nudgeFrame then
         self._nudgeFrame:Show()
         -- Always capture keyboard for Escape; arrow nudging checks selection internally
@@ -135,6 +145,11 @@ function QUI_LayoutMode_UI:Show()
 end
 
 function QUI_LayoutMode_UI:Hide()
+    -- Reset expanded state so Expand() works on re-entry
+    if self._resetToolbarState then
+        self._resetToolbarState()
+    end
+
     if self._overlay then
         self._overlay:Hide()
     end
@@ -1168,7 +1183,6 @@ CreateToolbar = function(ui)
 
     -- Slide-out state
     local expanded = false
-    local collapseTimer = nil
     local ANIM_DURATION = 0.18
 
     -- Animation state
@@ -1221,8 +1235,6 @@ CreateToolbar = function(ui)
         if expanded then return end
         expanded = true
         UpdateChevron(true)
-        if collapseTimer then collapseTimer:Cancel(); collapseTimer = nil end
-
         -- Start slide-in animation
         panel:SetWidth(2)
         panel:SetAlpha(0)
@@ -1237,15 +1249,14 @@ CreateToolbar = function(ui)
         animFrame:Show()
     end
 
-    local function Collapse(force)
+    local function Collapse()
         if not expanded then return end
-        -- Don't auto-collapse if mouse is over panel, tab, or drawer (skip check if forced)
-        if not force then
-            if panel:IsMouseOver() or tab:IsMouseOver() then return end
-            if ui._drawer and ui._drawer:IsShown() and ui._drawer:IsMouseOver() then return end
-        end
         expanded = false
         UpdateChevron(false)
+
+        -- Hide settings panel when toolbar collapses
+        local settings = ns.QUI_LayoutMode_Settings
+        if settings and settings.Hide then settings:Hide() end
 
         -- Start slide-out animation
         animState = {
@@ -1258,18 +1269,6 @@ CreateToolbar = function(ui)
         animFrame:Show()
     end
 
-    local function StartCollapseTimer()
-        if collapseTimer then collapseTimer:Cancel() end
-        collapseTimer = C_Timer.NewTimer(0.4, function()
-            collapseTimer = nil
-            Collapse()
-        end)
-    end
-
-    local function CancelCollapseTimer()
-        if collapseTimer then collapseTimer:Cancel(); collapseTimer = nil end
-    end
-
     -- Tab dragging (vertical slide + side switching)
     local isDragging = false
     local dragStartY = 0
@@ -1280,7 +1279,6 @@ CreateToolbar = function(ui)
     tab:SetScript("OnDragStart", function(self)
         isDragging = true
         tab._wasDragged = true
-        CancelCollapseTimer()
         local _, cursorY = GetCursorPosition()
         local scale = UIParent:GetEffectiveScale()
         dragStartY = cursorY / scale
@@ -1328,48 +1326,29 @@ CreateToolbar = function(ui)
         ApplyTabPosition()
     end)
 
-    -- Tab: click to toggle, hover to expand (only if not dragging)
-    local clickCollapsed = false  -- suppress hover re-expand after click-collapse
-
+    -- Tab: click to toggle (no hover expand/collapse)
     tab:SetScript("OnClick", function()
         if isDragging then return end
         if tab._wasDragged then tab._wasDragged = nil; return end
         if expanded then
-            CancelCollapseTimer()
-            Collapse(true)
-            clickCollapsed = true
+            Collapse()
         else
             Expand()
         end
     end)
     tab:SetScript("OnEnter", function()
         if isDragging then return end
-        if clickCollapsed then return end
-        CancelCollapseTimer()
-        Expand()
         tabBg:SetColorTexture(0.12, 0.12, 0.15, 0.95)
         tabLabel:SetAlpha(1)
     end)
     tab:SetScript("OnLeave", function()
-        clickCollapsed = false  -- reset after mouse leaves
         tabBg:SetColorTexture(0.08, 0.08, 0.10, 0.85)
         tabLabel:SetAlpha(0.7)
-        if not isDragging then
-            StartCollapseTimer()
-        end
     end)
 
-    -- Panel: keep open while hovered
-    panel:SetScript("OnEnter", function()
-        CancelCollapseTimer()
-    end)
-    panel:SetScript("OnLeave", function()
-        StartCollapseTimer()
-    end)
-
-    -- Expose for drawer hover coordination
-    ui._cancelCollapseTimer = CancelCollapseTimer
-    ui._startCollapseTimer = StartCollapseTimer
+    -- No-ops for backward compatibility (drawer references these)
+    ui._cancelCollapseTimer = function() end
+    ui._startCollapseTimer = function() end
 
     -- Start/stop glow and pulse when tab is shown/hidden
     tab:SetScript("OnShow", function()
@@ -1389,6 +1368,8 @@ CreateToolbar = function(ui)
     ui._toolbar = tab
     ui._toolbarPanel = panel
     ui._tabDocked = function() return docked end
+    ui._expandToolbar = Expand
+    ui._resetToolbarState = function() expanded = false end
     ui:ApplyConfigPanelScale(panel)
 end
 

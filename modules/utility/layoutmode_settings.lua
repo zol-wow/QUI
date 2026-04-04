@@ -197,6 +197,7 @@ local function CreatePanel()
     end)
     dragHandle:SetScript("OnDragStop", function()
         panel:StopMovingOrSizing()
+        panel._userDragged = true
     end)
 
     -- Scroll frame for content
@@ -263,43 +264,57 @@ local function CreatePanel()
 end
 
 ---------------------------------------------------------------------------
--- POSITIONING (near the selected mover)
+-- POSITIONING (adjacent to the slide-out drawer)
 ---------------------------------------------------------------------------
 
-local function PositionNearMover(panel, moverFrame)
-    if not moverFrame then return end
+local function PositionAdjacentToDrawer(panel)
+    local ui = ns.QUI_LayoutMode_UI
+    -- Prefer anchoring to drawer if visible, fall back to toolbar panel
+    local anchor = ui and ((ui._drawer and ui._drawer:IsShown() and ui._drawer) or ui._toolbarPanel)
+    if not anchor then return end
 
-    local moverCX, moverCY = moverFrame:GetCenter()
-    if not moverCX or not moverCY then return end
-
-    local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
-    local panelW, panelH = panel:GetSize()
+    local side = ui._tabDocked and ui._tabDocked() or "RIGHT"
     local panelScale = panel:GetScale() or 1
-    panelW = panelW * panelScale
-    panelH = panelH * panelScale
-
-    -- Determine which side has more space
-    local spaceRight = screenW - moverFrame:GetRight()
-    local spaceLeft = moverFrame:GetLeft()
-    local spaceAbove = screenH - moverFrame:GetTop()
-    local spaceBelow = moverFrame:GetBottom()
+    local screenW = UIParent:GetWidth()
+    local screenH = UIParent:GetHeight()
+    local panelW = PANEL_WIDTH * panelScale
+    local panelH = PANEL_HEIGHT * panelScale
+    local gap = 4
 
     local x, y
 
-    -- Prefer horizontal placement (left/right of mover)
-    local margin = 12
-    if spaceRight >= panelW + margin then
-        x = moverFrame:GetRight() + margin
-    elseif spaceLeft >= panelW + margin then
-        x = moverFrame:GetLeft() - panelW - margin
+    if side == "LEFT" then
+        -- Drawer is to the right of toolbar; settings goes right of drawer
+        local anchorRight = anchor:GetRight()
+        if anchorRight then
+            x = anchorRight + gap
+            if x + panelW > screenW then
+                -- Not enough space right, try left of toolbar
+                local tabLeft = ui._toolbar and ui._toolbar:GetLeft()
+                x = tabLeft and (tabLeft - panelW - gap) or (screenW - panelW - gap)
+            end
+        else
+            x = gap
+        end
     else
-        -- Center horizontally if neither side has space
-        x = math.max(4, math.min(moverCX - panelW / 2, screenW - panelW - 4))
+        -- Drawer is to the left of toolbar; settings goes left of drawer
+        local anchorLeft = anchor:GetLeft()
+        if anchorLeft then
+            x = anchorLeft - panelW - gap
+            if x < 0 then
+                -- Not enough space left, try right of toolbar
+                local tabRight = ui._toolbar and ui._toolbar:GetRight()
+                x = tabRight and (tabRight + gap) or gap
+            end
+        else
+            x = screenW - panelW - gap
+        end
     end
 
-    -- Vertical: try to align top with mover top, clamp to screen
-    y = math.min(moverFrame:GetTop(), screenH - 4)
-    y = math.max(y, panelH + 4)
+    -- Vertical: align top with anchor, clamp to screen
+    local anchorTop = anchor:GetTop()
+    y = math.min(anchorTop or (screenH - gap), screenH - gap)
+    y = math.max(y, panelH + gap)
 
     panel:ClearAllPoints()
     panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
@@ -700,12 +715,9 @@ function QUI_LayoutMode_Settings:Show(key)
         self._currentKey = key
         BuildContent(panel, key)
 
-        -- Position near mover only on first open (not when switching between movers)
-        if not wasShown then
-            local mover = um and um._handles and um._handles[key]
-            if mover and not panel._userDragged then
-                PositionNearMover(panel, mover)
-            end
+        -- Position adjacent to drawer on first open (not when switching between movers)
+        if not wasShown and not panel._userDragged then
+            PositionAdjacentToDrawer(panel)
         end
     end
 
@@ -722,6 +734,15 @@ function QUI_LayoutMode_Settings:Show(key)
 end
 
 function QUI_LayoutMode_Settings:Hide()
+    -- Deselect mover (stops pixel glow) — guard against re-entry
+    if not self._hiding then
+        self._hiding = true
+        local um = ns.QUI_LayoutMode
+        if um and um.SelectMover then
+            um:SelectMover(nil)
+        end
+        self._hiding = nil
+    end
     if self._panel then
         self._panel:Hide()
     end

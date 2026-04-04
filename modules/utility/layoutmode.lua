@@ -392,7 +392,16 @@ function QUI_LayoutMode:Open()
     self.isActive = true
 
     self._hasChanges = false
+
+    -- Clear previous selection and stop any lingering pixel glow
+    if self._selectedKey and self._handles[self._selectedKey] then
+        local prev = self._handles[self._selectedKey]
+        prev._selected = false
+        local LCG = LibStub("LibCustomGlow-1.0", true)
+        if LCG then LCG.PixelGlow_Stop(prev, "_QUILayoutSelect") end
+    end
     self._selectedKey = nil
+    self._prevSelectedKey = nil
 
     -- Snapshot current positions for revert
     SnapshotPositions()
@@ -678,6 +687,16 @@ function QUI_LayoutMode:Close(skipSaveCheck)
     end
     self._savedMovableState = {}
 
+    -- Clear selection and stop pixel glow before hiding handles
+    if self._selectedKey and self._handles[self._selectedKey] then
+        local prev = self._handles[self._selectedKey]
+        prev._selected = false
+        local LCG = LibStub("LibCustomGlow-1.0", true)
+        if LCG then LCG.PixelGlow_Stop(prev, "_QUILayoutSelect") end
+    end
+    self._selectedKey = nil
+    self._prevSelectedKey = nil
+
     -- Hide UI
     local ui = ns.QUI_LayoutMode_UI
     if ui then
@@ -817,12 +836,15 @@ function QUI_LayoutMode:ActivateElement(key)
 end
 
 function QUI_LayoutMode:SelectMover(key)
+    local LCG = LibStub("LibCustomGlow-1.0", true)
+
     -- Deselect previous
     if self._selectedKey and self._handles[self._selectedKey] then
         local prev = self._handles[self._selectedKey]
         if prev._border then
             prev._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         end
+        if LCG then LCG.PixelGlow_Stop(prev, "_QUILayoutSelect") end
         prev._selected = false
     end
 
@@ -831,8 +853,8 @@ function QUI_LayoutMode:SelectMover(key)
     if key and self._handles[key] then
         local handle = self._handles[key]
         handle._selected = true
-        if handle._border then
-            handle._border:SetColor(1, 1, 1, 1)
+        if LCG then
+            LCG.PixelGlow_Start(handle, {1, 1, 1, 0.7}, 12, 0.4, nil, 2, 0, 0, false, "_QUILayoutSelect")
         end
     end
 
@@ -1323,20 +1345,70 @@ AddHandleScripts = function(handle, def)
         if not self._dragging then
             self._bg:SetAlpha(HANDLE_HOVER_ALPHA)
         end
+        -- Show hint tooltip
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(def.label or self._barKey, 1, 1, 1)
+        GameTooltip:AddLine("Drag to move", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Right-click for settings", 0.7, 0.7, 0.7)
+        -- Show unanchor hint if frame is anchored
+        local fa = GetFrameAnchoring()
+        local entry = fa and fa[self._barKey]
+        if entry and type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
+            GameTooltip:AddLine("Middle-click to unanchor", 0.9, 0.6, 0.3)
+        end
+        GameTooltip:Show()
     end)
 
     handle:SetScript("OnLeave", function(self)
         if not self._dragging then
             self._bg:SetAlpha(HANDLE_BG_ALPHA)
         end
+        GameTooltip:Hide()
     end)
 
-    handle:SetScript("OnClick", function(self)
-        QUI_LayoutMode:SelectMover(self._barKey)
+    handle:SetScript("OnClick", nil)
+    handle:SetScript("OnMouseUp", function(self, button)
+        if button == "RightButton" then
+            QUI_LayoutMode:SelectMover(self._barKey)
+        elseif button == "MiddleButton" then
+            -- Middle-click: unanchor the frame
+            local fa = GetFrameAnchoring()
+            local entry = fa and fa[self._barKey]
+            if entry and type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
+                entry.parent = "disabled"
+                entry.point = nil
+                entry.relative = nil
+                QUI_LayoutMode._hasChanges = true
+                -- Update handle visuals (remove anchored state)
+                if self._isAnchored then
+                    self._isAnchored = false
+                    if self._border and self._border.SetLineSize then
+                        self._border:SetLineSize(HANDLE_BORDER_SIZE)
+                    end
+                end
+                -- Flash green to confirm
+                if self._border and self._border.SetColor then
+                    self._border:SetColor(0.2, 1, 0.4, 1)
+                    C_Timer.After(0.3, function()
+                        self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+                    end)
+                end
+                -- Refresh settings panel to show updated anchor state
+                local settings = ns.QUI_LayoutMode_Settings
+                if settings and settings.Refresh then settings:Refresh() end
+                -- Fire anchor changed message for UI sync
+                local QUI = _G.QUI
+                if QUI and QUI.SendMessage then
+                    QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", self._barKey)
+                end
+            end
+        end
     end)
 
     handle:SetScript("OnDragStart", function(self)
         if InCombatLockdown() then return end
+        GameTooltip:Hide()
 
         -- Check if frame has an active anchor (position controlled by anchoring system).
         -- If so, block dragging unless Shift is held (Shift = re-anchor/detach intent).
@@ -1352,11 +1424,7 @@ AddHandleScripts = function(handle, def)
             if self._border and self._border.SetColor then
                 self._border:SetColor(1, 0.3, 0.3, 1)
                 C_Timer.After(0.3, function()
-                    if self._selected then
-                        self._border:SetColor(1, 1, 1, 1)
-                    else
-                        self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-                    end
+                    self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
                 end)
             end
             return
@@ -1589,8 +1657,6 @@ AddHandleScripts = function(handle, def)
             -- Update coordinate display
             frame._coords:SetText(string.format("X: %d  Y: %d", postSnapOx, postSnapOy))
         end)
-
-        QUI_LayoutMode:SelectMover(self._barKey)
     end)
 
     handle:SetScript("OnDragStop", function(self)
@@ -1721,11 +1787,7 @@ AddHandleScripts = function(handle, def)
 
         -- Restore border color on dragging handle (may still be gold from anchor preview)
         if self._border and self._border.SetColor then
-            if self._selected then
-                self._border:SetColor(1, 1, 1, 1)
-            else
-                self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            end
+            self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         end
 
         -- Restore border on previously highlighted anchor target
@@ -1736,11 +1798,7 @@ AddHandleScripts = function(handle, def)
                     prevTarget._border:SetLineSize(prevTarget._isAnchored and HANDLE_BORDER_SIZE_ANCHORED or HANDLE_BORDER_SIZE)
                 end
                 if prevTarget._border.SetColor then
-                    if prevTarget._selected then
-                        prevTarget._border:SetColor(1, 1, 1, 1)
-                    else
-                        prevTarget._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-                    end
+                    prevTarget._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
                 end
             end
             self._anchorHighlightTarget = nil
@@ -1757,8 +1815,8 @@ AddHandleScripts = function(handle, def)
             ui:ClearSnapGuides()
         end
 
-        -- Re-show settings panel after drag, rebuilding to pick up position/anchor changes.
-        -- Collapsible expanded states are preserved across rebuilds.
+        -- Refresh settings panel after drag to pick up position/anchor changes.
+        -- Only re-show if it was visible before the drag started (don't open it fresh).
         if self._settingsWasShown then
             self._settingsWasShown = nil
             local settingsPanel = ns.QUI_LayoutMode_Settings
