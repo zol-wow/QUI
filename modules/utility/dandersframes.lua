@@ -527,8 +527,20 @@ RegisterLayoutModeElements = function()
             setEnabled = function(val)
                 local db = GetDB()
                 if not db or not db[containerKey] then return end
+                local old = db[containerKey].enabled
                 db[containerKey].enabled = val
-                QUI_DandersFrames:ApplyPosition(containerKey)
+                if (val and true or false) ~= (old and true or false) then
+                    local GUI = QUI and QUI.GUI
+                    if GUI and GUI.ShowConfirmation then
+                        GUI:ShowConfirmation({
+                            title = "Reload UI?",
+                            message = "DandersFrames changes require a reload to take effect.",
+                            acceptText = "Reload",
+                            cancelText = "Later",
+                            onAccept = function() QUI:SafeReload() end,
+                        })
+                    end
+                end
             end,
 
             onOpen = info.showTest and function()
