@@ -210,9 +210,22 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
     end
 
     -- Anchor To dropdown (uses anchor target registry)
+    -- When the anchor target changes, reset X/Y offsets to 0 so stale offsets
+    -- from the previous target don't confuse the user.
+    local function OnAnchorTargetChange(val)
+        frameDB.offsetX = 0
+        frameDB.offsetY = 0
+        if widgetRefs.sliderX and widgetRefs.sliderX.SetValue then
+            widgetRefs.sliderX:SetValue(0, true)
+        end
+        if widgetRefs.sliderY and widgetRefs.sliderY.SetValue then
+            widgetRefs.sliderY:SetValue(0, true)
+        end
+        OnChange()
+    end
     local anchorDropdown = self:CreateAnchorDropdown(
         tabContent, "Anchor To", frameDB, "parent",
-        PAD + 10, y, nil, OnChange,
+        PAD + 10, y, nil, OnAnchorTargetChange,
         nil, nil, frameKey  -- excludeSelf
     )
     if anchorDropdown then

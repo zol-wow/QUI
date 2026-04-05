@@ -2100,15 +2100,6 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     -- Mark frame as overridden FIRST — blocks any module positioning from this point on
     SetFrameOverride(resolved, true, key)
 
-    -- During layout mode, frames managed by handles are positioned by the
-    -- handle system. Skip repositioning here — otherwise debounced reapply
-    -- (from module refreshes, parent OnSizeChanged, etc.) would yank frames
-    -- away from their movers mid-session.  SetFrameOverride above still
-    -- blocks module-level positioning, which is the important part.
-    if _G.QUI_IsLayoutModeManaged and _G.QUI_IsLayoutModeManaged(key) then
-        return
-    end
-
     -- Defer protected frames to combat end; non-protected addon frames can
     -- still be repositioned during combat. Skip the bail during the
     -- ADDON_LOADED / PLAYER_ENTERING_WORLD safe window where protected calls
@@ -2403,6 +2394,15 @@ function QUI_Anchoring:ApplyAllFrameAnchors(force)
     local anchoringDB = QUICore.db.profile.frameAnchoring
     if not anchoringDB then return end
 
+    -- During layout mode, skip bulk reapply — the handle system owns frame
+    -- positions. Debounced reapply (from module refreshes, OnSizeChanged)
+    -- would yank frames away from movers. Individual ApplyFrameAnchor calls
+    -- (from settings changes) are still allowed. force=true bypasses this
+    -- (used by post-Close reapply in SaveAndClose/DiscardAndClose).
+    if not force and _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() then
+        return
+    end
+
     -- Throttle: if already applied this frame, defer to next frame
     if not force and _anchorThrottlePending then return end
     _anchorThrottlePending = true
@@ -2433,17 +2433,10 @@ end
 ---------------------------------------------------------------------------
 -- GLOBAL CALLBACKS
 ---------------------------------------------------------------------------
--- Check if a frame-anchoring key has a saved position in the DB, OR is
--- currently managed by a layout mode handle. Modules call this to skip
--- self-positioning when the anchoring system (or layout mode) manages
--- the frame. Without the layout mode check, module refreshes during
--- layout mode can yank frames away from their handles even when the
--- frame has never been dragged (no DB entry yet).
+-- Check if a frame-anchoring key has a saved position in the DB.
+-- Modules call this to skip self-positioning when the anchoring system manages the frame.
 _G.QUI_HasFrameAnchor = function(key)
     if not key then return false end
-    if _G.QUI_IsLayoutModeManaged and _G.QUI_IsLayoutModeManaged(key) then
-        return true
-    end
     local core = QUICore
     local db = core and core.db and core.db.profile
     return db and db.frameAnchoring and type(db.frameAnchoring[key]) == "table" or false

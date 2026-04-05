@@ -417,9 +417,13 @@ function QUI_LayoutMode:Open()
     -- QUI_OnEditModeEnterCDM show/populate CDM containers so their frames
     -- are visible when CreateHandle runs (enabling child overlays instead
     -- of proxy mover fallbacks).
+    -- Flag: during this window, _handles don't exist yet but we still need
+    -- QUI_IsLayoutModeManaged to block positioning triggered by callbacks.
+    self._enterCallbacksRunning = true
     for _, cb in ipairs(self._enterCallbacks) do
         pcall(cb)
     end
+    self._enterCallbacksRunning = false
 
     -- Create and show handles (only for enabled elements, respecting persisted hidden state)
     -- onOpen previews only fire for elements that are both enabled AND not hidden.
@@ -470,11 +474,8 @@ function QUI_LayoutMode:Open()
                     handle:Show()
                 end
 
-                -- If child overlay isn't visible (parent hidden), replace with proxy mover.
-                -- Skip this check for anchored handles — they're shown later in the
-                -- anchored sync pass, not here. Without this guard, anchored child
-                -- overlays always fall back to proxy movers.
-                if handle._isChildOverlay and not isAnchored and not handle:IsVisible() then
+                -- If child overlay isn't visible (parent hidden), replace with proxy mover
+                if handle._isChildOverlay and not handle:IsVisible() then
                     handle:Hide()
                     handle:SetParent(nil)
                     handle = CreateProxyMover(def)
@@ -3542,12 +3543,19 @@ _G.QUI_IsLayoutModeActive = function()
     return QUI_LayoutMode.isActive
 end
 
--- Returns true if layout mode is active and has a registered element for
--- this key (element may or may not have a handle yet — handles are created
--- after enter callbacks). Used by the anchoring system to skip
--- repositioning frames managed by layout mode.
+-- Returns true if layout mode is active and owns a handle for this key.
+-- During the brief enter-callback window (handles not yet created), falls
+-- back to checking registered elements so that positioning triggered by
+-- callbacks is still blocked.
 _G.QUI_IsLayoutModeManaged = function(key)
-    return QUI_LayoutMode.isActive and QUI_LayoutMode._elements[key] ~= nil
+    if not QUI_LayoutMode.isActive then return false end
+    if QUI_LayoutMode._handles[key] then return true end
+    -- Enter callbacks fire before handles are created — use element
+    -- registration as a proxy during that narrow window only.
+    if QUI_LayoutMode._enterCallbacksRunning and QUI_LayoutMode._elements[key] then
+        return true
+    end
+    return false
 end
 
 -- Sync a mover handle to match current DB position (called from options panel)
