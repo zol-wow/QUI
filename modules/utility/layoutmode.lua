@@ -470,8 +470,11 @@ function QUI_LayoutMode:Open()
                     handle:Show()
                 end
 
-                -- If child overlay isn't visible (parent hidden), replace with proxy mover
-                if handle._isChildOverlay and not handle:IsVisible() then
+                -- If child overlay isn't visible (parent hidden), replace with proxy mover.
+                -- Skip this check for anchored handles — they're shown later in the
+                -- anchored sync pass, not here. Without this guard, anchored child
+                -- overlays always fall back to proxy movers.
+                if handle._isChildOverlay and not isAnchored and not handle:IsVisible() then
                     handle:Hide()
                     handle:SetParent(nil)
                     handle = CreateProxyMover(def)

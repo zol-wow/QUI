@@ -259,14 +259,24 @@ local function CreateAuraIcon(parent)
         end
     end)
 
-    -- Right-click to cancel buff (out of combat only)
+    -- Right-click to cancel buff (out of combat only).
+    -- CancelUnitBuff requires a sequential buff index, so look it up from
+    -- the stored aura instance ID via C_UnitAuras.GetAuraDataByIndex.
     icon:SetScript("OnMouseUp", function(self, button)
         if button ~= "RightButton" then return end
         if InCombatLockdown() then return end
         if not self._auraInstanceID or self._auraInstanceID <= 0 then return end
         if self._filter ~= "HELPFUL" then return end
 
-        pcall(C_UnitAuras.CancelAuraByAuraInstanceID, self._auraInstanceID)
+        local target = self._auraInstanceID
+        for i = 1, 40 do
+            local data = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+            if not data then break end
+            if data.auraInstanceID == target then
+                CancelUnitBuff("player", i, "HELPFUL")
+                return
+            end
+        end
     end)
 
     icon:Hide()
@@ -482,21 +492,42 @@ local function LayoutIcons(container, sortedIcons, settings, prefix)
         anchor = growLeft and "TOPRIGHT" or "TOPLEFT"
     end
 
+    -- Compute new grid dimensions FIRST so the anchor conversion below uses
+    -- the correct (post-resize) size.  The old code used GetWidth/GetHeight
+    -- which returned the PREVIOUS size (often 1x1 on the first pass), causing
+    -- the growth corner to land at the wrong screen position after SetSize.
+    local numCols = math.min(count, iconsPerRow)
+    local numRows = math.ceil(count / iconsPerRow)
+    local totalW = numCols * iconSize + math.max(0, numCols - 1) * spacing
+    local bottomPadding = settings[prefix .. "BottomPadding"] or 10
+    local totalH = numRows * iconSize + math.max(0, numRows - 1) * rowSpacing + bottomPadding
+
+    -- Resize container to the new dimensions before re-anchoring so that
+    -- the anchor conversion math and SetAllPoints overlays see the real size.
+    container:SetSize(totalW, totalH)
+    -- Cache the natural size so layout mode proxy movers can read it
+    -- (frame.GetSize returns handle size when reparented via SetAllPoints).
+    container._naturalW = totalW
+    container._naturalH = totalH
+
     -- Re-anchor the container at the growth corner so it stays fixed when
-    -- SetSize changes the dimensions.  The anchoring system (or layout mode)
-    -- may have positioned the container at a different anchor (e.g. CENTER).
-    -- We convert the SetPoint to the growth corner, preserving screen position,
-    -- so the icon grid never shifts during resize.
-    local pt, rel, rp, ox, oy = container:GetPoint(1)
-    if pt and pt ~= anchor then
-        local W, H = container:GetWidth(), container:GetHeight()
-        local fx1, fy1 = ANCHOR_FRAC_X[pt], ANCHOR_FRAC_Y[pt]
-        local fx2, fy2 = ANCHOR_FRAC_X[anchor], ANCHOR_FRAC_Y[anchor]
-        if fx1 and fy1 and fx2 and fy2 then
-            container:ClearAllPoints()
-            container:SetPoint(anchor, rel, rp,
-                (ox or 0) + (fx2 - fx1) * W,
-                (oy or 0) + (fy2 - fy1) * H)
+    -- future SetSize calls change the dimensions.  The anchoring system (or
+    -- layout mode) may have positioned the container at a different anchor
+    -- (e.g. CENTER).  We convert the SetPoint to the growth corner,
+    -- preserving the CENTER screen position, so the icon grid never shifts.
+    -- Skip during layout mode — the handle system owns the container position
+    -- and re-anchoring would move the container out from under the mover.
+    if not Helpers.IsLayoutModeActive() then
+        local pt, rel, rp, ox, oy = container:GetPoint(1)
+        if pt and pt ~= anchor then
+            local fx1, fy1 = ANCHOR_FRAC_X[pt], ANCHOR_FRAC_Y[pt]
+            local fx2, fy2 = ANCHOR_FRAC_X[anchor], ANCHOR_FRAC_Y[anchor]
+            if fx1 and fy1 and fx2 and fy2 then
+                container:ClearAllPoints()
+                container:SetPoint(anchor, rel, rp,
+                    (ox or 0) + (fx2 - fx1) * totalW,
+                    (oy or 0) + (fy2 - fy1) * totalH)
+            end
         end
     end
 
@@ -516,13 +547,16 @@ local function LayoutIcons(container, sortedIcons, settings, prefix)
         icon:SetPoint(anchor, container, anchor, xOff, yOff)
     end
 
-    -- Resize container to fit grid + configurable bottom padding
-    local numCols = math.min(count, iconsPerRow)
-    local numRows = math.ceil(count / iconsPerRow)
-    local totalW = numCols * iconSize + math.max(0, numCols - 1) * spacing
-    local bottomPadding = settings[prefix .. "BottomPadding"] or 10
-    local totalH = numRows * iconSize + math.max(0, numRows - 1) * rowSpacing + bottomPadding
-    container:SetSize(totalW, totalH)
+    -- Re-sync layout mode handle to match the updated container size.
+    -- Needed for proxy movers (which don't auto-track via SetAllPoints).
+    if Helpers.IsLayoutModeActive() and _G.QUI_LayoutModeSyncHandle then
+        local name = container:GetName()
+        if name == "QUI_BuffIconContainer" then
+            _G.QUI_LayoutModeSyncHandle("buffFrame")
+        elseif name == "QUI_DebuffIconContainer" then
+            _G.QUI_LayoutModeSyncHandle("debuffFrame")
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
