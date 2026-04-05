@@ -2509,7 +2509,10 @@ end
 local function UpdateAnchorRoot(key, mainHeader, selfHeader, isRaid)
     local root = EnsureAnchorFrame(key)
     local grow, leadEdge = GetHeaderLeadEdge(isRaid)
-    local gap = 4
+    local db = GetSettings()
+    local vdb = db and (isRaid and (db.raid or db) or (db.party or db))
+    local layout = vdb and vdb.layout or (db and ((isRaid and db.raidLayout) or db.partyLayout)) or (db and db.layout)
+    local gap = layout and layout.spacing or 2
 
     local mainVisible = mainHeader and mainHeader:IsShown()
     local selfVisible = selfHeader and selfHeader:IsShown()
