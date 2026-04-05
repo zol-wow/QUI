@@ -667,7 +667,7 @@ function CDMContainers_API:RegisterDynamicFrameResolver(containerKey, settings)
         local resolverKey = "cdmCustom_" .. containerKey
         _G.QUI_RegisterFrameResolver(resolverKey, {
             resolver = function() return containers[containerKey] end,
-            displayName = settings.name or containerKey,
+            displayName = type(settings.name) == "string" and settings.name ~= "" and settings.name or containerKey,
             category = "Cooldown Manager & Custom Tracker Bars",
             order = 100,
         })

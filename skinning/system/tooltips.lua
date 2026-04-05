@@ -948,12 +948,26 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     -------------------------------------------------------------------
     do
         local fontsApplied = false
+        local wasShown = false
         local deferFrame = CreateFrame("Frame")
         deferFrame:SetScript("OnUpdate", function()
+            -- TAINT SAFETY: Detect GameTooltip hide via IsShown() polling
+            -- instead of HookScript("OnHide").  HookScript runs addon code
+            -- inside the secure execution context, tainting the caller
+            -- (e.g. QuestMapLogTitleButton_OnEnter → SetOwner → OnHide).
+            -- That taint makes GetStringWidth() return secret values,
+            -- breaking Blizzard's tooltip width arithmetic in combat.
+            local shown = GameTooltip:IsShown()
+            if wasShown and not shown then
+                fontsApplied = false
+                pendingGameTooltipRestyle = false
+            end
+            wasShown = shown
+
             if not pendingGameTooltipRestyle then return end
             pendingGameTooltipRestyle = false
 
-            if not GameTooltip:IsShown() then
+            if not shown then
                 fontsApplied = false
                 return
             end
@@ -994,11 +1008,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
         end)
 
-        -- Reset state when tooltip hides
-        GameTooltip:HookScript("OnHide", function()
-            fontsApplied = false
-            pendingGameTooltipRestyle = false
-        end)
+        -- Hide-state reset is handled by the wasShown transition check
+        -- above.  Do NOT use HookScript("OnHide") — it taints the secure
+        -- execution context of callers like QuestMapLogTitleButton_OnEnter.
     end
 
     -- Hook + initial skin

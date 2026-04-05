@@ -239,6 +239,7 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
     for name, data in pairs(self.anchorTargets) do
         if ShouldInclude(name) then
             local displayName = data.options and data.options.displayName or name
+            displayName = tostring(displayName)
             -- Capitalize first letter and add spaces before capitals
             displayName = displayName:gsub("^%l", string.upper)
             displayName = displayName:gsub("([a-z])([A-Z])", "%1 %2")

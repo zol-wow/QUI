@@ -2926,6 +2926,7 @@ function CDMIcons:UpdateAllCooldowns()
     -- CDMSpellData:InvalidateChildMap(). RebuildChildMap is a no-op when clean.
 
     local editMode = Helpers.IsEditModeActive()
+        or Helpers.IsLayoutModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
 
     -- Hoist DB lookups above the loop (avoids 4 table hops per icon).

@@ -1251,6 +1251,7 @@ function CDMBars:LayoutBars(container, settings)
 
     -- Configure and position each bar
     local editModeActive = Helpers.IsEditModeActive()
+        or Helpers.IsLayoutModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
     local visibleIndex = 0
     -- Build a lightweight config fingerprint so ConfigureBar is skipped
