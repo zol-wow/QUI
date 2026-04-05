@@ -2737,6 +2737,13 @@ do
         end
 
         local function GetCharCustomEntries(trackerKey)
+            if Helpers and Helpers.GetNCDMCustomEntries then
+                local activeData = Helpers.GetNCDMCustomEntries(trackerKey)
+                if activeData then
+                    return activeData
+                end
+            end
+
             local core = Helpers.GetCore()
             if core and core.db and core.db.char and core.db.char.ncdm
                 and core.db.char.ncdm[trackerKey] then

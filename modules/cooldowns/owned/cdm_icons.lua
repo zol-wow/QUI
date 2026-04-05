@@ -220,12 +220,27 @@ end
 ---------------------------------------------------------------------------
 local GetDB = Helpers.CreateDBGetter("ncdm")
 
-local function GetCustomData(trackerKey)
+local function GetLegacyCustomData(trackerKey)
     if QUICore and QUICore.db and QUICore.db.char and QUICore.db.char.ncdm
         and QUICore.db.char.ncdm[trackerKey] and QUICore.db.char.ncdm[trackerKey].customEntries then
         return QUICore.db.char.ncdm[trackerKey].customEntries
     end
     return nil
+end
+
+local function GetCustomData(trackerKey)
+    if type(trackerKey) ~= "string" or trackerKey == "" then
+        return nil
+    end
+
+    if Helpers and Helpers.GetNCDMCustomEntries then
+        local activeData = Helpers.GetNCDMCustomEntries(trackerKey)
+        if activeData then
+            return activeData
+        end
+    end
+
+    return GetLegacyCustomData(trackerKey)
 end
 
 ---------------------------------------------------------------------------
@@ -3229,26 +3244,18 @@ function CustomCDM:AddEntry(trackerKey, entryType, entryID)
     end
     if entryType ~= "spell" and entryType ~= "item" and entryType ~= "trinket" and entryType ~= "macro" then return false end
 
-    -- Materialize the path in saved variables. AceDB defaults are accessed
-    -- via metatables — writing to a table returned by __index modifies the
-    -- default in memory but never persists to SavedVariables. Force each
-    -- level into the sv by reading-then-writing through the proxy.
-    local charDB = QUICore.db.char
-    if not rawget(charDB, "ncdm") then
-        charDB.ncdm = {}
+    -- Resolve the active profile/spec-aware bucket so the options UI, runtime
+    -- renderer, and mutations all operate on the same saved table.
+    local customData = GetCustomData(trackerKey)
+    if not customData then return false end
+    if customData.enabled == nil then customData.enabled = true end
+    if customData.placement ~= "before" and customData.placement ~= "after" then
+        customData.placement = "after"
     end
-    local ncdm = charDB.ncdm
-    if not ncdm[trackerKey] then
-        ncdm[trackerKey] = {}
-    end
-    if not ncdm[trackerKey].customEntries then
-        ncdm[trackerKey].customEntries = { enabled = true, placement = "after", entries = {} }
-    end
-    if not ncdm[trackerKey].customEntries.entries then
-        ncdm[trackerKey].customEntries.entries = {}
+    if type(customData.entries) ~= "table" then
+        customData.entries = {}
     end
 
-    local customData = ncdm[trackerKey].customEntries
     -- Duplicate check
     for _, entry in ipairs(customData.entries) do
         if entryType == "macro" then
@@ -3289,6 +3296,23 @@ function CustomCDM:SetEntryEnabled(trackerKey, entryIndex, enabled)
 
     customData.entries[entryIndex].enabled = enabled
     if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
+end
+
+function CustomCDM:SetEntryPosition(trackerKey, entryIndex, position)
+    local customData = GetCustomData(trackerKey)
+    if not customData or not customData.entries or not customData.entries[entryIndex] then return false end
+
+    if position ~= nil then
+        position = tonumber(position)
+        if not position or position < 1 then
+            return false
+        end
+        position = math.floor(position + 0.5)
+    end
+
+    customData.entries[entryIndex].position = position
+    if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
+    return true
 end
 
 function CustomCDM:MoveEntry(trackerKey, fromIndex, direction)
