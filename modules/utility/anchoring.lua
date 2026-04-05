@@ -1215,6 +1215,13 @@ local DebouncedReapplyOverrides
 local ComputeAnchorApplyOrder
 ---------------------------------------------------------------------------
 -- Lazy resolver functions for all controllable frames
+-- When QUI action bars are disabled, resolvers should NOT fall back to
+-- Blizzard frames — let Blizzard / Edit Mode manage their own positions.
+local function IsActionBarsDisabled()
+    local db = QUI and QUI.db and QUI.db.profile and QUI.db.profile.actionBars
+    return db and db.enabled == false
+end
+
 local FRAME_RESOLVERS = {
     -- CDM Viewers
     cdmEssential = function() return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential") end,
@@ -1268,66 +1275,79 @@ local FRAME_RESOLVERS = {
     focusCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["focus"] end,
     petCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["pet"] end,
     totCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["targettarget"] end,
-    -- Action Bars — engine-aware: owned containers when mirror engine is active,
-    -- Blizzard frames otherwise (MainMenuBar renamed to MainActionBar in 12.0)
+    -- Action Bars — engine-aware: owned containers when the module is active,
+    -- Blizzard frames only when module is enabled but containers aren't ready yet.
+    -- When action bars are disabled, return nil so Blizzard/Edit Mode keeps control.
     bar1 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar1"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MainActionBar"] or _G["MainMenuBar"]
     end,
     bar2 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar2"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MultiBarBottomLeft"]
     end,
     bar3 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar3"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MultiBarBottomRight"]
     end,
     bar4 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar4"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MultiBarRight"]
     end,
     bar5 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar5"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MultiBarLeft"]
     end,
     bar6 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar6"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MultiBar5"]
     end,
     bar7 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar7"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MultiBar6"]
     end,
     bar8 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar8"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MultiBar7"]
     end,
     petBar = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["pet"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["PetActionBar"]
     end,
     stanceBar = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["stance"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["StanceBar"]
     end,
     microMenu = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["microbar"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["MicroMenuContainer"]
     end,
     bagBar = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bags"]
         if owned then return owned end
+        if IsActionBarsDisabled() then return nil end
         return _G["BagsBar"]
     end,
     extraActionButton = function()
