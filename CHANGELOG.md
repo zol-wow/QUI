@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.1.2 - 2026-04-05
+
+### Added
+- added selective profile export
+
+### Fixed
+- fixed custom CDM entries menu sync
+- restored cdm keybind override options
+- fixed self-first group frame gap
+- fixed resource bar reload error
+- Anchoring: block bulk reapply during layout mode; reset offsets on anchor change
+- Buff borders: skip anchor conversion during layout mode; sync handle size
+- Fix defaults migration SV pollution, dormant spell recovery, layout mode ordering
+- Fix tooltip taint from OnHide hook; CDM layout mode visibility; guard displayName types
+- Fix layout mode frame positioning conflicts and dormant spell false positives
 ## v3.1.1 - 2026-04-05
 
 ### Changed
