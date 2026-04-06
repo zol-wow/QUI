@@ -2545,13 +2545,74 @@ do
                 overlay:ClearAllPoints()
                 overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", -8, 32)
                 overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 8, -32)
+
+                -- Corner resize grip — drag to resize ChatFrame1 directly.
+                if not overlay._chatResizeGrip then
+                    local grip = CreateFrame("Button", nil, overlay)
+                    grip:SetSize(20, 20)
+                    grip:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -2, -2)
+                    grip:SetFrameLevel(overlay:GetFrameLevel() + 10)
+                    grip:EnableMouse(true)
+
+                    -- Accent-colored corner indicator (two mint bars forming an L).
+                    local barH = grip:CreateTexture(nil, "OVERLAY")
+                    barH:SetColorTexture(0.204, 0.827, 0.600, 0.9)
+                    barH:SetPoint("TOPRIGHT", 0, 0)
+                    barH:SetSize(18, 3)
+
+                    local barV = grip:CreateTexture(nil, "OVERLAY")
+                    barV:SetColorTexture(0.204, 0.827, 0.600, 0.9)
+                    barV:SetPoint("TOPRIGHT", 0, 0)
+                    barV:SetSize(3, 18)
+
+                    local hl = grip:CreateTexture(nil, "HIGHLIGHT")
+                    hl:SetColorTexture(1, 1, 1, 0.35)
+                    hl:SetAllPoints()
+                    hl:SetBlendMode("ADD")
+
+                    grip:SetScript("OnEnter", function(self)
+                        if GameTooltip then
+                            GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+                            GameTooltip:SetText("Drag to resize chat frame")
+                            GameTooltip:Show()
+                        end
+                    end)
+                    grip:SetScript("OnLeave", function()
+                        if GameTooltip then GameTooltip:Hide() end
+                    end)
+                    grip:SetScript("OnMouseDown", function(self, button)
+                        if button ~= "LeftButton" then return end
+                        if InCombatLockdown and InCombatLockdown() then return end
+                        local f = _G.ChatFrame1
+                        if not f then return end
+                        if f.SetResizable then f:SetResizable(true) end
+                        f:StartSizing("TOPRIGHT")
+                    end)
+                    grip:SetScript("OnMouseUp", function(self, button)
+                        local f = _G.ChatFrame1
+                        if f then
+                            f:StopMovingOrSizing()
+                            if _G.FCF_SavePositionAndDimensions then
+                                _G.FCF_SavePositionAndDimensions(f)
+                            end
+                        end
+                        if _G.QUI_RefreshChatSizeSliders then
+                            _G.QUI_RefreshChatSizeSliders()
+                        end
+                    end)
+
+                    overlay._chatResizeGrip = grip
+                end
             end,
             onOpen = function()
                 -- Deferred: CreateChildOverlay sets SetClampedToScreen(true)
                 -- after onOpen fires, so override on next frame.
                 C_Timer.After(0, function()
                     local f = _G.ChatFrame1
-                    if f then f:SetClampedToScreen(false) end
+                    if f then
+                        f:SetClampedToScreen(false)
+                        if f.SetResizable then f:SetResizable(true) end
+                    end
                 end)
             end,
         })

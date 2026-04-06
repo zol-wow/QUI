@@ -2091,6 +2091,53 @@ local function RegisterAllProviders()
         local function relayout() U.StandardRelayout(content, sections) end
         local function Refresh() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end
 
+        -- Frame Size — drives ChatFrame1 directly via FCF_SetWindowSize, so
+        -- Blizzard persists the dimensions in ChatConfig on logout. The proxy
+        -- table lets CreateFormSlider read/write live frame dimensions.
+        local sizeProxy = setmetatable({}, {
+            __index = function(_, k)
+                local f = _G.ChatFrame1
+                if not f then return 0 end
+                if k == "width" then return math.floor((f:GetWidth() or 0) + 0.5) end
+                if k == "height" then return math.floor((f:GetHeight() or 0) + 0.5) end
+                return 0
+            end,
+            __newindex = function(_, k, v)
+                local f = _G.ChatFrame1
+                if not f or type(v) ~= "number" then return end
+                local w, h = f:GetWidth() or 0, f:GetHeight() or 0
+                if k == "width" then w = v end
+                if k == "height" then h = v end
+                if _G.FCF_SetWindowSize then
+                    _G.FCF_SetWindowSize(f, w, h)
+                else
+                    f:SetSize(w, h)
+                end
+                if _G.FCF_SavePositionAndDimensions then
+                    _G.FCF_SavePositionAndDimensions(f)
+                end
+            end,
+        })
+
+        local widthSlider, heightSlider
+        U.CreateCollapsible(content, "Frame Size", 2 * FORM_ROW + 8, function(body)
+            local sy = -4
+            widthSlider = GUI:CreateFormSlider(body, "Width", 296, 1400, 1, "width", sizeProxy, nil)
+            sy = P(widthSlider, body, sy)
+            heightSlider = GUI:CreateFormSlider(body, "Height", 120, 900, 1, "height", sizeProxy, nil)
+            P(heightSlider, body, sy)
+        end, sections, relayout)
+
+        -- Expose a refresh hook so the corner-grip drag can sync slider positions.
+        _G.QUI_RefreshChatSizeSliders = function()
+            if widthSlider and widthSlider.SetValue then
+                widthSlider:SetValue(sizeProxy.width)
+            end
+            if heightSlider and heightSlider.SetValue then
+                heightSlider:SetValue(sizeProxy.height)
+            end
+        end
+
         -- Intro Message
         U.CreateCollapsible(content, "Intro Message", 2 * FORM_ROW + 8, function(body)
             local sy = -4
