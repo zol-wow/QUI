@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.1.4 - 2026-04-07
+
+### Added
+- added lots of legacy profile migration pain mitigations
+- added premade profiles (Quazii, Quazii Dark Mode, Coco (Drew)) - this will be extended in the future
+- added /qui cdm command to quickly open the QUI Spellmanager
+- added chat frame resizing options (size sliders and resizing grip)
 ## v3.1.3 - 2026-04-05
 
 ### Fixed
