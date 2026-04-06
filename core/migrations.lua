@@ -1014,16 +1014,29 @@ local function MigrateAnchoring(profile)
         end
         local fa = profile.frameAnchoring
 
+        -- CDM child containers (utility, buff, bar) use the parent chain in
+        -- the new system — their FA entries must NOT be preserved from old
+        -- absolute-position data or QUI_HasFrameAnchor will cause the CDM
+        -- module to skip its own positioning logic (anchorBelowEssential, etc).
+        -- Only cdmEssential (root of the chain) keeps its absolute offsets.
+        local CDM_CHAIN_CHILDREN = {
+            cdmUtility = true,
+            buffIcon   = true,
+            buffBar    = true,
+        }
+
         for key, settings in pairs(fa) do
             if type(settings) == "table" and settings.enabled ~= nil then
                 if settings.enabled == false then
-                    -- Preserve entries with meaningful position data (old profiles
-                    -- stored CDM/buff positions as enabled=false with non-zero offsets)
+                    -- Preserve the root CDM entry (cdmEssential) when it has
+                    -- non-zero offsets — those are the user's custom position.
+                    -- Delete CDM child entries and zero-offset placeholders so
+                    -- the seed fills them with proper parent-chain defaults.
                     local hasPositionData = (tonumber(settings.offsetX) or 0) ~= 0
                         or (tonumber(settings.offsetY) or 0) ~= 0
                         or (tonumber(settings.widthAdjust) or 0) ~= 0
                         or (tonumber(settings.heightAdjust) or 0) ~= 0
-                    if hasPositionData then
+                    if hasPositionData and not CDM_CHAIN_CHILDREN[key] then
                         settings.enabled = nil  -- strip flag, keep data
                     else
                         fa[key] = nil
@@ -1034,33 +1047,25 @@ local function MigrateAnchoring(profile)
             end
         end
 
-        -- Migrate CDM container positions from ncdm.pos to frameAnchoring.
-        -- Old profiles stored CDM positions as ncdm.essential.pos = { ox, oy }.
-        -- Convert to frameAnchoring entries so the parent chain resolves.
+        -- Migrate the CDM essential container position from ncdm.pos.
+        -- Only essential (root of the CDM parent chain) gets an absolute FA
+        -- entry. Utility/buff/bar are positioned via the parent chain, so
+        -- they must NOT get screen-absolute entries (QUI_HasFrameAnchor would
+        -- cause CDM to skip anchorBelowEssential and other relative logic).
         local ncdm = profile.ncdm
-        if type(ncdm) == "table" then
-            local cdmPosMap = {
-                essential  = "cdmEssential",
-                utility    = "cdmUtility",
-                buff       = "buffIcon",
-                trackedBar = "buffBar",
-            }
-            for ncdmKey, faKey in pairs(cdmPosMap) do
-                if not fa[faKey] then
-                    local container = ncdm[ncdmKey]
-                    if type(container) == "table" and type(container.pos) == "table" then
-                        local pos = container.pos
-                        if pos.ox ~= nil or pos.oy ~= nil then
-                            fa[faKey] = {
-                                parent = "screen",
-                                point = "CENTER",
-                                relative = "CENTER",
-                                offsetX = pos.ox or 0,
-                                offsetY = pos.oy or 0,
-                                sizeStable = true,
-                            }
-                        end
-                    end
+        if type(ncdm) == "table" and not fa.cdmEssential then
+            local ess = ncdm.essential
+            if type(ess) == "table" and type(ess.pos) == "table" then
+                local pos = ess.pos
+                if pos.ox ~= nil or pos.oy ~= nil then
+                    fa.cdmEssential = {
+                        parent = "screen",
+                        point = "CENTER",
+                        relative = "CENTER",
+                        offsetX = pos.ox or 0,
+                        offsetY = pos.oy or 0,
+                        sizeStable = true,
+                    }
                 end
             end
         end
