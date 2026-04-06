@@ -1215,10 +1215,20 @@ local DebouncedReapplyOverrides
 local ComputeAnchorApplyOrder
 ---------------------------------------------------------------------------
 -- Lazy resolver functions for all controllable frames
--- When QUI action bars are disabled, resolvers should NOT fall back to
+-- When a QUI module is disabled, its resolvers should NOT fall back to
 -- Blizzard frames — let Blizzard / Edit Mode manage their own positions.
-local function IsActionBarsDisabled()
-    local db = QUI and QUI.db and QUI.db.profile and QUI.db.profile.actionBars
+local function IsModuleDisabled(dbKey, enabledField)
+    local profile = QUI and QUI.db and QUI.db.profile
+    if not profile then return false end
+    local db = profile[dbKey]
+    if not db then return false end
+    return db[enabledField or "enabled"] == false
+end
+
+local function IsBlizzardElementDisabled(elementKey)
+    local profile = QUI and QUI.db and QUI.db.profile
+    local elements = profile and profile.blizzardFrames and profile.blizzardFrames.elements
+    local db = elements and elements[elementKey]
     return db and db.enabled == false
 end
 
@@ -1281,80 +1291,86 @@ local FRAME_RESOLVERS = {
     bar1 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar1"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MainActionBar"] or _G["MainMenuBar"]
     end,
     bar2 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar2"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MultiBarBottomLeft"]
     end,
     bar3 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar3"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MultiBarBottomRight"]
     end,
     bar4 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar4"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MultiBarRight"]
     end,
     bar5 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar5"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MultiBarLeft"]
     end,
     bar6 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar6"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MultiBar5"]
     end,
     bar7 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar7"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MultiBar6"]
     end,
     bar8 = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bar8"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MultiBar7"]
     end,
     petBar = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["pet"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["PetActionBar"]
     end,
     stanceBar = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["stance"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["StanceBar"]
     end,
     microMenu = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["microbar"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["MicroMenuContainer"]
     end,
     bagBar = function()
         local owned = ns.ActionBarsOwned and ns.ActionBarsOwned.containers and ns.ActionBarsOwned.containers["bags"]
         if owned then return owned end
-        if IsActionBarsDisabled() then return nil end
+        if IsModuleDisabled("actionBars") then return nil end
         return _G["BagsBar"]
     end,
     extraActionButton = function()
-        return _G["QUI_extraActionButtonHolder"] or _G["ExtraActionBarFrame"]
+        local owned = _G["QUI_extraActionButtonHolder"]
+        if owned then return owned end
+        if IsBlizzardElementDisabled("extraActionButton") then return nil end
+        return _G["ExtraActionBarFrame"]
     end,
     zoneAbility = function()
-        return _G["QUI_zoneAbilityHolder"] or _G["ZoneAbilityFrame"]
+        local owned = _G["QUI_zoneAbilityHolder"]
+        if owned then return owned end
+        if IsBlizzardElementDisabled("zoneAbility") then return nil end
+        return _G["ZoneAbilityFrame"]
     end,
     -- QoL
     brezCounter = function() return _G["QUI_BrezCounter"] end,
@@ -1373,9 +1389,13 @@ local FRAME_RESOLVERS = {
     totemBar = function()
         local owned = ns.QUI_TotemBar and ns.QUI_TotemBar.container
         if owned then return owned end
+        if IsModuleDisabled("totemBar") then return nil end
         return _G["TotemFrame"]
     end,
-    readyCheck = function() return _G["ReadyCheckFrame"] end,
+    readyCheck = function()
+        if IsModuleDisabled("general", "skinReadyCheck") then return nil end
+        return _G["ReadyCheckFrame"]
+    end,
     consumables = function() return _G["QUI_ConsumablesFrame"] end,
     alertAnchor = function() return _G["QUI_AlertFrameHolder"] end,
     toastAnchor = function() return _G["QUI_EventToastHolder"] end,
@@ -1422,9 +1442,22 @@ local FRAME_RESOLVERS = {
     objectiveTracker = function() return _G["ObjectiveTrackerFrame"] end,
     topCenterWidgets = function() return _G["UIWidgetTopCenterContainerFrame"] end,
     belowMinimapWidgets = function() return _G["UIWidgetBelowMinimapContainerFrame"] end,
-    buffFrame = function() return _G["QUI_BuffIconContainer"] or _G["BuffFrame"] end,
-    debuffFrame = function() return _G["QUI_DebuffIconContainer"] or _G["DebuffFrame"] end,
-    chatFrame1 = function() return _G["ChatFrame1"] end,
+    buffFrame = function()
+        local owned = _G["QUI_BuffIconContainer"]
+        if owned then return owned end
+        if IsModuleDisabled("buffBorders", "enableBuffs") then return nil end
+        return _G["BuffFrame"]
+    end,
+    debuffFrame = function()
+        local owned = _G["QUI_DebuffIconContainer"]
+        if owned then return owned end
+        if IsModuleDisabled("buffBorders", "enableDebuffs") then return nil end
+        return _G["DebuffFrame"]
+    end,
+    chatFrame1 = function()
+        if IsModuleDisabled("chat") then return nil end
+        return _G["ChatFrame1"]
+    end,
     -- External (DandersFrames, AbilityTimeline)
     dandersParty = function()
         if ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable() then

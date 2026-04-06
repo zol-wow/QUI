@@ -1214,6 +1214,14 @@ CommitPositions = function()
                 else
                     fa[key].offsetX = pos.offsetX
                     fa[key].offsetY = pos.offsetY
+                    -- Ensure point/relative are CENTER for unanchored frames.
+                    -- Writing nil to AceDB fields lets explicit defaults
+                    -- (e.g. TOPRIGHT/BOTTOMRIGHT) leak back through the
+                    -- metatable on reload, misinterpreting CENTER-based offsets.
+                    if not pos.anchorTarget then
+                        fa[key].point = "CENTER"
+                        fa[key].relative = "CENTER"
+                    end
                 end
                 if fa[key].sizeStable == nil then
                     fa[key].sizeStable = true
@@ -1428,8 +1436,8 @@ AddHandleScripts = function(handle, def)
             local entry = fa and fa[self._barKey]
             if entry and type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
                 entry.parent = "disabled"
-                entry.point = nil
-                entry.relative = nil
+                entry.point = "CENTER"
+                entry.relative = "CENTER"
                 QUI_LayoutMode._hasChanges = true
                 -- Update handle visuals (remove anchored state)
                 if self._isAnchored then
@@ -1750,7 +1758,7 @@ AddHandleScripts = function(handle, def)
                 anchorPtSelf = pending.anchorPointSelf
                 anchorPtTarget = pending.anchorPointTarget
             else
-                local fa = QUI.db.profile.frameAnchoring
+                local fa = GetFrameAnchoring()
                 if fa and fa[self._barKey] and type(fa[self._barKey]) == "table" then
                     local entry = fa[self._barKey]
                     if entry.parent and entry.parent ~= "disabled" then
@@ -1771,8 +1779,8 @@ AddHandleScripts = function(handle, def)
             local fa = GetFrameAnchoring()
             if fa and fa[self._barKey] then
                 fa[self._barKey].parent = "disabled"
-                fa[self._barKey].point = nil
-                fa[self._barKey].relative = nil
+                fa[self._barKey].point = "CENTER"
+                fa[self._barKey].relative = "CENTER"
             end
         end
 
