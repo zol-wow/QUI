@@ -642,38 +642,37 @@ end
 
 local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, iconSize, iconScale, borderSize)
     local statusBar = anchorFrame.statusBar
-    local border = anchorFrame and anchorFrame.Border
+    local border = statusBar and statusBar.Border
 
     if not statusBar then return end
 
     statusBar:SetHeight(barHeight)
     statusBar:ClearAllPoints()
 
-    -- Backdrop borders are drawn outside their parent frame, so keep the fill
-    -- flush with the anchor frame instead of shrinking it inward.
+    -- Keep the status bar inset by the border thickness so the outer edge of
+    -- the border still matches the configured castbar size.
     if ShouldShowIcon(anchorFrame, castSettings) then
         local iconSizePx = iconSize * iconScale
         local iconSpacing = QUICore:PixelRound(castSettings.iconSpacing or 0, anchorFrame)
         local iconAnchor = castSettings.iconAnchor or "TOPLEFT"
         if iconAnchor:find("LEFT") then
-            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", iconSizePx + iconSpacing, 0)
-            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
+            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", iconSizePx + iconSpacing + borderSize, -borderSize)
+            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
         elseif iconAnchor:find("RIGHT") then
-            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
-            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -iconSizePx - iconSpacing, 0)
+            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", borderSize, -borderSize)
+            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -iconSizePx - iconSpacing - borderSize, borderSize)
         else
-            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
-            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
+            statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", borderSize, -borderSize)
+            statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
         end
     else
-        statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
-        statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
+        statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", borderSize, -borderSize)
+        statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
     end
     
     local r, g, b, a = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
     if UIKit and UIKit.CreateBackdropBorder then
-        border = UIKit.CreateBackdropBorder(anchorFrame, castSettings.borderSize or 1, r, g, b, a)
-        anchorFrame.Border = border
+        border = UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, r, g, b, a)
         statusBar.Border = border
     end
 
@@ -1867,8 +1866,7 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     local statusBar = CreateStatusBar(anchorFrame)
 
     local br, bg_, bb, ba = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
-    UIKit.CreateBackdropBorder(anchorFrame, castSettings.borderSize or 1, br, bg_, bb, ba)
-    statusBar.Border = anchorFrame.Border
+    UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, br, bg_, bb, ba)
     statusBar.Border:SetFrameLevel(statusBar:GetFrameLevel() - 1)
 
     local bgBar = UIKit.CreateBackground(statusBar)
@@ -2933,8 +2931,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
 
     -- Create border for status bar (parented to statusBar)
     local br, bg_, bb, ba = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
-    UIKit.CreateBackdropBorder(anchorFrame, castSettings.borderSize or 1, br, bg_, bb, ba)
-    statusBar.Border = anchorFrame.Border
+    UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, br, bg_, bb, ba)
     statusBar.Border:SetFrameLevel(statusBar:GetFrameLevel() - 1)
 
     local bgBar = UIKit.CreateBackground(statusBar)
