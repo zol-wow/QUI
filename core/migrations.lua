@@ -1014,58 +1014,39 @@ local function MigrateAnchoring(profile)
         end
         local fa = profile.frameAnchoring
 
-        -- CDM child containers (utility, buff, bar) use the parent chain in
-        -- the new system — their FA entries must NOT be preserved from old
-        -- absolute-position data or QUI_HasFrameAnchor will cause the CDM
-        -- module to skip its own positioning logic (anchorBelowEssential, etc).
-        -- Only cdmEssential (root of the chain) keeps its absolute offsets.
-        local CDM_CHAIN_CHILDREN = {
-            cdmUtility = true,
-            buffIcon   = true,
-            buffBar    = true,
+        -- CDM containers are positioned by the CDM module (ncdm.pos,
+        -- anchorBelowEssential). Creating FA entries for them makes
+        -- QUI_HasFrameAnchor return true, which causes CDM to skip its
+        -- own positioning logic. Always delete old CDM FA entries.
+        local CDM_OWNED_KEYS = {
+            cdmEssential = true,
+            cdmUtility   = true,
+            buffIcon     = true,
+            buffBar      = true,
         }
 
         for key, settings in pairs(fa) do
             if type(settings) == "table" and settings.enabled ~= nil then
                 if settings.enabled == false then
-                    -- Preserve the root CDM entry (cdmEssential) when it has
-                    -- non-zero offsets — those are the user's custom position.
-                    -- Delete CDM child entries and zero-offset placeholders so
-                    -- the seed fills them with proper parent-chain defaults.
-                    local hasPositionData = (tonumber(settings.offsetX) or 0) ~= 0
-                        or (tonumber(settings.offsetY) or 0) ~= 0
-                        or (tonumber(settings.widthAdjust) or 0) ~= 0
-                        or (tonumber(settings.heightAdjust) or 0) ~= 0
-                    if hasPositionData and not CDM_CHAIN_CHILDREN[key] then
-                        settings.enabled = nil  -- strip flag, keep data
-                    else
+                    -- Preserve non-CDM entries that have real position data so
+                    -- the user's layout survives the upgrade. Old 2.55 profiles
+                    -- stored custom positions as enabled=false with non-zero
+                    -- offsets. Seed defaults are a last resort.
+                    if CDM_OWNED_KEYS[key] then
                         fa[key] = nil
+                    else
+                        local hasPositionData = (tonumber(settings.offsetX) or 0) ~= 0
+                            or (tonumber(settings.offsetY) or 0) ~= 0
+                            or (tonumber(settings.widthAdjust) or 0) ~= 0
+                            or (tonumber(settings.heightAdjust) or 0) ~= 0
+                        if hasPositionData then
+                            settings.enabled = nil  -- strip flag, keep data
+                        else
+                            fa[key] = nil
+                        end
                     end
                 else
                     settings.enabled = nil
-                end
-            end
-        end
-
-        -- Migrate the CDM essential container position from ncdm.pos.
-        -- Only essential (root of the CDM parent chain) gets an absolute FA
-        -- entry. Utility/buff/bar are positioned via the parent chain, so
-        -- they must NOT get screen-absolute entries (QUI_HasFrameAnchor would
-        -- cause CDM to skip anchorBelowEssential and other relative logic).
-        local ncdm = profile.ncdm
-        if type(ncdm) == "table" and not fa.cdmEssential then
-            local ess = ncdm.essential
-            if type(ess) == "table" and type(ess.pos) == "table" then
-                local pos = ess.pos
-                if pos.ox ~= nil or pos.oy ~= nil then
-                    fa.cdmEssential = {
-                        parent = "screen",
-                        point = "CENTER",
-                        relative = "CENTER",
-                        offsetX = pos.ox or 0,
-                        offsetY = pos.oy or 0,
-                        sizeStable = true,
-                    }
                 end
             end
         end
@@ -1395,8 +1376,12 @@ local DEFAULT_FRAME_ANCHORING = {
     brezCounter     = { parent = "combatTimer",     point = "BOTTOM",       relative = "TOP" },
     atonementCounter = { parent = "brezCounter",    point = "BOTTOM",       relative = "TOP" },
     buffFrame       = { parent = "minimap",         point = "TOPRIGHT",     relative = "TOPLEFT" },
-    buffIcon        = { parent = "cdmEssential",    point = "BOTTOM",       relative = "TOP" },
-    cdmUtility      = { parent = "secondaryPower",  point = "TOP",          relative = "BOTTOM" },
+    -- CDM containers (cdmEssential, cdmUtility, buffIcon, buffBar) are
+    -- deliberately excluded. The CDM module owns their positioning via
+    -- ncdm.pos and anchorBelowEssential. Creating FA entries here would
+    -- make QUI_HasFrameAnchor return true and cause CDM to skip its own
+    -- positioning logic. Frames that parent to CDM containers resolve them
+    -- at runtime via ResolveFrameForKey.
     combatTimer     = { parent = "bar3",            point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
     consumables     = { parent = "readyCheck",      point = "BOTTOM",       relative = "TOP" },
     datatextPanel   = { parent = "minimap",         point = "TOP",          relative = "BOTTOM" },
@@ -1421,7 +1406,6 @@ local DEFAULT_FRAME_ANCHORING = {
     totCastbar      = { parent = "totFrame",        point = "TOP",          relative = "BOTTOM" },
     totFrame        = { parent = "targetFrame",     point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
     zoneAbility     = { parent = "extraActionButton", point = "CENTER",     relative = "CENTER" },
-    cdmEssential    = { parent = "screen",          point = "CENTER",       relative = "CENTER",  offsetY = -180 },
     lootRollAnchor  = { parent = "readyCheck",      point = "TOP",          relative = "BOTTOM",  keepInPlace = true },
     skyriding       = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -30 },
     powerBarAlt     = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -75 },
