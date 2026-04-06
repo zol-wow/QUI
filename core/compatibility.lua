@@ -423,8 +423,15 @@ local function IsUninitializedAnchoring(fa)
     return count > 0
 end
 
+local ANCHORING_SEED_VERSION = 1
+
 local function SeedDefaultFrameAnchoring(profile)
     if not profile then return end
+
+    -- Only run once — stamp a version flag so we never re-seed on future loads
+    if profile._anchoringSeedVersion and profile._anchoringSeedVersion >= ANCHORING_SEED_VERSION then
+        return
+    end
 
     if type(profile.frameAnchoring) ~= "table" then
         profile.frameAnchoring = {}
@@ -432,7 +439,10 @@ local function SeedDefaultFrameAnchoring(profile)
     local fa = profile.frameAnchoring
 
     -- Only seed if the existing data looks uninitialized
-    if not IsUninitializedAnchoring(fa) then return end
+    if not IsUninitializedAnchoring(fa) then
+        profile._anchoringSeedVersion = ANCHORING_SEED_VERSION
+        return
+    end
 
     for key, defaults in pairs(DEFAULT_FRAME_ANCHORING) do
         if type(fa[key]) ~= "table" then
@@ -440,8 +450,8 @@ local function SeedDefaultFrameAnchoring(profile)
         end
         local entry = fa[key]
 
-        -- Seed parent chain and anchor points (always overwrite since old data is
-        -- all "screen"/CENTER which is the uninitialized state)
+        -- Seed parent chain and anchor points (overwrite uninitialized
+        -- "screen"/CENTER data with the proper default parent chain)
         entry.parent   = defaults.parent
         entry.point    = defaults.point
         entry.relative = defaults.relative
@@ -474,6 +484,8 @@ local function SeedDefaultFrameAnchoring(profile)
         if entry.heightAdjust == nil then entry.heightAdjust = 0 end
         if entry.widthAdjust == nil then entry.widthAdjust = 0 end
     end
+
+    profile._anchoringSeedVersion = ANCHORING_SEED_VERSION
 end
 
 -- Remove orphaned keys that cannot be meaningfully migrated
