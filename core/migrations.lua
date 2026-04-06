@@ -1001,6 +1001,24 @@ local function NormalizeMinimapSettings(profile)
         end
         mm.hideBagBar = nil
     end
+
+    -- Legacy 2.55 profiles stored minimap position as an array
+    -- { [1]=point, [2]=relPoint, [3]=x, [4]=y }. Convert to a frameAnchoring
+    -- entry so the user's custom minimap position survives the upgrade.
+    if type(mm.position) == "table" and mm.position[1] and mm.position[3] then
+        if not profile.frameAnchoring then profile.frameAnchoring = {} end
+        if not profile.frameAnchoring.minimap then
+            profile.frameAnchoring.minimap = {
+                parent = "screen",
+                point = tostring(mm.position[1]) or "CENTER",
+                relative = tostring(mm.position[2]) or "CENTER",
+                offsetX = tonumber(mm.position[3]) or 0,
+                offsetY = tonumber(mm.position[4]) or 0,
+                sizeStable = true,
+            }
+        end
+        mm.position = nil
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1367,6 +1385,14 @@ local function MigrateAnchoring(profile)
                 { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -150 })
             MigratePos(alertDB.bnetToastPosition, "bnetToastAnchor",
                 { point = "TOPRIGHT", relative = "TOPRIGHT", offsetX = -200, offsetY = -80 })
+        end
+
+        -- Legacy 2.55 raidBuffs position table (format: { point, relPoint, x, y })
+        -- The v2 MigrateOffsets only checks offsetX/Y so this was missed.
+        local rbDB = profile.raidBuffs
+        if rbDB and type(rbDB.position) == "table" then
+            MigratePos(rbDB.position, "missingRaidBuffs",
+                { point = "TOP", relative = "TOP", offsetX = 0, offsetY = -100 })
         end
 
         local barsDB = profile.actionBars and profile.actionBars.bars
