@@ -523,10 +523,30 @@ local function LayoutIcons(container, sortedIcons, settings, prefix)
             local fx1, fy1 = ANCHOR_FRAC_X[pt], ANCHOR_FRAC_Y[pt]
             local fx2, fy2 = ANCHOR_FRAC_X[anchor], ANCHOR_FRAC_Y[anchor]
             if fx1 and fy1 and fx2 and fy2 then
+                local newOx = (ox or 0) + (fx2 - fx1) * totalW
+                local newOy = (oy or 0) + (fy2 - fy1) * totalH
                 container:ClearAllPoints()
-                container:SetPoint(anchor, rel, rp,
-                    (ox or 0) + (fx2 - fx1) * totalW,
-                    (oy or 0) + (fy2 - fy1) * totalH)
+                container:SetPoint(anchor, rel, rp, newOx, newOy)
+                -- Persist the converted anchor to the DB so the anchoring
+                -- system never re-applies the stale CENTER point.  This
+                -- self-corrects legacy/imported profiles on the first
+                -- LayoutIcons pass that has real grid dimensions.
+                -- Only write back for unanchored containers (parent is
+                -- UIParent or disabled).  Parent-relative anchors use
+                -- a different relative point that we must not overwrite.
+                local fa = QUI and QUI.db and QUI.db.profile
+                    and QUI.db.profile.frameAnchoring
+                if fa then
+                    local faKey = container:GetName() == "QUI_BuffIconContainer"
+                        and "buffFrame" or "debuffFrame"
+                    local entry = fa[faKey]
+                    if entry and (not entry.parent or entry.parent == "disabled") then
+                        entry.point = anchor
+                        entry.relative = anchor
+                        entry.offsetX = math.floor(newOx + 0.5)
+                        entry.offsetY = math.floor(newOy + 0.5)
+                    end
+                end
             end
         end
     end

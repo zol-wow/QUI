@@ -1222,6 +1222,43 @@ CommitPositions = function()
                         fa[key].point = "CENTER"
                         fa[key].relative = "CENTER"
                     end
+                    -- Growth-direction containers need corner anchoring so
+                    -- the fixed edge stays put as the grid resizes.  Convert
+                    -- CENTER offsets to corner offsets when real dimensions
+                    -- are available (auras were showing during save).
+                    if not pos.anchorTarget and (key == "buffFrame" or key == "debuffFrame") then
+                        local bbDB = _G.QUI and _G.QUI.db and _G.QUI.db.profile
+                            and _G.QUI.db.profile.buffBorders
+                        if bbDB then
+                            local growLeft, growUp
+                            if key == "buffFrame" then
+                                growLeft, growUp = bbDB.buffGrowLeft, bbDB.buffGrowUp
+                            else
+                                growLeft, growUp = bbDB.debuffGrowLeft, bbDB.debuffGrowUp
+                            end
+                            local corner
+                            if growUp then
+                                corner = growLeft and "BOTTOMRIGHT" or "BOTTOMLEFT"
+                            else
+                                corner = growLeft and "TOPRIGHT" or "TOPLEFT"
+                            end
+                            local frame = def.frame and _G[def.frame]
+                            local fw = frame and frame._naturalW
+                            local fh = frame and frame._naturalH
+                            if fw and fh and fw > 1 and fh > 1 then
+                                local FRAC_X = { TOPLEFT = 0, TOPRIGHT = 1, BOTTOMLEFT = 0, BOTTOMRIGHT = 1 }
+                                local FRAC_Y = { TOPLEFT = 1, TOPRIGHT = 1, BOTTOMLEFT = 0, BOTTOMRIGHT = 0 }
+                                local cx = fa[key].offsetX or 0
+                                local cy = fa[key].offsetY or 0
+                                local pw = UIParent:GetWidth()
+                                local ph = UIParent:GetHeight()
+                                fa[key].point = corner
+                                fa[key].relative = corner
+                                fa[key].offsetX = math.floor(cx + (FRAC_X[corner] - 0.5) * (fw - pw) + 0.5)
+                                fa[key].offsetY = math.floor(cy + (FRAC_Y[corner] - 0.5) * (fh - ph) + 0.5)
+                            end
+                        end
+                    end
                 end
                 if fa[key].sizeStable == nil then
                     fa[key].sizeStable = true
