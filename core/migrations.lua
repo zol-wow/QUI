@@ -606,7 +606,17 @@ local function ResetLegacyAnchorsForRebuild(profile)
     end
 
     local fa = profile.frameAnchoring
+    -- Only clear entries that look like legacy 2.55 placeholders. A 3.0+
+    -- shaped entry (one with a `parent` field set) was authored by the user
+    -- via the modern layout system — preserve it even on profiles that
+    -- IsLegacy255Profile flagged due to a stray `enabled` flag elsewhere.
+    -- This mirrors the discriminator MigrateAnchoringV1 uses at the
+    -- `hasParentField` branch.
     local function ClearAnchor(key)
+        local entry = fa[key]
+        if type(entry) == "table" and entry.parent ~= nil then
+            return
+        end
         fa[key] = nil
     end
     local function HasOffsets(sourceTable)
