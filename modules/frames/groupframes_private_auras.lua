@@ -29,6 +29,8 @@ ns.QUI_GroupFramePrivateAuras = QUI_GFPA
 ---------------------------------------------------------------------------
 local AddPrivateAuraAnchor = C_UnitAuras.AddPrivateAuraAnchor
 local RemovePrivateAuraAnchor = C_UnitAuras.RemovePrivateAuraAnchor
+local GetAuraSlots = C_UnitAuras.GetAuraSlots
+local GetAuraDataBySlot = C_UnitAuras.GetAuraDataBySlot
 
 -- Upvalue hot-path globals
 local pairs = pairs
@@ -38,6 +40,8 @@ local wipe = wipe
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
+local GetTime = GetTime
+local UnitExists = UnitExists
 local table_insert = table.insert
 local table_remove = table.remove
 
@@ -48,6 +52,7 @@ local table_remove = table.remove
 --   textAnchorIDs = { [i] = id }          text (stack/countdown) anchor IDs
 --   unit          = string
 local frameState = Helpers.CreateStateTable()
+local unitPrivateDispelState = {}
 
 -- Container pool
 local containerPool = {}
@@ -58,6 +63,8 @@ local pendingReanchor = false
 local pendingCleanup = false
 local reanchorTimer = nil
 
+local PRIVATE_DISPEL_FILTER = "HARMFUL|RAID_PLAYER_DISPELLABLE"
+
 ---------------------------------------------------------------------------
 -- HELPERS
 ---------------------------------------------------------------------------
@@ -66,6 +73,72 @@ local function GetSettings(isRaid)
     if not db then return nil end
     local vdb = (isRaid and db.raid or db.party) or db
     return vdb.privateAuras
+end
+
+local function GetFrameUnit(frame)
+    if not frame then return nil end
+    return frame.unit or (frame.GetAttribute and frame:GetAttribute("unit"))
+end
+
+local function ExtractFirstAuraSlot(...)
+    local result1, result2 = ...
+    if type(result1) == "table" then
+        return result1[1]
+    end
+    if type(result2) == "number" then
+        return result2
+    end
+    return nil
+end
+
+local function RefreshPrivateDispelState(unit)
+    if not unit then return nil end
+
+    if not GetAuraSlots or not GetAuraDataBySlot or not UnitExists(unit) then
+        unitPrivateDispelState[unit] = nil
+        return nil
+    end
+
+    local slotsOk, result1, result2 = pcall(GetAuraSlots, unit, PRIVATE_DISPEL_FILTER, 1)
+    if not slotsOk then
+        unitPrivateDispelState[unit] = nil
+        return nil
+    end
+
+    local firstSlot = ExtractFirstAuraSlot(result1, result2)
+    if not firstSlot then
+        unitPrivateDispelState[unit] = nil
+        return nil
+    end
+
+    local auraOk, auraData = pcall(GetAuraDataBySlot, unit, firstSlot)
+    if not auraOk or not auraData then
+        unitPrivateDispelState[unit] = nil
+        return nil
+    end
+
+    local state = {
+        auraInstanceID = auraData.auraInstanceID,
+        slot = firstSlot,
+    }
+    unitPrivateDispelState[unit] = state
+    return state
+end
+
+local function RefreshAllPrivateDispelState()
+    wipe(unitPrivateDispelState)
+
+    local GF = ns.QUI_GroupFrames
+    if not GF or not GF.initialized then return end
+
+    for _, frame in pairs(GF.unitFrameMap) do
+        if frame and frame:IsShown() then
+            local unit = GetFrameUnit(frame)
+            if unit then
+                RefreshPrivateDispelState(unit)
+            end
+        end
+    end
 end
 
 local function AcquireContainer(parent)
@@ -272,7 +345,7 @@ local function SetupPrivateAuras(frame)
     local settings = GetSettings(frame._isRaid)
     if not settings or not settings.enabled then return end
 
-    local unit = frame.unit or frame:GetAttribute("unit")
+    local unit = GetFrameUnit(frame)
     if not unit then return end
 
     local state = frameState[frame]
@@ -376,7 +449,7 @@ local function ReanchorPrivateAuras(frame)
     local settings = GetSettings(frame._isRaid)
     if not settings or not settings.enabled then return end
 
-    local unit = frame.unit or frame:GetAttribute("unit")
+    local unit = GetFrameUnit(frame)
     if not unit then
         ClearPrivateAuras(frame)
         return
@@ -422,6 +495,14 @@ end
 -- PUBLIC API
 ---------------------------------------------------------------------------
 
+function QUI_GFPA:GetPrivateDispelState(unit)
+    return unit and unitPrivateDispelState[unit] or nil
+end
+
+function QUI_GFPA:RefreshPrivateDispelState(unit)
+    return RefreshPrivateDispelState(unit)
+end
+
 --- Setup private auras on all visible group frames
 function QUI_GFPA:SetupAll()
     if InCombatLockdown() then
@@ -431,6 +512,8 @@ function QUI_GFPA:SetupAll()
 
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
+
+    RefreshAllPrivateDispelState()
 
     for _, frame in pairs(GF.unitFrameMap) do
         if frame and frame:IsShown() then
@@ -451,6 +534,8 @@ function QUI_GFPA:ReanchorAll()
 
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
+
+    RefreshAllPrivateDispelState()
 
     for _, frame in pairs(GF.unitFrameMap) do
         if frame and frame:IsShown() then
@@ -475,6 +560,7 @@ function QUI_GFPA:CleanupAll()
         ClearPrivateAuras(frame)
     end
     wipe(frameState)
+    wipe(unitPrivateDispelState)
 end
 
 --- Full refresh — tear down and rebuild everything
@@ -505,6 +591,7 @@ function QUI_GFPA:RefreshFrame(frame)
     ClearPrivateAuras(frame)
     frameState[frame] = nil
     SetupPrivateAuras(frame)
+    RefreshPrivateDispelState(GetFrameUnit(frame))
 end
 
 ---------------------------------------------------------------------------
@@ -586,6 +673,8 @@ local paRefreshTimes = setmetatable({}, { __mode = "k" })
 -- Subscribe to centralized aura dispatcher for private aura refresh
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+        RefreshPrivateDispelState(unit)
+
         -- Private aura anchor APIs are restricted in combat (12.0.5+)
         if InCombatLockdown() then
             pendingReanchor = true

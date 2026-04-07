@@ -1330,7 +1330,7 @@ local function BuildHealerSettings(content, gfdb, onChange)
     CreateComposerCollapsible(content, "Dispel Overlay", function(body, updateH)
         local dispelCond = function() return dispel.enabled end
         local L = CreateDynamicLayout(body, updateH)
-        local desc = GUI:CreateLabel(body, "Colors the frame border when a dispellable debuff is active.", 11, C and C.textMuted); desc:SetJustifyH("LEFT")
+        local desc = GUI:CreateLabel(body, "Colors the frame border when a dispellable debuff is active, including Blizzard private dispels when available.", 11, C and C.textMuted); desc:SetJustifyH("LEFT")
         L:Row(desc, 26)
         L:Row(GUI:CreateFormCheckbox(body, "Enable Dispel Overlay", "enabled", dispel, onChange), FORM_ROW)
         L:Row(GUI:CreateFormSlider(body, "Border Size", 1, 16, 1, "borderSize", dispel, onChange), SLIDER_HEIGHT, dispelCond)

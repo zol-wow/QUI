@@ -1445,6 +1445,17 @@ local function SetDispelBorderColorMixin(overlay, color)
     end
 end
 
+local function ShowConfiguredDispelOverlay(overlay, colors, dispelType, opacity)
+    if not dispelType or not colors then return false end
+
+    local c = colors[dispelType]
+    if not c then return false end
+
+    SetDispelBorderColor(overlay, c[1], c[2], c[3], opacity)
+    overlay:Show()
+    return true
+end
+
 local function UpdateDispelOverlay(frame)
     if not frame or not frame.unit or not frame.dispelOverlay then return end
     local isRaid = frame._isRaid
@@ -1468,6 +1479,8 @@ local function UpdateDispelOverlay(frame)
     local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
     local hasDispellable = false
     local firstDispellableInstID = nil
+    local fallbackDispelType = nil
+    local fromPrivateSlots = false
 
     if cache and cache.harmful then
         for _, auraData in ipairs(cache.harmful) do
@@ -1476,8 +1489,21 @@ local function UpdateDispelOverlay(frame)
                 if dType then
                     hasDispellable = true
                     firstDispellableInstID = auraData.auraInstanceID
+                    fallbackDispelType = dType
                     break
                 end
+            end
+        end
+    end
+
+    if not hasDispellable then
+        local GFPA = ns.QUI_GroupFramePrivateAuras
+        if GFPA and GFPA.RefreshPrivateDispelState then
+            local privateState = GFPA:RefreshPrivateDispelState(unit)
+            if privateState and privateState.auraInstanceID then
+                hasDispellable = true
+                fromPrivateSlots = true
+                firstDispellableInstID = privateState.auraInstanceID
             end
         end
     end
@@ -1501,22 +1527,33 @@ local function UpdateDispelOverlay(frame)
         end
     end
 
-    -- Fallback: use dispel type from cache directly
+    -- Fallback: use dispel type from the visible cache or slot-based private scan.
     local colors = GetDispelColors()
-    if cache and cache.harmful then
+    local fallbackOpacity = healerSettings.dispelOverlay.opacity or 0.8
+    if ShowConfiguredDispelOverlay(overlay, colors, fallbackDispelType, fallbackOpacity) then
+        return
+    end
+
+    if cache and cache.harmful and not fromPrivateSlots then
         for _, auraData in ipairs(cache.harmful) do
             if auraData.dispelName then
                 local dType = SafeValue(auraData.dispelName, nil)
-                if dType and colors[dType] then
-                    local c = colors[dType]
-                    local fallbackOpacity = healerSettings.dispelOverlay.opacity or 0.8
-                    SetDispelBorderColor(overlay, c[1], c[2], c[3], fallbackOpacity)
-                    overlay:Show()
+                if ShowConfiguredDispelOverlay(overlay, colors, dType, fallbackOpacity) then
                     return
                 end
             end
         end
     end
+
+    if fromPrivateSlots then
+        local genericColor = colors and (colors.Magic or colors.Curse or colors.Disease or colors.Poison)
+        if genericColor then
+            SetDispelBorderColor(overlay, genericColor[1], genericColor[2], genericColor[3], fallbackOpacity)
+            overlay:Show()
+            return
+        end
+    end
+
     overlay:Hide()
 end
 
