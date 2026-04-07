@@ -600,8 +600,12 @@ local function ResetLegacyAnchorsForRebuild(profile)
             microbar = "microMenu",
             bags = "bagBar",
         }
+        -- Only the legacy 2.55 `position` field counts as a position source.
+        -- See the matching comment in MigrateAnchoringV3 — `ownedPosition` is
+        -- dead orphaned data on 3.x profiles and must not trigger ClearAnchor,
+        -- which would yank a chained-default bar onto the screen-center seed.
         for dbKey, barData in pairs(barsDB) do
-            if type(barData) == "table" and type(barData.ownedPosition) == "table" then
+            if type(barData) == "table" and type(barData.position) == "table" then
                 ClearAnchor(barKeyMap[dbKey] or dbKey)
             end
         end
@@ -1445,9 +1449,15 @@ local function MigrateAnchoringV3(profile)
             for dbKey, barData in pairs(barsDB) do
                 if type(barData) == "table" then
                     local faKey = barKeyMap[dbKey] or dbKey
-                    -- Prefer ownedPosition (new), fall back to position (old 2.55 format)
-                    local posSource = barData.ownedPosition or barData.position
-                    if posSource then
+                    -- ONLY the legacy 2.55 `position` field is migrated here.
+                    -- `ownedPosition` is a dead 3.x-era field that no runtime
+                    -- code reads or writes anymore — it lingers in some 3.0
+                    -- profiles as orphaned data. Treating it as a position
+                    -- source would clobber the user's chained-default bars
+                    -- with a screen-center FA entry on every login (bar1 →
+                    -- bar3 chain replaced with parent="screen", offset 0/0).
+                    local posSource = barData.position
+                    if type(posSource) == "table" then
                         MigratePos(posSource, faKey,
                             { point = "CENTER", relative = "CENTER", offsetX = 0, offsetY = 0 })
                     end
