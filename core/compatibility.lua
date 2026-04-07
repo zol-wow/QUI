@@ -16,9 +16,10 @@ local ADDON_NAME, ns = ...
 -- it needs to distinguish "user never set this" (rawget == nil) from
 -- "AceDB filled in the default" (proxy returns default value).
 ---------------------------------------------------------------------------
-local function StampOldDefaults(db)
-    local profileName = db:GetCurrentProfile()
-    local rawProfile = db.sv and db.sv.profiles and db.sv.profiles[profileName]
+-- Stamp old defaults into a single raw profile table. Operates entirely on
+-- raw data via rawget/rawset — no AceDB proxy access — so it can be called
+-- against any profile, not just the active one.
+local function StampOldDefaultsOnRawProfile(rawProfile)
     if not rawProfile then return end  -- brand-new profile, use new defaults
 
     -- Already migrated this profile?
@@ -37,7 +38,7 @@ local function StampOldDefaults(db)
     end
     if not hasData then
         -- New profile — just stamp version, let new defaults apply
-        db.profile._defaultsVersion = 2
+        rawset(rawProfile, "_defaultsVersion", 2)
         return
     end
 
@@ -308,9 +309,20 @@ local function StampOldDefaults(db)
     end
 
     ---------------------------------------------------------------------------
-    -- Done — stamp version
+    -- Done — stamp version directly on the raw profile
     ---------------------------------------------------------------------------
-    db.profile._defaultsVersion = 2
+    rawset(rawProfile, "_defaultsVersion", 2)
+end
+
+-- Iterate every stored profile and stamp old defaults on each. Previously
+-- this only operated on db:GetCurrentProfile(), so unused profiles never
+-- got their defaults stamped and silently inherited new default values on
+-- upgrade. Now every profile in db.sv.profiles is processed independently.
+local function StampOldDefaults(db)
+    if not (db and db.sv and db.sv.profiles) then return end
+    for _, rawProfile in pairs(db.sv.profiles) do
+        StampOldDefaultsOnRawProfile(rawProfile)
+    end
 end
 
 ---------------------------------------------------------------------------

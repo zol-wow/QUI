@@ -64,7 +64,7 @@ local ANCHORING_DEFAULTS = {
     autoHeight     = false,
     heightAdjust   = 0,
     hideWithParent = false,
-    keepInPlace    = false,
+    keepInPlace    = true,
 }
 
 local HUD_MIN_WIDTH_DEFAULT = (Helpers and Helpers.HUD_MIN_WIDTH_DEFAULT) or 200
@@ -125,7 +125,19 @@ function QUI_Anchoring_Options:GetFrameDB(key)
         return existing
     end
 
-    -- No entry: return a proxy that only materializes on first write.
+    -- No entry: return a proxy that only materializes on a meaningful write.
+    --
+    -- "Meaningful" = the new value differs from ANCHORING_DEFAULTS. Widgets
+    -- commonly fire OnChange handlers that write back the *current* value
+    -- (e.g. dropdowns re-selecting the same option). Without this guard, any
+    -- such write would materialize a full default-valued entry into the raw
+    -- SV, which ApplyFrameAnchor would then pick up and SetPoint the live
+    -- frame to the default position — causing CDM containers to teleport to
+    -- screen center the moment a settings panel opens.
+    --
+    -- A real edit (user actually changes a dropdown/slider) will always
+    -- produce a value different from the default, so the materialization
+    -- still fires for legitimate interaction.
     local proxy = {}
     setmetatable(proxy, {
         __index = function(_, k)
@@ -138,6 +150,10 @@ function QUI_Anchoring_Options:GetFrameDB(key)
         __newindex = function(_, k, v)
             local real = anchoringDB[key]
             if not real then
+                -- Skip no-op writes that would just restamp defaults.
+                if v == ANCHORING_DEFAULTS[k] then
+                    return
+                end
                 real = {}
                 anchoringDB[key] = real
                 -- Backfill defaults so the newly-materialized entry has the

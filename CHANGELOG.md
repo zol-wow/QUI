@@ -4,6 +4,23 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+
+### Changed
+- **Group Frames are now disabled by default.** Users who had them explicitly enabled will keep them. Users who never toggled the setting will see group frames disabled on first login — re-enable in *Group Frames → Enable* if you want them back.
+- **Action Bars 7 and 8 are now disabled by default.** Same rule: explicit user toggles are preserved; users who never touched these bars will find them disabled. Re-enable in *Action Bars → Bar 7/8 → Enable* if you were using them.
+- **"Keep In Place When Hidden" is now enabled by default** for every frame that supports the option. When a frame's anchor parent is hidden (e.g. pet bar when no pet, target castbar when no target, etc.), the child frame now stays anchored to its parent's last-known position instead of walking up the chain to find a visible ancestor. Users who had this explicitly disabled keep their setting.
+- Migration: removed the redundant `SeedDefaultFrameAnchoring` pass. `defaults.lua` is now the single source of truth for frame anchoring defaults; AceDB serves them natively via the metatable, preventing drift and SV bloat from the parallel seed table.
+- Migration: `Migrations.Run` and Tier 0 `StampOldDefaults` now iterate every stored profile instead of only the active one, so upgrading no longer leaves alt profiles frozen in their pre-migration state.
+- Anchoring: `ApplyFrameAnchor`'s `hideWithParent` and `keepInPlace` branches now no longer fire when `settings.parent` is `"screen"` or `"disabled"`. For those sentinel parents there's no real frame whose visibility can be tracked and no frame to SetPoint against other than UIParent (which is always visible), so the branches fell through to `SetPoint(point, UIParent, relative, offsetX, offsetY)` — teleporting the frame to UIParent at the configured offsets. When the ghost FA entry had 0/0 offsets (from a freshly materialized default), that meant teleport to screen center. The old code had a similar bug on the `hideWithParent` side: `ResolveFrameForKey("screen")` returned nil, `directVisible` collapsed to false, and the frame got `Hide()`'d entirely. Both paths now fall through to the normal chain-walk, which correctly resolves sentinel parents to UIParent via `ResolveParentFrame`. `hideWithParent` and `keepInPlace` still work exactly as before for any frame whose parent is a real frame.
+- Anchoring options: `GetFrameDB` no longer creates entries on read, and the lazy proxy skips `__newindex` writes whose value matches the default. Prevents widget OnChange handlers (dropdowns re-selecting the same value, sliders firing on focus, etc.) from materializing ghost `frameAnchoring` entries.
+- Anchoring chain walker: `ResolveParentFrame` takes an optional `originKey` that prevents self-cycle resolution via hardcoded fallbacks (fixes druid tank `primaryPower → secondaryPower → fallback → primaryPower` loop). When the walker detects a cycle (revisiting a key it already tried, or the origin frame), it now consults `FRAME_ANCHOR_FALLBACKS` one more time to continue the walk via a fallback target instead of immediately giving up and returning UIParent.
+- Anchoring: added `primaryPower → cdmEssential` to `FRAME_ANCHOR_FALLBACKS`. Classes without a secondary power bar (DK, druid, DH, warrior, rogue, monk) previously had legacy 3.0 profiles with `primaryPower.parent = "secondaryPower"`, which collapsed to a self-anchor loop or (after the cycle guard) dumped the frame offscreen at UIParent BOTTOM. The new fallback chain is `secondaryPower → primaryPower → cdmEssential`, so the power bar and anything chained off it land below the CDM Essential viewer — matching where the current default chain would put them.
+
+### Fixed
+- 3.0 → 3.1.x upgrade: `_cdmFaCleanupVersion` now backfills `ncdm.<key>.pos` from screen-rooted `frameAnchoring.cdm*` entries before nilling them, rescuing users who had CDM container positions only in `frameAnchoring`.
+- 2.5.5 upgrade: `MigrateAnchoring` v2/v3 helpers now explicitly set `parent = "screen"` on legacy position backfills so `copyDefaults` can't later fill in a chain-rooted parent and misinterpret the offsets. Fixes brezCounter, lootRollAnchor, consumables, zoneAbility, and similar legacy positions landing in wrong places after upgrade.
+- `MigrateAnchoring` v1/v2/v3 no longer unconditionally create an empty `profile.frameAnchoring = {}` that would shadow AceDB defaults for fresh profiles. Lazy `EnsureFa`/`ReadFa` helpers only materialize the table when there's actual legacy data to write.
 
 
 

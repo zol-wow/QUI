@@ -1026,12 +1026,23 @@ end
 ---------------------------------------------------------------------------
 
 local function MigrateAnchoring(profile)
-    if not profile._anchoringMigrationVersion then
+    -- Lazy accessor: only materializes profile.frameAnchoring on first write.
+    -- Fresh profiles with no legacy source data never trigger the creation,
+    -- so they don't get an empty shadow table that would mask AceDB defaults.
+    local function EnsureFa()
         if not profile.frameAnchoring then
             profile.frameAnchoring = {}
         end
-        local fa = profile.frameAnchoring
+        return profile.frameAnchoring
+    end
+    -- Snapshot the existing table (may be nil) for read paths. Iterators and
+    -- membership checks should treat nil as "no entries" without creating the
+    -- table. Writes go through EnsureFa().
+    local function ReadFa()
+        return profile.frameAnchoring
+    end
 
+    if not profile._anchoringMigrationVersion then
         -- Detect 2.55-style profile: has frameAnchoring entries with the
         -- legacy `enabled` flag. In 2.55, positions were stored as absolute
         -- screen offsets (parent=screen, CENTER) regardless of the frame's
@@ -1039,10 +1050,13 @@ local function MigrateAnchoring(profile)
         -- chain system — they must be discarded so the seed can apply
         -- proper default parent chains.
         local isLegacy255 = false
-        for _, settings in pairs(fa) do
-            if type(settings) == "table" and settings.enabled ~= nil then
-                isLegacy255 = true
-                break
+        local existingFa = ReadFa()
+        if existingFa then
+            for _, settings in pairs(existingFa) do
+                if type(settings) == "table" and settings.enabled ~= nil then
+                    isLegacy255 = true
+                    break
+                end
             end
         end
 
@@ -1079,35 +1093,39 @@ local function MigrateAnchoring(profile)
             raidFrames     = true,
         }
 
-        for key, settings in pairs(fa) do
-            if type(settings) == "table" and settings.enabled ~= nil then
-                if settings.enabled == false then
-                    -- enabled=false = never explicitly positioned via layout mode.
-                    -- For CDM containers and chain frames: discard (absolute 2.55
-                    -- coords don't translate). For other frames with real position
-                    -- data: preserve. Seed defaults are a last resort.
-                    if CDM_OWNED_KEYS[key] or LEGACY255_DISCARD_ABSOLUTE[key] then
-                        fa[key] = nil
-                    else
-                        local hasPositionData = (tonumber(settings.offsetX) or 0) ~= 0
-                            or (tonumber(settings.offsetY) or 0) ~= 0
-                            or (tonumber(settings.widthAdjust) or 0) ~= 0
-                            or (tonumber(settings.heightAdjust) or 0) ~= 0
-                        if hasPositionData then
-                            settings.enabled = nil  -- strip flag, keep data
+        -- Legacy cleanup only runs if the profile actually has entries.
+        -- Fresh profiles skip this block entirely (existingFa is nil).
+        if existingFa then
+            for key, settings in pairs(existingFa) do
+                if type(settings) == "table" and settings.enabled ~= nil then
+                    if settings.enabled == false then
+                        -- enabled=false = never explicitly positioned via layout mode.
+                        -- For CDM containers and chain frames: discard (absolute 2.55
+                        -- coords don't translate). For other frames with real position
+                        -- data: preserve. Seed defaults are a last resort.
+                        if CDM_OWNED_KEYS[key] or LEGACY255_DISCARD_ABSOLUTE[key] then
+                            existingFa[key] = nil
                         else
-                            fa[key] = nil
+                            local hasPositionData = (tonumber(settings.offsetX) or 0) ~= 0
+                                or (tonumber(settings.offsetY) or 0) ~= 0
+                                or (tonumber(settings.widthAdjust) or 0) ~= 0
+                                or (tonumber(settings.heightAdjust) or 0) ~= 0
+                            if hasPositionData then
+                                settings.enabled = nil  -- strip flag, keep data
+                            else
+                                existingFa[key] = nil
+                            end
                         end
-                    end
-                else
-                    -- enabled=true = user explicitly positioned this via layout
-                    -- mode. The entry already has valid parent-chain data (e.g.
-                    -- playerCastbar with parent=cdmUtility). Always preserve,
-                    -- except for CDM containers which the CDM module owns.
-                    if CDM_OWNED_KEYS[key] then
-                        fa[key] = nil
                     else
-                        settings.enabled = nil  -- strip flag, keep data
+                        -- enabled=true = user explicitly positioned this via layout
+                        -- mode. The entry already has valid parent-chain data (e.g.
+                        -- playerCastbar with parent=cdmUtility). Always preserve,
+                        -- except for CDM containers which the CDM module owns.
+                        if CDM_OWNED_KEYS[key] then
+                            existingFa[key] = nil
+                        else
+                            settings.enabled = nil  -- strip flag, keep data
+                        end
                     end
                 end
             end
@@ -1118,8 +1136,10 @@ local function MigrateAnchoring(profile)
             local ox = sourceTable.offsetX
             local oy = sourceTable.offsetY
             if ox == nil and oy == nil then return end
-            if fa[targetKey] then return end
-            fa[targetKey] = {
+            -- Skip if the target entry already exists (read without creating).
+            local currentFa = ReadFa()
+            if currentFa and currentFa[targetKey] then return end
+            EnsureFa()[targetKey] = {
                 parent = "screen",
                 point = "CENTER",
                 relative = "CENTER",
@@ -1173,9 +1193,10 @@ local function MigrateAnchoring(profile)
 
         local gf = profile.quiGroupFrames
         if gf and not isLegacy255 then
+            local currentFa = ReadFa()
             local pos = gf.position
-            if pos and (pos.offsetX or pos.offsetY) and not fa.partyFrames then
-                fa.partyFrames = {
+            if pos and (pos.offsetX or pos.offsetY) and not (currentFa and currentFa.partyFrames) then
+                EnsureFa().partyFrames = {
                     parent = "screen",
                     point = "CENTER",
                     relative = "CENTER",
@@ -1186,8 +1207,9 @@ local function MigrateAnchoring(profile)
             end
 
             local raidPos = gf.raidPosition
-            if raidPos and (raidPos.offsetX or raidPos.offsetY) and not fa.raidFrames then
-                fa.raidFrames = {
+            currentFa = ReadFa()
+            if raidPos and (raidPos.offsetX or raidPos.offsetY) and not (currentFa and currentFa.raidFrames) then
+                EnsureFa().raidFrames = {
                     parent = "screen",
                     point = "CENTER",
                     relative = "CENTER",
@@ -1219,7 +1241,8 @@ local function MigrateAnchoring(profile)
                 -- Let the seed apply the default parent chain (castbar → unit
                 -- frame TOP→BOTTOM).
                 local skipLegacyNone = isLegacy255 and anchor == "none"
-                if castDB and not fa[cm.targetKey] and not skipLegacyNone then
+                local currentFa = ReadFa()
+                if castDB and not (currentFa and currentFa[cm.targetKey]) and not skipLegacyNone then
                     local parent, ox, oy, point, relative
                     if anchor == "none" then
                         parent = "screen"
@@ -1267,7 +1290,7 @@ local function MigrateAnchoring(profile)
                     if anchor ~= "none" then
                         entry.autoWidth = true
                     end
-                    fa[cm.targetKey] = entry
+                    EnsureFa()[cm.targetKey] = entry
                 end
             end
         end
@@ -1276,38 +1299,48 @@ local function MigrateAnchoring(profile)
     end
 
     if (profile._anchoringMigrationVersion or 0) < 2 then
-        if not profile.frameAnchoring then profile.frameAnchoring = {} end
-        local fa = profile.frameAnchoring
-
         local mpt = profile.mplusTimer and profile.mplusTimer.position
-        if mpt and not fa.mplusTimer then
-            fa.mplusTimer = {
-                point = mpt.point or "TOPRIGHT",
-                relative = mpt.relPoint or "TOPRIGHT",
-                offsetX = mpt.x or -100,
-                offsetY = mpt.y or -200,
-                sizeStable = true,
-            }
+        if mpt then
+            local currentFa = ReadFa()
+            if not (currentFa and currentFa.mplusTimer) then
+                EnsureFa().mplusTimer = {
+                    parent = "screen",
+                    point = mpt.point or "TOPRIGHT",
+                    relative = mpt.relPoint or "TOPRIGHT",
+                    offsetX = mpt.x or -100,
+                    offsetY = mpt.y or -200,
+                    sizeStable = true,
+                }
+            end
         end
 
         local tp = profile.tooltip and profile.tooltip.anchorPosition
-        if tp and not fa.tooltipAnchor then
-            fa.tooltipAnchor = {
-                point = tp.point or "BOTTOMRIGHT",
-                relative = tp.relPoint or "BOTTOMRIGHT",
-                offsetX = tp.x or -200,
-                offsetY = tp.y or 100,
-                sizeStable = true,
-            }
+        if tp then
+            local currentFa = ReadFa()
+            if not (currentFa and currentFa.tooltipAnchor) then
+                EnsureFa().tooltipAnchor = {
+                    parent = "screen",
+                    point = tp.point or "BOTTOMRIGHT",
+                    relative = tp.relPoint or "BOTTOMRIGHT",
+                    offsetX = tp.x or -200,
+                    offsetY = tp.y or 100,
+                    sizeStable = true,
+                }
+            end
         end
 
+        -- Legacy inline offsets are UIParent-center-based absolute coords.
+        -- Pin parent="screen" explicitly so copyDefaults can't later fill
+        -- in a chain-rooted default parent and misinterpret the offsets.
         local function MigrateOffsets(sourceTable, targetKey)
             if not sourceTable then return end
             local ox = sourceTable.offsetX or sourceTable.xOffset
             local oy = sourceTable.offsetY or sourceTable.yOffset
             if ox == nil and oy == nil then return end
-            if fa[targetKey] then return end
-            fa[targetKey] = {
+            local currentFa = ReadFa()
+            if currentFa and currentFa[targetKey] then return end
+            EnsureFa()[targetKey] = {
+                parent = "screen",
                 point = "CENTER",
                 relative = "CENTER",
                 offsetX = ox or 0,
@@ -1328,13 +1361,15 @@ local function MigrateAnchoring(profile)
     end
 
     if (profile._anchoringMigrationVersion or 0) < 3 then
-        if not profile.frameAnchoring then profile.frameAnchoring = {} end
-        local fa = profile.frameAnchoring
-
+        -- Legacy position tables are UIParent-center-based absolute coords.
+        -- Pin parent="screen" explicitly so copyDefaults can't later fill
+        -- in a chain-rooted default parent and misinterpret the offsets.
         local function MigratePos(source, faKey, defaults)
             if not source then return end
-            if fa[faKey] then return end
-            fa[faKey] = {
+            local currentFa = ReadFa()
+            if currentFa and currentFa[faKey] then return end
+            EnsureFa()[faKey] = {
+                parent = "screen",
                 point = source.point or defaults.point,
                 relative = source.relPoint or source.relativePoint or defaults.relative,
                 offsetX = source.x or defaults.offsetX,
@@ -1366,14 +1401,18 @@ local function MigrateAnchoring(profile)
 
         if gen then
             local cfp = gen.consumableFreePosition
-            if cfp and not fa.consumables then
-                fa.consumables = {
-                    point = cfp.point or "CENTER",
-                    relative = cfp.relativePoint or cfp.relPoint or "CENTER",
-                    offsetX = cfp.x or 0,
-                    offsetY = cfp.y or 100,
-                    sizeStable = true,
-                }
+            if cfp then
+                local currentFa = ReadFa()
+                if not (currentFa and currentFa.consumables) then
+                    EnsureFa().consumables = {
+                        parent = "screen",
+                        point = cfp.point or "CENTER",
+                        relative = cfp.relativePoint or cfp.relPoint or "CENTER",
+                        offsetX = cfp.x or 0,
+                        offsetY = cfp.y or 100,
+                        sizeStable = true,
+                    }
+                end
             end
         end
 
@@ -1455,213 +1494,80 @@ local function MigrateNCDMContainers(profile)
 end
 
 ---------------------------------------------------------------------------
--- 5. Anchoring seed (must run after all anchoring migrations)
----------------------------------------------------------------------------
-
-local DEFAULT_FRAME_ANCHORING = {
-    bagBar          = { parent = "microMenu",       point = "TOPLEFT",      relative = "BOTTOMLEFT" },
-    bar1            = { parent = "bar3",            point = "BOTTOM",       relative = "TOP" },
-    bar2            = { parent = "bar1",            point = "BOTTOM",       relative = "TOP" },
-    bar3            = { parent = "screen",          point = "BOTTOMRIGHT",  relative = "BOTTOM" },
-    bar4            = { parent = "bar5",            point = "BOTTOMLEFT",   relative = "TOPLEFT" },
-    bar5            = { parent = "bar6",            point = "BOTTOMLEFT",   relative = "TOPLEFT" },
-    bar6            = { parent = "bar3",            point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
-    bossFrames      = { parent = "datatextPanel",   point = "TOPLEFT",      relative = "BOTTOMLEFT" },
-    brezCounter     = { parent = "combatTimer",     point = "BOTTOM",       relative = "TOP" },
-    atonementCounter = { parent = "brezCounter",    point = "BOTTOM",       relative = "TOP" },
-    buffFrame       = { parent = "minimap",         point = "TOPRIGHT",     relative = "TOPLEFT" },
-    -- CDM containers (cdmEssential, cdmUtility, buffIcon, buffBar) are
-    -- deliberately excluded. The CDM module owns their positioning via
-    -- ncdm.pos and anchorBelowEssential. Creating FA entries here would
-    -- make QUI_HasFrameAnchor return true and cause CDM to skip its own
-    -- positioning logic. Frames that parent to CDM containers resolve them
-    -- at runtime via ResolveFrameForKey.
-    combatTimer     = { parent = "bar3",            point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
-    consumables     = { parent = "readyCheck",      point = "BOTTOM",       relative = "TOP" },
-    datatextPanel   = { parent = "minimap",         point = "TOP",          relative = "BOTTOM" },
-    debuffFrame     = { parent = "buffFrame",       point = "TOPRIGHT",     relative = "BOTTOMRIGHT" },
-    focusCastbar    = { parent = "focusFrame",      point = "TOP",          relative = "BOTTOM",  autoWidth = true },
-    focusFrame      = { parent = "playerFrame",     point = "BOTTOMLEFT",   relative = "TOPLEFT", offsetY = 200 },
-    microMenu       = { parent = "screen",          point = "TOPLEFT",      relative = "TOPLEFT" },
-    minimap         = { parent = "screen",          point = "TOPRIGHT",     relative = "TOPRIGHT", offsetY = -25 },
-    objectiveTracker = { parent = "datatextPanel",  point = "TOPRIGHT",     relative = "BOTTOMRIGHT" },
-    partyFrames     = { parent = "cdmUtility",      point = "TOP",          relative = "BOTTOM",  offsetY = -25, keepInPlace = true },
-    petBar          = { parent = "bar6",            point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
-    petCastbar      = { parent = "petFrame",        point = "TOP",          relative = "BOTTOM" },
-    petFrame        = { parent = "playerFrame",     point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
-    playerCastbar   = { parent = "playerFrame",     point = "TOP",          relative = "BOTTOM",  autoWidth = true },
-    playerFrame     = { parent = "cdmEssential",    point = "BOTTOMRIGHT",  relative = "BOTTOMLEFT" },
-    primaryPower    = { parent = "cdmEssential",    point = "TOP",          relative = "BOTTOM",  autoWidth = true },
-    raidFrames      = { parent = "cdmUtility",      point = "TOP",          relative = "BOTTOM",  offsetY = -25, keepInPlace = true },
-    secondaryPower  = { parent = "primaryPower",    point = "TOP",          relative = "BOTTOM",  autoWidth = true },
-    stanceBar       = { parent = "petBar",          point = "BOTTOMLEFT",   relative = "TOPLEFT" },
-    targetCastbar   = { parent = "targetFrame",     point = "TOP",          relative = "BOTTOM",  autoWidth = true },
-    targetFrame     = { parent = "cdmEssential",    point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
-    totCastbar      = { parent = "totFrame",        point = "TOP",          relative = "BOTTOM" },
-    totFrame        = { parent = "targetFrame",     point = "BOTTOMLEFT",   relative = "BOTTOMRIGHT" },
-    zoneAbility     = { parent = "extraActionButton", point = "CENTER",     relative = "CENTER" },
-    lootRollAnchor  = { parent = "readyCheck",      point = "TOP",          relative = "BOTTOM",  keepInPlace = true },
-    skyriding       = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -30 },
-    powerBarAlt     = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -75 },
-    bnetToastAnchor = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -125 },
-    -- Frames without defaults that would otherwise stack at screen center
-    -- on legacy profile imports. Parent chain keeps them visible and out of
-    -- the way; users can fine-tune in layout mode.
-    extraActionButton = { parent = "screen",        point = "CENTER",       relative = "BOTTOM",  offsetY = 200 },
-    readyCheck      = { parent = "screen",          point = "CENTER",       relative = "CENTER" },
-    consumables     = { parent = "readyCheck",      point = "BOTTOM",       relative = "TOP",     offsetY = 50 },
-    lootFrame       = { parent = "screen",          point = "CENTER",       relative = "CENTER",  offsetX = 300 },
-    preyTracker     = { parent = "screen",          point = "CENTER",       relative = "TOP",     offsetY = -250 },
-    rotationAssistIcon = { parent = "cdmEssential", point = "BOTTOM",       relative = "TOP",     offsetY = 40 },
-    keyTracker      = { parent = "minimap",         point = "TOPRIGHT",     relative = "BOTTOMLEFT" },
-    xpTracker       = { parent = "screen",          point = "BOTTOM",       relative = "BOTTOM",  offsetY = 4 },
-    actionTracker   = { parent = "screen",          point = "RIGHT",        relative = "RIGHT",   offsetX = -20 },
-    petWarning      = { parent = "playerFrame",     point = "TOP",          relative = "BOTTOM",  offsetY = -30 },
-    focusCastAlert  = { parent = "screen",          point = "CENTER",       relative = "CENTER",  offsetY = -100 },
-    missingRaidBuffs = { parent = "screen",         point = "TOP",          relative = "TOP",     offsetY = -100 },
-    mplusTimer      = { parent = "screen",          point = "TOPRIGHT",     relative = "TOPRIGHT", offsetX = -200, offsetY = -100 },
-    tooltipAnchor   = { parent = "screen",          point = "BOTTOMRIGHT",  relative = "BOTTOMRIGHT", offsetX = -200, offsetY = 100 },
-    alertAnchor     = { parent = "screen",          point = "TOP",          relative = "TOP",     offsetY = -20 },
-    toastAnchor     = { parent = "screen",          point = "TOP",          relative = "TOP",     offsetY = -150 },
-    topCenterWidgets = { parent = "screen",         point = "TOP",          relative = "TOP",     offsetY = -100 },
-    belowMinimapWidgets = { parent = "datatextPanel", point = "TOP",        relative = "BOTTOM" },
-    crosshair       = { parent = "screen",          point = "CENTER",       relative = "CENTER" },
-    rangeCheck      = { parent = "screen",          point = "CENTER",       relative = "CENTER" },
-    totemBar        = { parent = "screen",          point = "CENTER",       relative = "BOTTOM",  offsetY = 200 },
-}
-
-local function IsUninitializedAnchoring(fa)
-    if type(fa) ~= "table" then return true end
-    local count = 0
-    for key, entry in pairs(fa) do
-        if type(entry) == "table" then
-            count = count + 1
-            local parent = entry.parent
-            if parent and parent ~= "screen" and parent ~= "disabled" then
-                return false  -- Has a real parent chain
-            end
-            if (entry.offsetX or 0) ~= 0 or (entry.offsetY or 0) ~= 0 then
-                if parent ~= "screen" then
-                    return false
-                end
-            end
-        end
-    end
-    return count > 0
-end
-
-local ANCHORING_SEED_VERSION = 2
-
-local function SeedDefaultFrameAnchoring(profile)
-    if not profile then return end
-
-    -- Only run once
-    if profile._anchoringSeedVersion and profile._anchoringSeedVersion >= ANCHORING_SEED_VERSION then
-        return
-    end
-
-    if type(profile.frameAnchoring) ~= "table" then
-        profile.frameAnchoring = {}
-    end
-    local fa = profile.frameAnchoring
-
-    -- Determine whether existing entries need their parent chains rewritten.
-    -- If the profile already has entries with real parent chains (non-screen),
-    -- only fill gaps for missing entries — don't overwrite existing chains.
-    local uninit = IsUninitializedAnchoring(fa)
-
-    for key, defaults in pairs(DEFAULT_FRAME_ANCHORING) do
-        local existing = type(fa[key]) == "table"
-
-        if not existing then
-            -- Always create missing entries with proper default parent chains.
-            -- This ensures old profiles (which may only have a few entries
-            -- surviving migration) get the full parent chain seeded.
-            fa[key] = {
-                parent   = defaults.parent,
-                point    = defaults.point,
-                relative = defaults.relative,
-                offsetX  = defaults.offsetX or 0,
-                offsetY  = defaults.offsetY or 0,
-                sizeStable    = true,
-                hideWithParent = false,
-                keepInPlace   = defaults.keepInPlace or false,
-                autoWidth     = defaults.autoWidth or false,
-                autoHeight    = false,
-                heightAdjust  = 0,
-                widthAdjust   = 0,
-            }
-        elseif uninit then
-            -- Profile looks uninitialized (all screen/CENTER with zero offsets):
-            -- overwrite parent chains with proper defaults.
-            local entry = fa[key]
-            entry.parent   = defaults.parent
-            entry.point    = defaults.point
-            entry.relative = defaults.relative
-
-            if defaults.offsetX and (entry.offsetX or 0) == 0 then
-                entry.offsetX = defaults.offsetX
-            end
-            if defaults.offsetY and (entry.offsetY or 0) == 0 then
-                entry.offsetY = defaults.offsetY
-            end
-
-            if entry.hideWithParent == nil then entry.hideWithParent = false end
-            if defaults.keepInPlace and entry.keepInPlace == nil then
-                entry.keepInPlace = defaults.keepInPlace
-            elseif entry.keepInPlace == nil then
-                entry.keepInPlace = false
-            end
-            if defaults.autoWidth and entry.autoWidth == nil then
-                entry.autoWidth = defaults.autoWidth
-            end
-
-            if entry.sizeStable == nil then entry.sizeStable = true end
-            if entry.autoHeight == nil then entry.autoHeight = false end
-            if entry.autoWidth == nil then entry.autoWidth = false end
-            if entry.heightAdjust == nil then entry.heightAdjust = 0 end
-            if entry.widthAdjust == nil then entry.widthAdjust = 0 end
-        else
-            -- Profile has real parent chains — only fill in missing metadata
-            -- fields on existing entries, don't touch parent/point/relative.
-            local entry = fa[key]
-            if entry.hideWithParent == nil then entry.hideWithParent = false end
-            if entry.keepInPlace == nil then entry.keepInPlace = defaults.keepInPlace or false end
-            if entry.sizeStable == nil then entry.sizeStable = true end
-            if entry.autoHeight == nil then entry.autoHeight = false end
-            if entry.autoWidth == nil then entry.autoWidth = defaults.autoWidth or false end
-            if entry.heightAdjust == nil then entry.heightAdjust = 0 end
-            if entry.widthAdjust == nil then entry.widthAdjust = 0 end
-        end
-    end
-
-    profile._anchoringSeedVersion = ANCHORING_SEED_VERSION
-end
-
----------------------------------------------------------------------------
 -- Entry point: Run all profile migrations
 ---------------------------------------------------------------------------
+--
+-- Note: SeedDefaultFrameAnchoring and DEFAULT_FRAME_ANCHORING used to live
+-- here. They wrote a parallel copy of default frameAnchoring entries into
+-- every profile on login, bloating SVs with data AceDB already provides
+-- via its defaults metatable. Removed. All frameAnchoring defaults now
+-- live in core/defaults.lua as the single source of truth. AceDB serves
+-- them on read, strips them on save, and no migration write is needed.
+--
+-- For legacy 2.55 absolute-offset profiles, MigrateAnchoring v1's
+-- LEGACY255_DISCARD_ABSOLUTE handling still nils the broken entries;
+-- AceDB defaults then fill in the replacements via metatable.
 
-function Migrations.Run(db)
-    local profile = db and db.profile
+-- Run the full migration pipeline against a single raw profile table.
+-- Accepts either db.profile (AceDB proxy) or a raw db.sv.profiles[name]
+-- entry. Operates only on explicit user data — never relies on AceDB
+-- default-merging, so it's safe to call against raw tables that have
+-- never been touched by AceDB.
+function Migrations.RunOnProfile(profile)
     if type(profile) ~= "table" then return false end
 
     -- Cleanup: delete CDM container FA entries from existing profiles.
     -- The CDM module owns positioning via ncdm.pos; FA entries for CDM
-    -- containers cause the anchoring system to override CDM positions.
+    -- containers are ignored at the apply layer (ApplyFrameAnchor early-
+    -- returns for them), but we still want to remove them from the SV to
+    -- keep it clean.
     --
-    -- v1 (initial cleanup) ran once per profile. v2 re-runs because the
-    -- anchoring options panel's GetFrameDB had a write-on-read side effect
-    -- that resurrected these entries the moment a CDM settings panel was
-    -- opened in layout mode. GetFrameDB has since been fixed (proxy that
-    -- only materializes on write), but we still need to purge any ghost
-    -- entries that were created before the fix landed.
+    -- BEFORE nilling, backfill ncdm.<key>.pos from any screen-rooted FA
+    -- entry. This rescues 3.0 upgraders whose CDM container position
+    -- lived only in frameAnchoring (they never opened layout mode, so
+    -- SaveContainerPosition never wrote ncdm.pos). Chain-rooted entries
+    -- (parent = "primaryPower" etc.) can't be resolved at migration time;
+    -- those are skipped and the user will need to re-drag in layout mode.
+    --
+    -- v1 (initial cleanup) ran once per profile. v2 re-runs to purge any
+    -- ghost entries created by the pre-fix GetFrameDB write-on-read bug,
+    -- and to add the ncdm.pos backfill that v1 was missing.
     if (profile._cdmFaCleanupVersion or 0) < 2 then
-        if type(profile.frameAnchoring) == "table" then
-            profile.frameAnchoring.cdmEssential = nil
-            profile.frameAnchoring.cdmUtility   = nil
-            profile.frameAnchoring.buffIcon     = nil
-            profile.frameAnchoring.buffBar      = nil
+        local fa = profile.frameAnchoring
+        if type(fa) == "table" then
+            local FA_TO_NCDM = {
+                cdmEssential = "essential",
+                cdmUtility   = "utility",
+                buffIcon     = "buff",
+                buffBar      = "trackedBar",
+            }
+            for faKey, ncdmKey in pairs(FA_TO_NCDM) do
+                local entry = fa[faKey]
+                if type(entry) == "table" then
+                    local parent = entry.parent or "screen"
+                    if parent == "screen" or parent == "disabled" then
+                        -- Screen-rooted: copy offsets to ncdm.<key>.pos
+                        -- (only if ncdm.pos doesn't already have a value).
+                        if type(profile.ncdm) ~= "table" then
+                            profile.ncdm = {}
+                        end
+                        if type(profile.ncdm[ncdmKey]) ~= "table" then
+                            profile.ncdm[ncdmKey] = {}
+                        end
+                        local tracker = profile.ncdm[ncdmKey]
+                        if type(tracker.pos) ~= "table"
+                            or tracker.pos.ox == nil
+                            or tracker.pos.oy == nil then
+                            tracker.pos = {
+                                ox = entry.offsetX or 0,
+                                oy = entry.offsetY or 0,
+                            }
+                        end
+                    end
+                    -- Nil the FA entry regardless of parent type.
+                    fa[faKey] = nil
+                end
+            end
         end
         profile._cdmFaCleanupVersion = 2
     end
@@ -1700,9 +1606,33 @@ function Migrations.Run(db)
     -- 4. Anchoring (depends on data being in final locations)
     MigrateAnchoring(profile)
     MigrateNCDMContainers(profile)
-    SeedDefaultFrameAnchoring(profile)
 
     -- 5. Stamp schema version
     profile._schemaVersion = CURRENT_SCHEMA_VERSION
     return true
+end
+
+-- Run migrations across every stored profile in the database. Previously
+-- this function only touched db.profile (the active profile of the logged-
+-- in character), leaving all other profiles frozen in their pre-migration
+-- state until the user happened to log in on the matching character. Now
+-- it iterates db.sv.profiles and migrates each one.
+--
+-- For stub db objects (e.g. profile import path) without db.sv.profiles,
+-- falls back to migrating db.profile alone.
+function Migrations.Run(db)
+    if not db then return false end
+
+    local profiles = db.sv and db.sv.profiles
+    if type(profiles) == "table" then
+        local any = false
+        for _, profile in pairs(profiles) do
+            if Migrations.RunOnProfile(profile) then
+                any = true
+            end
+        end
+        return any
+    end
+
+    return Migrations.RunOnProfile(db.profile)
 end

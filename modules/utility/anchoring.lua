@@ -1667,10 +1667,19 @@ local HUD_MIN_WIDTH_DEFAULT = (ns.Helpers and ns.Helpers.HUD_MIN_WIDTH_DEFAULT) 
 
 -- Fallback anchor targets for when a resolved frame is unavailable (nil or hidden).
 -- e.g. classes without a secondary resource should fall back to the primary bar.
+--
+-- Chain fallbacks matter when legacy profiles (QUI 3.0) have entries like
+-- primaryPower.parent = "secondaryPower" for classes that never had a
+-- secondary power bar (DK, druid in bear form, DH, rogue, warrior). The
+-- walker hits secondaryPower → nil → fallback primaryPower → visited
+-- (self-cycle) → needs another hop. Adding primaryPower → cdmEssential
+-- gives the walker a sensible next step: land below CDM Essential where
+-- the current default chain would have put it.
 FRAME_ANCHOR_FALLBACKS = {
     secondaryPower = "primaryPower",
-    petFrame = "playerFrame",
-    totFrame = "targetFrame",
+    primaryPower   = "cdmEssential",
+    petFrame       = "playerFrame",
+    totFrame       = "targetFrame",
 }
 
 -- Helper: resolve a single key to a visible frame (nil if unavailable)
@@ -1771,49 +1780,65 @@ local function ResolveParentFrame(parentKey, originKey)
     local lastChainSettings = nil
 
     while key do
-        if visited[key] then break end
-        visited[key] = true
-
-        local frame = ResolveFrameForKey(key)
-
-        -- Frame exists and is shown (or at least alpha-shown) → use it
-        if frame and frame.IsShown and frame:IsShown() then
-            return frame, lastChainSettings
-        end
-
-        -- In Layout Mode, treat hidden-but-enabled frames as valid anchor
-        -- targets. The mover overlay is visible even when the actual frame is
-        -- hidden (e.g. pet bar on a class with no pet), so dependents should
-        -- still anchor to it rather than walking up the chain.
-        if frame and ns.QUI_LayoutMode and ns.QUI_LayoutMode.isActive then
-            return frame, lastChainSettings
-        end
-
-        -- Frame exists but hidden — hook its visibility so that when it
-        -- reappears, children that chain-walked past it get re-anchored back.
-        if frame then
-            InstallVisibilityHook(frame)
-        end
-
-        -- Frame unavailable → try hardcoded fallback first
-        local fallback = FRAME_ANCHOR_FALLBACKS[key]
-        if fallback then
-            key = fallback
-        else
-            -- No hardcoded fallback — walk up the user's configured anchor chain.
-            -- If key itself has an anchor override with a parent, try that parent
-            -- (e.g. datatextPanel is anchored to minimap → use minimap).
-            local chainEntry = anchoringDB and anchoringDB[key]
-            local chainParent = chainEntry and chainEntry.parent
-            if chainParent and chainParent ~= "screen" and chainParent ~= "disabled" then
-                -- Remember this hidden link's anchor settings so the child can
-                -- adopt them (replacing the hidden frame in the visual chain).
-                lastChainSettings = chainEntry
-                key = chainParent
+        if visited[key] then
+            -- Cycle detected. The standard case: walker came back to a key
+            -- it already tried (or to the originKey we're trying to position,
+            -- pre-seeded to prevent self-anchoring). Before giving up, try
+            -- one more hop via the hardcoded fallback table — this lets
+            -- chains like "secondaryPower → primaryPower → cdmEssential"
+            -- recover on classes that don't have a secondary power bar.
+            -- A second unvisited hop continues the walk; otherwise we're
+            -- truly stuck and fall through to UIParent below.
+            local fallback = FRAME_ANCHOR_FALLBACKS[key]
+            if fallback and not visited[fallback] then
+                key = fallback
             else
-                -- End of the chain; return the frame if it exists (even if hidden)
-                -- so that anchored frames keep their reference, or UIParent as last resort
-                return frame or UIParent, lastChainSettings
+                break
+            end
+        else
+            visited[key] = true
+
+            local frame = ResolveFrameForKey(key)
+
+            -- Frame exists and is shown (or at least alpha-shown) → use it
+            if frame and frame.IsShown and frame:IsShown() then
+                return frame, lastChainSettings
+            end
+
+            -- In Layout Mode, treat hidden-but-enabled frames as valid anchor
+            -- targets. The mover overlay is visible even when the actual frame is
+            -- hidden (e.g. pet bar on a class with no pet), so dependents should
+            -- still anchor to it rather than walking up the chain.
+            if frame and ns.QUI_LayoutMode and ns.QUI_LayoutMode.isActive then
+                return frame, lastChainSettings
+            end
+
+            -- Frame exists but hidden — hook its visibility so that when it
+            -- reappears, children that chain-walked past it get re-anchored back.
+            if frame then
+                InstallVisibilityHook(frame)
+            end
+
+            -- Frame unavailable → try hardcoded fallback first
+            local fallback = FRAME_ANCHOR_FALLBACKS[key]
+            if fallback then
+                key = fallback
+            else
+                -- No hardcoded fallback — walk up the user's configured anchor chain.
+                -- If key itself has an anchor override with a parent, try that parent
+                -- (e.g. datatextPanel is anchored to minimap → use minimap).
+                local chainEntry = anchoringDB and anchoringDB[key]
+                local chainParent = chainEntry and chainEntry.parent
+                if chainParent and chainParent ~= "screen" and chainParent ~= "disabled" then
+                    -- Remember this hidden link's anchor settings so the child can
+                    -- adopt them (replacing the hidden frame in the visual chain).
+                    lastChainSettings = chainEntry
+                    key = chainParent
+                else
+                    -- End of the chain; return the frame if it exists (even if hidden)
+                    -- so that anchored frames keep their reference, or UIParent as last resort
+                    return frame or UIParent, lastChainSettings
+                end
             end
         end
     end
@@ -2195,10 +2220,20 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         end
     end
 
+    -- Only hideWithParent/keepInPlace make sense when settings.parent is a
+    -- real frame key. For the "screen" and "disabled" sentinels there's no
+    -- parent frame whose visibility we can track and no frame to SetPoint
+    -- against other than UIParent, which is always visible. In those cases
+    -- fall through to the normal chain-walk path so the frame is positioned
+    -- via ResolveParentFrame (which correctly resolves screen/disabled to
+    -- UIParent) instead of getting Hide()'d or teleported to UIParent center.
+    local parentKey = settings.parent
+    local parentIsSentinel = not parentKey or parentKey == "screen" or parentKey == "disabled"
+
     -- hideWithParent: skip fallback chain, hide child when direct parent is hidden
     local parentFrame
-    if settings.hideWithParent then
-        local directParent = ResolveFrameForKey(settings.parent)
+    if settings.hideWithParent and not parentIsSentinel then
+        local directParent = ResolveFrameForKey(parentKey)
         -- Hook visibility so we re-evaluate when the parent shows/hides
         if directParent then
             InstallVisibilityHook(directParent)
@@ -2240,11 +2275,11 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
             hideWithParentHidden[key] = nil
         end
         parentFrame = directParent
-    elseif settings.keepInPlace then
+    elseif settings.keepInPlace and not parentIsSentinel then
         -- Keep In Place: anchor directly to the parent frame even if hidden.
         -- WoW's SetPoint works on hidden frames, so the child stays at the
         -- correct relative position. No chain walk, no settings adoption.
-        local directParent = ResolveFrameForKey(settings.parent)
+        local directParent = ResolveFrameForKey(parentKey)
         if directParent then
             InstallVisibilityHook(directParent)
         end
