@@ -34,6 +34,18 @@ local MAX_ICONS = 5
 local GF = nil
 local SpecCache = nil
 
+-- Party-only feature: requires QUI group frames enabled and not in a raid.
+local function IsActive()
+    if IsInRaid() then return false end
+    local db = GetDB()
+    return db and db.enabled == true
+end
+
+local function IsPartyUnit(unit)
+    if not unit then return false end
+    return unit == "party1" or unit == "party2" or unit == "party3" or unit == "party4"
+end
+
 ---------------------------------------------------------------------------
 -- CC SPELL DATABASE — only spells with real cooldowns
 -- { id = spellID, cd = cooldown in seconds }
@@ -400,6 +412,8 @@ end
 
 local function OnSpellcastSucceeded(unit, castGUID, spellID)
     if not spellID then return end
+    if not IsActive() then return end
+    if not IsPartyUnit(unit) then return end
     if UnitIsEnemy("player", unit) then return end
 
     local ok, info = pcall(function() return CC_LOOKUP[spellID] end)

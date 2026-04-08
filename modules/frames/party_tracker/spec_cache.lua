@@ -40,8 +40,13 @@ local inspectTicker = nil
 function SpecCache.GetSpec(unit)
     if not unit or not UnitExists(unit) then return nil end
 
-    -- Fast path for the player — no inspection needed
-    if UnitIsUnit(unit, "player") then
+    -- Fast path for the player — no inspection needed.
+    -- NOTE: do not call UnitIsUnit here. UnitIsUnit returns a SECRET BOOLEAN
+    -- in combat for restricted unit tokens (target/targettarget/focus/etc.)
+    -- which taints any caller that tests it. Match the literal "player"
+    -- token instead — callers that pass party1..4 will fall through to the
+    -- GUID cache below, which is the only path we want for party members.
+    if unit == "player" then
         local spec = GetSpecialization and GetSpecialization()
         if spec then
             local specId = GetSpecializationInfo(spec)

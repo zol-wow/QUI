@@ -31,6 +31,18 @@ ns.PartyTracker_KickTimer = KickTimer
 local GF = nil
 local SpecCache = nil
 
+-- Party-only feature: requires QUI group frames enabled and not in a raid.
+local function IsActive()
+    if IsInRaid() then return false end
+    local db = GetDB()
+    return db and db.enabled == true
+end
+
+local function IsPartyUnit(unit)
+    if not unit then return false end
+    return unit == "party1" or unit == "party2" or unit == "party3" or unit == "party4"
+end
+
 ---------------------------------------------------------------------------
 -- INTERRUPT SPELL DATABASE — one primary interrupt per class
 ---------------------------------------------------------------------------
@@ -311,6 +323,8 @@ end
 local recentCasts = {}  -- unit → GetTime()
 
 local function OnSpellcastSucceeded(unit, castGUID, spellID)
+    if not IsActive() then return end
+    if unit ~= "player" and not IsPartyUnit(unit) then return end
     if UnitIsEnemy("player", unit) then return end
 
     -- Record cast time for interrupt matching (combat fallback)
@@ -532,6 +546,7 @@ end)
 C_Timer.After(0, function()
     if ns.AuraEvents then
         ns.AuraEvents:Subscribe("group", function(unit)
+            if not IsActive() or not IsPartyUnit(unit) then return end
             GF = GF or ns.QUI_GroupFrames
             if not GF or not GF.unitFrameMap then return end
             local frame = GF.unitFrameMap[unit]

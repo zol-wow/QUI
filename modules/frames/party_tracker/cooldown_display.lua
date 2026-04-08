@@ -125,6 +125,22 @@ local function GetSettings(isRaid)
     return vdb and vdb.partyTracker and vdb.partyTracker.partyCooldowns
 end
 
+-- Party tracker is a party-only feature: it requires QUI group frames to be
+-- enabled and the player to be in a party (not a raid). Raid units are not
+-- supported, and unrelated unit tokens (target/targettarget/focus/etc.) must
+-- be filtered out — calling spec/aura APIs on restricted unit tokens in
+-- combat returns secret booleans and taints the addon.
+local function IsActive()
+    if IsInRaid() then return false end
+    local db = GetDB()
+    return db and db.enabled == true
+end
+
+local function IsPartyUnit(unit)
+    if not unit then return false end
+    return unit == "party1" or unit == "party2" or unit == "party3" or unit == "party4"
+end
+
 ---------------------------------------------------------------------------
 -- LAZY ICON CREATION
 ---------------------------------------------------------------------------
@@ -434,6 +450,8 @@ end
 ---------------------------------------------------------------------------
 
 local function OnSpellcastSucceeded(unit, castGUID, spellID)
+    if not IsActive() then return end
+    if unit ~= "player" and not IsPartyUnit(unit) then return end
     if UnitIsEnemy("player", unit) then return end
 
     -- For the player: scan all tracked spells via C-side API
@@ -702,6 +720,7 @@ C_Timer.After(0, function()
 
     ns.AuraEvents:Subscribe("group", function(unit, updateInfo)
         if not updateInfo then return end
+        if not IsActive() or not IsPartyUnit(unit) then return end
         Brain = Brain or ns.PartyTracker_Brain
         Observer = Observer or ns.PartyTracker_Observer
 
