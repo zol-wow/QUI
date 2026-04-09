@@ -279,17 +279,11 @@ local function HideBlizzardRaidFrames()
         InstallShowHook(CompactRaidFrameContainer)
     end
 
-    -- CompactRaidFrameManager (the "raid" tab on left side)
-    if CompactRaidFrameManager then
-        SafeHideFrame(CompactRaidFrameManager)
-        SafeHideFrame(CompactRaidFrameManager.container)
-        SafeHideFrame(CompactRaidFrameManager.toggleButton)
-        SafeHideFrame(CompactRaidFrameManager.displayFrame)
-        InstallShowHook(CompactRaidFrameManager)
-        if CompactRaidFrameManager.displayFrame then
-            InstallShowHook(CompactRaidFrameManager.displayFrame)
-        end
-    end
+    -- CompactRaidFrameManager is owned by modules/ui/uihider.lua, which respects
+    -- the user's uiHider.hideRaidFrameManager setting. Do not suppress it here —
+    -- hiding the container/displayFrame/toggleButton removes the manager's buttons
+    -- even when the user has the hide setting disabled, and the extra ShowHook
+    -- caused a zone-in flicker on top of uihider's own hooks.
 
     -- Individual CompactRaidFrame1-40
     for i = 1, 40 do

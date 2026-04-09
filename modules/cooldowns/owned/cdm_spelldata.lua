@@ -2843,7 +2843,7 @@ function CDMSpellData:GetAllLearnedCooldowns()
         if okTabs and numTabs then
             for tab = 1, numTabs do
                 local okLine, skillLineInfo = pcall(C_SpellBook.GetSpellBookSkillLineInfo, tab)
-                if okLine and skillLineInfo and skillLineInfo.specID then
+                if okLine and skillLineInfo and skillLineInfo.name ~= GENERAL then
                     local offset = skillLineInfo.itemIndexOffset or 0
                     local numEntries = skillLineInfo.numSpellBookItems or 0
                     for i = 1, numEntries do

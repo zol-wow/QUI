@@ -140,6 +140,19 @@ local function GetCachedBackdrop(bgFile, edgeFile, edgeSize)
     return bd
 end
 
+-- Skip SetBackdrop when the same cached backdrop table is already applied.
+-- Blizzard's SetBackdrop does NOT short-circuit on identical backdropInfo —
+-- it unconditionally runs NineSliceUtil.ApplyLayout, which walks every
+-- piece (corners + edges + center) and is expensive enough that repeated
+-- calls across a full raid can exhaust WoW's 200ms script budget
+-- ("script ran too long" in NineSlice.lua). Tracking the last-applied
+-- cached table on the frame lets re-decoration passes skip the rebuild.
+local function EnsureBackdrop(frame, bd)
+    if frame._quiBackdrop == bd then return end
+    frame._quiBackdrop = bd
+    frame:SetBackdrop(bd)
+end
+
 ---------------------------------------------------------------------------
 -- GROUP_ROSTER_UPDATE coalescing: GRU fires in bursts of 5-20 during roster
 -- changes. Showing an already-shown frame is a no-op (automatic dedup), so
@@ -1474,8 +1487,11 @@ local function UpdateDispelOverlay(frame)
     local unit = frame.unit
     local overlay = frame.dispelOverlay
 
-    -- Check shared aura cache first to avoid redundant full aura scans.
-    -- The cache was just populated by the aura dispatcher before this function runs.
+    -- Fast path: the aura scan already classified every harmful aura against
+    -- HARMFUL|RAID_PLAYER_DISPELLABLE and stashed the matching instance IDs
+    -- in cache.playerDispellable. Probe the set directly — this replaces a
+    -- per-aura pcall+filter-check loop with a single next() call, which is
+    -- the biggest raid-perf win on this path.
     local GFA = ns.QUI_GroupFrameAuras
     local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
     local hasDispellable = false
@@ -1483,59 +1499,23 @@ local function UpdateDispelOverlay(frame)
     local firstDispellableType = nil
     local fromPrivateSlots = false
 
-    if cache and cache.harmful then
-        for _, auraData in ipairs(cache.harmful) do
-            local matched = false
-            local instID = auraData.auraInstanceID
-
-            -- Preferred path: ask the client directly whether this aura is
-            -- dispellable by the player using the HARMFUL|RAID_PLAYER_DISPELLABLE
-            -- classification filter. This is more reliable than trusting that
-            -- `dispelName` was populated on the cached aura payload.
-            if instID and not IsSecretValue(instID)
-               and C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID then
-                local ok, filteredOut = pcall(
-                    C_UnitAuras.IsAuraFilteredOutByInstanceID,
-                    unit,
-                    instID,
-                    "HARMFUL|RAID_PLAYER_DISPELLABLE"
-                )
-                if ok and not IsSecretValue(filteredOut) and filteredOut == false then
-                    matched = true
-                end
-            end
-
-            -- Fallback: legacy/raw dispel type from the cached aura payload.
-            if not matched and auraData.dispelName and not IsSecretValue(auraData.dispelName) then
-                local dType = SafeValue(auraData.dispelName, nil)
-                if dType then
-                    matched = true
-                    firstDispellableType = dType
-                end
-            end
-
-            -- Extra fallback: refresh directly from the aura instance in case
-            -- the shared cache entry is missing dispel metadata.
-            if not matched and instID and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
-                local ok, liveAura = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, unit, instID)
-                if ok and liveAura and liveAura.dispelName and not IsSecretValue(liveAura.dispelName) then
-                    local dType = SafeValue(liveAura.dispelName, nil)
-                    if dType then
-                        matched = true
-                        firstDispellableType = dType
+    if cache and cache.playerDispellable then
+        local instID = next(cache.playerDispellable)
+        if instID then
+            hasDispellable = true
+            firstDispellableInstID = instID
+            -- Best-effort dispel type for the legacy color fallback path.
+            -- We only need to inspect the one matching aura, not the list.
+            if cache.harmful then
+                for i = 1, #cache.harmful do
+                    local ad = cache.harmful[i]
+                    if ad.auraInstanceID == instID then
+                        if ad.dispelName and not IsSecretValue(ad.dispelName) then
+                            firstDispellableType = SafeValue(ad.dispelName, nil)
+                        end
+                        break
                     end
                 end
-            end
-
-            if matched then
-                hasDispellable = true
-                firstDispellableInstID = instID
-
-                if not firstDispellableType and auraData.dispelName and not IsSecretValue(auraData.dispelName) then
-                    firstDispellableType = SafeValue(auraData.dispelName, nil)
-                end
-
-                break
             end
         end
     end
@@ -1687,6 +1667,12 @@ local function IsVerifiedDefensiveAura(unit, auraData)
     return false
 end
 
+-- Exposed so the aura scanner (groupframes_auras.lua) can pre-classify
+-- defensives at scan time and stash matching instance IDs on the unit cache.
+-- Mirrors the dispel scan-time set pattern — moves the per-aura filter call
+-- out of the per-event UpdateDefensiveIndicator hot path.
+QUI_GF.IsVerifiedDefensiveAura = IsVerifiedDefensiveAura
+
 local function UpdateDefensiveIndicator(frame)
     if not frame or not frame.unit or not frame.defensiveIcons then return end
 
@@ -1707,9 +1693,13 @@ local function UpdateDefensiveIndicator(frame)
     local defSettings = healerSettings.defensiveIndicator
     local maxIcons = defSettings.maxIcons or 3
 
-    -- Collect defensive auras from the shared cache first (just populated by
-    -- the aura dispatcher). This avoids 2-3 redundant C_UnitAuras.GetUnitAuras
-    -- calls per unit per aura event (~60-100 saved C API calls per raid batch).
+    -- Scan-time set fast path: the aura scanner already classified every
+    -- helpful aura against BigDefensive + ExternalDefensive and stashed the
+    -- matching instance IDs in cache.defensives. Walk that set directly and
+    -- resolve each ID back to its aura data via an index map over cache.helpful.
+    -- This replaces the previous "iterate cache.helpful and filter-check each"
+    -- loop with a 2-pass walk whose cost is bounded by the number of actual
+    -- defensives present (typically 0-3), not the size of the helpful list.
     local foundAuras = _defensive.foundAuras
     local seen = _defensive.seen
     wipe(foundAuras)
@@ -1717,15 +1707,18 @@ local function UpdateDefensiveIndicator(frame)
 
     local GFA = ns.QUI_GroupFrameAuras
     local cache = GFA and GFA.unitAuraCache and GFA.unitAuraCache[unit]
-    if cache and cache.helpful then
-        for _, auraData in ipairs(cache.helpful) do
-            if IsVerifiedDefensiveAura(unit, auraData) then
-                local instID = auraData.auraInstanceID
-                if not instID or not seen[instID] then
-                    if instID then seen[instID] = true end
-                    foundAuras[#foundAuras + 1] = auraData
-                    if #foundAuras >= maxIcons then break end
-                end
+    if cache and cache.defensives and cache.helpful and next(cache.defensives) then
+        -- Build an instID → auraData lookup for the small set of defensives.
+        -- We only need to walk cache.helpful once, and only hit the IDs in the
+        -- defensive set.
+        local helpful = cache.helpful
+        for i = 1, #helpful do
+            local ad = helpful[i]
+            local instID = ad.auraInstanceID
+            if instID and cache.defensives[instID] and not seen[instID] then
+                seen[instID] = true
+                foundAuras[#foundAuras + 1] = ad
+                if #foundAuras >= maxIcons then break end
             end
         end
     end
@@ -1922,7 +1915,7 @@ local function DecorateGroupFrame(frame)
     local borderSize = borderPx > 0 and (QUICore.Pixels and QUICore:Pixels(borderPx, frame) or borderPx) or 0
     local px = QUICore.GetPixelSize and QUICore:GetPixelSize(frame) or 1
 
-    frame:SetBackdrop(GetCachedBackdrop(
+    EnsureBackdrop(frame, GetCachedBackdrop(
         "Interface\\Buttons\\WHITE8x8",
         borderSize > 0 and "Interface\\Buttons\\WHITE8x8" or nil,
         borderSize > 0 and borderSize or nil
@@ -2222,7 +2215,7 @@ local function DecorateGroupFrame(frame)
     threatBorder:SetPoint("TOPLEFT", -px, px)
     threatBorder:SetPoint("BOTTOMRIGHT", px, -px)
     threatBorder:SetFrameLevel(frame:GetFrameLevel() + 3)
-    threatBorder:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", threatBorderPx))
+    EnsureBackdrop(threatBorder, GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", threatBorderPx))
     threatBorder:Hide()
     frame.threatBorder = threatBorder
 
@@ -2232,7 +2225,7 @@ local function DecorateGroupFrame(frame)
     targetHighlight:SetPoint("TOPLEFT", -px, px)
     targetHighlight:SetPoint("BOTTOMRIGHT", px, -px)
     targetHighlight:SetFrameLevel(frame:GetFrameLevel() + 4)
-    targetHighlight:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", px * 2))
+    EnsureBackdrop(targetHighlight, GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", px * 2))
     targetHighlight:Hide()
     frame.targetHighlight = targetHighlight
 
@@ -2295,41 +2288,51 @@ local function DecorateGroupFrame(frame)
     dispelOverlay:Hide()
     frame.dispelOverlay = dispelOverlay
 
-    -- Defensive indicator icons (pool of up to MAX_DEFENSIVE_ICONS)
+    -- Defensive indicator icons (pool of up to MAX_DEFENSIVE_ICONS).
+    -- One-time init per icon is split from per-refresh config: SetBackdrop
+    -- on a BackdropTemplate frame goes through NineSliceUtil.ApplyLayout
+    -- on every call (Blizzard's SetBackdrop does not short-circuit on
+    -- identical backdropInfo). In large raids, re-running SetBackdrop on
+    -- 5 icons × 40 frames per redecoration is enough to exhaust WoW's
+    -- 200ms script budget ("script ran too long" in NineSlice.lua).
     local MAX_DEFENSIVE_ICONS = 5
     if not frame.defensiveIcons then frame.defensiveIcons = {} end
+    local healerDB = GetHealerSettings(isRaid)
+    local defReverse = healerDB and healerDB.defensiveIndicator and healerDB.defensiveIndicator.reverseSwipe ~= false
     for i = 1, MAX_DEFENSIVE_ICONS do
-        local defIcon = frame.defensiveIcons[i] or CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        defIcon:SetSize(16, 16)
-        defIcon:ClearAllPoints()
-        defIcon:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
+        local defIcon = frame.defensiveIcons[i]
+        if not defIcon then
+            defIcon = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            defIcon:SetSize(16, 16)
+            defIcon:ClearAllPoints()
+            defIcon:SetPoint("CENTER", frame, "CENTER", 0, 0)
+            defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
 
-        local defTex = defIcon.icon or defIcon:CreateTexture(nil, "ARTWORK")
-        defTex:SetAllPoints()
-        defTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        defIcon.icon = defTex
+            local defTex = defIcon:CreateTexture(nil, "ARTWORK")
+            defTex:SetAllPoints()
+            defTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            defIcon.icon = defTex
 
-        defIcon:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", px))
-        defIcon:SetBackdropBorderColor(0, 0.8, 0, 1)
+            defIcon:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", px))
+            defIcon:SetBackdropBorderColor(0, 0.8, 0, 1)
 
-        local healerDB = GetHealerSettings(isRaid)
-        local defReverse = healerDB and healerDB.defensiveIndicator and healerDB.defensiveIndicator.reverseSwipe ~= false
-        local defCD = defIcon.cooldown or CreateFrame("Cooldown", nil, defIcon, "CooldownFrameTemplate")
-        defCD:SetAllPoints(defTex)
-        defCD:SetDrawEdge(false)
-        defCD:SetDrawSwipe(true)
-        defCD:SetReverse(defReverse)
-        defCD:SetHideCountdownNumbers(false)
-        defIcon.cooldown = defCD
+            local defCD = CreateFrame("Cooldown", nil, defIcon, "CooldownFrameTemplate")
+            defCD:SetAllPoints(defTex)
+            defCD:SetDrawEdge(false)
+            defCD:SetDrawSwipe(true)
+            defCD:SetHideCountdownNumbers(false)
+            defIcon.cooldown = defCD
 
-        if defIcon.SetMouseClickEnabled then
-            defIcon:SetMouseClickEnabled(false)
+            if defIcon.SetMouseClickEnabled then
+                defIcon:SetMouseClickEnabled(false)
+            end
+            defIcon:EnableMouse(false)
+
+            defIcon:Hide()
+            frame.defensiveIcons[i] = defIcon
         end
-        defIcon:EnableMouse(false)
-
-        defIcon:Hide()
-        frame.defensiveIcons[i] = defIcon
+        -- Per-refresh: reverse-swipe can change via settings
+        defIcon.cooldown:SetReverse(defReverse)
     end
     -- Keep backward compat alias for single-icon references
     frame.defensiveIcon = frame.defensiveIcons[1]
@@ -2356,7 +2359,7 @@ local function DecorateGroupFrame(frame)
             portrait:SetPoint("LEFT", frame, "RIGHT", 0, 0)
         end
 
-        portrait:SetBackdrop(GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", portraitBorderPx))
+        EnsureBackdrop(portrait, GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", portraitBorderPx))
         portrait:SetBackdropBorderColor(0, 0, 0, 1)
         portrait:SetFrameLevel(frame:GetFrameLevel() + 1)
 

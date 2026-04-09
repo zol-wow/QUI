@@ -1160,6 +1160,21 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 -- would create a C-side animation that fights with the
                 -- hook's SetValue calls, causing bar jumps.
                 bar._cSideFill = true
+            elseif bar._cSideFill then
+                -- C-side SetTimerDuration is already driving the fill
+                -- animation.  Re-calling it would restart the animation
+                -- and cause visible flickering.  Detect aura refreshes
+                -- (new application with a different expiration) and
+                -- re-apply only then.
+                local rawExp = r.auraData and r.auraData.expirationTime
+                if rawExp and not Helpers.IsSecretValue(rawExp)
+                   and bar._expirationTime and bar._expirationTime ~= rawExp then
+                    -- Aura was refreshed — new duration, re-apply.
+                    if bar.StatusBar and bar.StatusBar.SetTimerDuration then
+                        pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                        pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
+                    end
+                end
             elseif bar.StatusBar then
                 pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
                 if bar.StatusBar.SetTimerDuration then

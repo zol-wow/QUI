@@ -72,7 +72,10 @@ local function CreateOrUpdateBackground()
             edgeSize = px,
             insets = { left = px, right = px, top = px, bottom = px }
         })
-        customBg:SetFrameStrata("BACKGROUND")
+        -- Inherit parent strata (MEDIUM); use FrameLevel 0 so we draw
+        -- behind InspectFrame's children but not below UIParent/WorldFrame.
+        -- Setting strata lower than parent causes intermittent render-order
+        -- issues where customBg can end up drawn behind the world.
         customBg:SetFrameLevel(0)
         customBg:EnableMouse(false)  -- Don't steal clicks
     end

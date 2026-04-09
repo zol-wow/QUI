@@ -1300,12 +1300,6 @@ local function OnEvent(self, event, ...)
         ThrottledUpdate()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         C_Timer.After(1, UpdateDisplay)
-    elseif event == "UNIT_FLAGS" then
-        -- Triggers when unit dies or resurrects
-        local unit = ...
-        if unit and (unit:match("^party") or unit:match("^raid")) then
-            ThrottledUpdate()
-        end
     elseif event == "PLAYER_DEAD" or event == "PLAYER_UNGHOST" then
         -- Player death/resurrect
         ThrottledUpdate()
@@ -1318,7 +1312,12 @@ eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-eventFrame:RegisterEvent("UNIT_FLAGS")
+-- UNIT_FLAGS intentionally NOT registered: it's a global event that fires
+-- constantly in raids (PvP/AFK/DND/in-combat/CC state changes on every unit
+-- in the world, including nameplates and targets). We only want "dead/alive"
+-- signals for raid members, which are covered by PLAYER_DEAD/PLAYER_UNGHOST
+-- (self) and the periodic range ticker (others, every 5s, out of combat only
+-- — which is the only time this display is visible anyway).
 eventFrame:RegisterEvent("PLAYER_DEAD")
 eventFrame:RegisterEvent("PLAYER_UNGHOST")
 eventFrame:SetScript("OnEvent", OnEvent)
@@ -1328,12 +1327,12 @@ ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "RaidBuffs", frame = ev
 
 -- Subscribe to centralized aura dispatcher
 if ns.AuraEvents then
-    ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+    -- Roster filter handles player/party/raid membership at the dispatcher
+    -- level — no string.match per event.
+    ns.AuraEvents:Subscribe("roster", function(unit, updateInfo)
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
-        if unit == "player" or unit:match("^party") or unit:match("^raid") then
-            ThrottledUpdate()
-        end
+        ThrottledUpdate()
     end)
 end
 

@@ -672,7 +672,28 @@ local paRefreshTimes = setmetatable({}, { __mode = "k" })
 
 -- Subscribe to centralized aura dispatcher for private aura refresh
 if ns.AuraEvents then
-    ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+    ns.AuraEvents:Subscribe("roster", function(unit, updateInfo)
+        -- Drop non-group-frame units fast. The dispel overlay path in
+        -- groupframes.lua calls RefreshPrivateDispelState on-demand for the
+        -- units it actually renders, so an eager scan for target/focus/boss/
+        -- nameplate/arena units on every UNIT_AURA just burns CPU in raids.
+        local GF = ns.QUI_GroupFrames
+        if not GF or not GF.initialized then return end
+        local frame = GF.unitFrameMap and GF.unitFrameMap[unit]
+        if not frame then return end
+
+        -- Skip the pcall-heavy GetAuraSlots scan when the aura set didn't
+        -- change (pure stack/duration updates). Private dispel state is keyed
+        -- by aura instance ID, so it can only change when auras are added or
+        -- removed — not when existing auras update in place.
+        if type(updateInfo) == "table"
+            and not updateInfo.isFullUpdate
+            and not updateInfo.addedAuras
+            and not updateInfo.removedAuraInstanceIDs
+        then
+            return
+        end
+
         RefreshPrivateDispelState(unit)
 
         -- Private aura anchor APIs are restricted in combat (12.0.5+)
@@ -680,10 +701,6 @@ if ns.AuraEvents then
             pendingReanchor = true
             return
         end
-        local GF = ns.QUI_GroupFrames
-        if not GF or not GF.initialized then return end
-        local frame = GF.unitFrameMap and GF.unitFrameMap[unit]
-        if not frame then return end
         local state = frameState[frame]
         if not state or #state.anchorIDs == 0 then return end
         local now = GetTime()

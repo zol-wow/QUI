@@ -30,13 +30,23 @@ ns.AuraEvents = AuraEvents
 local subscribers = {
     player = {},   -- only unit == "player"
     group  = {},   -- party/raid units (not player)
+    roster = {},   -- player + party1..4 + raid1..40 only (skips target/focus/boss/nameplate/arena)
     all    = {},   -- every UNIT_AURA event
 }
+
+-- Static roster unit set. UNIT_AURA fires for every unit token in the world
+-- (player, party1..4, raid1..40, target, focus, boss1..5, arena1..5, pet,
+-- mouseover, nameplate1..40, targettarget, focustarget, ...). In a raid with
+-- many nameplates, the non-roster events dominate — an O(1) table lookup here
+-- avoids dispatching to subscribers that would just early-out anyway.
+local rosterUnits = { player = true }
+for i = 1, 4 do rosterUnits["party" .. i] = true end
+for i = 1, 40 do rosterUnits["raid" .. i] = true end
 
 function AuraEvents:Subscribe(filter, callback)
     local list = subscribers[filter]
     if not list then
-        error("AuraEvents:Subscribe invalid filter '" .. tostring(filter) .. "', use 'player', 'group', or 'all'")
+        error("AuraEvents:Subscribe invalid filter '" .. tostring(filter) .. "', use 'player', 'group', 'roster', or 'all'")
     end
     -- Avoid duplicate subscriptions
     for _, cb in ipairs(list) do
@@ -68,10 +78,18 @@ coalesceFrame:SetScript("OnUpdate", function(self)
     self:Hide()
     for unit, updateInfo in pairs(pendingUnits) do
         local info = updateInfo ~= true and updateInfo or nil
+        local isRoster = rosterUnits[unit]
 
         -- Dispatch to "all" subscribers
         for _, cb in ipairs(subscribers.all) do
             cb(unit, info)
+        end
+
+        -- Dispatch to roster subscribers (player + party1..4 + raid1..40 only)
+        if isRoster then
+            for _, cb in ipairs(subscribers.roster) do
+                cb(unit, info)
+            end
         end
 
         -- Dispatch to filtered subscribers

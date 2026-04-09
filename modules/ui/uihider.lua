@@ -342,7 +342,7 @@ local function ApplyHideSettings()
     if CompactRaidFrameManager then
         if InCombatLockdown() then
             -- Skip protected operations during combat
-        elseif settings.hideRaidFrameManager or (Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled) then
+        elseif settings.hideRaidFrameManager then
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
                 CompactRaidFrameManager:SetAlpha(0)
@@ -357,8 +357,7 @@ local function ApplyHideSettings()
                     if IsInEditMode() then return end
                     if InCombatLockdown() then return end
                     local s = GetSettings()
-                    local quiGFActive = Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled
-                    if CompactRaidFrameManager and ((s and s.hideRaidFrameManager) or quiGFActive) then
+                    if CompactRaidFrameManager and s and s.hideRaidFrameManager then
                         _alphaGuard = true
                         CompactRaidFrameManager:StopAnimating()
                         CompactRaidFrameManager:SetAlpha(0)
@@ -379,8 +378,7 @@ local function ApplyHideSettings()
                     if _alphaGuard then return end
                     if alpha > 0 and not IsInEditMode() then
                         local s = GetSettings()
-                        local quiGFActive = Helpers.GetProfile() and Helpers.GetProfile().quiGroupFrames and Helpers.GetProfile().quiGroupFrames.enabled
-                        if (s and s.hideRaidFrameManager) or quiGFActive then
+                        if s and s.hideRaidFrameManager then
                             _alphaGuard = true
                             self:StopAnimating()
                             self:SetAlpha(0)

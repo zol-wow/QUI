@@ -6401,8 +6401,8 @@ function GUI:CreateMainFrame()
     local frame = CreateFrame("Frame", "QUI_Options", UIParent)
     frame:SetSize(savedWidth, FRAME_HEIGHT)
     frame:SetPoint("CENTER")
-    frame:SetFrameStrata("DIALOG")
-    frame:SetFrameLevel(100)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(500)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     frame:SetToplevel(true)
@@ -7419,6 +7419,7 @@ function GUI:Show()
         self:InitializeOptions()
     end
     self.MainFrame:Show()
+    self.MainFrame:Raise()
     if self._allTabsAdded and not self._searchIndexBuilt then
         self:StartBackgroundIndexBuild()
     end

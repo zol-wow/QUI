@@ -3741,6 +3741,13 @@ function QUI_LayoutMode:SoloHandlePreview(key)
     if not self.isActive then return false end
     if not self:IsElementEnabled(key) then return false end
 
+    -- If already soloed, clicking again un-solos (restores all enabled handles).
+    if self:IsHandleSolo(key) then
+        self:SetAllHandlePreviewsVisible(true)
+        self:SelectMover(key)
+        return true
+    end
+
     for _, otherKey in ipairs(self._elementOrder) do
         if self:IsElementEnabled(otherKey) then
             self:SetHandlePreviewVisible(otherKey, otherKey == key)

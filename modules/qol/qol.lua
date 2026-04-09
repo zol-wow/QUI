@@ -544,43 +544,95 @@ end
 ---------------------------------------------------------------------------
 
 local wasLoggingBeforeChallenge = false
+local mplusAutoLoggingActive = false
+local wasInMythicPlus = false
+local pendingMythicPlusUpdate = nil
 local raidAutoLoggingActive = false
 local wasInRaidInstance = false
 
-local function OnChallengeModeStart()
-    local settings = GetSettings()
-    if not settings or not settings.autoCombatLog then return end
-
-    -- Remember if user already had logging enabled (don't disable their manual logging)
-    wasLoggingBeforeChallenge = LoggingCombat()
-
-    if not wasLoggingBeforeChallenge then
-        LoggingCombat(true)
-        print("|cFF30D1FFQUI:|r Combat logging started for M+")
+local function CancelPendingMythicPlusUpdate()
+    if pendingMythicPlusUpdate and pendingMythicPlusUpdate.Cancel then
+        pendingMythicPlusUpdate:Cancel()
     end
+    pendingMythicPlusUpdate = nil
 end
 
-local function OnChallengeModeEnd()
-    local settings = GetSettings()
-    if not settings or not settings.autoCombatLog then return end
+local function IsMythicPlusActive()
+    if C_MythicPlus and type(C_MythicPlus.IsMythicPlusActive) == "function" then
+        local ok, active = pcall(C_MythicPlus.IsMythicPlusActive)
+        if ok then
+            return active == true
+        end
+    end
 
-    -- Only stop if WE started it (don't disable user's manual logging)
-    if not wasLoggingBeforeChallenge and LoggingCombat() then
+    if C_ChallengeMode and type(C_ChallengeMode.GetActiveChallengeMapID) == "function" then
+        local ok, mapID = pcall(C_ChallengeMode.GetActiveChallengeMapID)
+        if ok then
+            return mapID ~= nil
+        end
+    end
+
+    if C_ChallengeMode and type(C_ChallengeMode.IsChallengeModeActive) == "function" then
+        local ok, active = pcall(C_ChallengeMode.IsChallengeModeActive)
+        if ok then
+            return active == true
+        end
+    end
+
+    local _, instanceType, difficultyID = GetInstanceInfo()
+    return instanceType == "party" and difficultyID == 8
+end
+
+local function StopMythicPlusLogging()
+    if mplusAutoLoggingActive and LoggingCombat() then
         LoggingCombat(false)
         print("|cFF30D1FFQUI:|r Combat logging stopped")
     end
+
+    mplusAutoLoggingActive = false
     wasLoggingBeforeChallenge = false
 end
 
--- Handle reconnect: if in active M+ and setting enabled, resume logging
-local function CheckResumeLogging()
+local function UpdateMythicPlusAutoLogging()
     local settings = GetSettings()
-    if not settings or not settings.autoCombatLog then return end
+    local inMythicPlus = IsMythicPlusActive()
 
-    if C_ChallengeMode.IsChallengeModeActive() and not LoggingCombat() then
-        LoggingCombat(true)
-        print("|cFF30D1FFQUI:|r Combat logging resumed (reconnected to M+)")
+    if not settings or not settings.autoCombatLog then
+        StopMythicPlusLogging()
+        wasInMythicPlus = inMythicPlus
+        return
     end
+
+    if inMythicPlus then
+        if not wasInMythicPlus then
+            -- Remember if user already had logging enabled so we never stop their manual logging.
+            wasLoggingBeforeChallenge = LoggingCombat()
+            mplusAutoLoggingActive = false
+        end
+
+        if not LoggingCombat() then
+            LoggingCombat(true)
+            mplusAutoLoggingActive = true
+
+            if wasInMythicPlus then
+                print("|cFF30D1FFQUI:|r Combat logging resumed (active M+ detected)")
+            else
+                print("|cFF30D1FFQUI:|r Combat logging started for M+")
+            end
+        end
+    elseif wasInMythicPlus then
+        StopMythicPlusLogging()
+    end
+
+    wasInMythicPlus = inMythicPlus
+end
+
+local function ScheduleMythicPlusUpdate(delaySeconds)
+    CancelPendingMythicPlusUpdate()
+    pendingMythicPlusUpdate = C_Timer.NewTimer(delaySeconds or 0, function()
+        pendingMythicPlusUpdate = nil
+        UpdateMythicPlusAutoLogging()
+    end)
 end
 
 local function IsInRaidInstance()
@@ -622,6 +674,14 @@ local function UpdateRaidAutoLogging()
 
     wasInRaidInstance = inRaidInstance
 end
+
+local function RefreshAutoCombatLogging()
+    CancelPendingMythicPlusUpdate()
+    UpdateMythicPlusAutoLogging()
+    UpdateRaidAutoLogging()
+end
+
+_G.QUI_RefreshAutoCombatLogging = RefreshAutoCombatLogging
 
 ---------------------------------------------------------------------------
 -- DELETE CONFIRMATION: AUTO-FILL
@@ -762,14 +822,16 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "LOOT_READY" then
         OnLootReady()
     elseif event == "CHALLENGE_MODE_START" then
-        OnChallengeModeStart()
+        UpdateMythicPlusAutoLogging()
     elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" then
-        OnChallengeModeEnd()
+        -- Active-state APIs can lag the completion/reset event slightly.
+        ScheduleMythicPlusUpdate(5)
     elseif event == "PLAYER_ENTERING_WORLD" then
-        C_Timer.After(2, CheckResumeLogging)
+        ScheduleMythicPlusUpdate(2)
         C_Timer.After(2, UpdateRaidAutoLogging)
         C_Timer.After(2, RefreshPopupBlocker)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
+        UpdateMythicPlusAutoLogging()
         UpdateRaidAutoLogging()
     elseif event == "AUCTION_HOUSE_SHOW" then
         SetupAuctionHouseFilter()

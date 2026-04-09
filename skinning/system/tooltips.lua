@@ -891,7 +891,8 @@ local function RefreshAllColors()
     if InCombatLockdown() then return end
     -- Re-style all visible tooltips
     for tooltip in pairs(styleFrames) do
-        if tooltip.IsShown and tooltip:IsShown() then
+        if not (tooltip.IsForbidden and tooltip:IsForbidden())
+            and tooltip.IsShown and tooltip:IsShown() then
             StyleTooltip(tooltip)
         end
     end
@@ -937,12 +938,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             -- Full restyle of all visible tooltips (both named and dynamic)
             for _, name in ipairs(tooltipsToSkin) do
                 local tooltip = _G[name]
-                if tooltip and tooltip.IsShown and tooltip:IsShown() then
+                if tooltip and not (tooltip.IsForbidden and tooltip:IsForbidden())
+                    and tooltip.IsShown and tooltip:IsShown() then
                     StyleTooltip(tooltip)
                 end
             end
             for tooltip in pairs(styleFrames) do
-                if tooltip.IsShown and tooltip:IsShown() then
+                if not (tooltip.IsForbidden and tooltip:IsForbidden())
+                    and tooltip.IsShown and tooltip:IsShown() then
                     StyleTooltip(tooltip)
                 end
             end

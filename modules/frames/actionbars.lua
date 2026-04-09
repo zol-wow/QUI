@@ -2168,7 +2168,22 @@ local function BuildBar(barKey)
                 btn:SetAttribute("useparent-unit", true)
                 btn:SetAttribute("useparent-actionpage", true)
                 btn:RegisterForDrag("LeftButton", "RightButton")
-                btn:RegisterForClicks("AnyUp", "LeftButtonDown", "RightButtonDown")
+                -- Register for both down and up clicks — empowered
+                -- spells (Evoker Fire Breath etc.) need mouse-down to
+                -- start the empower and mouse-up to release.
+                btn:RegisterForClicks("AnyDown", "AnyUp")
+                -- Default casts to fire on mouse-up.  This is the LAB
+                -- default and what we actually want:
+                --   • Drag motions naturally pre-empt the cast (drag
+                --     fires before the mouse-up dispatch reaches the
+                --     action).  No per-click attribute toggling needed.
+                --   • Empowered spells still work — pressAndHoldAction
+                --     + typerelease="actionrelease" overrides this for
+                --     the press/release flow.
+                --   • Trade-off: fully-locked mode loses snappy on-down
+                --     click response for normal spells.  Imperceptible
+                --     in practice; keybinds are unaffected.
+                btn:SetAttribute("useOnKeyDown", false)
                 btn.flashing = 0
                 btn.flashtime = 0
                 btn:SetAttribute("index", i)
@@ -2224,9 +2239,6 @@ local function BuildBar(barKey)
                         self.Count:SetText("")
                     end
                 end
-                if btn.RegisterForClicks then
-                    btn:RegisterForClicks("AnyDown", "AnyUp")
-                end
                 -- Sync btn.action (ActionButtonTemplate has no
                 -- OnAttributeChanged to do this automatically).
                 btn.action = i
@@ -2273,10 +2285,22 @@ local function BuildBar(barKey)
             -- controller's calls to Update/ShouldShow are harmless.
         end
 
-        -- Fully suppress original Blizzard buttons
-        local origButtons = GetOriginalBlizzButtons(barKey)
-        for _, blizzBtn in ipairs(origButtons) do
-            SuppressBlizzardButton(blizzBtn)
+        -- Suppress original Blizzard buttons — but for the pet bar we
+        -- must leave the originals ALIVE (not UnregisterAllEvents, not
+        -- statehidden).  Blizzard's native pet action bar keeps the
+        -- server<->client state in sync via PetActionButton_OnEvent on
+        -- the individual buttons — if we unregister their events, pet
+        -- bar drag state fails to persist across /reload because the
+        -- native sync path never runs.  The container is already
+        -- hidden + reparented above, which is enough to make them
+        -- invisible.  Bartender4 uses the same approach (see
+        -- HideBlizzard.lua:78 — `hideActionBarFrame(PetActionBar, true)`
+        -- only touches the container, never the child buttons).
+        if barKey ~= "pet" then
+            local origButtons = GetOriginalBlizzButtons(barKey)
+            for _, blizzBtn in ipairs(origButtons) do
+                SuppressBlizzardButton(blizzBtn)
+            end
         end
 
         -- Create fresh buttons from the native template
@@ -2302,6 +2326,10 @@ local function BuildBar(barKey)
             if barKey == "pet" then
                 btn:UnregisterAllEvents()
                 btn:SetScript("OnEvent", nil)
+                -- Pin the pet slot on the button itself so our drag
+                -- overrides below don't depend on GetID() or on
+                -- whatever the template's OnLoad populated.
+                btn.id = i
                 -- The inherited OnEnter is BaseActionButtonMixin:OnEnter →
                 -- GameTooltip:SetAction(self.action), which is wrong for pet
                 -- buttons (they have no .action).  Replace with SetPetAction.
@@ -2311,6 +2339,32 @@ local function BuildBar(barKey)
                     GameTooltip:Show()
                 end)
                 btn:SetScript("OnLeave", GameTooltip_Hide)
+                -- Explicit insecure drag handlers.  Pet action pickup /
+                -- placement is not combat-protected, so plain Lua calls
+                -- are fine here.  Overriding means we don't rely on the
+                -- template's native OnDragStart / OnReceiveDrag, which
+                -- may misbehave when the button is reparented outside
+                -- the original PetActionBar frame or when the template
+                -- internals read stale cached fields.
+                btn:SetScript("OnDragStart", function(self)
+                    if InCombatLockdown() then return end
+                    local slot = self.id or self:GetID()
+                    if not slot or slot < 1 then return end
+                    self:SetChecked(false)
+                    PickupPetAction(slot)
+                    ActionBarsOwned.UpdatePetButton(self)
+                end)
+                btn:SetScript("OnReceiveDrag", function(self)
+                    if InCombatLockdown() then return end
+                    local slot = self.id or self:GetID()
+                    if not slot or slot < 1 then return end
+                    local cursorType = GetCursorInfo()
+                    if cursorType == "petaction" then
+                        self:SetChecked(false)
+                        PickupPetAction(slot)
+                        ActionBarsOwned.UpdatePetButton(self)
+                    end
+                end)
             end
             btn:Show()
             -- Both pet and stance bar-level Updates are suppressed — QUI
@@ -2700,7 +2754,11 @@ local function BuildBar(barKey)
                 btn:SetAttribute("useparent-unit", true)
                 btn:SetAttribute("useparent-actionpage", true)
                 btn:RegisterForDrag("LeftButton", "RightButton")
-                btn:RegisterForClicks("AnyUp", "LeftButtonDown", "RightButtonDown")
+                -- Click registration and cast-timing policy — see the
+                -- comments on the matching block in the bar1 creation
+                -- path above for full rationale.
+                btn:RegisterForClicks("AnyDown", "AnyUp")
+                btn:SetAttribute("useOnKeyDown", false)
                 btn.flashing = 0
                 btn.flashtime = 0
                 local action = offset + i
@@ -2724,9 +2782,6 @@ local function BuildBar(barKey)
                         btn:SetAttribute("pressAndHoldAction", pressAndHold)
                     end
                 ]], action, action))
-                if btn.RegisterForClicks then
-                    btn:RegisterForClicks("AnyDown", "AnyUp")
-                end
                 -- Sync btn.action from the attribute (ActionButtonTemplate
                 -- has no OnAttributeChanged to do this automatically).
                 btn.action = offset + i
@@ -2816,82 +2871,102 @@ local function BuildBar(barKey)
                     self.UpdateTooltip = nil
                 end
             end
-            btn:HookScript("OnEnter", function(self)
-                local global = GetGlobalSettings()
-                if global and global.showTooltips == false then return end
-                self:SetTooltip()
-            end)
-            btn:HookScript("OnLeave", function(self)
-                self.UpdateTooltip = nil
-                GameTooltip:Hide()
-            end)
-            -- ── Pickup / Place (Bartender4 / LibActionButton pattern) ──
-            -- All pickup/place goes through the secure framework via
-            -- WrapScript return values.  Lua handlers are nil'd — only
-            -- HookScript for visual refresh.  This ensures pickup works
-            -- in combat (secure path) and avoids tainted-code conflicts.
 
-            -- Sync lockActionBars CVar → button attribute for the
-            -- restricted snippets (GetCVar unavailable in restricted env).
+            -- Sync lockActionBars CVar → button attribute so the
+            -- restricted OnDragStart wrap's lock check can read it
+            -- (GetCVar is not available in the restricted env).
+            -- MUST run every Refresh so dropdown changes propagate.
             btn:SetAttribute("buttonlock", GetCVar("lockActionBars") == "1")
 
-            -- OnClick: when PICKUPACTION is held, disable on-down casting
-            -- by toggling useOnKeyDown off.  The post-body restores it.
-            -- This is the Bartender4/LAB approach — more reliable than
-            -- clearing type or returning false.
-            SecureHandlerWrapScript(btn, "OnClick", btn, [[
-                if IsModifiedClick("PICKUPACTION") and not self:GetAttribute("LABdisableDragNDrop") then
-                    local useDown = self:GetAttribute("useOnKeyDown")
-                    if useDown ~= false then
-                        self:SetAttribute("qui-toggled-down", true)
-                        self:SetAttribute("qui-toggled-down-backup", useDown)
-                        self:SetAttribute("useOnKeyDown", false)
-                    end
-                end
-            ]], [[
-                if self:GetAttribute("qui-toggled-down") then
-                    self:SetAttribute("useOnKeyDown", self:GetAttribute("qui-toggled-down-backup"))
-                    self:SetAttribute("qui-toggled-down", nil)
-                    self:SetAttribute("qui-toggled-down-backup", nil)
-                end
-            ]])
-
-            -- OnDragStart: nil the Lua handler, let WrapScript do the
-            -- pickup via return "action", slot → secure PickupAction.
-            -- Double-wrapped because the post-script doesn't run when
-            -- the pre-script causes a pickup (WoW engine quirk).
-            btn:SetScript("OnDragStart", nil)
-            SecureHandlerWrapScript(btn, "OnDragStart", btn, [[
-                if (self:GetAttribute("buttonlock") and not IsModifiedClick("PICKUPACTION"))
-                    or self:GetAttribute("LABdisableDragNDrop") then
-                    return false
-                end
-                return "action", self:GetAttribute("action")
-            ]])
-            -- Second wrap: phony message so the post-body runs even
-            -- though the inner wrap causes a pickup.
-            SecureHandlerWrapScript(btn, "OnDragStart", btn, [[
-                return "message", "update"
-            ]], [[
-                self:CallMethod("QUI_PostDrag")
-            ]])
             btn.QUI_PostDrag = function(self)
                 OwnedButton_PostDrag(self)
             end
 
-            -- OnReceiveDrag: same pattern — nil Lua handler, secure swap.
-            btn:SetScript("OnReceiveDrag", nil)
-            SecureHandlerWrapScript(btn, "OnReceiveDrag", btn, [[
-                if self:GetAttribute("LABdisableDragNDrop") then
-                    return false
-                end
-                return "action", self:GetAttribute("action")
-            ]])
-            SecureHandlerWrapScript(btn, "OnReceiveDrag", btn, [[
-                return "message", "update"
-            ]], [[
-                self:CallMethod("QUI_PostDrag")
-            ]])
+            -- One-time hook script and secure wrap install.  HookScript
+            -- and SecureHandlerWrapScript both STACK on repeat calls —
+            -- re-running these on every BuildBar/Refresh would layer N
+            -- copies of every wrap, breaking buttonlock and drag/click
+            -- behavior after a few setting changes.
+            if not btn.quiSecureHooksInstalled then
+                btn.quiSecureHooksInstalled = true
+
+                -- Re-evaluate pressAndHoldAction whenever the button's
+                -- `action` attribute changes.  Empowered / hold-to-
+                -- release spells (Evoker Fire Breath, channeled actions)
+                -- require pressAndHoldAction=true so the secure click
+                -- dispatch fires the "release" action on mouse-up.
+                -- Bar paging (_childupdate-offset, state driver) rewrites
+                -- the action attribute without re-running the initial
+                -- Execute block, so without this wrap the flag is stale
+                -- on every page change.
+                SecureHandlerWrapScript(btn, "OnAttributeChanged", btn, [[
+                    if name == "action" and IsPressHoldReleaseSpell and type(value) == "number" then
+                        local actionType, id, subType = GetActionInfo(value)
+                        local pressAndHold = false
+                        if actionType == "spell" then
+                            pressAndHold = IsPressHoldReleaseSpell(id)
+                        elseif actionType == "macro" and subType == "spell" then
+                            pressAndHold = IsPressHoldReleaseSpell(id)
+                        end
+                        self:SetAttribute("pressAndHoldAction", pressAndHold)
+                        self:SetAttribute("typerelease", "actionrelease")
+                    end
+                ]])
+
+                btn:HookScript("OnEnter", function(self)
+                    local global = GetGlobalSettings()
+                    if global and global.showTooltips == false then return end
+                    self:SetTooltip()
+                end)
+                btn:HookScript("OnLeave", function(self)
+                    self.UpdateTooltip = nil
+                    GameTooltip:Hide()
+                end)
+
+                -- ── Pickup / Place (secure WrapScript pattern) ──
+                -- Lua OnDragStart/OnReceiveDrag handlers are nil'd, and
+                -- the drag logic runs inside secure WrapScript snippets
+                -- so pickup works in combat via the restricted path and
+                -- the lockActionBars check stays taint-safe.
+                --
+                -- Click timing is NOT handled here — it's set statically
+                -- via `useOnKeyDown = false` at button creation.  See
+                -- the comment on RegisterForClicks in the creation path.
+
+                -- OnDragStart: nil the Lua handler, let WrapScript do the
+                -- pickup via return "action", slot → secure PickupAction.
+                -- Double-wrapped: the post-script does NOT run when the
+                -- inner pre-script causes a pickup, so the outer wrap
+                -- returns a phony "message" so its post-body still fires
+                -- for visual refresh.
+                btn:SetScript("OnDragStart", nil)
+                SecureHandlerWrapScript(btn, "OnDragStart", btn, [[
+                    if (self:GetAttribute("buttonlock") and not IsModifiedClick("PICKUPACTION"))
+                        or self:GetAttribute("LABdisableDragNDrop") then
+                        return false
+                    end
+                    return "action", self:GetAttribute("action")
+                ]])
+                SecureHandlerWrapScript(btn, "OnDragStart", btn, [[
+                    return "message", "update"
+                ]], [[
+                    self:CallMethod("QUI_PostDrag")
+                ]])
+
+                -- OnReceiveDrag: same double-wrap pattern.
+                btn:SetScript("OnReceiveDrag", nil)
+                SecureHandlerWrapScript(btn, "OnReceiveDrag", btn, [[
+                    if self:GetAttribute("LABdisableDragNDrop") then
+                        return false
+                    end
+                    return "action", self:GetAttribute("action")
+                ]])
+                SecureHandlerWrapScript(btn, "OnReceiveDrag", btn, [[
+                    return "message", "update"
+                ]], [[
+                    self:CallMethod("QUI_PostDrag")
+                ]])
+            end
         end
 
         -- Populate visuals via the mixin (safe — GetActionCount is
@@ -3344,10 +3419,17 @@ do
             -- Fast path: check primary cooldown first (1 API call).
             -- If not active, skip charges/LoC entirely (saves 2 API calls per
             -- button for the majority of buttons not on cooldown at any moment).
-            local cdInfo = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
-            if not cdInfo.isActive then
+            local cdInfo  = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
+            local chgInfo = C_ActionBar.GetActionCharges(action) or DEFAULT_CHG_INFO
+            local cdActive = cdInfo.isActive
+            local chActive = chgInfo.isActive
+            if not cdActive and not chActive then
                 -- Idle button: only clear the frames on the active→inactive
                 -- transition. Subsequent idle scans skip the Clear() churn.
+                -- Note: a charged spell with an unspent charge (e.g. 1/2)
+                -- is still "active" here because its recharge swipe must
+                -- drive the charge cooldown frame even though the primary
+                -- cooldown is idle.
                 if _buttonWasActive[button] then
                     _buttonWasActive[button] = nil
                     cooldown:Clear()
@@ -3358,13 +3440,13 @@ do
             end
             _buttonWasActive[button] = true
 
-            -- Button IS on cooldown — now check charges and LoC (2 more API calls)
-            local chgInfo = C_ActionBar.GetActionCharges(action) or DEFAULT_CHG_INFO
+            -- Button is on cooldown and/or recharging a charge — LoC is the
+            -- remaining query.
             local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action) or DEFAULT_LOC_INFO
 
             local showLoC    = locInfo.isActive
-            local showCharge = not locInfo.shouldReplaceNormalCooldown and chgInfo.isActive
-            local showNormal = not locInfo.shouldReplaceNormalCooldown
+            local showCharge = not locInfo.shouldReplaceNormalCooldown and chActive
+            local showNormal = not locInfo.shouldReplaceNormalCooldown and cdActive
 
             -- Normal cooldown (only fetch DurationObject when needed)
             if showNormal then
@@ -3904,9 +3986,28 @@ abUpdateFrame._lastVis = 0
 abUpdateFrame._dirtyCooldowns = false
 abUpdateFrame._dirtyStates = false
 abUpdateFrame._dirtyVisuals = false
+abUpdateFrame._dirtyAssistRotation = false
+abUpdateFrame._dirtyAssistHighlight = false
 
 abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
+
+    -- Assisted combat flags: cheap, always-process, no time-gate.
+    -- Coalesced here so rapid AssistedCombatManager event bursts (fired
+    -- from inside Blizzard's per-frame OnUpdate) can't chain into
+    -- back-to-back full bar sweeps inside a single TriggerEvent loop.
+    if self._dirtyAssistRotation then
+        self._dirtyAssistRotation = false
+        -- Called via module table (not upvalue) because this file is
+        -- large enough to saturate Lua 5.1's per-closure upvalue cap —
+        -- the bare local isn't reachable from this OnUpdate closure.
+        ActionBarsOwned.UpdateAllAssistedCombatRotation()
+    end
+    if self._dirtyAssistHighlight then
+        self._dirtyAssistHighlight = false
+        UpdateAllAssistedHighlights()
+    end
+
     local doVis = self._dirtyVisuals
     local doState = self._dirtyStates
     local doCd  = self._dirtyCooldowns
@@ -4004,6 +4105,7 @@ local _lastPagingTime = 0
 abSlotFrame:SetScript("OnUpdate", function(self)
     self:Hide()
     local slotMap = ActionBarsOwned.slotMap
+    local inCombat = InCombatLockdown()
     for slot in pairs(abDirtySlots) do
         if slotMap then
             local entry = slotMap[slot]
@@ -4012,7 +4114,25 @@ abSlotFrame:SetScript("OnUpdate", function(self)
                 pcall(ActionBarsOwned.SafeUpdate, btn)
                 ActionBarsOwned.UpdateCooldown(btn)
                 ActionBarsOwned.UpdateOverlayGlow(btn)
-                if not InCombatLockdown() then
+                -- Re-evaluate pressAndHoldAction for the new spell at
+                -- this slot.  The `action` attribute is the slot index
+                -- and hasn't changed, so the OnAttributeChanged wrap
+                -- won't fire — we must update it from Lua here.
+                -- SetAttribute on secure buttons is combat-blocked, so
+                -- skip in combat (ACTIONBAR_SLOT_CHANGED content changes
+                -- don't normally happen in combat anyway).
+                if not inCombat and IsPressHoldReleaseSpell then
+                    local actionType, id, subType = GetActionInfo(slot)
+                    local pressAndHold = false
+                    if actionType == "spell" then
+                        pressAndHold = IsPressHoldReleaseSpell(id)
+                    elseif actionType == "macro" and subType == "spell" then
+                        pressAndHold = IsPressHoldReleaseSpell(id)
+                    end
+                    btn:SetAttribute("pressAndHoldAction", pressAndHold)
+                    btn:SetAttribute("typerelease", "actionrelease")
+                end
+                if not inCombat then
                     local settings = GetEffectiveSettings(barKey)
                     if settings then
                         local st = GetFrameState(btn)
@@ -4754,6 +4874,15 @@ local function ApplyExtraButtonSettings(buttonType)
     if not extraButtonOriginalParents[buttonType] then
         extraButtonOriginalParents[buttonType] = blizzFrame:GetParent()
     end
+    -- Deregister from the managed-container's layout chain BEFORE reparenting,
+    -- otherwise the container still iterates this frame during Layout passes
+    -- (e.g. cinematic start), runs our hooks, and taints the container's
+    -- SetSize call — ADDON_ACTION_BLOCKED on UIParentRightManagedFrameContainer.
+    local currentParent = blizzFrame:GetParent()
+    if currentParent and currentParent.RemoveManagedFrame then
+        pcall(currentParent.RemoveManagedFrame, currentParent, blizzFrame)
+    end
+    blizzFrame.ignoreFramePositionManager = true
     extraBtnState.hookingSetParent = true
     blizzFrame:SetParent(holder)
     extraBtnState.hookingSetParent = false
@@ -6880,10 +7009,69 @@ local function HookSpellBookVisibilityFrame(frame)
     end)
 end
 
+local function EnsureSpellBookVisibilityHooks()
+    HookSpellBookVisibilityFrame(_G.SpellBookFrame)
+
+    local playerSpellsFrame = _G.PlayerSpellsFrame
+    HookSpellBookVisibilityFrame(playerSpellsFrame)
+    if playerSpellsFrame and playerSpellsFrame.SpellBookFrame then
+        HookSpellBookVisibilityFrame(playerSpellsFrame.SpellBookFrame)
+    end
+end
+
+local function ScheduleSpellBookVisibilityRefresh()
+    if not ActionBarsOwned.initialized then return end
+
+    local function Refresh()
+        if not ActionBarsOwned.initialized then return end
+        EnsureSpellBookVisibilityHooks()
+        RefreshBarsForSpellBookVisibility()
+    end
+
+    -- PlayerSpellsFrame and its spellbook tab can be created or shown a tick
+    -- after the toggle function runs, so recheck briefly to catch first-open.
+    Refresh()
+    C_Timer.After(0, Refresh)
+    C_Timer.After(SPELL_UI_FADE_RECHECK_DELAY, Refresh)
+end
+
+local function HookSpellBookToggleFunction(functionName)
+    local fn = _G[functionName]
+    if type(fn) ~= "function" then return end
+
+    local hooked = ActionBarsOwned.spellBookToggleHooks
+    if not hooked then
+        hooked = {}
+        ActionBarsOwned.spellBookToggleHooks = hooked
+    end
+    if hooked[functionName] then return end
+
+    hooked[functionName] = true
+    hooksecurefunc(functionName, ScheduleSpellBookVisibilityRefresh)
+end
+
+local SPELLBOOK_UI_ADDONS = {
+    Blizzard_PlayerSpells = true,
+    Blizzard_SpellBook = true,
+}
+
+local function HandleSpellBookAddonLoaded(addonName)
+    if not SPELLBOOK_UI_ADDONS[addonName] then return end
+
+    C_Timer.After(0, function()
+        if not ActionBarsOwned.initialized then return end
+        ScheduleSpellBookVisibilityRefresh()
+    end)
+end
+
 -- Expose entry points from the mouseover fade do...end block
 ActionBarsOwned.SetupBarMouseover = SetupBarMouseover
 ActionBarsOwned.RefreshBarsForSpellBookVisibility = RefreshBarsForSpellBookVisibility
 ActionBarsOwned.HookSpellBookVisibilityFrame = HookSpellBookVisibilityFrame
+ActionBarsOwned.EnsureSpellBookVisibilityHooks = EnsureSpellBookVisibilityHooks
+ActionBarsOwned.ScheduleSpellBookVisibilityRefresh = ScheduleSpellBookVisibilityRefresh
+ActionBarsOwned.HookSpellBookToggleFunction = HookSpellBookToggleFunction
+ActionBarsOwned.HandleSpellBookAddonLoaded = HandleSpellBookAddonLoaded
 
 end -- do (mouseover fade subsystem)
 
@@ -7443,7 +7631,12 @@ function ActionBarsOwned:Initialize()
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
             ActionBarsOwned._assistedCombatEverActive = true
-            ActionBarsOwned.UpdateAllAssistedCombatRotation()
+            -- Coalesce to the next OnUpdate tick.  Blizzard fires this
+            -- from inside AssistedCombatManager's OnUpdate, and handling
+            -- it synchronously chained into back-to-back 96-button
+            -- sweeps that tripped the script watchdog.
+            abUpdateFrame._dirtyAssistRotation = true
+            abUpdateFrame:Show()
         end, "QUI_ActionBars_AssistedCombat")
 
         -- Assisted combat highlight (marching ants on the next-cast button).
@@ -7463,8 +7656,15 @@ function ActionBarsOwned:Initialize()
         EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
             local ok, nextSpell = pcall(C_AssistedCombat.GetNextCastSpell, true)
             if ok and nextSpell then
-                UpdateAllAssistedHighlights()
-                ScheduleABVisualUpdate()
+                -- Coalesce to the next OnUpdate tick — this event can
+                -- fire multiple times per Blizzard OnUpdate under soft
+                -- targeting, so we must not run the full highlight pass
+                -- inline inside TriggerEvent.  The visual-update queue
+                -- is intentionally NOT poked here: UpdateAllAssistedHighlights
+                -- applies glows directly, and the rotation slot's icon
+                -- refresh is driven by the separate OnSetActionSpell path.
+                abUpdateFrame._dirtyAssistHighlight = true
+                abUpdateFrame:Show()
             end
             -- nil events intentionally ignored — keep last valid highlight
         end, "QUI_ActionBars_AssistedHighlight")
@@ -7522,37 +7722,13 @@ function ActionBarsOwned:Initialize()
         tooltip:ClearLines()
     end)
 
-    -- Hook Spellbook visibility for fade system
-    local function RefreshFadeForSpellBook()
-        if not ActionBarsOwned.initialized then return end
-        for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
-            local state = GetOwnedBarFadeState(barKey)
-            state.isFading = false
-            CancelOwnedBarFadeTimers(state)
-            if ShouldForceShowForSpellBook() then
-                SetOwnedBarAlpha(barKey, 1)
-            else
-                SetupOwnedBarMouseover(barKey)
-            end
-        end
-    end
-
-    local function HookSpellBookFrame(frame)
-        if not frame then return end
-        frame:HookScript("OnShow", function()
-            C_Timer.After(0, RefreshFadeForSpellBook)
-        end)
-        frame:HookScript("OnHide", function()
-            C_Timer.After(0, RefreshFadeForSpellBook)
-        end)
-    end
-
-    HookSpellBookFrame(_G.SpellBookFrame)
-    local psf = _G.PlayerSpellsFrame
-    HookSpellBookFrame(psf)
-    if psf and psf.SpellBookFrame then
-        HookSpellBookFrame(psf.SpellBookFrame)
-    end
+    -- Hook spellbook visibility for the mouseover fade system. The player
+    -- spells UI can be created lazily, so we also hook its toggle functions
+    -- and retry once the panel is actually opening.
+    ActionBarsOwned.EnsureSpellBookVisibilityHooks()
+    ActionBarsOwned.HookSpellBookToggleFunction("ToggleSpellBook")
+    ActionBarsOwned.HookSpellBookToggleFunction("TogglePlayerSpellsFrame")
+    ActionBarsOwned.ScheduleSpellBookVisibilityRefresh()
 
     -- Initialize extra buttons
     inInitSafeWindow = true
@@ -7709,6 +7885,8 @@ initFrame:SetScript("OnEvent", function(self, event, addonName)
                 c = c + 1
             until issecurevariable(overrideBar, "isShownExternal")
         end
+    elseif ActionBarsOwned.HandleSpellBookAddonLoaded then
+        ActionBarsOwned.HandleSpellBookAddonLoaded(addonName)
     end
 end)
 
