@@ -3986,9 +3986,28 @@ abUpdateFrame._lastVis = 0
 abUpdateFrame._dirtyCooldowns = false
 abUpdateFrame._dirtyStates = false
 abUpdateFrame._dirtyVisuals = false
+abUpdateFrame._dirtyAssistRotation = false
+abUpdateFrame._dirtyAssistHighlight = false
 
 abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
+
+    -- Assisted combat flags: cheap, always-process, no time-gate.
+    -- Coalesced here so rapid AssistedCombatManager event bursts (fired
+    -- from inside Blizzard's per-frame OnUpdate) can't chain into
+    -- back-to-back full bar sweeps inside a single TriggerEvent loop.
+    if self._dirtyAssistRotation then
+        self._dirtyAssistRotation = false
+        -- Called via module table (not upvalue) because this file is
+        -- large enough to saturate Lua 5.1's per-closure upvalue cap —
+        -- the bare local isn't reachable from this OnUpdate closure.
+        ActionBarsOwned.UpdateAllAssistedCombatRotation()
+    end
+    if self._dirtyAssistHighlight then
+        self._dirtyAssistHighlight = false
+        UpdateAllAssistedHighlights()
+    end
+
     local doVis = self._dirtyVisuals
     local doState = self._dirtyStates
     local doCd  = self._dirtyCooldowns
@@ -4855,6 +4874,15 @@ local function ApplyExtraButtonSettings(buttonType)
     if not extraButtonOriginalParents[buttonType] then
         extraButtonOriginalParents[buttonType] = blizzFrame:GetParent()
     end
+    -- Deregister from the managed-container's layout chain BEFORE reparenting,
+    -- otherwise the container still iterates this frame during Layout passes
+    -- (e.g. cinematic start), runs our hooks, and taints the container's
+    -- SetSize call — ADDON_ACTION_BLOCKED on UIParentRightManagedFrameContainer.
+    local currentParent = blizzFrame:GetParent()
+    if currentParent and currentParent.RemoveManagedFrame then
+        pcall(currentParent.RemoveManagedFrame, currentParent, blizzFrame)
+    end
+    blizzFrame.ignoreFramePositionManager = true
     extraBtnState.hookingSetParent = true
     blizzFrame:SetParent(holder)
     extraBtnState.hookingSetParent = false
@@ -7544,7 +7572,12 @@ function ActionBarsOwned:Initialize()
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
             ActionBarsOwned._assistedCombatEverActive = true
-            ActionBarsOwned.UpdateAllAssistedCombatRotation()
+            -- Coalesce to the next OnUpdate tick.  Blizzard fires this
+            -- from inside AssistedCombatManager's OnUpdate, and handling
+            -- it synchronously chained into back-to-back 96-button
+            -- sweeps that tripped the script watchdog.
+            abUpdateFrame._dirtyAssistRotation = true
+            abUpdateFrame:Show()
         end, "QUI_ActionBars_AssistedCombat")
 
         -- Assisted combat highlight (marching ants on the next-cast button).
@@ -7564,8 +7597,15 @@ function ActionBarsOwned:Initialize()
         EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
             local ok, nextSpell = pcall(C_AssistedCombat.GetNextCastSpell, true)
             if ok and nextSpell then
-                UpdateAllAssistedHighlights()
-                ScheduleABVisualUpdate()
+                -- Coalesce to the next OnUpdate tick — this event can
+                -- fire multiple times per Blizzard OnUpdate under soft
+                -- targeting, so we must not run the full highlight pass
+                -- inline inside TriggerEvent.  The visual-update queue
+                -- is intentionally NOT poked here: UpdateAllAssistedHighlights
+                -- applies glows directly, and the rotation slot's icon
+                -- refresh is driven by the separate OnSetActionSpell path.
+                abUpdateFrame._dirtyAssistHighlight = true
+                abUpdateFrame:Show()
             end
             -- nil events intentionally ignored — keep last valid highlight
         end, "QUI_ActionBars_AssistedHighlight")
