@@ -2301,6 +2301,27 @@ local function IsSizeStableAnchoringEnabled(settings)
     return settings.sizeStable ~= false
 end
 
+-- Map castbar anchor keys → unit settings path for width fallback
+local CASTBAR_UNIT_KEY_MAP = {
+    playerCastbar = "player",
+    targetCastbar = "target",
+    focusCastbar  = "focus",
+    petCastbar    = "pet",
+    totCastbar    = "targettarget",
+}
+
+-- Look up the configured castbar width from unitframes DB settings
+local function GetCastbarConfiguredWidth(key)
+    local unitKey = CASTBAR_UNIT_KEY_MAP[key]
+    if not unitKey then return nil end
+    local db = QUICore and QUICore.db
+    if not db then return nil end
+    local unitSettings = db.profile and db.profile.unitframes and db.profile.unitframes[unitKey]
+    local castSettings = unitSettings and unitSettings.castbar
+    local w = castSettings and castSettings.width
+    return (type(w) == "number" and w > 0) and w or nil
+end
+
 -- Apply auto-width and auto-height to a frame
 local function ApplyAutoSizing(frame, settings, parentFrame, key)
     if not frame then return end
@@ -2365,6 +2386,14 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
                     DebouncedReapplyOverrides()
                 end)
             end)
+        end
+    elseif settings.autoWidth and CASTBAR_ANCHOR_KEYS[key] then
+        -- autoWidth is enabled but there is no valid anchor parent —
+        -- fall back to the castbar's own configured width so it doesn't
+        -- keep a stale width from a previous anchor target.
+        local fallbackWidth = GetCastbarConfiguredWidth(key)
+        if fallbackWidth then
+            pcall(function() frame:SetWidth(fallbackWidth) end)
         end
     end
 
