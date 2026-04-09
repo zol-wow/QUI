@@ -9,6 +9,7 @@ local UIKit = ns.UIKit
 -- Local references for shared infrastructure
 local CreateScrollableContent = Shared.CreateScrollableContent
 local CreateWrappedLabel = Shared.CreateWrappedLabel
+local CreateInlineCollapsible = Shared.CreateInlineCollapsible
 
 local GetCore = ns.Helpers.GetCore
 
@@ -278,36 +279,47 @@ local function BuildImportExportTab(tabContent)
     end
     exportState.preview = exportPreview
 
+    -- Forward-declare; defined after postExportContainer is created
+    local exportRelayout
+    local exportCollapsibleAnchorY = y
+    local exportCollapsibleSection
+
     if exportPreview and type(exportPreview.categories) == "table" then
-        local selectiveExportHeader = GUI:CreateSectionHeader(tabContent, "Selective Export")
-        selectiveExportHeader:SetPoint("TOPLEFT", PAD, y)
-        y = y - selectiveExportHeader.gap
+        local exportCollapsibleBody
+        exportCollapsibleSection, exportCollapsibleBody = CreateInlineCollapsible(
+            tabContent, "Selective Export", 400, function() if exportRelayout then exportRelayout() end end
+        )
+        exportCollapsibleSection:SetPoint("TOPLEFT", PAD, y)
+        exportCollapsibleSection:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+
+        local body = exportCollapsibleBody
+        local localY = -6
 
         local selectiveExportText = CreateWrappedLabel(
-            tabContent,
+            body,
             "Parent checkboxes export a whole section. Indented child rows let you export specific subtabs only. Recommended keeps Theme / Fonts / Colors and Layout / Positions unchecked.",
             11,
             C.textMuted
         )
-        selectiveExportText:SetPoint("TOPLEFT", PAD, y)
-        selectiveExportText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - (selectiveExportText:GetStringHeight() or 18) - 12
+        selectiveExportText:SetPoint("TOPLEFT", 0, localY)
+        selectiveExportText:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+        localY = localY - (selectiveExportText:GetStringHeight() or 18) - 12
 
-        local selectAllExportBtn = GUI:CreateButton(tabContent, "SELECT ALL", 110, 24, function()
+        local selectAllExportBtn = GUI:CreateButton(body, "SELECT ALL", 110, 24, function()
             ApplyExportSelectionPreset("all")
         end)
-        selectAllExportBtn:SetPoint("TOPLEFT", PAD, y)
+        selectAllExportBtn:SetPoint("TOPLEFT", 0, localY)
 
-        local recommendedExportBtn = GUI:CreateButton(tabContent, "RECOMMENDED", 130, 24, function()
+        local recommendedExportBtn = GUI:CreateButton(body, "RECOMMENDED", 130, 24, function()
             ApplyExportSelectionPreset("recommended")
         end)
         recommendedExportBtn:SetPoint("LEFT", selectAllExportBtn, "RIGHT", 10, 0)
 
-        local clearExportBtn = GUI:CreateButton(tabContent, "CLEAR", 90, 24, function()
+        local clearExportBtn = GUI:CreateButton(body, "CLEAR", 90, 24, function()
             ApplyExportSelectionPreset("clear")
         end)
         clearExportBtn:SetPoint("LEFT", recommendedExportBtn, "RIGHT", 10, 0)
-        y = y - 36
+        localY = localY - 36
 
         local availableCount = 0
 
@@ -321,7 +333,7 @@ local function BuildImportExportTab(tabContent)
             end
 
             local checkbox = GUI:CreateFormCheckboxOriginal(
-                tabContent,
+                body,
                 category.label,
                 category.id,
                 exportState.selected,
@@ -338,8 +350,8 @@ local function BuildImportExportTab(tabContent)
                     UpdateExportActionButtons()
                 end
             )
-            checkbox:SetPoint("TOPLEFT", PAD + indent, y)
-            checkbox:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            checkbox:SetPoint("TOPLEFT", indent, localY)
+            checkbox:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             exportState.checkboxByID[category.id] = checkbox
 
             local descColor = category.available and C.textMuted or C.warning
@@ -348,13 +360,13 @@ local function BuildImportExportTab(tabContent)
                 descText = descText ~= "" and (descText .. " Not present in the current profile.") or "Not present in the current profile."
             end
 
-            local desc = CreateWrappedLabel(tabContent, descText, 10, descColor)
-            desc:SetPoint("TOPLEFT", PAD + 208 + indent, y - 4)
-            desc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            local desc = CreateWrappedLabel(body, descText, 10, descColor)
+            desc:SetPoint("TOPLEFT", 208 + indent, localY - 4)
+            desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
 
             local descHeight = desc:GetStringHeight() or 14
             local rowHeight = math.max(28, descHeight + 8)
-            y = y - rowHeight - 4
+            localY = localY - rowHeight - 4
 
             if type(category.children) == "table" then
                 for _, child in ipairs(category.children) do
@@ -369,45 +381,62 @@ local function BuildImportExportTab(tabContent)
 
         if availableCount == 0 then
             local noCategories = CreateWrappedLabel(
-                tabContent,
+                body,
                 "No selective export categories are currently available in this profile.",
                 11,
                 C.textMuted
             )
-            noCategories:SetPoint("TOPLEFT", PAD, y)
-            noCategories:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-            y = y - (noCategories:GetStringHeight() or 18) - 12
+            noCategories:SetPoint("TOPLEFT", 0, localY)
+            noCategories:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            localY = localY - (noCategories:GetStringHeight() or 18) - 12
         end
 
         local selectiveExportActionNote = CreateWrappedLabel(
-            tabContent,
+            body,
             "Export Selected writes a partial QUI1 profile string containing only the checked categories. Full Profile regenerates the complete current profile string.",
             10,
             C.textMuted
         )
-        selectiveExportActionNote:SetPoint("TOPLEFT", PAD, y)
-        selectiveExportActionNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - (selectiveExportActionNote:GetStringHeight() or 18) - 14
+        selectiveExportActionNote:SetPoint("TOPLEFT", 0, localY)
+        selectiveExportActionNote:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+        localY = localY - (selectiveExportActionNote:GetStringHeight() or 18) - 14
 
-        exportState.exportSelectedBtn = GUI:CreateButton(tabContent, "EXPORT SELECTED", 170, 28, function()
+        exportState.exportSelectedBtn = GUI:CreateButton(body, "EXPORT SELECTED", 170, 28, function()
             RefreshSelectiveExportString(true)
         end)
-        exportState.exportSelectedBtn:SetPoint("TOPLEFT", PAD, y)
+        exportState.exportSelectedBtn:SetPoint("TOPLEFT", 0, localY)
 
-        local fullExportBtn = GUI:CreateButton(tabContent, "FULL PROFILE", 140, 28, function()
+        local fullExportBtn = GUI:CreateButton(body, "FULL PROFILE", 140, 28, function()
             RefreshExportString(true)
         end)
         fullExportBtn:SetPoint("LEFT", exportState.exportSelectedBtn, "RIGHT", 10, 0)
 
-        y = y - 42
+        localY = localY - 42
 
+        body:SetHeight(math.abs(localY) + 8)
+        body._contentHeight = math.abs(localY) + 8
+        exportCollapsibleSection.RefreshContentHeight()
         ApplyExportSelectionPreset("all")
+
+        y = y - exportCollapsibleSection:GetHeight() - 8
     end
 
+    ---------------------------------------------------------------------------
+    -- Post-export container: holds everything below the collapsible so it
+    -- shifts automatically when the selective export section expands/collapses.
+    ---------------------------------------------------------------------------
+    local postExportContainer = CreateFrame("Frame", nil, tabContent)
+    postExportContainer:SetPoint("TOPLEFT", tabContent, "TOPLEFT", 0, y)
+    postExportContainer:SetPoint("RIGHT", tabContent, "RIGHT", 0, 0)
+    postExportContainer:SetHeight(1)
+
+    -- Reset y for container-local positioning
+    y = 0
+
     -- Export text box
-    local exportContainer = CreateScrollableTextBox(tabContent, 100, "")
+    local exportContainer = CreateScrollableTextBox(postExportContainer, 100, "")
     exportContainer:SetPoint("TOPLEFT", PAD, y)
-    exportContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    exportContainer:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
     exportEditBox = exportContainer.editBox
     exportEditBox:SetTextColor(0.8, 0.85, 0.9, 1)
     exportEditBox:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
@@ -415,25 +444,25 @@ local function BuildImportExportTab(tabContent)
 
     y = y - 115
 
-    local copyHint = GUI:CreateLabel(tabContent, "press Ctrl+C to copy the generated export string", 11, C.textMuted)
+    local copyHint = GUI:CreateLabel(postExportContainer, "press Ctrl+C to copy the generated export string", 11, C.textMuted)
     copyHint:SetPoint("TOPLEFT", PAD, y)
 
     y = y - 28
 
     -- Import Section Header
-    local importHeader = GUI:CreateSectionHeader(tabContent, "Import Profile String")
+    local importHeader = GUI:CreateSectionHeader(postExportContainer, "Import Profile String")
     importHeader:SetPoint("TOPLEFT", PAD, y)
 
     -- Paste hint next to header
-    local pasteHint = GUI:CreateLabel(tabContent, "press Ctrl+V to paste", 11, C.textMuted)
+    local pasteHint = GUI:CreateLabel(postExportContainer, "press Ctrl+V to paste", 11, C.textMuted)
     pasteHint:SetPoint("LEFT", importHeader, "RIGHT", 12, 0)
 
     y = y - importHeader.gap
 
     -- Import text box (user pastes string here)
-    local importContainer = CreateScrollableTextBox(tabContent, 100, "")
+    local importContainer = CreateScrollableTextBox(postExportContainer, 100, "")
     importContainer:SetPoint("TOPLEFT", PAD, y)
-    importContainer:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    importContainer:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
     importContainer:EnableMouse(true)
     local importEditBox = importContainer.editBox
     importEditBox:SetTextColor(0.8, 0.85, 0.9, 1)
@@ -443,7 +472,7 @@ local function BuildImportExportTab(tabContent)
 
     y = y - 110
 
-    local targetProfileInput = GUI:CreateFormEditBox(tabContent, "Save As Profile", nil, nil, nil, {
+    local targetProfileInput = GUI:CreateFormEditBox(postExportContainer, "Save As Profile", nil, nil, nil, {
         width = 240,
         commitOnEnter = false,
         commitOnFocusLost = false,
@@ -451,16 +480,16 @@ local function BuildImportExportTab(tabContent)
         onEscapePressed = function(self) self:ClearFocus() end,
     })
     targetProfileInput:SetPoint("TOPLEFT", PAD, y)
-    targetProfileInput:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    targetProfileInput:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
 
     local targetProfileHint = CreateWrappedLabel(
-        tabContent,
+        postExportContainer,
         "Optional. Leave this empty to overwrite your current active profile. Enter a name to import into that profile instead.",
         10,
         C.textMuted
     )
     targetProfileHint:SetPoint("TOPLEFT", PAD, y - 30)
-    targetProfileHint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    targetProfileHint:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
     y = y - (targetProfileHint:GetStringHeight() or 28) - 42
 
     local function GetTargetProfileName()
@@ -471,13 +500,13 @@ local function BuildImportExportTab(tabContent)
     end
 
     local analysisNote = CreateWrappedLabel(
-        tabContent,
+        postExportContainer,
         "Paste a QUI profile string, analyze it, then choose which categories to import. Unselected categories stay as they are in the target profile.",
         10,
         C.textMuted
     )
     analysisNote:SetPoint("TOPLEFT", PAD, y)
-    analysisNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    analysisNote:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
     y = y - (analysisNote:GetStringHeight() or 28) - 12
 
     local analysisState = {
@@ -488,11 +517,14 @@ local function BuildImportExportTab(tabContent)
         activePayload = nil,
     }
 
-    local previewHost = CreateFrame("Frame", nil, tabContent)
+    local previewHost = CreateFrame("Frame", nil, postExportContainer)
     local previewTopY = y - 40
     previewHost:SetPoint("TOPLEFT", PAD, previewTopY)
-    previewHost:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    previewHost:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
     previewHost:SetHeight(10)
+
+    -- Track the final y inside postExportContainer for height calculations
+    local postExportFinalY = previewTopY
 
     local function ShowReloadPrompt(message)
         GUI:ShowConfirmation({
@@ -599,10 +631,36 @@ local function BuildImportExportTab(tabContent)
     end
 
     local function UpdateContentHeight()
-        tabContent:SetHeight(math.abs(previewTopY) + previewHost:GetHeight() + 20)
+        local containerInternalHeight = math.abs(postExportFinalY) + previewHost:GetHeight() + 20
+        postExportContainer:SetHeight(containerInternalHeight)
+
+        local containerOffset
+        if exportCollapsibleSection then
+            containerOffset = math.abs(exportCollapsibleAnchorY) + exportCollapsibleSection:GetHeight() + 8
+        else
+            containerOffset = math.abs(exportCollapsibleAnchorY)
+        end
+        tabContent:SetHeight(containerOffset + containerInternalHeight + 20)
+    end
+
+    exportRelayout = function()
+        local newY = exportCollapsibleAnchorY
+        if exportCollapsibleSection then
+            newY = exportCollapsibleAnchorY - exportCollapsibleSection:GetHeight() - 8
+        end
+        postExportContainer:ClearAllPoints()
+        postExportContainer:SetPoint("TOPLEFT", tabContent, "TOPLEFT", 0, newY)
+        postExportContainer:SetPoint("RIGHT", tabContent, "RIGHT", 0, 0)
+        UpdateContentHeight()
     end
 
     local function RenderPreview(title, message, preview, isError, validationDetail)
+        -- Cancel any in-flight import collapsible animation before destroying content
+        if previewHost._importCollapsible and UIKit and UIKit.CancelValueAnimation then
+            UIKit.CancelValueAnimation(previewHost._importCollapsible, "inlineCollapsible")
+        end
+        previewHost._importCollapsible = nil
+
         if previewHost.content then
             previewHost.content:Hide()
             previewHost.content:SetParent(nil)
@@ -697,149 +755,7 @@ local function BuildImportExportTab(tabContent)
         end
 
         if preview and type(preview.categories) == "table" then
-            local summaryHeader = GUI:CreateSectionHeader(content, "Selective Import")
-            summaryHeader:SetPoint("TOPLEFT", 0, localY)
-            localY = localY - summaryHeader.gap
-
-            local summaryText = CreateWrappedLabel(
-                content,
-                "Type: " .. tostring(preview.importType or "QUI Profile") .. ". Parent checkboxes import a whole section. Indented child rows let you import specific subtabs only. Recommended keeps Theme / Fonts / Colors and Layout / Positions unchecked.",
-                11,
-                C.textMuted
-            )
-            summaryText:SetPoint("TOPLEFT", 0, localY)
-            summaryText:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-            localY = localY - (summaryText:GetStringHeight() or 18) - 12
-
-            local selectAllBtn = GUI:CreateButton(content, "SELECT ALL", 110, 24, function()
-                ApplySelectionPreset("all")
-            end)
-            selectAllBtn:SetPoint("TOPLEFT", 0, localY)
-
-            local recommendedBtn = GUI:CreateButton(content, "RECOMMENDED", 130, 24, function()
-                ApplySelectionPreset("recommended")
-            end)
-            recommendedBtn:SetPoint("LEFT", selectAllBtn, "RIGHT", 10, 0)
-
-            local clearBtn = GUI:CreateButton(content, "CLEAR", 90, 24, function()
-                ApplySelectionPreset("clear")
-            end)
-            clearBtn:SetPoint("LEFT", recommendedBtn, "RIGHT", 10, 0)
-            localY = localY - 36
-
-            local availableCount = 0
-
-            local function RenderCategoryRow(category, indent, parentCategory)
-                if not category.available and parentCategory == nil then
-                    return
-                end
-
-                if category.available then
-                    availableCount = availableCount + 1
-                end
-
-                local checkbox = GUI:CreateFormCheckboxOriginal(
-                    content,
-                    category.label,
-                    category.id,
-                    analysisState.selected,
-                    function(value)
-                        if value and parentCategory and analysisState.selected[parentCategory.id] then
-                            analysisState.selected[parentCategory.id] = false
-                            local parentCheckbox = analysisState.checkboxByID[parentCategory.id]
-                            if parentCheckbox and parentCheckbox.SetValue then
-                                parentCheckbox:SetValue(false, true)
-                            end
-                        end
-
-                        UpdateCategoryCheckboxStates()
-                        UpdateActionButtons()
-                    end
-                )
-                checkbox:SetPoint("TOPLEFT", indent, localY)
-                checkbox:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-                analysisState.checkboxByID[category.id] = checkbox
-
-                local descColor = category.available and C.textMuted or C.warning
-                local descText = category.description or ""
-                if not category.available then
-                    descText = descText ~= "" and (descText .. " Not present in this import string.") or "Not present in this import string."
-                end
-
-                local desc = CreateWrappedLabel(content, descText, 10, descColor)
-                desc:SetPoint("TOPLEFT", 208 + indent, localY - 4)
-                desc:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-
-                local descHeight = desc:GetStringHeight() or 14
-                local rowHeight = math.max(28, descHeight + 8)
-                localY = localY - rowHeight - 4
-
-                if type(category.children) == "table" then
-                    for _, child in ipairs(category.children) do
-                        RenderCategoryRow(child, indent + 18, category)
-                    end
-                end
-            end
-
-            for _, category in ipairs(preview.categories) do
-                RenderCategoryRow(category, 0, nil)
-            end
-
-            if availableCount == 0 then
-                local noCategories = CreateWrappedLabel(
-                    content,
-                    "No selective categories were detected in this string. Try importing everything or use a different QUI profile string.",
-                    11,
-                    C.textMuted
-                )
-                noCategories:SetPoint("TOPLEFT", 0, localY)
-                noCategories:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-                localY = localY - (noCategories:GetStringHeight() or 18) - 12
-            end
-
-            local actionNote = CreateWrappedLabel(
-                content,
-                "Import Selected keeps all unchecked categories from the target profile. If a parent section is checked, its child rows are ignored. If Save As Profile is empty, the target is your current profile. Import Everything replaces the whole target profile.",
-                10,
-                C.textMuted
-            )
-            actionNote:SetPoint("TOPLEFT", 0, localY)
-            actionNote:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-            localY = localY - (actionNote:GetStringHeight() or 18) - 14
-
-            analysisState.importSelectedBtn = GUI:CreateButton(content, "IMPORT SELECTED", 170, 28, function()
-                local selectedIDs = GetSelectedCategoryIDs()
-                if #selectedIDs == 0 then
-                    return
-                end
-
-                local core = GetCore()
-                if not core or not core.ImportProfileSelectionFromString then
-                    print("|cffff0000QUI: QUICore not available for selective import.|r")
-                    return
-                end
-
-                local ok, err
-                if analysisState.activePayload then
-                    ok, err = core:ImportProfileSelectionFromValidatedPayload(
-                        analysisState.activePayload,
-                        selectedIDs,
-                        GetTargetProfileName()
-                    )
-                else
-                    ok, err = core:ImportProfileSelectionFromString(
-                        importEditBox:GetText(),
-                        selectedIDs,
-                        GetTargetProfileName()
-                    )
-                end
-                PrintImportResult(ok, err)
-                if ok then
-                    ShowReloadPrompt("Selected profile settings imported. Reload UI to fully apply the changes?")
-                end
-            end)
-            analysisState.importSelectedBtn:SetPoint("TOPLEFT", 0, localY)
-
+            -- "Import Everything" button above the collapsible for quick access
             analysisState.importEverythingBtn = GUI:CreateButton(content, "IMPORT EVERYTHING", 180, 28, function()
                 local targetProfileName = GetTargetProfileName()
                 GUI:ShowConfirmation({
@@ -876,11 +792,179 @@ local function BuildImportExportTab(tabContent)
                     end,
                 })
             end)
-            analysisState.importEverythingBtn:SetPoint("LEFT", analysisState.importSelectedBtn, "RIGHT", 10, 0)
-            localY = localY - 40
+            analysisState.importEverythingBtn:SetPoint("TOPLEFT", 0, localY)
+            localY = localY - 36
+
+            local orLabel = GUI:CreateLabel(content, "or", 11, C.textMuted)
+            orLabel:SetPoint("TOPLEFT", 0, localY)
+            localY = localY - 20
+
+            local importSectionStartY = localY
+            local importCollapsibleSection, importCollapsibleBody = CreateInlineCollapsible(
+                content, "Selective Import", 500, function()
+                    -- Recalculate previewHost height when import collapsible animates.
+                    -- Must match the static calculation at the end of RenderPreview:
+                    --   localY = importSectionStartY - section:GetHeight() - 8
+                    --   previewHost:SetHeight(math.abs(localY) + 8)
+                    local totalHeight = math.abs(importSectionStartY) + importCollapsibleSection:GetHeight() + 16
+                    previewHost:SetHeight(totalHeight)
+                    UpdateContentHeight()
+                end
+            )
+            importCollapsibleSection:SetPoint("TOPLEFT", 0, localY)
+            importCollapsibleSection:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+            previewHost._importCollapsible = importCollapsibleSection
+
+            local importBody = importCollapsibleBody
+            local innerY = -6
+
+            local summaryText = CreateWrappedLabel(
+                importBody,
+                "Type: " .. tostring(preview.importType or "QUI Profile") .. ". Parent checkboxes import a whole section. Indented child rows let you import specific subtabs only. Recommended keeps Theme / Fonts / Colors and Layout / Positions unchecked.",
+                11,
+                C.textMuted
+            )
+            summaryText:SetPoint("TOPLEFT", 0, innerY)
+            summaryText:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
+            innerY = innerY - (summaryText:GetStringHeight() or 18) - 12
+
+            local selectAllBtn = GUI:CreateButton(importBody, "SELECT ALL", 110, 24, function()
+                ApplySelectionPreset("all")
+            end)
+            selectAllBtn:SetPoint("TOPLEFT", 0, innerY)
+
+            local recommendedBtn = GUI:CreateButton(importBody, "RECOMMENDED", 130, 24, function()
+                ApplySelectionPreset("recommended")
+            end)
+            recommendedBtn:SetPoint("LEFT", selectAllBtn, "RIGHT", 10, 0)
+
+            local clearBtn = GUI:CreateButton(importBody, "CLEAR", 90, 24, function()
+                ApplySelectionPreset("clear")
+            end)
+            clearBtn:SetPoint("LEFT", recommendedBtn, "RIGHT", 10, 0)
+            innerY = innerY - 36
+
+            local availableCount = 0
+
+            local function RenderCategoryRow(category, indent, parentCategory)
+                if not category.available and parentCategory == nil then
+                    return
+                end
+
+                if category.available then
+                    availableCount = availableCount + 1
+                end
+
+                local checkbox = GUI:CreateFormCheckboxOriginal(
+                    importBody,
+                    category.label,
+                    category.id,
+                    analysisState.selected,
+                    function(value)
+                        if value and parentCategory and analysisState.selected[parentCategory.id] then
+                            analysisState.selected[parentCategory.id] = false
+                            local parentCheckbox = analysisState.checkboxByID[parentCategory.id]
+                            if parentCheckbox and parentCheckbox.SetValue then
+                                parentCheckbox:SetValue(false, true)
+                            end
+                        end
+
+                        UpdateCategoryCheckboxStates()
+                        UpdateActionButtons()
+                    end
+                )
+                checkbox:SetPoint("TOPLEFT", indent, innerY)
+                checkbox:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
+                analysisState.checkboxByID[category.id] = checkbox
+
+                local descColor = category.available and C.textMuted or C.warning
+                local descText = category.description or ""
+                if not category.available then
+                    descText = descText ~= "" and (descText .. " Not present in this import string.") or "Not present in this import string."
+                end
+
+                local desc = CreateWrappedLabel(importBody, descText, 10, descColor)
+                desc:SetPoint("TOPLEFT", 208 + indent, innerY - 4)
+                desc:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
+
+                local descHeight = desc:GetStringHeight() or 14
+                local rowHeight = math.max(28, descHeight + 8)
+                innerY = innerY - rowHeight - 4
+
+                if type(category.children) == "table" then
+                    for _, child in ipairs(category.children) do
+                        RenderCategoryRow(child, indent + 18, category)
+                    end
+                end
+            end
+
+            for _, category in ipairs(preview.categories) do
+                RenderCategoryRow(category, 0, nil)
+            end
+
+            if availableCount == 0 then
+                local noCategories = CreateWrappedLabel(
+                    importBody,
+                    "No selective categories were detected in this string. Try importing everything or use a different QUI profile string.",
+                    11,
+                    C.textMuted
+                )
+                noCategories:SetPoint("TOPLEFT", 0, innerY)
+                noCategories:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
+                innerY = innerY - (noCategories:GetStringHeight() or 18) - 12
+            end
+
+            local actionNote = CreateWrappedLabel(
+                importBody,
+                "Import Selected keeps all unchecked categories from the target profile. If a parent section is checked, its child rows are ignored. If Save As Profile is empty, the target is your current profile. Import Everything replaces the whole target profile.",
+                10,
+                C.textMuted
+            )
+            actionNote:SetPoint("TOPLEFT", 0, innerY)
+            actionNote:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
+            innerY = innerY - (actionNote:GetStringHeight() or 18) - 14
+
+            analysisState.importSelectedBtn = GUI:CreateButton(importBody, "IMPORT SELECTED", 170, 28, function()
+                local selectedIDs = GetSelectedCategoryIDs()
+                if #selectedIDs == 0 then
+                    return
+                end
+
+                local core = GetCore()
+                if not core or not core.ImportProfileSelectionFromString then
+                    print("|cffff0000QUI: QUICore not available for selective import.|r")
+                    return
+                end
+
+                local ok, err
+                if analysisState.activePayload then
+                    ok, err = core:ImportProfileSelectionFromValidatedPayload(
+                        analysisState.activePayload,
+                        selectedIDs,
+                        GetTargetProfileName()
+                    )
+                else
+                    ok, err = core:ImportProfileSelectionFromString(
+                        importEditBox:GetText(),
+                        selectedIDs,
+                        GetTargetProfileName()
+                    )
+                end
+                PrintImportResult(ok, err)
+                if ok then
+                    ShowReloadPrompt("Selected profile settings imported. Reload UI to fully apply the changes?")
+                end
+            end)
+            analysisState.importSelectedBtn:SetPoint("TOPLEFT", 0, innerY)
+            innerY = innerY - 40
+
+            importBody:SetHeight(math.abs(innerY) + 8)
+            importCollapsibleSection:RefreshContentHeight()
 
             UpdateCategoryCheckboxStates()
             UpdateActionButtons()
+
+            localY = importSectionStartY - importCollapsibleSection:GetHeight() - 8
         end
 
         previewHost:SetHeight(math.abs(localY) + 8)
@@ -900,7 +984,7 @@ local function BuildImportExportTab(tabContent)
         )
     end
 
-    local analyzeBtn = GUI:CreateButton(tabContent, "ANALYZE IMPORT", 160, 28, function()
+    local analyzeBtn = GUI:CreateButton(postExportContainer, "ANALYZE IMPORT", 160, 28, function()
         local core = GetCore()
         if not core or not core.AnalyzeProfileImportString then
             ClearAnalysis("QUICore is not available for import analysis.", true)
@@ -946,7 +1030,7 @@ local function BuildImportExportTab(tabContent)
     end)
     analyzeBtn:SetPoint("TOPLEFT", PAD, y)
 
-    local analyzeHint = GUI:CreateLabel(tabContent, "Analyze first, then import selected parts or the whole profile.", 11, C.textMuted)
+    local analyzeHint = GUI:CreateLabel(postExportContainer, "Analyze first, then import selected parts or the whole profile.", 11, C.textMuted)
     analyzeHint:SetPoint("LEFT", analyzeBtn, "RIGHT", 12, 0)
 
     importEditBox:SetScript("OnTextChanged", function(_, userInput)

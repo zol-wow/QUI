@@ -911,6 +911,206 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
     return sections, relayout, CreateCollapsible
 end
 
+---------------------------------------------------------------------------
+-- INLINE COLLAPSIBLE HELPER
+-- A lightweight, self-contained collapsible section that can be embedded
+-- anywhere in a manually-positioned layout.  Stripped-down version of the
+-- CreateCollapsible inner function without page-level features (sections
+-- array, DB persistence, search registration, deferred re-measure).
+--
+-- Returns: section (outer frame), body (inner frame to build content into)
+---------------------------------------------------------------------------
+local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
+    local section = CreateFrame("Frame", nil, parent)
+    section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+
+    -- Header button (clickable bar) -------------------------------------------
+    local btn = CreateFrame("Button", nil, section)
+    btn:SetPoint("TOPLEFT", 0, 0)
+    btn:SetPoint("TOPRIGHT", 0, 0)
+    btn:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+
+    local ar, ag, ab = GetCollapsibleAccent()
+    local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
+        point = "LEFT",
+        relativeTo = btn,
+        relativePoint = "LEFT",
+        xPixels = 2,
+        yPixels = 0,
+        sizePixels = 10,
+        lineWidthPixels = 6,
+        lineHeightPixels = 1,
+        expanded = false,
+        collapsedDirection = "right",
+        r = ar, g = ag, b = ab, a = 1,
+    }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if not (UIKit and UIKit.CreateChevronCaret) then
+        chevron:SetPoint("LEFT", 2, 0)
+        chevron:SetTextColor(ar, ag, ab, 1)
+        chevron:SetText(">")
+    end
+
+    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+    label:SetTextColor(ar, ag, ab, 1)
+    label:SetText(title)
+
+    local underline = btn:CreateTexture(nil, "ARTWORK")
+    underline:SetHeight(1)
+    underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+    underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+    underline:SetColorTexture(ar, ag, ab, 0.3)
+
+    -- Body clip (ScrollFrame that masks the content) --------------------------
+    local bodyClip = CreateFrame("ScrollFrame", nil, section)
+    bodyClip:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
+    bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
+    bodyClip:SetHeight(0)
+    bodyClip:Hide()
+
+    local body = CreateFrame("Frame", nil, bodyClip)
+    body:SetHeight(contentHeight)
+    body:SetWidth(1)
+    bodyClip:SetScrollChild(body)
+    bodyClip:SetScript("OnSizeChanged", function(self, width)
+        body:SetWidth(math.max(width or 1, 1))
+    end)
+    body:SetAlpha(0)
+
+    section._expanded = false
+    section._contentHeight = contentHeight
+    section._body = body
+    section._bodyClip = bodyClip
+
+    -- Height measurement ------------------------------------------------------
+    local function MeasureBodyContentHeight()
+        local bodyTop = body.GetTop and body:GetTop()
+        if not bodyTop then return nil end
+
+        local maxOffset = 0
+        local function Accumulate(region)
+            if not region or not region.GetBottom then return end
+            if region.IsShown and not region:IsShown() then return end
+            local bottom = region:GetBottom()
+            if bottom then
+                maxOffset = math.max(maxOffset, bodyTop - bottom)
+            end
+        end
+
+        for i = 1, (body.GetNumChildren and body:GetNumChildren() or 0) do
+            Accumulate(select(i, body:GetChildren()))
+        end
+        for i = 1, (body.GetNumRegions and body:GetNumRegions() or 0) do
+            Accumulate(select(i, body:GetRegions()))
+        end
+
+        if maxOffset <= 0 then return nil end
+        return math.ceil(maxOffset + 8)
+    end
+
+    local function RefreshContentHeight()
+        -- Unlike the page-level CreateCollapsible, the inline variant allows
+        -- the content height to shrink.  This is needed because the import
+        -- collapsible is rebuilt dynamically via RenderPreview and may have
+        -- fewer rows on subsequent analyses.
+        if type(body._contentHeight) == "number" and body._contentHeight > 0 then
+            section._contentHeight = body._contentHeight
+            body._contentHeight = nil
+        end
+        if type(bodyClip._contentHeight) == "number" and bodyClip._contentHeight > 0 then
+            section._contentHeight = bodyClip._contentHeight
+            bodyClip._contentHeight = nil
+        end
+
+        local measured = MeasureBodyContentHeight()
+        if measured and measured > 0 then
+            section._contentHeight = measured
+        end
+
+        body:SetHeight(section._contentHeight or contentHeight)
+    end
+    section.RefreshContentHeight = RefreshContentHeight
+
+    -- Apply height to clip + outer frame --------------------------------------
+    local function ApplyExpandedState(currentHeight)
+        local h = math.max(0, math.min(section._contentHeight, currentHeight or 0))
+        bodyClip:SetHeight(h)
+        section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + h)
+    end
+
+    -- Expand / collapse -------------------------------------------------------
+    section.SetExpanded = function(self, expanded)
+        section._expanded = expanded and true or false
+
+        if UIKit and UIKit.SetChevronCaretExpanded then
+            UIKit.SetChevronCaretExpanded(chevron, section._expanded)
+        else
+            chevron:SetText(section._expanded and "v" or ">")
+        end
+
+        RefreshContentHeight()
+        local targetHeight = section._expanded and section._contentHeight or 0
+
+        if section._expanded then
+            bodyClip:Show()
+        end
+
+        if not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
+            ApplyExpandedState(targetHeight)
+            body:SetAlpha(section._expanded and 1 or 0)
+            if not section._expanded then bodyClip:Hide() end
+            if onResize then onResize() end
+            return
+        end
+
+        UIKit.CancelValueAnimation(section, "inlineCollapsible")
+        local currentHeight = bodyClip:GetHeight() or 0
+        UIKit.AnimateValue(section, "inlineCollapsible", {
+            fromValue = currentHeight,
+            toValue = targetHeight,
+            duration = (GUI and GUI._sidebarAnimDuration) or 0.16,
+            onUpdate = function(_, progressHeight)
+                local totalRange = math.max(section._contentHeight, 1)
+                local ratio = math.max(0, math.min(1, progressHeight / totalRange))
+                ApplyExpandedState(progressHeight)
+                body:SetAlpha(ratio)
+                if onResize then onResize() end
+            end,
+            onFinish = function(_, finalHeight)
+                ApplyExpandedState(finalHeight)
+                body:SetAlpha(section._expanded and 1 or 0)
+                if not section._expanded then bodyClip:Hide() end
+                if onResize then onResize() end
+            end,
+        })
+    end
+
+    -- Click / hover -----------------------------------------------------------
+    btn:SetScript("OnClick", function()
+        section:SetExpanded(not section._expanded)
+    end)
+
+    btn:SetScript("OnEnter", function()
+        label:SetTextColor(1, 1, 1, 1)
+        if UIKit and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
+        else
+            chevron:SetTextColor(1, 1, 1, 1)
+        end
+    end)
+    btn:SetScript("OnLeave", function()
+        local lr, lg, lb = GetCollapsibleAccent()
+        label:SetTextColor(lr, lg, lb, 1)
+        if UIKit and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretColor(chevron, lr, lg, lb, 1)
+        else
+            chevron:SetTextColor(lr, lg, lb, 1)
+        end
+    end)
+
+    return section, body
+end
+
 ns.QUI_Options = {
     -- Constants
     PADDING = PADDING,
@@ -921,6 +1121,7 @@ ns.QUI_Options = {
     GetDB = GetDB,
     CreateScrollableContent = CreateScrollableContent,
     CreateCollapsiblePage = CreateCollapsiblePage,
+    CreateInlineCollapsible = CreateInlineCollapsible,
     GetTextureList = GetTextureList,
     GetFontList = GetFontList,
     GetSoundList = GetSoundList,
