@@ -7009,10 +7009,69 @@ local function HookSpellBookVisibilityFrame(frame)
     end)
 end
 
+local function EnsureSpellBookVisibilityHooks()
+    HookSpellBookVisibilityFrame(_G.SpellBookFrame)
+
+    local playerSpellsFrame = _G.PlayerSpellsFrame
+    HookSpellBookVisibilityFrame(playerSpellsFrame)
+    if playerSpellsFrame and playerSpellsFrame.SpellBookFrame then
+        HookSpellBookVisibilityFrame(playerSpellsFrame.SpellBookFrame)
+    end
+end
+
+local function ScheduleSpellBookVisibilityRefresh()
+    if not ActionBarsOwned.initialized then return end
+
+    local function Refresh()
+        if not ActionBarsOwned.initialized then return end
+        EnsureSpellBookVisibilityHooks()
+        RefreshBarsForSpellBookVisibility()
+    end
+
+    -- PlayerSpellsFrame and its spellbook tab can be created or shown a tick
+    -- after the toggle function runs, so recheck briefly to catch first-open.
+    Refresh()
+    C_Timer.After(0, Refresh)
+    C_Timer.After(SPELL_UI_FADE_RECHECK_DELAY, Refresh)
+end
+
+local function HookSpellBookToggleFunction(functionName)
+    local fn = _G[functionName]
+    if type(fn) ~= "function" then return end
+
+    local hooked = ActionBarsOwned.spellBookToggleHooks
+    if not hooked then
+        hooked = {}
+        ActionBarsOwned.spellBookToggleHooks = hooked
+    end
+    if hooked[functionName] then return end
+
+    hooked[functionName] = true
+    hooksecurefunc(functionName, ScheduleSpellBookVisibilityRefresh)
+end
+
+local SPELLBOOK_UI_ADDONS = {
+    Blizzard_PlayerSpells = true,
+    Blizzard_SpellBook = true,
+}
+
+local function HandleSpellBookAddonLoaded(addonName)
+    if not SPELLBOOK_UI_ADDONS[addonName] then return end
+
+    C_Timer.After(0, function()
+        if not ActionBarsOwned.initialized then return end
+        ScheduleSpellBookVisibilityRefresh()
+    end)
+end
+
 -- Expose entry points from the mouseover fade do...end block
 ActionBarsOwned.SetupBarMouseover = SetupBarMouseover
 ActionBarsOwned.RefreshBarsForSpellBookVisibility = RefreshBarsForSpellBookVisibility
 ActionBarsOwned.HookSpellBookVisibilityFrame = HookSpellBookVisibilityFrame
+ActionBarsOwned.EnsureSpellBookVisibilityHooks = EnsureSpellBookVisibilityHooks
+ActionBarsOwned.ScheduleSpellBookVisibilityRefresh = ScheduleSpellBookVisibilityRefresh
+ActionBarsOwned.HookSpellBookToggleFunction = HookSpellBookToggleFunction
+ActionBarsOwned.HandleSpellBookAddonLoaded = HandleSpellBookAddonLoaded
 
 end -- do (mouseover fade subsystem)
 
@@ -7663,37 +7722,13 @@ function ActionBarsOwned:Initialize()
         tooltip:ClearLines()
     end)
 
-    -- Hook Spellbook visibility for fade system
-    local function RefreshFadeForSpellBook()
-        if not ActionBarsOwned.initialized then return end
-        for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
-            local state = GetOwnedBarFadeState(barKey)
-            state.isFading = false
-            CancelOwnedBarFadeTimers(state)
-            if ShouldForceShowForSpellBook() then
-                SetOwnedBarAlpha(barKey, 1)
-            else
-                SetupOwnedBarMouseover(barKey)
-            end
-        end
-    end
-
-    local function HookSpellBookFrame(frame)
-        if not frame then return end
-        frame:HookScript("OnShow", function()
-            C_Timer.After(0, RefreshFadeForSpellBook)
-        end)
-        frame:HookScript("OnHide", function()
-            C_Timer.After(0, RefreshFadeForSpellBook)
-        end)
-    end
-
-    HookSpellBookFrame(_G.SpellBookFrame)
-    local psf = _G.PlayerSpellsFrame
-    HookSpellBookFrame(psf)
-    if psf and psf.SpellBookFrame then
-        HookSpellBookFrame(psf.SpellBookFrame)
-    end
+    -- Hook spellbook visibility for the mouseover fade system. The player
+    -- spells UI can be created lazily, so we also hook its toggle functions
+    -- and retry once the panel is actually opening.
+    ActionBarsOwned.EnsureSpellBookVisibilityHooks()
+    ActionBarsOwned.HookSpellBookToggleFunction("ToggleSpellBook")
+    ActionBarsOwned.HookSpellBookToggleFunction("TogglePlayerSpellsFrame")
+    ActionBarsOwned.ScheduleSpellBookVisibilityRefresh()
 
     -- Initialize extra buttons
     inInitSafeWindow = true
@@ -7850,6 +7885,8 @@ initFrame:SetScript("OnEvent", function(self, event, addonName)
                 c = c + 1
             until issecurevariable(overrideBar, "isShownExternal")
         end
+    elseif ActionBarsOwned.HandleSpellBookAddonLoaded then
+        ActionBarsOwned.HandleSpellBookAddonLoaded(addonName)
     end
 end)
 
