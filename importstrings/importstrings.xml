@@ -8,4 +8,6 @@
     <Script file="quazii_platynator.lua" />
     <Script file="quazii_plater.lua" />
     <Script file="quazii_details.lua" />
+    <Script file="oak_tankdps_profile.lua" />
+    <Script file="oak_healer_profile.lua" />
 </Ui>

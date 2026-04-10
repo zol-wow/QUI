@@ -38,9 +38,9 @@ QUI.imports = setmetatable({}, {
 -- To add a new preset, just append an entry here and ship the matching
 -- importstring file — the UI picks it up automatically.
 QUI._presetProfiles = {
-    { key = "QUIProfile",         profileName = "Quazii",           description = "Quazii's signature UI layout" },
-    { key = "QUIProfileDarkMode", profileName = "Quazii Dark Mode", description = "Dark mode variant of Quazii's layout" },
-    { key = "CocoProfile",        profileName = "Coco",             description = "Coco's personal UI layout" },
+    { key = "OakTankDPS",  profileName = "Oak's Tank/DPS", description = "Oak's Tank/DPS UI layout" },
+    { key = "OakHealer",   profileName = "Oak's Healer",   description = "Oak's Healer UI layout" },
+    { key = "CocoProfile", profileName = "Coco",            description = "Coco's personal UI layout" },
 }
 
 ---@type table

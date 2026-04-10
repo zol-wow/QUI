@@ -2197,6 +2197,24 @@ local function BuildBar(barKey)
                 --     click response for normal spells.  Imperceptible
                 --     in practice; keybinds are unaffected.
                 btn:SetAttribute("useOnKeyDown", false)
+                -- Popup direction support for spell flyouts.
+                -- BaseActionButtonMixin:UpdateFlyout bails at
+                -- "if not self.HasPopup" without these methods,
+                -- so the flyoutDirection attribute is never read.
+                if not btn.HasPopup then
+                    local popupDir
+                    btn.HasPopup = true
+                    btn.SetPopupDirection = function(_, dir) popupDir = dir end
+                    btn.GetPopupDirection = function() return popupDir end
+                    btn.SetPopup = function(self2, popup)
+                        if popup then
+                            rawset(self2, "_quiPopup", popup)
+                        end
+                    end
+                    btn.ClearPopup = function(self2)
+                        rawset(self2, "_quiPopup", nil)
+                    end
+                end
                 btn.flashing = 0
                 btn.flashtime = 0
                 btn:SetAttribute("index", i)
@@ -2772,6 +2790,21 @@ local function BuildBar(barKey)
                 -- path above for full rationale.
                 btn:RegisterForClicks("AnyDown", "AnyUp")
                 btn:SetAttribute("useOnKeyDown", false)
+                -- Popup direction support — see bar1 creation path.
+                if not btn.HasPopup then
+                    local popupDir
+                    btn.HasPopup = true
+                    btn.SetPopupDirection = function(_, dir) popupDir = dir end
+                    btn.GetPopupDirection = function() return popupDir end
+                    btn.SetPopup = function(self2, popup)
+                        if popup then
+                            rawset(self2, "_quiPopup", popup)
+                        end
+                    end
+                    btn.ClearPopup = function(self2)
+                        rawset(self2, "_quiPopup", nil)
+                    end
+                end
                 btn.flashing = 0
                 btn.flashtime = 0
                 local action = offset + i
@@ -6429,6 +6462,10 @@ ApplyFlyoutDirection = function(barKey)
     for _, btn in ipairs(buttons) do
         if btn and btn.SetAttribute then
             btn:SetAttribute("flyoutDirection", dir)
+            -- Explicitly sync popup direction: UpdateFlyout only calls
+            -- SetPopupDirection when the value is non-nil, so switching
+            -- back to AUTO would leave the old direction stuck.
+            if btn.SetPopupDirection then btn:SetPopupDirection(dir) end
             if btn.UpdateFlyout then pcall(btn.UpdateFlyout, btn) end
         end
     end

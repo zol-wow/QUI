@@ -3387,4 +3387,39 @@ end
 CDMSpellData._spellIDToChild = _spellIDToChild
 CDMSpellData._abilityToAuraSpellID = _abilityToAuraSpellID
 
+--- Resolve the live spell ID from a Blizzard viewer child, falling back to
+--- entry IDs.  Used by both icons (tooltips) and bars (name text) so that
+--- talent replacements like Berserk → Incarnation display correctly.
+--- @param entry table  The resolved owned-spell entry.
+--- @param blizzChildOverride frame|nil  Optional explicit child (e.g. bar._blizzIconChild).
+--- @return number|nil spellID  The current spell ID, or nil.
+function CDMSpellData:ResolveDisplaySpellID(entry, blizzChildOverride)
+    local child = blizzChildOverride or (entry and entry._blizzChild)
+    if child and child.GetSpellID then
+        local ok, childSid = pcall(child.GetSpellID, child)
+        -- childSid may be a secret value in combat — skip numeric comparison,
+        -- callers pass it to C-side functions that handle secrets natively.
+        if ok and childSid then return childSid end
+    end
+    return entry and (entry.overrideSpellID or entry.spellID or entry.id)
+end
+
+--- Resolve the display name for an entry, using the live viewer child spell
+--- for aura entries (talent replacements) and falling back to entry.name.
+--- @param entry table  The resolved owned-spell entry.
+--- @param blizzChildOverride frame|nil  Optional explicit child.
+--- @return string name
+function CDMSpellData:ResolveDisplayName(entry, blizzChildOverride)
+    if entry and entry.isAura then
+        local sid = self:ResolveDisplaySpellID(entry, blizzChildOverride)
+        if sid then
+            -- C_Spell.GetSpellInfo and FontString:SetText are both C-side
+            -- and handle secret values natively.
+            local ok, info = pcall(C_Spell.GetSpellInfo, sid)
+            if ok and info and info.name then return info.name end
+        end
+    end
+    return (entry and entry.name) or ""
+end
+
 ns.CDMSpellData = CDMSpellData

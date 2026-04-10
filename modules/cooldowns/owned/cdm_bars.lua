@@ -1095,9 +1095,12 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
         end
 
-        -- Set initial name text
-        if bar.NameText and entry.name then
-            bar.NameText:SetText(entry.name)
+        -- Set initial name text (resolve from viewer child for talent replacements)
+        if bar.NameText then
+            local displayName = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
+            if displayName ~= "" then
+                bar.NameText:SetText(displayName)
+            end
         end
 
         -- Update active state from aura data
@@ -1186,11 +1189,19 @@ function CDMBars:UpdateOwnedBarAura(bar)
 
         -- Stacks (appended to name text)
         if bar.NameText then
-            local name = (entry and entry.name) or ""
+            local name = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
             local stacks = r.stacks
                 and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
                 or ""
-            pcall(bar.NameText.SetText, bar.NameText, name .. stacks)
+            -- name may be a secret value in combat — concatenation would fail,
+            -- so pcall the whole expression; if it errors just set name alone
+            -- (SetText is C-side and handles secrets natively).
+            local catOk, display = pcall(function() return name .. stacks end)
+            if catOk then
+                pcall(bar.NameText.SetText, bar.NameText, display)
+            else
+                pcall(bar.NameText.SetText, bar.NameText, name)
+            end
         end
     else
         bar._active = false
