@@ -856,6 +856,12 @@ CreateNudgeHandler = function(ui)
             return
         end
 
+        local focusedFrame = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() or nil
+        if focusedFrame and focusedFrame:IsObjectType("EditBox") then
+            self:SetPropagateKeyboardInput(true)
+            return
+        end
+
         self:SetPropagateKeyboardInput(false)
 
         -- Apply immediate nudge
