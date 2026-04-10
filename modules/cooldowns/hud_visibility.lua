@@ -654,10 +654,10 @@ end
 local function GetActionBarFrames()
     local frames = {}
     -- Action bar containers from the owned action bar system
-    if ns.QUI_ActionBars and ns.QUI_ActionBars.containers then
-        for _, container in pairs(ns.QUI_ActionBars.containers) do
+    if ns.ActionBarsOwned and ns.ActionBarsOwned.containers then
+        for barKey, container in pairs(ns.ActionBarsOwned.containers) do
             if container then
-                frames[#frames + 1] = container
+                frames[#frames + 1] = { barKey = barKey, container = container }
             end
         end
     end
@@ -700,9 +700,12 @@ local function OnActionBarsFadeUpdate(self, elapsed)
         (ActionBarsVisibility.fadeTargetAlpha - ActionBarsVisibility.fadeStartAlpha) * progress
 
     local frames = GetActionBarFrames()
-    for _, frame in ipairs(frames) do
-        if frame and frame.SetAlpha then
-            pcall(frame.SetAlpha, frame, alpha)
+    local setBarAlpha = ns.ActionBarsOwned and ns.ActionBarsOwned.SetBarAlpha
+    for _, entry in ipairs(frames) do
+        if setBarAlpha then
+            pcall(setBarAlpha, entry.barKey, alpha)
+        elseif entry.container and entry.container.SetAlpha then
+            pcall(entry.container.SetAlpha, entry.container, alpha)
         end
     end
 
@@ -717,7 +720,7 @@ local function StartActionBarsFade(targetAlpha)
     local frames = GetActionBarFrames()
     if #frames == 0 then return end
 
-    local currentAlpha = frames[1]:GetAlpha()
+    local currentAlpha = frames[1].container:GetAlpha()
 
     if math.abs(currentAlpha - targetAlpha) < 0.01 then
         ActionBarsVisibility.currentlyHidden = (targetAlpha < 1)
@@ -773,7 +776,8 @@ local function SetupActionBarsMouseoverDetector()
     local abFrames = GetActionBarFrames()
     local hoverCount = 0
 
-    for _, frame in ipairs(abFrames) do
+    for _, entry in ipairs(abFrames) do
+        local frame = entry.container
         if frame and not _mouseoverHooked[frame] then
             _mouseoverHooked[frame] = true
 

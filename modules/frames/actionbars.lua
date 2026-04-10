@@ -1565,6 +1565,10 @@ local function SetOwnedBarAlpha(barKey, alpha)
     GetOwnedBarFadeState(barKey).currentAlpha = alpha
 end
 
+-- Expose for HUD visibility system (hud_visibility.lua) so it can fade
+-- bars through the proper path that hides MOD-blend textures.
+ActionBarsOwned.SetBarAlpha = SetOwnedBarAlpha
+
 local fadeFrame = nil
 local fadeFrameUpdate = nil
 
