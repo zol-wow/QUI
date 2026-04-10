@@ -34,6 +34,7 @@ local function BuildHUDVisibilityTab(tabContent)
         if visTable.showInGroup == nil then visTable.showInGroup = false end
         if visTable.showInInstance == nil then visTable.showInInstance = false end
         if visTable.showOnMouseover == nil then visTable.showOnMouseover = false end
+        if visTable.showWhenMounted == nil then visTable.showWhenMounted = false end
         if visTable.fadeDuration == nil then visTable.fadeDuration = 0.2 end
         if visTable.fadeOutAlpha == nil then visTable.fadeOutAlpha = 0 end
         if visTable.hideWhenMounted == nil then visTable.hideWhenMounted = false end
@@ -98,6 +99,10 @@ local function BuildHUDVisibilityTab(tabContent)
             table.insert(conditionChecks, mouseoverCheck)
             sy = P(mouseoverCheck, body, sy)
 
+            local mountedCheck = GUI:CreateFormCheckbox(body, "Show When Mounted", "showWhenMounted", visTable, refreshFunc)
+            table.insert(conditionChecks, mountedCheck)
+            sy = P(mountedCheck, body, sy)
+
             -- Extra condition checks (e.g. showWhenHealthBelow100, alwaysShowCastbars)
             if extraChecks then
                 for _, ec in ipairs(extraChecks) do
@@ -153,7 +158,7 @@ local function BuildHUDVisibilityTab(tabContent)
             dungeonHint:SetJustifyH("LEFT")
 
             -- Calculate total content height
-            local numConditions = 6 + (extraChecks and #extraChecks or 0)
+            local numConditions = 7 + (extraChecks and #extraChecks or 0)
             -- tip(28) + showAlways(FORM_ROW) + conditions(numConditions * FORM_ROW)
             -- + fadeSliders(2 * FORM_ROW) + 5 hide rules(5 * (FORM_ROW + 20))
             local totalHeight = 28 + FORM_ROW + numConditions * FORM_ROW + 2 * FORM_ROW + 5 * (FORM_ROW + 20) + 8

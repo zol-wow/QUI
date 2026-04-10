@@ -175,7 +175,7 @@ local function ShouldCDMBeVisible()
     if vis.showAlways then
         local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
         if not ignoreHideRules then
-            if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
             if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
             if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
             if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
@@ -189,11 +189,12 @@ local function ShouldCDMBeVisible()
     if vis.showInGroup and IsPlayerInGroup() then return true end
     if vis.showInInstance and IsPlayerInInstance() then return true end
     if vis.showOnMouseover and CDMVisibility.mouseOver then return true end
+    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition — apply hide rules
     local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
     if not ignoreHideRules then
-        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
         if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
         if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
         if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
@@ -473,7 +474,7 @@ local function ShouldUnitframesBeVisible()
     if vis.showAlways then
         local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
         if not ignoreHideRules then
-            if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
             if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
             if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
         end
@@ -486,11 +487,12 @@ local function ShouldUnitframesBeVisible()
     if vis.showInGroup and IsPlayerInGroup() then return true end
     if vis.showInInstance and IsPlayerInInstance() then return true end
     if vis.showOnMouseover and UnitframesVisibility.mouseOver then return true end
+    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition — apply hide rules
     local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
     if not ignoreHideRules then
-        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
         if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
         if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
     end
@@ -693,7 +695,7 @@ local function ShouldActionBarsBeVisible()
         -- "Always show" still respects hide rules (mounted/flying/etc.)
         local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
         if not ignoreHideRules then
-            if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
             if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
             if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
             if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
@@ -707,11 +709,12 @@ local function ShouldActionBarsBeVisible()
     if vis.showInGroup and IsPlayerInGroup() then return true end
     if vis.showInInstance and IsPlayerInInstance() then return true end
     if vis.showOnMouseover and ActionBarsVisibility.mouseOver then return true end
+    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition matched — apply hide rules
     local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
     if not ignoreHideRules then
-        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
         if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
         if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
         if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
@@ -918,7 +921,7 @@ local function ShouldChatBeVisible()
     if vis.showAlways then
         local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
         if not ignoreHideRules then
-            if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
             if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
             if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
             if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
@@ -932,11 +935,12 @@ local function ShouldChatBeVisible()
     if vis.showInGroup and IsPlayerInGroup() then return true end
     if vis.showInInstance and IsPlayerInInstance() then return true end
     if vis.showOnMouseover and ChatVisibility.mouseOver then return true end
+    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition — apply hide rules
     local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
     if not ignoreHideRules then
-        if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
         if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
         if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
         if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
