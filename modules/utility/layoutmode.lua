@@ -2470,6 +2470,7 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy)
 
     local handle = self._handles[key]
     if not handle then return false end
+    local def = self._elements[key]
 
     local ox, oy = HandleToOffsets(handle)
     ox = ox + dx
@@ -2483,7 +2484,6 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy)
         handle:ClearAllPoints()
         handle:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
 
-        local def = self._elements[key]
         if def then
             local frame = def.getFrame and def.getFrame()
             if frame then
@@ -2499,8 +2499,29 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy)
         end
     end
 
+    -- Preserve any existing anchor metadata when nudging. Without this,
+    -- SaveAndClose() can later treat the nudge as a plain CENTER/CENTER move
+    -- and overwrite the anchor-relative offsets we just wrote to the DB.
+    local anchorKey, anchorPtSelf, anchorPtTarget
+    if not (def and def.usesCustomPositionPersistence) then
+        local pending = self._pendingPositions[key]
+        if pending and pending.anchorTarget then
+            anchorKey = pending.anchorTarget
+            anchorPtSelf = pending.anchorPointSelf
+            anchorPtTarget = pending.anchorPointTarget
+        else
+            local fa = GetFrameAnchoring()
+            local entry = fa and fa[key]
+            if type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
+                anchorKey = entry.parent
+                anchorPtSelf = entry.point or "CENTER"
+                anchorPtTarget = entry.relative or "CENTER"
+            end
+        end
+    end
+
     -- Store pending
-    SavePendingPosition(key, "CENTER", "CENTER", ox, oy)
+    SavePendingPosition(key, "CENTER", "CENTER", ox, oy, anchorKey, anchorPtSelf, anchorPtTarget)
 
     -- Update coordinate text — show anchor-relative offsets for anchored frames
     if handle._isAnchored then
