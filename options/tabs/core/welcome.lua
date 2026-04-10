@@ -37,7 +37,7 @@ local function CreateWelcomePage(parent)
     -- =====================================================
     -- WELCOME HEADER
     -- =====================================================
-    local version = QUI.versionString or "2.00"
+    local version = QUI.versionString or "3.00"
     local title = CreateWrappedLabel(content, "Welcome to QUI", 20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
     y = y - 28
@@ -47,7 +47,7 @@ local function CreateWelcomePage(parent)
     y = y - 22
 
     local tagline = CreateWrappedLabel(content,
-        "A comprehensive UI replacement for World of Warcraft. Customizable unit frames, cooldown management, action bars, and quality-of-life features.",
+        "A comprehensive UI suite for World of Warcraft with custom unit and group frames, cooldown tracking, action bars, anchoring and layout tools, profile import/export, and quality-of-life features.",
         12, C.textMuted, contentWidth - PADDING * 2)
     tagline:SetPoint("TOPLEFT", PADDING, y)
     y = y - (tagline:GetStringHeight() or 14) - 14
@@ -79,10 +79,11 @@ local function CreateWelcomePage(parent)
     y = y - setupHeader.gap
 
     local steps = {
-        {num = "1.", text = "Import the Edit Mode string (below) into Blizzard Edit Mode to position default frames"},
-        {num = "2.", text = "Open |cff60A5FA/qui|r to browse and configure settings for each module"},
-        {num = "3.", text = "Import a QUI profile from the |cff60A5FAImport & Export Strings|r tab for a recommended starting layout"},
-        {num = "4.", text = "Type |cff60A5FA/rl|r to reload the UI after making changes"},
+        {num = "1.", text = "Open |cff60A5FA/qui|r to browse settings, then use the Search tab if you are not sure where a system lives"},
+        {num = "2.", text = "If you want a starting point, install a bundled preset from the |cff60A5FAProfiles|r tab or analyze/import a current QUI profile in |cff60A5FAImport & Export Strings|r"},
+        {num = "3.", text = "Use |cff60A5FA/qui layout|r or the |cff60A5FAQUI Edit Mode|r button to move QUI-managed frames, then fine-tune anchors and nudges in |cff60A5FAFrame Positioning|r"},
+        {num = "4.", text = "Use Blizzard Edit Mode only for Blizzard-managed elements that QUI does not replace or anchor for you"},
+        {num = "5.", text = "Type |cff60A5FA/rl|r after profile imports or larger changes when a module asks for a reload"},
     }
 
     for _, step in ipairs(steps) do
@@ -103,77 +104,40 @@ local function CreateWelcomePage(parent)
 
     y = CreateQA(content,
         "What is QUI?",
-        "QUI (QuaziiUI) is a full UI replacement addon. It provides custom unit frames, cooldown tracking, action bar styling, data panels, and many quality-of-life improvements \226\128\148 all configurable from a single options panel.",
+        "QUI is a full UI suite built around QUI 3 systems: custom unit and group frames, Cooldown Manager viewers, action bar styling, anchoring and layout tools, profile import/export, skinning, and quality-of-life modules - all configurable from one options panel.",
         y, contentWidth)
 
     y = CreateQA(content,
         "How do I move and resize frames?",
-        "Open Blizzard Edit Mode (Escape > Edit Mode, or type /qui editmode) to reposition the default Blizzard frames. For best results with QUI's skinning, anchoring, and auto-sizing features, set all frames to 100% size in Edit Mode. QUI's own frame anchoring is under the Frame Positioning tab in /qui, and in each frame's own options panel.",
+        "For QUI-managed elements, use the |cff60A5FAQUI Edit Mode|r button or type |cff60A5FA/qui layout|r to drag frames, then use |cff60A5FAFrame Positioning|r for exact anchors, offsets, and nudging. Use Blizzard Edit Mode only for Blizzard frames that QUI does not replace. You generally do not need to import a separate Edit Mode string to get started anymore.",
+        y, contentWidth)
+
+    y = CreateQA(content,
+        "What is QUI Layout Mode?",
+        "Layout Mode is QUI's drag-and-place workflow for QUI-managed frames. It is the fastest way to get elements roughly where you want them on screen. After that, use |cff60A5FAFrame Positioning|r when you want precise anchors, offsets, and nudge controls instead of freeform dragging.",
         y, contentWidth)
 
     y = CreateQA(content,
         "What is the Cooldown Manager (CDM)?",
-        "The Cooldown Manager displays your ability cooldowns as icon bars near your character. Configure which spells to track, bar appearance, and glow effects in the Cooldown Manager tab. You can also open CDM-specific settings with /cdm.",
+        "The Cooldown Manager powers QUI's essential and utility cooldown viewers, buff trackers, and tracked bars. Use |cff60A5FA/qui cdm|r to open the CDM Spell Composer and control what gets tracked, then use the Cooldown Manager tab for appearance, glows, keybind text, and custom-entry behavior. If you need Blizzard's viewer settings panel itself, use |cff60A5FA/cdm|r.",
+        y, contentWidth)
+
+    y = CreateQA(content,
+        "Coming from QUI 2.x or old Quazii strings?",
+        "Prefer QUI 3 presets or current QUI profile strings over legacy Quazii or Edit Mode strings. QUI 3 has newer layout, anchoring, cooldown, and selective import systems, so older strings can miss settings or conflict with the current defaults.",
         y, contentWidth)
 
     y = CreateQA(content,
         "How do I set up keybinds?",
-        "Type /kb to open the keybind overlay. Hover over any action button and press a key to bind it. Keybind display settings are in the Cooldown Manager tab under Keybinds.",
+        "Type |cff60A5FA/kb|r to open the keybind overlay. Hover over any action button and press a key to bind it. Keybind display settings and override text live in the Cooldown Manager tab under Keybinds.",
         y, contentWidth)
 
     y = CreateQA(content,
         "How do I report a bug or get help?",
-        "First, try importing the QUI Edit Mode layout string (below) as a starting point. If you're still encountering issues, raise an issue on GitHub (https://github.com/zol-wow/QUI) or ask for help on Discord (https://discord.gg/FFUjA4JXnH). Links with copy buttons are at the top of this page.",
+        "If something still looks wrong after reloading or trying a current QUI 3 preset/profile import, enable Lua errors with |cff60A5FA/console scriptErrors 1|r and report the issue on GitHub (https://github.com/zol-wow/QUI) or ask on Discord (https://discord.gg/FFUjA4JXnH). Links with copy buttons are at the top of this page.",
         y, contentWidth)
 
     y = y - 10
-
-    -- =====================================================
-    -- EDIT MODE LAYOUT STRING
-    -- =====================================================
-    local editModeHeader = GUI:CreateSectionHeader(content, "QUI Edit Mode Layout String")
-    editModeHeader:SetPoint("TOPLEFT", PADDING, y)
-    y = y - editModeHeader.gap
-
-    local editModeDesc = CreateWrappedLabel(content,
-        "Copy this string and import it in Blizzard Edit Mode (Escape > Edit Mode > Layout dropdown > Import) to set up these default frame positions. Use this as a starting point for your layout if you encounter unusual errors with an older layout.",
-        11, C.textMuted, contentWidth - PADDING * 2)
-    editModeDesc:SetPoint("TOPLEFT", PADDING, y)
-    y = y - (editModeDesc:GetStringHeight() or 14) - 10
-
-    -- Load Edit Mode string from importstrings/qui_editmode_base.lua
-    local editModeString = ""
-    if _G.QUI and _G.QUI.imports and _G.QUI.imports.QUIEditMode then
-        editModeString = _G.QUI.imports.QUIEditMode.data or ""
-    end
-
-    local BOX_HEIGHT = 80
-
-    local boxContainer = GUI:CreateScrollableTextBox(content, BOX_HEIGHT, editModeString, {
-        bgColor = {0.05, 0.07, 0.1, 0.9},
-        borderColor = C.border,
-        fontSize = 11,
-    })
-    boxContainer:SetPoint("TOPLEFT", PADDING, y)
-    boxContainer:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
-    local editBox = boxContainer.editBox
-    editBox:HookScript("OnEditFocusGained", function(self)
-        self:HighlightText()
-    end)
-
-    y = y - BOX_HEIGHT - 8
-
-    -- SELECT ALL button + hint
-    local selectBtn = GUI:CreateButton(content, "SELECT ALL", 120, 28, function()
-        editBox:SetFocus()
-        editBox:HighlightText()
-    end)
-    selectBtn:SetPoint("TOPLEFT", PADDING, y)
-
-    local copyHint = GUI:CreateLabel(content, "then press Ctrl+C to copy", 11, C.textMuted)
-    copyHint:SetPoint("LEFT", selectBtn, "RIGHT", 12, 0)
-
-    y = y - 50
 
     -- Set total content height for scrolling
     content:SetHeight(math.abs(y) + 0)
