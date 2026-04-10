@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.2.2 - 2026-04-11
+
+### Added
+- hud: add "Show When Mounted" condition across all visibility systems
+- presets: replace Quazii profiles with Oak Tank/DPS and Healer
+- actionbars: add popup direction support for spell flyouts
+
+### Changed
+- allow arrow keys in offset inputs in layout mode
+- align welcome help text with QUI v3
+- remove legacy Quazii import strings
+
+### Fixed
+- prevent stale CDM spec icons after character swaps
+- preserve mouseover-hidden action bars during visibility refreshes
+- ensure action bar flyout button directions after zoning/loading in/changed spells
+- properly preserve anchor metadata and offsets when nudging in layout mode
+- hud: fix visibility precedence — show conditions override hide rules
+- totems: remove secure button/click-dismiss (DestroyTotem is protected)
+- buffborders: scaled secondary anchor for private aura duration text
+- cdm: skip ChargeCount.Hide hook for charged entries (FWD authority)
+- actionbars: respect buttonlock on receive-drag, force scan after drag
+- hud: route action bar fading through SetBarAlpha for MOD-blend support
+- cdm: shared ResolveDisplaySpellID/ResolveDisplayName helpers
+- buffborders: use SecureActionButton for weapon enchant cancellation
+- actionbars: unify usability tinting, remove desaturate toggle buffborders: add borders and text styling for private aura slots minimap: add enable/disable toggle to layout mode
+- actionbars: fix usability tint on empty slots and zone transitions
+- gse: full icon/tooltip/watermark management for QUI buttons
+- gse: add right-click sequence picker for QUI action bar buttons
+- groupframes: delta-aware aura icon refresh for stack/duration updates
+- party tracker: deduplicate shared helpers, player spell cache, disable filter
+- cdm/actionbars: remove redundant post-combat refresh passes
+- lib: fix LibOpenRaid UNIT_PET taint error with pcall wrapper
 ## v3.2.1 - 2026-04-10
 
 ### Added
