@@ -223,18 +223,37 @@ function ActionBarsOwned.SafeUpdate(self)
 
     if HasAction(action) then
         ActionBarsOwned._activeButtons[self] = true
-        -- Icon
-        local texture = GetActionTexture(action)
-        -- Assisted combat rotation slots return nil texture when the
-        -- rotation has no current recommendation (e.g. no target).  Fall
-        -- back to the next-cast spell texture so the button isn't blank.
-        if not texture and C_AssistedCombat and C_AssistedCombat.GetNextCastSpell then
-            local aOk, isAssisted = pcall(C_ActionBar.IsAssistedCombatAction, action)
-            if aOk and isAssisted then
-                local sOk, spellID = pcall(C_AssistedCombat.GetNextCastSpell, true)
-                if sOk and spellID then
-                    local tOk, tex = pcall(C_Spell.GetSpellTexture, spellID)
-                    if tOk and tex then texture = tex end
+        -- Icon — GSE override buttons use the sequence macro icon instead
+        -- of the action slot texture, so SafeUpdate doesn't overwrite it.
+        local gseSeq = self:GetAttribute("gse-button")
+        local texture
+        if gseSeq then
+            -- Prefer the compiled macro icon registered by GSE
+            if GetMacroIndexByName then
+                local idx = GetMacroIndexByName(gseSeq)
+                if idx and idx > 0 then
+                    local _, macTex = GetMacroInfo(idx)
+                    texture = macTex
+                end
+            end
+            -- Fall back to the action slot texture (may be the original
+            -- spell icon, which is still a reasonable fallback)
+            if not texture then
+                texture = GetActionTexture(action)
+            end
+        else
+            texture = GetActionTexture(action)
+            -- Assisted combat rotation slots return nil texture when the
+            -- rotation has no current recommendation (e.g. no target).  Fall
+            -- back to the next-cast spell texture so the button isn't blank.
+            if not texture and C_AssistedCombat and C_AssistedCombat.GetNextCastSpell then
+                local aOk, isAssisted = pcall(C_ActionBar.IsAssistedCombatAction, action)
+                if aOk and isAssisted then
+                    local sOk, spellID = pcall(C_AssistedCombat.GetNextCastSpell, true)
+                    if sOk and spellID then
+                        local tOk, tex = pcall(C_Spell.GetSpellTexture, spellID)
+                        if tOk and tex then texture = tex end
+                    end
                 end
             end
         end

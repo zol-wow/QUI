@@ -20,6 +20,10 @@
 ]]
 
 local ADDON_NAME, ns = ...
+local Helpers = ns.Helpers
+local IsInRaid = IsInRaid
+local UnitIsUnit = UnitIsUnit
+local pairs = pairs
 
 ---------------------------------------------------------------------------
 -- SHARED HELPER: Style cooldown frame countdown text size
@@ -85,6 +89,37 @@ local function SetRealCooldown(cooldownFrame, unit, spellId, baseDuration, rever
     pcall(cooldownFrame.SetCooldown, cooldownFrame, GetTime(), baseDuration)
 end
 ns.PartyTracker_SetRealCooldown = SetRealCooldown
+
+---------------------------------------------------------------------------
+-- SHARED HELPERS: Used by cc_icons, kick_timer, cooldown_display
+---------------------------------------------------------------------------
+local function PT_IsActive()
+    if IsInRaid() then return false end
+    local db = Helpers.CreateDBGetter("quiGroupFrames")()
+    return db and db.enabled == true
+end
+ns.PartyTracker_IsActive = PT_IsActive
+
+local function PT_IsPartyUnit(unit)
+    if not unit then return false end
+    return unit == "party1" or unit == "party2" or unit == "party3" or unit == "party4"
+end
+ns.PartyTracker_IsPartyUnit = PT_IsPartyUnit
+
+local function PT_GetFrameForUnit(unit)
+    local GF = ns.QUI_GroupFrames
+    if not GF or not GF.unitFrameMap then return nil end
+    local frame = GF.unitFrameMap[unit]
+    if not frame and unit == "player" then
+        for token, f in pairs(GF.unitFrameMap) do
+            if UnitIsUnit(token, "player") then
+                return f
+            end
+        end
+    end
+    return frame
+end
+ns.PartyTracker_GetFrameForUnit = PT_GetFrameForUnit
 
 local Rules = {
     BySpec = {},

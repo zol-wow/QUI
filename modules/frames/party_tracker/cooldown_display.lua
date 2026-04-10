@@ -125,21 +125,8 @@ local function GetSettings(isRaid)
     return vdb and vdb.partyTracker and vdb.partyTracker.partyCooldowns
 end
 
--- Party tracker is a party-only feature: it requires QUI group frames to be
--- enabled and the player to be in a party (not a raid). Raid units are not
--- supported, and unrelated unit tokens (target/targettarget/focus/etc.) must
--- be filtered out — calling spec/aura APIs on restricted unit tokens in
--- combat returns secret booleans and taints the addon.
-local function IsActive()
-    if IsInRaid() then return false end
-    local db = GetDB()
-    return db and db.enabled == true
-end
-
-local function IsPartyUnit(unit)
-    if not unit then return false end
-    return unit == "party1" or unit == "party2" or unit == "party3" or unit == "party4"
-end
+local IsActive = ns.PartyTracker_IsActive
+local IsPartyUnit = ns.PartyTracker_IsPartyUnit
 
 ---------------------------------------------------------------------------
 -- LAZY ICON CREATION
@@ -228,10 +215,13 @@ local function GetStaticAbilities(unit, filterMode)
     local specId = SpecCache and SpecCache.GetSpec(unit)
     local _, classToken = UnitClass(unit)
 
+    local settings = GetSettings(IsInRaid())
+    local disabledSpells = settings and settings.disabledSpells or {}
+
     local function CollectFromRules(ruleList)
         if not ruleList then return end
         for _, rule in ipairs(ruleList) do
-            if rule.SpellId and not seen[rule.SpellId] then
+            if rule.SpellId and not seen[rule.SpellId] and not disabledSpells[rule.SpellId] then
                 if UnitHasSpell(unit, rule.SpellId) then
                     local isOffensive = rule.Offensive or (Rules.OffensiveSpellIds and Rules.OffensiveSpellIds[rule.SpellId])
                     local include = false
@@ -269,19 +259,7 @@ end
 -- RESOLVE UNIT → FRAME (handles "player" → party/raid token)
 ---------------------------------------------------------------------------
 
-local function GetFrameForUnit(unit)
-    GF = GF or ns.QUI_GroupFrames
-    if not GF or not GF.unitFrameMap then return nil end
-    local frame = GF.unitFrameMap[unit]
-    if not frame and unit == "player" then
-        for token, f in pairs(GF.unitFrameMap) do
-            if UnitIsUnit(token, "player") then
-                return f
-            end
-        end
-    end
-    return frame
-end
+local GetFrameForUnit = ns.PartyTracker_GetFrameForUnit
 
 ---------------------------------------------------------------------------
 -- UPDATE DISPLAY
@@ -370,7 +348,8 @@ function CooldownDisplay.UpdateFrame(frame)
                     end
                 end
             else
-                icon:SetAlpha(1.0)
+                local dimAlpha = settings.dimReadyAlpha or 0.4
+                icon:SetAlpha(dimAlpha)
                 if cd and cd.Clear then cd:Clear() end
             end
 
@@ -449,19 +428,37 @@ end
 -- Works for the player. Party members use aura fallback below.
 ---------------------------------------------------------------------------
 
+-- Cached list of the player's tracked spell IDs (avoids rebuilding via
+-- GetStaticAbilities + UnitHasSpell/LibOpenRaid on every single cast).
+-- Invalidated on spec change and roster update.
+local playerTrackedSpellIds = nil
+
+local function InvalidatePlayerSpellCache()
+    playerTrackedSpellIds = nil
+end
+
+local function EnsurePlayerSpellCache()
+    if playerTrackedSpellIds then return playerTrackedSpellIds end
+    local abilities = GetStaticAbilities("player", "all")
+    playerTrackedSpellIds = {}
+    for _, ability in ipairs(abilities) do
+        playerTrackedSpellIds[#playerTrackedSpellIds + 1] = ability.spellId
+    end
+    return playerTrackedSpellIds
+end
+
 local function OnSpellcastSucceeded(unit, castGUID, spellID)
     if not IsActive() then return end
     if unit ~= "player" and not IsPartyUnit(unit) then return end
     if UnitIsEnemy("player", unit) then return end
 
-    -- For the player: scan all tracked spells via C-side API
+    -- For the player: scan cached tracked spells via C-side API
     if UnitIsUnit(unit, "player") and C_Spell.GetSpellCooldownDuration then
-        local abilities = GetStaticAbilities(unit, "all")
+        local trackedIds = EnsurePlayerSpellCache()
         if not activeCooldowns[unit] then activeCooldowns[unit] = {} end
         local unitCDs = activeCooldowns[unit]
 
-        for _, ability in ipairs(abilities) do
-            local sid = ability.spellId
+        for _, sid in ipairs(trackedIds) do
             if not unitCDs[sid] then
                 -- Check if this spell just went on CD via DurationObject
                 local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, sid)
@@ -624,8 +621,9 @@ local function WatchPartyUnits()
     Observer = Observer or ns.PartyTracker_Observer
     if not Observer then return end
 
-    -- Clear and re-watch all party units
+    -- Clear and re-watch all party units (+ player for external defensive evidence)
     Observer.ClearAll()
+    Observer.Watch("player")
     local numGroup = GetNumGroupMembers() or 0
     if numGroup > 0 then
         local prefix = IsInRaid() and "raid" or "party"
@@ -661,6 +659,7 @@ C_Timer.After(0, function()
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 
     local function RegisterUnits()
         eventFrame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
@@ -682,7 +681,8 @@ C_Timer.After(0, function()
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             OnSpellcastSucceeded(arg1, arg2, arg3)
         else
-            -- Roster change: cleanup stale units + re-register
+            -- Roster/spec change: invalidate player spell cache + cleanup stale units
+            InvalidatePlayerSpellCache()
             for u in pairs(activeCooldowns) do
                 if not UnitExists(u) then
                     for _, cdData in pairs(activeCooldowns[u]) do

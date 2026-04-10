@@ -26,9 +26,14 @@ local GetCore = Helpers and Helpers.GetCore
 
 local pairs = pairs
 local type = type
+local tonumber = tonumber
+local string_gmatch = string.gmatch
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
+local GetActionTexture = GetActionTexture
+local GetMacroIndexByName = GetMacroIndexByName
+local GetMacroInfo = GetMacroInfo
 
 ---------------------------------------------------------------------------
 -- Button name classification
@@ -99,6 +104,196 @@ local BAR_SWAP_ONCLICK = [[
 ]]
 
 ---------------------------------------------------------------------------
+-- Icon management
+--
+-- GSE's icon helpers (getGSEButtonIcon, addGSEWatermark,
+-- hookButtonIconUpdates, scheduleIconRestore) are local to Events.lua
+-- and never run for QUI buttons because our shim intercepts
+-- CreateActionBarOverride before overrideActionButton is reached.
+-- We replicate the essential behaviour here.
+---------------------------------------------------------------------------
+
+local watermarkedButtons = {}   -- [buttonName] = texture region
+local iconHookedButtons = {}    -- [buttonName] = true
+
+--- Resolve the effective action slot for a QUI button.
+local function GetButtonEffectiveSlot(btn)
+    local action = tonumber(btn:GetAttribute("action"))
+    if action and action > 0 then return action end
+    local slot = btn:GetID()
+    if not slot or slot == 0 then return nil end
+    local page = tonumber(btn:GetAttribute("actionpage")) or 1
+    return slot + (page - 1) * 12
+end
+
+--- Return the display icon for a GSE-overridden button.
+local function GetGSEButtonIcon(btn)
+    local effectiveSlot = GetButtonEffectiveSlot(btn)
+    if effectiveSlot and GetActionTexture then
+        local texture = GetActionTexture(effectiveSlot)
+        if texture then return texture end
+    end
+    if not GetMacroIndexByName then return nil end
+    local seq = btn:GetAttribute("gse-button")
+    if not seq then return nil end
+    local idx = GetMacroIndexByName(seq)
+    if not idx or idx == 0 then return nil end
+    local _, texture = GetMacroInfo(idx)
+    return texture
+end
+
+--- Resolve the button's icon texture child.
+local function GetButtonIcon(btn, buttonName)
+    return btn.icon or (buttonName and _G[buttonName .. "Icon"])
+end
+
+--- Defer icon restore one frame so WoW's own ActionButton_Update runs first.
+local function ScheduleIconRestore(btn, icon)
+    C_Timer.After(0, function()
+        if not btn:GetAttribute("gse-button") then return end
+        local texture = GetGSEButtonIcon(btn)
+        if texture then
+            icon:SetTexture(texture)
+            icon:Show()
+            return
+        end
+        local seq = btn:GetAttribute("gse-button")
+        if seq and _G[seq] and GSE and GSE.UpdateIcon then
+            GSE.UpdateIcon(_G[seq], false)
+        end
+    end)
+end
+
+--- Show GSE spell tooltip for an overridden button.
+local function ShowGSEButtonTooltip(btn)
+    if not btn or not btn.GetAttribute then return end
+    local seqName = btn:GetAttribute("gse-button")
+    if not seqName then return end
+    local seqFrame = _G[seqName]
+    if not seqFrame or not GSE or not GSE.SequencesExec then return end
+    local step = seqFrame:GetAttribute("step") or 1
+    local executionseq = GSE.SequencesExec[seqName]
+    if not executionseq or not executionseq[step] then return end
+    local entry = executionseq[step]
+    local spellID
+    if entry.type == "spell" and entry.spell and C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(GSE.UnEscapeString(entry.spell))
+        spellID = info and info.spellID
+    elseif entry.type == "macro" and entry.macrotext then
+        local info = GSE.GetSpellsFromString and GSE.GetSpellsFromString(entry.macrotext)
+        if info then
+            spellID = info.spellID or (info[1] and info[1].spellID)
+        end
+        if not spellID and C_Spell and C_Spell.GetSpellInfo then
+            for line in string_gmatch(entry.macrotext .. "\n", "([^\n]+)\n") do
+                local rest = line:match("^/%a+%s+(.*)")
+                if rest then
+                    local spell = SecureCmdOptionParse and SecureCmdOptionParse(rest)
+                    if spell and spell ~= "" then
+                        local si = C_Spell.GetSpellInfo(spell)
+                        if si and si.spellID then
+                            spellID = si.spellID
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    elseif entry.type == "macro" and entry.macro and GetMacroIndexByName then
+        local idx = GetMacroIndexByName(entry.macro)
+        if idx and idx > 0 then spellID = GetMacroSpell(idx) end
+    end
+    GameTooltip_SetDefaultAnchor(GameTooltip, btn)
+    if spellID then
+        if GameTooltip.SetSpellByID then
+            GameTooltip:SetSpellByID(spellID)
+        else
+            GameTooltip:SetHyperlink("spell:" .. spellID)
+        end
+    else
+        local L = GSE.L or {}
+        GameTooltip:SetText(seqName, 1, 1, 1)
+        GameTooltip:AddLine(L["GSE Sequence"] or "GSE Sequence", 0.6, 0.6, 0.6)
+    end
+    GameTooltip:Show()
+end
+
+--- Add small GSE logo watermark to bottom-right of button.
+local function AddWatermark(buttonName)
+    if watermarkedButtons[buttonName] then return end
+    local btn = _G[buttonName]
+    if not btn then return end
+    local iconPath = GSE and GSE.Static and GSE.Static.Icons and GSE.Static.Icons.GSE_Logo_Dark
+    if not iconPath then return end
+    local wm = btn:CreateTexture(nil, "OVERLAY", nil, 7)
+    wm:SetTexture(iconPath)
+    wm:SetSize(14, 14)
+    wm:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -2, 2)
+    wm:SetAlpha(0.85)
+    if GSEOptions and GSEOptions.showActionBarWatermark == false then wm:Hide() end
+    watermarkedButtons[buttonName] = wm
+end
+
+local function RemoveWatermark(buttonName)
+    local wm = watermarkedButtons[buttonName]
+    if not wm then return end
+    wm:Hide()
+    watermarkedButtons[buttonName] = nil
+end
+
+local function SetWatermarkVisible(buttonName, visible)
+    if GSEOptions and GSEOptions.showActionBarWatermark == false then return end
+    local wm = watermarkedButtons[buttonName]
+    if not wm then return end
+    if visible then wm:Show() else wm:Hide() end
+end
+
+--- Hook OnEnter / OnLeave / OnAttributeChanged to keep icon + tooltip correct.
+local function HookButtonIconUpdates(buttonName)
+    if iconHookedButtons[buttonName] then return end
+    iconHookedButtons[buttonName] = true
+    local btn = _G[buttonName]
+    if not btn then return end
+
+    local function restoreIconNow(self)
+        if not self:GetAttribute("gse-button") then return end
+        local bName = self:GetName()
+        local icon = GetButtonIcon(self, bName)
+        if not icon then return end
+        local texture = GetGSEButtonIcon(self)
+        if texture then
+            icon:SetTexture(texture)
+            icon:Show()
+        end
+    end
+
+    btn:HookScript("OnEnter", function(self)
+        restoreIconNow(self)
+        ShowGSEButtonTooltip(self)
+    end)
+    btn:HookScript("OnLeave", restoreIconNow)
+
+    btn:HookScript("OnAttributeChanged", function(self, name, value)
+        if not self:GetAttribute("gse-button") then return end
+        local bName = self:GetName()
+        local icon = GetButtonIcon(self, bName)
+        if not icon then return end
+        if name == "gse-eff-action" then
+            if value and value > 0 then
+                local texture = GetActionTexture(value)
+                if texture then icon:SetTexture(texture) end
+                SetWatermarkVisible(bName, false)
+            else
+                ScheduleIconRestore(self, icon)
+                SetWatermarkVisible(bName, true)
+            end
+        elseif name == "type" and value == "click" then
+            ScheduleIconRestore(self, icon)
+        end
+    end)
+end
+
+---------------------------------------------------------------------------
 -- Per-button install / uninstall
 ---------------------------------------------------------------------------
 
@@ -140,6 +335,22 @@ local function InstallOverrideOnButton(buttonName, sequenceName)
     btn:SetAttribute("gse-button", sequenceName)
     btn:SetAttribute("type", "click")
     btn:SetAttribute("clickbutton", _G[sequenceName])
+
+    -- Register in GSE.ButtonOverrides so GSE.UpdateIcon (which fires on
+    -- every sequence step) knows to push the current spell icon to this
+    -- button.  Without this entry, UpdateIcon never touches QUI buttons.
+    if GSE.ButtonOverrides then
+        GSE.ButtonOverrides[buttonName] = sequenceName
+    end
+
+    -- Icon management — replicate what GSE's overrideActionButton does
+    HookButtonIconUpdates(buttonName)
+    AddWatermark(buttonName)
+    local icon = GetButtonIcon(btn, buttonName)
+    if icon then
+        ScheduleIconRestore(btn, icon)
+    end
+
     return true
 end
 
@@ -153,6 +364,15 @@ local function RemoveOverrideFromButton(buttonName)
     btn:SetAttribute("gse-button", nil)
     btn:SetAttribute("clickbutton", nil)
     btn:SetAttribute("type", "action")
+    RemoveWatermark(buttonName)
+    if GSE and GSE.ButtonOverrides then
+        GSE.ButtonOverrides[buttonName] = nil
+    end
+    -- Re-run the button's update so the icon refreshes back to the
+    -- normal action slot state (or hides if the slot is empty).
+    if btn.Update then
+        pcall(btn.Update, btn)
+    end
     return true
 end
 

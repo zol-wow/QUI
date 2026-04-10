@@ -940,6 +940,69 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Auras for a single frame
 ---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- DELTA-AWARE ICON REFRESH: When only stacks/durations changed (no auras
+-- added or removed), the filtered+sorted display set is identical. Skip
+-- the full filter → sort → render pipeline and just re-call UpdateAuraIcon
+-- on the visible icons whose auraInstanceID is in updatedAuraInstanceIDs.
+-- This is the dominant path in raids (DoT ticks, HoT refreshes, etc.).
+---------------------------------------------------------------------------
+local _updateSet = {}  -- scratch set, wipe-reuse
+
+local function RefreshUpdatedIcons(frame, unit, updateInfo)
+    if not updateInfo or not updateInfo.updatedAuraInstanceIDs then return end
+    local updated = updateInfo.updatedAuraInstanceIDs
+    if #updated == 0 then return end
+
+    -- Build a set for O(1) lookup
+    wipe(_updateSet)
+    for _, instID in ipairs(updated) do
+        _updateSet[instID] = true
+    end
+
+    -- Refresh visible debuff icons whose displayed instance ID was updated
+    if frame.debuffIcons then
+        for _, icon in ipairs(frame.debuffIcons) do
+            if not icon:IsShown() then break end  -- pool is contiguous
+            local state = auraIconState[icon]
+            local instID = state and state.auraInstanceID
+            if instID and _updateSet[instID] then
+                -- Re-fetch fresh aura data from the cache (was just updated
+                -- by IncrementalUpdateAuras) and push it to the icon.
+                local cache = unitAuraCache[unit]
+                if cache and cache.harmful then
+                    for i = 1, #cache.harmful do
+                        if cache.harmful[i].auraInstanceID == instID then
+                            UpdateAuraIcon(icon, cache.harmful[i], unit)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Refresh visible buff icons
+    if frame.buffIcons then
+        for _, icon in ipairs(frame.buffIcons) do
+            if not icon:IsShown() then break end
+            local state = auraIconState[icon]
+            local instID = state and state.auraInstanceID
+            if instID and _updateSet[instID] then
+                local cache = unitAuraCache[unit]
+                if cache and cache.helpful then
+                    for i = 1, #cache.helpful do
+                        if cache.helpful[i].auraInstanceID == instID then
+                            UpdateAuraIcon(icon, cache.helpful[i], unit)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local sortedAuras = {} -- Reusable sort table
 
 local function UpdateFrameAuras(frame)
@@ -1360,10 +1423,14 @@ if ns.AuraEvents then
             if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
             local GFP = ns.QUI_GroupFramePinnedAuras
             if GFP and GFP.RefreshFrame then GFP:RefreshFrame(frame) end
+            -- Full filter → sort → render: the display set may have changed.
+            UpdateFrameAuras(frame)
+        else
+            -- Pure stack/duration update — the display set is identical.
+            -- Only refresh the specific icons whose instance IDs were
+            -- updated, skipping the entire filter/sort/collect pipeline.
+            RefreshUpdatedIcons(frame, unit, updateInfo)
         end
-        -- Buff/debuff icons always refresh on any change — stack/duration
-        -- updates still need to rewrite SetText / cooldown swipe.
-        UpdateFrameAuras(frame)
     end)
 end
 

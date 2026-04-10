@@ -343,7 +343,7 @@ function Brain.ProcessAuraAppearance(unit, auraTypes, castSnapshot)
     if specId and Rules.BySpec[specId] then
         rule = TryRules(Rules.BySpec[specId])
     end
-    if not rule and not specId and classToken and Rules.ByClass[classToken] then
+    if not rule and classToken and Rules.ByClass[classToken] then
         rule = TryRules(Rules.ByClass[classToken])
     end
 

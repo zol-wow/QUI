@@ -34,17 +34,8 @@ local MAX_ICONS = 5
 local GF = nil
 local SpecCache = nil
 
--- Party-only feature: requires QUI group frames enabled and not in a raid.
-local function IsActive()
-    if IsInRaid() then return false end
-    local db = GetDB()
-    return db and db.enabled == true
-end
-
-local function IsPartyUnit(unit)
-    if not unit then return false end
-    return unit == "party1" or unit == "party2" or unit == "party3" or unit == "party4"
-end
+local IsActive = ns.PartyTracker_IsActive
+local IsPartyUnit = ns.PartyTracker_IsPartyUnit
 
 ---------------------------------------------------------------------------
 -- CC SPELL DATABASE — only spells with real cooldowns
@@ -286,19 +277,7 @@ end
 -- RESOLVE UNIT → FRAME
 ---------------------------------------------------------------------------
 
-local function GetFrameForUnit(unit)
-    GF = GF or ns.QUI_GroupFrames
-    if not GF or not GF.unitFrameMap then return nil end
-    local frame = GF.unitFrameMap[unit]
-    if not frame and unit == "player" then
-        for token, f in pairs(GF.unitFrameMap) do
-            if UnitIsUnit(token, "player") then
-                return f
-            end
-        end
-    end
-    return frame
-end
+local GetFrameForUnit = ns.PartyTracker_GetFrameForUnit
 
 ---------------------------------------------------------------------------
 -- UPDATE DISPLAY
