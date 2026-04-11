@@ -26,36 +26,14 @@ local PICKER_MIN_WIDTH = 200
 local FOOD_BUFFS = {
     -- Midnight / current retail generic Well Fed auras
     [1232324] = true, [285719] = true,
-    -- TWW Food (Well Fed buffs)
-    [462210] = true, [462212] = true, [462213] = true, [462214] = true,
-    [462215] = true, [462216] = true, [462217] = true, [462218] = true,
-    [462270] = true, [462271] = true, [462272] = true, [462273] = true,
-    -- Dragonflight food (still valid)
-    [382145] = true, [382146] = true, [382149] = true, [382150] = true,
-    [382152] = true, [382153] = true, [382154] = true, [382155] = true,
-    [382156] = true, [382157] = true, [382246] = true, [382247] = true,
-    [396092] = true,
 }
 
 local FLASK_BUFFS = {
     -- Midnight Flasks
     [1235057] = true, [1235108] = true, [1235110] = true, [1235111] = true,
-    -- TWW Flasks
-    [432021] = true, [432473] = true, [431971] = true, [431972] = true,
-    [431973] = true, [431974] = true,
-    -- Dragonflight Flasks
-    [371339] = true, [374000] = true, [371354] = true, [371204] = true,
-    [370662] = true, [373257] = true, [371386] = true, [370652] = true,
-    [371172] = true, [371186] = true,
 }
 
 local RUNE_BUFFS = {
-    [453250] = true,   -- Crystallized Augment Rune (TWW)
-    [393438] = true,   -- Draconic Augment Rune (DF)
-    [367405] = true,   -- Eternal Augment Rune
-    [347901] = true,   -- Veiled Augment Rune
-    [270058] = true,   -- Battle-Scarred Augment Rune
-    [317065] = true,   -- Lightless Force (SL)
     [1234969] = true,  -- Midnight Augment Rune
     [1242347] = true,  -- Greater Midnight Augment Rune
     [1264426] = true,  -- Void-Touched Augment Rune (Midnight)
@@ -67,8 +45,6 @@ local FLASK_ITEMS = {
     241322, 241323, -- Flask of the Magisters
     241324, 241325, -- Flask of the Blood Knights
     241326, 241327, -- Flask of the Shattered Sun
-    212283, 212284, 212285, 212286, 212287, 212288,  -- TWW Flasks
-    191318, 191319, 191320, 191321, 191322, 191323, 191324, 191325, 191326, 191327,  -- DF Flasks
 }
 local FLASK_ITEM_SET = {}
 for _, itemID in ipairs(FLASK_ITEMS) do
@@ -78,9 +54,6 @@ end
 local RUNE_ITEMS = {
     259085,  -- Void-Touched Augment Rune (Midnight)
     243191,  -- Ethereal Augment Rune (infinite)
-    224572,  -- Crystallized Augment Rune (TWW)
-    201325,  -- Draconic Augment Rune (DF)
-    190384,  -- Eternal Augment Rune
 }
 
 local OIL_ITEMS = {
@@ -91,21 +64,6 @@ local OIL_ITEMS = {
     -- Midnight Stones
     237370, 237371, -- Refulgent Whetstone
     237367, 237369, -- Refulgent Weightstone
-    -- TWW Oils
-    222502, 222503, 222504,
-    222508, 222509, 222510,
-    222888, 222889, 222890, 222891, 222892, 222893, 222894, 222895, 222896,
-    -- TWW Stones
-    219906, 219907, 219908,
-    219909, 219910, 219911,
-    219912, 219913, 219914,
-    224105, 224106, 224107,
-    224108, 224109, 224110,
-    224111, 224112, 224113,
-    -- DF Oils
-    191933, 191939, 191940,
-    191943, 191944, 191945,
-    191948, 191949, 191950,
 }
 
 local AMMO_ITEMS = {
@@ -116,60 +74,7 @@ local AMMO_ITEMS = {
     257752, 257751, -- Weighted Boomshots (AoE Fire)
 }
 
-local WEAPON_ENCHANTS = {
-    -- TWW Bubbling Wax
-    [7549] = { icon = 3622199, item = 222508 },
-    [7550] = { icon = 3622199, item = 222509 },
-    [7551] = { icon = 3622199, item = 222510 },
-    -- TWW Algari Mana Oil
-    [7529] = { icon = 4549251, item = 222888 },
-    [7530] = { icon = 4549251, item = 222889 },
-    [7531] = { icon = 4549251, item = 222890 },
-    [7532] = { icon = 4549251, item = 222891 },
-    [7533] = { icon = 4549251, item = 222892 },
-    [7534] = { icon = 4549251, item = 222893 },
-    [7535] = { icon = 4549251, item = 222894 },
-    [7536] = { icon = 4549251, item = 222895 },
-    [7537] = { icon = 4549251, item = 222896 },
-    -- TWW Oil of Beledar's Grace
-    [7543] = { icon = 3622195, item = 222502 },
-    [7544] = { icon = 3622195, item = 222503 },
-    [7545] = { icon = 3622195, item = 222504 },
-    -- TWW Ironclaw Whetstone
-    [7599] = { icon = 5975854, item = 219906 },
-    [7600] = { icon = 5975854, item = 219907 },
-    [7601] = { icon = 5975854, item = 219908 },
-    -- TWW Ironclaw Weightstone
-    [7596] = { icon = 5975933, item = 219909 },
-    [7597] = { icon = 5975933, item = 219910 },
-    [7598] = { icon = 5975933, item = 219911 },
-    -- TWW Ironclaw Razorstone
-    [7593] = { icon = 5975753, item = 219912 },
-    [7594] = { icon = 5975753, item = 219913 },
-    [7595] = { icon = 5975753, item = 219914 },
-    -- TWW Oils (older IDs)
-    [7500] = { icon = 609896, item = 224108 },
-    [7501] = { icon = 609896, item = 224109 },
-    [7502] = { icon = 609896, item = 224110 },
-    [7496] = { icon = 609897, item = 224105 },
-    [7497] = { icon = 609897, item = 224106 },
-    [7498] = { icon = 609897, item = 224107 },
-    [7493] = { icon = 609892, item = 224111 },
-    [7494] = { icon = 609892, item = 224112 },
-    [7495] = { icon = 609892, item = 224113 },
-    -- DF Primal Whetstone
-    [6379] = { icon = 4622275, item = 191933 },
-    [6380] = { icon = 4622275, item = 191939 },
-    [6381] = { icon = 4622275, item = 191940 },
-    -- DF Primal Weightstone
-    [6696] = { icon = 4622279, item = 191943 },
-    [6697] = { icon = 4622279, item = 191944 },
-    [6698] = { icon = 4622279, item = 191945 },
-    -- DF Primal Razorstone
-    [6382] = { icon = 4622274, item = 191948 },
-    [6383] = { icon = 4622274, item = 191949 },
-    [6384] = { icon = 4622274, item = 191950 },
-}
+local WEAPON_ENCHANTS = {}
 
 local PREFERENCE_KEYS = {
     food = "consumablePreferredFood",
@@ -270,10 +175,18 @@ local CLASS_ENHANCEMENT_CONFIG = {
 
 local function GetEnhancementConfig(slot)
     local classConfig = CLASS_ENHANCEMENT_CONFIG[playerClass]
-    if classConfig then
-        return classConfig[slot]
+    if not classConfig then return nil end
+    local slotConfig = classConfig[slot]
+    if not slotConfig then return nil end
+    if slotConfig.spells then
+        for _, spell in ipairs(slotConfig.spells) do
+            if IsPlayerSpell(spell.spellID) then
+                return slotConfig
+            end
+        end
+        return nil
     end
-    return nil
+    return slotConfig
 end
 
 local function HasShieldEquipped()
@@ -585,7 +498,7 @@ local function ResolveSelectedOwnedItem(buttonType, ownedItems)
     return ownedItems[1]
 end
 
-local function ConfigureButtonClickAction(button, buttonType, data)
+local function ConfigureButtonClickAction(button, buttonType, data, showGlow)
     if not button or not button.click or not data then return end
     button.selectedItemID = data.itemID
     button.click.selectedItemID = data.itemID
@@ -608,7 +521,9 @@ local function ConfigureButtonClickAction(button, buttonType, data)
     if data.icon then
         button.icon:SetTexture(data.icon)
     end
-    StartButtonGlow(button)
+    if showGlow then
+        StartButtonGlow(button)
+    end
 end
 
 local function ApplyPreferredItemIcons(buttons, settings)
@@ -1344,48 +1259,43 @@ UpdateConsumables = function()
 
     local canUseItems = not InCombatLockdown()
     if canUseItems then
-        -- Clickable food button
-        if settings.consumableFood ~= false and not hasFoodBuff then
+        if settings.consumableFood ~= false then
             local ownedFoodItems = GetOwnedItemsForButton("food")
             local selectedFood = ResolveSelectedOwnedItem("food", ownedFoodItems)
             if selectedFood then
-                ConfigureButtonClickAction(buttons.food, "food", selectedFood)
+                ConfigureButtonClickAction(buttons.food, "food", selectedFood, not hasFoodBuff)
             end
         end
 
-        -- Clickable flask button
-        if settings.consumableFlask ~= false and not hasFlaskBuff then
+        if settings.consumableFlask ~= false then
             local ownedFlasks = GetOwnedItemsForButton("flask")
             local selectedFlask = ResolveSelectedOwnedItem("flask", ownedFlasks)
             if selectedFlask then
-                ConfigureButtonClickAction(buttons.flask, "flask", selectedFlask)
+                ConfigureButtonClickAction(buttons.flask, "flask", selectedFlask, not hasFlaskBuff)
             end
         end
 
-        -- Clickable rune button
-        if settings.consumableRune ~= false and not hasRuneBuff then
+        if settings.consumableRune ~= false then
             local ownedRunes = GetOwnedItemsForButton("rune")
             local selectedRune = ResolveSelectedOwnedItem("rune", ownedRunes)
             if selectedRune then
-                ConfigureButtonClickAction(buttons.rune, "rune", selectedRune)
+                ConfigureButtonClickAction(buttons.rune, "rune", selectedRune, not hasRuneBuff)
             end
         end
 
-        -- Clickable enhancement button (Main Hand)
-        if settings.consumableOilMH ~= false and not hasMHEnhancement then
+        if settings.consumableOilMH ~= false then
             local ownedMH = GetOwnedItemsForButton("oilMH")
             local selectedMH = ResolveSelectedOwnedItem("oilMH", ownedMH)
             if selectedMH then
-                ConfigureButtonClickAction(buttons.oilMH, "oilMH", selectedMH)
+                ConfigureButtonClickAction(buttons.oilMH, "oilMH", selectedMH, not hasMHEnhancement)
             end
         end
 
-        -- Clickable enhancement button (Off Hand)
-        if ShouldShowOHButton(settings) and not hasOHEnhancement then
+        if ShouldShowOHButton(settings) then
             local ownedOH = GetOwnedItemsForButton("oilOH")
             local selectedOH = ResolveSelectedOwnedItem("oilOH", ownedOH)
             if selectedOH then
-                ConfigureButtonClickAction(buttons.oilOH, "oilOH", selectedOH)
+                ConfigureButtonClickAction(buttons.oilOH, "oilOH", selectedOH, not hasOHEnhancement)
             end
         end
     else

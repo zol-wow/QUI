@@ -90,8 +90,8 @@ local defaults = {
             questHoldShift = true,
             fastAutoLoot = true,
             autoSelectGossip = true,  -- Auto-select single gossip options
-            autoCombatLog = true,  -- Auto start/stop combat logging in M+ (opt-in)
-            autoCombatLogRaid = true,  -- Auto start/stop combat logging in raids (opt-in)
+            autoCombatLog = false,  -- Auto start/stop combat logging in M+ (opt-in)
+            autoCombatLogRaid = false,  -- Auto start/stop combat logging in raids (opt-in)
             autoDeleteConfirm = true,  -- Auto-fill DELETE confirmation text
             auctionHouseExpansionFilter = true,  -- Auto-enable current expansion filter in AH
             craftingOrderExpansionFilter = true,  -- Auto-enable current expansion filter in Crafting Orders
@@ -1333,6 +1333,7 @@ local defaults = {
                 manaColor = {0.5, 0.5, 1.0, 1}, -- Out of mana color (blue tint)
                 fastUsabilityUpdates = false, -- 5x faster range/usability checks (50ms vs 250ms)
                 showTooltips = true,        -- Show tooltips when hovering action buttons
+                useOnKeyDown = false,       -- Cast on key press (true) vs key release (false)
             },
             -- Mouseover fade settings
             fade = {

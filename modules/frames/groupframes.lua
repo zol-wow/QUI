@@ -3751,10 +3751,13 @@ local function DecorateBatched(frames, onComplete)
     -- Large raids: batch 20 per tick
     local idx = 1
     local function ProcessBatch()
+        -- Re-check combat each tick: batches are deferred via C_Timer, so the
+        -- player can enter combat between ticks — a captured value would taint.
+        local batchInCombat = InCombatLockdown()
         local batchEnd = math_min(idx + 19, total)
         for i = idx, batchEnd do
             DecorateGroupFrame(frames[i])
-            if not inCombat then
+            if not batchInCombat then
                 frames[i]:RegisterForClicks("AnyUp")
             else
                 _pending.registerClicks = true

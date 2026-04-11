@@ -578,16 +578,10 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
 end
 
 local function SetCastbarSize(anchorFrame, castSettings, unitFrame, barHeight)
-    local anchor = castSettings.anchor or "none"
-    
-    if anchor == "essential" or anchor == "utility" then
-        anchorFrame:SetSize(1, barHeight)
-    else
-        local frameWidth = (unitFrame and unitFrame:GetWidth()) or 250
-        local widthValue = (type(castSettings.width) == "number" and castSettings.width > 0) and castSettings.width or frameWidth
-        local castWidth = QUICore:PixelRound(widthValue, anchorFrame)
-        anchorFrame:SetSize(castWidth, barHeight)
-    end
+    local frameWidth = (unitFrame and unitFrame:GetWidth()) or 250
+    local widthValue = (type(castSettings.width) == "number" and castSettings.width > 0) and castSettings.width or frameWidth
+    local castWidth = QUICore:PixelRound(widthValue, anchorFrame)
+    anchorFrame:SetSize(castWidth, barHeight)
 end
 
 ---------------------------------------------------------------------------

@@ -547,8 +547,10 @@ local wasLoggingBeforeChallenge = false
 local mplusAutoLoggingActive = false
 local wasInMythicPlus = false
 local pendingMythicPlusUpdate = nil
+local pendingMythicPlusStop = nil
 local raidAutoLoggingActive = false
 local wasInRaidInstance = false
+local MYTHIC_PLUS_STOP_GRACE_SECONDS = 8
 
 local function CancelPendingMythicPlusUpdate()
     if pendingMythicPlusUpdate and pendingMythicPlusUpdate.Cancel then
@@ -557,28 +559,39 @@ local function CancelPendingMythicPlusUpdate()
     pendingMythicPlusUpdate = nil
 end
 
-local function IsMythicPlusActive()
+local function CancelPendingMythicPlusStop()
+    if pendingMythicPlusStop and pendingMythicPlusStop.Cancel then
+        pendingMythicPlusStop:Cancel()
+    end
+    pendingMythicPlusStop = nil
+end
+
+local function HasMythicPlusActiveSignal()
     if C_MythicPlus and type(C_MythicPlus.IsMythicPlusActive) == "function" then
         local ok, active = pcall(C_MythicPlus.IsMythicPlusActive)
-        if ok then
-            return active == true
+        if ok and active == true then
+            return true
         end
     end
 
     if C_ChallengeMode and type(C_ChallengeMode.GetActiveChallengeMapID) == "function" then
         local ok, mapID = pcall(C_ChallengeMode.GetActiveChallengeMapID)
-        if ok then
-            return mapID ~= nil
+        if ok and mapID ~= nil then
+            return true
         end
     end
 
     if C_ChallengeMode and type(C_ChallengeMode.IsChallengeModeActive) == "function" then
         local ok, active = pcall(C_ChallengeMode.IsChallengeModeActive)
-        if ok then
-            return active == true
+        if ok and active == true then
+            return true
         end
     end
 
+    return false
+end
+
+local function IsInMythicPlusInstance()
     local _, instanceType, difficultyID = GetInstanceInfo()
     return instanceType == "party" and difficultyID == 8
 end
@@ -593,17 +606,22 @@ local function StopMythicPlusLogging()
     wasLoggingBeforeChallenge = false
 end
 
-local function UpdateMythicPlusAutoLogging()
+local function UpdateMythicPlusAutoLogging(allowImmediateStop)
     local settings = GetSettings()
-    local inMythicPlus = IsMythicPlusActive()
+    local hasActiveSignal = HasMythicPlusActiveSignal()
+    local inMythicPlusInstance = IsInMythicPlusInstance()
+    local inMythicPlus = hasActiveSignal or (inMythicPlusInstance and (wasInMythicPlus or mplusAutoLoggingActive or LoggingCombat()))
 
     if not settings or not settings.autoCombatLog then
+        CancelPendingMythicPlusStop()
         StopMythicPlusLogging()
         wasInMythicPlus = inMythicPlus
         return
     end
 
     if inMythicPlus then
+        CancelPendingMythicPlusStop()
+
         if not wasInMythicPlus then
             -- Remember if user already had logging enabled so we never stop their manual logging.
             wasLoggingBeforeChallenge = LoggingCombat()
@@ -621,7 +639,17 @@ local function UpdateMythicPlusAutoLogging()
             end
         end
     elseif wasInMythicPlus then
-        StopMythicPlusLogging()
+        if allowImmediateStop then
+            StopMythicPlusLogging()
+        else
+            CancelPendingMythicPlusStop()
+            -- Give Blizzard's challenge-state APIs a moment to settle before stopping the log.
+            pendingMythicPlusStop = C_Timer.NewTimer(MYTHIC_PLUS_STOP_GRACE_SECONDS, function()
+                pendingMythicPlusStop = nil
+                UpdateMythicPlusAutoLogging(true)
+            end)
+            return
+        end
     end
 
     wasInMythicPlus = inMythicPlus
@@ -677,6 +705,7 @@ end
 
 local function RefreshAutoCombatLogging()
     CancelPendingMythicPlusUpdate()
+    CancelPendingMythicPlusStop()
     UpdateMythicPlusAutoLogging()
     UpdateRaidAutoLogging()
 end

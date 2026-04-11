@@ -2193,18 +2193,18 @@ local function BuildBar(barKey)
                 -- spells (Evoker Fire Breath etc.) need mouse-down to
                 -- start the empower and mouse-up to release.
                 btn:RegisterForClicks("AnyDown", "AnyUp")
-                -- Default casts to fire on mouse-up.  This is the LAB
-                -- default and what we actually want:
-                --   • Drag motions naturally pre-empt the cast (drag
-                --     fires before the mouse-up dispatch reaches the
-                --     action).  No per-click attribute toggling needed.
-                --   • Empowered spells still work — pressAndHoldAction
-                --     + typerelease="actionrelease" overrides this for
-                --     the press/release flow.
-                --   • Trade-off: fully-locked mode loses snappy on-down
-                --     click response for normal spells.  Imperceptible
-                --     in practice; keybinds are unaffected.
-                btn:SetAttribute("useOnKeyDown", false)
+                -- Click timing is user-configurable:
+                --   • false (default) — cast on mouse-up. Drag motions
+                --     naturally pre-empt the cast.
+                --   • true — cast on mouse-down for snappier response.
+                -- Empowered spells still work in both modes because
+                -- pressAndHoldAction + typerelease="actionrelease"
+                -- override the timing for press/release flow.
+                do
+                    local _db = GetDB()
+                    local _g = _db and _db.global
+                    btn:SetAttribute("useOnKeyDown", _g and _g.useOnKeyDown == true)
+                end
                 -- Popup direction support for spell flyouts.
                 -- BaseActionButtonMixin:UpdateFlyout bails at
                 -- "if not self.HasPopup" without these methods,
@@ -2797,7 +2797,11 @@ local function BuildBar(barKey)
                 -- comments on the matching block in the bar1 creation
                 -- path above for full rationale.
                 btn:RegisterForClicks("AnyDown", "AnyUp")
-                btn:SetAttribute("useOnKeyDown", false)
+                do
+                    local _db = GetDB()
+                    local _g = _db and _db.global
+                    btn:SetAttribute("useOnKeyDown", _g and _g.useOnKeyDown == true)
+                end
                 -- Popup direction support — see bar1 creation path.
                 if not btn.HasPopup then
                     local popupDir
@@ -2983,9 +2987,9 @@ local function BuildBar(barKey)
                 -- so pickup works in combat via the restricted path and
                 -- the lockActionBars check stays taint-safe.
                 --
-                -- Click timing is NOT handled here — it's set statically
-                -- via `useOnKeyDown = false` at button creation.  See
-                -- the comment on RegisterForClicks in the creation path.
+                -- Click timing is NOT handled here — it's seeded at
+                -- button creation from the `useOnKeyDown` profile
+                -- setting and re-applied via QUI_ApplyUseOnKeyDown.
 
                 -- OnDragStart: nil the Lua handler, let WrapScript do the
                 -- pickup via return "action", slot → secure PickupAction.
@@ -3755,6 +3759,11 @@ end
 -- this do block) can set it.
 ActionBarsOwned._assistedCombatEverActive = false
 
+-- The single button that currently hosts the AssistedCombatRotationFrame.
+-- There is only ever one rotation slot, so rotation updates only need to
+-- touch this one button instead of sweeping all 96.
+local _assistRotationButton = nil
+
 UpdateAssistedCombatRotationFrame = function(button)
     if not (C_ActionBar and C_ActionBar.IsAssistedCombatAction) then return end
     -- Fast path: if assisted combat was never active AND this button has
@@ -3773,6 +3782,7 @@ UpdateAssistedCombatRotationFrame = function(button)
         ActionBarsOwned._assistedCombatEverActive = true
         frame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatRotationTemplate")
         button.AssistedCombatRotationFrame = frame
+        _assistRotationButton = button
     end
     -- Always delegate to UpdateState — the template manages its own
     -- show/hide and has internal event handlers that can re-show the
@@ -3783,12 +3793,31 @@ UpdateAssistedCombatRotationFrame = function(button)
 end
 
 local function UpdateAllAssistedCombatRotation()
-    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-        local btns = ActionBarsOwned.nativeButtons[barKey]
-        if btns then
-            for _, btn in ipairs(btns) do
-                UpdateAssistedCombatRotationFrame(btn)
-            end
+    -- Fast path: one known rotation button, update just it.
+    if _assistRotationButton then
+        UpdateAssistedCombatRotationFrame(_assistRotationButton)
+        return
+    end
+
+    -- Discovery pass: no rotation button known yet.  Look up the slot for
+    -- the current recommendation and update that one button.  Once it
+    -- creates a frame, _assistRotationButton gets set and subsequent
+    -- updates take the fast path above.
+    if not (C_AssistedCombat and C_AssistedCombat.GetNextCastSpell
+        and C_ActionBar and C_ActionBar.FindSpellActionButtons) then
+        return
+    end
+    local ok, spellID = pcall(C_AssistedCombat.GetNextCastSpell, true)
+    if not (ok and spellID) then return end
+    local sOk, slots = pcall(C_ActionBar.FindSpellActionButtons, spellID)
+    if not (sOk and slots) then return end
+    local slotMap = ActionBarsOwned.slotMap
+    if not slotMap then return end
+    for _, slot in ipairs(slots) do
+        local entry = slotMap[slot]
+        if entry and entry.button then
+            UpdateAssistedCombatRotationFrame(entry.button)
+            if _assistRotationButton then return end
         end
     end
 end
@@ -4203,15 +4232,14 @@ abSlotFrame:SetScript("OnUpdate", function(self)
     wipe(abDirtySlots)
     -- Rebuild spell-to-button map after slot content changes (drag/drop)
     ActionBarsOwned.RebuildSpellIdMap()
-    -- Refresh assisted combat highlights and rotation frames — the spell
-    -- may have moved to a different button, so the old highlight/arrow
-    -- must move too.  Without this, dragging the one-button rotation
-    -- action leaves the highlight on the old (now-empty) slot.
+    -- Slot contents changed — the rotation action may have moved to a
+    -- different button.  Invalidate the cached rotation button so the
+    -- next UpdateAllAssistedCombatRotation re-discovers it from the
+    -- current recommendation.
+    _assistRotationButton = nil
+    -- Refresh assisted combat highlights and rotation frames.
     UpdateAllAssistedHighlights()
     ActionBarsOwned.UpdateAllAssistedCombatRotation()
-    if InCombatLockdown() then
-        ActionBarsOwned.pendingSlotUpdate = true
-    end
 end)
 
 local function ScheduleSlotUpdate(slot)
@@ -4242,6 +4270,8 @@ local function OnOwnedEvent(self, event, ...)
         -- Mark paging window so ScheduleSlotUpdate suppresses the redundant
         -- ACTIONBAR_SLOT_CHANGED burst that Blizzard fires after paging.
         _lastPagingTime = GetTime()
+        -- Page swap may remap which button holds the rotation action.
+        _assistRotationButton = nil
         -- Paging is handled by state driver: _childupdate-offset sets the
         -- action attribute and calls CallMethod("SafeSyncAction") which
         -- syncs self.action and refreshes visuals on each button.
@@ -4316,20 +4346,6 @@ local function OnOwnedEvent(self, event, ...)
         end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
-        if ActionBarsOwned.pendingSlotUpdate then
-            ActionBarsOwned.pendingSlotUpdate = false
-            C_Timer.After(0.1, function()
-                for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-                    local btns = ActionBarsOwned.nativeButtons[barKey]
-                    local s = GetEffectiveSettings(barKey)
-                    if btns and s then
-                        for _, btn in ipairs(btns) do
-                            UpdateEmptySlotVisibility(btn, s)
-                        end
-                    end
-                end
-            end)
-        end
         if ActionBarsOwned.pendingExtraButtonInit then
             ActionBarsOwned.pendingExtraButtonInit = false
             InitializeExtraButtons()
@@ -4341,6 +4357,10 @@ local function OnOwnedEvent(self, event, ...)
         if ActionBarsOwned.pendingRefresh then
             ActionBarsOwned.pendingRefresh = false
             ActionBarsOwned:Refresh()
+        end
+        if ActionBarsOwned.pendingUseOnKeyDownUpdate then
+            ActionBarsOwned.pendingUseOnKeyDownUpdate = false
+            if _G.QUI_ApplyUseOnKeyDown then _G.QUI_ApplyUseOnKeyDown() end
         end
         if ActionBarsOwned.pendingBindings then
             ActionBarsOwned.pendingBindings = false
@@ -4589,19 +4609,14 @@ local function OnOwnedEvent(self, event, ...)
             end
         end
         ApplyAllFlyoutDirections()
-        -- Refresh empty slot visibility (slots may have gained/lost actions)
-        if not InCombatLockdown() then
-            for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-                local btns = ActionBarsOwned.nativeButtons[barKey]
-                local s = GetEffectiveSettings(barKey)
-                if btns and s then
-                    for _, btn in ipairs(btns) do
-                        UpdateEmptySlotVisibility(btn, s)
-                    end
+        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+            local btns = ActionBarsOwned.nativeButtons[barKey]
+            local s = GetEffectiveSettings(barKey)
+            if btns and s then
+                for _, btn in ipairs(btns) do
+                    UpdateEmptySlotVisibility(btn, s)
                 end
             end
-        else
-            ActionBarsOwned.pendingSlotUpdate = true
         end
         -- Zone/extra abilities may have changed — recapture frames.
         RefreshExtraButtons()
@@ -7674,12 +7689,19 @@ function ActionBarsOwned:Initialize()
 
     -- Assisted combat rotation (one-button rotation arrow overlay).
     if EventRegistry and EventRegistry.RegisterCallback then
-        EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
+        EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function(_, ...)
             ActionBarsOwned._assistedCombatEverActive = true
-            -- Coalesce to the next OnUpdate tick.  Blizzard fires this
-            -- from inside AssistedCombatManager's OnUpdate, and handling
-            -- it synchronously chained into back-to-back 96-button
-            -- sweeps that tripped the script watchdog.
+            -- Dedupe: Blizzard fires this every OnUpdate frame under soft
+            -- targeting; if the rotation spell hasn't actually changed,
+            -- skip the dirty-flag flip entirely.  First callback arg is
+            -- conventionally the new spell ID; fall back to GetNextCastSpell.
+            local newSpell = select(1, ...)
+            if not newSpell then
+                local ok, s = pcall(C_AssistedCombat.GetNextCastSpell, true)
+                if ok then newSpell = s end
+            end
+            if newSpell == ActionBarsOwned._lastAssistRotationSpell then return end
+            ActionBarsOwned._lastAssistRotationSpell = newSpell
             abUpdateFrame._dirtyAssistRotation = true
             abUpdateFrame:Show()
         end, "QUI_ActionBars_AssistedCombat")
@@ -7700,18 +7722,16 @@ function ActionBarsOwned:Initialize()
         -- (PLAYER_REGEN_ENABLED calls UpdateAllAssistedHighlights).
         EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
             local ok, nextSpell = pcall(C_AssistedCombat.GetNextCastSpell, true)
-            if ok and nextSpell then
-                -- Coalesce to the next OnUpdate tick — this event can
-                -- fire multiple times per Blizzard OnUpdate under soft
-                -- targeting, so we must not run the full highlight pass
-                -- inline inside TriggerEvent.  The visual-update queue
-                -- is intentionally NOT poked here: UpdateAllAssistedHighlights
-                -- applies glows directly, and the rotation slot's icon
-                -- refresh is driven by the separate OnSetActionSpell path.
-                abUpdateFrame._dirtyAssistHighlight = true
-                abUpdateFrame:Show()
-            end
-            -- nil events intentionally ignored — keep last valid highlight
+            if not (ok and nextSpell) then return end
+            -- nil events intentionally ignored — keep last valid highlight.
+            -- Dedupe: under soft targeting this event fires every Blizzard
+            -- OnUpdate frame with the same spell, contributing to the
+            -- script-time-limit watchdog.  Skip if the recommendation hasn't
+            -- changed since the last dirty-flag flip.
+            if nextSpell == ActionBarsOwned._lastAssistHighlightSpell then return end
+            ActionBarsOwned._lastAssistHighlightSpell = nextSpell
+            abUpdateFrame._dirtyAssistHighlight = true
+            abUpdateFrame:Show()
         end, "QUI_ActionBars_AssistedHighlight")
     end
 
@@ -7880,6 +7900,28 @@ _G.QUI_RefreshActionBars = function()
         return
     end
     ActionBarsOwned:Refresh()
+end
+
+-- Apply the `useOnKeyDown` profile setting to all QUI action bar
+-- buttons. SetAttribute on a secure frame is protected during combat,
+-- so defer to PLAYER_REGEN_ENABLED when locked down. Empowered spells
+-- are unaffected — pressAndHoldAction + typerelease="actionrelease"
+-- handle the press/release flow independently of this attribute.
+_G.QUI_ApplyUseOnKeyDown = function()
+    if InCombatLockdown() then
+        ActionBarsOwned.pendingUseOnKeyDownUpdate = true
+        return
+    end
+    local db = GetDB()
+    local value = db and db.global and db.global.useOnKeyDown == true
+    for bar = 1, 8 do
+        for i = 1, 12 do
+            local btn = _G["QUI_Bar" .. bar .. "Button" .. i]
+            if btn then
+                btn:SetAttribute("useOnKeyDown", value)
+            end
+        end
+    end
 end
 
 -- Lightweight refresh: only re-evaluate mouseover fade state for all bars.
