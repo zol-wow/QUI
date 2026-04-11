@@ -147,9 +147,8 @@ local paPendingSetup = false   -- deferred AddPrivateAuraAnchor after combat
 ---------------------------------------------------------------------------
 local function CreateAuraIcon(parent)
     iconCounter = iconCounter + 1
-    local frameName = "QUIAuraIcon" .. iconCounter
 
-    local icon = CreateFrame("Frame", frameName, parent)
+    local icon = CreateFrame("Frame", nil, parent)
     icon:SetSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE)
 
     -- .Icon texture (ARTWORK layer)
@@ -158,7 +157,7 @@ local function CreateAuraIcon(parent)
     icon.Icon:SetTexCoord(BASE_CROP, 1 - BASE_CROP, BASE_CROP, 1 - BASE_CROP)
 
     -- .Cooldown frame (CooldownFrameTemplate for swipe + countdown)
-    icon.Cooldown = CreateFrame("Cooldown", frameName .. "Cooldown", icon, "CooldownFrameTemplate")
+    icon.Cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     icon.Cooldown:SetAllPoints(icon)
     icon.Cooldown:EnableMouse(false)
     icon.Cooldown:SetDrawSwipe(true)
