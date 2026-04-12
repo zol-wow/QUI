@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.3.1 - 2026-04-13
+
+### Added
+- added option for pandemic effect glow
+
+### Fixed
+- fixed Nokterian's name! <3
+- groupframes: hybrid aura updates — skip full scan for stack/duration changes
+- groupframes: stop re-registering UNIT_AURA on hidden Blizzard frames
+- buffborders: simplify private aura slot parenting and layout math
 ## v3.3.0 - 2026-04-12
 
 ### Added
