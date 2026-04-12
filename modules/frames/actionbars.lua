@@ -2981,6 +2981,37 @@ local function BuildBar(barKey)
                     GameTooltip:Hide()
                 end)
 
+                -- ── PreClick: suppress action when drag modifier held ──
+                -- When useOnKeyDown is true the action fires on mouse-
+                -- down, BEFORE OnDragStart can detect the drag motion.
+                -- Without intervention shift-click casts instead of
+                -- picking up the spell.  This Lua pre-click handler
+                -- clears the "type" attribute so the secure action
+                -- dispatch becomes a no-op; PostClick restores it.
+                -- When the cursor already carries a spell (placement),
+                -- the suppression is skipped so the drop goes through.
+                -- Uses Lua hooks (not restricted snippets) because the
+                -- restricted environment lacks GetCursorInfo().
+                -- SetAttribute is fine — bar rearranging is out-of-combat.
+                btn:HookScript("PreClick", function(self)
+                    if InCombatLockdown() then return end
+                    if self:GetAttribute("useOnKeyDown")
+                        and self:GetAttribute("buttonlock")
+                        and IsModifiedClick("PICKUPACTION")
+                        and not GetCursorInfo() then
+                        self:SetAttribute("type", nil)
+                        self._quiPreClickSuppressed = true
+                    end
+                end)
+                btn:HookScript("PostClick", function(self)
+                    if self._quiPreClickSuppressed then
+                        self._quiPreClickSuppressed = nil
+                        if not InCombatLockdown() then
+                            self:SetAttribute("type", "action")
+                        end
+                    end
+                end)
+
                 -- ── Pickup / Place (secure WrapScript pattern) ──
                 -- Lua OnDragStart/OnReceiveDrag handlers are nil'd, and
                 -- the drag logic runs inside secure WrapScript snippets
@@ -3014,7 +3045,7 @@ local function BuildBar(barKey)
                 -- OnReceiveDrag: same double-wrap pattern.
                 btn:SetScript("OnReceiveDrag", nil)
                 SecureHandlerWrapScript(btn, "OnReceiveDrag", btn, [[
-                    if self:GetAttribute("buttonlock")
+                    if (self:GetAttribute("buttonlock") and not IsModifiedClick("PICKUPACTION"))
                         or self:GetAttribute("LABdisableDragNDrop") then
                         return false
                     end
@@ -3275,6 +3306,12 @@ UpdatePetBarVisibility = function()
         LayoutNativeButtons("pet")
         -- Re-evaluate mouseover fade so alwaysShow / fade alpha are correct
         SetupOwnedBarMouseover("pet")
+        -- Let the HUD visibility system re-assert its fade state so mounting
+        -- / flying / vehicle hide rules take precedence over the mouseover
+        -- fade alpha that SetupOwnedBarMouseover just applied.
+        if _G.QUI_RefreshActionBarsVisibility then
+            _G.QUI_RefreshActionBarsVisibility()
+        end
     elseif inInitSafeWindow and InCombatLockdown() then
         -- During a combat reload, pet data may not be available yet at PEW
         -- time (HasPetUI returns false). Don't hide — defer to
@@ -3349,6 +3386,12 @@ UpdateStanceBarLayout = function()
 
     -- Re-evaluate mouseover fade so alwaysShow / fade alpha are correct
     SetupOwnedBarMouseover("stance")
+    -- Let the HUD visibility system re-assert its fade state so mounting
+    -- / flying / vehicle hide rules take precedence over the mouseover
+    -- fade alpha that SetupOwnedBarMouseover just applied.
+    if _G.QUI_RefreshActionBarsVisibility then
+        _G.QUI_RefreshActionBarsVisibility()
+    end
 
     -- Notify anchoring system when visibility changed
     if not wasShown and _G.QUI_UpdateFramesAnchoredTo then
@@ -3803,12 +3846,12 @@ local function UpdateAllAssistedCombatRotation()
     -- the current recommendation and update that one button.  Once it
     -- creates a frame, _assistRotationButton gets set and subsequent
     -- updates take the fast path above.
-    if not (C_AssistedCombat and C_AssistedCombat.GetNextCastSpell
-        and C_ActionBar and C_ActionBar.FindSpellActionButtons) then
+    if not (AssistedCombatManager and C_ActionBar
+        and C_ActionBar.FindSpellActionButtons) then
         return
     end
-    local ok, spellID = pcall(C_AssistedCombat.GetNextCastSpell, true)
-    if not (ok and spellID) then return end
+    local spellID = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
+    if not spellID then return end
     local sOk, slots = pcall(C_ActionBar.FindSpellActionButtons, spellID)
     if not (sOk and slots) then return end
     local slotMap = ActionBarsOwned.slotMap
@@ -3830,6 +3873,7 @@ end
 ---------------------------------------------------------------------------
 
 local assistedHighlightButtons = {}  -- set of buttons currently highlighted (button → true)
+local _assistHighlightScratch = {}   -- reusable scratch table to avoid per-frame allocation
 local ASSISTED_HIGHLIGHT_KEY = "QUI_AssistedCombat"
 local ASSISTED_HIGHLIGHT_FALLBACK = { 1, 1, 1, 0.8 }
 
@@ -3861,7 +3905,7 @@ local function SetAssistedHighlightShown(button, show)
 end
 
 UpdateAllAssistedHighlights = function()
-    if not (C_AssistedCombat and C_AssistedCombat.GetNextCastSpell) then return end
+    if not AssistedCombatManager then return end
     if not (C_ActionBar and C_ActionBar.FindSpellActionButtons) then return end
 
     local db = GetDB()
@@ -3869,16 +3913,18 @@ UpdateAllAssistedHighlights = function()
         for btn in pairs(assistedHighlightButtons) do
             SetAssistedHighlightShown(btn, false)
         end
-        assistedHighlightButtons = {}
+        wipe(assistedHighlightButtons)
         return
     end
 
-    local ok, nextSpellID = pcall(C_AssistedCombat.GetNextCastSpell, true)
-    if not ok then nextSpellID = nil end
+    -- Read directly from the manager's Lua table — Blizzard's OnUpdate sets
+    -- this field before firing the event.  Zero-cost vs pcall into C.
+    local nextSpellID = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
 
-    -- Find which action slots contain the recommended spell (C-side handles
-    -- secret spellIDs natively — no Lua comparison needed).
-    local matchButtons = {}
+    -- Build match set into a reusable scratch table to avoid per-call
+    -- allocation — this runs up to 10x/sec under soft targeting.
+    local matchButtons = _assistHighlightScratch
+    wipe(matchButtons)
     if nextSpellID then
         local sOk, slots = pcall(C_ActionBar.FindSpellActionButtons, nextSpellID)
         if sOk and slots then
@@ -3905,6 +3951,11 @@ UpdateAllAssistedHighlights = function()
     for btn in pairs(matchButtons) do
         SetAssistedHighlightShown(btn, true)
     end
+
+    -- Swap: move scratch results into the live set, reuse the old live
+    -- table as next call's scratch.  Zero allocation per frame.
+    _assistHighlightScratch = assistedHighlightButtons
+    wipe(_assistHighlightScratch)
     assistedHighlightButtons = matchButtons
 end
 
@@ -4083,23 +4134,25 @@ abUpdateFrame._dirtyVisuals = false
 abUpdateFrame._dirtyAssistRotation = false
 abUpdateFrame._dirtyAssistHighlight = false
 
+abUpdateFrame._lastAssist = 0
+
 abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
 
-    -- Assisted combat flags: cheap, always-process, no time-gate.
-    -- Coalesced here so rapid AssistedCombatManager event bursts (fired
-    -- from inside Blizzard's per-frame OnUpdate) can't chain into
-    -- back-to-back full bar sweeps inside a single TriggerEvent loop.
-    if self._dirtyAssistRotation then
-        self._dirtyAssistRotation = false
-        -- Called via module table (not upvalue) because this file is
-        -- large enough to saturate Lua 5.1's per-closure upvalue cap —
-        -- the bare local isn't reachable from this OnUpdate closure.
-        ActionBarsOwned.UpdateAllAssistedCombatRotation()
-    end
-    if self._dirtyAssistHighlight then
-        self._dirtyAssistHighlight = false
-        UpdateAllAssistedHighlights()
+    -- Assisted combat flags: time-gated to avoid per-frame pcall + table
+    -- work under soft targeting (Blizzard fires highlight events every frame).
+    if self._dirtyAssistRotation or self._dirtyAssistHighlight then
+        if now - self._lastAssist >= 0.1 then
+            self._lastAssist = now
+            if self._dirtyAssistRotation then
+                self._dirtyAssistRotation = false
+                ActionBarsOwned.UpdateAllAssistedCombatRotation()
+            end
+            if self._dirtyAssistHighlight then
+                self._dirtyAssistHighlight = false
+                UpdateAllAssistedHighlights()
+            end
+        end
     end
 
     local doVis = self._dirtyVisuals
@@ -7699,17 +7752,13 @@ function ActionBarsOwned:Initialize()
 
     -- Assisted combat rotation (one-button rotation arrow overlay).
     if EventRegistry and EventRegistry.RegisterCallback then
-        EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function(_, ...)
+        EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
             ActionBarsOwned._assistedCombatEverActive = true
             -- Dedupe: Blizzard fires this every OnUpdate frame under soft
             -- targeting; if the rotation spell hasn't actually changed,
-            -- skip the dirty-flag flip entirely.  First callback arg is
-            -- conventionally the new spell ID; fall back to GetNextCastSpell.
-            local newSpell = select(1, ...)
-            if not newSpell then
-                local ok, s = pcall(C_AssistedCombat.GetNextCastSpell, true)
-                if ok then newSpell = s end
-            end
+            -- skip the dirty-flag flip entirely.  Read the manager's Lua
+            -- table directly — zero cost vs pcall into C.
+            local newSpell = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
             if newSpell == ActionBarsOwned._lastAssistRotationSpell then return end
             ActionBarsOwned._lastAssistRotationSpell = newSpell
             abUpdateFrame._dirtyAssistRotation = true
@@ -7730,19 +7779,12 @@ function ActionBarsOwned:Initialize()
         -- refresh naturally when the rotation action is moved/removed
         -- (HIDEGRID) or during the post-combat full refresh
         -- (PLAYER_REGEN_ENABLED calls UpdateAllAssistedHighlights).
-        EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function(_, ...)
-            -- Dedupe: under soft targeting this event fires every Blizzard
-            -- OnUpdate frame, contributing to the script-time-limit watchdog.
-            -- Prefer the event's own spell arg and only fall back to
-            -- GetNextCastSpell when it's missing — an unconditional pcall
-            -- into C every frame accumulates enough script time to trip
-            -- the watchdog inside Blizzard's TriggerEvent call chain.
-            local nextSpell = select(1, ...)
-            if not nextSpell then
-                local ok, s = pcall(C_AssistedCombat.GetNextCastSpell, true)
-                if ok then nextSpell = s end
-            end
-            -- nil events intentionally ignored — keep last valid highlight.
+        EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
+            -- Read the manager's Lua table directly — zero cost vs pcall.
+            local nextSpell = AssistedCombatManager.lastNextCastSpellID
+            -- nil means "no recommendation" (target lost, soft-target gap).
+            -- Ignore nil to avoid on/off flicker; highlights refresh on
+            -- HIDEGRID or PLAYER_REGEN_ENABLED.
             if not nextSpell then return end
             if nextSpell == ActionBarsOwned._lastAssistHighlightSpell then return end
             ActionBarsOwned._lastAssistHighlightSpell = nextSpell

@@ -2623,6 +2623,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     local entryPoint    = settings.point or "CENTER"
     local entryRelative = settings.relative or "CENTER"
     local isLegacyCenter = entryPoint == "CENTER" and entryRelative == "CENTER"
+
     if isLegacyCenter
         and settings.growAnchor and CORNER_POINTS and CORNER_POINTS[settings.growAnchor]
         and (key == "buffFrame" or key == "debuffFrame")
@@ -3175,10 +3176,15 @@ _G.QUI_UpdateFramesAnchoredTo = function(targetKeyOrFrame)
         if not targetKey then return end
     end
 
-    -- In combat, only process CDM-driven targets. ApplyFrameAnchor keeps its own
-    -- safety checks and will defer unsafe frame types automatically.
+    -- In combat, only process addon-owned targets. ApplyFrameAnchor keeps its
+    -- own safety checks and will defer unsafe frame types automatically.
+    -- buffFrame/debuffFrame are included because LayoutIcons defers to a clean
+    -- timer context where SetSize/SetPoint work, and dependents need to follow.
     if InCombatLockdown() then
-        if targetKey ~= "cdmEssential" and targetKey ~= "cdmUtility" and targetKey ~= "buffIcon" and targetKey ~= "buffBar" then
+        if targetKey ~= "cdmEssential" and targetKey ~= "cdmUtility"
+            and targetKey ~= "buffIcon" and targetKey ~= "buffBar"
+            and targetKey ~= "buffFrame" and targetKey ~= "debuffFrame"
+        then
             return
         end
     end
