@@ -368,9 +368,13 @@ local function StyleHeaderChildren(header, settings, isBuff)
                     if self._spellId then
                         pcall(GameTooltip.SetSpellByID, GameTooltip, self._spellId)
                     end
-                elseif self._auraInstanceID and self._auraInstanceID > 0 then
-                    if GameTooltip.SetUnitAuraByAuraInstanceID then
-                        pcall(GameTooltip.SetUnitAuraByAuraInstanceID, GameTooltip, "player", self._auraInstanceID)
+                else
+                    local shown = false
+                    if self._auraInstanceID and GameTooltip.SetUnitAuraByAuraInstanceID then
+                        shown = pcall(GameTooltip.SetUnitAuraByAuraInstanceID, GameTooltip, "player", self._auraInstanceID)
+                    end
+                    if not shown and self._spellId then
+                        pcall(GameTooltip.SetSpellByID, GameTooltip, self._spellId)
                     end
                 end
                 pcall(GameTooltip.Show, GameTooltip)
@@ -415,10 +419,11 @@ local function StyleHeaderChildren(header, settings, isBuff)
             pcall(child.Cooldown.SetReverse, child.Cooldown, invert)
         end
 
-        -- Stacks
-        if child.Stacks and name then
-            if settings.showStacks ~= false and count and count > 1 then
-                pcall(child.Stacks.SetText, child.Stacks, tostring(count))
+        -- Stacks (data.applications holds the stack count)
+        if child.Stacks then
+            local stacks = data.applications
+            if settings.showStacks ~= false and stacks and not IsSecretValue(stacks) and stacks > 1 then
+                pcall(child.Stacks.SetText, child.Stacks, tostring(stacks))
                 pcall(child.Stacks.Show, child.Stacks)
             else
                 pcall(child.Stacks.SetText, child.Stacks, "")
@@ -427,7 +432,7 @@ local function StyleHeaderChildren(header, settings, isBuff)
         end
 
         -- Borders (via StyleIcon — reuse existing function)
-        StyleIcon(child, settings, isBuff, debuffType)
+        StyleIcon(child, settings, isBuff, data.dispelName)
     end
 
     -- Style weapon enchant children (buff header only)
@@ -1141,7 +1146,6 @@ UpdateBuffIcons = function()
         end
         buffContainer:SetAlpha(0)
         buffContainer:EnableMouse(false)
-        SetDescendantMouse(buffContainer, false)
         return
     end
     if not buffContainer:IsShown() and not InCombatLockdown() then
@@ -1149,7 +1153,6 @@ UpdateBuffIcons = function()
     end
     buffContainer:SetAlpha(1)
     buffContainer:EnableMouse(true)
-    SetDescendantMouse(buffContainer, true)
     StyleHeaderChildren(buffContainer, settings, true)
 end
 
@@ -1182,7 +1185,6 @@ UpdateDebuffIcons = function()
         end
         debuffContainer:SetAlpha(0)
         debuffContainer:EnableMouse(false)
-        SetDescendantMouse(debuffContainer, false)
         return
     end
     if not debuffContainer:IsShown() and not InCombatLockdown() then
@@ -1190,7 +1192,6 @@ UpdateDebuffIcons = function()
     end
     debuffContainer:SetAlpha(1)
     debuffContainer:EnableMouse(true)
-    SetDescendantMouse(debuffContainer, true)
     StyleHeaderChildren(debuffContainer, settings, false)
     RefreshPrivateAuraAnchors()
     LayoutPrivateAuraSlots()
