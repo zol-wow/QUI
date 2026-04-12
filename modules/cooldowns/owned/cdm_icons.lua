@@ -2634,6 +2634,9 @@ function CDMIcons:ReleaseIcon(icon)
     UnmirrorBlizzCooldown(icon)
     UnhookBlizzTexture(icon)
     UnhookBlizzStackText(icon)
+    if ns._OwnedGlows and ns._OwnedGlows.ClearPandemicState then
+        ns._OwnedGlows.ClearPandemicState(icon)
+    end
     icon:Hide()
     icon:ClearAllPoints()
     icon._spellEntry = nil
