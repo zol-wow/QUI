@@ -467,6 +467,12 @@ local function SafeSetReverse(cooldown, reverse)
     end
 end
 
+local function SafeSetDrawSwipe(cooldown, showSwipe)
+    if cooldown and cooldown.SetDrawSwipe then
+        pcall(cooldown.SetDrawSwipe, cooldown, showSwipe ~= false)
+    end
+end
+
 -- Dispel border colors (file-level to avoid per-call allocation)
 local AURA_DISPEL_COLORS = {
     Magic   = { 0.2, 0.6, 1.0, 1 },
@@ -932,6 +938,7 @@ local function UpdateFrameAuras(frame)
                 end
             end
             local icon = frame.debuffIcons[i]
+            SafeSetDrawSwipe(icon and icon.cooldown, auraSettings.debuffHideSwipe ~= true)
             SafeSetReverse(icon and icon.cooldown, auraSettings.debuffReverseSwipe == true)
             if auraData then
                 icon._cachedShowPulse = showPulse
@@ -1092,6 +1099,7 @@ local function UpdateFrameAuras(frame)
                 end
             end
             local bIcon = frame.buffIcons[i]
+            SafeSetDrawSwipe(bIcon and bIcon.cooldown, auraSettings.buffHideSwipe ~= true)
             SafeSetReverse(bIcon and bIcon.cooldown, auraSettings.buffReverseSwipe == true)
             if auraData then
                 bIcon._cachedShowPulse = showPulse

@@ -1140,11 +1140,13 @@ local function BuildBuffsSettings(content, gfdb, onChange)
 
     CreateComposerCollapsible(content, "Buffs", function(body, updateH)
         local cond = function() return auras.showBuffs end
+        local reverseCond = function() return auras.showBuffs and not auras.buffHideSwipe end
         local L = CreateDynamicLayout(body, updateH)
         L:Row(GUI:CreateFormCheckbox(body, "Show Buffs", "showBuffs", auras, syncedOnChange), FORM_ROW)
         L:Row(GUI:CreateFormSlider(body, "Max Buffs", 0, 8, 1, "maxBuffs", auras, syncedOnChange), SLIDER_HEIGHT, cond)
         L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "buffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "buffReverseSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "buffHideSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "buffReverseSwipe", auras, syncedOnChange), FORM_ROW, reverseCond)
         L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "buffAnchor", auras, syncedOnChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "buffGrowDirection", auras, syncedOnChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "buffSpacing", auras, syncedOnChange), SLIDER_HEIGHT, cond)
@@ -1210,11 +1212,13 @@ local function BuildDebuffsSettings(content, gfdb, onChange)
 
     CreateComposerCollapsible(content, "Debuffs", function(body, updateH)
         local cond = function() return auras.showDebuffs end
+        local reverseCond = function() return auras.showDebuffs and not auras.debuffHideSwipe end
         local L = CreateDynamicLayout(body, updateH)
         L:Row(GUI:CreateFormCheckbox(body, "Show Debuffs", "showDebuffs", auras, syncedOnChange), FORM_ROW)
         L:Row(GUI:CreateFormSlider(body, "Max Debuffs", 0, 8, 1, "maxDebuffs", auras, syncedOnChange), SLIDER_HEIGHT, cond)
         L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "debuffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "debuffReverseSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "debuffHideSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "debuffReverseSwipe", auras, syncedOnChange), FORM_ROW, reverseCond)
         L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "debuffAnchor", auras, syncedOnChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "debuffGrowDirection", auras, syncedOnChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "debuffSpacing", auras, syncedOnChange), SLIDER_HEIGHT, cond)
@@ -1417,13 +1421,15 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
 
     CreateComposerCollapsible(content, "Aura Indicator Defaults", function(body, updateH)
         local cond = function() return ai.enabled end
+        local reverseCond = function() return ai.enabled and not ai.hideSwipe end
         local L = CreateDynamicLayout(body, updateH)
         local desc = GUI:CreateLabel(body, "Icon indicators still use the shared strip settings below. Bars and health-bar tints are configured per aura entry.", 11, C and C.textMuted); desc:SetJustifyH("LEFT")
         L:Row(desc, 40)
         L:Row(GUI:CreateFormCheckbox(body, "Enable Aura Indicators", "enabled", ai, onChange), FORM_ROW)
         L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", ai, onChange), SLIDER_HEIGHT, cond)
         L:Row(GUI:CreateFormSlider(body, "Max Indicators", 1, 10, 1, "maxIndicators", ai, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", ai, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "hideSwipe", ai, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", ai, onChange), FORM_ROW, reverseCond)
         L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", ai, onChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", ai, onChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", ai, onChange), SLIDER_HEIGHT, cond)

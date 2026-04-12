@@ -307,6 +307,9 @@ local function UpdateIconData(icon, unit, auraData)
     end
 
     if icon.cooldown and auraData then
+        if icon.cooldown.SetDrawSwipe then
+            pcall(icon.cooldown.SetDrawSwipe, icon.cooldown, icon._hideSwipe ~= true)
+        end
         if icon.cooldown.SetReverse then
             pcall(icon.cooldown.SetReverse, icon.cooldown, icon._reverseSwipe == true)
         end
@@ -672,6 +675,7 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
         local payload = iconPayloads[idx]
         local icon = AcquireIcon(container)
         icon:SetSize(iconSize, iconSize)
+        icon._hideSwipe = ai.hideSwipe == true
         icon._reverseSwipe = ai.reverseSwipe == true
         icon:ClearAllPoints()
 
