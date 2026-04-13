@@ -10,6 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.3.2 - 2026-04-14
+
+### Changed
+- updated premade Nokterian Healing Profile
+
+### Fixed
+- actionbars: remove pcall from C-side assisted combat APIs, inline callbacks
+- buffborders: guard FullRefresh against nil containers
+- buffborders/layout: fix preview sizing, nil guards, remove bottom padding
+- cdm: add passive aura source tab, block debuff texture bleed on cooldown icons
+- cdm: add override cache and handle COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED
+- cdm/glows: hoist GetSettings above IsPandemicMirroringEnabled
+- groupframes/auras: remove pcall overhead from C-side aura APIs
+- debug cleanup, rotation helper overlay fixes, and CDM improvements
 ## v3.3.1 - 2026-04-13
 
 ### Added
