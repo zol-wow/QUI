@@ -193,6 +193,11 @@ function ActionBarsOwned.SafeSyncAction(self)
             end
         end
     end
+    -- Re-register with C-side after page change so it pushes updates
+    -- for the new action (critical for assisted combat rotation).
+    if SetActionUIButton and action and self.cooldown then
+        SetActionUIButton(self, action, self.cooldown)
+    end
     ActionBarsOwned.SafeUpdate(self)
     -- Refresh assisted combat highlights after page change — the button
     -- now shows a different spell so the old highlight may be stale.
@@ -243,18 +248,6 @@ function ActionBarsOwned.SafeUpdate(self)
             end
         else
             texture = GetActionTexture(action)
-            -- Assisted combat rotation slots return nil texture when the
-            -- rotation has no current recommendation (e.g. no target).  Fall
-            -- back to the next-cast spell texture so the button isn't blank.
-            if not texture and C_AssistedCombat and C_AssistedCombat.GetNextCastSpell then
-                if C_ActionBar.IsAssistedCombatAction(action) then
-                    local spellID = C_AssistedCombat.GetNextCastSpell(true)
-                    if spellID then
-                        local tex = C_Spell.GetSpellTexture(spellID)
-                        if tex then texture = tex end
-                    end
-                end
-            end
         end
         if texture then
             self.icon:SetTexture(texture)
@@ -302,7 +295,14 @@ function ActionBarsOwned.SafeUpdate(self)
             pcall(self.UpdateFlyout, self)
         end
 
-        -- Assisted combat rotation arrow (one-button rotation)
+        -- Assisted combat rotation arrow (one-button rotation).
+        -- Set everActive flag here — SafeUpdate already confirmed
+        -- IsAssistedCombatAction, so unblock the rotation frame's
+        -- fast-path early return.
+        if C_ActionBar and C_ActionBar.IsAssistedCombatAction
+            and C_ActionBar.IsAssistedCombatAction(action) then
+            ActionBarsOwned._assistedCombatEverActive = true
+        end
         UpdateAssistedCombatRotationFrame(self)
 
         -- Level link lock
@@ -2944,12 +2944,12 @@ local function BuildBar(barKey)
     -- Standard action bars (bar1-8): suppress Blizzard's event handling
     -- and shadow mixin methods with taint-safe versions.
     --
-    -- QUI does NOT register buttons with SetActionUIButton.  That C-side
-    -- registration creates a dispatch pipeline (ActionBarButtonEventsFrame
-    -- → ForceUpdateAction → mixin OnEvent/Update) that runs taint-unsafe
-    -- comparison operators on secret values during combat.  Instead, QUI
-    -- self-manages all updates via ownedEventFrame (cooldowns, usability,
-    -- visuals) and SPELL_ACTIVATION_OVERLAY_GLOW events (proc glows).
+    -- Buttons ARE registered with SetActionUIButton so the C-side can
+    -- push icon/cooldown/state updates (critical for assisted combat
+    -- rotation which has no Lua event).  The taint-unsafe mixin methods
+    -- (Update, UpdateAction, UpdateCooldown) are shadowed below with
+    -- QUI's safe versions, so C-side ForceUpdateAction → btn:Update()
+    -- hits SafeUpdate instead of the original mixin code.
     if barKey ~= "pet" and barKey ~= "stance" and barKey ~= "microbar" and barKey ~= "bags" then
         for _, btn in ipairs(buttons) do
             -- Unregister all events — QUI handles events centrally.
@@ -2992,6 +2992,13 @@ local function BuildBar(barKey)
                     self.Count:SetText("")
                 end
             end
+            -- Register with C-side so it pushes icon/state/cooldown updates.
+            -- Must come AFTER method shadows so ForceUpdateAction → Update()
+            -- hits SafeUpdate.
+            if SetActionUIButton and btn.action and btn.cooldown then
+                SetActionUIButton(btn, btn.action, btn.cooldown)
+            end
+
             -- ActionButtonTemplate only provides BaseActionButtonMixin (flyout
             -- handling).  Tooltip code lives in ActionBarActionButtonMixin
             -- (part of ActionBarButtonTemplate) which QUI does not use.
@@ -3895,21 +3902,31 @@ UpdateAssistedCombatRotationFrame = function(button)
 
     local action = button.action
     local show = false
-    if action and HasAction(action) then
+    local hasAction = action and HasAction(action)
+    if hasAction then
         show = C_ActionBar.IsAssistedCombatAction(action)
     end
+
     -- Only create the template frame when needed (first time it should show).
     if show and not frame then
         ActionBarsOwned._assistedCombatEverActive = true
         frame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatRotationTemplate")
         button.AssistedCombatRotationFrame = frame
         _assistRotationButton = button
+        -- The template OnLoad sets frame level relative to MainActionBar's
+        -- EndCaps, which QUI reparented to a hidden frame (low level).
+        -- Override to sit above the button so it's visible over QUI's
+        -- border/gloss overlays.
+        frame:SetFrameLevel(button:GetFrameLevel() + 5)
     end
     -- Always delegate to UpdateState — the template manages its own
     -- show/hide and has internal event handlers that can re-show the
     -- frame if we only call Hide() manually.
     if frame then
         frame:UpdateState()
+        -- Re-assert frame level: the template's OnEvent resets it
+        -- relative to MainActionBar (reparented/hidden in QUI).
+        frame:SetFrameLevel(button:GetFrameLevel() + 5)
     end
 end
 
@@ -4187,13 +4204,14 @@ end
 -- interval hasn't elapsed, the frame stays shown and retries next frame.
 -- Zero closure allocation.
 --
--- Two intervals: cooldown-only updates use a fast 33ms cap (~30/sec)
--- because cooldown swipes are visually continuous.  Full visual updates
--- (icon, name, border, glow) use 66ms (~15/sec) since they're discrete
--- state changes where the extra latency is imperceptible.
-local AB_CD_UPDATE_INTERVAL    = 0.100  -- 100ms for cooldown-only (10Hz — cooldown swipes self-animate once set, so this only gates detection latency)
-local AB_STATE_UPDATE_INTERVAL = 0.066  -- 66ms for checked-state (autoattack/current-action toggle)
-local AB_VIS_UPDATE_INTERVAL   = 0.100  -- 100ms for full visual refresh (10Hz — discrete state changes tolerate this)
+-- Out of combat all updates flush immediately (next frame) for zero-latency
+-- visual changes.  In combat, high-frequency events (ACTIONBAR_UPDATE_COOLDOWN,
+-- ACTIONBAR_UPDATE_STATE) are coalesced behind these interval gates (~30Hz).
+-- Low-frequency events (SPELL_UPDATE_ICON, PLAYER_ENTER/LEAVE_COMBAT) set the
+-- _immediate flag to bypass the combat throttle for that tick.
+local AB_CD_UPDATE_INTERVAL    = 0.033  -- 33ms in-combat cooldown gate (~30Hz)
+local AB_STATE_UPDATE_INTERVAL = 0.033  -- 33ms in-combat checked-state gate
+local AB_VIS_UPDATE_INTERVAL   = 0.033  -- 33ms in-combat visual gate
 
 -- Unified update frame: merges cooldown, state and visual update into a
 -- single OnUpdate handler with dirty flags. When visuals are dirty,
@@ -4209,15 +4227,22 @@ abUpdateFrame._lastVis = 0
 abUpdateFrame._dirtyCooldowns = false
 abUpdateFrame._dirtyStates = false
 abUpdateFrame._dirtyVisuals = false
+abUpdateFrame._immediate = false  -- bypass combat throttle for this tick
 abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
+    -- Out of combat: flush immediately (no throttle).
+    -- In combat: coalesce high-frequency events behind interval gates.
+    -- _immediate flag lets low-frequency events (icon change, form swap)
+    -- bypass the combat throttle for a single tick.
+    local throttle = InCombatLockdown() and not self._immediate
+    self._immediate = false
 
     local doVis = self._dirtyVisuals
     local doState = self._dirtyStates
     local doCd  = self._dirtyCooldowns
 
     if doVis then
-        if now - self._lastVis < AB_VIS_UPDATE_INTERVAL then return end
+        if throttle and (now - self._lastVis < AB_VIS_UPDATE_INTERVAL) then return end
         self:Hide()
         self._lastVis = now
         self._lastCd = now
@@ -4228,20 +4253,20 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
         -- SafeUpdate includes cooldown + checked state internally
         ActionBarsOwned.UpdateAllButtonVisuals()
     elseif doState then
-        if now - self._lastState < AB_STATE_UPDATE_INTERVAL then return end
+        if throttle and (now - self._lastState < AB_STATE_UPDATE_INTERVAL) then return end
         -- State is lean; if cooldowns are also dirty, run them in the same
         -- tick to avoid a second OnUpdate wake-up.
         self:Hide()
         self._lastState = now
         self._dirtyStates = false
         ActionBarsOwned.UpdateAllButtonStates()
-        if doCd and (now - self._lastCd >= AB_CD_UPDATE_INTERVAL) then
+        if doCd and (not throttle or (now - self._lastCd >= AB_CD_UPDATE_INTERVAL)) then
             self._lastCd = now
             self._dirtyCooldowns = false
             ActionBarsOwned.UpdateAllCooldowns()
         end
     elseif doCd then
-        if now - self._lastCd < AB_CD_UPDATE_INTERVAL then return end
+        if throttle and (now - self._lastCd < AB_CD_UPDATE_INTERVAL) then return end
         self:Hide()
         self._lastCd = now
         self._dirtyCooldowns = false
@@ -4274,13 +4299,15 @@ do
     ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AB_Visuals",   frame = visProbeFrame,   scriptType = "OnEvent" }
 end
 
-local function ScheduleABCooldownUpdate()
+local function ScheduleABCooldownUpdate(immediate)
     abUpdateFrame._dirtyCooldowns = true
+    if immediate then abUpdateFrame._immediate = true end
     abUpdateFrame:Show()
 end
 
-local function ScheduleABVisualUpdate(full)
+local function ScheduleABVisualUpdate(full, immediate)
     abUpdateFrame._dirtyVisuals = true
+    if immediate then abUpdateFrame._immediate = true end
     if full then
         -- Mass action-table shuffles (shapeshift, vehicle swap, fresh world,
         -- spell learn/unlearn) need a full scan because the old _activeButtons
@@ -4291,8 +4318,9 @@ local function ScheduleABVisualUpdate(full)
     abUpdateFrame:Show()
 end
 
-local function ScheduleABStateUpdate()
+local function ScheduleABStateUpdate(immediate)
     abUpdateFrame._dirtyStates = true
+    if immediate then abUpdateFrame._immediate = true end
     abUpdateFrame:Show()
 end
 
@@ -4628,7 +4656,7 @@ local function OnOwnedEvent(self, event, ...)
         -- Centralized cooldown update for all owned action buttons.
         -- Per-button OnEvent is suppressed (addon-created frames are
         -- tainted).  DurationObject path is secret-safe.
-        -- Debounced: fires 20+/sec in combat, coalesced to ~20/sec max.
+        -- Coalesced: fires 20+/sec in combat, throttled to ~30Hz.
         ScheduleABCooldownUpdate()
 
     elseif event == "ACTIONBAR_UPDATE_STATE" then
@@ -4640,7 +4668,8 @@ local function OnOwnedEvent(self, event, ...)
     elseif event == "SPELL_UPDATE_ICON" then
         -- Icon texture changed (rare — spell morphs, glyphs, etc).
         -- Needs full SafeUpdate to refresh the icon texture.
-        ScheduleABVisualUpdate()
+        -- Immediate: infrequent but visually jarring when delayed.
+        ScheduleABVisualUpdate(false, true)
 
     elseif event == "ACTIONBAR_UPDATE_USABLE" then
         -- Usability only — the dedicated usability overlay system handles
@@ -4705,11 +4734,13 @@ local function OnOwnedEvent(self, event, ...)
 
     elseif event == "PLAYER_ENTER_COMBAT" or event == "PLAYER_LEAVE_COMBAT" then
         -- Auto-attack flash state changes (SafeUpdate handles flash now)
-        ScheduleABVisualUpdate()
+        -- Immediate: discrete one-shot events, not combat spam.
+        ScheduleABVisualUpdate(false, true)
 
     elseif event == "START_AUTOREPEAT_SPELL" or event == "STOP_AUTOREPEAT_SPELL" then
         -- Auto-shot/wand toggle — refresh flash state on all buttons
-        ScheduleABVisualUpdate()
+        -- Immediate: discrete one-shot events.
+        ScheduleABVisualUpdate(false, true)
 
     elseif event == "SPELLS_CHANGED"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" then
@@ -7810,14 +7841,25 @@ function ActionBarsOwned:Initialize()
     -- Assisted combat rotation (one-button rotation arrow overlay).
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
+            local newSpell = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
             -- Dedupe: Blizzard fires this every OnUpdate frame under soft
             -- targeting; if the rotation spell hasn't actually changed,
             -- skip entirely.
-            local newSpell = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
             if newSpell == ActionBarsOwned._lastAssistRotationSpell then return end
             ActionBarsOwned._lastAssistRotationSpell = newSpell
             if newSpell then ActionBarsOwned._assistedCombatEverActive = true end
             ActionBarsOwned.UpdateAllAssistedCombatRotation()
+            -- The rotation button's icon needs to update too — SafeUpdate
+            -- overrides the arrow texture with the recommended spell.
+            -- Immediate flush: spell changes are low-frequency.
+            ScheduleABVisualUpdate(false, true)
+            -- Notify other modules that consume the rotation recommendation.
+            -- Centralized here so they react to the same event instead of
+            -- polling GetNextCastSpell on independent timers.
+            local rai = ns.RotationAssistIcon
+            if rai and rai.Update then pcall(rai.Update) end
+            local kb = ns.Keybinds
+            if kb and kb.UpdateAllRotationHelpers then pcall(kb.UpdateAllRotationHelpers) end
         end, "QUI_ActionBars_AssistedCombat")
 
         -- Assisted combat highlight (marching ants on the next-cast button).
@@ -7833,6 +7875,32 @@ function ActionBarsOwned:Initialize()
             ActionBarsOwned._lastAssistHighlightSpell = nextSpell
             UpdateAllAssistedHighlights()
         end, "QUI_ActionBars_AssistedHighlight")
+    end
+
+    -- Direct hook on AssistedCombatManager — works even when no assisted
+    -- combat button is on any action bar.  The EventRegistry events above
+    -- don't reliably fire, and SafeUpdate notifications only work when
+    -- a button IS on a bar.  This hook catches all spell changes at the
+    -- source and notifies the rotation assist icon + CDM viewer overlay.
+    if AssistedCombatManager and AssistedCombatManager.UpdateAllAssistedHighlightFramesForSpell then
+        hooksecurefunc(AssistedCombatManager, "UpdateAllAssistedHighlightFramesForSpell", function(_, spellID)
+            -- The spellID from AssistedCombatManager may be a secret value
+            -- in combat.  Convert to a safe number so modules can use ==
+            -- comparisons without erroring.
+            local Helpers = ns.Helpers
+            local safeSpellID = Helpers and Helpers.SafeToNumber(spellID, nil) or spellID
+            if not safeSpellID then return end
+            -- ForceUpdateAction → SafeUpdate races the C-side texture write:
+            -- SafeUpdate reads GetActionTexture before the new value is
+            -- committed, showing the PREVIOUS spell icon.  This hook fires
+            -- AFTER the C-side completes, so schedule an immediate visual
+            -- refresh to re-read the now-correct texture.
+            ScheduleABVisualUpdate(false, true)
+            local rai = ns.RotationAssistIcon
+            if rai and rai.Update then pcall(rai.Update, safeSpellID) end
+            local kb = ns.Keybinds
+            if kb and kb.UpdateAllRotationHelpers then pcall(kb.UpdateAllRotationHelpers, safeSpellID) end
+        end)
     end
 
     -- No overlay scaling hooks needed — buttons stay at their natural 45x45
@@ -8317,6 +8385,7 @@ do
             "macroNameAnchor", "macroNameOffsetX", "macroNameOffsetY",
             "showCounts", "countFontSize", "countColor",
             "countAnchor", "countOffsetX", "countOffsetY",
+            "showFlash",
         }
 
         local copyBarOptions = {

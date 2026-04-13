@@ -284,6 +284,21 @@ function QUI_UF:HideBlizzardFrames()
 
     -- Hide Boss frames (allow in Edit Mode)
     if db.boss and db.boss.enabled then
+        -- TAINT SAFETY: Remove BossTargetFrameContainer from the managed layout
+        -- chain BEFORE touching any geometry. The container is a child of
+        -- UIParentRightManagedFrameContainer; addon-code SetSize/SetPoint/
+        -- ClearAllPoints calls taint its geometry data, and the next
+        -- UIParentManageRightFrameContainer layout pass propagates the taint to
+        -- ClearAllPoints() on the container -> ADDON_ACTION_BLOCKED.
+        if BossTargetFrameContainer and not _blizzFrameGuards.bossContainerRemovedFromManaged then
+            _blizzFrameGuards.bossContainerRemovedFromManaged = true
+            local parent = BossTargetFrameContainer:GetParent()
+            if parent and parent.RemoveManagedFrame then
+                pcall(parent.RemoveManagedFrame, parent, BossTargetFrameContainer)
+            end
+            BossTargetFrameContainer.ignoreFramePositionManager = true
+        end
+
         for i = 1, 5 do
             local bf = _G["Boss" .. i .. "TargetFrame"]
             KillBlizzardFrame(bf, true)

@@ -210,6 +210,7 @@ local function SaveSpecProfile(specID)
 
     local specData = {}
     local containerKeys = CDMContainers_API:GetAllContainerKeys()
+    local hasAnySpells = false
 
     for _, key in ipairs(containerKeys) do
         local containerDB = GetTrackerSettings(key)
@@ -220,10 +221,19 @@ local function SaveSpecProfile(specID)
                 dormantSpells = CopyTable(containerDB.dormantSpells or {}),
                 dormantSequence = containerDB._dormantSequence or 0,
             }
+            if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
+                hasAnySpells = true
+            end
         end
     end
 
-    db._specProfiles[specID] = specData
+    -- Only persist when there are actual spells. If all containers are
+    -- empty (e.g. snapshot failed on login), leave the existing saved
+    -- profile untouched — it may contain good data from a previous session
+    -- that we'll need when the user swaps back to this spec.
+    if hasAnySpells then
+        db._specProfiles[specID] = specData
+    end
 end
 
 local function SaveCurrentSpecProfile()
@@ -248,6 +258,24 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
 
     local containerKeys = CDMContainers_API:GetAllContainerKeys()
     local savedProfile = db._specProfiles and db._specProfiles[specID]
+
+    -- Validate the saved profile actually contains spell data. An empty
+    -- profile (all containers nil/empty) was likely persisted from a failed
+    -- snapshot — discard it so we fall through to fresh snapshot below.
+    if savedProfile then
+        local profileHasSpells = false
+        for _, key in ipairs(containerKeys) do
+            local sc = savedProfile[key]
+            if sc and type(sc.ownedSpells) == "table" and #sc.ownedSpells > 0 then
+                profileHasSpells = true
+                break
+            end
+        end
+        if not profileHasSpells then
+            db._specProfiles[specID] = nil
+            savedProfile = nil
+        end
+    end
 
     if savedProfile then
         -- Restore each container's ownedSpells, removedSpells, and dormantSpells from saved profile
@@ -2705,8 +2733,13 @@ ns.CDMContainers = {
     GetContainerSettings = function(key) return CDMContainers_API:GetContainerSettings(key) end,
     GetContainersByType = function(containerType) return CDMContainers_API:GetContainersByType(containerType) end,
     GetAllContainerKeys = function() return CDMContainers_API:GetAllContainerKeys() end,
-    -- Save current spec's ownedSpells to _specProfiles (called after Composer mutations)
-    SaveActiveSpecProfile = function() SaveSpecProfile(GetCurrentSpecID()) end,
+    -- Save current spec's ownedSpells to _specProfiles (called after Composer mutations).
+    -- Guard: refuse to save while spec tracking is still initialising — the live
+    -- containerDB may still hold stale data from a previous character/spec.
+    SaveActiveSpecProfile = function()
+        if not specTrackingReady then return end
+        SaveSpecProfile(GetCurrentSpecID())
+    end,
     -- Clear imported ownedSpells and re-snapshot from Blizzard CDM for the
     -- current spec. Called after profile import so foreign-class spells are
     -- replaced with the player's actual abilities.

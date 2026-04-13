@@ -885,7 +885,9 @@ local function HookBlizzTexture(icon, blizzChild)
             -- override transitions (wasSetFromAura = false), forward normally.
             if tEntry and not tEntry.isAura and tEntry._blizzChild then
                 local child = tEntry._blizzChild
-                if type(child.wasSetFromAura) == "boolean" and child.wasSetFromAura then
+                -- wasSetFromAura is a secret value in combat — type() returns
+                -- "number" not "boolean".  Use truthiness check instead.
+                if child.wasSetFromAura then
                     return
                 end
             end
@@ -2074,9 +2076,22 @@ local function UpdateIconCooldown(icon)
                 -- child's dynamic texture changes (e.g. Glacial Spike ↔
                 -- Frostbolt).  C_Spell.GetSpellInfo never reflects these.
                 -- For custom entries (no blizzChild), resolve explicitly.
-                -- Note: debuff texture bleed (e.g. Outbreak → Dread Plague)
-                -- is handled by the wasSetFromAura guard in HookBlizzTexture.
-                if icon.Icon and entry._blizzChild then
+                -- Non-aura cooldown entries: lock _desiredTexture to the ability
+                -- icon so HookBlizzTexture can't overwrite with the viewer
+                -- child's debuff texture (e.g. Outbreak → Virulent Plague).
+                -- Aura entries: clear _desiredTexture so HookBlizzTexture
+                -- can forward the correct aura icon.
+                -- Spell override entries (isAura=false, no blizzChild or
+                -- override transitions): let HookBlizzTexture drive.
+                if icon.Icon and entry._blizzChild and not entry.isAura then
+                    if not icon._desiredTexture then
+                        local texInfo = C_Spell.GetSpellInfo(cdSid)
+                        if texInfo and texInfo.iconID then
+                            icon._desiredTexture = texInfo.iconID
+                            pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
+                        end
+                    end
+                elseif icon.Icon and entry._blizzChild then
                     icon._desiredTexture = nil
                 elseif icon.Icon then
                     local texInfo = C_Spell.GetSpellInfo(cdSid)
@@ -2161,8 +2176,18 @@ local function UpdateIconCooldown(icon)
                 if _tickCi and not IsSecretValue(_tickCi.isOnGCD) then
                     icon._isOnGCD = _tickCi.isOnGCD or false
                 end
-                -- Texture: let HookBlizzTexture drive when viewer child exists.
-                if icon.Icon and entry._blizzChild then
+                -- Texture: non-aura cooldown entries keep _desiredTexture locked
+                -- to the ability icon.  Aura entries let HookBlizzTexture drive.
+                if icon.Icon and entry._blizzChild and not entry.isAura then
+                    if not icon._desiredTexture then
+                        local texSid = _runtimeSid
+                        local texInfo = C_Spell.GetSpellInfo(texSid)
+                        if texInfo and texInfo.iconID then
+                            icon._desiredTexture = texInfo.iconID
+                            pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
+                        end
+                    end
+                elseif icon.Icon and entry._blizzChild then
                     icon._desiredTexture = nil
                 elseif icon.Icon then
                     local texSid = _runtimeSid
@@ -2641,6 +2666,8 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
             UpdateIconSecureAttributes(icon, spellEntry, spellEntry.viewerType)
         end
         icon:Show()
+        -- Notify rotation helper that an icon was assigned a spell
+        if ns._onIconAssigned then pcall(ns._onIconAssigned, icon) end
         return icon
     end
     local newIcon = CreateIcon(parent, spellEntry)
@@ -2648,6 +2675,8 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
     if spellEntry.viewerType ~= "buff" then
         UpdateIconSecureAttributes(newIcon, spellEntry, spellEntry.viewerType)
     end
+    -- Notify rotation helper that an icon was assigned a spell
+    if ns._onIconAssigned then pcall(ns._onIconAssigned, newIcon) end
     return newIcon
 end
 

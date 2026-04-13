@@ -20,9 +20,10 @@ local pcall = pcall
 local ipairs = ipairs
 local C_Timer = C_Timer
 
--- Update intervals
-local UPDATE_INTERVAL_COMBAT = 0.1   -- 100ms in combat (was 300ms)
-local UPDATE_INTERVAL_IDLE = 1.0
+-- No polling ticker — updates are event-driven via the centralized
+-- OnSetActionSpell EventRegistry callback in actionbars.lua which calls
+-- RotationAssistIcon.Update, plus direct DoUpdate() calls on
+-- PLAYER_TARGET_CHANGED and combat state transitions.
 
 -- Icon state colors
 local COLOR_USABLE = { 1, 1, 1 }
@@ -37,7 +38,6 @@ local lastSpellID = nil
 local inCombat = false
 
 -- Performance: Ticker instead of OnUpdate
-local updateTicker = nil
 
 -- Cache for keybind lookup (reuse from keybinds.lua)
 local spellToKeybind = {}
@@ -444,19 +444,20 @@ end
 -- Ticker-based Update (Performance: runs only when needed, not every frame)
 --------------------------------------------------------------------------------
 
-local function DoUpdate()
+local function DoUpdate(overrideSpellID)
     local db = GetDB()
-    if not db or not db.enabled then return end
-
-    -- Check if C_AssistedCombat API is available
-    if not C_AssistedCombat or not C_AssistedCombat.GetNextCastSpell then
+    if not db or not db.enabled then
         return
     end
 
-    -- Get next recommended spell
-    local ok, spellID = pcall(C_AssistedCombat.GetNextCastSpell, false)
-    if not ok then
-        spellID = nil
+    local spellID = overrideSpellID
+    if not spellID then
+        -- Fallback: query the API if no override provided
+        if not C_AssistedCombat or not C_AssistedCombat.GetNextCastSpell then
+            return
+        end
+        local ok, sid = pcall(C_AssistedCombat.GetNextCastSpell, false)
+        if ok then spellID = sid end
     end
 
     -- Secret spellID: pass directly to C-side display functions (texture,
@@ -475,24 +476,6 @@ local function DoUpdate()
     end
 end
 
-local function StartUpdateTicker()
-    -- Cancel existing ticker if any
-    if updateTicker then updateTicker:Cancel() end
-
-    local db = GetDB()
-    if not db or not db.enabled then return end
-
-    -- Use appropriate interval based on combat state
-    local interval = inCombat and UPDATE_INTERVAL_COMBAT or UPDATE_INTERVAL_IDLE
-    updateTicker = C_Timer.NewTicker(interval, DoUpdate)
-end
-
-local function StopUpdateTicker()
-    if updateTicker then
-        updateTicker:Cancel()
-        updateTicker = nil
-    end
-end
 
 --------------------------------------------------------------------------------
 -- Frame Refresh (Apply Settings)
@@ -511,12 +494,8 @@ RefreshIconFrame = function()
 
     if not db.enabled then
         iconFrame:Hide()
-        StopUpdateTicker()
         return
     end
-
-    -- Ensure ticker is running when enabled (may have been stopped)
-    StartUpdateTicker()
 
     -- Size (guard with pcall to prevent secret value crash when backdrop recalculates)
     -- SetSize triggers backdrop texture coordinate recalculation which can fail during combat
@@ -646,8 +625,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             local db = GetDB()
             if db and db.enabled then
                 RefreshIconFrame()
-                -- Start ticker for spell updates (performance: replaces OnUpdate)
-                StartUpdateTicker()
+                DoUpdate()
             end
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -655,16 +633,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local db = GetDB()
         if db and db.enabled then
             UpdateVisibility()
-            -- Restart ticker with idle interval (1.0s instead of 0.3s)
-            StartUpdateTicker()
+            DoUpdate()
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
         inCombat = true
         local db = GetDB()
         if db and db.enabled then
             UpdateVisibility()
-            -- Restart ticker with combat interval (0.3s for faster response)
-            StartUpdateTicker()
+            DoUpdate()
         end
     elseif event == "PLAYER_TARGET_CHANGED" then
         UpdateVisibility()
@@ -699,6 +675,7 @@ _G.QUI_RefreshRotationAssistIcon = RefreshRotationAssistIcon
 QUI.RotationAssistIcon = {
     Refresh = RefreshRotationAssistIcon,
     GetFrame = function() return iconFrame end,
+    Update = DoUpdate,  -- called by centralized OnSetActionSpell callback
 }
 
 if QUI.Registry then

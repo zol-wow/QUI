@@ -43,8 +43,7 @@ local pendingRebuild = false
 
 -- Rotation Helper state
 local rotationHelperEnabled = false
-local lastNextSpellID = nil
-local rotationHelperTicker = nil  -- Performance: Ticker instead of OnUpdate
+local currentRotationSpellID = nil  -- current recommendation, for OnShow re-apply
 
 -- Position-based keybind cache (remembers keybinds by icon to handle procs)
 local iconKeybindCache = {}
@@ -1608,6 +1607,8 @@ local function GetRotationHelperOverlay(icon)
         iconKeybindState[icon] = iks
     end
     iks.overlay = overlay
+
+
     return overlay
 end
 
@@ -1661,33 +1662,32 @@ local function ApplyRotationHelperToIcon(icon, settings, nextSpellID)
         return
     end
     
-    -- Check if this icon matches the next spell
+    -- Check if this icon matches the next spell.
+    -- tonumber() both sides: spell entries may store IDs as strings while
+    -- the hook passes numbers (or vice versa), and Lua's == is type-strict.
     local isNextSpell = false
-    if nextSpellID then
-        -- Direct match
-        if iconSpellID == nextSpellID then
+    local nextNum = tonumber(nextSpellID)
+    if nextNum then
+        -- Direct match (iconSpellID may be the override or base)
+        if tonumber(iconSpellID) == nextNum then
             isNextSpell = true
         end
-        -- Check overrideSpellID (some spells morph)
-        if not isNextSpell then
-            local overrideID
-            if icon._spellEntry then
-                -- Owned engine: check both base and override
-                overrideID = icon._spellEntry.spellID  -- base ID (iconSpellID used override above)
-            elseif icon.cooldownInfo then
-                overrideID = icon.cooldownInfo.overrideSpellID
-            end
-            if overrideID then
-                local compareOk, isMatch = pcall(function() return overrideID == nextSpellID end)
-                if compareOk and isMatch then
-                    isNextSpell = true
-                end
+        -- Check the other ID on the spell entry (base if iconSpellID was
+        -- override, or override if iconSpellID was base)
+        if not isNextSpell and icon._spellEntry then
+            local baseID = tonumber(icon._spellEntry.spellID)
+            local overID = tonumber(icon._spellEntry.overrideSpellID)
+            if baseID and baseID == nextNum then
+                isNextSpell = true
+            elseif overID and overID == nextNum then
+                isNextSpell = true
             end
         end
+
     end
-    
+
     local overlay = GetRotationHelperOverlay(icon)
-    
+
     if isNextSpell then
         local color = settings.rotationHelperColor or { 0, 1, 0, 0.8 }
         local thickness = settings.rotationHelperThickness or 2
@@ -1713,15 +1713,17 @@ local function UpdateViewerRotationHelper(viewerName, nextSpellID)
         end
     end
 
-    -- Use CDMIcons pool directly (avoids GetChildren table allocation + GC)
+    -- Process ALL icons in the pool, not just shown ones.  When CDM
+    -- recycles an icon (hides it), the rotation overlay stays as a child.
+    -- When the icon is reused for a different spell, the stale overlay
+    -- would reappear.  Processing hidden icons ensures overlays get
+    -- cleaned up on recycled frames.
     local CDMIcons = QUI.CDMIcons
     if CDMIcons then
         local pool = CDMIcons:GetIconPool(viewerName)
         if pool then
             for _, icon in ipairs(pool) do
-                if icon:IsShown() then
-                    ApplyRotationHelperToIcon(icon, settings, nextSpellID)
-                end
+                ApplyRotationHelperToIcon(icon, settings, nextSpellID)
             end
             return
         end
@@ -1734,35 +1736,34 @@ local function UpdateViewerRotationHelper(viewerName, nextSpellID)
     local n = select('#', container:GetChildren())
     for i = 1, n do
         local child = select(i, container:GetChildren())
-        if child and child:IsShown() then
+        if child then
             ApplyRotationHelperToIcon(child, settings, nextSpellID)
         end
     end
 end
 
 -- Update rotation helper on all viewers
-local function UpdateAllRotationHelpers()
-    -- Check if C_AssistedCombat API is available
-    if not C_AssistedCombat or not C_AssistedCombat.GetNextCastSpell then
-        return
-    end
-    
-    -- Get the next recommended spell (false = don't consider GCD)
-    local ok, nextSpellID = pcall(C_AssistedCombat.GetNextCastSpell, false)
-    if not ok then
-        nextSpellID = nil
-    end
-    -- Guard against secret values from combat API
-    if nextSpellID and type(issecretvalue) == "function" and issecretvalue(nextSpellID) then
-        nextSpellID = nil
+local function UpdateAllRotationHelpers(overrideSpellID)
+    local nextSpellID = overrideSpellID
+    if not nextSpellID then
+        -- Fallback: query the API if no override provided
+        if not C_AssistedCombat or not C_AssistedCombat.GetNextCastSpell then
+            return
+        end
+        local ok, sid = pcall(C_AssistedCombat.GetNextCastSpell, false)
+        if ok then nextSpellID = sid end
+        -- Guard against secret values from combat API
+        if nextSpellID and type(issecretvalue) == "function" and issecretvalue(nextSpellID) then
+            nextSpellID = nil
+        end
     end
 
-    -- Only update if the spell changed
-    if nextSpellID == lastNextSpellID then
-        return
-    end
-    lastNextSpellID = nextSpellID
-    
+    -- Track current recommendation so OnShow hooks can re-apply.
+    currentRotationSpellID = nextSpellID
+
+    -- No dedup — always re-process all icons.  CDM icons may be created
+    -- after the first call, and the OnShow hook hides overlays on recycled
+    -- icons that need re-evaluation.  The per-icon cost is negligible.
     UpdateViewerRotationHelper("essential", nextSpellID)
     UpdateViewerRotationHelper("utility", nextSpellID)
 end
@@ -1781,37 +1782,15 @@ local function ShouldRunRotationHelper()
     return (essential and essential.showRotationHelper) or (utility and utility.showRotationHelper)
 end
 
--- Rotation helper ticker interval (Performance: uses ticker instead of OnUpdate)
-local ROTATION_HELPER_INTERVAL = 0.2 -- Update every 200ms (GCD is 750ms+; 200ms is imperceptible)
-
-local function StartRotationHelperTicker()
-    if rotationHelperTicker then rotationHelperTicker:Cancel() end
-    rotationHelperTicker = C_Timer.NewTicker(ROTATION_HELPER_INTERVAL, function()
-        if not rotationHelperEnabled then return end
-        UpdateAllRotationHelpers()
-    end)
-end
-
-local function StopRotationHelperTicker()
-    if rotationHelperTicker then
-        rotationHelperTicker:Cancel()
-        rotationHelperTicker = nil
-    end
-end
-
 -- Start/stop rotation helper based on settings
 local function RefreshRotationHelper()
     rotationHelperEnabled = ShouldRunRotationHelper()
 
     if not rotationHelperEnabled then
-        -- Hide all overlays and stop ticker
-        lastNextSpellID = nil
         UpdateViewerRotationHelper("essential", nil)
         UpdateViewerRotationHelper("utility", nil)
-        StopRotationHelperTicker()
     else
-        -- Start ticker when enabled
-        StartRotationHelperTicker()
+        UpdateAllRotationHelpers()
     end
 end
 
@@ -1821,6 +1800,26 @@ rotationHelperInitFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 rotationHelperInitFrame:SetScript("OnEvent", function()
     C_Timer.After(1.0, RefreshRotationHelper)
 end)
+
+-- CDM icon assignment callback: when CDM assigns a spell to an icon
+-- (new or recycled), immediately apply the rotation helper glow if
+-- the icon matches the current recommendation.  This replaces tickers
+-- and OnShow hooks — fires at exactly the right moment with _spellEntry set.
+QUI._onIconAssigned = function(icon)
+    if not rotationHelperEnabled or not currentRotationSpellID then return end
+    -- Resolve settings from the icon's own spell entry viewerType
+    -- (can't search pools — icon isn't in the pool yet at this point).
+    local entry = icon._spellEntry
+    if not entry then return end
+    local vType = entry.viewerType
+    if vType ~= "essential" and vType ~= "utility" then return end
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile or not core.db.profile.viewers then return end
+    local settings = core.db.profile.viewers[VIEWER_DB_KEY[vType] or vType]
+    if settings then
+        ApplyRotationHelperToIcon(icon, settings, currentRotationSpellID)
+    end
+end
 
 -- Export functions
 QUI.Keybinds = {
