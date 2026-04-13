@@ -56,6 +56,8 @@ local function GetSpellGlowOverride(icon)
     return CDMSpellData:GetSpellOverride(entry.viewerType, lookupID)
 end
 
+local GetSettings = Helpers.CreateDBGetter("customGlow")
+
 local function IsPandemicMirroringEnabled(icon)
     if not icon or not icon._spellEntry then return false end
 
@@ -113,7 +115,6 @@ end
 
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
-local GetSettings = Helpers.CreateDBGetter("customGlow")
 
 ---------------------------------------------------------------------------
 -- DETERMINE VIEWER TYPE FROM ICON
