@@ -218,6 +218,9 @@ local function HideTalentMicroButtonAlert(button)
         alert:Hide()
     end
 
+    if button.FlashBorder then
+        button.FlashBorder:Hide()
+    end
     if button.NewFeatureTexture then
         button.NewFeatureTexture:Hide()
     end
@@ -329,6 +332,26 @@ local function HookTalentReminderAlerts()
                 end)
             end)
             _quiPopupBlockerHooked[alertFrame] = true
+        end
+    end
+
+    -- Hook FlashBorder (golden glow) on talent micro buttons so it gets suppressed on re-show
+    for _, buttonName in ipairs(talentMicroButtonCandidates) do
+        local button = _G[buttonName]
+        if button and button.FlashBorder and not _quiPopupBlockerHooked[button.FlashBorder] then
+            button.FlashBorder:HookScript("OnShow", function(self)
+                C_Timer.After(0, function()
+                    if not self or not self.Hide then return end
+                    if IsMicrobarEffectivelyHidden() then
+                        self:Hide()
+                        return
+                    end
+                    if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
+                        self:Hide()
+                    end
+                end)
+            end)
+            _quiPopupBlockerHooked[button.FlashBorder] = true
         end
     end
 end

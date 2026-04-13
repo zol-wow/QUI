@@ -2356,59 +2356,17 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             -- Handle timer-driven mode (non-player units with secret timing)
             if self.timerDriven and not isPlayer then
                 -- Engine is driving the animation via SetTimerDuration
-                -- Just update time text by reading remaining time
+                -- Read remaining from the DurationObject and pass secret values
+                -- directly to C-side SetFormattedText (no SafeToNumber needed).
 
-                local remaining = nil
-
-                -- Method 1: Try duration object GetRemainingDuration first
-                if self.durationObj then
+                if self.timeText and self.durationObj then
                     local getter = self.durationObj.GetRemainingDuration or self.durationObj.GetRemaining
                     if getter then
-                        local okRem, rem = pcall(getter, self.durationObj)
-                        if okRem and rem ~= nil then
-                            remaining = SafeToNumber(rem)
+                        local ok, rem = pcall(getter, self.durationObj)
+                        if ok and rem ~= nil then
+                            self.timeText:SetFormattedText("%.1f", rem)
                         end
                     end
-                end
-
-                -- Method 2: Fall back to StatusBar extraction
-                if remaining == nil and self.statusBar and self.statusBar.GetValue and self.statusBar.GetMinMaxValues then
-                    local okV, value = pcall(self.statusBar.GetValue, self.statusBar)
-                    local okMM, minV, maxV = pcall(self.statusBar.GetMinMaxValues, self.statusBar)
-
-                    if okV and okMM then
-                        value = SafeToNumber(value)
-                        minV = SafeToNumber(minV) or 0
-                        maxV = SafeToNumber(maxV)
-
-                        if value and maxV and maxV > minV then
-                            local span = maxV - minV
-
-                            -- Detect countdown vs countup
-                            -- If value is closer to max, bar is counting down
-                            local assumeCountdown = self._assumeCountdown
-                            if assumeCountdown == nil then
-                                local distMin = math.abs(value - minV)
-                                local distMax = math.abs(maxV - value)
-                                assumeCountdown = (distMax < distMin)
-                                self._assumeCountdown = assumeCountdown
-                            end
-
-                            if assumeCountdown then
-                                remaining = value - minV
-                            else
-                                remaining = maxV - value
-                            end
-
-                            if remaining < 0 then remaining = 0 end
-                            if remaining > span then remaining = span end
-                        end
-                    end
-                end
-
-                -- Update time text (throttled) - only if we have valid remaining
-                if remaining ~= nil then
-                    UpdateThrottledText(self, elapsed, self.timeText, remaining)
                 end
 
                 if self.channelTickPositions then
@@ -2653,7 +2611,6 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                         pcall(self.statusBar.SetTimerDuration, self.statusBar, durationObj)
                     end
                 end
-                -- Don't store timing values - we'll read progress from the StatusBar
                 self.castStartTime = nil
                 self.castEndTime = nil
             else
@@ -2980,19 +2937,14 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
         if spellName or channelName then
             -- Timer-driven mode: engine animates the bar, we just update time text
             if self.timerDriven then
-                local remaining = nil
-                if self.durationObj then
+                if self.timeText and self.durationObj then
                     local getter = self.durationObj.GetRemainingDuration or self.durationObj.GetRemaining
                     if getter then
-                        local okRem, rem = pcall(getter, self.durationObj)
-                        if okRem and rem ~= nil then
-                            remaining = SafeToNumber(rem)
+                        local ok, rem = pcall(getter, self.durationObj)
+                        if ok and rem ~= nil then
+                            self.timeText:SetFormattedText("%.1f", rem)
                         end
                     end
-                end
-                if remaining and self.timeText then
-                    self.timeText:SetText(string_format("%.1f", remaining))
-                    UpdateTimeTextColor(self, self.unit)
                 end
                 return
             end

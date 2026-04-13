@@ -4671,6 +4671,12 @@ local function OnOwnedEvent(self, event, ...)
         -- Immediate: infrequent but visually jarring when delayed.
         ScheduleABVisualUpdate(false, true)
 
+    elseif event == "MODIFIER_STATE_CHANGED" then
+        -- Modifier pressed/released — macro conditionals like [mod:shift]
+        -- may resolve to a different spell, changing the icon texture.
+        -- Immediate: user expects instant visual feedback on key press.
+        ScheduleABVisualUpdate(false, true)
+
     elseif event == "ACTIONBAR_UPDATE_USABLE" then
         -- Usability only — the dedicated usability overlay system handles
         -- tinting (range/mana/unusable).  No need for a full SafeUpdate
@@ -7698,6 +7704,7 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("ACTIONBAR_HIDEGRID")
     ownedEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
     ownedEventFrame:RegisterEvent("SPELL_UPDATE_ICON")
+    ownedEventFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
     ownedEventFrame:RegisterEvent("PLAYER_ENTER_COMBAT")
     ownedEventFrame:RegisterEvent("PLAYER_LEAVE_COMBAT")
     ownedEventFrame:RegisterEvent("PET_BATTLE_OPENING_START")

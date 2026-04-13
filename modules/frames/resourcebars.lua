@@ -1410,53 +1410,58 @@ function QUICore:UpdatePowerBar()
         offsetY = QUICore:PixelRound(cfg.offsetY or 0, bar)
     end
 
-    -- Only reposition when offset actually changed (prevents flicker)
-    -- Skip if frame has an active anchoring override
-    local swapMode = isSwapped and "swappedToSecondary" or nil
-    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("primaryPower")) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode) then
-        bar:ClearAllPoints()
-        bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
-        bar._cachedX = offsetX
-        bar._cachedY = offsetY
-        bar._cachedAutoMode = swapMode
-        -- Notify unit frames that may be anchored to this power bar
-        if _G.QUI_UpdateAnchoredUnitFrames then
-            _G.QUI_UpdateAnchoredUnitFrames()
-        end
-    end
-
-    -- For vertical bars, swap width and height (width = thickness, height = length)
-    local wantedH, wantedW
-    if isVertical then
-        -- Vertical bar: cfg.width is the bar length (becomes height), cfg.height is thickness (becomes width)
-        wantedW = QUICore:PixelRound(cfg.height or 6, bar)
-        wantedH = QUICore:PixelRound(width, bar)
-    else
-        -- Horizontal bar: normal dimensions
-        wantedH = QUICore:PixelRound(cfg.height or 6, bar)
-        wantedW = QUICore:PixelRound(width, bar)
-    end
-
-    -- Only resize when dimensions actually changed (prevents flicker)
-    if bar._cachedH ~= wantedH then
-        bar:SetHeight(wantedH)
-        bar._cachedH = wantedH
-    end
-    if bar._cachedW ~= wantedW then
-        bar:SetWidth(wantedW)
-        bar._cachedW = wantedW
-    end
-
-    -- Update border size only when changed (prevents flicker)
-    local borderSizePixels = cfg.borderSize or 1
-    if bar._cachedBorderSize ~= borderSizePixels then
-        if UIKit and UIKit.CreateBackdropBorder then
-            bar.Border = UIKit.CreateBackdropBorder(bar, borderSizePixels, 0, 0, 0, 1)
-            if bar.Border then
-                bar.Border:SetShown(borderSizePixels > 0)
+    -- Geometry functions (SetHeight/SetWidth/SetPoint/ClearAllPoints) are
+    -- protected on named frames during combat.  Config-driven dimensions
+    -- don't change mid-fight; PLAYER_REGEN_ENABLED triggers a full update.
+    if not InCombatLockdown() then
+        -- Only reposition when offset actually changed (prevents flicker)
+        -- Skip if frame has an active anchoring override
+        local swapMode = isSwapped and "swappedToSecondary" or nil
+        if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("primaryPower")) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode) then
+            bar:ClearAllPoints()
+            bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+            bar._cachedX = offsetX
+            bar._cachedY = offsetY
+            bar._cachedAutoMode = swapMode
+            -- Notify unit frames that may be anchored to this power bar
+            if _G.QUI_UpdateAnchoredUnitFrames then
+                _G.QUI_UpdateAnchoredUnitFrames()
             end
         end
-        bar._cachedBorderSize = borderSizePixels
+
+        -- For vertical bars, swap width and height (width = thickness, height = length)
+        local wantedH, wantedW
+        if isVertical then
+            -- Vertical bar: cfg.width is the bar length (becomes height), cfg.height is thickness (becomes width)
+            wantedW = QUICore:PixelRound(cfg.height or 6, bar)
+            wantedH = QUICore:PixelRound(width, bar)
+        else
+            -- Horizontal bar: normal dimensions
+            wantedH = QUICore:PixelRound(cfg.height or 6, bar)
+            wantedW = QUICore:PixelRound(width, bar)
+        end
+
+        -- Only resize when dimensions actually changed (prevents flicker)
+        if bar._cachedH ~= wantedH then
+            bar:SetHeight(wantedH)
+            bar._cachedH = wantedH
+        end
+        if bar._cachedW ~= wantedW then
+            bar:SetWidth(wantedW)
+            bar._cachedW = wantedW
+        end
+
+        -- Update border size only when changed (prevents flicker)
+        local borderSizePixels = cfg.borderSize or 1
+        if bar._cachedBorderSize ~= borderSizePixels then
+            if UIKit and UIKit.CreateBackdropBorder then
+                bar.Border = UIKit.CreateBackdropBorder(bar, borderSizePixels, 0, 0, 0, 1)
+                if bar.Border then
+                    bar.Border:SetShown(borderSizePixels > 0)
+                end
+            end
+            bar._cachedBorderSize = borderSizePixels
+        end
     end
 
     -- Update background color
@@ -3190,38 +3195,43 @@ function QUICore:UpdateSecondaryPowerBar()
         end
     end
 
-    -- For vertical bars, swap width and height (width = thickness, height = length)
-    local wantedH, wantedW
-    if isVertical then
-        -- Vertical bar: cfg.width is the bar length (becomes height), cfg.height is thickness (becomes width)
-        wantedW = QUICore:PixelRound(cfg.height or 4, bar)
-        wantedH = QUICore:PixelRound(width, bar)
-    else
-        -- Horizontal bar: normal dimensions
-        wantedH = QUICore:PixelRound(cfg.height or 4, bar)
-        wantedW = QUICore:PixelRound(width, bar)
-    end
-
-    -- Only resize when dimensions actually changed (prevents flicker)
-    if bar._cachedH ~= wantedH then
-        bar:SetHeight(wantedH)
-        bar._cachedH = wantedH
-    end
-    if bar._cachedW ~= wantedW then
-        bar:SetWidth(wantedW)
-        bar._cachedW = wantedW
-    end
-
-    -- Update border size (pixel-perfect)
-    local secBorderSizePixels = cfg.borderSize or 1
-    if bar._cachedBorderSize ~= secBorderSizePixels then
-        if UIKit and UIKit.CreateBackdropBorder then
-            bar.Border = UIKit.CreateBackdropBorder(bar, secBorderSizePixels, 0, 0, 0, 1)
-            if bar.Border then
-                bar.Border:SetShown(secBorderSizePixels > 0)
-            end
+    -- Geometry functions (SetHeight/SetWidth/SetPoint/ClearAllPoints) are
+    -- protected on named frames during combat.  Config-driven dimensions
+    -- don't change mid-fight; PLAYER_REGEN_ENABLED triggers a full update.
+    if not InCombatLockdown() then
+        -- For vertical bars, swap width and height (width = thickness, height = length)
+        local wantedH, wantedW
+        if isVertical then
+            -- Vertical bar: cfg.width is the bar length (becomes height), cfg.height is thickness (becomes width)
+            wantedW = QUICore:PixelRound(cfg.height or 4, bar)
+            wantedH = QUICore:PixelRound(width, bar)
+        else
+            -- Horizontal bar: normal dimensions
+            wantedH = QUICore:PixelRound(cfg.height or 4, bar)
+            wantedW = QUICore:PixelRound(width, bar)
         end
-        bar._cachedBorderSize = secBorderSizePixels
+
+        -- Only resize when dimensions actually changed (prevents flicker)
+        if bar._cachedH ~= wantedH then
+            bar:SetHeight(wantedH)
+            bar._cachedH = wantedH
+        end
+        if bar._cachedW ~= wantedW then
+            bar:SetWidth(wantedW)
+            bar._cachedW = wantedW
+        end
+
+        -- Update border size (pixel-perfect)
+        local secBorderSizePixels = cfg.borderSize or 1
+        if bar._cachedBorderSize ~= secBorderSizePixels then
+            if UIKit and UIKit.CreateBackdropBorder then
+                bar.Border = UIKit.CreateBackdropBorder(bar, secBorderSizePixels, 0, 0, 0, 1)
+                if bar.Border then
+                    bar.Border:SetShown(secBorderSizePixels > 0)
+                end
+            end
+            bar._cachedBorderSize = secBorderSizePixels
+        end
     end
 
     -- Update background color
