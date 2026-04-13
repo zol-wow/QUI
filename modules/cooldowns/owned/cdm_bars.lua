@@ -177,6 +177,11 @@ local function GetBlizzTrackedBarSpellData(blizzBarChild)
         overrideSpellID = Helpers.SafeToNumber(cdInfo.overrideSpellID, nil)
         baseSpellID = Helpers.SafeToNumber(cdInfo.spellID, nil)
         name = Helpers.SafeValue(cdInfo.name, nil)
+        -- Fall back to event-sourced override cache (non-secret in combat)
+        local overrideCache = ns.CDMSpellData and ns.CDMSpellData._overrideCache
+        if not overrideSpellID and baseSpellID and overrideCache then
+            overrideSpellID = overrideCache[baseSpellID]
+        end
         resolvedSpellID = overrideSpellID or baseSpellID
     end
 
@@ -187,6 +192,11 @@ local function GetBlizzTrackedBarSpellData(blizzBarChild)
         if okInfo and info then
             overrideSpellID = overrideSpellID or Helpers.SafeToNumber(info.overrideSpellID, nil)
             baseSpellID = baseSpellID or Helpers.SafeToNumber(info.spellID, nil)
+            -- Fall back to event-sourced override cache
+            local overrideCache = ns.CDMSpellData and ns.CDMSpellData._overrideCache
+            if not overrideSpellID and baseSpellID and overrideCache then
+                overrideSpellID = overrideCache[baseSpellID]
+            end
             name = name or Helpers.SafeValue(info.name, nil)
             resolvedSpellID = resolvedSpellID or overrideSpellID or baseSpellID
         end
@@ -475,10 +485,16 @@ local function ExtractSpellID(blizzBarChild)
 
     -- 1. Direct cooldownInfo (same property icons use)
     local cdInfo = blizzBarChild.cooldownInfo
+    local overrideCache = ns.CDMSpellData and ns.CDMSpellData._overrideCache
     if cdInfo then
         local override = SafeToNumber(cdInfo.overrideSpellID, nil)
         if override then return override end
         local spell = SafeToNumber(cdInfo.spellID, nil)
+        -- Fall back to event-sourced override cache (non-secret in combat)
+        if not override and spell and overrideCache then
+            override = overrideCache[spell]
+            if override then return override end
+        end
         if spell then return spell end
     end
 
@@ -490,6 +506,10 @@ local function ExtractSpellID(blizzBarChild)
             local override = SafeToNumber(info.overrideSpellID, nil)
             if override then return override end
             local spell = SafeToNumber(info.spellID, nil)
+            if not override and spell and overrideCache then
+                override = overrideCache[spell]
+                if override then return override end
+            end
             if spell then return spell end
         end
     end
@@ -946,6 +966,11 @@ local function FindBlizzBarChild(spellID, entry)
             if ci then
                 local sid = Helpers.SafeValue(ci.overrideSpellID, nil)
                 local sid2 = Helpers.SafeValue(ci.spellID, nil)
+                -- Fall back to event-sourced override cache (non-secret in combat)
+                if not sid and sid2 then
+                    local oc = ns.CDMSpellData and ns.CDMSpellData._overrideCache
+                    if oc then sid = oc[sid2] end
+                end
                 if (sid and idsToMatch[sid]) or (sid2 and idsToMatch[sid2]) then
                     return child
                 end
@@ -1095,12 +1120,12 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
         end
 
-        -- Set initial name text (resolve from viewer child for talent replacements)
+        -- Set initial name text (resolve from viewer child for talent replacements).
+        -- ResolveDisplayName may return a secret string in combat; SetText is
+        -- C-side and handles secret values natively, so pass it through without
+        -- comparing in Lua.
         if bar.NameText then
-            local displayName = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
-            if displayName ~= "" then
-                bar.NameText:SetText(displayName)
-            end
+            bar.NameText:SetText(ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild))
         end
 
         -- Update active state from aura data

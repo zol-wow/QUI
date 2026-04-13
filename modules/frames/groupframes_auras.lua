@@ -69,13 +69,15 @@ local unitAuraCache = {}
 local DISPEL_FILTER = "HARMFUL|RAID_PLAYER_DISPELLABLE"
 
 -- Classify a single harmful aura as dispellable by the current player.
--- Returns true/false; returns nil when the API is unavailable or call fails
--- (caller treats nil as "don't know" and skips set insertion).
+-- Returns true/false; returns nil when the API is unavailable.
+-- No pcall — IsAuraFilteredOutByInstanceID is C-side, returns nil on error.
+local IsAuraFilteredOut = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
+
 local function ClassifyDispellable(unit, instID)
     if not instID or IsSecretValue(instID) then return nil end
-    if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then return nil end
-    local ok, filteredOut = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, instID, DISPEL_FILTER)
-    if not ok or IsSecretValue(filteredOut) then return nil end
+    if not IsAuraFilteredOut then return nil end
+    local filteredOut = IsAuraFilteredOut(unit, instID, DISPEL_FILTER)
+    if filteredOut == nil or IsSecretValue(filteredOut) then return nil end
     return filteredOut == false
 end
 
@@ -100,21 +102,19 @@ local function ScanUnitAuras(unit)
         wipe(cache.defensives)
     end
 
-    if not C_UnitAuras or not C_UnitAuras.GetUnitAuras then return cache end
+    local GetUnitAuras = C_UnitAuras.GetUnitAuras
+    if not GetUnitAuras then return cache end
 
-    -- Copy API results into our existing tables instead of replacing refs
-    -- (avoids abandoning 2 tables per unit per scan to GC — 40 tables in raids)
-    local ok, harmful = pcall(C_UnitAuras.GetUnitAuras, unit, "HARMFUL", 40)
-    if ok and harmful then
+    -- No pcall — GetUnitAuras is C-side, returns nil on invalid unit.
+    local harmful = GetUnitAuras(unit, "HARMFUL", 40)
+    if harmful then
         local dst = cache.harmful
         local dispellable = cache.playerDispellable
         for i = 1, #harmful do
             local ad = harmful[i]
             dst[i] = ad
-            -- Scan-time dispel classification: one pcall per aura now saves
-            -- one pcall per aura per setChanged event later. Fall back to the
-            -- legacy dispelName field when the filter API is unavailable or
-            -- returns nil (preserves correctness in rare edge cases).
+            -- Scan-time dispel classification (C-side, no pcall needed).
+            -- Fall back to dispelName when filter API unavailable.
             local instID = ad.auraInstanceID
             if instID then
                 local classified = ClassifyDispellable(unit, instID)
@@ -127,8 +127,8 @@ local function ScanUnitAuras(unit)
         end
     end
 
-    local ok2, helpful = pcall(C_UnitAuras.GetUnitAuras, unit, "HELPFUL", 40)
-    if ok2 and helpful then
+    local helpful = GetUnitAuras(unit, "HELPFUL", 40)
+    if helpful then
         local dst = cache.helpful
         local defensives = cache.defensives
         for i = 1, #helpful do
@@ -755,12 +755,9 @@ local function AuraPassesFilter(unit, auraInstanceID, filterStrings)
     end
 
     for _, filterStr in ipairs(filterStrings) do
-        local ok, filteredOut = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, auraInstanceID, filterStr)
-        if not ok then
-            return true -- fail-open on error
-        end
-        if IsSecretValue(filteredOut) then
-            return true -- fail-open on secret
+        local filteredOut = IsAuraFilteredOut(unit, auraInstanceID, filterStr)
+        if filteredOut == nil or IsSecretValue(filteredOut) then
+            return true -- fail-open on error/secret
         end
         if not filteredOut then
             return true -- aura matches this classification
@@ -1023,10 +1020,9 @@ local function UpdateFrameAuras(frame)
                 -- "Only My Buffs" filter (use C-side API to avoid secret value on isFromPlayerOrPlayerPet)
                 if onlyMine and not dominated then
                     local instID = auraData.auraInstanceID
-                    if C_UnitAuras.IsAuraFilteredOutByInstanceID and instID and not IsSecretValue(instID) then
-                        -- Inline query — no per-ID caching (same approach as AuraPassesFilter)
-                        local ok, fo = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, instID, "HELPFUL|PLAYER")
-                        if ok and not IsSecretValue(fo) and fo then
+                    if IsAuraFilteredOut and instID and not IsSecretValue(instID) then
+                        local fo = IsAuraFilteredOut(unit, instID, "HELPFUL|PLAYER")
+                        if fo and not IsSecretValue(fo) then
                             dominated = true
                         end
                     elseif not IsSecretValue(auraData.isFromPlayerOrPlayerPet) then
@@ -1184,7 +1180,8 @@ if ns.AuraEvents then
 
         -- Fast path: pure stack/duration update (no auras added or removed).
         -- The display set is identical — skip full scan + all overlay updates.
-        -- Just refresh cooldown swipes on visible icons via DurationObject.
+        -- Only refresh the specific icons whose aura actually updated.
+        -- All APIs are C-side, secret-safe — no pcall needed.
         if type(updateInfo) == "table"
             and not updateInfo.isFullUpdate
             and not updateInfo.addedAuras
@@ -1193,42 +1190,39 @@ if ns.AuraEvents then
             and unitAuraCache[unit]
         then
             local updated = updateInfo.updatedAuraInstanceIDs
-            if #updated == 0 then return end
-            -- Zero-alloc refresh: DurationObject for swipe, C-side for stacks
-            if frame.debuffIcons then
-                for _, icon in ipairs(frame.debuffIcons) do
-                    if not icon:IsShown() then break end
-                    local state = icon._auraState
-                    local instID = state and state.auraInstanceID
-                    if instID and not IsSecretValue(instID) then
-                        if icon.cooldown and icon.cooldown.SetCooldownFromDurationObject and C_UnitAuras.GetAuraDuration then
-                            local ok, dObj = pcall(C_UnitAuras.GetAuraDuration, unit, instID)
-                            if ok and dObj then
-                                pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, dObj, true)
+            local nUpdated = #updated
+            if nUpdated == 0 then return end
+
+            local GetDuration = C_UnitAuras.GetAuraDuration
+            local GetDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
+            if not GetDuration then return end
+
+            -- Refresh only icons whose aura is in the updated set.
+            -- Typically 1-2 auras update per event, so most icons skip.
+            for listIdx = 1, 2 do
+                local icons = listIdx == 1 and frame.debuffIcons or frame.buffIcons
+                if icons then
+                    for _, icon in ipairs(icons) do
+                        if not icon:IsShown() then break end
+                        local state = icon._auraState
+                        local instID = state and state.auraInstanceID
+                        if instID then
+                            -- Linear scan for match (nUpdated is typically 1-3)
+                            local hit = false
+                            for i = 1, nUpdated do
+                                if updated[i] == instID then hit = true; break end
                             end
-                        end
-                        if icon.stackText and C_UnitAuras.GetAuraApplicationDisplayCount then
-                            local ok, s = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, instID, 2, 99)
-                            if ok and s then pcall(icon.stackText.SetText, icon.stackText, s) end
-                        end
-                    end
-                end
-            end
-            if frame.buffIcons then
-                for _, icon in ipairs(frame.buffIcons) do
-                    if not icon:IsShown() then break end
-                    local state = icon._auraState
-                    local instID = state and state.auraInstanceID
-                    if instID and not IsSecretValue(instID) then
-                        if icon.cooldown and icon.cooldown.SetCooldownFromDurationObject and C_UnitAuras.GetAuraDuration then
-                            local ok, dObj = pcall(C_UnitAuras.GetAuraDuration, unit, instID)
-                            if ok and dObj then
-                                pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, dObj, true)
+                            if hit then
+                                local cd = icon.cooldown
+                                if cd and cd.SetCooldownFromDurationObject then
+                                    local dObj = GetDuration(unit, instID)
+                                    if dObj then cd:SetCooldownFromDurationObject(dObj, true) end
+                                end
+                                if icon.stackText and GetDisplayCount then
+                                    local s = GetDisplayCount(unit, instID, 2, 99)
+                                    if s then icon.stackText:SetText(s) end
+                                end
                             end
-                        end
-                        if icon.stackText and C_UnitAuras.GetAuraApplicationDisplayCount then
-                            local ok, s = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, instID, 2, 99)
-                            if ok and s then pcall(icon.stackText.SetText, icon.stackText, s) end
                         end
                     end
                 end

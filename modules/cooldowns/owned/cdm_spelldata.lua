@@ -30,6 +30,11 @@ local CDMSpellData = {}
 -- returning stale/incomplete data.
 local _inZoneTransition = false
 
+-- Override cache: populated by COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED event
+-- (non-secret even in combat) and seeded from OOC scan data.
+local _overrideCache = {}               -- [baseSpellID] = overrideSpellID
+local _overrideToCooldownBase = {}      -- [overrideSpellID] = baseSpellID (reverse)
+
 ---------------------------------------------------------------------------
 -- CONSTANTS
 ---------------------------------------------------------------------------
@@ -72,6 +77,17 @@ local function ChildMatchesSpellID(child, spellID)
     -- cooldownID is a direct property, not behind cooldownInfo — often readable
     local cdID = child.cooldownID
     if cdID and cdID == spellID then return true end
+    -- Reverse lookup: if spellID is an override, check if child matches the base
+    local baseFromCache = _overrideToCooldownBase[spellID]
+    if baseFromCache then
+        if ci then
+            local baseSid = Helpers.SafeValue(ci.spellID, nil)
+            if baseSid and baseSid == baseFromCache then return true end
+        end
+        if cdID and _spellToCooldownID and _spellToCooldownID[baseFromCache] == cdID then
+            return true
+        end
+    end
     return false
 end
 
@@ -273,6 +289,15 @@ local function FindBuffChildForSpell(viewerType, id1, id2, id3)
 end
 
 function CDMSpellData:InvalidateChildMap()
+    _childMapDirty = true
+end
+
+--- Targeted child map update for a single spell override change.
+--- Avoids full invalidation when only one spell morphed.
+local function _UpdateChildMapForOverride(baseSpellID, newOverride, oldOverride)
+    if newOverride and baseSpellID and _spellIDToChild[baseSpellID] then
+        _spellIDToChild[newOverride] = _spellIDToChild[baseSpellID]
+    end
     _childMapDirty = true
 end
 
@@ -862,6 +887,11 @@ local function ScanCooldownViewer(viewerType)
                         local info = child.cooldownInfo
                         spellID = Helpers.SafeValue(info.spellID, nil)
                         overrideSpellID = Helpers.SafeValue(info.overrideSpellID, nil)
+                        -- Seed override cache from OOC scan data
+                        if spellID and overrideSpellID and overrideSpellID ~= spellID then
+                            _overrideCache[spellID] = overrideSpellID
+                            _overrideToCooldownBase[overrideSpellID] = spellID
+                        end
                         name = Helpers.SafeValue(info.name, nil)
                         local wasSetFromAura = (type(info.wasSetFromAura) == "boolean") and info.wasSetFromAura or false
                         local useAuraDisplayTime = (type(info.cooldownUseAuraDisplayTime) == "boolean") and info.cooldownUseAuraDisplayTime or false
@@ -1252,6 +1282,7 @@ local function IsSpellKnownByPlayer(spellID)
                                 if okI and cdInfo then
                                     local sid = Helpers.SafeValue(cdInfo.spellID, nil)
                                     local ov = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
+                                    if not ov and sid then ov = _overrideCache[sid] end
                                     if sid == spellID or ov == spellID then
                                         return true
                                     end
@@ -1356,6 +1387,7 @@ local function ResolveOwnedEntry(entry, containerKey, index)
                     if okI and cdInfo then
                         local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
                         local baseOv = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
+                        if not baseOv and baseSid then baseOv = _overrideCache[baseSid] end
                         isBaseAbility = (entry.id == baseSid or entry.id == baseOv)
                     end
                 end
@@ -1619,7 +1651,8 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
                     if child and child ~= sel and child.Bar then
                         local cdInfo = child.cooldownInfo
                         if cdInfo then
-                            local sid = Helpers.SafeValue(cdInfo.overrideSpellID, nil) or Helpers.SafeValue(cdInfo.spellID, nil)
+                            local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
+                            local sid = Helpers.SafeValue(cdInfo.overrideSpellID, nil) or (baseSid and _overrideCache[baseSid]) or baseSid
                             if sid and not seenBarIDs[sid] then
                                 seenBarIDs[sid] = true
                                 owned[#owned + 1] = { type = "spell", id = sid }
@@ -2012,7 +2045,9 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     -- C_CooldownViewer and spellbook APIs return incomplete data during
     -- transitions, which causes valid dormant spells to be permanently
     -- deleted with no way to recover them.
-    if restoreOnly or _inZoneTransition then
+    if restoreOnly or _inZoneTransition
+       or (C_CooldownViewer and C_CooldownViewer.IsCooldownViewerAvailable
+           and not C_CooldownViewer.IsCooldownViewerAvailable()) then
         -- skip Phase 3
     elseif C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet then
         local allCDMSpells = {}
@@ -2026,6 +2061,7 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
                             local sid = Helpers.SafeValue(info.spellID, nil)
                             if sid then allCDMSpells[sid] = true end
                             local ov = Helpers.SafeValue(info.overrideSpellID, nil)
+                            if not ov and sid then ov = _overrideCache[sid] end
                             if ov then allCDMSpells[ov] = true end
                         end
                     end
@@ -2134,6 +2170,11 @@ local FireChangeCallback
 ResolveInfoSpellID = function(info)
     if not info then return nil end
     local ov = Helpers.SafeValue(info.overrideSpellID, nil)
+    -- Fall back to event-sourced override cache (non-secret in combat)
+    if not ov then
+        local sid = Helpers.SafeValue(info.spellID, nil)
+        if sid then ov = _overrideCache[sid] end
+    end
     if ov and ov > 0 then return ov end
     local linked = info.linkedSpellIDs
     if linked then
@@ -2227,6 +2268,11 @@ RebuildSpellToCooldownID = function()
                     local ov = Helpers.SafeValue(info.overrideSpellID, nil)
                     if ov and ov > 0 then
                         _spellToCooldownID[ov] = cdID
+                    end
+                    -- Seed override cache from OOC scan data
+                    if sid and ov and ov ~= sid then
+                        _overrideCache[sid] = ov
+                        _overrideToCooldownBase[ov] = sid
                     end
                     if info.linkedSpellIDs then
                         for _, lsid in ipairs(info.linkedSpellIDs) do
@@ -2995,6 +3041,56 @@ function CDMSpellData:GetActiveAuras(filter)
     return result
 end
 
+---------------------------------------------------------------------------
+-- GetPassiveAuras — returns passive spells from class/spec spellbook tabs
+-- (skips General). These are talent-granted passives that may produce
+-- visible player buffs trackable in aura containers.
+---------------------------------------------------------------------------
+function CDMSpellData:GetPassiveAuras()
+    local result = {}
+    local seen = {}
+
+    if not (C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines) then
+        return result
+    end
+
+    local okTabs, numTabs = pcall(C_SpellBook.GetNumSpellBookSkillLines)
+    if not okTabs or not numTabs then return result end
+
+    for tab = 1, numTabs do
+        local okLine, skillLineInfo = pcall(C_SpellBook.GetSpellBookSkillLineInfo, tab)
+        if okLine and skillLineInfo and skillLineInfo.name ~= GENERAL then
+            local offset = skillLineInfo.itemIndexOffset or 0
+            local numEntries = skillLineInfo.numSpellBookItems or 0
+            for i = 1, numEntries do
+                local slotIndex = offset + i
+                local okItem, itemInfo = pcall(C_SpellBook.GetSpellBookItemInfo, slotIndex, Enum.SpellBookSpellBank.Player)
+                if okItem and itemInfo and itemInfo.spellID and itemInfo.isPassive and not itemInfo.isOffSpec then
+                    local sid = itemInfo.spellID
+                    if not seen[sid] then
+                        seen[sid] = true
+                        local name, icon
+                        if C_Spell and C_Spell.GetSpellInfo then
+                            local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                            if okI and spellInfo then
+                                name = spellInfo.name
+                                icon = spellInfo.iconID
+                            end
+                        end
+                        result[#result + 1] = {
+                            spellID = sid,
+                            name = name or "",
+                            icon = icon or 0,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    return result
+end
+
 function CDMSpellData:GetUsableItems()
     local result = {}
 
@@ -3198,7 +3294,8 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("SPELLS_CHANGED")
     eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-    eventFrame:SetScript("OnEvent", function(self, event, arg)
+    eventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
+    eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         if event == "SPELL_UPDATE_COOLDOWN" then
             -- No-op: ScanAll runs on its own 0.5s ticker (line 3178).
             -- Calling it here on every SPELL_UPDATE_COOLDOWN was redundant —
@@ -3249,11 +3346,44 @@ function CDMSpellData:Initialize()
             if not InCombatLockdown() then
                 CDMSpellData:ReconcileAllContainers()
             end
+        elseif event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
+            -- Event args are NOT secret — C-side dispatch, safe in combat.
+            local baseSpellID, newOverride = arg1, arg2
+            if baseSpellID then
+                local oldOverride = _overrideCache[baseSpellID]
+                if newOverride then
+                    _overrideCache[baseSpellID] = newOverride
+                    _overrideToCooldownBase[newOverride] = baseSpellID
+                    -- Propagate to cooldownID lookup
+                    local cdID = _spellToCooldownID[baseSpellID]
+                    if cdID then _spellToCooldownID[newOverride] = cdID end
+                else
+                    _overrideCache[baseSpellID] = nil
+                    if oldOverride then _overrideToCooldownBase[oldOverride] = nil end
+                end
+                _UpdateChildMapForOverride(baseSpellID, newOverride, oldOverride)
+                FireChangeCallback()
+            end
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.
-            -- APIs are stale for ~1-2s after entering a new zone/instance.
+            -- APIs are stale until the cooldown viewer comes online.
             _inZoneTransition = true
-            C_Timer.After(2.0, function() _inZoneTransition = false end)
+            -- Poll IsCooldownViewerAvailable instead of blind 2s timer.
+            local attempts = 0
+            local function CheckViewerReady()
+                attempts = attempts + 1
+                if C_CooldownViewer and C_CooldownViewer.IsCooldownViewerAvailable
+                   and C_CooldownViewer.IsCooldownViewerAvailable() then
+                    _inZoneTransition = false
+                    return
+                end
+                if attempts < 20 then  -- 20 * 0.25s = 5s max
+                    C_Timer.After(0.25, CheckViewerReady)
+                else
+                    _inZoneTransition = false  -- fallback: clear after 5s regardless
+                end
+            end
+            C_Timer.After(0.25, CheckViewerReady)
             -- Hide viewers immediately to prevent flash of unstyled icons
             HideBlizzardViewers()
             C_Timer.After(1.0, function()
@@ -3327,6 +3457,7 @@ SlashCmdList["QUI_CDMDUMP"] = function(msg)
                     local childName = ci and Helpers.SafeValue(ci.name, nil)
                     local childSid = ci and Helpers.SafeValue(ci.spellID, nil)
                     local childOv = ci and Helpers.SafeValue(ci.overrideSpellID, nil)
+                    if not childOv and childSid then childOv = _overrideCache[childSid] end
                     -- Match by name substring OR by spell ID
                     local match = false
                     if filterNum then
@@ -3421,7 +3552,7 @@ function CDMSpellData:ResolveDisplaySpellID(entry, blizzChildOverride)
         -- callers pass it to C-side functions that handle secrets natively.
         if ok and childSid then return childSid end
     end
-    return entry and (entry.overrideSpellID or entry.spellID or entry.id)
+    return entry and (entry.overrideSpellID or _overrideCache[entry.spellID] or entry.spellID or entry.id)
 end
 
 --- Resolve the display name for an entry, using the live viewer child spell
@@ -3440,6 +3571,244 @@ function CDMSpellData:ResolveDisplayName(entry, blizzChildOverride)
         end
     end
     return (entry and entry.name) or ""
+end
+
+CDMSpellData._overrideCache = _overrideCache
+CDMSpellData._overrideToCooldownBase = _overrideToCooldownBase
+
+---------------------------------------------------------------------------
+-- DEBUG: /cdmprofiles — dump _specProfiles contents and current spec state.
+---------------------------------------------------------------------------
+SLASH_QUI_CDMPROFILES1 = "/cdmprofiles"
+SlashCmdList["QUI_CDMPROFILES"] = function()
+    local P = "|cff34D399[CDM-Profiles]|r"
+    local db = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+    if not db then
+        print(P, "No ncdm database found.")
+        return
+    end
+
+    local currentSpecID = GetSpecialization and GetSpecializationInfo(GetSpecialization()) or "?"
+    print(P, "Current spec ID:", currentSpecID)
+    print(P, "_lastSpecID:", db._lastSpecID or "nil")
+
+    local profiles = db._specProfiles
+    if not profiles or not next(profiles) then
+        print(P, "_specProfiles: empty/nil")
+        return
+    end
+
+    for specID, specData in pairs(profiles) do
+        local label = specID
+        -- Try to get spec name for readability
+        if GetSpecializationInfoByID then
+            local _, name, _, _, role = GetSpecializationInfoByID(specID)
+            if name then label = specID .. " (" .. name .. ")" end
+        end
+        local containerCount = 0
+        local totalSpells = 0
+        for key, cData in pairs(specData) do
+            if type(cData) == "table" and cData.ownedSpells then
+                containerCount = containerCount + 1
+                local count = type(cData.ownedSpells) == "table" and #cData.ownedSpells or 0
+                totalSpells = totalSpells + count
+                -- Print first few spell names/IDs
+                local spellNames = {}
+                if type(cData.ownedSpells) == "table" then
+                    for i = 1, math.min(5, #cData.ownedSpells) do
+                        local entry = cData.ownedSpells[i]
+                        if entry and entry.id then
+                            local name = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(entry.id)
+                            spellNames[#spellNames + 1] = (name or "?") .. "(" .. entry.id .. ")"
+                        end
+                    end
+                end
+                local dormantCount = 0
+                if type(cData.dormantSpells) == "table" then
+                    for _ in pairs(cData.dormantSpells) do dormantCount = dormantCount + 1 end
+                end
+                local removedCount = 0
+                if type(cData.removedSpells) == "table" then
+                    for _ in pairs(cData.removedSpells) do removedCount = removedCount + 1 end
+                end
+                print(P, "  " .. key .. ":", count, "owned,", dormantCount, "dormant,", removedCount, "removed")
+                if #spellNames > 0 then
+                    local suffix = count > 5 and (" +" .. (count - 5) .. " more") or ""
+                    print(P, "    ", table.concat(spellNames, ", ") .. suffix)
+                end
+            end
+        end
+        print(P, label .. ":", containerCount, "containers,", totalSpells, "total spells")
+    end
+end
+
+---------------------------------------------------------------------------
+-- DEBUG: /cdmclean — purge cross-class spell corruption from _specProfiles.
+-- For each spec belonging to the current character's class, removes spells
+-- that IsSpellKnownByPlayer says aren't learned (cross-class contamination).
+-- Specs belonging to other classes are left untouched — run the command on
+-- each character to clean their own specs.
+---------------------------------------------------------------------------
+SLASH_QUI_CDMCLEAN1 = "/cdmclean"
+SlashCmdList["QUI_CDMCLEAN"] = function()
+    local P = "|cff34D399[CDM-Clean]|r"
+
+    if InCombatLockdown() then
+        print(P, "Cannot clean during combat.")
+        return
+    end
+
+    local db = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+    if not db or not db._specProfiles then
+        print(P, "No spec profiles to clean.")
+        return
+    end
+
+    local _, playerClass = UnitClass("player")
+    if not playerClass then
+        print(P, "Could not determine player class.")
+        return
+    end
+
+    -- Build set of all spells the current character knows (any spec)
+    -- by querying the CDM API + spellbook for comprehensive coverage.
+    local knownSpells = {}
+    if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
+       and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        for cat = 0, 3 do
+            local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cat, true)
+            if ok and ids then
+                for _, cdID in ipairs(ids) do
+                    local okI, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+                    if okI and info then
+                        local sid = Helpers.SafeValue(info.spellID, nil)
+                        if sid then knownSpells[sid] = true end
+                        local ov = Helpers.SafeValue(info.overrideSpellID, nil)
+                        if ov then knownSpells[ov] = true end
+                    end
+                end
+            end
+        end
+    end
+    -- Also include spellbook spells
+    if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
+        local okT, numTabs = pcall(C_SpellBook.GetNumSpellBookSkillLines)
+        if okT and numTabs then
+            for tab = 1, numTabs do
+                local okL, sli = pcall(C_SpellBook.GetSpellBookSkillLineInfo, tab)
+                if okL and sli then
+                    local offset = sli.itemIndexOffset or 0
+                    for i = 1, (sli.numSpellBookItems or 0) do
+                        local okI, ii = pcall(C_SpellBook.GetSpellBookItemInfo, offset + i, Enum.SpellBookSpellBank.Player)
+                        if okI and ii and ii.spellID then knownSpells[ii.spellID] = true end
+                    end
+                end
+            end
+        end
+    end
+
+    local totalCleaned = 0
+    local profilesChecked = 0
+
+    for specID, specData in pairs(db._specProfiles) do
+        local specLabel = tostring(specID)
+        local specClass
+        if GetSpecializationInfoByID then
+            local _, specName, _, _, _, classFile = GetSpecializationInfoByID(specID)
+            if specName then specLabel = specID .. " (" .. specName .. ")" end
+            specClass = classFile
+        end
+
+        if specClass == playerClass then
+            -- This spec belongs to our class — surgically remove foreign spells
+            profilesChecked = profilesChecked + 1
+            local specCleaned = 0
+            for containerKey, cData in pairs(specData) do
+                if type(cData) == "table" and type(cData.ownedSpells) == "table" then
+                    local cleaned = {}
+                    local removed = 0
+                    for _, entry in ipairs(cData.ownedSpells) do
+                        if entry and entry.id and entry.type == "spell" then
+                            if knownSpells[entry.id] or IsSpellKnownByPlayer(entry.id) then
+                                cleaned[#cleaned + 1] = entry
+                            else
+                                removed = removed + 1
+                                local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(entry.id) or "?"
+                                print(P, "  Removed", spellName .. "(" .. entry.id .. ") from", specLabel, containerKey)
+                            end
+                        else
+                            -- Keep non-spell entries (macros, items) as-is
+                            cleaned[#cleaned + 1] = entry
+                        end
+                    end
+                    if removed > 0 then
+                        cData.ownedSpells = cleaned
+                        specCleaned = specCleaned + removed
+                    end
+                    -- Also clean dormantSpells of foreign entries
+                    if type(cData.dormantSpells) == "table" then
+                        for sid in pairs(cData.dormantSpells) do
+                            if type(sid) == "number" and not knownSpells[sid] and not IsSpellKnownByPlayer(sid) then
+                                cData.dormantSpells[sid] = nil
+                                specCleaned = specCleaned + 1
+                            end
+                        end
+                    end
+                end
+            end
+            if specCleaned > 0 then
+                totalCleaned = totalCleaned + specCleaned
+                print(P, specLabel .. ": cleaned", specCleaned, "foreign spells")
+            else
+                print(P, specLabel .. ": clean")
+            end
+        elseif specClass and specClass ~= playerClass then
+            -- Different class — surgically remove any of OUR spells that
+            -- leaked into their profile, preserving their legitimate spells.
+            local specCleaned = 0
+            for containerKey, cData in pairs(specData) do
+                if type(cData) == "table" and type(cData.ownedSpells) == "table" then
+                    local cleaned = {}
+                    local removed = 0
+                    for _, entry in ipairs(cData.ownedSpells) do
+                        if entry and entry.id and entry.type == "spell"
+                           and (knownSpells[entry.id] or IsSpellKnownByPlayer(entry.id)) then
+                            -- This spell belongs to US, not to that class
+                            removed = removed + 1
+                            local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(entry.id) or "?"
+                            print(P, "  Removed", spellName .. "(" .. entry.id .. ") from", specLabel, containerKey)
+                        else
+                            cleaned[#cleaned + 1] = entry
+                        end
+                    end
+                    if removed > 0 then
+                        cData.ownedSpells = cleaned
+                        specCleaned = specCleaned + removed
+                    end
+                    -- Also clean dormantSpells
+                    if type(cData.dormantSpells) == "table" then
+                        for sid in pairs(cData.dormantSpells) do
+                            if type(sid) == "number" and (knownSpells[sid] or IsSpellKnownByPlayer(sid)) then
+                                cData.dormantSpells[sid] = nil
+                                specCleaned = specCleaned + 1
+                            end
+                        end
+                    end
+                end
+            end
+            if specCleaned > 0 then
+                totalCleaned = totalCleaned + specCleaned
+                print(P, specLabel .. ": cleaned", specCleaned, "foreign spells")
+            else
+                print(P, specLabel .. ": clean")
+            end
+        else
+            print(P, specLabel .. ": skipped (unknown spec)")
+        end
+    end
+
+    print(P, "Done.", profilesChecked, "profiles checked,", totalCleaned, "foreign spells removed.")
+    print(P, "Run /cdmprofiles to verify. Run this on each character to clean their specs.")
 end
 
 ns.CDMSpellData = CDMSpellData

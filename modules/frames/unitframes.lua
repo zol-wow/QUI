@@ -2355,6 +2355,11 @@ local function CreateUnitFrame(unit, unitKey)
 
     frame:SetScript("OnEvent", function(self, event, arg1)
         if event == "PLAYER_ENTERING_WORLD" then
+            -- Skip refresh if HUD visibility has this frame hidden — the
+            -- visibility system will re-evaluate via its own PEW handler.
+            -- Without this guard the frame flashes visible for one frame
+            -- before the coalesced visibility check hides it again.
+            if self:GetAlpha() < 0.01 then return end
             UpdateFrame(self)
         elseif event == "PLAYER_TARGET_CHANGED" then
             if self.unitKey == "target" then
@@ -3789,6 +3794,18 @@ initFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Re-hide Blizzard castbars immediately — Blizzard can re-register
         -- events and re-attach the unit on the casting bar during zone transitions.
         QUI_UF:HideBlizzardCastbars()
+        -- Pre-set hidden alpha before refresh so auto-hidden frames don't flash
+        if _G.QUI_ShouldUnitframesBeVisible and not _G.QUI_ShouldUnitframesBeVisible() then
+            local core = GetCore()
+            local vis = core and core.db and core.db.profile and core.db.profile.unitframesVisibility
+            local alpha = vis and vis.fadeOutAlpha or 0
+            for _, frame in pairs(QUI_UF.frames) do
+                if frame then frame:SetAlpha(alpha) end
+            end
+            for _, castbar in pairs(QUI_UF.castbars) do
+                if castbar then castbar:SetAlpha(alpha) end
+            end
+        end
         -- Refresh after loading screens
         C_Timer.After(1.0, function()
             QUI_UF:RefreshAll()

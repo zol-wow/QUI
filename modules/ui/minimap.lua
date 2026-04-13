@@ -167,18 +167,6 @@ local function FlushMinimapDebugStats(force)
     end
 
     stats.lastFlush = now
-    MinimapDebugPrint(format(
-        "1s refresh=%d size=%d dtPanel=%d dtSlots=%d hud=%d hudDefer=%d hide=%d zoomNudge=%d externalHud=%s",
-        stats.refresh or 0,
-        stats.size or 0,
-        stats.datatextPanel or 0,
-        stats.datatextSlots or 0,
-        stats.hud or 0,
-        stats.hudDefer or 0,
-        stats.hideDecor or 0,
-        stats.zoomNudge or 0,
-        externalHudActive and "on" or "off"
-    ))
 
     stats.refresh = 0
     stats.size = 0

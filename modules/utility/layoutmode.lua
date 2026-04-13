@@ -2820,6 +2820,7 @@ do
                 frame = "QUI_BuffIconContainer", isOwned = true,
                 dbKey = "buffBorders", enabledField = "enableBuffs",
                 refresh = "QUI_RefreshBuffBorders",
+                getFrame = function() return _G["QUI_BuffIconContainer"] end,
                 -- SecureAuraHeaderTemplate auto-sizes from its secure children.
                 -- Return _naturalW/_naturalH so the mover tracks the settings-
                 -- computed size (from StyleHeaderChildren / preview grid).
@@ -2835,6 +2836,7 @@ do
                 frame = "QUI_DebuffIconContainer", isOwned = true,
                 dbKey = "buffBorders", enabledField = "enableDebuffs",
                 refresh = "QUI_RefreshBuffBorders",
+                getFrame = function() return _G["QUI_DebuffIconContainer"] end,
                 getSize = function()
                     local f = _G["QUI_DebuffIconContainer"]
                     if f then return f._naturalW, f._naturalH end

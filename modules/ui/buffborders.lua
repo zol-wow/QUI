@@ -1022,6 +1022,12 @@ local function ShowPreview()
     local settings = GetSettings()
     if not settings then return end
 
+    -- Ensure containers are shown so the layout mode reparenting code
+    -- (which checks IsShown()) can attach them to the proxy mover.
+    -- Out of combat, so Show() is safe on SecureAuraHeaders.
+    if not buffContainer:IsShown() then buffContainer:Show() end
+    if not debuffContainer:IsShown() then debuffContainer:Show() end
+
     -- Hide real header children (layout mode = out of combat, so alpha works)
     buffContainer:SetAlpha(0)
     debuffContainer:SetAlpha(0)
@@ -1051,10 +1057,15 @@ local function ShowPreview()
 
     -- Copy computed grid size to the header's _naturalW/_naturalH so the
     -- layout mode handle system picks up the preview dimensions.
+    -- Also SetSize on the containers so the overlay (SetAllPoints) has
+    -- real bounds — SecureAuraHeaders auto-size from children, but the
+    -- real children are hidden during preview.
     buffContainer._naturalW = previewBuffOverlay._naturalW
     buffContainer._naturalH = previewBuffOverlay._naturalH
+    buffContainer:SetSize(previewBuffOverlay._naturalW, previewBuffOverlay._naturalH)
     debuffContainer._naturalW = previewDebuffOverlay._naturalW
     debuffContainer._naturalH = previewDebuffOverlay._naturalH
+    debuffContainer:SetSize(previewDebuffOverlay._naturalW, previewDebuffOverlay._naturalH)
 
     -- Sync layout handles to match preview size
     if _G.QUI_LayoutModeSyncHandle then
@@ -1092,6 +1103,7 @@ end
 -- AURA UPDATE WRAPPERS
 ---------------------------------------------------------------------------
 UpdateBuffIcons = function()
+    if not buffContainer then return end
     local settings = GetSettings()
     if not settings then return end
     if previewActive then return end
@@ -1129,6 +1141,7 @@ local function RefreshPrivateAuraAnchors()
 end
 
 UpdateDebuffIcons = function()
+    if not debuffContainer then return end
     local settings = GetSettings()
     if not settings then return end
     if previewActive then return end
@@ -1275,6 +1288,7 @@ local function UpdateGrowAnchor(faKey)
 end
 
 local function FullRefresh()
+    if not buffContainer or not debuffContainer then return end
     ManageBlizzardFrames()
 
     -- Sync growAnchor from the user's grow direction settings. This catches

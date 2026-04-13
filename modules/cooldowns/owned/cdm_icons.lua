@@ -876,6 +876,21 @@ local function HookBlizzTexture(icon, blizzChild)
             -- Skip when the icon has a resolved desired texture — the Blizzard
             -- child may use a different icon (e.g., debuff instead of ability).
             if quiIcon._desiredTexture then return end
+            -- Block debuff texture bleed on non-aura cooldown entries.
+            -- When an ability applies a DOT (e.g. Outbreak → Dread Plague),
+            -- Blizzard sets wasSetFromAura on the viewer child and updates
+            -- the Icon texture to the debuff icon.  For non-aura cooldown
+            -- entries (essential/utility), block this — the user wants the
+            -- ability icon, not the debuff icon.  For aura entries and spell
+            -- override transitions (wasSetFromAura = false), forward normally.
+            if tEntry and not tEntry.isAura and tEntry._blizzChild then
+                local child = tEntry._blizzChild
+                -- wasSetFromAura is a secret value in combat — type() returns
+                -- "number" not "boolean".  Use truthiness check instead.
+                if child.wasSetFromAura then
+                    return
+                end
+            end
             if quiIcon.Icon and texture then
                 -- Detect spell override transitions (e.g., Wake of Ashes →
                 -- Hammer of Light).  When texture changes, the spell has
@@ -2061,7 +2076,22 @@ local function UpdateIconCooldown(icon)
                 -- child's dynamic texture changes (e.g. Glacial Spike ↔
                 -- Frostbolt).  C_Spell.GetSpellInfo never reflects these.
                 -- For custom entries (no blizzChild), resolve explicitly.
-                if icon.Icon and entry._blizzChild then
+                -- Non-aura cooldown entries: lock _desiredTexture to the ability
+                -- icon so HookBlizzTexture can't overwrite with the viewer
+                -- child's debuff texture (e.g. Outbreak → Virulent Plague).
+                -- Aura entries: clear _desiredTexture so HookBlizzTexture
+                -- can forward the correct aura icon.
+                -- Spell override entries (isAura=false, no blizzChild or
+                -- override transitions): let HookBlizzTexture drive.
+                if icon.Icon and entry._blizzChild and not entry.isAura then
+                    if not icon._desiredTexture then
+                        local texInfo = C_Spell.GetSpellInfo(cdSid)
+                        if texInfo and texInfo.iconID then
+                            icon._desiredTexture = texInfo.iconID
+                            pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
+                        end
+                    end
+                elseif icon.Icon and entry._blizzChild then
                     icon._desiredTexture = nil
                 elseif icon.Icon then
                     local texInfo = C_Spell.GetSpellInfo(cdSid)
@@ -2146,8 +2176,18 @@ local function UpdateIconCooldown(icon)
                 if _tickCi and not IsSecretValue(_tickCi.isOnGCD) then
                     icon._isOnGCD = _tickCi.isOnGCD or false
                 end
-                -- Texture: let HookBlizzTexture drive when viewer child exists.
-                if icon.Icon and entry._blizzChild then
+                -- Texture: non-aura cooldown entries keep _desiredTexture locked
+                -- to the ability icon.  Aura entries let HookBlizzTexture drive.
+                if icon.Icon and entry._blizzChild and not entry.isAura then
+                    if not icon._desiredTexture then
+                        local texSid = _runtimeSid
+                        local texInfo = C_Spell.GetSpellInfo(texSid)
+                        if texInfo and texInfo.iconID then
+                            icon._desiredTexture = texInfo.iconID
+                            pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
+                        end
+                    end
+                elseif icon.Icon and entry._blizzChild then
                     icon._desiredTexture = nil
                 elseif icon.Icon then
                     local texSid = _runtimeSid
@@ -2587,6 +2627,14 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._hasCooldownActive = nil
 
         -- Update texture
+        -- Live override correction: if the event updated the override since
+        -- the entry was built, patch the entry so texture/name stay current.
+        if spellEntry.spellID and not spellEntry.type and ns.CDMSpellData._overrideCache then
+            local liveOverride = ns.CDMSpellData._overrideCache[spellEntry.spellID]
+            if liveOverride and liveOverride ~= spellEntry.overrideSpellID then
+                spellEntry.overrideSpellID = liveOverride
+            end
+        end
         local texID
         if spellEntry.type then
             texID = GetEntryTexture(spellEntry)
@@ -2618,6 +2666,8 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
             UpdateIconSecureAttributes(icon, spellEntry, spellEntry.viewerType)
         end
         icon:Show()
+        -- Notify rotation helper that an icon was assigned a spell
+        if ns._onIconAssigned then pcall(ns._onIconAssigned, icon) end
         return icon
     end
     local newIcon = CreateIcon(parent, spellEntry)
@@ -2625,6 +2675,8 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
     if spellEntry.viewerType ~= "buff" then
         UpdateIconSecureAttributes(newIcon, spellEntry, spellEntry.viewerType)
     end
+    -- Notify rotation helper that an icon was assigned a spell
+    if ns._onIconAssigned then pcall(ns._onIconAssigned, newIcon) end
     return newIcon
 end
 
@@ -3602,6 +3654,7 @@ cdEventFrame:RegisterEvent("PLAYER_SOFT_ENEMY_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 cdEventFrame:RegisterEvent("UPDATE_MACROS")
+cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 -- UNIT_AURA handled by centralized dispatcher subscription (below)
 
 -- C_Timer coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
@@ -3700,6 +3753,13 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
     if event == "UPDATE_MACROS" then
         InvalidateMacroCache()
+        return
+    end
+    if event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
+        -- Override changed: refresh icons/bars to pick up new textures/names.
+        -- SpellData handler already updated _overrideCache and fired change callback.
+        _barsDirty = true
+        ScheduleCDMUpdate()
         return
     end
     -- Coalesce cooldown events via C_Timer

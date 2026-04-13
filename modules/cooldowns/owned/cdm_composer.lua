@@ -2132,6 +2132,9 @@ RefreshAddList = function()
     elseif activeAddTab == "all_cooldowns" then
         sourceEntries = spellData:GetAllLearnedCooldowns() or {}
 
+    elseif activeAddTab == "other_auras" then
+        sourceEntries = spellData:GetPassiveAuras() or {}
+
     elseif activeAddTab == "items" then
         local items = spellData:GetUsableItems() or {}
         for _, item in ipairs(items) do
@@ -2353,10 +2356,12 @@ local function BuildAddTabs()
     elseif containerType == "aura" then
         tabs = {
             { key = "cdm_spells",     label = "Blizzard CDM" },
+            { key = "other_auras",    label = "Other Auras" },
         }
     elseif containerType == "auraBar" then
         tabs = {
             { key = "cdm_spells",     label = "Blizzard CDM" },
+            { key = "other_auras",    label = "Other Auras" },
         }
     end
 

@@ -1178,7 +1178,13 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 
     if event == "ADDON_LOADED" or event == "PLAYER_ENTERING_WORLD" then
-        UpdateHealthState()
+        -- Skip UpdateHealthState on PEW when hidden — it can trigger
+        -- UpdateUnitframesVisibility directly, which would flash frames
+        -- before mount state has settled.  The 2s timer calls it later.
+        if not (event == "PLAYER_ENTERING_WORLD"
+            and UnitframesVisibility.currentlyHidden) then
+            UpdateHealthState()
+        end
         -- Schedule delayed setup so CDM/UF frames have time to render.
         -- Also runs on PLAYER_ENTERING_WORLD to cover zone transitions.
         if _pendingSetupTimer then
@@ -1186,16 +1192,35 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         _pendingSetupTimer = C_Timer.NewTimer(2.0, function()
             _pendingSetupTimer = nil
-            UpdateHealthState()  -- Player healthBar should exist by now
             SetupCDMMouseoverDetector()
             SetupUnitframesMouseoverDetector()
             SetupActionBarsMouseoverDetector()
             SetupChatMouseoverDetector()
+            -- Only CDM runs here — UF/AB/Chat visibility is driven by
+            -- events (dismount, combat, target, etc.).  Running a full
+            -- re-eval here flashes frames because IsMounted() and
+            -- IsPlayerInDungeonOrRaid() can still return stale values
+            -- 2+ seconds after a zone transition.
+            -- UpdateHealthState is also skipped — it triggers
+            -- UpdateUnitframesVisibility internally.  UNIT_HEALTH events
+            -- keep the health state current independently.
             UpdateCDMVisibility()
-            UpdateUnitframesVisibility()
-            UpdateActionBarsVisibility()
-            UpdateChatVisibility()
         end)
+    end
+
+    -- On zone-transition events, skip the coalesced visibility update for
+    -- controllers that are currently hidden. IsMounted()/IsFlying() return
+    -- stale values right after a load screen, which makes ShouldBeVisible
+    -- erroneously return true and flash frames.  The 2-second setup timer
+    -- runs the authoritative re-evaluation once API state has settled.
+    -- All other events (dismount, combat, target change) trigger normally.
+    if (event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA")
+        and (UnitframesVisibility.currentlyHidden
+            or ActionBarsVisibility.currentlyHidden
+            or ChatVisibility.currentlyHidden) then
+        -- Run CDM only — it doesn't have mount-based hide rules
+        UpdateCDMVisibility()
+        return
     end
 
     -- Coalesce visibility updates: if multiple events fire in the same
