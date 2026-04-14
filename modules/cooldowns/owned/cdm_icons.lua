@@ -2628,14 +2628,6 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._hasCooldownActive = nil
 
         -- Update texture
-        -- Live override correction: if the event updated the override since
-        -- the entry was built, patch the entry so texture/name stay current.
-        if spellEntry.spellID and not spellEntry.type and ns.CDMSpellData._overrideCache then
-            local liveOverride = ns.CDMSpellData._overrideCache[spellEntry.spellID]
-            if liveOverride and liveOverride ~= spellEntry.overrideSpellID then
-                spellEntry.overrideSpellID = liveOverride
-            end
-        end
         local texID
         if spellEntry.type then
             texID = GetEntryTexture(spellEntry)
@@ -3655,7 +3647,6 @@ cdEventFrame:RegisterEvent("PLAYER_SOFT_ENEMY_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 cdEventFrame:RegisterEvent("UPDATE_MACROS")
-cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 -- UNIT_AURA handled by centralized dispatcher subscription (below)
 
 -- C_Timer coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
@@ -3754,13 +3745,6 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
     if event == "UPDATE_MACROS" then
         InvalidateMacroCache()
-        return
-    end
-    if event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
-        -- Override changed: refresh icons/bars to pick up new textures/names.
-        -- SpellData handler already updated _overrideCache and fired change callback.
-        _barsDirty = true
-        ScheduleCDMUpdate()
         return
     end
     -- Coalesce cooldown events via C_Timer
