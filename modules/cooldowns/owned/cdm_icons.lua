@@ -1885,16 +1885,21 @@ local function UpdateIconCooldown(icon)
                             pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
                         end
 
-                        -- Stacks: use r.stacks from ResolveAuraState directly,
-                        -- matching bar behavior. ResolveAuraState reads the
-                        -- canonical aura data — hooks (ChargeCount/Applications)
-                        -- are for cooldown charge forwarding, not aura stacks.
-                        if r.stacks then
-                            pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
-                            icon.StackText:Show()
-                        elseif not InCombatLockdown() then
-                            icon.StackText:SetText("")
-                            icon.StackText:Hide()
+                        -- Stacks: prefer hook-driven values (Applications.SetText
+                        -- hook fires immediately when Blizzard updates stacks).
+                        -- The API path (GetAuraDataBySpellName) lags behind the
+                        -- hook by 1+ frames and may return secret values in
+                        -- combat — only use it as a fallback when hooks aren't
+                        -- actively driving stack text for this icon.
+                        local _auraHookActive = IsHookStackActive(entry, icon)
+                        if not _auraHookActive then
+                            if r.stacks then
+                                pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
+                                icon.StackText:Show()
+                            elseif not InCombatLockdown() then
+                                icon.StackText:SetText("")
+                                icon.StackText:Hide()
+                            end
                         end
 
                         -- Keep texture showing the tracked aura spell
