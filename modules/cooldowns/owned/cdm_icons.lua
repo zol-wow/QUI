@@ -1041,8 +1041,11 @@ local function HookBlizzStackText(icon, blizzChild)
                     if entry and entry.isAura then return end
                     -- Mark hook as active so the tick update uses
                     -- cooldownChargesCount (gated) instead of the API path.
-                    -- Only track/forward non-empty text — Blizzard spams
-                    -- SetText("") every refresh cycle.
+                    -- Track non-empty text for hook-active detection.
+                    -- Empty text means stacks depleted — clear cached state
+                    -- so IsHookStackActive yields to the API/clear path.
+                    -- Only the first empty after a real value triggers the
+                    -- clear; subsequent empties are no-ops (no flicker).
                     local isEmpty = true
                     if text ~= nil then
                         local eok, eeq = pcall(function() return text == "" end)
@@ -1061,6 +1064,14 @@ local function HookBlizzStackText(icon, blizzChild)
                         if not entry.hasCharges then
                             pcall(s.icon.StackText.SetText, s.icon.StackText, text)
                             s.icon.StackText:Show()
+                        end
+                    elseif s.chargeText ~= nil then
+                        s.chargeText = nil
+                        ChargeDebug(entry and entry.name, "HOOK ChargeCount.SetText CLEAR",
+                            "hasCharges=", entry and entry.hasCharges)
+                        if not (entry and entry.hasCharges) then
+                            s.icon.StackText:SetText("")
+                            s.icon.StackText:Hide()
                         end
                     end
                 end)
@@ -1113,6 +1124,10 @@ local function HookBlizzStackText(icon, blizzChild)
                         s.lastHookTime = GetTime()
                         pcall(s.icon.StackText.SetText, s.icon.StackText, text)
                         s.icon.StackText:Show()
+                    elseif s.appText ~= nil then
+                        s.appText = nil
+                        s.icon.StackText:SetText("")
+                        s.icon.StackText:Hide()
                     end
                 end)
             end
