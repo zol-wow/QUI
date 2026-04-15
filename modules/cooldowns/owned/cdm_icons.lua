@@ -1247,10 +1247,13 @@ local function CreateIcon(parent, spellEntry)
         else
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         end
-        -- Resolve current spell from the viewer child (reflects dynamic
-        -- transforms like Glacial Spike ↔ Frostbolt that GetOverrideSpell
-        -- does not).  Fall back to entry IDs when no child exists.
-        local sid = ns.CDMSpellData:ResolveDisplaySpellID(entry)
+        -- Use the live runtime spell ID stashed by the tick loop.
+        -- This is the current override (may be secret in combat) —
+        -- pass directly to C-side SetSpellByID which handles secrets.
+        local sid = self._runtimeSpellID
+        if not sid then
+            sid = ns.CDMSpellData:ResolveDisplaySpellID(entry)
+        end
         if sid then
             if entry.type == "trinket" or entry.type == "slot" then
                 local itemID = entry.itemID or GetInventoryItemID("player", entry.id)
@@ -1826,6 +1829,9 @@ local function UpdateIconCooldown(icon)
         local ovOk, ovId = pcall(C_Spell.GetOverrideSpell, _runtimeSid)
         if ovOk and ovId then _runtimeSid = ovId end
     end
+    -- Stash live override on icon so tooltip/display can pass it
+    -- directly to C-side functions (handles secret values natively).
+    icon._runtimeSpellID = _runtimeSid
 
         -- Aura-driven update: delegates to shared CDMSpellData:ResolveAuraState().
         -- Icons apply result to swipe/stacks display on CooldownFrame.
@@ -2072,22 +2078,18 @@ local function UpdateIconCooldown(icon)
                     end
                 end
 
-                -- Texture: when a Blizzard viewer child exists, clear
-                -- _desiredTexture so HookBlizzTexture can forward the
-                -- child's dynamic texture changes (e.g. Glacial Spike ↔
-                -- Frostbolt).  C_Spell.GetSpellInfo never reflects these.
-                -- For custom entries (no blizzChild), resolve explicitly.
-                -- Non-aura cooldown entries: lock _desiredTexture to the ability
-                -- icon so HookBlizzTexture can't overwrite with the viewer
-                -- child's debuff texture (e.g. Outbreak → Virulent Plague).
+                -- Texture: mirror the current runtime spell each tick.
+                -- Non-aura cooldown entries keep _desiredTexture set so
+                -- HookBlizzTexture's wasSetFromAura guard blocks debuff
+                -- texture bleed (e.g. Outbreak → Virulent Plague).
+                -- Update it every tick from the live override (cdSid) so
+                -- talent swaps (Keg Smash → Empty Barrel) are reflected.
                 -- Aura entries: clear _desiredTexture so HookBlizzTexture
-                -- can forward the correct aura icon.
-                -- Spell override entries (isAura=false, no blizzChild or
-                -- override transitions): let HookBlizzTexture drive.
+                -- can forward the correct aura icon from the child.
                 if icon.Icon and entry._blizzChild and not entry.isAura then
-                    if not icon._desiredTexture then
-                        local texInfo = C_Spell.GetSpellInfo(cdSid)
-                        if texInfo and texInfo.iconID then
+                    local texInfo = C_Spell.GetSpellInfo(cdSid)
+                    if texInfo and texInfo.iconID then
+                        if icon._desiredTexture ~= texInfo.iconID then
                             icon._desiredTexture = texInfo.iconID
                             pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
                         end
@@ -2177,13 +2179,14 @@ local function UpdateIconCooldown(icon)
                 if _tickCi and not IsSecretValue(_tickCi.isOnGCD) then
                     icon._isOnGCD = _tickCi.isOnGCD or false
                 end
-                -- Texture: non-aura cooldown entries keep _desiredTexture locked
-                -- to the ability icon.  Aura entries let HookBlizzTexture drive.
+                -- Texture: mirror runtime override each tick (same as
+                -- non-charged path). Keeps _desiredTexture set to block
+                -- debuff bleed, but updates it for talent swaps.
                 if icon.Icon and entry._blizzChild and not entry.isAura then
-                    if not icon._desiredTexture then
-                        local texSid = _runtimeSid
-                        local texInfo = C_Spell.GetSpellInfo(texSid)
-                        if texInfo and texInfo.iconID then
+                    local texSid = _runtimeSid
+                    local texInfo = C_Spell.GetSpellInfo(texSid)
+                    if texInfo and texInfo.iconID then
+                        if icon._desiredTexture ~= texInfo.iconID then
                             icon._desiredTexture = texInfo.iconID
                             pcall(icon.Icon.SetTexture, icon.Icon, texInfo.iconID)
                         end

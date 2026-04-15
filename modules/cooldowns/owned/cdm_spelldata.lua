@@ -1727,18 +1727,35 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
                                 end
                             end
                             if not sid then
-                                sid = ResolveInfoSpellID(cdInfo)
+                                -- Cooldown containers: store the stable base
+                                -- spellID so the entry survives talent swaps.
+                                -- The override is resolved dynamically each
+                                -- tick via C_Spell.GetOverrideSpell.
+                                -- Aura containers still use ResolveInfoSpellID
+                                -- (override points to the actual tracked aura).
+                                if not isAuraContainer then
+                                    local baseSid2 = Helpers.SafeValue(cdInfo.spellID, nil)
+                                    if baseSid2 and baseSid2 > 0 then
+                                        sid = baseSid2
+                                    else
+                                        sid = ResolveInfoSpellID(cdInfo)
+                                    end
+                                else
+                                    sid = ResolveInfoSpellID(cdInfo)
+                                end
                             end
                             if sid and not seenIDs[sid] then
                                 seenIDs[sid] = true
                                 owned[#owned + 1] = { type = "spell", id = sid, _layoutIndex = viewerCDIDs[cdID] or 9999 }
-                                -- Also mark the base spellID so the fallback merge
-                                -- (which uses entry.spellID) doesn't re-add the base
-                                -- when the override was already added (e.g., Divine
-                                -- Toll base when Holy Bulwark override is active).
+                                -- Also mark the override spellID so the fallback
+                                -- merge doesn't re-add it as a duplicate.
                                 local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
                                 if baseSid and baseSid ~= sid then
                                     seenIDs[baseSid] = true
+                                end
+                                local ovSid = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
+                                if ovSid and ovSid ~= sid then
+                                    seenIDs[ovSid] = true
                                 end
                             end
                         end
@@ -2762,15 +2779,31 @@ function CDMSpellData:GetAvailableSpells(containerKey)
                             end
                         end
                         if not sid then
-                            sid = ResolveInfoSpellID(cdInfo)
+                            -- Cooldown containers: use stable base spellID
+                            -- so adding a spell stores the base, not the
+                            -- volatile override. Same logic as snapshot.
+                            if not isAuraContainer then
+                                local baseSid3 = Helpers.SafeValue(cdInfo.spellID, nil)
+                                if baseSid3 and baseSid3 > 0 then
+                                    sid = baseSid3
+                                else
+                                    sid = ResolveInfoSpellID(cdInfo)
+                                end
+                            else
+                                sid = ResolveInfoSpellID(cdInfo)
+                            end
                         end
                         if sid and not seen[sid] then
                             seen[sid] = true
-                            -- Also mark the base spellID as seen so override/base
-                            -- pairs don't both appear (e.g., Divine Toll + Holy Bulwark).
+                            -- Mark both base and override as seen so they
+                            -- don't both appear in the available list.
                             local baseSid2 = Helpers.SafeValue(cdInfo.spellID, nil)
                             if baseSid2 and baseSid2 ~= sid then
                                 seen[baseSid2] = true
+                            end
+                            local ovSid2 = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
+                            if ovSid2 and ovSid2 ~= sid then
+                                seen[ovSid2] = true
                             end
 
                             if not ownedSet[sid] then
@@ -2786,9 +2819,19 @@ function CDMSpellData:GetAvailableSpells(containerKey)
                                 end
 
                                 if not overrideOwned then
+                                    -- Show the current override name/icon in the
+                                    -- picker so the user sees what they'll get,
+                                    -- but store the base ID when they add it.
+                                    local displaySid = sid
+                                    if C_Spell and C_Spell.GetOverrideSpell then
+                                        local okOv2, ovDisplay = pcall(C_Spell.GetOverrideSpell, sid)
+                                        if okOv2 and ovDisplay and ovDisplay ~= sid then
+                                            displaySid = ovDisplay
+                                        end
+                                    end
                                     local name, icon
                                     if C_Spell and C_Spell.GetSpellInfo then
-                                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, displaySid)
                                         if okI and spellInfo then
                                             name = spellInfo.name
                                             icon = spellInfo.iconID

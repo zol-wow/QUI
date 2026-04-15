@@ -1154,6 +1154,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
         -- Bar fill via DurationObject
         local durObj = r.durObj
         if durObj then
+            local prevDurObj = bar._durObj
             bar._durObj = durObj
             local mirrorFillActive = bar._lastMirrorFill
                 and (GetTime() - bar._lastMirrorFill) < 5
@@ -1167,12 +1168,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 -- C-side SetTimerDuration is already driving the fill
                 -- animation.  Re-calling it would restart the animation
                 -- and cause visible flickering.  Detect aura refreshes
-                -- (new application with a different expiration) and
-                -- re-apply only then.
-                local rawExp = r.auraData and r.auraData.expirationTime
-                if rawExp and not Helpers.IsSecretValue(rawExp)
-                   and bar._expirationTime and bar._expirationTime ~= rawExp then
-                    -- Aura was refreshed — new duration, re-apply.
+                -- by comparing the DurationObject reference (C userdata
+                -- identity check — safe in combat, no secret values).
+                if durObj ~= prevDurObj then
                     if bar.StatusBar and bar.StatusBar.SetTimerDuration then
                         pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
                         pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
