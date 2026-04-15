@@ -1185,15 +1185,31 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
         end
 
-        -- Stacks (appended to name text)
+        -- Icon: mirror the blizzIcon child's texture each tick so the bar
+        -- icon tracks dynamic buff changes (e.g. Roll the Bones re-rolls).
+        -- GetTexture and SetTexture are both C-side — forward directly,
+        -- no Lua comparison (texture may be secret in combat).
+        if bar.IconTexture and bar._blizzIconChild then
+            local blzIcon = bar._blizzIconChild
+            local iconRegion = blzIcon.Icon or blzIcon.icon
+            local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
+            if texRegion and texRegion.GetTexture then
+                local tok, tex = pcall(texRegion.GetTexture, texRegion)
+                if tok and tex then
+                    pcall(bar.IconTexture.SetTexture, bar.IconTexture, tex)
+                end
+            end
+        end
+
+        -- Name + stacks text.  Both name and stacks can be secret in
+        -- combat — no Lua comparisons.  SetText is C-side and handles
+        -- secrets natively.  Just forward every tick; FontString dedupes
+        -- internally when the rendered text hasn't changed.
         if bar.NameText then
             local name = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
             local stacks = r.stacks
                 and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
                 or ""
-            -- name may be a secret value in combat — concatenation would fail,
-            -- so pcall the whole expression; if it errors just set name alone
-            -- (SetText is C-side and handles secrets natively).
             local catOk, display = pcall(function() return name .. stacks end)
             if catOk then
                 pcall(bar.NameText.SetText, bar.NameText, display)
@@ -1603,4 +1619,102 @@ barTimerGroup:SetScript("OnLoop", function()
         barTimerGroup:Stop()
     end
 end)
+
+---------------------------------------------------------------------------
+-- DEBUG: /cdmbardebug — toggle per-tick bar state dump.
+-- Shows spellID, resolved aura state, durObj, _blizzBar child fields,
+-- icon child fields — everything needed to diagnose Roll the Bones etc.
+---------------------------------------------------------------------------
+SLASH_QUI_CDMBARDEBUG1 = "/cdmbardebug"
+SlashCmdList["QUI_CDMBARDEBUG"] = function(msg)
+    local filter = msg and strtrim(msg) or ""
+    if filter == "" then
+        _G.QUI_CDM_BAR_DEBUG = not _G.QUI_CDM_BAR_DEBUG
+        print("|cff34D399[CDM-BarDebug]|r", _G.QUI_CDM_BAR_DEBUG and "ON (all bars)" or "OFF")
+        return
+    end
+    _G.QUI_CDM_BAR_DEBUG = filter:lower()
+    print("|cff34D399[CDM-BarDebug]|r ON — filter:", filter)
+end
+
+-- Inject debug print into UpdateOwnedBarAura (post-resolve)
+local _origUpdateOwnedBarAura = CDMBars.UpdateOwnedBarAura
+function CDMBars:UpdateOwnedBarAura(bar)
+    _origUpdateOwnedBarAura(self, bar)
+
+    local dbg = _G.QUI_CDM_BAR_DEBUG
+    if not dbg then return end
+    if not bar or not bar._spellEntry then return end
+    local entry = bar._spellEntry
+    local entryName = entry.name or "?"
+
+    -- Filter check
+    if type(dbg) == "string" then
+        if not entryName:lower():find(dbg, 1, true)
+           and tostring(bar._spellID) ~= dbg then
+            return
+        end
+    end
+
+    local P = "|cff34D399[CDM-BarDbg]|r"
+    local Helpers = ns.Helpers
+    print(P, entryName, "spellID=", bar._spellID, "entry.id=", entry.id,
+          "entry.spellID=", entry.spellID, "entry.overrideSpellID=", entry.overrideSpellID)
+    print(P, "  active=", bar._active, "cSideFill=", bar._cSideFill,
+          "durObj=", bar._durObj and "yes" or "nil")
+
+    -- Blizzard bar child state
+    local blzBar = bar._blizzBar
+    if blzBar then
+        local ci = blzBar.cooldownInfo
+        if ci then
+            local sid = Helpers.SafeValue(ci.spellID, "secret")
+            local ov = Helpers.SafeValue(ci.overrideSpellID, "secret")
+            local cid = ci.cooldownID and Helpers.SafeValue(ci.cooldownID, "secret") or "nil"
+            local wasAura = ci.wasSetFromAura
+            print(P, "  blizzBar: spellID=", sid, "overrideSpellID=", ov,
+                  "cooldownID=", cid, "wasSetFromAura=", tostring(wasAura))
+            if ci.linkedSpellIDs and type(ci.linkedSpellIDs) == "table" then
+                local ids = {}
+                for i, v in ipairs(ci.linkedSpellIDs) do
+                    ids[i] = tostring(Helpers.SafeValue(v, "secret"))
+                end
+                print(P, "  linkedSpellIDs= {", table.concat(ids, ", "), "}")
+            end
+        else
+            print(P, "  blizzBar: no cooldownInfo")
+        end
+        if blzBar.GetSpellID then
+            local ok, gsid = pcall(blzBar.GetSpellID, blzBar)
+            print(P, "  blizzBar:GetSpellID()=", ok and Helpers.SafeValue(gsid, "secret") or "err")
+        end
+        if blzBar.GetAuraSpellID then
+            local ok, asid = pcall(blzBar.GetAuraSpellID, blzBar)
+            print(P, "  blizzBar:GetAuraSpellID()=", ok and Helpers.SafeValue(asid, "secret") or "err")
+        end
+        -- StatusBar value
+        local sb = blzBar.Bar
+        if sb and sb.GetValue then
+            local ok, val = pcall(sb.GetValue, sb)
+            print(P, "  blizzBar.Bar:GetValue()=", ok and Helpers.SafeValue(val, "secret") or "err")
+        end
+    else
+        print(P, "  blizzBar: nil")
+    end
+
+    -- Icon child state
+    local blzIcon = bar._blizzIconChild
+    if blzIcon then
+        if blzIcon.GetSpellID then
+            local ok, gsid = pcall(blzIcon.GetSpellID, blzIcon)
+            print(P, "  blizzIcon:GetSpellID()=", ok and Helpers.SafeValue(gsid, "secret") or "err")
+        end
+        if blzIcon.GetAuraSpellID then
+            local ok, asid = pcall(blzIcon.GetAuraSpellID, blzIcon)
+            print(P, "  blizzIcon:GetAuraSpellID()=", ok and Helpers.SafeValue(asid, "secret") or "err")
+        end
+    else
+        print(P, "  blizzIcon: nil")
+    end
+end
 

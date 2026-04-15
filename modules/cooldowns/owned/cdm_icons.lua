@@ -1247,10 +1247,20 @@ local function CreateIcon(parent, spellEntry)
         else
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         end
-        -- Use the live runtime spell ID stashed by the tick loop.
-        -- This is the current override (may be secret in combat) —
-        -- pass directly to C-side SetSpellByID which handles secrets.
-        local sid = self._runtimeSpellID
+        -- Aura entries: use the Blizzard child's live GetSpellID()
+        -- which dynamically tracks the active buff (e.g. Roll the
+        -- Bones cycling between Broadside/One of a Kind/etc.).
+        -- Non-aura entries: use _runtimeSpellID (live override).
+        -- Both may be secret in combat — pass directly to C-side
+        -- SetSpellByID which handles secrets natively.
+        local sid
+        if entry.isAura and entry._blizzChild and entry._blizzChild.GetSpellID then
+            local ok, childSid = pcall(entry._blizzChild.GetSpellID, entry._blizzChild)
+            if ok and childSid then sid = childSid end
+        end
+        if not sid then
+            sid = self._runtimeSpellID
+        end
         if not sid then
             sid = ns.CDMSpellData:ResolveDisplaySpellID(entry)
         end
