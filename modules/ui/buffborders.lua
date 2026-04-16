@@ -225,31 +225,20 @@ local function CreateHeader(name, filter)
     -- Don't pass name to CreateFrame — C-side name registration makes the
     local header = CreateFrame("Frame", nil, UIParent, "SecureAuraHeaderTemplate")
     if name then _G[name] = header end
+    header:SetClampedToScreen(true)
     header:SetAttribute("unit", "player")
     header:SetAttribute("filter", filter)
-    header:SetAttribute("template", "QUIAuraIconTemplate")
+    header:SetAttribute("template", "QUIAuraTemplate")
     header:SetAttribute("minWidth", 1)
     header:SetAttribute("minHeight", 1)
     header:SetAttribute("sortMethod", "INDEX")
     header:SetAttribute("sortDirection", "+")
     if filter == "HELPFUL" then
         header:SetAttribute("includeWeapons", 1)
-        header:SetAttribute("weaponTemplate", "QUIAuraIconTemplate")
+        header:SetAttribute("weaponTemplate", "QUIAuraTemplate")
     end
 
-    -- Fade support
     header._fadeEnabled = false
-    header:EnableMouse(true)
-    header:SetScript("OnEnter", function(self)
-        if self._fadeEnabled then self:SetAlpha(1) end
-    end)
-    header:SetScript("OnLeave", function(self)
-        if self._fadeEnabled then
-            local s = GetSettings()
-            self:SetAlpha(s and s.fadeOutAlpha or 0)
-        end
-    end)
-
     return header
 end
 
@@ -348,24 +337,8 @@ local function StyleHeaderChildren(header, settings, isBuff)
         child._spellId = data.spellId
         child._filter = filter
 
-        -- Register right-click for buff cancellation (protected, out-of-combat only)
-        if not child._quiClickRegistered and not InCombatLockdown() then
-            child._quiClickRegistered = true
-            child:RegisterForClicks("RightButtonUp")
-        end
-
-        -- Cancel buff on right-click via PostClick (runs in hardware event
-        -- context). The cancelaura secure action type is non-functional in
-        -- 12.0+ so we call CancelUnitBuff directly.
-        if not child._quiCancelHooked then
-            child._quiCancelHooked = true
-            child:HookScript("PostClick", function(self, button)
-                if button ~= "RightButton" then return end
-                if isBuff then
-                    pcall(CancelUnitBuff, "player", self:GetID(), "HELPFUL")
-                end
-            end)
-        end
+        -- Buff cancellation is declared on the secure XML template so right
+        -- clicks flow through SECURE_ACTIONS.cancelaura in combat.
 
         -- Tooltip handlers (set once, check flag)
         if not child._quiTooltipHooked then
