@@ -65,6 +65,7 @@ local framePrevBuffCount = Helpers.CreateStateTable()
 -- is invariant per aura instance ID, so the sets only need maintenance on
 -- add/remove — in-place updates leave them untouched.
 local unitAuraCache = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "GF_unitAuraCache", tbl = unitAuraCache } end
 
 local DISPEL_FILTER = "HARMFUL|RAID_PLAYER_DISPELLABLE"
 

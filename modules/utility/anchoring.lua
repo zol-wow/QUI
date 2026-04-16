@@ -106,6 +106,21 @@ local function PixelRound(frame, value)
     return value
 end
 
+-- Only raw/saved frameAnchoring entries count as explicit overrides here.
+-- AceDB serves defaults through metatables, and those defaults should not
+-- suppress module-owned positioning logic unless the user actually saved an
+-- override entry for that key.
+local function GetSavedFrameAnchorSettings(anchoringDB, key)
+    if type(anchoringDB) ~= "table" or not key then
+        return nil
+    end
+    local settings = rawget(anchoringDB, key)
+    if type(settings) == "table" then
+        return settings
+    end
+    return nil
+end
+
 -- frame param reserved for future frame-aware border calculations
 local function GetBorderAdjustment(frame, anchorPoint, borderSize)
     if not borderSize or borderSize == 0 then return 0, 0 end
@@ -1049,8 +1064,9 @@ local function InstallAnchorGuard(frame, key)
                 end
                 local anchoringDB = QUICore.db and QUICore.db.profile
                     and QUICore.db.profile.frameAnchoring
-                if anchoringDB and anchoringDB[key] then
-                    QUI_Anchoring:ApplyFrameAnchor(key, anchoringDB[key])
+                local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+                if settings then
+                    QUI_Anchoring:ApplyFrameAnchor(key, settings)
                 end
             end)
         end)
@@ -1067,8 +1083,9 @@ local function InstallAnchorGuard(frame, key)
             end
             local anchoringDB = QUICore.db and QUICore.db.profile
                 and QUICore.db.profile.frameAnchoring
-            if anchoringDB and anchoringDB[key] then
-                QUI_Anchoring:ApplyFrameAnchor(key, anchoringDB[key])
+            local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+            if settings then
+                QUI_Anchoring:ApplyFrameAnchor(key, settings)
             end
         end)
     end)
@@ -1580,6 +1597,7 @@ local FRAME_RESOLVERS = {
         if IsBlizzardElementDisabled("zoneAbility") then return nil end
         return _G["ZoneAbilityFrame"]
     end,
+    leaveVehicle = function() return _G["MainMenuBarVehicleLeaveButton"] end,
     -- QoL
     brezCounter = function() return _G["QUI_BrezCounter"] end,
     atonementCounter = function() return _G["QUI_AtonementCounter"] end,
@@ -1806,6 +1824,7 @@ local FRAME_ANCHOR_INFO = {
     bagBar          = { displayName = "Bag Bar",               category = "Action Bars",       order = 12 },
     extraActionButton = { displayName = "Extra Action Button", category = "Action Bars",       order = 13 },
     zoneAbility     = { displayName = "Zone Ability Button",   category = "Action Bars",       order = 14 },
+    leaveVehicle    = { displayName = "Leave Vehicle Button", category = "Action Bars",       order = 15 },
     brezCounter     = { displayName = "Brez Counter",          category = "QoL",               order = 1 },
     atonementCounter = { displayName = "Atonement Counter",    category = "QoL",               order = 2 },
     combatTimer     = { displayName = "Combat Timer",          category = "QoL",               order = 3 },
@@ -2054,7 +2073,7 @@ local function ResolveParentFrame(parentKey, originKey)
                 -- No hardcoded fallback — walk up the user's configured anchor chain.
                 -- If key itself has an anchor override with a parent, try that parent
                 -- (e.g. datatextPanel is anchored to minimap → use minimap).
-                local chainEntry = anchoringDB and anchoringDB[key]
+                local chainEntry = GetSavedFrameAnchorSettings(anchoringDB, key)
                 local chainParent = chainEntry and chainEntry.parent
                 if chainParent and chainParent ~= "screen" and chainParent ~= "disabled" then
                     -- Remember this hidden link's anchor settings so the child can
@@ -2926,13 +2945,13 @@ end
 ---------------------------------------------------------------------------
 -- GLOBAL CALLBACKS
 ---------------------------------------------------------------------------
--- Check if a frame-anchoring key has a saved position in the DB.
+-- Check if a frame-anchoring key has a saved/raw position in the DB.
 -- Modules call this to skip self-positioning when the anchoring system manages the frame.
 _G.QUI_HasFrameAnchor = function(key)
     if not key then return false end
     local core = QUICore
     local db = core and core.db and core.db.profile
-    return db and db.frameAnchoring and type(db.frameAnchoring[key]) == "table" or false
+    return GetSavedFrameAnchorSettings(db and db.frameAnchoring, key) ~= nil
 end
 
 -- Returns true when the anchoring system has hidden a frame because its
@@ -2962,8 +2981,8 @@ _G.QUI_ApplyFrameAnchor = function(key)
         return
     end
     local anchoringDB = QUICore.db.profile.frameAnchoring
-    local settings = anchoringDB and anchoringDB[key]
-    if type(settings) == "table" and HasFrameResolverForKey(key) then
+    local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+    if settings and HasFrameResolverForKey(key) then
         QUI_Anchoring:ApplyFrameAnchor(key, settings)
     end
 end
@@ -2976,8 +2995,8 @@ _G.QUI_ForceReapplyFrameAnchor = function(key)
         return
     end
     local anchoringDB = QUICore.db.profile.frameAnchoring
-    local settings = anchoringDB and anchoringDB[key]
-    if type(settings) ~= "table" or not HasFrameResolverForKey(key) then return end
+    local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+    if not settings or not HasFrameResolverForKey(key) then return end
     local resolved = ResolveApplyFrameForKey(key)
     if resolved then
         if type(resolved) == "table" and not resolved.GetObjectType then

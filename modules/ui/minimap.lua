@@ -2067,6 +2067,7 @@ local function SaveOriginalState(frame, name)
         origPoints = points,
         origOnDragStart = origOnDragStart,
         origOnDragStop = origOnDragStop,
+        origMovable = frame:IsMovable(),
         wasShown = frame:IsShown(),
         iconTex = iconTex,
     }
@@ -2739,13 +2740,15 @@ local function CollectButton(frame, name)
     if mtSetAlpha then mtSetAlpha(frame, 1) end
     if mt and mt.__index then mt.__index.Show(frame) end
 
-    -- Disable dragging
+    -- Disable dragging — nil scripts AND prevent movement so no handler
+    -- (OnMouseDown, etc.) can call StartMoving() and pull the icon out
     if frame:HasScript("OnDragStart") then
         frame:SetScript("OnDragStart", nil)
     end
     if frame:HasScript("OnDragStop") then
         frame:SetScript("OnDragStop", nil)
     end
+    frame:SetMovable(false)
     -- Hook enter/leave for auto-hide
     if frame:HasScript("OnEnter") then
         frame:HookScript("OnEnter", function() CancelAutoHide() end)
@@ -2822,6 +2825,9 @@ local function ReleaseAllButtons()
             frame:ClearAllPoints()
             for _, pt in ipairs(data.origPoints) do
                 frame:SetPoint(unpack(pt))
+            end
+            if data.origMovable ~= nil then
+                frame:SetMovable(data.origMovable)
             end
             pcall(function()
                 if data.origOnDragStart and frame:HasScript("OnDragStart") then

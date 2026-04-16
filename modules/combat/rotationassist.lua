@@ -469,6 +469,16 @@ local function DoUpdate(overrideSpellID)
         return
     end
 
+    -- Resolve talent-transformed display spell.  Blizzard may recommend a
+    -- base spell ID while talents have replaced it with an override.
+    -- The texture, keybind, and usability should reflect the override.
+    if spellID and C_Spell and C_Spell.GetOverrideSpell then
+        local okOvr, overrideID = pcall(C_Spell.GetOverrideSpell, spellID)
+        if okOvr and overrideID and overrideID ~= spellID then
+            spellID = overrideID
+        end
+    end
+
     -- Non-secret: dedup by value
     if spellID ~= lastSpellID then
         lastSpellID = spellID

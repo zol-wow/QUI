@@ -116,6 +116,9 @@ coalesceFrame:SetScript("OnUpdate", function(self)
         -- the nil check is enough without a type() call.
         if info and info._isMerged then
             info._isMerged = nil
+            wipe(info.addedAuras)
+            wipe(info.removedAuraInstanceIDs)
+            wipe(info.updatedAuraInstanceIDs)
         end
     end
     wipe(pendingUnits)
@@ -137,6 +140,7 @@ AuraEvents._RecountSubscribers = RecountSubscribers
 ---------------------------------------------------------------------------
 -- Per-unit scratch tables for merging (pre-allocated, reused via wipe)
 local mergedInfoPool = {}  -- [unit] = { addedAuras = {}, removed... = {}, updated... = {} }
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "AuraEvt_mergedInfoPool", tbl = mergedInfoPool } end
 
 local function GetMergedInfo(unit)
     local m = mergedInfoPool[unit]

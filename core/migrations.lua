@@ -90,11 +90,18 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        uses a relaxed shape check (parent=screen, sizeStable=true, only
 --        the 6 V2 fields) and also patches MigrateAnchoringV2 to skip the
 --        mplusTimer write going forward.)
+-- v29 = RestorePowerBarModulePositioning
+--       (3.1.6: older 3.x profiles can carry raw frameAnchoring entries for
+--        primaryPower / secondaryPower that still match the seeded defaults.
+--        Those entries make the resource bars look explicitly anchored, which
+--        bypasses resourcebars.lua's swap / quick-position logic. Delete only
+--        entries that still match the seeded defaults so the power-bar module
+--        regains ownership; real user customizations stay intact.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 28
+local CURRENT_SCHEMA_VERSION = 29
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1836,6 +1843,66 @@ local function RestoreMplusTimerChainedDefault(profile)
     end
 end
 
+-- v29: remove raw primary/secondary power-bar frameAnchoring entries when
+-- they still resolve to the 3.x seeded defaults. Those entries make the
+-- power bars appear explicitly anchored and block resourcebars.lua from
+-- applying spec-aware swap / lock positioning. Matching against the current
+-- effective values lets this catch raw tables that AceDB partially or fully
+-- stripped back to defaults, while the raw-key check preserves customized
+-- entries with extra fields.
+local SEEDED_POWER_BAR_ANCHOR_DEFAULTS = {
+    primaryPower = {
+        point = "TOP", parent = "cdmEssential", relative = "BOTTOM",
+        offsetX = 0, offsetY = 0,
+        sizeStable = true, autoWidth = true, autoHeight = false,
+        hideWithParent = false, keepInPlace = true,
+        widthAdjust = 0, heightAdjust = 0,
+    },
+    secondaryPower = {
+        point = "TOP", parent = "primaryPower", relative = "BOTTOM",
+        offsetX = 0, offsetY = 0,
+        sizeStable = true, autoWidth = true, autoHeight = false,
+        hideWithParent = false, keepInPlace = true,
+        widthAdjust = 0, heightAdjust = 0,
+    },
+}
+
+local function IsSeededDefaultPowerBarAnchor(key, entry)
+    local defaults = SEEDED_POWER_BAR_ANCHOR_DEFAULTS[key]
+    if not defaults or type(entry) ~= "table" then
+        return false
+    end
+    for field, defaultValue in pairs(defaults) do
+        if entry[field] ~= defaultValue then
+            return false
+        end
+    end
+    for field in pairs(entry) do
+        if defaults[field] == nil then
+            return false
+        end
+    end
+    return true
+end
+
+local function RestorePowerBarModulePositioning(profile)
+    if type(profile) ~= "table" or type(profile.frameAnchoring) ~= "table" then
+        return
+    end
+    local fa = profile.frameAnchoring
+    local removed = 0
+    for key in pairs(SEEDED_POWER_BAR_ANCHOR_DEFAULTS) do
+        local entry = rawget(fa, key)
+        if IsSeededDefaultPowerBarAnchor(key, entry) then
+            MigLog("v29 RestorePowerBarModulePositioning: %s → remove seeded/default FA entry",
+                tostring(key))
+            fa[key] = nil
+            removed = removed + 1
+        end
+    end
+    MigLog("RestorePowerBarModulePositioning done: removed=%d", removed)
+end
+
 -- CORNER_POINTS used by both RepairDisabledStaleCornerEntries and
 -- BackfillGrowAnchor. Defined locally so the migration module is
 -- self-contained (anchoring.lua has its own copy).
@@ -2357,6 +2424,10 @@ function Migrations.RunOnProfile(profile)
     -- cause as v27 but for a key v27's discriminator couldn't catch (V2's
     -- mplusTimer entry uses non-CENTER points). See function docstring.
     if stored < 28 then RestoreMplusTimerChainedDefault(profile) end
+
+    -- v29: remove seeded/default raw FA entries for primary/secondary power
+    -- bars so resourcebars.lua regains control of swap/quick positioning.
+    if stored < 29 then RestorePowerBarModulePositioning(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

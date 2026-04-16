@@ -400,6 +400,7 @@ local function BuildGeneralTab(tabContent)
             end
 
             AddPopupToggle("Block Talent Reminder Alerts (Microbutton)", "blockTalentMicroButtonAlerts")
+            AddPopupToggle("Block Help Tips (talent/spellbook tutorial popups)", "blockHelpTips")
             AddPopupToggle("Block Event Toasts (often campaign/housing)", "blockEventToasts")
             AddPopupToggle("Block New Mount Toasts", "blockMountAlerts")
             AddPopupToggle("Block New Pet Toasts", "blockPetAlerts")

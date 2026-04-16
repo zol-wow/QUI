@@ -99,6 +99,7 @@ local defaults = {
             popupBlocker = {
                 enabled = false,
                 blockTalentMicroButtonAlerts = false, -- Unspent talent/spellbook reminder callouts
+                blockHelpTips = false, -- Blizzard HelpTip tutorial popups (talent/spellbook reminders, etc.)
                 blockEventToasts = false, -- Event toast manager (often campaign/housing news)
                 blockMountAlerts = false, -- New mount toasts
                 blockPetAlerts = false, -- New pet toasts
@@ -3116,7 +3117,7 @@ local defaults = {
             hideEssential = true,
             hideUtility = true,
         },
-        -- Custom Glow Settings (for Essential/Utility cooldown viewers)
+        -- Custom Glow Settings (for Essential/Utility/Buff cooldown viewers)
         customGlow = {
             -- Essential Cooldowns
             essentialEnabled = true,
@@ -3143,6 +3144,9 @@ local defaults = {
             utilityScale = 1,
             utilityXOffset = 0,
             utilityYOffset = 0,
+
+            -- Buff Icon Bar
+            buffPandemicEnabled = true,
         },
         
         -- Cooldown Highlighter (flash on spell cast)

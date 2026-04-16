@@ -69,6 +69,11 @@ local function IsPandemicMirroringEnabled(icon)
         return settings.essentialPandemicEnabled ~= false
     elseif viewerType == "utility" then
         return settings.utilityPandemicEnabled ~= false
+    elseif viewerType == "buff" then
+        return settings.buffPandemicEnabled ~= false
+    elseif viewerType then
+        -- Custom container: uses viewerType as prefix
+        return settings[viewerType .. "PandemicEnabled"] ~= false
     end
 
     return false
@@ -125,6 +130,7 @@ local function GetViewerType(icon)
     local vt = icon._spellEntry.viewerType
     if vt == "essential" then return "Essential"
     elseif vt == "utility" then return "Utility"
+    elseif vt then return vt  -- custom container key
     end
     return nil
 end
@@ -161,6 +167,21 @@ local function GetViewerSettings(viewerType)
             scale = settings.utilityScale or 1,
             xOffset = settings.utilityXOffset or 0,
             yOffset = settings.utilityYOffset or 0,
+        }
+    else
+        -- Custom container: uses viewerType as prefix (e.g., "custom_1Enabled")
+        local prefix = viewerType
+        if not settings[prefix .. "Enabled"] then return nil end
+        return {
+            enabled = true,
+            glowType = settings[prefix .. "GlowType"] or "Pixel Glow",
+            color = settings[prefix .. "Color"] or {0.95, 0.95, 0.32, 1},
+            lines = settings[prefix .. "Lines"] or 14,
+            frequency = settings[prefix .. "Frequency"] or 0.25,
+            thickness = settings[prefix .. "Thickness"] or 2,
+            scale = settings[prefix .. "Scale"] or 1,
+            xOffset = settings[prefix .. "XOffset"] or 0,
+            yOffset = settings[prefix .. "YOffset"] or 0,
         }
     end
 

@@ -1783,87 +1783,67 @@ function QUI_GFEM:CreateSpotlightHeader()
     if not spot or not spot.enabled then return end
     if InCombatLockdown() then return end
 
-    if spotlightContainer then return spotlightContainer end
+    -- Already fully set up with previews from a prior call
+    if spotlightContainer and spotlightContainer._previewFrames then
+        return spotlightContainer
+    end
+
+    -- Adopt the runtime-created container/header if available
+    local GF = ns.QUI_GroupFrames
+    if not spotlightContainer and GF and GF.spotlightContainer then
+        spotlightContainer = GF.spotlightContainer
+        spotlightHeader = GF.spotlightHeader
+    end
 
     -- Dimensions
     local w = spot.frameWidth or 180
     local h = spot.frameHeight or 36
 
-    -- Non-secure container: provides stable size for the layout mode handle.
-    -- SecureGroupHeaderTemplate auto-sizes to 0 when it has no children (solo),
-    -- which makes the handle un-clickable.
-    spotlightContainer = CreateFrame("Frame", "QUI_SpotlightContainer", UIParent)
-    spotlightContainer:SetSize(w, h)
-    spotlightContainer:SetMovable(true)
-    spotlightContainer:SetClampedToScreen(true)
+    -- Create infrastructure only if runtime didn't (spotlight enabled mid-session)
+    if not spotlightContainer then
+        spotlightContainer = CreateFrame("Frame", "QUI_SpotlightContainer", UIParent)
+        spotlightContainer:SetSize(w, h)
+        spotlightContainer:SetMovable(true)
+        spotlightContainer:SetClampedToScreen(true)
+        spotlightContainer._editModeCreated = true
 
-    -- Position via frameAnchoring
-    local anchoring = QUI and QUI.db and QUI.db.profile and QUI.db.profile.frameAnchoring
-    local saved = anchoring and anchoring.spotlightFrames
-    if saved then
-        spotlightContainer:SetPoint(saved.point or "CENTER", UIParent, saved.relative or "CENTER",
-            saved.offsetX or 0, saved.offsetY or 0)
-    else
-        spotlightContainer:SetPoint("CENTER", UIParent, "CENTER", -400, 200)
+        local anchoring = QUI and QUI.db and QUI.db.profile and QUI.db.profile.frameAnchoring
+        local saved = anchoring and anchoring.spotlightFrames
+        if saved then
+            spotlightContainer:SetPoint(saved.point or "CENTER", UIParent, saved.relative or "CENTER",
+                saved.offsetX or 0, saved.offsetY or 0)
+        else
+            spotlightContainer:SetPoint("CENTER", UIParent, "CENTER", -400, 200)
+        end
+
+        local initConfigFunc = [[
+            local header = self:GetParent()
+            self:SetWidth(header:GetAttribute("_initialAttribute-unit-width") or 200)
+            self:SetHeight(header:GetAttribute("_initialAttribute-unit-height") or 40)
+            self:SetAttribute("*type1", "target")
+            self:SetAttribute("*type2", "togglemenu")
+            RegisterUnitWatch(self)
+        ]]
+
+        spotlightHeader = CreateFrame("Frame", "QUI_SpotlightHeader", spotlightContainer, "SecureGroupHeaderTemplate")
+        spotlightHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
+        spotlightHeader:SetAttribute("initialConfigFunction", initConfigFunc)
+        spotlightHeader:SetAttribute("showRaid", true)
+        spotlightHeader:SetAttribute("showParty", true)
+        spotlightHeader:SetPoint("TOPLEFT")
+
+        if GF then
+            GF.spotlightHeader = spotlightHeader
+            GF.spotlightContainer = spotlightContainer
+        end
     end
+
     spotlightContainer:Show()
 
-    -- Secure header: parented inside the container
-    local initConfigFunc = [[
-        local header = self:GetParent()
-        self:SetWidth(header:GetAttribute("_initialAttribute-unit-width") or 200)
-        self:SetHeight(header:GetAttribute("_initialAttribute-unit-height") or 40)
-        self:SetAttribute("*type1", "target")
-        self:SetAttribute("*type2", "togglemenu")
-        RegisterUnitWatch(self)
-    ]]
-
-    spotlightHeader = CreateFrame("Frame", "QUI_SpotlightHeader", spotlightContainer, "SecureGroupHeaderTemplate")
-    spotlightHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
-    spotlightHeader:SetAttribute("initialConfigFunction", initConfigFunc)
-    spotlightHeader:SetAttribute("showRaid", true)
-    spotlightHeader:SetAttribute("showParty", true)
-    spotlightHeader:SetPoint("TOPLEFT")
-
-    -- Store on module table so DecorateGroupFrame can detect spotlight children
-    local GF = ns.QUI_GroupFrames
-    if GF then GF.spotlightHeader = spotlightHeader end
-
-    -- Filtering
+    -- Build preview frames
     local filterMode = spot.filterMode or "ROLE"
-    if filterMode == "ROLE" then
-        local roles = {}
-        if spot.filterTank then roles[#roles + 1] = "TANK" end
-        if spot.filterHealer then roles[#roles + 1] = "HEALER" end
-        if #roles > 0 then
-            spotlightHeader:SetAttribute("groupBy", "ASSIGNEDROLE")
-            spotlightHeader:SetAttribute("groupingOrder", table.concat(roles, ","))
-            spotlightHeader:SetAttribute("strictFiltering", true)
-        end
-    elseif filterMode == "NAME" then
-        local nameList = spot.nameList
-        if nameList and nameList ~= "" then
-            spotlightHeader:SetAttribute("nameList", nameList)
-        end
-    end
-
-    spotlightHeader:SetAttribute("_initialAttribute-unit-width", w)
-    spotlightHeader:SetAttribute("_initialAttribute-unit-height", h)
-
-    -- Grow direction
     local spacing = spot.spacing or 2
     local grow = spot.growDirection or "DOWN"
-    if grow == "DOWN" then
-        spotlightHeader:SetAttribute("point", "TOP")
-        spotlightHeader:SetAttribute("yOffset", -spacing)
-    else
-        spotlightHeader:SetAttribute("point", "BOTTOM")
-        spotlightHeader:SetAttribute("yOffset", spacing)
-    end
-
-    spotlightHeader:Show()
-
-    -- Build preview frames: 2 for tanks, 3 for healers
     local previewFrames = {}
     local previewData = {}
     if filterMode == "ROLE" then
@@ -1895,7 +1875,6 @@ function QUI_GFEM:CreateSpotlightHeader()
         for i, data in ipairs(previewData) do
             local testFrame = CreateTestFrame(spotlightContainer, 1000 + i, totalCount, data.class, data.name, data.role, data.hp)
             if testFrame then
-                -- Override dimensions to use spotlight-specific sizes
                 testFrame:SetSize(w, h)
                 testFrame:ClearAllPoints()
                 if i == 1 then
@@ -1923,26 +1902,11 @@ function QUI_GFEM:CreateSpotlightHeader()
 
     spotlightContainer._previewFrames = previewFrames
 
-    -- Decorate real children if in a group
-    C_Timer.After(0.3, function()
-        if not spotlightHeader or not spotlightContainer then return end
-        local GF = ns.QUI_GroupFrames
-        if not GF or not GF.DecorateGroupFrame then return end
-        local i = 1
-        while true do
-            local child = spotlightHeader:GetAttribute("child" .. i)
-            if not child then break end
-            if not child._quiDecorated then
-                GF.DecorateGroupFrame(child)
-            end
-            i = i + 1
-        end
-    end)
-
     return spotlightContainer
 end
 
 function QUI_GFEM:DestroySpotlightHeader()
+    -- Always clean up preview frames
     if spotlightContainer and spotlightContainer._previewFrames then
         for _, f in ipairs(spotlightContainer._previewFrames) do
             f:Hide()
@@ -1950,12 +1914,21 @@ function QUI_GFEM:DestroySpotlightHeader()
         end
         spotlightContainer._previewFrames = nil
     end
+
+    -- If the runtime owns the container/header, just clear our locals
+    if spotlightContainer and not spotlightContainer._editModeCreated then
+        spotlightContainer = nil
+        spotlightHeader = nil
+        return
+    end
+
+    -- Edit-mode-created: full teardown
     if spotlightHeader then
         if not InCombatLockdown() then
             spotlightHeader:Hide()
         end
         local GF = ns.QUI_GroupFrames
-        if GF then GF.spotlightHeader = nil end
+        if GF then GF.spotlightHeader = nil; GF.spotlightContainer = nil end
         spotlightHeader = nil
     end
     if spotlightContainer then
@@ -2139,19 +2112,38 @@ do
                 if not db.raid then db.raid = {} end
                 if not db.raid.spotlight then db.raid.spotlight = {} end
                 db.raid.spotlight.enabled = val
+                -- Show/hide the runtime spotlight immediately
+                local GF = ns.QUI_GroupFrames
+                if GF then
+                    if val then
+                        if GF.RecreateSpotlightHeader then
+                            GF:RecreateSpotlightHeader()
+                        end
+                    else
+                        if GF.spotlightHeader and not InCombatLockdown() then
+                            GF.spotlightHeader:Hide()
+                        end
+                        if GF.spotlightContainer then
+                            GF.spotlightContainer:Hide()
+                        end
+                    end
+                end
             end,
             setGameplayHidden = function(hide)
-                if not spotlightContainer then return end
+                local container = spotlightContainer
+                    or (ns.QUI_GroupFrames and ns.QUI_GroupFrames.spotlightContainer)
+                if not container then return end
                 if hide then
-                    spotlightContainer:SetAlpha(0)
-                    pcall(spotlightContainer.EnableMouse, spotlightContainer, false)
+                    container:SetAlpha(0)
+                    pcall(container.EnableMouse, container, false)
                 else
-                    spotlightContainer:SetAlpha(1)
-                    pcall(spotlightContainer.EnableMouse, spotlightContainer, true)
+                    container:SetAlpha(1)
+                    pcall(container.EnableMouse, container, true)
                 end
             end,
             getFrame = function()
                 return spotlightContainer
+                    or (ns.QUI_GroupFrames and ns.QUI_GroupFrames.spotlightContainer)
             end,
             onOpen = function()
                 local GFEM = ns.QUI_GroupFrameEditMode

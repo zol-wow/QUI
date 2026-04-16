@@ -125,6 +125,7 @@ end
 -- SPELL TEXTURE CACHE
 ---------------------------------------------------------------------------
 local textureCache = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "PT_CC_textureCache", tbl = textureCache } end
 
 local function GetSpellTexture(spellId)
     if not spellId then return nil end
@@ -218,6 +219,7 @@ end
 -- ACTIVE COOLDOWNS STATE
 ---------------------------------------------------------------------------
 local activeCooldowns = {}  -- unit → { [spellId] = { startTime, cooldown, timer } }
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "PT_CC_activeCooldowns", tbl = activeCooldowns } end
 
 ---------------------------------------------------------------------------
 -- CHECK IF UNIT HAS SPELL
@@ -440,11 +442,12 @@ C_Timer.After(0, function()
 
     local function RegisterUnits()
         eventFrame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+        if IsInRaid() then return end
         local units = { "player" }
         local numGroup = GetNumGroupMembers() or 0
         if numGroup > 0 then
-            local prefix = IsInRaid() and "raid" or "party"
-            local max = IsInRaid() and numGroup or (numGroup - 1)
+            local prefix = "party"
+            local max = numGroup - 1
             for i = 1, max do
                 units[#units + 1] = prefix .. i
             end

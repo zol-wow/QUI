@@ -435,6 +435,12 @@ local function RegisterGroupFrameProviders()
         if not spot then gfdb.raid.spotlight = {} spot = gfdb.raid.spotlight end
 
         local function onChange()
+            -- Recreate runtime header with new settings
+            local GF = ns.QUI_GroupFrames
+            if GF and GF.RecreateSpotlightHeader then
+                GF:RecreateSpotlightHeader()
+            end
+            -- Recreate layout mode previews
             local GFEM = ns.QUI_GroupFrameEditMode
             if GFEM then
                 GFEM:DestroySpotlightHeader()

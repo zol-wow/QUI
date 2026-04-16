@@ -43,7 +43,8 @@ local pendingRebuild = false
 
 -- Rotation Helper state
 local rotationHelperEnabled = false
-local currentRotationSpellID = nil  -- current recommendation, for OnShow re-apply
+local currentRotationSpellID = nil  -- current recommendation (resolved override), for OnShow re-apply
+local currentRotationBaseSpellID = nil  -- original base spell from Blizzard
 
 -- Position-based keybind cache (remembers keybinds by icon to handle procs)
 local iconKeybindCache = {}
@@ -60,11 +61,22 @@ local function IsAnyKeybindFeatureEnabled()
     if not core or not core.db or not core.db.profile then return false end
 
     local viewers = core.db.profile.viewers
-    if not viewers then return false end
+    if viewers then
+        for _, settings in pairs(viewers) do
+            if settings.showKeybinds or settings.showMacroNames or settings.showStackCounts then
+                return true
+            end
+        end
+    end
 
-    for viewerName, settings in pairs(viewers) do
-        if settings.showKeybinds or settings.showMacroNames or settings.showStackCounts then
-            return true
+    -- Also check custom containers
+    local ncdm = core.db.profile.ncdm
+    local ct = ncdm and ncdm.containers
+    if ct then
+        for _, settings in pairs(ct) do
+            if type(settings) == "table" and settings.showKeybinds then
+                return true
+            end
         end
     end
     return false
@@ -79,9 +91,14 @@ local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 local function GetViewerSettings(viewerName)
     local QUICore = _G.QUI and _G.QUI.QUICore
     if not QUICore or not QUICore.db or not QUICore.db.profile then return nil end
-    local viewers = QUICore.db.profile.viewers
-    if not viewers then return nil end
-    return viewers[VIEWER_DB_KEY[viewerName] or viewerName]
+    local dbKey = VIEWER_DB_KEY[viewerName]
+    if dbKey then
+        local viewers = QUICore.db.profile.viewers
+        return viewers and viewers[dbKey]
+    end
+    -- Custom container: settings live in ncdm.containers[key]
+    local ncdm = QUICore.db.profile.ncdm
+    return ncdm and ncdm.containers and ncdm.containers[viewerName]
 end
 
 -- Helper: get current specialization ID
@@ -975,10 +992,15 @@ local function ApplyKeybindToIcon(icon, viewerName)
     local itemID
     local itemName
 
-    -- New CDM icons (cdm_icons.lua) store data in _spellEntry
+    -- New CDM icons (cdm_icons.lua) store data in _spellEntry.
+    -- Two paths populate item-typed entries:
+    --   _isCustomEntry: legacy essential/utility custom merge (cdm_icons BuildIcons)
+    --   _isOwnedEntry:  Composer/owned containers (cdm_spelldata ResolveOwnedEntry)
+    -- Both carry .type and .id; either should be treated as an item entry.
     local spellEntry = icon._spellEntry
-    local customEntry = icon._customCDMEntry or (spellEntry and spellEntry._isCustomEntry and spellEntry)
-    local isItemEntry = customEntry and (customEntry.type == "item" or customEntry.type == "trinket")
+    local customEntry = icon._customCDMEntry
+        or (spellEntry and (spellEntry._isCustomEntry or spellEntry._isOwnedEntry) and spellEntry)
+    local isItemEntry = customEntry and (customEntry.type == "item" or customEntry.type == "trinket" or customEntry.type == "slot")
 
     -- Try _spellEntry first (new addon-owned CDM icons)
     if spellEntry then
@@ -1011,9 +1033,9 @@ local function ApplyKeybindToIcon(icon, viewerName)
     if isItemEntry and customEntry and customEntry.id then
         if customEntry.type == "item" then
             itemID = tonumber(customEntry.id)
-        elseif customEntry.type == "trinket" then
-            -- entry.id stores slot number (13/14) for trinket entries
-            itemID = GetInventoryItemID("player", customEntry.id)
+        elseif customEntry.type == "trinket" or customEntry.type == "slot" then
+            -- entry.id stores equipment slot (13/14) for trinket/slot entries
+            itemID = customEntry.itemID or GetInventoryItemID("player", customEntry.id)
         end
         if itemID then
             itemName = C_Item.GetItemInfo(itemID)
@@ -1373,6 +1395,23 @@ local function SetKeybindOverrideForItem(itemID, keybindText)
     end
 end
 
+-- Helper: get custom container keys from ncdm.containers
+local function GetCustomContainerKeys()
+    local core = GetCore()
+    if not core or not core.db or not core.db.profile then return end
+    local ncdm = core.db.profile.ncdm
+    local ct = ncdm and ncdm.containers
+    if not ct then return end
+    local keys = {}
+    for key, settings in pairs(ct) do
+        if type(settings) == "table" and not settings.builtIn
+            and settings.containerType == "cooldown" then
+            keys[#keys + 1] = key
+        end
+    end
+    return keys
+end
+
 -- Update keybinds on all icons in a viewer
 local function UpdateViewerKeybinds(viewerName)
     local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
@@ -1413,16 +1452,28 @@ end
 local function ClearAllStoredKeybinds()
     ClearStoredKeybinds("essential")
     ClearStoredKeybinds("utility")
+    local customKeys = GetCustomContainerKeys()
+    if customKeys then
+        for _, key in ipairs(customKeys) do
+            ClearStoredKeybinds(key)
+        end
+    end
 end
 
--- Update keybinds on Essential and Utility viewers
+-- Update keybinds on Essential, Utility, and custom container viewers
 local function UpdateAllKeybinds()
     -- Force cache rebuild
     lastCacheUpdate = 0
     RebuildCache()
-    
+
     UpdateViewerKeybinds("essential")
     UpdateViewerKeybinds("utility")
+    local customKeys = GetCustomContainerKeys()
+    if customKeys then
+        for _, key in ipairs(customKeys) do
+            UpdateViewerKeybinds(key)
+        end
+    end
 end
 
 -- Throttle for event-driven updates
@@ -1502,21 +1553,28 @@ local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
+local function HookAllViewerLayouts()
+    HookViewerLayout("essential")
+    HookViewerLayout("utility")
+    local customKeys = GetCustomContainerKeys()
+    if customKeys then
+        for _, key in ipairs(customKeys) do
+            HookViewerLayout(key)
+        end
+    end
+end
+
 initFrame:SetScript("OnEvent", function(self, event, arg)
     if event == "ADDON_LOADED" and arg == "Blizzard_CooldownManager" then
         C_Timer.After(0.5, function()
-            HookViewerLayout("essential")
-            HookViewerLayout("utility")
-            -- Only do initial keybind update if features are enabled
+            HookAllViewerLayouts()
             if IsAnyKeybindFeatureEnabled() then
                 UpdateAllKeybinds()
             end
         end)
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(1.0, function()
-            HookViewerLayout("essential")
-            HookViewerLayout("utility")
-            -- Only do initial keybind update if features are enabled
+            HookAllViewerLayouts()
             if IsAnyKeybindFeatureEnabled() then
                 UpdateAllKeybinds()
             end
@@ -1614,7 +1672,7 @@ end
 
 -- Apply rotation helper overlay to a single icon.
 -- `settings` is pre-resolved by the caller to avoid per-icon DB lookups.
-local function ApplyRotationHelperToIcon(icon, settings, nextSpellID)
+local function ApplyRotationHelperToIcon(icon, settings, nextSpellID, nextBaseSpellID)
     if not settings or not settings.showRotationHelper then
         -- Hide overlay if disabled
         local iks = iconKeybindState[icon]
@@ -1647,10 +1705,6 @@ local function ApplyRotationHelperToIcon(icon, settings, nextSpellID)
     end)
     
     if ok and result then
-        -- Verify result isn't a secret value (can't be compared)
-        if type(issecretvalue) == "function" and issecretvalue(result) then
-            result = nil
-        end
         iconSpellID = result
     end
 
@@ -1663,27 +1717,38 @@ local function ApplyRotationHelperToIcon(icon, settings, nextSpellID)
     end
     
     -- Check if this icon matches the next spell.
-    -- tonumber() both sides: spell entries may store IDs as strings while
-    -- the hook passes numbers (or vice versa), and Lua's == is type-strict.
+    -- nextSpellID is the resolved override; nextBaseSpellID (4th arg) is the
+    -- original base from Blizzard, so we can match either direction.
+    -- == is safe with secret values (returns false for type mismatch).
     local isNextSpell = false
-    local nextNum = tonumber(nextSpellID)
-    if nextNum then
-        -- Direct match (iconSpellID may be the override or base)
-        if tonumber(iconSpellID) == nextNum then
+    if nextSpellID then
+        -- Direct match against resolved override
+        if iconSpellID == nextSpellID then
             isNextSpell = true
         end
-        -- Check the other ID on the spell entry (base if iconSpellID was
-        -- override, or override if iconSpellID was base)
+        -- Match against original base spell
+        if not isNextSpell and nextBaseSpellID and iconSpellID == nextBaseSpellID then
+            isNextSpell = true
+        end
+        -- Check both IDs on the spell entry
         if not isNextSpell and icon._spellEntry then
-            local baseID = tonumber(icon._spellEntry.spellID)
-            local overID = tonumber(icon._spellEntry.overrideSpellID)
-            if baseID and baseID == nextNum then
+            local entryBase = icon._spellEntry.spellID
+            local entryOvr = icon._spellEntry.overrideSpellID
+            if entryBase and (entryBase == nextSpellID or (nextBaseSpellID and entryBase == nextBaseSpellID)) then
                 isNextSpell = true
-            elseif overID and overID == nextNum then
+            elseif entryOvr and (entryOvr == nextSpellID or (nextBaseSpellID and entryOvr == nextBaseSpellID)) then
                 isNextSpell = true
             end
         end
-
+        -- Reverse lookup: if the icon's spell has a base that matches
+        if not isNextSpell and iconSpellID then
+            local okBase, resolvedBase = pcall(FindBaseSpellByID, iconSpellID)
+            if okBase and resolvedBase and resolvedBase ~= iconSpellID then
+                if resolvedBase == nextSpellID or (nextBaseSpellID and resolvedBase == nextBaseSpellID) then
+                    isNextSpell = true
+                end
+            end
+        end
     end
 
     local overlay = GetRotationHelperOverlay(icon)
@@ -1702,7 +1767,7 @@ end
 -- Update rotation helper on all icons in a viewer.
 -- Resolves DB settings once per viewer, then uses CDMIcons pool directly
 -- to avoid the table allocation of { container:GetChildren() }.
-local function UpdateViewerRotationHelper(viewerName, nextSpellID)
+local function UpdateViewerRotationHelper(viewerName, nextSpellID, nextBaseSpellID)
     -- Resolve settings once for all icons in this viewer
     local settings
     local core = GetCore()
@@ -1723,7 +1788,7 @@ local function UpdateViewerRotationHelper(viewerName, nextSpellID)
         local pool = CDMIcons:GetIconPool(viewerName)
         if pool then
             for _, icon in ipairs(pool) do
-                ApplyRotationHelperToIcon(icon, settings, nextSpellID)
+                ApplyRotationHelperToIcon(icon, settings, nextSpellID, nextBaseSpellID)
             end
             return
         end
@@ -1737,14 +1802,17 @@ local function UpdateViewerRotationHelper(viewerName, nextSpellID)
     for i = 1, n do
         local child = select(i, container:GetChildren())
         if child then
-            ApplyRotationHelperToIcon(child, settings, nextSpellID)
+            ApplyRotationHelperToIcon(child, settings, nextSpellID, nextBaseSpellID)
         end
     end
 end
 
--- Update rotation helper on all viewers
-local function UpdateAllRotationHelpers(overrideSpellID)
+-- Update rotation helper on all viewers.
+-- overrideSpellID: resolved override spell (from actionbars hook).
+-- baseSpellID: original base spell from Blizzard (nil when self-queried).
+local function UpdateAllRotationHelpers(overrideSpellID, baseSpellID)
     local nextSpellID = overrideSpellID
+    local nextBaseSpellID = baseSpellID
     if not nextSpellID then
         -- Fallback: query the API if no override provided
         if not C_AssistedCombat or not C_AssistedCombat.GetNextCastSpell then
@@ -1752,20 +1820,25 @@ local function UpdateAllRotationHelpers(overrideSpellID)
         end
         local ok, sid = pcall(C_AssistedCombat.GetNextCastSpell, false)
         if ok then nextSpellID = sid end
-        -- Guard against secret values from combat API
-        if nextSpellID and type(issecretvalue) == "function" and issecretvalue(nextSpellID) then
-            nextSpellID = nil
+        -- Resolve override when self-queried (no pre-resolved ID from hook)
+        if nextSpellID and C_Spell and C_Spell.GetOverrideSpell then
+            nextBaseSpellID = nextSpellID
+            local okOvr, ovrID = pcall(C_Spell.GetOverrideSpell, nextSpellID)
+            if okOvr and ovrID and ovrID ~= nextSpellID then
+                nextSpellID = ovrID
+            end
         end
     end
 
     -- Track current recommendation so OnShow hooks can re-apply.
     currentRotationSpellID = nextSpellID
+    currentRotationBaseSpellID = nextBaseSpellID
 
     -- No dedup — always re-process all icons.  CDM icons may be created
     -- after the first call, and the OnShow hook hides overlays on recycled
     -- icons that need re-evaluation.  The per-icon cost is negligible.
-    UpdateViewerRotationHelper("essential", nextSpellID)
-    UpdateViewerRotationHelper("utility", nextSpellID)
+    UpdateViewerRotationHelper("essential", nextSpellID, nextBaseSpellID)
+    UpdateViewerRotationHelper("utility", nextSpellID, nextBaseSpellID)
 end
 
 -- Check if rotation helper should be running
@@ -1817,7 +1890,7 @@ QUI._onIconAssigned = function(icon)
     if not core or not core.db or not core.db.profile or not core.db.profile.viewers then return end
     local settings = core.db.profile.viewers[VIEWER_DB_KEY[vType] or vType]
     if settings then
-        ApplyRotationHelperToIcon(icon, settings, currentRotationSpellID)
+        ApplyRotationHelperToIcon(icon, settings, currentRotationSpellID, currentRotationBaseSpellID)
     end
 end
 

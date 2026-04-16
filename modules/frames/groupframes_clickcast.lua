@@ -642,6 +642,15 @@ function QUI_GFCC:RegisterAllFrames()
             end
         end
     end
+
+    -- Spotlight header children
+    if GF.spotlightHeader then
+        for i = 1, 40 do
+            local child = GF.spotlightHeader:GetAttribute("child" .. i)
+            if not child then break end
+            SetupFrameClickCast(child)
+        end
+    end
 end
 
 function QUI_GFCC:RegisterUnitFrames()

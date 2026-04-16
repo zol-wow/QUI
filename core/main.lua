@@ -740,6 +740,7 @@ function QUICore:HookEditMode()
             -- Action bars
             "StanceBar", "MicroMenuContainer", "BagsBar",
             "PetActionBar", "ExtraAbilityContainer",
+            "MainMenuBarVehicleLeaveButton",
             -- Cooldown viewers
             "EssentialCooldownViewer", "UtilityCooldownViewer",
             "BuffIconCooldownViewer", "BuffBarCooldownViewer",

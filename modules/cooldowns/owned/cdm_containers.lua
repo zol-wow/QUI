@@ -548,6 +548,13 @@ local function GetDefaultsByContainerType(containerType)
             dormantSpells = {},
             spellOverrides = {},
             iconDisplayMode = "always",
+            -- Keybind display
+            showKeybinds = false,
+            keybindTextSize = 12,
+            keybindTextColor = { 1, 0.82, 0, 1 },
+            keybindAnchor = "TOPLEFT",
+            keybindOffsetX = 2,
+            keybindOffsetY = 2,
         }
     elseif containerType == "aura" then
         return {
@@ -1756,8 +1763,7 @@ local function LayoutContainer(trackerKey)
                 _G.QUI_UpdateCDMAnchoredUnitFrames()
             end
             if _G.QUI_UpdateViewerKeybinds then
-                local containerName = container:GetName()
-                _G.QUI_UpdateViewerKeybinds(containerName)
+                _G.QUI_UpdateViewerKeybinds(trackerKey)
             end
         end)
     end
@@ -3001,11 +3007,15 @@ do
 
         local function GetViewerDB(trackerKey)
             local profile = GetProfileDB()
-            if not profile or not profile.viewers then return nil end
+            if not profile then return nil end
             if trackerKey == "essential" then
-                return profile.viewers.EssentialCooldownViewer
+                return profile.viewers and profile.viewers.EssentialCooldownViewer
+            elseif trackerKey == "utility" then
+                return profile.viewers and profile.viewers.UtilityCooldownViewer
             else
-                return profile.viewers.UtilityCooldownViewer
+                -- Custom containers store keybind settings in their own ncdm.containers[key] table
+                local ncdm = profile.ncdm
+                return ncdm and ncdm.containers and ncdm.containers[trackerKey]
             end
         end
 
@@ -3553,7 +3563,14 @@ do
                     local swipeDB = profile.cooldownSwipe
                     local effectsDB = profile.cooldownEffects
                     local glowDB = profile.customGlow
-                    local glowPrefix = isEssential and "essential" or "utility"
+                    local glowPrefix
+                    if isEssential then
+                        glowPrefix = "essential"
+                    elseif dbKey == "utility" then
+                        glowPrefix = "utility"
+                    else
+                        glowPrefix = dbKey  -- custom containers get their own prefix
+                    end
                     local pandemicKey = glowPrefix .. "PandemicEnabled"
                     if glowDB[pandemicKey] == nil then glowDB[pandemicKey] = true end
 
@@ -3622,8 +3639,17 @@ do
                         hideLabel:SetTextColor(U.ACCENT_R, U.ACCENT_G, U.ACCENT_B, 0.8)
                         sy = sy - 16
 
-                        local hideKey = isEssential and "hideEssential" or "hideUtility"
-                        local hideLabel2 = isEssential and "Hide on Essential Cooldowns" or "Hide on Utility Cooldowns"
+                        local hideKey, hideLabel2
+                        if isEssential then
+                            hideKey = "hideEssential"
+                            hideLabel2 = "Hide on Essential Cooldowns"
+                        elseif dbKey == "utility" then
+                            hideKey = "hideUtility"
+                            hideLabel2 = "Hide on Utility Cooldowns"
+                        else
+                            hideKey = "hide_" .. dbKey
+                            hideLabel2 = "Hide Cooldown Effects"
+                        end
                         sy = U.PlaceRow(GUI:CreateFormCheckbox(body, hideLabel2, hideKey, effectsDB, function()
                             if _G.QUI_RefreshCooldownEffects then _G.QUI_RefreshCooldownEffects() end
                         end), body, sy)
@@ -3652,11 +3678,13 @@ do
                             local isPixel = glowType == "Pixel Glow"
                             local isAutocast = glowType == "Autocast Shine"
                             local isButton = glowType == "Button Glow"
+                            local isTexture = glowType == "Flash" or glowType == "Hammer"
+                            local isProc = glowType == "Proc Glow"
                             if glowWidgets.lines then glowWidgets.lines:SetEnabled(isPixel or isAutocast) end
                             if glowWidgets.thickness then glowWidgets.thickness:SetEnabled(isPixel) end
                             if glowWidgets.scale then glowWidgets.scale:SetEnabled(isAutocast) end
-                            if glowWidgets.xOffset then glowWidgets.xOffset:SetEnabled(not isButton) end
-                            if glowWidgets.yOffset then glowWidgets.yOffset:SetEnabled(not isButton) end
+                            if glowWidgets.xOffset then glowWidgets.xOffset:SetEnabled(not isButton and not isTexture) end
+                            if glowWidgets.yOffset then glowWidgets.yOffset:SetEnabled(not isButton and not isTexture) end
                         end
 
                         sy = U.PlaceRow(GUI:CreateFormCheckbox(body, "Enable Custom Glow", enabledKey, glowDB, RefreshGlows), body, sy)
@@ -3666,6 +3694,9 @@ do
                             {value = "Pixel Glow", text = "Pixel Glow"},
                             {value = "Autocast Shine", text = "Autocast Shine"},
                             {value = "Button Glow", text = "Button Glow"},
+                            {value = "Flash", text = "Flash"},
+                            {value = "Hammer", text = "Hammer"},
+                            {value = "Proc Glow", text = "Proc Glow"},
                         }
                         sy = U.PlaceRow(GUI:CreateFormDropdown(body, "Glow Type", glowTypeOptions, glowTypeKey, glowDB, function()
                             RefreshGlows()
@@ -3932,6 +3963,21 @@ do
                 sy = P(GUI:CreateFormSlider(body, "Stack X Offset", -20, 20, 1, "stackOffsetX", buffData, RefreshBuff), body, sy)
                 P(GUI:CreateFormSlider(body, "Stack Y Offset", -20, 20, 1, "stackOffsetY", buffData, RefreshBuff), body, sy)
             end, sections, relayout)
+
+            -- Effects section (pandemic glow toggle)
+            do
+                local profile = GetProfileDB()
+                if profile then
+                    if not profile.customGlow then profile.customGlow = {} end
+                    local glowDB = profile.customGlow
+                    if glowDB.buffPandemicEnabled == nil then glowDB.buffPandemicEnabled = true end
+
+                    CreateCollapsible(content, "Effects", FORM_ROW + 8, function(body)
+                        local sy = -4
+                        P(GUI:CreateFormCheckbox(body, "Mirror Blizzard Pandemic Refresh Glow", "buffPandemicEnabled", glowDB, RefreshGlows), body, sy)
+                    end, sections, relayout)
+                end
+            end
 
             -- Position / Anchoring
             BuildPositionCollapsible(content, key, nil, sections, relayout)

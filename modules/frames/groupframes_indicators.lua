@@ -39,11 +39,55 @@ local POOL_SIZE = 60
 local iconPool = {}
 local barPool = {}
 local spellNameCache = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GF_Ind_iconPool", tbl = iconPool }
+    mp[#mp + 1] = { name = "GF_Ind_barPool", tbl = barPool }
+    mp[#mp + 1] = { name = "GF_Ind_spellNameCache", tbl = spellNameCache }
+end
 
 local _scratchActiveAuras = {}
 local _scratchActiveAuraNames = {}
 local _scratchIconPayloads = {}
 local _scratchBarPayloads = {}
+
+-- Pre-allocated payload pool: avoids creating fresh {} per indicator per
+-- dispatch.  Payloads hold transient auraData refs that anchor C-side tables
+-- in memory — nilling them after render lets the GC collect those tables
+-- promptly instead of retaining them until the next dispatch cycle.
+local PAYLOAD_POOL_SIZE = 40
+local _payloadPool = {}
+local _payloadPoolSize = 0
+
+local function AcquirePayload()
+    if _payloadPoolSize > 0 then
+        local p = _payloadPool[_payloadPoolSize]
+        _payloadPool[_payloadPoolSize] = nil
+        _payloadPoolSize = _payloadPoolSize - 1
+        return p
+    end
+    return { indicator = nil, auraData = nil, key = nil }
+end
+
+local function ReleasePayload(p)
+    p.indicator = nil
+    p.auraData = nil
+    p.key = nil
+    if _payloadPoolSize < PAYLOAD_POOL_SIZE then
+        _payloadPoolSize = _payloadPoolSize + 1
+        _payloadPool[_payloadPoolSize] = p
+    end
+end
+
+local function ReleasePayloads(arr)
+    for i = 1, #arr do
+        ReleasePayload(arr[i])
+        arr[i] = nil
+    end
+end
+
+local EMPTY_TABLE = {}
+local DEFAULT_HEALTH_COLOR = { 0.2, 0.8, 0.2, 1 }
+local AURA_FILTERS = { "HELPFUL", "HARMFUL" }
 
 local FILTER_RAID = "PLAYER|HELPFUL|RAID"
 local FILTER_RIC = "PLAYER|HELPFUL|RAID_IN_COMBAT"
@@ -52,7 +96,7 @@ local FILTER_DISP = "PLAYER|HELPFUL|RAID_PLAYER_DISPELLABLE"
 local SECRET_TRACKED_AURAS = {
     [10060] = {
         name = "Power Infusion",
-        signature = "1:0:0:1",
+        signature = 9,  -- raid(8) + disp(1)
         filter = "HELPFUL",
         scanLimit = 100,
     },
@@ -128,10 +172,7 @@ local function GetTrackedSpellName(spellID)
 end
 
 local function MakeAuraSignature(passesRaid, passesRic, passesExt, passesDisp)
-    return (passesRaid and "1" or "0")
-        .. ":" .. (passesRic and "1" or "0")
-        .. ":" .. (passesExt and "1" or "0")
-        .. ":" .. (passesDisp and "1" or "0")
+    return (passesRaid and 8 or 0) + (passesRic and 4 or 0) + (passesExt and 2 or 0) + (passesDisp and 1 or 0)
 end
 
 local function GetAuraFilterMatch(unit, auraInstanceID, filterString)
@@ -196,7 +237,11 @@ local function FindSecretTrackedAura(unit, spellID, helpfulAuras)
         end
     end
 
-    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+    -- Skip expensive bulk scan in combat — the helpfulAuras path above
+    -- already covers auras present in the shared cache.  The full
+    -- GetUnitAuras(unit, filter, 100) scan allocates massive C-side
+    -- tables that overwhelm the GC in 20-person raids.
+    if not InCombatLockdown() and C_UnitAuras and C_UnitAuras.GetUnitAuras then
         local scanFilter = config.filter or "HELPFUL"
         local scanLimit = config.scanLimit or 100
         local ok, allAuras = pcall(C_UnitAuras.GetUnitAuras, unit, scanFilter, scanLimit)
@@ -233,7 +278,7 @@ local function FindTrackedAuraData(unit, spellID, activeAurasByID, activeAurasBy
         return auraData
     end
 
-    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+    if not InCombatLockdown() and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
         local okHelpful, helpfulAura = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
         if okHelpful and helpfulAura then
             return helpfulAura
@@ -394,8 +439,10 @@ local function ReleaseBar(item)
     end
 end
 
+local DEFAULT_BORDER_COLOR = { 0, 0, 0, 1 }
+
 local function GetBarDisplayColor(indicator, remaining)
-    local color = indicator.color or { 0.2, 0.8, 0.2, 1 }
+    local color = indicator.color or DEFAULT_HEALTH_COLOR
     local threshold = SafeToNumber(indicator.lowTimeThreshold, 0)
     if remaining and threshold > 0 and remaining <= threshold then
         local lowColor = indicator.lowTimeColor
@@ -466,7 +513,7 @@ local function ConfigureBarIndicator(bar, frame, auraData, indicator)
     local offsetY = SafeToNumber(indicator.offsetY, 0)
 
     local borderSize = math_max(1, SafeToNumber(indicator.borderSize, 1))
-    local borderColor = indicator.borderColor or { 0, 0, 0, 1 }
+    local borderColor = indicator.borderColor or DEFAULT_BORDER_COLOR
     local px = QUICore.GetPixelSize and QUICore:GetPixelSize(bar) or 1
 
     bar:ClearAllPoints()
@@ -624,8 +671,10 @@ local function BuildActiveAuraLookup(unit)
                 end
             end
         end
-    elseif C_UnitAuras and C_UnitAuras.GetUnitAuras then
-        for _, filter in ipairs({ "HELPFUL", "HARMFUL" }) do
+    elseif not InCombatLockdown() and C_UnitAuras and C_UnitAuras.GetUnitAuras then
+        -- Fallback: shared cache missing (should not happen in normal dispatch).
+        -- Skip in combat to avoid C-side table allocations that overwhelm the GC.
+        for _, filter in ipairs(AURA_FILTERS) do
             local ok, auras = pcall(C_UnitAuras.GetUnitAuras, unit, filter, 40)
             if ok and auras then
                 if filter == "HELPFUL" then
@@ -657,6 +706,7 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
         if state.iconContainer then
             state.iconContainer:Hide()
         end
+        ReleasePayloads(iconPayloads)
         return
     end
 
@@ -710,6 +760,9 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
             icon:SetPoint(iconPoint, container, anchor, startX + (idx - 1) * (iconSize + spacing), 0)
         end
     end
+
+    -- Release payloads back to pool — breaks auraData reference chain
+    ReleasePayloads(iconPayloads)
 end
 
 local function RenderBarIndicators(frame, barPayloads)
@@ -726,6 +779,9 @@ local function RenderBarIndicators(frame, barPayloads)
         bar:Show()
         state.bars[idx] = bar
     end
+
+    -- Release payloads back to pool — breaks auraData reference chain
+    ReleasePayloads(barPayloads)
 end
 
 local function UpdateFrameIndicators(frame)
@@ -774,24 +830,22 @@ local function UpdateFrameIndicators(frame)
                     frame._indicatorAuraIDs[auraInstanceID] = true
                 end
 
-                for _, indicator in ipairs(entry.indicators or {}) do
+                for _, indicator in ipairs(entry.indicators or EMPTY_TABLE) do
                     if indicator.enabled ~= false then
                         if indicator.type == "icon" then
                             if not (defIDs and auraInstanceID and defIDs[auraInstanceID]) then
-                                iconPayloads[#iconPayloads + 1] = {
-                                    indicator = indicator,
-                                    auraData = auraData,
-                                    key = tostring(entry.id) .. ":" .. tostring(indicator.id),
-                                }
+                                local p = AcquirePayload()
+                                p.indicator = indicator
+                                p.auraData = auraData
+                                iconPayloads[#iconPayloads + 1] = p
                             end
                         elseif indicator.type == "bar" then
-                            barPayloads[#barPayloads + 1] = {
-                                indicator = indicator,
-                                auraData = auraData,
-                                key = tostring(entry.id) .. ":" .. tostring(indicator.id),
-                            }
+                            local p = AcquirePayload()
+                            p.indicator = indicator
+                            p.auraData = auraData
+                            barPayloads[#barPayloads + 1] = p
                         elseif indicator.type == "healthBarColor" and not healthColor then
-                            healthColor = indicator.color or { 0.2, 0.8, 0.2, 1 }
+                            healthColor = indicator.color or DEFAULT_HEALTH_COLOR
                         end
                     end
                 end
@@ -808,6 +862,8 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 
 eventFrame:SetScript("OnEvent", function()
+    -- Spec change: evict spell name cache (spell roster changes per spec)
+    wipe(spellNameCache)
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then
         return

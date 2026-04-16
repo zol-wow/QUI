@@ -76,6 +76,7 @@ end
 -- ICON TEXTURE CACHE
 ---------------------------------------------------------------------------
 local textureCache = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "PT_Kick_textureCache", tbl = textureCache } end
 
 local function GetInterruptTexture(spellID)
     if textureCache[spellID] then return textureCache[spellID] end
@@ -466,12 +467,13 @@ local registeredFrame = nil
 local function RegisterPartyUnits()
     if not registeredFrame then return end
     registeredFrame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    if IsInRaid() then return end
 
     local units = { "player" }
     local numGroup = GetNumGroupMembers() or 0
     if numGroup > 0 then
-        local prefix = IsInRaid() and "raid" or "party"
-        local max = IsInRaid() and numGroup or (numGroup - 1)
+        local prefix = "party"
+        local max = numGroup - 1
         for i = 1, max do
             units[#units + 1] = prefix .. i
         end

@@ -38,8 +38,10 @@ local DEFAULTS = {
 local pendingObjectiveTrackerHide = false
 local pendingApplyHideSettings = false
 
--- CompactRaidFrameManager: tracks whether hooks have been installed
-local _crfHooked = false
+-- CompactRaidFrameManager: hidden-parent approach (no hooks on secure frame)
+local _crfHidden = false
+local _crfOrigParent = nil
+local _crfHideParent = nil
 
 -- TAINT SAFETY: Track hook state in a local weak-keyed table, NOT on Blizzard
 -- frames. Writing _QUI_* properties to secure frames taints them in Midnight's
@@ -320,79 +322,34 @@ local function ApplyHideSettings()
     end
 
     -- Compact Raid Frame Manager
-    -- TAINT SAFETY: CompactRaidFrameManager is a secure frame. NEVER use Hide()
-    -- on it — Hide() triggers Blizzard's internal update chain on compact unit
-    -- frames (CompactUnitFrame_UpdateHealthColor etc.) in addon execution context,
-    -- tainting health bar color values. When Edit Mode later reads those tainted
-    -- values via ResetRaidFrames, it causes a Lua error ("attempt to compare
-    -- secret number tainted by QUI") that can prevent ExitEditMode from completing.
-    -- Use SetAlpha(0) + EnableMouse(false) instead to make it invisible without
-    -- triggering the compact unit frame update chain.
+    -- TAINT SAFETY: CompactRaidFrameManager is a secure frame. NEVER hook its
+    -- methods (Show, SetAlpha, etc.) or the global CompactRaidFrameManager_UpdateShown.
+    -- hooksecurefunc injects addon code into the secure execution chain, tainting
+    -- it. When the user later opens the game menu, the taint propagates through
+    -- ShowUIPanel → GameMenuFrame callback → ADDON_ACTION_FORBIDDEN.
     --
-    -- FLICKER FIX: Three hooks replace the old OnUpdate watcher.
-    -- (1) CompactRaidFrameManager_UpdateShown — the global Blizzard calls on
-    --     PLAYER_ENTERING_WORLD, GROUP_ROSTER_UPDATE, etc.
-    -- (2) CompactRaidFrameManager:Show() — catches direct Show() calls that
-    --     bypass UpdateShown (empirically needed for group join).
-    -- (3) CompactRaidFrameManager:SetAlpha() — catches anything that restores
-    --     alpha after hooks 1/2 run (animations, deferred callbacks, etc.).
-    --     The _alphaGuard prevents our own SetAlpha(0) from re-triggering it.
-    -- All hooks run synchronously before rendering, eliminating the flash.
-    -- SetAlpha(0) is used instead of Hide() for taint safety (see above).
+    -- Instead, reparent to a hidden frame out of combat. A hidden parent prevents
+    -- the frame from rendering without touching any secure properties. No hooks,
+    -- no taint.
     if CompactRaidFrameManager then
         if InCombatLockdown() then
             -- Skip protected operations during combat
         elseif settings.hideRaidFrameManager then
-            C_Timer.After(0, function()
-                if InCombatLockdown() then return end
-                CompactRaidFrameManager:SetAlpha(0)
-                CompactRaidFrameManager:EnableMouse(false)
-            end)
-            if not _crfHooked then
-                _crfHooked = true
-
-                local _alphaGuard = false
-
-                local function ApplyCRFHide()
-                    if IsInEditMode() then return end
-                    if InCombatLockdown() then return end
-                    local s = GetSettings()
-                    if CompactRaidFrameManager and s and s.hideRaidFrameManager then
-                        _alphaGuard = true
-                        CompactRaidFrameManager:StopAnimating()
-                        CompactRaidFrameManager:SetAlpha(0)
-                        CompactRaidFrameManager:EnableMouse(false)
-                        _alphaGuard = false
-                    end
+            if not _crfHidden then
+                -- Create the hidden parent once
+                if not _crfHideParent then
+                    _crfHideParent = CreateFrame("Frame")
+                    _crfHideParent:Hide()
                 end
-
-                hooksecurefunc("CompactRaidFrameManager_UpdateShown", function()
-                    ApplyCRFHide()
-                end)
-
-                hooksecurefunc(CompactRaidFrameManager, "Show", function()
-                    ApplyCRFHide()
-                end)
-
-                hooksecurefunc(CompactRaidFrameManager, "SetAlpha", function(self, alpha)
-                    if _alphaGuard then return end
-                    if alpha > 0 and not IsInEditMode() then
-                        local s = GetSettings()
-                        if s and s.hideRaidFrameManager then
-                            _alphaGuard = true
-                            self:StopAnimating()
-                            self:SetAlpha(0)
-                            _alphaGuard = false
-                        end
-                    end
-                end)
+                _crfOrigParent = CompactRaidFrameManager:GetParent()
+                CompactRaidFrameManager:SetParent(_crfHideParent)
+                _crfHidden = true
             end
         else
-            C_Timer.After(0, function()
-                if InCombatLockdown() then return end
-                CompactRaidFrameManager:SetAlpha(1)
-                CompactRaidFrameManager:EnableMouse(true)
-            end)
+            if _crfHidden then
+                CompactRaidFrameManager:SetParent(_crfOrigParent or UIParent)
+                _crfHidden = false
+            end
         end
     end
     
@@ -784,8 +741,8 @@ eventFrame:SetScript("OnEvent", function(self, event, addon)
     end
 
     -- Handle raid permission/role changes - re-evaluate player frame visibility.
-    -- CompactRaidFrameManager re-hide is handled by the hooksecurefunc on
-    -- CompactRaidFrameManager_UpdateShown, which Blizzard calls for this event.
+    -- CompactRaidFrameManager re-hide is handled by the hidden-parent reparent
+    -- in ApplyHideSettings — no hooks needed.
     -- BUG-008: Wrap in C_Timer.After(0) to break taint chain from secure event context
     if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
         if settings and settings.hidePlayerFrameInParty then
@@ -906,10 +863,10 @@ local function ShowAllHiddenForEditMode()
         GameTimeFrame:Show()
     end
 
-    -- Compact Raid Frame Manager
-    if CompactRaidFrameManager and settings.hideRaidFrameManager then
-        CompactRaidFrameManager:SetAlpha(1)
-        CompactRaidFrameManager:EnableMouse(true)
+    -- Compact Raid Frame Manager — reparent back for edit mode visibility
+    if CompactRaidFrameManager and settings.hideRaidFrameManager and _crfHidden then
+        CompactRaidFrameManager:SetParent(_crfOrigParent or UIParent)
+        _crfHidden = false
     end
 
     -- Minimap Zone Text

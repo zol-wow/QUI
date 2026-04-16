@@ -656,10 +656,12 @@ local function GetRelevantBuffs()
                     end
                 end
             else
-                -- Default: show all buffs where provider class is in the group
+                -- Default: show missing buffs where provider class is in the group
                 if groupClasses[buff.providerClass] then
                     buff._hasBuff = PlayerHasRaidBuff(buff)
-                    table_insert(result, buff)
+                    if not buff._hasBuff then
+                        table_insert(result, buff)
+                    end
                 end
             end
         end

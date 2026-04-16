@@ -2043,7 +2043,12 @@ local function ApplyBarOverrideBindings(barKey)
             if key then
                 local existing = GetBindingAction(key, true)
                 if not existing or existing == "" or existing == command then
-                    SetOverrideBindingClick(container, false, key, btn:GetName(), "Keybind")
+                    -- Pet/stance buttons use PetActionButtonTemplate / StanceButtonTemplate
+                    -- whose OnClick handlers check for "LeftButton" specifically.  Standard
+                    -- action bars (SecureActionButtonTemplate) fire via secure attributes
+                    -- regardless of button string, so "Keybind" works for them.
+                    local vBtn = (barKey == "pet" or barKey == "stance") and "LeftButton" or "Keybind"
+                    SetOverrideBindingClick(container, false, key, btn:GetName(), vBtn)
                 end
             end
         end
@@ -3067,34 +3072,37 @@ local function BuildBar(barKey)
                     GameTooltip:Hide()
                 end)
 
-                -- ── PreClick: suppress action when drag modifier held ──
+                -- ── PreClick: defer action to mouse-up when drag modifier held ──
                 -- When useOnKeyDown is true the action fires on mouse-
                 -- down, BEFORE OnDragStart can detect the drag motion.
                 -- Without intervention shift-click casts instead of
                 -- picking up the spell.  This Lua pre-click handler
-                -- clears the "type" attribute so the secure action
-                -- dispatch becomes a no-op; PostClick restores it.
+                -- temporarily disables useOnKeyDown so the action fires
+                -- on mouse-up instead — giving OnDragStart time to
+                -- detect drags while still letting the action through
+                -- for normal modifier+click (e.g. [mod:shift] macros).
                 -- When the cursor already carries a spell (placement),
-                -- the suppression is skipped so the drop goes through.
+                -- the deferral is skipped so the drop goes through.
                 -- Uses Lua hooks (not restricted snippets) because the
                 -- restricted environment lacks GetCursorInfo().
                 -- SetAttribute is fine — bar rearranging is out-of-combat.
                 btn:HookScript("PreClick", function(self)
                     if InCombatLockdown() then return end
-                    if self:GetAttribute("useOnKeyDown")
+                    local useOnKeyDown = self:GetAttribute("useOnKeyDown")
+                    if useOnKeyDown
                         and self:GetAttribute("buttonlock")
                         and IsModifiedClick("PICKUPACTION")
                         and not GetCursorInfo() then
-                        self:SetAttribute("type", nil)
-                        self._quiPreClickSuppressed = true
+                        self:SetAttribute("useOnKeyDown", false)
+                        self._quiPreClickKeyDownBackup = useOnKeyDown
                     end
                 end)
                 btn:HookScript("PostClick", function(self)
-                    if self._quiPreClickSuppressed then
-                        self._quiPreClickSuppressed = nil
+                    if self._quiPreClickKeyDownBackup ~= nil then
                         if not InCombatLockdown() then
-                            self:SetAttribute("type", "action")
+                            self:SetAttribute("useOnKeyDown", self._quiPreClickKeyDownBackup)
                         end
+                        self._quiPreClickKeyDownBackup = nil
                     end
                 end)
 
@@ -3941,12 +3949,12 @@ local function UpdateAllAssistedCombatRotation()
     -- the current recommendation and update that one button.  Once it
     -- creates a frame, _assistRotationButton gets set and subsequent
     -- updates take the fast path above.
-    if not (AssistedCombatManager and C_ActionBar
-        and C_ActionBar.FindSpellActionButtons) then
+    if not (C_AssistedCombat and C_AssistedCombat.GetNextCastSpell
+        and C_ActionBar and C_ActionBar.FindSpellActionButtons) then
         return
     end
-    local spellID = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
-    if not spellID then return end
+    local ok, spellID = pcall(C_AssistedCombat.GetNextCastSpell, false)
+    if not ok or not spellID then return end
     local slots = C_ActionBar.FindSpellActionButtons(spellID)
     if not slots then return end
     local slotMap = ActionBarsOwned.slotMap
@@ -3969,16 +3977,7 @@ end
 
 local assistedHighlightButtons = {}  -- set of buttons currently highlighted (button → true)
 local _assistHighlightScratch = {}   -- reusable scratch table to avoid per-frame allocation
-local ASSISTED_HIGHLIGHT_KEY = "QUI_AssistedCombat"
-local ASSISTED_HIGHLIGHT_FALLBACK = { 1, 1, 1, 0.8 }
-
-local function GetAssistedHighlightSettings()
-    local core = ns.Addon
-    if core and core.db and core.db.profile and core.db.profile.ncdm then
-        return core.db.profile.ncdm.cooldownHighlighter
-    end
-    return nil
-end
+local ASSISTED_HIGHLIGHT_COLOR = { 0.2, 0.82, 0.6, 1 }  -- Teal/mint, matches QUI accent
 
 local function SetAssistedHighlightShown(button, show)
     if not LCG then return end
@@ -3986,21 +3985,16 @@ local function SetAssistedHighlightShown(button, show)
     if show then
         if state.quiAssistedHighlight then return end
         state.quiAssistedHighlight = true
-        local hl = GetAssistedHighlightSettings()
-        local color = (hl and hl.color) or ASSISTED_HIGHLIGHT_FALLBACK
-        local lines = (hl and hl.lines) or 8
-        local freq = (hl and hl.frequency) or 0.25
-        local thick = (hl and hl.thickness) or 1
-        LCG.PixelGlow_Start(button, color, lines, freq, nil, thick, 0, 0, false, ASSISTED_HIGHLIGHT_KEY)
+        LCG.ButtonGlow_Start(button, ASSISTED_HIGHLIGHT_COLOR)
     else
         if not state.quiAssistedHighlight then return end
         state.quiAssistedHighlight = false
-        LCG.PixelGlow_Stop(button, ASSISTED_HIGHLIGHT_KEY)
+        LCG.ButtonGlow_Stop(button)
     end
 end
 
 UpdateAllAssistedHighlights = function()
-    if not AssistedCombatManager then return end
+    if not (C_AssistedCombat and C_AssistedCombat.GetNextCastSpell) then return end
     if not (C_ActionBar and C_ActionBar.FindSpellActionButtons) then return end
 
     local db = GetDB()
@@ -4012,9 +4006,8 @@ UpdateAllAssistedHighlights = function()
         return
     end
 
-    -- Read directly from the manager's Lua table — Blizzard's OnUpdate sets
-    -- this field before firing the event.  Zero-cost vs pcall into C.
-    local nextSpellID = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
+    local okNext, nextSpellID = pcall(C_AssistedCombat.GetNextCastSpell, false)
+    if not okNext then nextSpellID = nil end
 
     -- Build match set into a reusable scratch table to avoid per-call
     -- allocation — this runs up to 10x/sec under soft targeting.
@@ -4134,6 +4127,20 @@ function ActionBarsOwned.UpdateAllButtonStates()
     end
 end
 
+-- Lean count refresh: UpdateCount on active buttons only.
+-- Used for UNIT_AURA which fires when aura-based resource overlays
+-- (Soul Fragments, etc.) change.  Avoids full SafeUpdate.
+local _lastCountUpdateTime = 0
+function ActionBarsOwned.UpdateAllButtonCounts()
+    local now = GetTime()
+    if now == _lastCountUpdateTime then return end
+    _lastCountUpdateTime = now
+
+    for btn in pairs(ActionBarsOwned._activeButtons) do
+        if btn.UpdateCount then pcall(btn.UpdateCount, btn) end
+    end
+end
+
 -- Full visual refresh for all owned action buttons via SafeUpdate.
 -- Uses only truthiness tests on API returns — safe during combat.
 local _lastVisualUpdateTime = 0
@@ -4227,7 +4234,9 @@ abUpdateFrame._lastVis = 0
 abUpdateFrame._dirtyCooldowns = false
 abUpdateFrame._dirtyStates = false
 abUpdateFrame._dirtyVisuals = false
+abUpdateFrame._dirtyCounts = false
 abUpdateFrame._immediate = false  -- bypass combat throttle for this tick
+abUpdateFrame._lastCount = 0
 abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
     -- Out of combat: flush immediately (no throttle).
@@ -4240,6 +4249,7 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
     local doVis = self._dirtyVisuals
     local doState = self._dirtyStates
     local doCd  = self._dirtyCooldowns
+    local doCount = self._dirtyCounts
 
     if doVis then
         if throttle and (now - self._lastVis < AB_VIS_UPDATE_INTERVAL) then return end
@@ -4247,15 +4257,17 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
         self._lastVis = now
         self._lastCd = now
         self._lastState = now
+        self._lastCount = now
         self._dirtyCooldowns = false
         self._dirtyStates = false
         self._dirtyVisuals = false
-        -- SafeUpdate includes cooldown + checked state internally
+        self._dirtyCounts = false
+        -- SafeUpdate includes cooldown + checked state + count internally
         ActionBarsOwned.UpdateAllButtonVisuals()
     elseif doState then
         if throttle and (now - self._lastState < AB_STATE_UPDATE_INTERVAL) then return end
-        -- State is lean; if cooldowns are also dirty, run them in the same
-        -- tick to avoid a second OnUpdate wake-up.
+        -- State is lean; if cooldowns or counts are also dirty, run them
+        -- in the same tick to avoid a second OnUpdate wake-up.
         self:Hide()
         self._lastState = now
         self._dirtyStates = false
@@ -4265,12 +4277,30 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
             self._dirtyCooldowns = false
             ActionBarsOwned.UpdateAllCooldowns()
         end
+        if doCount then
+            self._lastCount = now
+            self._dirtyCounts = false
+            ActionBarsOwned.UpdateAllButtonCounts()
+        end
     elseif doCd then
         if throttle and (now - self._lastCd < AB_CD_UPDATE_INTERVAL) then return end
         self:Hide()
         self._lastCd = now
         self._dirtyCooldowns = false
         ActionBarsOwned.UpdateAllCooldowns()
+        -- Piggyback counts if dirty — same frame, avoid extra wake-up.
+        if doCount then
+            self._lastCount = now
+            self._dirtyCounts = false
+            ActionBarsOwned.UpdateAllButtonCounts()
+        end
+    elseif doCount then
+        -- Counts are lightweight — no combat throttle needed, just
+        -- once-per-frame dedup via _lastCountUpdateTime inside the fn.
+        self:Hide()
+        self._lastCount = now
+        self._dirtyCounts = false
+        ActionBarsOwned.UpdateAllButtonCounts()
     else
         self:Hide()
     end
@@ -4321,6 +4351,11 @@ end
 local function ScheduleABStateUpdate(immediate)
     abUpdateFrame._dirtyStates = true
     if immediate then abUpdateFrame._immediate = true end
+    abUpdateFrame:Show()
+end
+
+local function ScheduleABCountUpdate()
+    abUpdateFrame._dirtyCounts = true
     abUpdateFrame:Show()
 end
 
@@ -4685,13 +4720,15 @@ local function OnOwnedEvent(self, event, ...)
 
     elseif event == "SPELL_UPDATE_CHARGES" then
         -- Charge count changed (e.g. Arcane Charges, Chi).
-        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            local btns = ActionBarsOwned.nativeButtons[barKey]
-            if btns then
-                for _, btn in ipairs(btns) do
-                    if btn.UpdateCount then pcall(btn.UpdateCount, btn) end
-                end
-            end
+        ScheduleABCountUpdate()
+
+    elseif event == "UNIT_AURA" then
+        -- Aura-based resource overlays (Soul Fragments, etc.) update
+        -- the action display count when auras change.  Only react to
+        -- player auras — party/target aura churn is irrelevant.
+        local unit = ...
+        if unit == "player" then
+            ScheduleABCountUpdate()
         end
 
     elseif event == "ACTIONBAR_SHOWGRID" then
@@ -7703,6 +7740,7 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("ACTIONBAR_SHOWGRID")
     ownedEventFrame:RegisterEvent("ACTIONBAR_HIDEGRID")
     ownedEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
+    ownedEventFrame:RegisterUnitEvent("UNIT_AURA", "player")
     ownedEventFrame:RegisterEvent("SPELL_UPDATE_ICON")
     ownedEventFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
     ownedEventFrame:RegisterEvent("PLAYER_ENTER_COMBAT")
@@ -7848,7 +7886,8 @@ function ActionBarsOwned:Initialize()
     -- Assisted combat rotation (one-button rotation arrow overlay).
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
-            local newSpell = AssistedCombatManager and AssistedCombatManager.lastNextCastSpellID
+            local okSpell, newSpell = pcall(C_AssistedCombat.GetNextCastSpell, false)
+            if not okSpell then newSpell = nil end
             -- Dedupe: Blizzard fires this every OnUpdate frame under soft
             -- targeting; if the rotation spell hasn't actually changed,
             -- skip entirely.
@@ -7876,7 +7915,8 @@ function ActionBarsOwned:Initialize()
         -- gap) — NOT "rotation disabled".  Ignore nil to avoid flicker.
         -- Highlights refresh on HIDEGRID or PLAYER_REGEN_ENABLED.
         EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
-            local nextSpell = AssistedCombatManager.lastNextCastSpellID
+            local okHL, nextSpell = pcall(C_AssistedCombat.GetNextCastSpell, false)
+            if not okHL then nextSpell = nil end
             if not nextSpell then return end
             if nextSpell == ActionBarsOwned._lastAssistHighlightSpell then return end
             ActionBarsOwned._lastAssistHighlightSpell = nextSpell
@@ -7891,22 +7931,41 @@ function ActionBarsOwned:Initialize()
     -- source and notifies the rotation assist icon + CDM viewer overlay.
     if AssistedCombatManager and AssistedCombatManager.UpdateAllAssistedHighlightFramesForSpell then
         hooksecurefunc(AssistedCombatManager, "UpdateAllAssistedHighlightFramesForSpell", function(_, spellID)
-            -- The spellID from AssistedCombatManager may be a secret value
-            -- in combat.  Convert to a safe number so modules can use ==
-            -- comparisons without erroring.
+            if not spellID then return end
             local Helpers = ns.Helpers
-            local safeSpellID = Helpers and Helpers.SafeToNumber(spellID, nil) or spellID
-            if not safeSpellID then return end
+            local isSecret = Helpers and Helpers.IsSecretValue(spellID)
+
+            -- Resolve the talent-transformed display spell.  Blizzard may
+            -- recommend a base spell ID while talents have replaced it with
+            -- an override (or vice versa).  Resolve both directions so
+            -- downstream matching works regardless of which ID the API returns.
+            local resolvedID = spellID
+            if not isSecret then
+                -- Forward: base → current override (e.g., Thunder Clap → Thunder Blast)
+                local okOvr, overrideID = pcall(C_Spell.GetOverrideSpell, spellID)
+                if okOvr and overrideID and overrideID ~= spellID then
+                    resolvedID = overrideID
+                end
+            end
+
             -- ForceUpdateAction → SafeUpdate races the C-side texture write:
             -- SafeUpdate reads GetActionTexture before the new value is
             -- committed, showing the PREVIOUS spell icon.  This hook fires
             -- AFTER the C-side completes, so schedule an immediate visual
             -- refresh to re-read the now-correct texture.
             ScheduleABVisualUpdate(false, true)
+            -- Rotation assist icon handles secret values natively via C-side
+            -- functions — pass the raw spellID so it works during combat.
             local rai = ns.RotationAssistIcon
-            if rai and rai.Update then pcall(rai.Update, safeSpellID) end
+            if rai and rai.Update then pcall(rai.Update, spellID) end
+            -- Pass both the resolved override and the original base so the
+            -- matcher can check either direction.  Secret values pass through
+            -- safely — tonumber() returns nil for secrets, so no match = no
+            -- overlay, no crash.
             local kb = ns.Keybinds
-            if kb and kb.UpdateAllRotationHelpers then pcall(kb.UpdateAllRotationHelpers, safeSpellID) end
+            if kb and kb.UpdateAllRotationHelpers then
+                pcall(kb.UpdateAllRotationHelpers, resolvedID, spellID)
+            end
         end)
     end
 

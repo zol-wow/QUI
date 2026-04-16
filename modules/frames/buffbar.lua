@@ -1298,13 +1298,15 @@ LayoutBuffIcons = function()
     -- Optional anchoring to CDM/resource/unitframe targets.
     ApplyBuffIconAnchor(settings)
 
-    -- Apply HUD layer priority
-    local core = GetCore()
-    local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
-    local layerPriority = hudLayering and hudLayering.buffIcon or 5
-    if core and core.GetHUDFrameLevel then
-        local frameLevel = core:GetHUDFrameLevel(layerPriority)
-        viewer:SetFrameLevel(frameLevel)
+    -- Apply HUD layer priority (protected on secure frames — skip in combat)
+    if not InCombatLockdown() then
+        local core = GetCore()
+        local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
+        local layerPriority = hudLayering and hudLayering.buffIcon or 5
+        if core and core.GetHUDFrameLevel then
+            local frameLevel = core:GetHUDFrameLevel(layerPriority)
+            viewer:SetFrameLevel(frameLevel)
+        end
     end
 
     local icons = GetBuffIconFrames()

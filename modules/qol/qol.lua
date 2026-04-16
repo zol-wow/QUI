@@ -13,6 +13,7 @@ local qolFrame = CreateFrame("Frame")
 local popupBlockerDefaults = {
     enabled = false,
     blockTalentMicroButtonAlerts = false,
+    blockHelpTips = false,
     blockEventToasts = false,
     blockMountAlerts = false,
     blockPetAlerts = false,
@@ -335,25 +336,22 @@ local function HookTalentReminderAlerts()
         end
     end
 
-    -- Hook FlashBorder (golden glow) on talent micro buttons so it gets suppressed on re-show
-    for _, buttonName in ipairs(talentMicroButtonCandidates) do
-        local button = _G[buttonName]
-        if button and button.FlashBorder and not _quiPopupBlockerHooked[button.FlashBorder] then
-            button.FlashBorder:HookScript("OnShow", function(self)
-                C_Timer.After(0, function()
-                    if not self or not self.Hide then return end
-                    if IsMicrobarEffectivelyHidden() then
-                        self:Hide()
-                        return
-                    end
-                    if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
-                        self:Hide()
-                    end
-                end)
-            end)
-            _quiPopupBlockerHooked[button.FlashBorder] = true
-        end
-    end
+    -- TAINT SAFETY: Do NOT HookScript("OnShow") on FlashBorder — micro button
+    -- children can fire OnShow from secure context (MicroButtonAndBagsBar layout),
+    -- and HookScript injects addon code into that context. Taint propagates through
+    -- ShowUIPanel → GameMenuFrame → callback() → ADDON_ACTION_FORBIDDEN.
+    -- FlashBorder is already hidden by HideTalentMicroButtonAlert() above.
+end
+
+-- TAINT SAFETY: HelpTip is a Lua mixin (not a C-side API). Calling ANY of its
+-- methods from addon code — SetHelpTipsEnabled, ForceHideAll, Show — writes to
+-- internal Lua tables with addon taint.  When Blizzard secure code later reads
+-- those tables (e.g. during ShowUIPanel → GameMenuFrame), taint propagates and
+-- causes ADDON_ACTION_FORBIDDEN on game menu buttons.  Even deferring via
+-- C_Timer.After does not help: the table entries remain permanently tainted.
+-- The feature is disabled until Blizzard exposes a C-side API for help tip control.
+local function RefreshHelpTipSuppression()
+    -- intentionally empty — see taint safety note above
 end
 
 local function RefreshPopupBlocker()
@@ -363,6 +361,7 @@ local function RefreshPopupBlocker()
 
     HideEventToasts()
     HideTalentReminderAlerts()
+    RefreshHelpTipSuppression()
 end
 
 _G.QUI_RefreshPopupBlocker = RefreshPopupBlocker

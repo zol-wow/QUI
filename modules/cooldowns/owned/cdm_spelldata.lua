@@ -30,11 +30,6 @@ local CDMSpellData = {}
 -- returning stale/incomplete data.
 local _inZoneTransition = false
 
--- Override cache: populated by COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED event
--- (non-secret even in combat) and seeded from OOC scan data.
-local _overrideCache = {}               -- [baseSpellID] = overrideSpellID
-local _overrideToCooldownBase = {}      -- [overrideSpellID] = baseSpellID (reverse)
-
 ---------------------------------------------------------------------------
 -- CONSTANTS
 ---------------------------------------------------------------------------
@@ -64,6 +59,15 @@ local buffChildrenHooked = false  -- one-time hook for buff viewer aura events
 -- DurationObject cache: Blizzard child → captured DurationObject/start/duration.
 local _spellIDToChild = {}  -- [spellID] = { child1, child2, ... } (built OOC during scan)
 
+-- Per-batch memo caches for ResolveOwnedEntry candidate scoring.
+-- Wiped at the start of each BuildSpellListFromOwned call so all owned
+-- entries in one batch share the same spellID→icon and lsid→active lookups.
+-- Prevents O(candidates × linkedSpellIDs × entries) API storms when the
+-- _spellIDToChild candidate list grows large (e.g. 35+ children share a
+-- linkedSpellID via a buff-viewer CDM entry).
+local _resolveIconMemo = {}          -- [spellID] = iconID (false = negative lookup)
+local _resolveAuraActiveMemo = {}    -- [lsid]    = bool   (true = active aura present)
+
 --- Check if a Blizzard viewer child matches a given spell ID.
 --- Tries cooldownInfo.overrideSpellID, cooldownInfo.spellID (may be secret),
 --- and cooldownID (numeric, typically not secret).
@@ -77,17 +81,6 @@ local function ChildMatchesSpellID(child, spellID)
     -- cooldownID is a direct property, not behind cooldownInfo — often readable
     local cdID = child.cooldownID
     if cdID and cdID == spellID then return true end
-    -- Reverse lookup: if spellID is an override, check if child matches the base
-    local baseFromCache = _overrideToCooldownBase[spellID]
-    if baseFromCache then
-        if ci then
-            local baseSid = Helpers.SafeValue(ci.spellID, nil)
-            if baseSid and baseSid == baseFromCache then return true end
-        end
-        if cdID and _spellToCooldownID and _spellToCooldownID[baseFromCache] == cdID then
-            return true
-        end
-    end
     return false
 end
 
@@ -289,15 +282,6 @@ local function FindBuffChildForSpell(viewerType, id1, id2, id3)
 end
 
 function CDMSpellData:InvalidateChildMap()
-    _childMapDirty = true
-end
-
---- Targeted child map update for a single spell override change.
---- Avoids full invalidation when only one spell morphed.
-local function _UpdateChildMapForOverride(baseSpellID, newOverride, oldOverride)
-    if newOverride and baseSpellID and _spellIDToChild[baseSpellID] then
-        _spellIDToChild[newOverride] = _spellIDToChild[baseSpellID]
-    end
     _childMapDirty = true
 end
 
@@ -887,11 +871,6 @@ local function ScanCooldownViewer(viewerType)
                         local info = child.cooldownInfo
                         spellID = Helpers.SafeValue(info.spellID, nil)
                         overrideSpellID = Helpers.SafeValue(info.overrideSpellID, nil)
-                        -- Seed override cache from OOC scan data
-                        if spellID and overrideSpellID and overrideSpellID ~= spellID then
-                            _overrideCache[spellID] = overrideSpellID
-                            _overrideToCooldownBase[overrideSpellID] = spellID
-                        end
                         name = Helpers.SafeValue(info.name, nil)
                         local wasSetFromAura = (type(info.wasSetFromAura) == "boolean") and info.wasSetFromAura or false
                         local useAuraDisplayTime = (type(info.cooldownUseAuraDisplayTime) == "boolean") and info.cooldownUseAuraDisplayTime or false
@@ -1282,7 +1261,6 @@ local function IsSpellKnownByPlayer(spellID)
                                 if okI and cdInfo then
                                     local sid = Helpers.SafeValue(cdInfo.spellID, nil)
                                     local ov = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
-                                    if not ov and sid then ov = _overrideCache[sid] end
                                     if sid == spellID or ov == spellID then
                                         return true
                                     end
@@ -1334,6 +1312,44 @@ local RebuildCdIDToCorrectSID
 local RebuildSpellToCooldownID
 local ResolveInfoSpellID
 local ResolveChildSpellID
+
+-- Memoized C_Spell.GetSpellInfo icon lookup.  The raw API can fire 30+ times
+-- per ResolveOwnedEntry in the viewer-child tiebreaker when candidate lists
+-- are large; memoizing per batch collapses this to one call per unique ID.
+-- `false` is stored for negative results so we don't retry missing spells.
+local function GetMemoIcon(spellID)
+    if not spellID then return nil end
+    local cached = _resolveIconMemo[spellID]
+    if cached ~= nil then
+        return cached or nil
+    end
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellID)
+        local iconID = info and info.iconID or nil
+        _resolveIconMemo[spellID] = iconID or false
+        return iconID
+    end
+    _resolveIconMemo[spellID] = false
+    return nil
+end
+
+-- Memoized active-aura presence check.  Same rationale as GetMemoIcon:
+-- C_UnitAuras.GetPlayerAuraBySpellID runs per linkedSpellID per tying
+-- candidate, so memoizing per batch is a large win.
+local function IsMemoAuraActive(lsid)
+    if not lsid then return false end
+    local cached = _resolveAuraActiveMemo[lsid]
+    if cached ~= nil then return cached end
+    local active = false
+    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, lsid)
+        if ok and ad and ad.auraInstanceID then
+            active = true
+        end
+    end
+    _resolveAuraActiveMemo[lsid] = active
+    return active
+end
 
 -- Resolve a single owned entry to a spell data table compatible with
 -- the existing icon/bar building pipeline.
@@ -1387,7 +1403,6 @@ local function ResolveOwnedEntry(entry, containerKey, index)
                     if okI and cdInfo then
                         local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
                         local baseOv = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
-                        if not baseOv and baseSid then baseOv = _overrideCache[baseSid] end
                         isBaseAbility = (entry.id == baseSid or entry.id == baseOv)
                     end
                 end
@@ -1528,6 +1543,8 @@ local function ResolveOwnedEntry(entry, containerKey, index)
     if resolved.id and resolved.id ~= resolved.spellID and resolved.id ~= resolved.overrideSpellID then searchIDs[#searchIDs+1] = resolved.id end
 
     local bestChild, bestScore = nil, 0
+    local bestChildHasCdInfo = false -- preserve original "bestChild.cooldownInfo" guard
+    local bestChildLinkedIcon = nil  -- icon of bestChild.cooldownInfo.linkedSpellIDs[1]
     for _, searchSid in ipairs(searchIDs) do
         local candidates = _spellIDToChild[searchSid]
         if candidates then
@@ -1551,51 +1568,34 @@ local function ResolveOwnedEntry(entry, containerKey, index)
                 if score == bestScore and score >= 3 and ch.cooldownInfo then
                     local linked = ch.cooldownInfo.linkedSpellIDs
                     if linked then
-                        -- Active aura check (works in and out of combat)
-                        if C_UnitAuras.GetPlayerAuraBySpellID then
-                            for li = 1, #linked do
-                                local lsid = Helpers.SafeValue(linked[li], nil)
-                                if lsid and lsid > 0 then
-                                    local aok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, lsid)
-                                    if aok and ad and ad.auraInstanceID then
-                                        score = score + 1
-                                        break
-                                    end
-                                end
+                        -- Active aura check (memoized per batch — see
+                        -- IsMemoAuraActive).  Works in and out of combat.
+                        for li = 1, #linked do
+                            local lsid = Helpers.SafeValue(linked[li], nil)
+                            if lsid and lsid > 0 and IsMemoAuraActive(lsid) then
+                                score = score + 1
+                                break
                             end
                         end
                         -- OOC tiebreaker: prefer the child whose linked
                         -- aura has a distinct icon from the base spell.
                         -- The active buff typically has its own icon; passive
                         -- or hidden variants share the ability icon.
-                        if score == bestScore and bestChild and bestChild.cooldownInfo then
+                        if score == bestScore and bestChild and bestChildHasCdInfo then
                             local baseSid = Helpers.SafeValue(ch.cooldownInfo.spellID, nil)
-                            local baseIcon
-                            if baseSid and C_Spell and C_Spell.GetSpellInfo then
-                                local bi = C_Spell.GetSpellInfo(baseSid)
-                                baseIcon = bi and bi.iconID
-                            end
+                            local baseIcon = baseSid and GetMemoIcon(baseSid) or nil
                             if baseIcon then
-                                local chLinked = ch.cooldownInfo.linkedSpellIDs
-                                local bestLinked = bestChild.cooldownInfo.linkedSpellIDs
-                                local chIcon, bestIcon
-                                if chLinked and chLinked[1] then
-                                    local lsid = Helpers.SafeValue(chLinked[1], nil)
-                                    if lsid and C_Spell.GetSpellInfo then
-                                        local li = C_Spell.GetSpellInfo(lsid)
-                                        chIcon = li and li.iconID
-                                    end
+                                local chIcon
+                                if linked[1] then
+                                    local lsid = Helpers.SafeValue(linked[1], nil)
+                                    if lsid then chIcon = GetMemoIcon(lsid) end
                                 end
-                                if bestLinked and bestLinked[1] then
-                                    local lsid = Helpers.SafeValue(bestLinked[1], nil)
-                                    if lsid and C_Spell.GetSpellInfo then
-                                        local li = C_Spell.GetSpellInfo(lsid)
-                                        bestIcon = li and li.iconID
-                                    end
-                                end
-                                -- Prefer child with distinct aura icon
+                                -- Prefer child with distinct aura icon.
+                                -- bestChildLinkedIcon is cached at
+                                -- bestChild-assignment time, avoiding a
+                                -- repeat lookup every iteration.
                                 if chIcon and chIcon ~= baseIcon
-                                    and (not bestIcon or bestIcon == baseIcon) then
+                                    and (not bestChildLinkedIcon or bestChildLinkedIcon == baseIcon) then
                                     score = score + 1
                                 end
                             end
@@ -1605,6 +1605,16 @@ local function ResolveOwnedEntry(entry, containerKey, index)
                 if score > bestScore then
                     bestChild = ch
                     bestScore = score
+                    -- Cache bestChild's linked[1] icon so subsequent
+                    -- tiebreakers don't re-resolve it every iteration.
+                    bestChildLinkedIcon = nil
+                    local bci = ch.cooldownInfo
+                    bestChildHasCdInfo = (bci ~= nil)
+                    local bl = bci and bci.linkedSpellIDs
+                    if bl and bl[1] then
+                        local lsid = Helpers.SafeValue(bl[1], nil)
+                        if lsid then bestChildLinkedIcon = GetMemoIcon(lsid) end
+                    end
                 end
             end
         end
@@ -1651,8 +1661,7 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
                     if child and child ~= sel and child.Bar then
                         local cdInfo = child.cooldownInfo
                         if cdInfo then
-                            local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
-                            local sid = Helpers.SafeValue(cdInfo.overrideSpellID, nil) or (baseSid and _overrideCache[baseSid]) or baseSid
+                            local sid = Helpers.SafeValue(cdInfo.overrideSpellID, nil) or Helpers.SafeValue(cdInfo.spellID, nil)
                             if sid and not seenBarIDs[sid] then
                                 seenBarIDs[sid] = true
                                 owned[#owned + 1] = { type = "spell", id = sid }
@@ -1760,18 +1769,35 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
                                 end
                             end
                             if not sid then
-                                sid = ResolveInfoSpellID(cdInfo)
+                                -- Cooldown containers: store the stable base
+                                -- spellID so the entry survives talent swaps.
+                                -- The override is resolved dynamically each
+                                -- tick via C_Spell.GetOverrideSpell.
+                                -- Aura containers still use ResolveInfoSpellID
+                                -- (override points to the actual tracked aura).
+                                if not isAuraContainer then
+                                    local baseSid2 = Helpers.SafeValue(cdInfo.spellID, nil)
+                                    if baseSid2 and baseSid2 > 0 then
+                                        sid = baseSid2
+                                    else
+                                        sid = ResolveInfoSpellID(cdInfo)
+                                    end
+                                else
+                                    sid = ResolveInfoSpellID(cdInfo)
+                                end
                             end
                             if sid and not seenIDs[sid] then
                                 seenIDs[sid] = true
                                 owned[#owned + 1] = { type = "spell", id = sid, _layoutIndex = viewerCDIDs[cdID] or 9999 }
-                                -- Also mark the base spellID so the fallback merge
-                                -- (which uses entry.spellID) doesn't re-add the base
-                                -- when the override was already added (e.g., Divine
-                                -- Toll base when Holy Bulwark override is active).
+                                -- Also mark the override spellID so the fallback
+                                -- merge doesn't re-add it as a duplicate.
                                 local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
                                 if baseSid and baseSid ~= sid then
                                     seenIDs[baseSid] = true
+                                end
+                                local ovSid = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
+                                if ovSid and ovSid ~= sid then
+                                    seenIDs[ovSid] = true
                                 end
                             end
                         end
@@ -1863,6 +1889,13 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
     if not next(_spellToCooldownID) then
         RebuildSpellToCooldownID()
     end
+
+    -- Wipe per-batch memo caches so a stale aura-active result from the
+    -- previous batch can't persist across buff-data-changed dispatches.
+    -- Icon lookups would be safe to carry, but wiping both keeps the
+    -- invariant simple: memos live for exactly one batch.
+    wipe(_resolveIconMemo)
+    wipe(_resolveAuraActiveMemo)
 
     local ownedSpells = NormalizeOwnedSpells(db.ownedSpells)
     local removedSpells = db.removedSpells or {}
@@ -2045,9 +2078,7 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     -- C_CooldownViewer and spellbook APIs return incomplete data during
     -- transitions, which causes valid dormant spells to be permanently
     -- deleted with no way to recover them.
-    if restoreOnly or _inZoneTransition
-       or (C_CooldownViewer and C_CooldownViewer.IsCooldownViewerAvailable
-           and not C_CooldownViewer.IsCooldownViewerAvailable()) then
+    if restoreOnly or _inZoneTransition then
         -- skip Phase 3
     elseif C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet then
         local allCDMSpells = {}
@@ -2061,7 +2092,6 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
                             local sid = Helpers.SafeValue(info.spellID, nil)
                             if sid then allCDMSpells[sid] = true end
                             local ov = Helpers.SafeValue(info.overrideSpellID, nil)
-                            if not ov and sid then ov = _overrideCache[sid] end
                             if ov then allCDMSpells[ov] = true end
                         end
                     end
@@ -2170,11 +2200,6 @@ local FireChangeCallback
 ResolveInfoSpellID = function(info)
     if not info then return nil end
     local ov = Helpers.SafeValue(info.overrideSpellID, nil)
-    -- Fall back to event-sourced override cache (non-secret in combat)
-    if not ov then
-        local sid = Helpers.SafeValue(info.spellID, nil)
-        if sid then ov = _overrideCache[sid] end
-    end
     if ov and ov > 0 then return ov end
     local linked = info.linkedSpellIDs
     if linked then
@@ -2268,11 +2293,6 @@ RebuildSpellToCooldownID = function()
                     local ov = Helpers.SafeValue(info.overrideSpellID, nil)
                     if ov and ov > 0 then
                         _spellToCooldownID[ov] = cdID
-                    end
-                    -- Seed override cache from OOC scan data
-                    if sid and ov and ov ~= sid then
-                        _overrideCache[sid] = ov
-                        _overrideToCooldownBase[ov] = sid
                     end
                     if info.linkedSpellIDs then
                         for _, lsid in ipairs(info.linkedSpellIDs) do
@@ -2808,15 +2828,31 @@ function CDMSpellData:GetAvailableSpells(containerKey)
                             end
                         end
                         if not sid then
-                            sid = ResolveInfoSpellID(cdInfo)
+                            -- Cooldown containers: use stable base spellID
+                            -- so adding a spell stores the base, not the
+                            -- volatile override. Same logic as snapshot.
+                            if not isAuraContainer then
+                                local baseSid3 = Helpers.SafeValue(cdInfo.spellID, nil)
+                                if baseSid3 and baseSid3 > 0 then
+                                    sid = baseSid3
+                                else
+                                    sid = ResolveInfoSpellID(cdInfo)
+                                end
+                            else
+                                sid = ResolveInfoSpellID(cdInfo)
+                            end
                         end
                         if sid and not seen[sid] then
                             seen[sid] = true
-                            -- Also mark the base spellID as seen so override/base
-                            -- pairs don't both appear (e.g., Divine Toll + Holy Bulwark).
+                            -- Mark both base and override as seen so they
+                            -- don't both appear in the available list.
                             local baseSid2 = Helpers.SafeValue(cdInfo.spellID, nil)
                             if baseSid2 and baseSid2 ~= sid then
                                 seen[baseSid2] = true
+                            end
+                            local ovSid2 = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
+                            if ovSid2 and ovSid2 ~= sid then
+                                seen[ovSid2] = true
                             end
 
                             if not ownedSet[sid] then
@@ -2832,9 +2868,19 @@ function CDMSpellData:GetAvailableSpells(containerKey)
                                 end
 
                                 if not overrideOwned then
+                                    -- Show the current override name/icon in the
+                                    -- picker so the user sees what they'll get,
+                                    -- but store the base ID when they add it.
+                                    local displaySid = sid
+                                    if C_Spell and C_Spell.GetOverrideSpell then
+                                        local okOv2, ovDisplay = pcall(C_Spell.GetOverrideSpell, sid)
+                                        if okOv2 and ovDisplay and ovDisplay ~= sid then
+                                            displaySid = ovDisplay
+                                        end
+                                    end
                                     local name, icon
                                     if C_Spell and C_Spell.GetSpellInfo then
-                                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, sid)
+                                        local okI, spellInfo = pcall(C_Spell.GetSpellInfo, displaySid)
                                         if okI and spellInfo then
                                             name = spellInfo.name
                                             icon = spellInfo.iconID
@@ -3294,8 +3340,7 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("SPELLS_CHANGED")
     eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-    eventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
-    eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
+    eventFrame:SetScript("OnEvent", function(self, event, arg)
         if event == "SPELL_UPDATE_COOLDOWN" then
             -- No-op: ScanAll runs on its own 0.5s ticker (line 3178).
             -- Calling it here on every SPELL_UPDATE_COOLDOWN was redundant —
@@ -3346,44 +3391,11 @@ function CDMSpellData:Initialize()
             if not InCombatLockdown() then
                 CDMSpellData:ReconcileAllContainers()
             end
-        elseif event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
-            -- Event args are NOT secret — C-side dispatch, safe in combat.
-            local baseSpellID, newOverride = arg1, arg2
-            if baseSpellID then
-                local oldOverride = _overrideCache[baseSpellID]
-                if newOverride then
-                    _overrideCache[baseSpellID] = newOverride
-                    _overrideToCooldownBase[newOverride] = baseSpellID
-                    -- Propagate to cooldownID lookup
-                    local cdID = _spellToCooldownID[baseSpellID]
-                    if cdID then _spellToCooldownID[newOverride] = cdID end
-                else
-                    _overrideCache[baseSpellID] = nil
-                    if oldOverride then _overrideToCooldownBase[oldOverride] = nil end
-                end
-                _UpdateChildMapForOverride(baseSpellID, newOverride, oldOverride)
-                FireChangeCallback()
-            end
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.
-            -- APIs are stale until the cooldown viewer comes online.
+            -- APIs are stale for ~1-2s after entering a new zone/instance.
             _inZoneTransition = true
-            -- Poll IsCooldownViewerAvailable instead of blind 2s timer.
-            local attempts = 0
-            local function CheckViewerReady()
-                attempts = attempts + 1
-                if C_CooldownViewer and C_CooldownViewer.IsCooldownViewerAvailable
-                   and C_CooldownViewer.IsCooldownViewerAvailable() then
-                    _inZoneTransition = false
-                    return
-                end
-                if attempts < 20 then  -- 20 * 0.25s = 5s max
-                    C_Timer.After(0.25, CheckViewerReady)
-                else
-                    _inZoneTransition = false  -- fallback: clear after 5s regardless
-                end
-            end
-            C_Timer.After(0.25, CheckViewerReady)
+            C_Timer.After(2.0, function() _inZoneTransition = false end)
             -- Hide viewers immediately to prevent flash of unstyled icons
             HideBlizzardViewers()
             C_Timer.After(1.0, function()
@@ -3457,7 +3469,6 @@ SlashCmdList["QUI_CDMDUMP"] = function(msg)
                     local childName = ci and Helpers.SafeValue(ci.name, nil)
                     local childSid = ci and Helpers.SafeValue(ci.spellID, nil)
                     local childOv = ci and Helpers.SafeValue(ci.overrideSpellID, nil)
-                    if not childOv and childSid then childOv = _overrideCache[childSid] end
                     -- Match by name substring OR by spell ID
                     local match = false
                     if filterNum then
@@ -3552,7 +3563,7 @@ function CDMSpellData:ResolveDisplaySpellID(entry, blizzChildOverride)
         -- callers pass it to C-side functions that handle secrets natively.
         if ok and childSid then return childSid end
     end
-    return entry and (entry.overrideSpellID or _overrideCache[entry.spellID] or entry.spellID or entry.id)
+    return entry and (entry.overrideSpellID or entry.spellID or entry.id)
 end
 
 --- Resolve the display name for an entry, using the live viewer child spell
@@ -3572,9 +3583,6 @@ function CDMSpellData:ResolveDisplayName(entry, blizzChildOverride)
     end
     return (entry and entry.name) or ""
 end
-
-CDMSpellData._overrideCache = _overrideCache
-CDMSpellData._overrideToCooldownBase = _overrideToCooldownBase
 
 ---------------------------------------------------------------------------
 -- DEBUG: /cdmprofiles — dump _specProfiles contents and current spec state.

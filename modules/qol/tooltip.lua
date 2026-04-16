@@ -672,28 +672,15 @@ local function SetupTooltipHook()
             end
         end
 
-        -- Cursor positioning uses cached UIParent scale and
-        -- GetCursorPosition (screen coords, not restricted) — safe in combat.
+        -- Reposition immediately — ClearAllPoints/SetPoint are C-side and
+        -- handle combat safely. Do NOT call SetOwner here; Blizzard already
+        -- set it and re-calling mid-build disrupts the tooltip chain.
         if settings.anchorToCursor then
-            -- Don't call AnchorTooltipToCursor here — it calls SetOwner()
-            -- which re-taints the tooltip from addon context, breaking
-            -- widget-set layout (secret value arithmetic on child frames).
-            -- Blizzard already called SetOwner(parent, "ANCHOR_NONE") inside
-            -- GameTooltip_SetDefaultAnchor before this hook fires.
             EnsureCursorFollowHooks(tooltip)
-            if HasActiveMoneyFrame(tooltip) then
-                cursorFollowActive[tooltip] = nil
-                return
-            end
-            if HasActiveWidgetContainer(tooltip) then
-                cursorFollowActive[tooltip] = nil
-                return
-            end
             cursorFollowActive[tooltip] = true
             Provider:PositionTooltipAtCursor(tooltip, settings)
         else
             cursorFollowActive[tooltip] = nil
-            -- Anchor to QUI's fixed tooltip anchor instead of Blizzard default
             Provider:PositionTooltipAtAnchor(tooltip, settings)
         end
     end)

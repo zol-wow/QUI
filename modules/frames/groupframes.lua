@@ -87,6 +87,7 @@ QUI_GF.raidGroupHeaders = {} -- raid section headers (groups or custom self-firs
 QUI_GF.anchorFrames = {}     -- non-secure runtime roots for party/raid blocks
 QUI_GF.petHeader = nil       -- pet header
 QUI_GF.spotlightHeader = nil -- spotlight header
+QUI_GF.spotlightContainer = nil -- spotlight non-secure root
 QUI_GF.allFrames = {}        -- flat list of all child frames (for iteration)
 QUI_GF.unitFrameMap = {}     -- unitToken → frame (O(1) event dispatch)
 QUI_GF.initialized = false
@@ -127,6 +128,7 @@ local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
 -- table reference lets it short-circuit and reduces GC pressure.
 ---------------------------------------------------------------------------
 local _backdropCache = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "GF_backdropCache", tbl = _backdropCache } end
 local function GetCachedBackdrop(bgFile, edgeFile, edgeSize)
     local key = (bgFile or "") .. "|" .. (edgeFile or "") .. "|" .. (edgeSize or 0)
     local bd = _backdropCache[key]
@@ -198,6 +200,7 @@ local _dispel = {
 local GetDispelColors
 local InvalidateDispelColors
 local UpdateSelectiveEvents
+local UpdateDarkModeVisuals
 
 local function GetDispelColorCurve(opacity)
     if _dispel.colorCurve then return _dispel.colorCurve end
@@ -694,6 +697,12 @@ local function UpdateHealth(frame)
         if frame.healthText then frame.healthText:SetText("") end
         return
     end
+
+    -- BackdropTemplate-backed frames can lose their cached tint when the client
+    -- rebuilds backdrop internals. Re-apply our configured backdrop/alpha here
+    -- so frequent health updates restore the intended colors without waiting for
+    -- a full frame refresh.
+    UpdateDarkModeVisuals(frame)
 
     local isDeadOrGhost = UnitIsDeadOrGhost(unit)
     local isConnected = UnitIsConnected(unit) or IsNPCPartyMember(unit)
@@ -1841,7 +1850,7 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Dark Mode Visuals (backdrop, health bar alpha)
 ---------------------------------------------------------------------------
-local function UpdateDarkModeVisuals(frame)
+UpdateDarkModeVisuals = function(frame)
     if not frame then return end
     local general = GetGeneralSettings(frame._isRaid)
     local bgColor, healthOpacity, bgOpacity
@@ -1855,9 +1864,15 @@ local function UpdateDarkModeVisuals(frame)
         bgOpacity = general and general.defaultBgOpacity or 1.0
     end
     local bgAlpha = (bgColor[4] or 1) * bgOpacity
+    -- Do not dirty-check the backdrop tint: BackdropTemplate can rebuild or
+    -- desync the visible backdrop without changing our configured RGBA, and we
+    -- want both live updates and settings changes to force the correct color.
     frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
     if frame.healthBar then
-        frame.healthBar:SetAlpha(healthOpacity)
+        if healthOpacity ~= frame._lastHealthBarAlpha then
+            frame._lastHealthBarAlpha = healthOpacity
+            frame.healthBar:SetAlpha(healthOpacity)
+        end
     end
 end
 
@@ -2507,6 +2522,8 @@ local function RebuildUnitFrameMap()
     else
         CollectHeaderUnits(QUI_GF.headers.raid)
     end
+
+    CollectHeaderUnits(QUI_GF.spotlightHeader)
 end
 
 local function EnsureAnchorFrame(key)
@@ -3403,6 +3420,164 @@ local function CreateHeaders()
 end
 
 ---------------------------------------------------------------------------
+-- SPOTLIGHT: Create runtime spotlight header if enabled
+---------------------------------------------------------------------------
+local function CreateSpotlightHeader()
+    local db = GetSettings()
+    if not db then return end
+    local spot = db.raid and db.raid.spotlight
+    if not spot or not spot.enabled then return end
+    if InCombatLockdown() and not _state.inInitSafeWindow then return end
+
+    -- Already exists (e.g., from a previous init before combat reload)
+    if QUI_GF.spotlightContainer then return end
+
+    local w = spot.frameWidth or 180
+    local h = spot.frameHeight or 36
+
+    -- Non-secure container: provides stable size. SecureGroupHeaderTemplate
+    -- auto-sizes to 0 with no children, making the frame un-clickable.
+    local container = CreateFrame("Frame", "QUI_SpotlightContainer", UIParent)
+    container:SetSize(w, h)
+    container:SetMovable(true)
+    container:SetClampedToScreen(true)
+
+    -- Position via frameAnchoring
+    local faDB = QUI.db and QUI.db.profile and QUI.db.profile.frameAnchoring
+    local saved = faDB and faDB.spotlightFrames
+    if saved and saved.point then
+        container:SetPoint(saved.point, UIParent, saved.relative or saved.point,
+            saved.offsetX or 0, saved.offsetY or 0)
+    else
+        local pos = spot.position
+        container:SetPoint("CENTER", UIParent, "CENTER",
+            pos and pos.offsetX or -400, pos and pos.offsetY or 200)
+    end
+
+    -- Secure header with QUIGroupUnitButtonTemplate for proper decoration
+    local initConfigFunc = [[
+        local header = self:GetParent()
+        local w = header:GetAttribute("_initialAttribute-unit-width") or 200
+        local h = header:GetAttribute("_initialAttribute-unit-height") or 40
+        self:SetWidth(w)
+        self:SetHeight(h)
+        self:SetAttribute("*type1", "target")
+        self:SetAttribute("*type2", "togglemenu")
+        RegisterUnitWatch(self)
+    ]]
+
+    local header = CreateFrame("Frame", "QUI_SpotlightRTHeader", container, "SecureGroupHeaderTemplate")
+    header:SetAttribute("template", "QUIGroupUnitButtonTemplate")
+    header:SetAttribute("initialConfigFunction", initConfigFunc)
+    header:SetAttribute("showRaid", true)
+    header:SetAttribute("showParty", true)
+    header:SetPoint("TOPLEFT")
+
+    -- Filtering: use roleFilter (not groupBy/strictFiltering which are for sorting)
+    local filterMode = spot.filterMode or "ROLE"
+    if filterMode == "ROLE" then
+        local roles = {}
+        if spot.filterTank then roles[#roles + 1] = "TANK" end
+        if spot.filterHealer then roles[#roles + 1] = "HEALER" end
+        if #roles > 0 then
+            header:SetAttribute("roleFilter", table.concat(roles, ","))
+            -- Also sort by role so tanks appear before healers
+            header:SetAttribute("groupBy", "ASSIGNEDROLE")
+            header:SetAttribute("groupingOrder", table.concat(roles, ","))
+        end
+    elseif filterMode == "NAME" then
+        local nameList = spot.nameList
+        if nameList and nameList ~= "" then
+            header:SetAttribute("nameList", nameList)
+        end
+    end
+
+    header:SetAttribute("_initialAttribute-unit-width", w)
+    header:SetAttribute("_initialAttribute-unit-height", h)
+
+    -- Grow direction
+    local spacing = spot.spacing or 2
+    local grow = spot.growDirection or "DOWN"
+    if grow == "DOWN" then
+        header:SetAttribute("point", "TOP")
+        header:SetAttribute("yOffset", -spacing)
+    elseif grow == "UP" then
+        header:SetAttribute("point", "BOTTOM")
+        header:SetAttribute("yOffset", spacing)
+    elseif grow == "RIGHT" then
+        header:SetAttribute("point", "LEFT")
+        header:SetAttribute("xOffset", spacing)
+    elseif grow == "LEFT" then
+        header:SetAttribute("point", "RIGHT")
+        header:SetAttribute("xOffset", -spacing)
+    end
+
+    -- Store references
+    QUI_GF.spotlightHeader = header
+    QUI_GF.spotlightContainer = container
+
+    -- Force child creation now (during ADDON_LOADED safe window).
+    -- Note: SecureGroupHeaderTemplate does NOT fire QUIGroupUnitButtonTemplate
+    -- OnLoad for children created on a header whose parent is a non-secure
+    -- container. Decorate children manually after creation.
+    container:Show()
+    header:Show()
+
+    -- Deferred decoration: the secure header needs one frame to finish
+    -- creating/assigning children. Decorate + size them once ready.
+    C_Timer.After(0, function()
+        local h = QUI_GF.spotlightHeader
+        if not h then return end
+        local s = GetSettings()
+        s = s and s.raid and s.raid.spotlight
+        local fw = s and s.frameWidth or 180
+        local fh = s and s.frameHeight or 36
+        local i = 1
+        while true do
+            local child = h:GetAttribute("child" .. i)
+            if not child then break end
+            -- Always re-decorate on init: frame may persist from a prior
+            -- reload with stale _quiDecorated from a different header.
+            child._quiDecorated = nil
+            child:SetSize(fw, fh)
+            QUI_GF:InitializeHeaderChild(child)
+            i = i + 1
+        end
+        -- Register click-casting on new spotlight children
+        local GFCC = ns.QUI_GroupFrameClickCast
+        if GFCC and GFCC.RegisterFrame and GFCC:IsEnabled() then
+            local j = 1
+            while true do
+                local child = h:GetAttribute("child" .. j)
+                if not child then break end
+                GFCC:RegisterFrame(child)
+                j = j + 1
+            end
+        end
+    end)
+end
+
+local function DestroySpotlightHeader()
+    if InCombatLockdown() then return end
+    local header = QUI_GF.spotlightHeader
+    local container = QUI_GF.spotlightContainer
+    if header then
+        header:Hide()
+        QUI_GF.spotlightHeader = nil
+    end
+    if container then
+        container:Hide()
+        QUI_GF.spotlightContainer = nil
+    end
+end
+
+-- Public: edit mode calls this to reconfigure after settings change
+function QUI_GF:RecreateSpotlightHeader()
+    DestroySpotlightHeader()
+    CreateSpotlightHeader()
+end
+
+---------------------------------------------------------------------------
 -- HEADER: Helper to determine which raid groups (1-8) have at least one member
 ---------------------------------------------------------------------------
 local function GetPopulatedRaidGroups()
@@ -3709,6 +3884,8 @@ local function UpdateHeaderVisibility()
         if QUI_GF.headers.party then QUI_GF.headers.party:Hide() end
         if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
         if QUI_GF.headers.self then QUI_GF.headers.self:Hide() end
+        if QUI_GF.spotlightHeader then QUI_GF.spotlightHeader:Hide() end
+        if QUI_GF.spotlightContainer then QUI_GF.spotlightContainer:Hide() end
         HideRaidGroupHeaders()
         UpdateAnchorFrames()
         return
@@ -3772,6 +3949,55 @@ local function UpdateHeaderVisibility()
         end
         if selfHeader then
             if partySelfFirst then selfHeader:Show() else selfHeader:Hide() end
+        end
+    end
+
+    -- Spotlight: show when in a group (party or raid), hide otherwise
+    if QUI_GF.spotlightContainer then
+        if IsInRaid() or IsInGroup() then
+            QUI_GF.spotlightContainer:Show()
+            if QUI_GF.spotlightHeader then QUI_GF.spotlightHeader:Show() end
+            -- Decorate any new children (SecureGroupHeaderTemplate OnLoad
+            -- does not fire QUIGroupUnitButtonTemplate scripts reliably).
+            C_Timer.After(0.2, function()
+                local h = QUI_GF.spotlightHeader
+                if not h then return end
+                local s = GetSettings()
+                s = s and s.raid and s.raid.spotlight
+                local fw = s and s.frameWidth or 180
+                local fh = s and s.frameHeight or 36
+                local newCount = 0
+                local i = 1
+                while true do
+                    local child = h:GetAttribute("child" .. i)
+                    if not child then break end
+                    if not child._quiDecorated then
+                        child:SetSize(fw, fh)
+                        QUI_GF:InitializeHeaderChild(child)
+                        newCount = newCount + 1
+                    end
+                    i = i + 1
+                end
+                -- Refresh all spotlight frames so they display current unit data
+                if newCount > 0 then
+                    -- Register click-casting on new children
+                    local GFCC = ns.QUI_GroupFrameClickCast
+                    if GFCC and GFCC.RegisterFrame and GFCC:IsEnabled() then
+                        local j = 1
+                        while true do
+                            local child = h:GetAttribute("child" .. j)
+                            if not child then break end
+                            GFCC:RegisterFrame(child)
+                            j = j + 1
+                        end
+                    end
+                    RebuildUnitFrameMap()
+                    QUI_GF:RefreshAllFrames()
+                end
+            end)
+        else
+            if QUI_GF.spotlightHeader then QUI_GF.spotlightHeader:Hide() end
+            QUI_GF.spotlightContainer:Hide()
         end
     end
 
@@ -4771,6 +4997,15 @@ function QUI_GF:RefreshSettings()
     -- Force re-decoration of all children
     for _, frame in pairs(self.allFrames) do
         frame._quiDecorated = false
+        frame._lastBackdropColorR = nil
+        frame._lastBackdropColorG = nil
+        frame._lastBackdropColorB = nil
+        frame._lastBackdropColorA = nil
+        frame._lastHealthBarAlpha = nil
+        frame._lastHealthColorR = nil
+        frame._lastHealthColorG = nil
+        frame._lastHealthColorB = nil
+        frame._lastHealthColorA = nil
     end
     wipe(self.allFrames)
 
@@ -4782,6 +5017,15 @@ function QUI_GF:RefreshSettings()
             local child = header:GetAttribute("child" .. i)
             if not child then break end
             child._quiDecorated = false
+            child._lastBackdropColorR = nil
+            child._lastBackdropColorG = nil
+            child._lastBackdropColorB = nil
+            child._lastBackdropColorA = nil
+            child._lastHealthBarAlpha = nil
+            child._lastHealthColorR = nil
+            child._lastHealthColorG = nil
+            child._lastHealthColorB = nil
+            child._lastHealthColorA = nil
             i = i + 1
         end
     end
@@ -4837,6 +5081,9 @@ function QUI_GF:Initialize()
 
     -- Create headers
     CreateHeaders()
+
+    -- Create spotlight header (if enabled)
+    CreateSpotlightHeader()
 
     -- Register events
     RegisterEvents()
@@ -4898,6 +5145,9 @@ function QUI_GF:Disable()
     for _, proxy in pairs(self.anchorFrames) do
         proxy:Hide()
     end
+
+    if self.spotlightHeader then self.spotlightHeader:Hide() end
+    if self.spotlightContainer then self.spotlightContainer:Hide() end
 
     if ns.QUI_GroupFramePrivateAuras and ns.QUI_GroupFramePrivateAuras.CleanupAll then
         ns.QUI_GroupFramePrivateAuras:CleanupAll()

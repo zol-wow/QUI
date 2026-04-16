@@ -39,6 +39,7 @@ local ipairs = ipairs
 local pcall = pcall
 local issecretvalue = issecretvalue
 local string_format = string.format
+local math_floor = math.floor
 local hooksecurefunc = hooksecurefunc
 local CreateFrame = CreateFrame
 
@@ -177,11 +178,6 @@ local function GetBlizzTrackedBarSpellData(blizzBarChild)
         overrideSpellID = Helpers.SafeToNumber(cdInfo.overrideSpellID, nil)
         baseSpellID = Helpers.SafeToNumber(cdInfo.spellID, nil)
         name = Helpers.SafeValue(cdInfo.name, nil)
-        -- Fall back to event-sourced override cache (non-secret in combat)
-        local overrideCache = ns.CDMSpellData and ns.CDMSpellData._overrideCache
-        if not overrideSpellID and baseSpellID and overrideCache then
-            overrideSpellID = overrideCache[baseSpellID]
-        end
         resolvedSpellID = overrideSpellID or baseSpellID
     end
 
@@ -192,11 +188,6 @@ local function GetBlizzTrackedBarSpellData(blizzBarChild)
         if okInfo and info then
             overrideSpellID = overrideSpellID or Helpers.SafeToNumber(info.overrideSpellID, nil)
             baseSpellID = baseSpellID or Helpers.SafeToNumber(info.spellID, nil)
-            -- Fall back to event-sourced override cache
-            local overrideCache = ns.CDMSpellData and ns.CDMSpellData._overrideCache
-            if not overrideSpellID and baseSpellID and overrideCache then
-                overrideSpellID = overrideCache[baseSpellID]
-            end
             name = name or Helpers.SafeValue(info.name, nil)
             resolvedSpellID = resolvedSpellID or overrideSpellID or baseSpellID
         end
@@ -485,16 +476,10 @@ local function ExtractSpellID(blizzBarChild)
 
     -- 1. Direct cooldownInfo (same property icons use)
     local cdInfo = blizzBarChild.cooldownInfo
-    local overrideCache = ns.CDMSpellData and ns.CDMSpellData._overrideCache
     if cdInfo then
         local override = SafeToNumber(cdInfo.overrideSpellID, nil)
         if override then return override end
         local spell = SafeToNumber(cdInfo.spellID, nil)
-        -- Fall back to event-sourced override cache (non-secret in combat)
-        if not override and spell and overrideCache then
-            override = overrideCache[spell]
-            if override then return override end
-        end
         if spell then return spell end
     end
 
@@ -506,10 +491,6 @@ local function ExtractSpellID(blizzBarChild)
             local override = SafeToNumber(info.overrideSpellID, nil)
             if override then return override end
             local spell = SafeToNumber(info.spellID, nil)
-            if not override and spell and overrideCache then
-                override = overrideCache[spell]
-                if override then return override end
-            end
             if spell then return spell end
         end
     end
@@ -966,11 +947,6 @@ local function FindBlizzBarChild(spellID, entry)
             if ci then
                 local sid = Helpers.SafeValue(ci.overrideSpellID, nil)
                 local sid2 = Helpers.SafeValue(ci.spellID, nil)
-                -- Fall back to event-sourced override cache (non-secret in combat)
-                if not sid and sid2 then
-                    local oc = ns.CDMSpellData and ns.CDMSpellData._overrideCache
-                    if oc then sid = oc[sid2] end
-                end
                 if (sid and idsToMatch[sid]) or (sid2 and idsToMatch[sid2]) then
                     return child
                 end
@@ -1120,12 +1096,12 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
         end
 
-        -- Set initial name text (resolve from viewer child for talent replacements).
-        -- ResolveDisplayName may return a secret string in combat; SetText is
-        -- C-side and handles secret values natively, so pass it through without
-        -- comparing in Lua.
+        -- Set initial name text (resolve from viewer child for talent replacements)
         if bar.NameText then
-            bar.NameText:SetText(ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild))
+            local displayName = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
+            if displayName ~= "" then
+                bar.NameText:SetText(displayName)
+            end
         end
 
         -- Update active state from aura data
@@ -1179,6 +1155,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
         -- Bar fill via DurationObject
         local durObj = r.durObj
         if durObj then
+            local prevDurObj = bar._durObj
             bar._durObj = durObj
             local mirrorFillActive = bar._lastMirrorFill
                 and (GetTime() - bar._lastMirrorFill) < 5
@@ -1192,12 +1169,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 -- C-side SetTimerDuration is already driving the fill
                 -- animation.  Re-calling it would restart the animation
                 -- and cause visible flickering.  Detect aura refreshes
-                -- (new application with a different expiration) and
-                -- re-apply only then.
-                local rawExp = r.auraData and r.auraData.expirationTime
-                if rawExp and not Helpers.IsSecretValue(rawExp)
-                   and bar._expirationTime and bar._expirationTime ~= rawExp then
-                    -- Aura was refreshed — new duration, re-apply.
+                -- by comparing the DurationObject reference (C userdata
+                -- identity check — safe in combat, no secret values).
+                if durObj ~= prevDurObj then
                     if bar.StatusBar and bar.StatusBar.SetTimerDuration then
                         pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
                         pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
@@ -1212,15 +1186,31 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
         end
 
-        -- Stacks (appended to name text)
+        -- Icon: mirror the blizzIcon child's texture each tick so the bar
+        -- icon tracks dynamic buff changes (e.g. Roll the Bones re-rolls).
+        -- GetTexture and SetTexture are both C-side — forward directly,
+        -- no Lua comparison (texture may be secret in combat).
+        if bar.IconTexture and bar._blizzIconChild then
+            local blzIcon = bar._blizzIconChild
+            local iconRegion = blzIcon.Icon or blzIcon.icon
+            local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
+            if texRegion and texRegion.GetTexture then
+                local tok, tex = pcall(texRegion.GetTexture, texRegion)
+                if tok and tex then
+                    pcall(bar.IconTexture.SetTexture, bar.IconTexture, tex)
+                end
+            end
+        end
+
+        -- Name + stacks text.  Both name and stacks can be secret in
+        -- combat — no Lua comparisons.  SetText is C-side and handles
+        -- secrets natively.  Just forward every tick; FontString dedupes
+        -- internally when the rendered text hasn't changed.
         if bar.NameText then
             local name = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
             local stacks = r.stacks
                 and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
                 or ""
-            -- name may be a secret value in combat — concatenation would fail,
-            -- so pcall the whole expression; if it errors just set name alone
-            -- (SetText is C-side and handles secrets natively).
             local catOk, display = pcall(function() return name .. stacks end)
             if catOk then
                 pcall(bar.NameText.SetText, bar.NameText, display)
@@ -1282,9 +1272,11 @@ function CDMBars:LayoutBars(container, settings)
         else
             w, h = barWidth, barHeight
         end
-        container:SetSize(w, h)
-        if _G.QUI_SetCDMViewerBounds then
-            _G.QUI_SetCDMViewerBounds(container, w, h)
+        if not InCombatLockdown() then
+            container:SetSize(w, h)
+            if _G.QUI_SetCDMViewerBounds then
+                _G.QUI_SetCDMViewerBounds(container, w, h)
+            end
         end
         return
     end
@@ -1478,12 +1470,14 @@ function CDMBars:LayoutBars(container, settings)
     local lastW = container._lastBarLayoutW
     local lastH = container._lastBarLayoutH
     if lastW ~= totalW or lastH ~= totalH then
-        container._lastBarLayoutW = totalW
-        container._lastBarLayoutH = totalH
-        container:SetSize(totalW, totalH)
-        -- Write calculated dimensions to viewer state for proxy sizing
-        if _G.QUI_SetCDMViewerBounds then
-            _G.QUI_SetCDMViewerBounds(container, totalW, totalH)
+        if not InCombatLockdown() then
+            container._lastBarLayoutW = totalW
+            container._lastBarLayoutH = totalH
+            container:SetSize(totalW, totalH)
+            -- Write calculated dimensions to viewer state for proxy sizing
+            if _G.QUI_SetCDMViewerBounds then
+                _G.QUI_SetCDMViewerBounds(container, totalW, totalH)
+            end
         end
     end
 end
@@ -1571,14 +1565,18 @@ barTimerGroup:SetScript("OnLoop", function()
                         -- OOC: readable remaining — update text in Lua
                         if bar.DurationText then
                             if remaining >= 60 then
-                                local text = string_format("%.0fm", remaining / 60)
-                                if text ~= bar._lastDurationText then
+                                local bucket = math_floor(remaining / 60)
+                                if bucket ~= bar._lastDurationBucket then
+                                    bar._lastDurationBucket = bucket
+                                    local text = string_format("%.0fm", remaining / 60)
                                     bar._lastDurationText = text
                                     bar.DurationText:SetText(text)
                                 end
                             else
-                                local text = string_format("%.1f", remaining)
-                                if text ~= bar._lastDurationText then
+                                local bucket = math_floor(remaining * 10)
+                                if bucket ~= bar._lastDurationBucket then
+                                    bar._lastDurationBucket = bucket
+                                    local text = string_format("%.1f", remaining)
                                     bar._lastDurationText = text
                                     bar.DurationText:SetText(text)
                                 end
@@ -1614,6 +1612,7 @@ barTimerGroup:SetScript("OnLoop", function()
                         bar._durObj = nil
                         bar._cSideFill = nil
                         bar._lastDurationText = nil
+                        bar._lastDurationBucket = nil
                         if bar.DurationText then
                             bar.DurationText:SetText("")
                         end
@@ -1630,4 +1629,102 @@ barTimerGroup:SetScript("OnLoop", function()
         barTimerGroup:Stop()
     end
 end)
+
+---------------------------------------------------------------------------
+-- DEBUG: /cdmbardebug — toggle per-tick bar state dump.
+-- Shows spellID, resolved aura state, durObj, _blizzBar child fields,
+-- icon child fields — everything needed to diagnose Roll the Bones etc.
+---------------------------------------------------------------------------
+SLASH_QUI_CDMBARDEBUG1 = "/cdmbardebug"
+SlashCmdList["QUI_CDMBARDEBUG"] = function(msg)
+    local filter = msg and strtrim(msg) or ""
+    if filter == "" then
+        _G.QUI_CDM_BAR_DEBUG = not _G.QUI_CDM_BAR_DEBUG
+        print("|cff34D399[CDM-BarDebug]|r", _G.QUI_CDM_BAR_DEBUG and "ON (all bars)" or "OFF")
+        return
+    end
+    _G.QUI_CDM_BAR_DEBUG = filter:lower()
+    print("|cff34D399[CDM-BarDebug]|r ON — filter:", filter)
+end
+
+-- Inject debug print into UpdateOwnedBarAura (post-resolve)
+local _origUpdateOwnedBarAura = CDMBars.UpdateOwnedBarAura
+function CDMBars:UpdateOwnedBarAura(bar)
+    _origUpdateOwnedBarAura(self, bar)
+
+    local dbg = _G.QUI_CDM_BAR_DEBUG
+    if not dbg then return end
+    if not bar or not bar._spellEntry then return end
+    local entry = bar._spellEntry
+    local entryName = entry.name or "?"
+
+    -- Filter check
+    if type(dbg) == "string" then
+        if not entryName:lower():find(dbg, 1, true)
+           and tostring(bar._spellID) ~= dbg then
+            return
+        end
+    end
+
+    local P = "|cff34D399[CDM-BarDbg]|r"
+    local Helpers = ns.Helpers
+    print(P, entryName, "spellID=", bar._spellID, "entry.id=", entry.id,
+          "entry.spellID=", entry.spellID, "entry.overrideSpellID=", entry.overrideSpellID)
+    print(P, "  active=", bar._active, "cSideFill=", bar._cSideFill,
+          "durObj=", bar._durObj and "yes" or "nil")
+
+    -- Blizzard bar child state
+    local blzBar = bar._blizzBar
+    if blzBar then
+        local ci = blzBar.cooldownInfo
+        if ci then
+            local sid = Helpers.SafeValue(ci.spellID, "secret")
+            local ov = Helpers.SafeValue(ci.overrideSpellID, "secret")
+            local cid = ci.cooldownID and Helpers.SafeValue(ci.cooldownID, "secret") or "nil"
+            local wasAura = ci.wasSetFromAura
+            print(P, "  blizzBar: spellID=", sid, "overrideSpellID=", ov,
+                  "cooldownID=", cid, "wasSetFromAura=", tostring(wasAura))
+            if ci.linkedSpellIDs and type(ci.linkedSpellIDs) == "table" then
+                local ids = {}
+                for i, v in ipairs(ci.linkedSpellIDs) do
+                    ids[i] = tostring(Helpers.SafeValue(v, "secret"))
+                end
+                print(P, "  linkedSpellIDs= {", table.concat(ids, ", "), "}")
+            end
+        else
+            print(P, "  blizzBar: no cooldownInfo")
+        end
+        if blzBar.GetSpellID then
+            local ok, gsid = pcall(blzBar.GetSpellID, blzBar)
+            print(P, "  blizzBar:GetSpellID()=", ok and Helpers.SafeValue(gsid, "secret") or "err")
+        end
+        if blzBar.GetAuraSpellID then
+            local ok, asid = pcall(blzBar.GetAuraSpellID, blzBar)
+            print(P, "  blizzBar:GetAuraSpellID()=", ok and Helpers.SafeValue(asid, "secret") or "err")
+        end
+        -- StatusBar value
+        local sb = blzBar.Bar
+        if sb and sb.GetValue then
+            local ok, val = pcall(sb.GetValue, sb)
+            print(P, "  blizzBar.Bar:GetValue()=", ok and Helpers.SafeValue(val, "secret") or "err")
+        end
+    else
+        print(P, "  blizzBar: nil")
+    end
+
+    -- Icon child state
+    local blzIcon = bar._blizzIconChild
+    if blzIcon then
+        if blzIcon.GetSpellID then
+            local ok, gsid = pcall(blzIcon.GetSpellID, blzIcon)
+            print(P, "  blizzIcon:GetSpellID()=", ok and Helpers.SafeValue(gsid, "secret") or "err")
+        end
+        if blzIcon.GetAuraSpellID then
+            local ok, asid = pcall(blzIcon.GetAuraSpellID, blzIcon)
+            print(P, "  blizzIcon:GetAuraSpellID()=", ok and Helpers.SafeValue(asid, "secret") or "err")
+        end
+    else
+        print(P, "  blizzIcon: nil")
+    end
+end
 

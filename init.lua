@@ -318,6 +318,14 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r Found", count, "issues above.")
         end
         return
+    elseif input and input:match("^memaudit") then
+        if _G.QUI_MemAudit then
+            local subcmd = input:match("^memaudit%s+(%S+)")
+            _G.QUI_MemAudit(subcmd)
+        else
+            print("|cff60A5FAQUI:|r Memory audit not loaded yet.")
+        end
+        return
     elseif input and input == "perf" then
         if _G.QUI_TogglePerfMonitor then
             _G.QUI_TogglePerfMonitor()
