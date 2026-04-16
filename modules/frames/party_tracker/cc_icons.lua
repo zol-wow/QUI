@@ -249,9 +249,19 @@ end
 
 ---------------------------------------------------------------------------
 -- STATIC ABILITY LIST (CC spells for unit's class that they have)
+-- Cached per-unit; invalidated on roster / spec change.
 ---------------------------------------------------------------------------
 
+local _ccAbilitiesCache = {}  -- [unit] = { spell, spell, ... }
+
+local function InvalidateCCAbilitiesCache()
+    wipe(_ccAbilitiesCache)
+end
+
 local function GetStaticAbilities(unit)
+    local cached = _ccAbilitiesCache[unit]
+    if cached then return cached end
+
     local _, classToken = UnitClass(unit)
     if not classToken then return {} end
 
@@ -272,6 +282,7 @@ local function GetStaticAbilities(unit)
             abilities[#abilities + 1] = spell
         end
     end
+    _ccAbilitiesCache[unit] = abilities
     return abilities
 end
 
@@ -439,6 +450,7 @@ C_Timer.After(0, function()
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 
     local function RegisterUnits()
         eventFrame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
@@ -461,6 +473,7 @@ C_Timer.After(0, function()
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             OnSpellcastSucceeded(arg1, arg2, arg3)
         else
+            InvalidateCCAbilitiesCache()
             for u in pairs(activeCooldowns) do
                 if not UnitExists(u) then
                     for _, cdData in pairs(activeCooldowns[u]) do

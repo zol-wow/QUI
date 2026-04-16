@@ -117,11 +117,19 @@ local function RefreshPrivateDispelState(unit)
         return nil
     end
 
-    local state = {
-        auraInstanceID = auraData.auraInstanceID,
-        slot = firstSlot,
-    }
-    unitPrivateDispelState[unit] = state
+    -- Reuse existing state table when present; UNIT_AURA fires per unit up
+    -- to 40 times in a raid (~40-80 allocations/sec otherwise).
+    local state = unitPrivateDispelState[unit]
+    if state then
+        state.auraInstanceID = auraData.auraInstanceID
+        state.slot = firstSlot
+    else
+        state = {
+            auraInstanceID = auraData.auraInstanceID,
+            slot = firstSlot,
+        }
+        unitPrivateDispelState[unit] = state
+    end
     return state
 end
 

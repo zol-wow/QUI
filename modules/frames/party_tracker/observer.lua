@@ -53,12 +53,16 @@ end)
 ---------------------------------------------------------------------------
 -- PER-UNIT EVENT FRAME
 ---------------------------------------------------------------------------
-local function CreateUnitEventFrame(unit)
-    local frame = CreateFrame("Frame")
-
+local function RegisterUnitEvents(frame, unit)
     frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unit)
     frame:RegisterUnitEvent("UNIT_FLAGS", unit)
     frame:RegisterUnitEvent("UNIT_AURA", unit)
+end
+
+local function CreateUnitEventFrame(unit)
+    local frame = CreateFrame("Frame")
+
+    RegisterUnitEvents(frame, unit)
 
     frame:SetScript("OnEvent", function(_, event, u, ...)
         local state = unitState[u]
@@ -129,7 +133,10 @@ function Observer.Watch(unit)
         lastFeignState = false,
     }
 
-    if not unitFrames[unit] then
+    local frame = unitFrames[unit]
+    if frame then
+        RegisterUnitEvents(frame, unit)
+    else
         unitFrames[unit] = CreateUnitEventFrame(unit)
     end
 end
@@ -143,19 +150,25 @@ function Observer.Unwatch(unit)
     local frame = unitFrames[unit]
     if frame then
         frame:UnregisterAllEvents()
-        unitFrames[unit] = nil
     end
 
     unitState[unit] = nil
 end
 
+-- Scratch table for GetEvidence return value. Callers consume the evidence
+-- inline (MatchRule reads it within the same call frame), so reuse is safe.
+-- Saves 1 table allocation per call; with ExternalDefensive multi-candidate
+-- evaluation (5+ units per aura burst), this is a meaningful per-event win.
+local _evidenceScratch = {}
+
 --- Build evidence set for a unit at a given detection time.
 --- @param castTimeOverride number? If provided, use this instead of live lastCastTime (for per-candidate snapshot-based evidence).
 function Observer.GetEvidence(unit, detectionTime, castTimeOverride)
+    wipe(_evidenceScratch)
     local state = unitState[unit]
-    if not state then return {} end
+    if not state then return _evidenceScratch end
 
-    local evidence = {}
+    local evidence = _evidenceScratch
     local t = detectionTime or GetTime()
 
     -- Cast evidence: use override from snapshot if provided, else live state
@@ -219,7 +232,6 @@ function Observer.ClearAll()
         Observer.Unwatch(unit)
     end
     wipe(unitState)
-    wipe(unitFrames)
     wipe(watchedUnits)
     wipe(unitCanFeign)
 end

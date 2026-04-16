@@ -2360,9 +2360,18 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 -- directly to C-side SetFormattedText (no SafeToNumber needed).
 
                 if self.timeText and self.durationObj then
-                    local getter = self.durationObj.GetRemainingDuration or self.durationObj.GetRemaining
+                    -- Cache the getter method lookup across OnUpdate ticks
+                    -- (same durationObj for the duration of a cast, OnUpdate
+                    -- runs ~60 Hz — recomputing the `or` chain each frame is
+                    -- wasted metatable work).
+                    local obj = self.durationObj
+                    if self._durationGetterObj ~= obj then
+                        self._durationGetter = obj.GetRemainingDuration or obj.GetRemaining
+                        self._durationGetterObj = obj
+                    end
+                    local getter = self._durationGetter
                     if getter then
-                        local ok, rem = pcall(getter, self.durationObj)
+                        local ok, rem = pcall(getter, obj)
                         if ok and rem ~= nil then
                             self.timeText:SetFormattedText("%.1f", rem)
                         end
@@ -2938,9 +2947,18 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             -- Timer-driven mode: engine animates the bar, we just update time text
             if self.timerDriven then
                 if self.timeText and self.durationObj then
-                    local getter = self.durationObj.GetRemainingDuration or self.durationObj.GetRemaining
+                    -- Cache the getter method lookup across OnUpdate ticks
+                    -- (same durationObj for the duration of a cast, OnUpdate
+                    -- runs ~60 Hz — recomputing the `or` chain each frame is
+                    -- wasted metatable work).
+                    local obj = self.durationObj
+                    if self._durationGetterObj ~= obj then
+                        self._durationGetter = obj.GetRemainingDuration or obj.GetRemaining
+                        self._durationGetterObj = obj
+                    end
+                    local getter = self._durationGetter
                     if getter then
-                        local ok, rem = pcall(getter, self.durationObj)
+                        local ok, rem = pcall(getter, obj)
                         if ok and rem ~= nil then
                             self.timeText:SetFormattedText("%.1f", rem)
                         end

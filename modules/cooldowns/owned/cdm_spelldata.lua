@@ -68,6 +68,46 @@ local _spellIDToChild = {}  -- [spellID] = { child1, child2, ... } (built OOC du
 local _resolveIconMemo = {}          -- [spellID] = iconID (false = negative lookup)
 local _resolveAuraActiveMemo = {}    -- [lsid]    = bool   (true = active aura present)
 
+-- Per-tick caches for Blizzard aura queries. Same aura instance is frequently
+-- queried by multiple icons in one UpdateAllCooldowns batch (~100-150 icons).
+-- GetAuraDataByAuraInstanceID allocates a fresh ~600-byte Blizzard table every
+-- call; caching per batch cuts 12-30KB/tick of short-lived garbage. Wiped via
+-- CDMSpellData:WipeTickAuraCache() at the start of each batch.
+-- auraInstanceID is globally unique across units, so the unit is not part of
+-- the cache key.
+local _tickAuraDataCache = {}        -- [auraInstanceID] = data | false (false = negative)
+local _tickAuraDurationCache = {}    -- [auraInstanceID] = durObj | false
+
+local function TickCacheGetAuraData(unit, instanceID)
+    if not instanceID then return nil end
+    local cached = _tickAuraDataCache[instanceID]
+    if cached ~= nil then
+        return cached or nil
+    end
+    local ok, data = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, unit, instanceID)
+    if ok and data then
+        _tickAuraDataCache[instanceID] = data
+        return data
+    end
+    _tickAuraDataCache[instanceID] = false
+    return nil
+end
+
+local function TickCacheGetAuraDuration(unit, instanceID)
+    if not instanceID or not C_UnitAuras.GetAuraDuration then return nil end
+    local cached = _tickAuraDurationCache[instanceID]
+    if cached ~= nil then
+        return cached or nil
+    end
+    local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, unit, instanceID)
+    if ok and durObj then
+        _tickAuraDurationCache[instanceID] = durObj
+        return durObj
+    end
+    _tickAuraDurationCache[instanceID] = false
+    return nil
+end
+
 --- Check if a Blizzard viewer child matches a given spell ID.
 --- Tries cooldownInfo.overrideSpellID, cooldownInfo.spellID (may be secret),
 --- and cooldownID (numeric, typically not secret).
@@ -285,6 +325,11 @@ function CDMSpellData:InvalidateChildMap()
     _childMapDirty = true
 end
 
+function CDMSpellData:WipeTickAuraCache()
+    wipe(_tickAuraDataCache)
+    wipe(_tickAuraDurationCache)
+end
+
 CDMSpellData.FindChildForSpell = FindChildForSpell
 CDMSpellData.FindBuffChildForSpell = FindBuffChildForSpell
 CDMSpellData._childBySpellID = _childBySpellID
@@ -419,15 +464,13 @@ function CDMSpellData:ResolveAuraState(params)
     end
 
     if childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
-        local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
-        if vok and vdata then
+        local vdata = TickCacheGetAuraData(auraUnit, childAuraInstID)
+        if vdata then
             isActive = true
             r.auraData = vdata
-            if C_UnitAuras.GetAuraDuration then
-                local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, auraUnit, childAuraInstID)
-                if dok and durObj then
-                    r.durObj = durObj
-                end
+            local durObj = TickCacheGetAuraDuration(auraUnit, childAuraInstID)
+            if durObj then
+                r.durObj = durObj
             end
         end
     end
@@ -499,8 +542,8 @@ function CDMSpellData:ResolveAuraState(params)
     end
     -- 5. Validate child auraInstanceID via GetAuraDataByAuraInstanceID
     if not isActive and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
-        local vok, vdata = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
-        if vok and vdata then
+        local vdata = TickCacheGetAuraData(auraUnit, childAuraInstID)
+        if vdata then
             isActive = true
             r.auraData = vdata
         end
@@ -527,17 +570,15 @@ function CDMSpellData:ResolveAuraState(params)
         local dynChild = FindChildForSpell(auraSpellID, entrySpellID, entryID)
         if dynChild and dynChild.auraInstanceID and C_UnitAuras.GetAuraDataByAuraInstanceID then
             local dynUnit = dynChild.auraDataUnit or "player"
-            local vok2, vdata2 = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, dynUnit, dynChild.auraInstanceID)
-            if vok2 and vdata2 then
+            local vdata2 = TickCacheGetAuraData(dynUnit, dynChild.auraInstanceID)
+            if vdata2 then
                 isActive = true
                 childAuraInstID = dynChild.auraInstanceID
                 auraUnit = dynUnit
                 r.auraData = vdata2
-                if C_UnitAuras.GetAuraDuration then
-                    local dok2, durObj2 = pcall(C_UnitAuras.GetAuraDuration, dynUnit, dynChild.auraInstanceID)
-                    if dok2 and durObj2 then
-                        r.durObj = durObj2
-                    end
+                local durObj2 = TickCacheGetAuraDuration(dynUnit, dynChild.auraInstanceID)
+                if durObj2 then
+                    r.durObj = durObj2
                 end
             end
         end
@@ -579,8 +620,8 @@ function CDMSpellData:ResolveAuraState(params)
 
     -- Get DurationObject from auraInstanceID
     if isActive and childAuraInstID and C_UnitAuras.GetAuraDuration then
-        local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, auraUnit, childAuraInstID)
-        if dok and durObj then
+        local durObj = TickCacheGetAuraDuration(auraUnit, childAuraInstID)
+        if durObj then
             r.durObj = durObj
         end
     end
@@ -611,8 +652,8 @@ function CDMSpellData:ResolveAuraState(params)
             end
         end
         if not apps and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
-            local aok, instData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, auraUnit, childAuraInstID)
-            if aok and instData and instData.applications then
+            local instData = TickCacheGetAuraData(auraUnit, childAuraInstID)
+            if instData and instData.applications then
                 apps = instData.applications
             end
         end

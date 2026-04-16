@@ -278,7 +278,7 @@ do
     function WhirlwindTracker:Reset()
         stacks = 0
         expiresAt = nil
-        seenGUID = {}
+        wipe(seenGUID)
         pendingToken = pendingToken + 1
     end
 
@@ -365,7 +365,7 @@ do
             -- Combat ended: clear pending token to prevent stale delayed grants,
             -- and clear GUID cache to prevent memory growth.
             pendingToken = pendingToken + 1
-            seenGUID = {}
+            wipe(seenGUID)
         end
     end)
     wwFrame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")

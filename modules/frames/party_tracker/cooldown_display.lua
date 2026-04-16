@@ -204,14 +204,32 @@ end
 
 ---------------------------------------------------------------------------
 -- STATIC ABILITY LIST (from Rules for unit's spec/class)
+-- Cache keyed by (unit, filterMode). Each UpdateFrame previously allocated a
+-- fresh abilities table + seen set per call (5 units × many aura bursts/sec
+-- in raid → 100-200 small tables/sec). Cache is invalidated on roster / spec
+-- change alongside InvalidatePlayerSpellCache.
 ---------------------------------------------------------------------------
+
+local _staticAbilitiesCache = {}  -- [unit][filterMode] = { {spellId, isOffensive}, ... }
+local _seenScratch = {}            -- reused across GetStaticAbilities calls
+
+local function InvalidateStaticAbilitiesCache()
+    wipe(_staticAbilitiesCache)
+end
 
 local function GetStaticAbilities(unit, filterMode)
     Rules = Rules or ns.PartyTracker_Rules
     if not Rules then return {} end
 
+    local unitCache = _staticAbilitiesCache[unit]
+    if unitCache then
+        local cached = unitCache[filterMode]
+        if cached then return cached end
+    end
+
     local abilities = {}
-    local seen = {}
+    wipe(_seenScratch)
+    local seen = _seenScratch
 
     SpecCache = SpecCache or ns.PartyTracker_SpecCache
     local specId = SpecCache and SpecCache.GetSpec(unit)
@@ -254,6 +272,9 @@ local function GetStaticAbilities(unit, filterMode)
         CollectFromRules(Rules.ByClass[classToken])
     end
 
+    unitCache = unitCache or {}
+    unitCache[filterMode] = abilities
+    _staticAbilitiesCache[unit] = unitCache
     return abilities
 end
 
@@ -685,8 +706,9 @@ C_Timer.After(0, function()
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             OnSpellcastSucceeded(arg1, arg2, arg3)
         else
-            -- Roster/spec change: invalidate player spell cache + cleanup stale units
+            -- Roster/spec change: invalidate spell caches + cleanup stale units
             InvalidatePlayerSpellCache()
+            InvalidateStaticAbilitiesCache()
             for u in pairs(activeCooldowns) do
                 if not UnitExists(u) then
                     for _, cdData in pairs(activeCooldowns[u]) do

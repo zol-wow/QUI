@@ -509,6 +509,7 @@ C_Timer.After(0, function()
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             OnSpellcastSucceeded(arg1, arg2, arg3)
         else
+            wipe(recentCasts)
             RefreshGUIDMap()
             RegisterPartyUnits()
             KickTimer.RefreshAll()

@@ -2982,6 +2982,9 @@ function CDMIcons:UpdateAllCooldowns()
     wipe(_tickChargeCache)
     wipe(_tickCooldownCache)
     wipe(_tickDurationCache)
+    if ns.CDMSpellData and ns.CDMSpellData.WipeTickAuraCache then
+        ns.CDMSpellData:WipeTickAuraCache()
+    end
 
     -- Child map is invalidated by aura/cooldown event subscribers via
     -- CDMSpellData:InvalidateChildMap(). RebuildChildMap is a no-op when clean.
