@@ -367,28 +367,21 @@ local function StyleHeaderChildren(header, settings, isBuff)
             child:SetAttribute("type2", "cancelaura")
         end
 
-        -- Debug: hook click events to trace right-click cancellation failures
-        if not child._quiClickDebugHooked then
-            child._quiClickDebugHooked = true
-            child:HookScript("PreClick", function(self, button)
-                local id = self:GetID()
-                local unit = self:GetAttribute("unit")
-                local type2 = self:GetAttribute("type2")
-                local idx = self:GetAttribute("index")
-                local flt = self:GetAttribute("filter")
-                local spellInfo = self._spellId and C_Spell.GetSpellInfo(self._spellId)
-                local name = spellInfo and spellInfo.name or "?"
-                BBDebug(("PreClick btn=%s id=%d unit=%s type2=%s index=%s filter=%s spell=%s(%s) combat=%s"):format(
-                    tostring(button), id,
-                    tostring(unit), tostring(type2), tostring(idx), tostring(flt),
-                    tostring(name), tostring(self._spellId),
-                    tostring(InCombatLockdown())
-                ))
-            end)
+        -- Cancel via modern API — the legacy cancelaura secure action calls
+        -- CancelUnitBuff internally which is defunct in 12.0+. Use
+        -- CancelAuraByAuraInstanceID in PostClick instead (still runs in
+        -- hardware event context so the client accepts it).
+        if not child._quiCancelHooked then
+            child._quiCancelHooked = true
             child:HookScript("PostClick", function(self, button)
-                BBDebug(("PostClick btn=%s id=%d — action sent to secure handler"):format(
-                    tostring(button), self:GetID()
+                if button ~= "RightButton" then return end
+                local aid = self._auraInstanceID
+                BBDebug(("PostClick cancel btn=%s id=%d auraInstanceID=%s combat=%s"):format(
+                    tostring(button), self:GetID(), tostring(aid), tostring(InCombatLockdown())
                 ))
+                if aid and C_UnitAuras and C_UnitAuras.CancelAuraByAuraInstanceID then
+                    pcall(C_UnitAuras.CancelAuraByAuraInstanceID, aid)
+                end
             end)
         end
 
