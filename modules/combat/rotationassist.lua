@@ -39,11 +39,6 @@ local inCombat = false
 
 -- Performance: Ticker instead of OnUpdate
 
--- Cache for keybind lookup (reuse from keybinds.lua)
-local spellToKeybind = {}
-local lastKeybindCacheTime = 0
-local KEYBIND_CACHE_INTERVAL = 1.0
-
 -- GCD spell ID (standard global cooldown reference)
 local GCD_SPELL_ID = 61304
 
