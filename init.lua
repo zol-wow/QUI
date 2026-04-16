@@ -120,6 +120,18 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r Layout Mode not loaded yet.")
         end
         return
+    elseif input and input == "buffdbg" then
+        -- One-shot diagnostic dump for buff/debuff click debugging
+        self.DEBUG_MODE = true
+        local bc = _G["QUI_BuffIconContainer"]
+        local dc = _G["QUI_DebuffIconContainer"]
+        if bc then bc._quiDiagRequested = true end
+        if dc then dc._quiDiagRequested = true end
+        if _G.QUI_RefreshBuffBorders then
+            _G.QUI_RefreshBuffBorders()
+        end
+        self:Print("|cffFFD700[BuffBorders]|r Diagnostic dump printed to chat. Run /qui buffdbg again to refresh.")
+        return
     elseif input and input == "cdm" then
         if _G.QUI_OpenCDMComposer then
             _G.QUI_OpenCDMComposer()

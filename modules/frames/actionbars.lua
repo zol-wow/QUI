@@ -4127,6 +4127,20 @@ function ActionBarsOwned.UpdateAllButtonStates()
     end
 end
 
+-- Lean count refresh: UpdateCount on active buttons only.
+-- Used for UNIT_AURA which fires when aura-based resource overlays
+-- (Soul Fragments, etc.) change.  Avoids full SafeUpdate.
+local _lastCountUpdateTime = 0
+function ActionBarsOwned.UpdateAllButtonCounts()
+    local now = GetTime()
+    if now == _lastCountUpdateTime then return end
+    _lastCountUpdateTime = now
+
+    for btn in pairs(ActionBarsOwned._activeButtons) do
+        if btn.UpdateCount then pcall(btn.UpdateCount, btn) end
+    end
+end
+
 -- Full visual refresh for all owned action buttons via SafeUpdate.
 -- Uses only truthiness tests on API returns — safe during combat.
 local _lastVisualUpdateTime = 0
@@ -4220,7 +4234,9 @@ abUpdateFrame._lastVis = 0
 abUpdateFrame._dirtyCooldowns = false
 abUpdateFrame._dirtyStates = false
 abUpdateFrame._dirtyVisuals = false
+abUpdateFrame._dirtyCounts = false
 abUpdateFrame._immediate = false  -- bypass combat throttle for this tick
+abUpdateFrame._lastCount = 0
 abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
     -- Out of combat: flush immediately (no throttle).
@@ -4233,6 +4249,7 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
     local doVis = self._dirtyVisuals
     local doState = self._dirtyStates
     local doCd  = self._dirtyCooldowns
+    local doCount = self._dirtyCounts
 
     if doVis then
         if throttle and (now - self._lastVis < AB_VIS_UPDATE_INTERVAL) then return end
@@ -4240,15 +4257,17 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
         self._lastVis = now
         self._lastCd = now
         self._lastState = now
+        self._lastCount = now
         self._dirtyCooldowns = false
         self._dirtyStates = false
         self._dirtyVisuals = false
-        -- SafeUpdate includes cooldown + checked state internally
+        self._dirtyCounts = false
+        -- SafeUpdate includes cooldown + checked state + count internally
         ActionBarsOwned.UpdateAllButtonVisuals()
     elseif doState then
         if throttle and (now - self._lastState < AB_STATE_UPDATE_INTERVAL) then return end
-        -- State is lean; if cooldowns are also dirty, run them in the same
-        -- tick to avoid a second OnUpdate wake-up.
+        -- State is lean; if cooldowns or counts are also dirty, run them
+        -- in the same tick to avoid a second OnUpdate wake-up.
         self:Hide()
         self._lastState = now
         self._dirtyStates = false
@@ -4258,12 +4277,30 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
             self._dirtyCooldowns = false
             ActionBarsOwned.UpdateAllCooldowns()
         end
+        if doCount then
+            self._lastCount = now
+            self._dirtyCounts = false
+            ActionBarsOwned.UpdateAllButtonCounts()
+        end
     elseif doCd then
         if throttle and (now - self._lastCd < AB_CD_UPDATE_INTERVAL) then return end
         self:Hide()
         self._lastCd = now
         self._dirtyCooldowns = false
         ActionBarsOwned.UpdateAllCooldowns()
+        -- Piggyback counts if dirty — same frame, avoid extra wake-up.
+        if doCount then
+            self._lastCount = now
+            self._dirtyCounts = false
+            ActionBarsOwned.UpdateAllButtonCounts()
+        end
+    elseif doCount then
+        -- Counts are lightweight — no combat throttle needed, just
+        -- once-per-frame dedup via _lastCountUpdateTime inside the fn.
+        self:Hide()
+        self._lastCount = now
+        self._dirtyCounts = false
+        ActionBarsOwned.UpdateAllButtonCounts()
     else
         self:Hide()
     end
@@ -4314,6 +4351,11 @@ end
 local function ScheduleABStateUpdate(immediate)
     abUpdateFrame._dirtyStates = true
     if immediate then abUpdateFrame._immediate = true end
+    abUpdateFrame:Show()
+end
+
+local function ScheduleABCountUpdate()
+    abUpdateFrame._dirtyCounts = true
     abUpdateFrame:Show()
 end
 
@@ -4678,13 +4720,15 @@ local function OnOwnedEvent(self, event, ...)
 
     elseif event == "SPELL_UPDATE_CHARGES" then
         -- Charge count changed (e.g. Arcane Charges, Chi).
-        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            local btns = ActionBarsOwned.nativeButtons[barKey]
-            if btns then
-                for _, btn in ipairs(btns) do
-                    if btn.UpdateCount then pcall(btn.UpdateCount, btn) end
-                end
-            end
+        ScheduleABCountUpdate()
+
+    elseif event == "UNIT_AURA" then
+        -- Aura-based resource overlays (Soul Fragments, etc.) update
+        -- the action display count when auras change.  Only react to
+        -- player auras — party/target aura churn is irrelevant.
+        local unit = ...
+        if unit == "player" then
+            ScheduleABCountUpdate()
         end
 
     elseif event == "ACTIONBAR_SHOWGRID" then
@@ -7696,6 +7740,7 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("ACTIONBAR_SHOWGRID")
     ownedEventFrame:RegisterEvent("ACTIONBAR_HIDEGRID")
     ownedEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
+    ownedEventFrame:RegisterUnitEvent("UNIT_AURA", "player")
     ownedEventFrame:RegisterEvent("SPELL_UPDATE_ICON")
     ownedEventFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
     ownedEventFrame:RegisterEvent("PLAYER_ENTER_COMBAT")

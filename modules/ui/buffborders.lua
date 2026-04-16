@@ -25,6 +25,13 @@ local CreateFrame = CreateFrame
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 
+-- Debug helper — gated behind /qui debug
+local function BBDebug(...)
+    if QUI and QUI.DEBUG_MODE and QUI.DebugPrint then
+        QUI:DebugPrint("|cffFFD700[BuffBorders]|r", ...)
+    end
+end
+
 -- Private aura API (WoW 10.1.0+)
 local AddPrivateAuraAnchor = C_UnitAuras and C_UnitAuras.AddPrivateAuraAnchor
 local RemovePrivateAuraAnchor = C_UnitAuras and C_UnitAuras.RemovePrivateAuraAnchor
@@ -360,6 +367,31 @@ local function StyleHeaderChildren(header, settings, isBuff)
             child:SetAttribute("type2", "cancelaura")
         end
 
+        -- Debug: hook click events to trace right-click cancellation failures
+        if not child._quiClickDebugHooked then
+            child._quiClickDebugHooked = true
+            child:HookScript("PreClick", function(self, button)
+                local id = self:GetID()
+                local unit = self:GetAttribute("unit")
+                local type2 = self:GetAttribute("type2")
+                local idx = self:GetAttribute("index")
+                local flt = self:GetAttribute("filter")
+                local spellInfo = self._spellId and C_Spell.GetSpellInfo(self._spellId)
+                local name = spellInfo and spellInfo.name or "?"
+                BBDebug(("PreClick btn=%s id=%d unit=%s type2=%s index=%s filter=%s spell=%s(%s) combat=%s"):format(
+                    tostring(button), id,
+                    tostring(unit), tostring(type2), tostring(idx), tostring(flt),
+                    tostring(name), tostring(self._spellId),
+                    tostring(InCombatLockdown())
+                ))
+            end)
+            child:HookScript("PostClick", function(self, button)
+                BBDebug(("PostClick btn=%s id=%d — action sent to secure handler"):format(
+                    tostring(button), self:GetID()
+                ))
+            end)
+        end
+
         -- Tooltip handlers (set once, check flag)
         if not child._quiTooltipHooked then
             child._quiTooltipHooked = true
@@ -502,6 +534,31 @@ local function StyleHeaderChildren(header, settings, isBuff)
                         end
                     end)
                 end
+            end
+        end
+    end
+
+    -- Debug: dump child state summary
+    if visibleCount > 0 and (QUI.DEBUG_MODE or header._quiDiagRequested) then
+        header._quiDiagRequested = nil
+        for i = 1, visibleCount do
+            local c = header:GetAttribute("child" .. i)
+            if c then
+                local strata, level = c:GetFrameStrata(), c:GetFrameLevel()
+                local mouse = c:IsMouseEnabled()
+                local clickFn = c.GetRegisteredClicks
+                local clicks = clickFn and clickFn(c) or "N/A"
+                local t2 = c:GetAttribute("type2")
+                local idx = c:GetAttribute("index")
+                local flt = c:GetAttribute("filter")
+                local unit = c:GetAttribute("unit")
+                BBDebug(("%s child%d: strata=%s lvl=%d mouse=%s clicks=%s type2=%s index=%s filter=%s unit=%s spellId=%s"):format(
+                    isBuff and "BUFF" or "DEBUFF", i,
+                    tostring(strata), level,
+                    tostring(mouse), tostring(clicks),
+                    tostring(t2), tostring(idx), tostring(flt), tostring(unit),
+                    tostring(c._spellId)
+                ))
             end
         end
     end

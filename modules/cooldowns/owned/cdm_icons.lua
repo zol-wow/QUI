@@ -938,14 +938,19 @@ end
 --- Check whether Blizzard's native stack frames are actively displaying
 --- on this icon.  When true, API-based stack writes in UpdateIconCooldown
 --- should yield — the reparented native frames are the source of truth.
---- Live IsShown() check — no cached state, immune to secret values.
+--- Check whether Blizzard's native stack frames have been reparented onto
+--- our icon.  We test whether the reparent happened (parent == TextOverlay),
+--- NOT IsShown() — IsShown() returns secret booleans on tainted frames in
+--- combat and cannot be boolean-tested in Lua.
 local function IsHookStackActive(entry, icon)
     if not entry or not entry._blizzChild then return false end
     local child = entry._blizzChild
-    -- ChargeCount shown = Blizzard is displaying charges/stacks natively
-    if child.ChargeCount and child.ChargeCount:IsShown() then return true end
-    -- Applications shown = Blizzard is displaying application stacks
-    if child.Applications and child.Applications:IsShown() then return true end
+    local textOverlay = icon.TextOverlay
+    if not textOverlay then return false end
+    -- If we reparented ChargeCount or Applications onto our TextOverlay,
+    -- Blizzard's native stack display is driving this icon.
+    if child.ChargeCount and child.ChargeCount:GetParent() == textOverlay then return true end
+    if child.Applications and child.Applications:GetParent() == textOverlay then return true end
     return false
 end
 
