@@ -233,7 +233,8 @@ local function IsPandemicMirroringEnabled(icon)
         return settings[viewerType .. "PandemicEnabled"] ~= false
     end
 
-    return false
+    -- Custom containers and other viewer types: default to enabled.
+    return true
 end
 
 -- Forward declarations for hook-driven pandemic helpers.
@@ -555,20 +556,26 @@ end
 
 ---------------------------------------------------------------------------
 -- PANDEMIC GLOW: hook Blizzard CDM children's ShowPandemicStateFrame /
--- HidePandemicStateFrame. Blizzard calls these every OnUpdate tick.
--- Zero polling, zero API queries, zero secret value issues.
+-- HidePandemicStateFrame. Blizzard calls these every OnUpdate tick from
+-- CheckPandemicTimeDisplay — Show fires while in pandemic window, Hide
+-- fires otherwise. Self-corrects on target changes because the viewer
+-- re-evaluates pandemic state against the current target's aura.
 ---------------------------------------------------------------------------
-local PANDEMIC_LINGER = 0.1
+-- Linger window: how long after the last ShowPandemicStateFrame tick we
+-- wait before killing the glow on Hide. Short enough for responsive target
+-- switches, long enough to tolerate brief update hitches (~2 frames @ 60fps).
+local PANDEMIC_LINGER = 0.03
 local _pandemicState = setmetatable({}, { __mode = "k" })
 local _pandemicGlowIcons = setmetatable({}, { __mode = "k" })  -- [icon] = true when glow is pandemic-driven
 
+-- Pandemic glow is independent of the per-spell glowEnabled override —
+-- that override only controls overlay/procOnUsable glows. Pandemic uses
+-- its own per-viewer toggle via IsPandemicMirroringEnabled.
 local function StartPandemicGlow(icon)
     if not icon or not icon._spellEntry or not icon:IsShown() then return end
     if not IsPandemicMirroringEnabled(icon) then return end
 
     local spellOvr = GetSpellGlowOverride(icon)
-    if spellOvr and spellOvr.glowEnabled == false then return end
-
     _pandemicGlowIcons[icon] = true
     if not activeGlowIcons[icon] then
         StartGlow(icon, spellOvr)
@@ -602,28 +609,34 @@ HookBlizzPandemic = function(icon, blizzChild)
             StartPandemicGlow(icon)
         else
             state.active = nil
-            state.lastFire = nil
         end
     end
 
     if state.hooked then return end
     state.hooked = true
 
+    -- ShowPandemicStateFrame fires every frame from CheckPandemicTimeDisplay
+    -- while the tracked aura is in its pandemic window against the current
+    -- target. Self-corrects on target switches.
     hooksecurefunc(blizzChild, "ShowPandemicStateFrame", function(self)
         local s = _pandemicState[self]
         if not s or not s.icon then return end
-        s.lastFire = GetTime()
         if not s.active then
-            s.active = true
             StartPandemicGlow(s.icon)
-            if not _pandemicGlowIcons[s.icon]
-                and (not s.icon._spellEntry or not s.icon:IsShown()) then
-                s.active = nil
+            if _pandemicGlowIcons[s.icon] then
+                s.active = true
+                s.lastFire = GetTime()
+            else
                 s.lastFire = nil
             end
+        else
+            s.lastFire = GetTime()
         end
     end)
 
+    -- HidePandemicStateFrame fires every frame when not in pandemic. Kill
+    -- the glow once PANDEMIC_LINGER has elapsed since the last Show tick
+    -- (tolerates hitches where Hide momentarily fires mid-pandemic).
     hooksecurefunc(blizzChild, "HidePandemicStateFrame", function(self)
         local s = _pandemicState[self]
         if not s or not s.active then return end
@@ -631,6 +644,7 @@ HookBlizzPandemic = function(icon, blizzChild)
         if last and (GetTime() - last) < PANDEMIC_LINGER then return end
         local icon = s.icon
         s.active = nil
+        s.lastFire = nil
         if icon then
             _pandemicGlowIcons[icon] = nil
             if icon._spellEntry then
