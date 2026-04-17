@@ -1140,12 +1140,15 @@ local function FixAllIconMouse()
     if InCombatLockdown() then return end
     local GF = ns.QUI_GroupFrames
     if not GF then return end
-    for _, frame in pairs(GF.unitFrameMap) do
-        if frame.debuffIcons then
-            for _, icon in ipairs(frame.debuffIcons) do FixIconMouse(icon, true) end
-        end
-        if frame.buffIcons then
-            for _, icon in ipairs(frame.buffIcons) do FixIconMouse(icon, true) end
+    for _, list in pairs(GF.unitFrameMap) do
+        for i = 1, #list do
+            local frame = list[i]
+            if frame.debuffIcons then
+                for _, icon in ipairs(frame.debuffIcons) do FixIconMouse(icon, true) end
+            end
+            if frame.buffIcons then
+                for _, icon in ipairs(frame.buffIcons) do FixIconMouse(icon, true) end
+            end
         end
     end
     pendingMouseFix = false
@@ -1176,8 +1179,10 @@ if ns.AuraEvents then
         local GF = ns.QUI_GroupFrames
         if not GF or not GF.initialized then return end
 
-        local frame = GF.unitFrameMap[unit]
-        if not frame or not frame:IsShown() then return end
+        local frames = GF.unitFrameMap[unit]
+        if not frames then return end
+        local nFrames = #frames
+        if nFrames == 0 then return end
 
         -- Fast path: pure stack/duration update (no auras added or removed).
         -- The display set is identical — skip full scan + all overlay updates.
@@ -1198,30 +1203,35 @@ if ns.AuraEvents then
             local GetDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
             if not GetDuration then return end
 
-            -- Refresh only icons whose aura is in the updated set.
-            -- Typically 1-2 auras update per event, so most icons skip.
-            for listIdx = 1, 2 do
-                local icons = listIdx == 1 and frame.debuffIcons or frame.buffIcons
-                if icons then
-                    for _, icon in ipairs(icons) do
-                        if not icon:IsShown() then break end
-                        local state = icon._auraState
-                        local instID = state and state.auraInstanceID
-                        if instID then
-                            -- Linear scan for match (nUpdated is typically 1-3)
-                            local hit = false
-                            for i = 1, nUpdated do
-                                if updated[i] == instID then hit = true; break end
-                            end
-                            if hit then
-                                local cd = icon.cooldown
-                                if cd and cd.SetCooldownFromDurationObject then
-                                    local dObj = GetDuration(unit, instID)
-                                    if dObj then cd:SetCooldownFromDurationObject(dObj, true) end
-                                end
-                                if icon.stackText and GetDisplayCount then
-                                    local s = GetDisplayCount(unit, instID, 2, 99)
-                                    if s then icon.stackText:SetText(s) end
+            -- Refresh only icons whose aura is in the updated set — for every
+            -- frame displaying this unit (main raid panel + spotlight).
+            for f = 1, nFrames do
+                local frame = frames[f]
+                if frame:IsShown() then
+                    for listIdx = 1, 2 do
+                        local icons = listIdx == 1 and frame.debuffIcons or frame.buffIcons
+                        if icons then
+                            for _, icon in ipairs(icons) do
+                                if not icon:IsShown() then break end
+                                local state = icon._auraState
+                                local instID = state and state.auraInstanceID
+                                if instID then
+                                    -- Linear scan for match (nUpdated is typically 1-3)
+                                    local hit = false
+                                    for i = 1, nUpdated do
+                                        if updated[i] == instID then hit = true; break end
+                                    end
+                                    if hit then
+                                        local cd = icon.cooldown
+                                        if cd and cd.SetCooldownFromDurationObject then
+                                            local dObj = GetDuration(unit, instID)
+                                            if dObj then cd:SetCooldownFromDurationObject(dObj, true) end
+                                        end
+                                        if icon.stackText and GetDisplayCount then
+                                            local s = GetDisplayCount(unit, instID, 2, 99)
+                                            if s then icon.stackText:SetText(s) end
+                                        end
+                                    end
                                 end
                             end
                         end
@@ -1231,15 +1241,21 @@ if ns.AuraEvents then
             return
         end
 
-        -- Set change or full update: full scan + all consumers.
+        -- Set change or full update: full scan (once per unit) + all consumers
+        -- for every frame displaying the unit.
         ScanUnitAuras(unit)
-        if GF.UpdateDispelOverlay then GF:UpdateDispelOverlay(frame) end
-        if GF.UpdateDefensiveIndicator then GF:UpdateDefensiveIndicator(frame) end
         local GFI = ns.QUI_GroupFrameIndicators
-        if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
         local GFP = ns.QUI_GroupFramePinnedAuras
-        if GFP and GFP.RefreshFrame then GFP:RefreshFrame(frame) end
-        UpdateFrameAuras(frame)
+        for f = 1, nFrames do
+            local frame = frames[f]
+            if frame:IsShown() then
+                if GF.UpdateDispelOverlay then GF:UpdateDispelOverlay(frame) end
+                if GF.UpdateDefensiveIndicator then GF:UpdateDefensiveIndicator(frame) end
+                if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
+                if GFP and GFP.RefreshFrame then GFP:RefreshFrame(frame) end
+                UpdateFrameAuras(frame)
+            end
+        end
     end)
 end
 
@@ -1268,10 +1284,13 @@ function QUI_GFA:RefreshAll()
     local db = GetDB()
     cachedShowDurationColor = db and db.auras and db.auras.showDurationColor ~= false
 
-    for unit, frame in pairs(GF.unitFrameMap) do
-        if frame and frame:IsShown() then
-            ScanUnitAuras(unit)
-            UpdateFrameAuras(frame)
+    for unit, list in pairs(GF.unitFrameMap) do
+        ScanUnitAuras(unit)
+        for i = 1, #list do
+            local frame = list[i]
+            if frame and frame:IsShown() then
+                UpdateFrameAuras(frame)
+            end
         end
     end
 end

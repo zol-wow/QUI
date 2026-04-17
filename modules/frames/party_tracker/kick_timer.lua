@@ -283,8 +283,10 @@ function KickTimer.RefreshAll()
     -- RefreshSettings and may be empty when testMode causes an early return
     -- in UpdateHeaderVisibility (e.g. during layout mode).
     if GF.unitFrameMap then
-        for _, frame in pairs(GF.unitFrameMap) do
-            ShowStaticIcon(frame)
+        for _, list in pairs(GF.unitFrameMap) do
+            for i = 1, #list do
+                ShowStaticIcon(list[i])
+            end
         end
     end
 end
@@ -530,9 +532,13 @@ C_Timer.After(0, function()
             if not IsActive() or not IsPartyUnit(unit) then return end
             GF = GF or ns.QUI_GroupFrames
             if not GF or not GF.unitFrameMap then return end
-            local frame = GF.unitFrameMap[unit]
-            if frame and not frame._kickIcon then
-                ShowStaticIcon(frame)
+            local list = GF.unitFrameMap[unit]
+            if not list then return end
+            for i = 1, #list do
+                local frame = list[i]
+                if frame and not frame._kickIcon then
+                    ShowStaticIcon(frame)
+                end
             end
         end)
     end

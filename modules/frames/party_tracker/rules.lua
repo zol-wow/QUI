@@ -109,15 +109,19 @@ ns.PartyTracker_IsPartyUnit = PT_IsPartyUnit
 local function PT_GetFrameForUnit(unit)
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.unitFrameMap then return nil end
-    local frame = GF.unitFrameMap[unit]
-    if not frame and unit == "player" then
-        for token, f in pairs(GF.unitFrameMap) do
-            if UnitIsUnit(token, "player") then
-                return f
+    -- unitFrameMap values are arrays of frames (main raid + spotlight may both
+    -- display the same unit). Party tracker only cares about the primary party
+    -- frame, so return the first frame in the list.
+    local list = GF.unitFrameMap[unit]
+    if list and list[1] then return list[1] end
+    if unit == "player" then
+        for token, l in pairs(GF.unitFrameMap) do
+            if UnitIsUnit(token, "player") and l[1] then
+                return l[1]
             end
         end
     end
-    return frame
+    return nil
 end
 ns.PartyTracker_GetFrameForUnit = PT_GetFrameForUnit
 

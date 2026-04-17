@@ -437,8 +437,10 @@ function CooldownDisplay.RefreshAll()
     GF = GF or ns.QUI_GroupFrames
     if not GF then return end
     if GF.unitFrameMap then
-        for _, frame in pairs(GF.unitFrameMap) do
-            CooldownDisplay.UpdateFrame(frame)
+        for _, list in pairs(GF.unitFrameMap) do
+            for i = 1, #list do
+                CooldownDisplay.UpdateFrame(list[i])
+            end
         end
     end
 end

@@ -643,9 +643,12 @@ function QUI_GFP:RefreshAll()
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
 
-    for _, frame in pairs(GF.unitFrameMap) do
-        if frame and frame:IsShown() then
-            UpdateFramePinnedAuras(frame)
+    for _, list in pairs(GF.unitFrameMap) do
+        for i = 1, #list do
+            local frame = list[i]
+            if frame and frame:IsShown() then
+                UpdateFramePinnedAuras(frame)
+            end
         end
     end
 end

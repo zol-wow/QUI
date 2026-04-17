@@ -877,9 +877,12 @@ function QUI_GFI:RefreshAll()
         return
     end
 
-    for _, frame in pairs(GF.unitFrameMap) do
-        if frame and frame:IsShown() then
-            UpdateFrameIndicators(frame)
+    for _, list in pairs(GF.unitFrameMap) do
+        for i = 1, #list do
+            local frame = list[i]
+            if frame and frame:IsShown() then
+                UpdateFrameIndicators(frame)
+            end
         end
     end
 end

@@ -393,8 +393,10 @@ function CCIcons.RefreshAll()
     GF = GF or ns.QUI_GroupFrames
     if not GF then return end
     if GF.unitFrameMap then
-        for _, frame in pairs(GF.unitFrameMap) do
-            CCIcons.UpdateFrame(frame)
+        for _, list in pairs(GF.unitFrameMap) do
+            for i = 1, #list do
+                CCIcons.UpdateFrame(list[i])
+            end
         end
     end
 end

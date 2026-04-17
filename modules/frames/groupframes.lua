@@ -89,10 +89,48 @@ QUI_GF.petHeader = nil       -- pet header
 QUI_GF.spotlightHeader = nil -- spotlight header
 QUI_GF.spotlightContainer = nil -- spotlight non-secure root
 QUI_GF.allFrames = {}        -- flat list of all child frames (for iteration)
-QUI_GF.unitFrameMap = {}     -- unitToken → frame (O(1) event dispatch)
+QUI_GF.unitFrameMap = {}     -- unitToken → array of frames (O(1) event dispatch)
+                             -- Multiple frames may display the same unit (e.g., main
+                             -- raid panel + spotlight both showing a tank). All frames
+                             -- for a unit must receive per-unit events; iterate the list.
 QUI_GF.initialized = false
 QUI_GF.testMode = false
 QUI_GF.editMode = false
+
+-- unitFrameMap helpers: the map value is an array of frames (list).
+-- AddFrameToMap is a no-op if the frame is already in the list.
+-- RemoveFrameFromMap nils the key when the list becomes empty so that
+-- `next(unitFrameMap)` and map-miss self-healing keep working correctly.
+local function AddFrameToMap(unit, frame)
+    if not unit or not frame then return end
+    local list = QUI_GF.unitFrameMap[unit]
+    if list then
+        for i = 1, #list do
+            if list[i] == frame then return end
+        end
+        list[#list + 1] = frame
+    else
+        QUI_GF.unitFrameMap[unit] = { frame }
+    end
+end
+
+local function RemoveFrameFromMap(unit, frame)
+    if not unit or not frame then return end
+    local list = QUI_GF.unitFrameMap[unit]
+    if not list then return end
+    for i = #list, 1, -1 do
+        if list[i] == frame then
+            table.remove(list, i)
+        end
+    end
+    if #list == 0 then
+        QUI_GF.unitFrameMap[unit] = nil
+    end
+end
+
+-- Expose so child modules (auras/indicators/party tracker) can iterate safely.
+QUI_GF.AddFrameToMap = AddFrameToMap
+QUI_GF.RemoveFrameFromMap = RemoveFrameFromMap
 
 -- State tables for taint safety (weak-keyed)
 local frameState, GetFrameState = Helpers.CreateStateTable()
@@ -1427,8 +1465,16 @@ local function UpdateTargetHighlight(frame)
         local c = healerSettings.targetHighlight.color or { 1, 1, 1, 0.6 }
         frame.targetHighlight:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.6)
         frame.targetHighlight:Show()
-        -- Keep fast-path cache in sync (used by PLAYER_TARGET_CHANGED O(1) unhighlight)
-        QUI_GF._targetHighlightFrame = frame
+        -- Keep fast-path cache in sync (used by PLAYER_TARGET_CHANGED fast unhighlight)
+        local list = QUI_GF._targetHighlightFrames
+        if not list then
+            list = {}
+            QUI_GF._targetHighlightFrames = list
+        end
+        for i = 1, #list do
+            if list[i] == frame then return end
+        end
+        list[#list + 1] = frame
     else
         frame.targetHighlight:Hide()
     end
@@ -2414,9 +2460,9 @@ local function DecorateGroupFrame(frame)
 
             self.unit = value
 
-            -- Clean up old mapping
-            if oldUnit and QUI_GF.unitFrameMap[oldUnit] == self then
-                QUI_GF.unitFrameMap[oldUnit] = nil
+            -- Clean up old mapping (idempotently removes self from the list)
+            if oldUnit then
+                RemoveFrameFromMap(oldUnit, self)
             end
 
             if not value then
@@ -2426,7 +2472,7 @@ local function DecorateGroupFrame(frame)
             end
 
             -- Register new mapping immediately (so events dispatch correctly)
-            QUI_GF.unitFrameMap[value] = self
+            AddFrameToMap(value, self)
 
             -- GUID comparison: detect whether the actual player changed.
             -- UnitGUID returns secret strings during combat — coerce to nil
@@ -2457,7 +2503,7 @@ local function DecorateGroupFrame(frame)
     local currentUnit = frame:GetAttribute("unit")
     if currentUnit then
         frame.unit = currentUnit
-        QUI_GF.unitFrameMap[currentUnit] = frame
+        AddFrameToMap(currentUnit, frame)
     end
 
     -- Register with Clique / click-cast
@@ -2492,7 +2538,7 @@ function QUI_GF:InitializeHeaderChild(frame)
 end
 
 ---------------------------------------------------------------------------
--- UNIT FRAME MAP: Rebuild unit → frame lookup
+-- UNIT FRAME MAP: Rebuild unit → list-of-frames lookup
 ---------------------------------------------------------------------------
 local function CollectHeaderUnits(header)
     if not header or not header:IsShown() then return end
@@ -2503,7 +2549,7 @@ local function CollectHeaderUnits(header)
         local unit = child:GetAttribute("unit")
         child.unit = unit  -- sync Lua property (nil clears stale)
         if unit then
-            QUI_GF.unitFrameMap[unit] = child
+            AddFrameToMap(unit, child)
         end
         i = i + 1
     end
@@ -3470,7 +3516,7 @@ local function CreateSpotlightHeader()
     header:SetAttribute("template", "QUIGroupUnitButtonTemplate")
     header:SetAttribute("initialConfigFunction", initConfigFunc)
     header:SetAttribute("showRaid", true)
-    header:SetAttribute("showParty", true)
+    header:SetAttribute("showParty", false)
     header:SetPoint("TOPLEFT")
 
     -- Filtering: use roleFilter (not groupBy/strictFiltering which are for sorting)
@@ -3952,9 +3998,9 @@ local function UpdateHeaderVisibility()
         end
     end
 
-    -- Spotlight: show when in a group (party or raid), hide otherwise
+    -- Spotlight: raid-only. Hidden in party and solo.
     if QUI_GF.spotlightContainer then
-        if IsInRaid() or IsInGroup() then
+        if IsInRaid() then
             QUI_GF.spotlightContainer:Show()
             if QUI_GF.spotlightHeader then QUI_GF.spotlightHeader:Show() end
             -- Decorate any new children (SecureGroupHeaderTemplate OnLoad
@@ -4383,27 +4429,30 @@ local function DoRangeCheck()
     if (not partyRange or partyRange.enabled == false) and (not raidRange or raidRange.enabled == false) then return end
 
     local now = GetTime()
-    for unit, frame in pairs(QUI_GF.unitFrameMap) do
-        if frame and frame:IsShown() then
-            -- Skip units updated by UNIT_IN_RANGE_UPDATE within the last 0.4s
-            local lastEventTime = _range.cacheTime[unit]
-            if lastEventTime and (now - lastEventTime) < 0.4 then
-                -- Event-driven update is still fresh, skip this unit
-            else
-                local rangeSettings = GetRangeSettings(frame._isRaid)
-                if rangeSettings and rangeSettings.enabled ~= false then
-                    local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
-                    local inRange = CheckUnitRange(unit)
-                    local state = GetFrameState(frame)
-
-                    local cached = _range.cache[unit]
-                    local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
-
-                    if isSecret or cached ~= inRange or state.outOfRange == nil then
-                        _range.cache[unit] = inRange
-                        state.outOfRange = true
-                        state.inRange = inRange
-                        ApplyRangeAlpha(frame, inRange, outAlpha)
+    for unit, list in pairs(QUI_GF.unitFrameMap) do
+        -- Skip units updated by UNIT_IN_RANGE_UPDATE within the last 0.4s
+        local lastEventTime = _range.cacheTime[unit]
+        if not (lastEventTime and (now - lastEventTime) < 0.4) then
+            -- Compute range once per unit, apply per-frame below.
+            local inRange = CheckUnitRange(unit)
+            local cached = _range.cache[unit]
+            local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
+            local rangeChanged = isSecret or cached ~= inRange
+            if rangeChanged then
+                _range.cache[unit] = inRange
+            end
+            for i = 1, #list do
+                local frame = list[i]
+                if frame and frame:IsShown() then
+                    local rangeSettings = GetRangeSettings(frame._isRaid)
+                    if rangeSettings and rangeSettings.enabled ~= false then
+                        local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
+                        local state = GetFrameState(frame)
+                        if rangeChanged or state.outOfRange == nil then
+                            state.outOfRange = true
+                            state.inRange = inRange
+                            ApplyRangeAlpha(frame, inRange, outAlpha)
+                        end
                     end
                 end
             end
@@ -4449,8 +4498,11 @@ local function GRU_DeferredWork()
     -- nothing to decorate here even on a full roster change.
     RebuildUnitFrameMap()
     -- Refresh GUID cache so OnAttributeChanged skip has fresh data
-    for unit, frame in pairs(QUI_GF.unitFrameMap) do
-        _state.unitGuidCache[frame] = UnitGUID(unit)
+    for unit, list in pairs(QUI_GF.unitFrameMap) do
+        local guid = UnitGUID(unit)
+        for i = 1, #list do
+            _state.unitGuidCache[list[i]] = guid
+        end
     end
     wipe(_range.cache)  -- Fresh map — force re-evaluate all units
     wipe(_range.cacheTime)
@@ -4504,9 +4556,9 @@ local function OnEvent(self, event, arg1, ...)
     -- Skip GetSettings() entirely for units not in the map (nameplates,
     -- boss, arena, target, focus, pet) — saves ~20k table lookups/sec in raids.
     if type(arg1) == "string" then
-        local frame = QUI_GF.unitFrameMap[arg1]
+        local frames = QUI_GF.unitFrameMap[arg1]
 
-        if not frame then
+        if not frames then
             -- Self-healing: rebuild map on miss for party/raid/player units.
             -- Fast prefix check avoids per-event regex (string.sub vs :match).
             local p4 = arg1:sub(1, 4)
@@ -4515,34 +4567,37 @@ local function OnEvent(self, event, arg1, ...)
                 if not QUI_GF.lastMapRebuild or (now - QUI_GF.lastMapRebuild) > 1.0 then
                     QUI_GF.lastMapRebuild = now
                     RebuildUnitFrameMap()
-                    frame = QUI_GF.unitFrameMap[arg1]
+                    frames = QUI_GF.unitFrameMap[arg1]
                 end
             end
-            if not frame then return end  -- Not a tracked unit, bail early
+            if not frames then return end  -- Not a tracked unit, bail early
         end
 
-        -- Matched frame — check cached enabled state
+        -- Matched frame list — check cached enabled state
         if not _state.cachedModuleEnabled then return end
+        local nFrames = #frames
 
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
             -- Fast path: health bar only. Absorbs and heal prediction are handled
             -- by their own dedicated events (UNIT_ABSORB_AMOUNT_CHANGED,
             -- UNIT_HEAL_ABSORB_AMOUNT_CHANGED, UNIT_HEAL_PREDICTION) — calling
             -- them here doubled work in raids (~150-200 UNIT_HEALTH events/sec).
-            local unit = frame.unit
-            if not unit or not UnitExists(unit) then return end
-            UpdateHealth(frame)
+            if not UnitExists(arg1) then return end
+            for i = 1, nFrames do UpdateHealth(frames[i]) end
 
         elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" then
             local now = GetTime()
             local last = powerThrottle[arg1] or 0
             if (now - last) < THROTTLE_INTERVAL then return end
             powerThrottle[arg1] = now
-            UpdatePower(frame)
+            for i = 1, nFrames do UpdatePower(frames[i]) end
 
         elseif event == "UNIT_MAXPOWER" then
-            frame._lastMaxPower = nil  -- force SetMinMaxValues refresh
-            UpdatePower(frame)
+            for i = 1, nFrames do
+                local frame = frames[i]
+                frame._lastMaxPower = nil  -- force SetMinMaxValues refresh
+                UpdatePower(frame)
+            end
 
         elseif event == "UNIT_ABSORB_AMOUNT_CHANGED"
             or event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED"
@@ -4555,60 +4610,66 @@ local function OnEvent(self, event, arg1, ...)
             if (now - last) < THROTTLE_INTERVAL then return end
             tbl[arg1] = now
             if event == "UNIT_ABSORB_AMOUNT_CHANGED" then
-                UpdateAbsorbs(frame)
+                for i = 1, nFrames do UpdateAbsorbs(frames[i]) end
             elseif event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
-                UpdateHealAbsorb(frame)
+                for i = 1, nFrames do UpdateHealAbsorb(frames[i]) end
             else
-                UpdateHealPrediction(frame)
+                for i = 1, nFrames do UpdateHealPrediction(frames[i]) end
             end
 
         elseif event == "UNIT_NAME_UPDATE" then
-            UpdateName(frame)
+            for i = 1, nFrames do UpdateName(frames[i]) end
 
         elseif event == "UNIT_THREAT_SITUATION_UPDATE" then
-            UpdateThreat(frame)
+            for i = 1, nFrames do UpdateThreat(frames[i]) end
 
         -- UNIT_AURA handled by centralized dispatcher → groupframes_auras.lua
 
         elseif event == "UNIT_CONNECTION" or event == "UNIT_FLAGS" then
-            UpdateConnection(frame)
-            UpdateHealth(frame)
-            UpdatePower(frame)
+            for i = 1, nFrames do
+                local frame = frames[i]
+                UpdateConnection(frame)
+                UpdateHealth(frame)
+                UpdatePower(frame)
+            end
 
         elseif event == "UNIT_IN_RANGE_UPDATE" then
             -- Instant range update from Blizzard (~38yd boundary crossing).
             -- Primary driver for range checks; ticker is a slow fallback.
-            local isRaid = frame._isRaid
-            local rangeSettings = GetRangeSettings(isRaid)
-            if rangeSettings and rangeSettings.enabled ~= false then
-                local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
-                local inRange = CheckUnitRange(arg1)
-                local cached = _range.cache[arg1]
-                local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
-                if isSecret or cached ~= inRange then
-                    _range.cache[arg1] = inRange
-                    local state = GetFrameState(frame)
-                    state.outOfRange = true
-                    state.inRange = inRange
-                    ApplyRangeAlpha(frame, inRange, outAlpha)
+            -- Range status is per-unit; compute once and apply to all frames.
+            local inRange = CheckUnitRange(arg1)
+            local cached = _range.cache[arg1]
+            local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
+            if isSecret or cached ~= inRange then
+                _range.cache[arg1] = inRange
+                for i = 1, nFrames do
+                    local frame = frames[i]
+                    local rangeSettings = GetRangeSettings(frame._isRaid)
+                    if rangeSettings and rangeSettings.enabled ~= false then
+                        local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
+                        local state = GetFrameState(frame)
+                        state.outOfRange = true
+                        state.inRange = inRange
+                        ApplyRangeAlpha(frame, inRange, outAlpha)
+                    end
                 end
-                _range.cacheTime[arg1] = GetTime()
             end
+            _range.cacheTime[arg1] = GetTime()
 
         elseif event == "UNIT_PHASE" then
-            UpdatePhaseIcon(frame)
+            for i = 1, nFrames do UpdatePhaseIcon(frames[i]) end
 
         elseif event == "INCOMING_RESURRECT_CHANGED" then
             wipe(_range.cache)
-            UpdateResurrection(frame)
+            for i = 1, nFrames do UpdateResurrection(frames[i]) end
 
         elseif event == "INCOMING_SUMMON_CHANGED" then
-            UpdateSummonPending(frame)
+            for i = 1, nFrames do UpdateSummonPending(frames[i]) end
 
         elseif event == "READY_CHECK_CONFIRM" then
-            -- READY_CHECK_CONFIRM arg1 is a unit token — dispatch to that frame only.
-            -- GetReadyCheckStatus is per-unit, no cross-frame dependency.
-            UpdateReadyCheck(frame)
+            -- READY_CHECK_CONFIRM arg1 is a unit token — dispatch to all frames
+            -- for that unit. GetReadyCheckStatus is per-unit, no cross-frame dep.
+            for i = 1, nFrames do UpdateReadyCheck(frames[i]) end
         end
         return
     end  -- end unit event block (type(arg1) == "string")
@@ -4623,18 +4684,30 @@ local function OnEvent(self, event, arg1, ...)
         gruCoalesceFrame:Show()
 
     elseif event == "PLAYER_TARGET_CHANGED" then
-        -- O(1) unhighlight + O(N/2) average find-and-highlight with early exit
-        -- (replaces unconditional O(N) UpdateTargetHighlight on all 40 frames)
-        local prev = QUI_GF._targetHighlightFrame
-        if prev and prev.targetHighlight then
-            prev.targetHighlight:Hide()
+        -- Unhighlight previously targeted frames, then highlight new ones.
+        -- Multiple frames can show the same unit (main raid + spotlight), so
+        -- track a list rather than a single "the" target-highlight frame.
+        local prevList = QUI_GF._targetHighlightFrames
+        if prevList then
+            for i = 1, #prevList do
+                local f = prevList[i]
+                if f.targetHighlight then f.targetHighlight:Hide() end
+            end
+            wipe(prevList)
+        else
+            QUI_GF._targetHighlightFrames = {}
+            prevList = QUI_GF._targetHighlightFrames
         end
-        QUI_GF._targetHighlightFrame = nil
-        for _, frame in pairs(QUI_GF.unitFrameMap) do
-            if frame.unit and UnitIsUnit(frame.unit, "target") then
-                UpdateTargetHighlight(frame)
-                QUI_GF._targetHighlightFrame = frame
-                break
+        local targetUnit = UnitExists("target") and "target" or nil
+        if targetUnit then
+            for _, list in pairs(QUI_GF.unitFrameMap) do
+                for i = 1, #list do
+                    local frame = list[i]
+                    if frame.unit and UnitIsUnit(frame.unit, "target") then
+                        UpdateTargetHighlight(frame)
+                        prevList[#prevList + 1] = frame
+                    end
+                end
             end
         end
 
@@ -4648,8 +4721,10 @@ local function OnEvent(self, event, arg1, ...)
             QUI_GF._readyCheckHideTimer:Cancel()
             QUI_GF._readyCheckHideTimer = nil
         end
-        for _, frame in pairs(QUI_GF.unitFrameMap) do
-            UpdateReadyCheck(frame)
+        for _, list in pairs(QUI_GF.unitFrameMap) do
+            for i = 1, #list do
+                UpdateReadyCheck(list[i])
+            end
         end
 
     elseif event == "READY_CHECK_FINISHED" then
@@ -4662,9 +4737,12 @@ local function OnEvent(self, event, arg1, ...)
             QUI_GF._readyCheckHideTimer:Cancel()
         end
         QUI_GF._readyCheckHideTimer = C_Timer.NewTimer(6, function()
-            for _, f in pairs(QUI_GF.unitFrameMap) do
-                if f.readyCheckIcon then
-                    f.readyCheckIcon:Hide()
+            for _, list in pairs(QUI_GF.unitFrameMap) do
+                for i = 1, #list do
+                    local f = list[i]
+                    if f.readyCheckIcon then
+                        f.readyCheckIcon:Hide()
+                    end
                 end
             end
             QUI_GF._readyCheckHideTimer = nil
@@ -4672,22 +4750,24 @@ local function OnEvent(self, event, arg1, ...)
 
     elseif event == "RAID_TARGET_UPDATE" then
         local inCombat = InCombatLockdown()
-        for _, frame in pairs(QUI_GF.unitFrameMap) do
+        for unit, list in pairs(QUI_GF.unitFrameMap) do
             if inCombat then
-                UpdateTargetMarker(frame)
+                for i = 1, #list do UpdateTargetMarker(list[i]) end
             else
-                local marker = frame.unit and GetRaidTargetIndex(frame.unit)
+                local marker = GetRaidTargetIndex(unit)
                 local safeMarker = Helpers.SafeValue(marker, 0)
-                if safeMarker ~= _state.cachedMarkers[frame.unit] then
-                    _state.cachedMarkers[frame.unit] = safeMarker
-                    UpdateTargetMarker(frame)
+                if safeMarker ~= _state.cachedMarkers[unit] then
+                    _state.cachedMarkers[unit] = safeMarker
+                    for i = 1, #list do UpdateTargetMarker(list[i]) end
                 end
             end
         end
 
     elseif event == "PARTY_LEADER_CHANGED" then
-        for _, frame in pairs(QUI_GF.unitFrameMap) do
-            UpdateLeaderIcon(frame)
+        for _, list in pairs(QUI_GF.unitFrameMap) do
+            for i = 1, #list do
+                UpdateLeaderIcon(list[i])
+            end
         end
 
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -4896,17 +4976,20 @@ function QUI_GF:RefreshAllFrames()
     if GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
     local GFI = ns.QUI_GroupFrameIndicators
 
-    for _, frame in pairs(self.unitFrameMap) do
-        if frame and frame:IsShown() then
-            if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
-            if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
-            if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
-            UpdateFrame(frame)
+    for _, list in pairs(self.unitFrameMap) do
+        for i = 1, #list do
+            local frame = list[i]
+            if frame and frame:IsShown() then
+                if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
+                if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
+                if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
+                UpdateFrame(frame)
 
-            -- Auras: scan + render (was a separate full iteration)
-            if GFA and GFA.RefreshFrame then GFA:RefreshFrame(frame) end
-            -- Indicators: update tracked spells (was a separate full iteration)
-            if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
+                -- Auras: scan + render (was a separate full iteration)
+                if GFA and GFA.RefreshFrame then GFA:RefreshFrame(frame) end
+                -- Indicators: update tracked spells (was a separate full iteration)
+                if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
+            end
         end
     end
 

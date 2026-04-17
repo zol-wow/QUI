@@ -144,13 +144,10 @@ local function RefreshAllPrivateDispelState()
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
 
-    for _, frame in pairs(GF.unitFrameMap) do
-        if frame and frame:IsShown() then
-            local unit = GetFrameUnit(frame)
-            if unit then
-                RefreshPrivateDispelState(unit)
-            end
-        end
+    -- Dispel state is keyed by unit, so scan each unit once regardless of how
+    -- many frames (main raid + spotlight) display it.
+    for unit, _ in pairs(GF.unitFrameMap) do
+        RefreshPrivateDispelState(unit)
     end
 end
 
@@ -528,11 +525,14 @@ function QUI_GFPA:SetupAll()
 
     RefreshAllPrivateDispelState()
 
-    for _, frame in pairs(GF.unitFrameMap) do
-        if frame and frame:IsShown() then
-            local settings = GetSettings(frame._isRaid)
-            if settings and settings.enabled then
-                SetupPrivateAuras(frame)
+    for _, list in pairs(GF.unitFrameMap) do
+        for i = 1, #list do
+            local frame = list[i]
+            if frame and frame:IsShown() then
+                local settings = GetSettings(frame._isRaid)
+                if settings and settings.enabled then
+                    SetupPrivateAuras(frame)
+                end
             end
         end
     end
@@ -550,13 +550,16 @@ function QUI_GFPA:ReanchorAll()
 
     RefreshAllPrivateDispelState()
 
-    for _, frame in pairs(GF.unitFrameMap) do
-        if frame and frame:IsShown() then
-            local settings = GetSettings(frame._isRaid)
-            if settings and settings.enabled then
-                ReanchorPrivateAuras(frame)
-            else
-                ClearPrivateAuras(frame)
+    for _, list in pairs(GF.unitFrameMap) do
+        for i = 1, #list do
+            local frame = list[i]
+            if frame and frame:IsShown() then
+                local settings = GetSettings(frame._isRaid)
+                if settings and settings.enabled then
+                    ReanchorPrivateAuras(frame)
+                else
+                    ClearPrivateAuras(frame)
+                end
             end
         end
     end
@@ -692,8 +695,10 @@ if ns.AuraEvents then
         -- nameplate/arena units on every UNIT_AURA just burns CPU in raids.
         local GF = ns.QUI_GroupFrames
         if not GF or not GF.initialized then return end
-        local frame = GF.unitFrameMap and GF.unitFrameMap[unit]
-        if not frame then return end
+        local frames = GF.unitFrameMap and GF.unitFrameMap[unit]
+        if not frames then return end
+        local nFrames = #frames
+        if nFrames == 0 then return end
 
         -- Skip the pcall-heavy GetAuraSlots scan when the aura set didn't
         -- change (pure stack/duration updates). Private dispel state is keyed
@@ -714,14 +719,20 @@ if ns.AuraEvents then
             pendingReanchor = true
             return
         end
-        local state = frameState[frame]
-        if not state or #state.anchorIDs == 0 then return end
+        -- Per-frame: rate-limited reanchor for any frame showing this unit.
         local now = GetTime()
-        if paRefreshTimes[frame] and now - paRefreshTimes[frame] < PA_REFRESH_CD then return end
-        paRefreshTimes[frame] = now
-        RemoveAllAnchors(state)
-        state.unit = ""
-        SetupPrivateAuras(frame)
+        for f = 1, nFrames do
+            local frame = frames[f]
+            local state = frameState[frame]
+            if state and #state.anchorIDs > 0 then
+                if not (paRefreshTimes[frame] and now - paRefreshTimes[frame] < PA_REFRESH_CD) then
+                    paRefreshTimes[frame] = now
+                    RemoveAllAnchors(state)
+                    state.unit = ""
+                    SetupPrivateAuras(frame)
+                end
+            end
+        end
     end)
 end
 
