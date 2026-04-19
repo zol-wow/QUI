@@ -14,6 +14,7 @@ local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
 local NormalizeAuraIndicatorConfig = Helpers.NormalizeAuraIndicatorConfig
+local ApplyCooldownFromAura = Helpers.ApplyCooldownFromAura
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
 local pairs = pairs
@@ -473,30 +474,7 @@ local function UpdateIconData(icon, unit, auraData)
         local dur = auraData.duration
         local expTime = auraData.expirationTime
         if dur and expTime then
-            if unit and auraData.auraInstanceID
-               and C_UnitAuras and C_UnitAuras.GetAuraDuration
-               and icon.cooldown.SetCooldownFromDurationObject then
-                local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
-                if ok and durationObj then
-                    pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, durationObj)
-                elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
-                    if icon.cooldown.SetCooldownFromExpirationTime then
-                        pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
-                    else
-                        pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
-                    end
-                else
-                    icon.cooldown:Clear()
-                end
-            elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
-                if icon.cooldown.SetCooldownFromExpirationTime then
-                    pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
-                else
-                    pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
-                end
-            else
-                icon.cooldown:Clear()
-            end
+            ApplyCooldownFromAura(icon.cooldown, unit, auraData.auraInstanceID, expTime, dur)
         else
             icon.cooldown:Clear()
         end

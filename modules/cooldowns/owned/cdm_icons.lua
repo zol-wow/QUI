@@ -466,7 +466,7 @@ local function GetBestSpellCooldown(spellID)
         end
         if not bestDurObj and C_Spell.GetOverrideSpell and C_Spell.GetSpellChargeDuration then
             local overrideID = C_Spell.GetOverrideSpell(spellID)
-            if overrideID and overrideID ~= spellID then
+            if overrideID and not IsSecretValue(overrideID) and overrideID ~= spellID then
                 local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, overrideID)
                 if ok and durObj then bestDurObj = durObj end
             end
@@ -477,7 +477,7 @@ local function GetBestSpellCooldown(spellID)
         end
         if not bestDurObj and C_Spell.GetOverrideSpell then
             local overrideID = C_Spell.GetOverrideSpell(spellID)
-            if overrideID and overrideID ~= spellID then
+            if overrideID and not IsSecretValue(overrideID) and overrideID ~= spellID then
                 bestDurObj = TickCacheGetDuration(overrideID)
             end
         end
@@ -538,6 +538,22 @@ local function GetItemCooldown(itemID)
         return nil, nil, nil
     end
     return startTime, duration, nil
+end
+
+local function ApplyResolvedCooldown(cd, startTime, duration, durObj, reverse)
+    if not cd then
+        return false
+    end
+
+    if durObj and cd.SetCooldownFromDurationObject then
+        return pcall(cd.SetCooldownFromDurationObject, cd, durObj, reverse)
+    end
+
+    if IsSafeNumeric(startTime) and IsSafeNumeric(duration) and duration > 0 then
+        return pcall(cd.SetCooldown, cd, startTime, duration)
+    end
+
+    return false
 end
 
 -- Expose for external use
@@ -632,7 +648,13 @@ local function MirrorCurrentBlizzCooldown(icon, blizzCD)
     if not addonCD or not blizzCD then return false end
 
     local synced = false
-    if blizzCD.GetCooldownTimes then
+    local entry = icon._spellEntry
+    if entry and entry.viewerType ~= "buff" then
+        local startTime, duration, durObj = GetBestSpellCooldown(GetIconCooldownIdentifier(icon))
+        synced = ApplyResolvedCooldown(addonCD, startTime, duration, durObj, false)
+    end
+
+    if not synced and blizzCD.GetCooldownTimes then
         local ok, rawStart, rawDuration, isEnabled = pcall(blizzCD.GetCooldownTimes, blizzCD)
         if ok and not IsSecretValue(rawStart) and not IsSecretValue(rawDuration) then
             local start = (type(rawStart) == "number") and rawStart or nil
@@ -650,23 +672,11 @@ local function MirrorCurrentBlizzCooldown(icon, blizzCD)
                 end
 
                 if enabled and start > 0 and duration > 0 then
-                    synced = pcall(addonCD.SetCooldown, addonCD, start, duration)
+                    synced = ApplyResolvedCooldown(addonCD, start, duration, nil, false)
                 elseif duration == 0 or not enabled then
                     addonCD:Clear()
                     synced = true
                 end
-            end
-        end
-    end
-
-    if not synced and addonCD.SetCooldownFromDurationObject then
-        local entry = icon._spellEntry
-        if entry and entry.viewerType ~= "buff" then
-            local startTime, duration, durObj = GetBestSpellCooldown(GetIconCooldownIdentifier(icon))
-            if durObj then
-                synced = pcall(addonCD.SetCooldownFromDurationObject, addonCD, durObj, false)
-            elseif IsSafeNumeric(startTime) and IsSafeNumeric(duration) and duration > 0 then
-                synced = pcall(addonCD.SetCooldown, addonCD, startTime, duration)
             end
         end
     end
@@ -1841,7 +1851,7 @@ local function UpdateIconCooldown(icon)
                     p.entryName = entry.name
                     p.viewerType = entry.viewerType
                     p.blizzChild = entry._blizzChild
-                    p.blizzBarChild = nil
+                    p.blizzBarChild = entry._blizzBarChild
 
                     local r = ns.CDMSpellData:ResolveAuraState(p)
                     if r.blizzChild and r.blizzChild ~= entry._blizzChild then
@@ -1853,6 +1863,9 @@ local function UpdateIconCooldown(icon)
                         HookBlizzTexture(icon, r.blizzChild)
                         HookBlizzStackText(icon, r.blizzChild)
                     end
+                    -- Cache bar-viewer counterpart so the next tick passes it
+                    -- through without rescanning BuffBarCooldownViewer.
+                    entry._blizzBarChild = r.blizzBarChild
 
                     if r.isActive then
                         icon._auraActive = true
@@ -2037,9 +2050,10 @@ local function UpdateIconCooldown(icon)
                     p.entryName = entry.name
                     p.viewerType = entry.viewerType
                     p.blizzChild = entry._blizzChild
-                    p.blizzBarChild = nil
+                    p.blizzBarChild = entry._blizzBarChild
 
                     local r = ns.CDMSpellData:ResolveAuraState(p)
+                    entry._blizzBarChild = r.blizzBarChild
 
                     if r.isActive then
                         _ncAuraActive = true
@@ -2146,9 +2160,10 @@ local function UpdateIconCooldown(icon)
                     p.entryName = entry.name
                     p.viewerType = entry.viewerType
                     p.blizzChild = entry._blizzChild
-                    p.blizzBarChild = nil
+                    p.blizzBarChild = entry._blizzBarChild
 
                     local r = ns.CDMSpellData:ResolveAuraState(p)
+                    entry._blizzBarChild = r.blizzBarChild
 
                     if r.isActive then
                         icon._auraActive = true
@@ -2268,20 +2283,14 @@ local function UpdateIconCooldown(icon)
             local gcdSwipeWanted = icon._isOnGCD and _showGCDSwipe
             if apiIsActive == false and not gcdSwipeWanted then
                 icon.Cooldown:Clear()
-            elseif not mirrorActive and durObj then
+            elseif not mirrorActive then
                 -- Skip applying the swipe during GCD — the override system
                 -- lags by one tick, so the base CD briefly shows before the
                 -- override (e.g., Hammer of Light) clears it.  Deferring
                 -- during GCD lets the override resolve first.
                 -- Exception: when GCD swipe is enabled, apply so it renders.
                 if not icon._isOnGCD or gcdSwipeWanted then
-                    pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, durObj, false)
-                else
-                end
-            elseif not mirrorActive and startTime and duration
-                   and IsSafeNumeric(startTime) and IsSafeNumeric(duration) then
-                if not icon._isOnGCD or gcdSwipeWanted then
-                    pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
+                    ApplyResolvedCooldown(icon.Cooldown, startTime, duration, durObj, false)
                 end
             else
             end

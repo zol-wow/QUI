@@ -7,7 +7,7 @@ local QUI = ns.QUI or {}
 ns.QUI = QUI
 local Helpers = ns.Helpers
 local CreateTimeThrottle = Helpers and Helpers.CreateTimeThrottle
-local IsSecretValue = Helpers and Helpers.IsSecretValue
+local ApplyCooldownFromSpell = Helpers and Helpers.ApplyCooldownFromSpell
 
 -- Locals
 local UIParent = UIParent
@@ -16,10 +16,7 @@ local GetScaledCursorPosition = GetScaledCursorPosition
 local InCombatLockdown = InCombatLockdown
 local UnitClass = UnitClass
 local C_ClassColor = C_ClassColor
-local C_Spell = C_Spell
 local GetTime = GetTime
-local pcall = pcall
-local type = type
 
 -- Frame references
 local ringFrame, ringTexture, reticleTexture, gcdCooldown
@@ -110,127 +107,6 @@ local function GetCurrentAlpha()
     else
         return settings.outCombatAlpha or 0.3
     end
-end
-
----------------------------------------------------------------------------
--- Secret value protection for Midnight 12.0+
--- Prefer non-secret isActive and DurationObject APIs when available.
----------------------------------------------------------------------------
-local function IsCooldownActive(start, duration, isActive)
-    if type(isActive) == "boolean" then
-        return isActive
-    end
-    if not start or not duration then return false end
-
-    local ok, result = pcall(function()
-        if duration == 0 or start == 0 then
-            return false
-        end
-        return true
-    end)
-
-    if not ok then
-        -- Comparison threw error = secret value = cooldown is active
-        return true
-    end
-
-    return result and true or false
-end
-
----------------------------------------------------------------------------
--- Apply cooldown display for a spell (secret-safe for 12.0.5+)
--- Returns true if a cooldown was applied, false otherwise
----------------------------------------------------------------------------
-local function ApplySpellCooldown(cd, spellID)
-    if not cd then return false end
-    local cdInfo = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
-    if not cdInfo then return false end
-
-    -- isActive: new 12.0.5+ non-secret boolean; fall back to pcall detection
-    local isActive = cdInfo.isActive
-    if isActive == nil then
-        isActive = IsCooldownActive(cdInfo.startTime or cdInfo.start, cdInfo.duration)
-    end
-    if not isActive then return false end
-
-    -- Priority 1: DurationObject (secret-safe, works in combat)
-    if C_Spell.GetSpellCooldownDuration and cd.SetCooldownFromDurationObject then
-        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
-        if ok and durObj then
-            pcall(cd.SetCooldownFromDurationObject, cd, durObj, false)
-            return true
-        end
-    end
-
-    -- Priority 2: non-secret numeric values (SetCooldown restricted from secrets 12.0.5+)
-    local start, duration = cdInfo.startTime or cdInfo.start, cdInfo.duration
-    if start and duration and not IsSecretValue(start) and not IsSecretValue(duration) then
-        local modRate = cdInfo.modRate
-        if modRate and not IsSecretValue(modRate) then
-            cd:SetCooldown(start, duration, modRate)
-        else
-            cd:SetCooldown(start, duration)
-        end
-        return true
-    end
-
-    return false
-end
-
----------------------------------------------------------------------------
--- Read spell cooldown (handles both 11.x and 12.0+ API formats)
----------------------------------------------------------------------------
-local function ReadSpellCooldown(spellID)
-    if C_Spell and C_Spell.GetSpellCooldown then
-        local a, b, c, d = C_Spell.GetSpellCooldown(spellID)
-        if type(a) == "table" then
-            -- Midnight 12.0+ returns table
-            local t = a
-            local start = t.startTime or t.start
-            local duration = t.duration
-            local modRate = t.modRate
-            return start, duration, modRate, t.isActive
-        else
-            -- 11.x returns tuple: start, duration, enable, modRate
-            return a, b, d, nil
-        end
-    end
-    -- Fallback for older API
-    if GetSpellCooldown then
-        local s, d = GetSpellCooldown(spellID)
-        return s, d, nil, nil
-    end
-    return nil, nil, nil, nil
-end
-
-local function ApplyCooldownFromSpell(cooldownFrame, spellID)
-    if not cooldownFrame or not spellID then return false end
-
-    local start, duration, modRate, isActive = ReadSpellCooldown(spellID)
-    if not IsCooldownActive(start, duration, isActive) then
-        return false
-    end
-
-    if cooldownFrame.SetCooldownFromDurationObject and C_Spell and C_Spell.GetSpellCooldownDuration then
-        local okDur, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
-        if okDur and durObj then
-            return pcall(cooldownFrame.SetCooldownFromDurationObject, cooldownFrame, durObj)
-        end
-    end
-
-    if IsSecretValue and (IsSecretValue(start) or IsSecretValue(duration) or IsSecretValue(modRate)) then
-        return false
-    end
-    if type(start) ~= "number" or type(duration) ~= "number" then
-        return false
-    end
-    if modRate ~= nil then
-        if type(modRate) ~= "number" then
-            return false
-        end
-        return pcall(cooldownFrame.SetCooldown, cooldownFrame, start, duration, modRate)
-    end
-    return pcall(cooldownFrame.SetCooldown, cooldownFrame, start, duration)
 end
 
 ---------------------------------------------------------------------------
@@ -350,7 +226,7 @@ local function UpdateGCDCooldown()
         return
     end
 
-    if ApplySpellCooldown(gcdCooldown, GCD_SPELL_ID) then
+    if ApplyCooldownFromSpell and ApplyCooldownFromSpell(gcdCooldown, GCD_SPELL_ID) then
         gcdCooldown:Show()
     else
         gcdCooldown:Hide()
@@ -539,7 +415,7 @@ eventFrame:SetScript("OnEvent", function(self, event, unit, _, spellID)
 
         -- Check cooldown of cast spell, fall back to GCD spell
         if spellID then
-            if ApplySpellCooldown(gcdCooldown, spellID) then
+            if ApplyCooldownFromSpell and ApplyCooldownFromSpell(gcdCooldown, spellID) then
                 gcdCooldown:Show()
                 UpdateRingAppearance()
             else

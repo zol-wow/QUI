@@ -607,7 +607,15 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
         hooksecurefunc(blizzStatusBar, "SetValue", function(self, value)
             local target = mirrorMap[blizzBarChild]
             if not target then return end
-            -- Forward value to owned StatusBar (C-side handles secret values)
+            -- When the aura is no longer active, Blizzard's bar child may
+            -- transition to driving the ability's cooldown progress (same
+            -- child is reused: aura while up, cooldown while recharging).
+            -- UpdateOwnedBarAura has already reset the owned StatusBar to 0
+            -- on the inactive transition; forwarding cooldown-progress
+            -- writes here flickers the bar between 0 and the cooldown value.
+            if target._active == false then
+                return
+            end
             pcall(target.StatusBar.SetValue, target.StatusBar, value)
             target._lastMirrorFill = GetTime()
         end)
@@ -1075,6 +1083,109 @@ end
 -- UPDATE OWNED BAR AURA: Delegates to shared CDMSpellData:ResolveAuraState()
 -- and applies results to bar StatusBar fill / duration text / stacks.
 ---------------------------------------------------------------------------
+-- Phase B.3: drive bar fill from item / trinket-slot cooldowns. Custom
+-- auraBar containers accept item entries alongside spells; duration-bar
+-- rendering needs its own path since ResolveAuraState is aura-only.
+local function UpdateItemBarCooldown(bar, entry)
+    local itemID
+    if entry.type == "slot" or entry.type == "trinket" then
+        itemID = GetInventoryItemID("player", entry.id)
+    else
+        itemID = entry.id
+    end
+
+    -- Texture refresh (trinket swap case)
+    if bar.IconTexture and itemID then
+        local ok, tex = pcall(C_Item.GetItemIconByID, itemID)
+        if ok and tex then
+            pcall(bar.IconTexture.SetTexture, bar.IconTexture, tex)
+            bar._desiredTexture = tex
+        end
+    end
+
+    -- Name
+    if bar.NameText and itemID then
+        local ok, n = pcall(C_Item.GetItemNameByID, itemID)
+        if ok and n then pcall(bar.NameText.SetText, bar.NameText, n) end
+    end
+
+    -- Active-state detection: SpellScanner maps item → buff spellID; if
+    -- the buff is up on the player, treat the item as active (filled bar
+    -- from aura duration). Falls back to cooldown display otherwise.
+    local scanner = _G.QUI and _G.QUI.SpellScanner
+    local isActive, auraDur, auraRemaining
+    if scanner and scanner.IsItemActive and itemID then
+        local ok, active, expiration, duration = pcall(scanner.IsItemActive, itemID)
+        local readableDuration = SafeToNumber(duration, nil)
+        local readableExpiration = SafeToNumber(expiration, nil)
+        if ok and active and readableDuration and readableDuration > 0 then
+            isActive = true
+            auraDur = readableDuration
+            if readableExpiration then
+                auraRemaining = readableExpiration - GetTime()
+            end
+        end
+    end
+
+    if isActive and auraRemaining and auraRemaining > 0 then
+        bar._active = true
+        bar._totalDuration = auraDur
+        bar._expirationTime = GetTime() + auraRemaining
+        if bar.StatusBar then
+            pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+            pcall(bar.StatusBar.SetValue, bar.StatusBar, auraRemaining / auraDur)
+        end
+        return
+    end
+
+    -- Cooldown display
+    local startTime, duration
+    if entry.type == "slot" or entry.type == "trinket" then
+        if GetInventoryItemCooldown then
+            local s, d, enabled = GetInventoryItemCooldown("player", entry.id)
+            local safeStart = SafeToNumber(s, nil)
+            local safeDuration = SafeToNumber(d, nil)
+            if safeStart and safeDuration and safeDuration > 1.5 and enabled == 1 then
+                startTime = safeStart
+                duration = safeDuration
+            end
+        end
+    elseif itemID and C_Item.GetItemCooldown then
+        local s, d = C_Item.GetItemCooldown(itemID)
+        local safeStart = SafeToNumber(s, nil)
+        local safeDuration = SafeToNumber(d, nil)
+        if safeStart and safeDuration and safeDuration > 0 then
+            startTime = safeStart
+            duration = safeDuration
+        end
+    end
+
+    if startTime and duration and duration > 0 then
+        local remaining = (startTime + duration) - GetTime()
+        if remaining > 0 then
+            bar._active = true
+            bar._totalDuration = duration
+            bar._expirationTime = startTime + duration
+            if bar.StatusBar then
+                pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                pcall(bar.StatusBar.SetValue, bar.StatusBar, remaining / duration)
+            end
+            return
+        end
+    end
+
+    -- Not active, not on cooldown
+    bar._active = false
+    bar._totalDuration = nil
+    bar._expirationTime = nil
+    if bar.StatusBar then
+        pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+    end
+    if bar.DurationText then
+        bar.DurationText:SetText("")
+    end
+end
+
 function CDMBars:UpdateOwnedBarAura(bar)
     if not bar or not bar._spellID then return end
     local spellID = bar._spellID
@@ -1095,6 +1206,14 @@ function CDMBars:UpdateOwnedBarAura(bar)
 
     local r = ns.CDMSpellData:ResolveAuraState(p)
     if r.blizzChild then bar._blizzIconChild = r.blizzChild end
+    -- Late-bind a bar-viewer child when the initial FindBlizzBarChild at
+    -- build time returned nil (spell not yet in BuffBarCooldownViewer) and
+    -- one has since appeared. Hook mirror once so StatusBar/icon writes
+    -- flow to the owned bar from here on.
+    if not bar._blizzBar and r.blizzBarChild then
+        bar._blizzBar = r.blizzBarChild
+        MirrorBlizzBar(bar, r.blizzBarChild)
+    end
 
     local _bname = entry and entry.name
 

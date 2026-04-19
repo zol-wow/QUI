@@ -37,7 +37,9 @@ local function ForEachSpellCandidate(spellID, callback)
     if C_Spell and C_Spell.GetOverrideSpell then
         local ok, overrideID = pcall(C_Spell.GetOverrideSpell, spellID)
         if ok and overrideID and overrideID ~= spellID then
-            Visit(overrideID)
+            -- GetOverrideSpell can return secret values in combat; sanitize
+            -- before using as a Lua table key downstream.
+            Visit(Helpers.SafeValue(overrideID, nil))
         end
     end
 end
@@ -109,16 +111,26 @@ local function ForEachIconSpellID(icon, callback)
         end)
     end
 
+    -- entry.* come from our spell registration and are always non-secret.
     VisitRaw(entry.spellID)
     VisitRaw(entry.overrideSpellID)
     VisitRaw(entry.id)
-    VisitRaw(icon._runtimeSpellID)
-    VisitRaw(GetChildSpellID(child))
-    VisitRaw(GetChildAuraSpellID(child))
+
+    -- Blizzard-sourced IDs (runtime override, child GetSpellID/GetAuraSpellID,
+    -- cooldownInfo.*) can be secret values in combat. Sanitize at the boundary;
+    -- downstream dedup/lookup tables are keyed by non-secret IDs from overlay
+    -- event payloads and registered spell entries, so secret IDs couldn't match
+    -- anyway. Combat misses here are covered by SPELL_ACTIVATION_OVERLAY_GLOW
+    -- events, which deliver non-secret spellIDs directly to ScanGlowsForSpell.
+    VisitRaw(Helpers.SafeValue(icon._runtimeSpellID, nil))
+    VisitRaw(Helpers.SafeValue(GetChildSpellID(child), nil))
+    VisitRaw(Helpers.SafeValue(GetChildAuraSpellID(child), nil))
 
     local CDMSpellData = ns.CDMSpellData
     if CDMSpellData and CDMSpellData.ResolveDisplaySpellID then
-        VisitRaw(CDMSpellData:ResolveDisplaySpellID(entry))
+        -- ResolveDisplaySpellID returns child:GetSpellID() which can be a secret
+        -- value in combat; sanitize before using as a Lua table key downstream.
+        VisitRaw(Helpers.SafeValue(CDMSpellData:ResolveDisplaySpellID(entry), nil))
     end
 
     local info = child and child.cooldownInfo

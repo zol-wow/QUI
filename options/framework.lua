@@ -7418,6 +7418,16 @@ function GUI:Show()
     if not self.MainFrame then
         self:InitializeOptions()
     end
+    if not self._combatFrame then
+        self._combatFrame = CreateFrame("Frame")
+        self._combatFrame:SetScript("OnEvent", function()
+            if GUI.MainFrame and GUI.MainFrame:IsShown() then
+                GUI:Hide()
+                print("|cff60A5FAQUI:|r Settings closed (combat).")
+            end
+        end)
+        self._combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    end
     self.MainFrame:Show()
     self.MainFrame:Raise()
     if self._allTabsAdded and not self._searchIndexBuilt then

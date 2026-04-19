@@ -658,9 +658,16 @@ function QUI_LayoutMode:Open()
         self._combatFrame:SetScript("OnEvent", function(_, event)
             if event == "PLAYER_REGEN_DISABLED" then
                 QUI_LayoutMode:_CombatSuspend()
+                QUI_LayoutMode._pendingCombatClose = true
+                print("|cff60A5FAQUI:|r Layout Mode closed (combat). Unsaved changes discarded.")
             elseif event == "PLAYER_REGEN_ENABLED" then
                 C_Timer.After(0.5, function()
-                    QUI_LayoutMode:_CombatResume()
+                    if QUI_LayoutMode._pendingCombatClose then
+                        QUI_LayoutMode._pendingCombatClose = nil
+                        QUI_LayoutMode:DiscardAndClose()
+                    else
+                        QUI_LayoutMode:_CombatResume()
+                    end
                 end)
             end
         end)

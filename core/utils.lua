@@ -1350,6 +1350,168 @@ function Helpers.SafeHide(frame)
     return pcall(frame.Hide, frame)
 end
 
+--- Normalize spell cooldown returns across 11.x tuple and 12.x table APIs.
+--- @param spellID any
+--- @return any start
+--- @return any duration
+--- @return any modRate
+--- @return boolean|nil isActive
+--- @return table|nil cooldownInfo Raw cooldown info table when available
+function Helpers.ReadSpellCooldown(spellID)
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local a, b, c, d = C_Spell.GetSpellCooldown(spellID)
+        if type(a) == "table" then
+            local info = a
+            return info.startTime or info.start, info.duration, info.modRate, info.isActive, info
+        end
+        return a, b, d, nil, nil
+    end
+
+    if GetSpellCooldown then
+        local start, duration = GetSpellCooldown(spellID)
+        return start, duration, nil, nil, nil
+    end
+
+    return nil, nil, nil, nil, nil
+end
+
+--- Treat secret values as active cooldowns unless a non-secret boolean says otherwise.
+--- @param start any
+--- @param duration any
+--- @param isActive boolean|nil
+--- @return boolean
+function Helpers.IsCooldownActive(start, duration, isActive)
+    if type(isActive) == "boolean" then
+        return isActive
+    end
+    if not start or not duration then return false end
+
+    local ok, result = pcall(function()
+        return duration > 0 and start > 0
+    end)
+    if not ok then
+        return true
+    end
+    return result
+end
+
+--- Apply a cooldown from a DurationObject when available, falling back to
+--- numeric start/duration only when values are confirmed non-secret.
+--- @param cooldownFrame table
+--- @param durationObj any
+--- @param startTime any
+--- @param duration any
+--- @param modRate any
+--- @param reverse boolean|nil
+--- @return boolean applied True when a cooldown was applied
+function Helpers.ApplyCooldownFromStart(cooldownFrame, durationObj, startTime, duration, modRate, reverse)
+    if not cooldownFrame then
+        return false
+    end
+
+    if durationObj and cooldownFrame.SetCooldownFromDurationObject then
+        local applied = pcall(cooldownFrame.SetCooldownFromDurationObject, cooldownFrame, durationObj, reverse)
+        if applied then
+            return true
+        end
+    end
+
+    if Helpers.IsSecretValue(startTime) or Helpers.IsSecretValue(duration) or Helpers.IsSecretValue(modRate) then
+        return false
+    end
+    if type(startTime) ~= "number" or type(duration) ~= "number" then
+        return false
+    end
+    if duration <= 0 or not cooldownFrame.SetCooldown then
+        return false
+    end
+
+    if modRate ~= nil then
+        if type(modRate) ~= "number" then
+            return false
+        end
+        return pcall(cooldownFrame.SetCooldown, cooldownFrame, startTime, duration, modRate)
+    end
+    return pcall(cooldownFrame.SetCooldown, cooldownFrame, startTime, duration)
+end
+
+--- Apply a spell cooldown using a DurationObject when possible, falling back to
+--- numeric APIs only when the values are confirmed non-secret.
+--- @param cooldownFrame table
+--- @param spellID any
+--- @param reverse boolean|nil
+--- @return boolean applied True when a cooldown was applied
+function Helpers.ApplyCooldownFromSpell(cooldownFrame, spellID, reverse)
+    if not cooldownFrame or not spellID then
+        return false
+    end
+
+    local start, duration, modRate, isActive = Helpers.ReadSpellCooldown(spellID)
+    if not Helpers.IsCooldownActive(start, duration, isActive) then
+        return false
+    end
+
+    local durationObj = nil
+    if cooldownFrame.SetCooldownFromDurationObject
+        and C_Spell and C_Spell.GetSpellCooldownDuration then
+        local ok, fetchedDurationObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if ok and fetchedDurationObj then
+            durationObj = fetchedDurationObj
+        end
+    end
+
+    return Helpers.ApplyCooldownFromStart(cooldownFrame, durationObj, start, duration, modRate, reverse)
+end
+
+--- Apply a cooldown using a DurationObject when possible, falling back to
+--- numeric APIs only when the numeric values are confirmed non-secret.
+--- This keeps combat-time aura cooldown rendering on the C-side path and
+--- avoids doing Lua math on secret values.
+--- @param cooldownFrame table
+--- @param unit string|nil
+--- @param auraInstanceID any
+--- @param expirationTime any
+--- @param duration any
+--- @param reverse boolean|nil
+--- @return boolean applied True when a cooldown was applied
+function Helpers.ApplyCooldownFromAura(cooldownFrame, unit, auraInstanceID, expirationTime, duration, reverse)
+    if not cooldownFrame then
+        return false
+    end
+
+    if cooldownFrame.SetCooldownFromDurationObject
+        and unit and auraInstanceID
+        and C_UnitAuras and C_UnitAuras.GetAuraDuration then
+        local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraInstanceID)
+        if ok and durationObj then
+            local applied = pcall(cooldownFrame.SetCooldownFromDurationObject, cooldownFrame, durationObj, reverse)
+            if applied then
+                return true
+            end
+        end
+    end
+
+    if expirationTime ~= nil and duration ~= nil then
+        if Helpers.IsSecretValue(expirationTime) or Helpers.IsSecretValue(duration) then
+            if cooldownFrame.Clear then
+                cooldownFrame:Clear()
+            end
+            return false
+        end
+
+        if cooldownFrame.SetCooldownFromExpirationTime then
+            return pcall(cooldownFrame.SetCooldownFromExpirationTime, cooldownFrame, expirationTime, duration)
+        end
+
+        return pcall(cooldownFrame.SetCooldown, cooldownFrame, expirationTime - duration, duration)
+    end
+
+    if cooldownFrame.Clear then
+        cooldownFrame:Clear()
+    end
+    return false
+end
+
 ---------------------------------------------------------------------------
 -- FORM LAYOUT HELPERS
 ---------------------------------------------------------------------------

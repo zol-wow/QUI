@@ -7,6 +7,7 @@ local LSM = QUI.LSM
 
 local GetCore = QUI.Helpers.GetCore
 local IsSecretValue = QUI.Helpers.IsSecretValue
+local ApplyCooldownFromSpell = QUI.Helpers.ApplyCooldownFromSpell
 
 -- Locals for performance
 local GetTime = GetTime
@@ -15,7 +16,6 @@ local UnitCanAttack = UnitCanAttack
 local UnitExists = UnitExists
 local CreateFrame = CreateFrame
 local UIParent = UIParent
-local type = type
 local pcall = pcall
 local ipairs = ipairs
 local C_Timer = C_Timer
@@ -117,69 +117,6 @@ local function GetKeybindForSpell(spellID)
     end
 
     return nil
-end
-
--- GCD Cooldown Helpers (handles Midnight 12.0+ secret values)
---------------------------------------------------------------------------------
-
-local function ReadSpellCooldown(spellID)
-    if C_Spell and C_Spell.GetSpellCooldown then
-        local a, b, c, d = C_Spell.GetSpellCooldown(spellID)
-        if type(a) == "table" then
-            -- Midnight 12.0+ returns table
-            local start = a.startTime or a.start
-            local duration = a.duration
-            local modRate = a.modRate
-            return start, duration, modRate, a.isActive
-        else
-            -- 11.x returns tuple: start, duration, enable, modRate
-            return a, b, d, nil
-        end
-    end
-    return nil, nil, nil, nil
-end
-
-local function IsCooldownActive(start, duration, isActive)
-    if type(isActive) == "boolean" then
-        return isActive
-    end
-    if not start or not duration then return false end
-    local ok, result = pcall(function()
-        return duration > 0 and start > 0
-    end)
-    -- If comparison threw error = secret value = cooldown IS active
-    if not ok then return true end
-    return result
-end
-
-local function ApplyCooldownFromSpell(cooldownFrame, spellID)
-    if not cooldownFrame or not spellID then return false end
-
-    local start, duration, modRate, isActive = ReadSpellCooldown(spellID)
-    if not IsCooldownActive(start, duration, isActive) then
-        return false
-    end
-
-    if cooldownFrame.SetCooldownFromDurationObject and C_Spell and C_Spell.GetSpellCooldownDuration then
-        local okDur, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
-        if okDur and durObj then
-            return pcall(cooldownFrame.SetCooldownFromDurationObject, cooldownFrame, durObj)
-        end
-    end
-
-    if IsSecretValue and (IsSecretValue(start) or IsSecretValue(duration) or IsSecretValue(modRate)) then
-        return false
-    end
-    if type(start) ~= "number" or type(duration) ~= "number" then
-        return false
-    end
-    if modRate ~= nil then
-        if type(modRate) ~= "number" then
-            return false
-        end
-        return pcall(cooldownFrame.SetCooldown, cooldownFrame, start, duration, modRate)
-    end
-    return pcall(cooldownFrame.SetCooldown, cooldownFrame, start, duration)
 end
 
 --------------------------------------------------------------------------------
@@ -395,38 +332,12 @@ local function UpdateGCDCooldown()
     if not iconFrame:IsShown() then return end
 
     local cd = iconFrame.cooldown
-    local cdInfo = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(GCD_SPELL_ID)
-    if not cdInfo then cd:Clear() return end
-
-    -- isActive: new 12.0.5+ non-secret boolean; fall back to pcall detection
-    local isActive = cdInfo.isActive
-    if isActive == nil then
-        isActive = IsCooldownActive(cdInfo.startTime or cdInfo.start, cdInfo.duration)
+    if ApplyCooldownFromSpell(cd, GCD_SPELL_ID) then
+        cd:Show()
+        return
     end
 
-    if not isActive then cd:Clear() return end
-
-    cd:Show()
-
-    -- Priority 1: DurationObject (secret-safe, works in combat)
-    if C_Spell.GetSpellCooldownDuration and cd.SetCooldownFromDurationObject then
-        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, GCD_SPELL_ID)
-        if ok and durObj then
-            pcall(cd.SetCooldownFromDurationObject, cd, durObj, false)
-            return
-        end
-    end
-
-    -- Priority 2: non-secret numeric values (SetCooldown restricted from secrets 12.0.5+)
-    local start, duration = cdInfo.startTime or cdInfo.start, cdInfo.duration
-    if start and duration and not IsSecretValue(start) and not IsSecretValue(duration) then
-        local modRate = cdInfo.modRate
-        if modRate and not IsSecretValue(modRate) then
-            cd:SetCooldown(start, duration, modRate)
-        else
-            cd:SetCooldown(start, duration)
-        end
-    end
+    cd:Clear()
 end
 
 --------------------------------------------------------------------------------

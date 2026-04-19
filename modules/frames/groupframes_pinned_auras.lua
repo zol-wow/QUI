@@ -12,6 +12,7 @@ local QUICore = ns.Addon
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
+local ApplyCooldownFromAura = Helpers.ApplyCooldownFromAura
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
 -- Upvalue hot-path globals
@@ -367,30 +368,7 @@ local function UpdateIndicatorData(ind, unit, slot, auraData, showSwipe)
             local dur = auraData.duration
             local expTime = auraData.expirationTime
             if dur and expTime then
-                if unit and auraData.auraInstanceID
-                   and C_UnitAuras and C_UnitAuras.GetAuraDuration
-                   and ind.cooldown.SetCooldownFromDurationObject then
-                    local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
-                    if ok and durationObj then
-                        pcall(ind.cooldown.SetCooldownFromDurationObject, ind.cooldown, durationObj)
-                    elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
-                        if ind.cooldown.SetCooldownFromExpirationTime then
-                            pcall(ind.cooldown.SetCooldownFromExpirationTime, ind.cooldown, expTime, dur)
-                        else
-                            pcall(ind.cooldown.SetCooldown, ind.cooldown, expTime - dur, dur)
-                        end
-                    else
-                        ind.cooldown:Clear()
-                    end
-                elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
-                    if ind.cooldown.SetCooldownFromExpirationTime then
-                        pcall(ind.cooldown.SetCooldownFromExpirationTime, ind.cooldown, expTime, dur)
-                    else
-                        pcall(ind.cooldown.SetCooldown, ind.cooldown, expTime - dur, dur)
-                    end
-                else
-                    ind.cooldown:Clear()
-                end
+                ApplyCooldownFromAura(ind.cooldown, unit, auraData.auraInstanceID, expTime, dur)
             else
                 ind.cooldown:Clear()
             end

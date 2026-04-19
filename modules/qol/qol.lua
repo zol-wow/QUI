@@ -13,6 +13,7 @@ local qolFrame = CreateFrame("Frame")
 local popupBlockerDefaults = {
     enabled = false,
     blockTalentMicroButtonAlerts = false,
+    blockMicroButtonGlows = false,
     blockHelpTips = false,
     blockEventToasts = false,
     blockMountAlerts = false,
@@ -55,6 +56,7 @@ local talentMicroButtonAlertCandidates = {
 local hookedAlertSystems = {}
 local eventToastHooked = false
 local mainMenuAlertHooked = false
+local microButtonPulseHooked = false
 local _quiPopupBlockerHooked = {}  -- Track hooked alert frames (avoids writing to Blizzard frames)
 
 local function GetMaxStaticPopupDialogs()
@@ -220,6 +222,9 @@ local function HideTalentMicroButtonAlert(button)
     end
 
     if button.FlashBorder then
+        -- Alpha 0 persists across re-shows; Blizzard pulse animations can
+        -- re-show the texture, but with alpha 0 it renders invisibly.
+        button.FlashBorder:SetAlpha(0)
         button.FlashBorder:Hide()
     end
     if button.NewFeatureTexture then
@@ -258,11 +263,77 @@ local allMicroButtonNames = {
     "EJMicroButton", "StoreMicroButton", "MainMenuMicroButton",
 }
 
+-- Detects a HelpTip-shaped frame by structural signature. HelpTip frames are
+-- pooled by Blizzard's HelpTip module; they have Text, CloseButton, and either
+-- Arrow or BouncyArrow regions. We identify them structurally so we can hide
+-- them without touching the HelpTip module itself.
+local function IsHelpTipShapedFrame(frame)
+    if type(frame) ~= "table" then return false end
+    if not (frame.Text and frame.CloseButton) then return false end
+    return frame.Arrow ~= nil or frame.BouncyArrow ~= nil
+end
+
+-- TAINT SAFETY: Do NOT call ANY HelpTip module methods (Show/Hide/Acknowledge/
+-- SetHelpTipsEnabled). They mutate HelpTip's internal Lua tables and taint
+-- propagates through Blizzard secure reads. Only touch the discovered frame
+-- via C-side methods (SetAlpha, EnableMouse, ClearAllPoints) — those don't
+-- write to HelpTip's Lua state. We use SetAlpha(0) rather than Hide() so the
+-- frame's OnHide handler never fires → HelpTip's framePool:Release is never
+-- triggered from our context.
+local function AlphaZeroHelpTip(child)
+    if child.SetAlpha then child:SetAlpha(0) end
+    if child.EnableMouse then child:EnableMouse(false) end
+end
+
+local function HideHelpTipsOnButton(button)
+    if not button or type(button.GetChildren) ~= "function" then return end
+    local children = { button:GetChildren() }
+    for i = 1, #children do
+        local child = children[i]
+        if IsHelpTipShapedFrame(child) and child.IsShown and child:IsShown() then
+            AlphaZeroHelpTip(child)
+        end
+    end
+end
+
+-- Builds a lookup set {[frameRef]=true} of the live micro button frames.
+local function BuildMicroButtonSet()
+    local set = {}
+    for i = 1, #allMicroButtonNames do
+        local btn = _G[allMicroButtonNames[i]]
+        if btn then set[btn] = true end
+    end
+    return set
+end
+
+-- Fallback sweep: HelpTip frames are often parented to UIParent with SetPoint
+-- anchored to the micro button (not direct children of the button). Scan
+-- UIParent children once per tick and hide any HelpTip-shaped frame that's
+-- anchored to a known micro button.
+local function SweepHelpTipsFromUIParent()
+    if not UIParent or type(UIParent.GetChildren) ~= "function" then return end
+    local micros = BuildMicroButtonSet()
+    local kids = { UIParent:GetChildren() }
+    for i = 1, #kids do
+        local child = kids[i]
+        if IsHelpTipShapedFrame(child) and child.IsShown and child:IsShown()
+            and type(child.GetNumPoints) == "function" then
+                local hit = false
+                for p = 1, child:GetNumPoints() do
+                    local _, relTo = child:GetPoint(p)
+                    if relTo and micros[relTo] then hit = true; break end
+                end
+                if hit then AlphaZeroHelpTip(child) end
+        end
+    end
+end
+
 local function HideAllMicroButtonAlerts()
     for _, buttonName in ipairs(allMicroButtonNames) do
         local button = _G[buttonName]
         if button then
             HideTalentMicroButtonAlert(button)
+            HideHelpTipsOnButton(button)
         end
         -- Also hide the named alert frame if it exists
         local alertFrame = _G[buttonName .. "Alert"]
@@ -273,25 +344,26 @@ local function HideAllMicroButtonAlerts()
 end
 
 local function HideTalentReminderAlerts()
-    -- If microbar is hidden, suppress ALL micro button alerts
-    if IsMicrobarEffectivelyHidden() then
+    -- Broad sweep: microbar hidden (alerts would be off-screen) OR user opted
+    -- into blocking ALL micro button glows → suppress every micro button.
+    if IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows") then
         HideAllMicroButtonAlerts()
-        return
     end
 
-    if not IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then return end
-
-    for _, buttonName in ipairs(talentMicroButtonCandidates) do
-        local button = _G[buttonName]
-        if button then
-            HideTalentMicroButtonAlert(button)
+    -- Talent-specific sweep (named alert frames beyond the generic button set).
+    if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
+        for _, buttonName in ipairs(talentMicroButtonCandidates) do
+            local button = _G[buttonName]
+            if button then
+                HideTalentMicroButtonAlert(button)
+            end
         end
-    end
 
-    for _, alertName in ipairs(talentMicroButtonAlertCandidates) do
-        local alertFrame = _G[alertName]
-        if alertFrame then
-            alertFrame:Hide()
+        for _, alertName in ipairs(talentMicroButtonAlertCandidates) do
+            local alertFrame = _G[alertName]
+            if alertFrame then
+                alertFrame:Hide()
+            end
         end
     end
 end
@@ -302,7 +374,7 @@ local function HookTalentReminderAlerts()
         hooksecurefunc("MainMenuMicroButton_ShowAlert", function(button)
             C_Timer.After(0, function()
                 -- If microbar is hidden/invisible, suppress ALL micro button alerts
-                if IsMicrobarEffectivelyHidden() then
+                if IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows") then
                     HideTalentMicroButtonAlert(button)
                     return
                 end
@@ -323,11 +395,27 @@ local function HookTalentReminderAlerts()
             alertFrame:HookScript("OnShow", function(self)
                 C_Timer.After(0, function()
                     if not self or not self.Hide then return end
-                    if IsMicrobarEffectivelyHidden() then
-                        self:Hide()
-                        return
+                    if IsMicrobarEffectivelyHidden()
+                        or IsPopupBlockEnabled("blockMicroButtonGlows")
+                        or IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
+                            self:Hide()
                     end
-                    if IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
+                end)
+            end)
+            _quiPopupBlockerHooked[alertFrame] = true
+        end
+    end
+
+    -- Hook OnShow on non-talent micro button alert frames too (e.g. CollectionsMicroButtonAlert,
+    -- AchievementMicroButtonAlert). These are plain callout frames — not secure-layout
+    -- children like FlashBorder — so HookScript is taint-safe here.
+    for _, buttonName in ipairs(allMicroButtonNames) do
+        local alertFrame = _G[buttonName .. "Alert"]
+        if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
+            alertFrame:HookScript("OnShow", function(self)
+                C_Timer.After(0, function()
+                    if not self or not self.Hide then return end
+                    if IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows") then
                         self:Hide()
                     end
                 end)
@@ -340,7 +428,38 @@ local function HookTalentReminderAlerts()
     -- children can fire OnShow from secure context (MicroButtonAndBagsBar layout),
     -- and HookScript injects addon code into that context. Taint propagates through
     -- ShowUIPanel → GameMenuFrame → callback() → ADDON_ACTION_FORBIDDEN.
-    -- FlashBorder is already hidden by HideTalentMicroButtonAlert() above.
+    --
+    -- Instead, hook the named globals MicroButtonPulse / MicroButtonPulseStop.
+    -- hooksecurefunc on named globals is taint-safe (the original runs first,
+    -- untainted), and Hide/SetAlpha on a texture from our deferred callback
+    -- doesn't taint secure state. This re-suppresses FlashBorder whenever
+    -- Blizzard re-triggers the pulse (talent change, spec swap, etc.).
+    if not microButtonPulseHooked then
+        if type(MicroButtonPulse) == "function" then
+            hooksecurefunc("MicroButtonPulse", function(button)
+                C_Timer.After(0, function()
+                    if not button then return end
+                    if IsMicrobarEffectivelyHidden()
+                        or IsPopupBlockEnabled("blockMicroButtonGlows")
+                        or (IsPopupBlockEnabled("blockTalentMicroButtonAlerts") and IsTalentMicroButton(button)) then
+                            HideTalentMicroButtonAlert(button)
+                    end
+                end)
+            end)
+        end
+        if type(MicroButtonPulseStop) == "function" then
+            hooksecurefunc("MicroButtonPulseStop", function(button)
+                C_Timer.After(0, function()
+                    if not button then return end
+                    if button.FlashBorder then
+                        button.FlashBorder:SetAlpha(0)
+                        button.FlashBorder:Hide()
+                    end
+                end)
+            end)
+        end
+        microButtonPulseHooked = true
+    end
 end
 
 -- TAINT SAFETY: HelpTip is a Lua mixin (not a C-side API). Calling ANY of its
@@ -354,6 +473,59 @@ local function RefreshHelpTipSuppression()
     -- intentionally empty — see taint safety note above
 end
 
+-- Event-driven sweep for micro button HelpTips. Pure C-side (Frame:GetChildren
+-- + SetAlpha/EnableMouse) — does NOT touch the HelpTip Lua module, so no
+-- taint risk. Triggered by the events that actually cause HelpTips to appear
+-- on micro buttons, so no polling cost.
+local function SweepMicroButtonHelpTips()
+    if not (IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows")) then
+        return
+    end
+    -- 1) Direct children of each micro button (covers HelpTips parented to button)
+    for _, buttonName in ipairs(allMicroButtonNames) do
+        local btn = _G[buttonName]
+        if btn then HideHelpTipsOnButton(btn) end
+    end
+    -- 2) UIParent children anchored to a micro button (covers HelpTips
+    --    parented to UIParent with SetPoint(..., microButton, ...))
+    SweepHelpTipsFromUIParent()
+end
+
+-- Events that reliably trigger a micro button HelpTip appearance. Each fires
+-- once per state change (not per frame), so the cost is trivial. A short
+-- C_Timer.After defer lets Blizzard actually create/show the HelpTip before
+-- we sweep.
+local helpTipSweepEvents = {
+    "PLAYER_ENTERING_WORLD",        -- Login / zone change (catches pre-existing tips)
+    "NEW_MOUNT_ADDED",              -- Collections: new mount
+    "NEW_PET_ADDED",                -- Collections: new pet
+    "NEW_TOY_ADDED",                -- Collections: new toy
+    "ACHIEVEMENT_EARNED",           -- Achievements button
+    "TRAIT_CONFIG_UPDATED",         -- PlayerSpells/Talents button
+    "PLAYER_TALENT_UPDATE",         -- Legacy talent event
+    "QUEST_LOG_UPDATE",             -- Quest log callouts
+}
+local helpTipSweepFrame = CreateFrame("Frame")
+helpTipSweepFrame:SetScript("OnEvent", function()
+    C_Timer.After(0.1, SweepMicroButtonHelpTips)
+end)
+
+local function RefreshHelpTipSweeper()
+    local shouldRun = IsPopupBlockEnabled("blockMicroButtonGlows")
+        or IsMicrobarEffectivelyHidden()
+    if shouldRun then
+        -- pcall each RegisterEvent so an event renamed/removed in a future
+        -- WoW patch doesn't break the whole handler chain.
+        for _, ev in ipairs(helpTipSweepEvents) do
+            pcall(helpTipSweepFrame.RegisterEvent, helpTipSweepFrame, ev)
+        end
+        -- Immediate sweep for any HelpTips currently showing
+        SweepMicroButtonHelpTips()
+    else
+        helpTipSweepFrame:UnregisterAllEvents()
+    end
+end
+
 local function RefreshPopupBlocker()
     HookPopupAlertSystems()
     HookEventToastManager()
@@ -362,6 +534,7 @@ local function RefreshPopupBlocker()
     HideEventToasts()
     HideTalentReminderAlerts()
     RefreshHelpTipSuppression()
+    RefreshHelpTipSweeper()
 end
 
 _G.QUI_RefreshPopupBlocker = RefreshPopupBlocker

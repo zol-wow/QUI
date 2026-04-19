@@ -400,6 +400,7 @@ local function BuildGeneralTab(tabContent)
             end
 
             AddPopupToggle("Block Talent Reminder Alerts (Microbutton)", "blockTalentMicroButtonAlerts")
+            AddPopupToggle("Block All Microbutton Glows (collections, achievements, etc.)", "blockMicroButtonGlows")
             AddPopupToggle("Block Help Tips (talent/spellbook tutorial popups)", "blockHelpTips")
             AddPopupToggle("Block Event Toasts (often campaign/housing)", "blockEventToasts")
             AddPopupToggle("Block New Mount Toasts", "blockMountAlerts")
@@ -414,7 +415,7 @@ local function BuildGeneralTab(tabContent)
             UpdatePopupToggleState()
 
             local section = body:GetParent()
-            section._contentHeight = 30 + 11 * FORM_ROW + 8
+            section._contentHeight = 30 + 12 * FORM_ROW + 8
         end)
     end
 

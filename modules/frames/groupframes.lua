@@ -12,6 +12,7 @@ local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
+local ApplyCooldownFromAura = Helpers.ApplyCooldownFromAura
 local issecretvalue = _G.issecretvalue
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
@@ -1819,29 +1820,13 @@ local function UpdateDefensiveIndicator(frame)
                 if cd.SetReverse then
                     pcall(cd.SetReverse, cd, reverseSwipe)
                 end
-                if aura.auraInstanceID and C_UnitAuras.GetAuraDuration
-                   and cd.SetCooldownFromDurationObject then
-                    local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, aura.auraInstanceID)
-                    if ok and durationObj then
-                        pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
-                    elseif not IsSecretValue(aura.expirationTime) and not IsSecretValue(aura.duration) then
-                        if cd.SetCooldownFromExpirationTime then
-                            pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
-                        else
-                            pcall(cd.SetCooldown, cd, aura.expirationTime - aura.duration, aura.duration)
-                        end
-                    else
-                        cd:Clear()
-                    end
-                elseif not IsSecretValue(aura.expirationTime) and not IsSecretValue(aura.duration) then
-                    if cd.SetCooldownFromExpirationTime then
-                        pcall(cd.SetCooldownFromExpirationTime, cd, aura.expirationTime, aura.duration)
-                    else
-                        pcall(cd.SetCooldown, cd, aura.expirationTime - aura.duration, aura.duration)
-                    end
-                else
-                    cd:Clear()
-                end
+                ApplyCooldownFromAura(
+                    cd,
+                    unit,
+                    aura.auraInstanceID,
+                    aura.expirationTime,
+                    aura.duration
+                )
             elseif cd then
                 cd:Clear()
             end

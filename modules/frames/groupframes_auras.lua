@@ -11,6 +11,7 @@ local QUICore = ns.Addon
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
+local ApplyCooldownFromAura = Helpers.ApplyCooldownFromAura
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
 -- Upvalue hot-path globals
@@ -539,30 +540,7 @@ local function UpdateAuraIcon(icon, auraData, unit)
         local dur = displayData.duration
         local expTime = displayData.expirationTime
 
-        if auraID and not IsSecretValue(auraID) and icon.cooldown.SetCooldownFromDurationObject and C_UnitAuras.GetAuraDuration then
-            -- Path 1: DurationObject (WoW 12.0+, fully secret-safe)
-            local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraID)
-            if ok and durationObj then
-                pcall(icon.cooldown.SetCooldownFromDurationObject, icon.cooldown, durationObj, true)
-            elseif not IsSecretValue(expTime) and not IsSecretValue(dur) then
-                if icon.cooldown.SetCooldownFromExpirationTime then
-                    pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
-                else
-                    pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
-                end
-            else
-                icon.cooldown:Clear()
-            end
-        elseif not IsSecretValue(dur) and dur and not IsSecretValue(expTime) and expTime then
-            -- Path 2: Non-secret fallback (SetCooldownFromExpirationTime or legacy)
-            if icon.cooldown.SetCooldownFromExpirationTime then
-                pcall(icon.cooldown.SetCooldownFromExpirationTime, icon.cooldown, expTime, dur)
-            else
-                pcall(icon.cooldown.SetCooldown, icon.cooldown, expTime - dur, dur)
-            end
-        else
-            icon.cooldown:Clear()
-        end
+        ApplyCooldownFromAura(icon.cooldown, unit, auraID, expTime, dur, true)
     end
 
     -- Duration text + timer registration

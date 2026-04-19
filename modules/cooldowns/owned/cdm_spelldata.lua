@@ -443,6 +443,7 @@ local _auraResult = {
     auraUnit = "player",
     durObj = nil,
     blizzChild = nil,
+    blizzBarChild = nil,
     stacks = nil,
     auraData = nil,
 }
@@ -453,6 +454,7 @@ local function WipeAuraResult()
     _auraResult.auraUnit = "player"
     _auraResult.durObj = nil
     _auraResult.blizzChild = nil
+    _auraResult.blizzBarChild = nil
     _auraResult.stacks = nil
     _auraResult.auraData = nil
 end
@@ -496,41 +498,64 @@ function CDMSpellData:ResolveAuraState(params)
     end
 
     -----------------------------------------------------------------------
-    -- Phase 2: Find Blizzard child
+    -- Phase 2: Find Blizzard child(ren)
+    -- Aura state can live on either the buff-icon viewer's child or the
+    -- buff-bar viewer's child, and callers may not know which. Populate
+    -- BOTH r.blizzChild (viewer-preferred, safe for write-back into
+    -- entry._blizzChild) and r.blizzBarChild (bar-viewer counterpart, used
+    -- by phase 3 as an aura-resolution fallback regardless of caller).
     -----------------------------------------------------------------------
-    -- Validate cached blizzChild
+    local buffIconViewer = _G["BuffIconCooldownViewer"]
+    local buffBarViewer  = _G["BuffBarCooldownViewer"]
+    local expectedPrimary = (viewerType == "trackedBar") and buffBarViewer or buffIconViewer
+
+    -- Validate cached blzChild. If its resolved IDs still match but it is
+    -- from the non-preferred viewer, demote it to blzBarChild so callers'
+    -- write-backs (entry._blizzChild) stay viewer-correct while phase 3
+    -- keeps access to its auraInstanceID.
     if blzChild then
-        local expectedViewer = (viewerType == "trackedBar")
-            and _G["BuffBarCooldownViewer"] or _G["BuffIconCooldownViewer"]
-        local valid = false
-        local vf = blzChild.viewerFrame
-        if vf and vf == expectedViewer then
-            local ids = blzChild._resolvedIDs
-            if ids then
-                for k = 1, #ids do
-                    if ids[k] == auraSpellID or ids[k] == (entrySpellID or 0) or ids[k] == (entryID or 0) then
-                        valid = true
-                        break
-                    end
+        local idsMatch = false
+        local ids = blzChild._resolvedIDs
+        if ids then
+            for k = 1, #ids do
+                if ids[k] == auraSpellID or ids[k] == (entrySpellID or 0) or ids[k] == (entryID or 0) then
+                    idsMatch = true
+                    break
                 end
             end
+        else
+            idsMatch = true
         end
-        if not valid then
+        local vf = blzChild.viewerFrame
+        if not idsMatch then
+            blzChild = nil
+        elseif vf ~= expectedPrimary then
+            if not blzBarChild and vf == buffBarViewer then
+                blzBarChild = blzChild
+            end
             blzChild = nil
         end
     end
-    -- Buff-viewer-specific lookup
+    -- Primary (viewer-matching) lookup
     if not blzChild then
         blzChild = FindBuffChildForSpell(viewerType, auraSpellID, entrySpellID, entryID)
     end
-    -- Broader fallback: any viewer
+    -- Broader fallback: any viewer with a live auraInstanceID
     if not blzChild then
         local dynChild = FindChildForSpell(auraSpellID, entrySpellID, entryID)
         if dynChild and dynChild.auraInstanceID then
             blzChild = dynChild
         end
     end
-    r.blizzChild = blzChild
+    -- Bar-viewer counterpart for symmetric phase-3 fallback. Icon callers
+    -- previously hardcoded p.blizzBarChild = nil and lost bar-viewer
+    -- auraInstanceIDs; this scan recovers them from the live child map.
+    if not blzBarChild and buffBarViewer then
+        blzBarChild = _scanViewerForIDs(buffBarViewer, nil,
+            auraSpellID, entrySpellID, entryID)
+    end
+    r.blizzChild    = blzChild
+    r.blizzBarChild = blzBarChild
 
     -----------------------------------------------------------------------
     -- Phase 3: Direct aura query via child's auraInstanceID

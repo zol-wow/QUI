@@ -99,6 +99,7 @@ local defaults = {
             popupBlocker = {
                 enabled = false,
                 blockTalentMicroButtonAlerts = false, -- Unspent talent/spellbook reminder callouts
+                blockMicroButtonGlows = false, -- Golden FlashBorder glow on any micromenu button (collections, achievements, etc.)
                 blockHelpTips = false, -- Blizzard HelpTip tutorial popups (talent/spellbook reminders, etc.)
                 blockEventToasts = false, -- Event toast manager (often campaign/housing news)
                 blockMountAlerts = false, -- New mount toasts

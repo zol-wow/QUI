@@ -638,44 +638,24 @@ end
     end
 
     -- World Map Blackout (dark overlay behind fullscreen map)
-    if WorldMapFrame and WorldMapFrame.BlackoutFrame then
+    -- TAINT SAFETY: Do NOT call SetAlpha/EnableMouse on WorldMapFrame children
+    -- from insecure code. EnableMouse taints the frame, and when WorldMapFrame
+    -- later runs secureexecuterange over its data providers (e.g. QuestDataProvider
+    -- acquiring pins), the taint propagates to the secure SetPassThroughButtons
+    -- call on each pin, producing ADDON_ACTION_BLOCKED. State drivers mutate
+    -- visibility through a secure handler and do not taint.
+    if WorldMapFrame and WorldMapFrame.BlackoutFrame and not InCombatLockdown() then
+        local boState = hookedSecureFrames[WorldMapFrame.BlackoutFrame]
+        if not boState then boState = {}; hookedSecureFrames[WorldMapFrame.BlackoutFrame] = boState end
         if settings.hideWorldMapBlackout then
-            WorldMapFrame.BlackoutFrame:SetAlpha(0)
-            WorldMapFrame.BlackoutFrame:EnableMouse(false)
-
-            -- TAINT SAFETY: Do NOT hook BlackoutFrame methods (Show, SetAlpha).
-            -- hooksecurefunc on WorldMapFrame children taints their dispatch tables;
-            -- the taint propagates through WorldMapFrame's secureexecuterange when
-            -- refreshing map data providers, causing ADDON_ACTION_BLOCKED on
-            -- SetPropagateMouseClicks for map pins.
-            --
-            -- Instead, use a separate watcher frame (same pattern as
-            -- groupframes_blizzard.lua) that periodically re-hides the blackout
-            -- if Blizzard restores it. No frame-level hooks = no taint.
-            local boState = hookedSecureFrames[WorldMapFrame.BlackoutFrame]
-            if not boState then boState = {}; hookedSecureFrames[WorldMapFrame.BlackoutFrame] = boState end
-            if not boState.blackoutWatcher then
-                boState.blackoutWatcher = true
-                local watcher = CreateFrame("Frame")
-                local elapsed = 0
-                watcher:SetScript("OnUpdate", function(self, dt)
-                    elapsed = elapsed + dt
-                    if elapsed < 0.5 then return end
-                    elapsed = 0
-                    if InCombatLockdown() then return end
-                    if IsInEditMode() then return end
-                    local s = GetSettings()
-                    if not s or not s.hideWorldMapBlackout then return end
-                    local bf = WorldMapFrame and WorldMapFrame.BlackoutFrame
-                    if bf and bf:GetAlpha() > 0 then
-                        bf:SetAlpha(0)
-                        bf:EnableMouse(false)
-                    end
-                end)
+            if not boState.blackoutHidden then
+                RegisterStateDriver(WorldMapFrame.BlackoutFrame, "visibility", "hide")
+                boState.blackoutHidden = true
             end
-        else
-            WorldMapFrame.BlackoutFrame:SetAlpha(1)
-            WorldMapFrame.BlackoutFrame:EnableMouse(true)
+        elseif boState.blackoutHidden then
+            UnregisterStateDriver(WorldMapFrame.BlackoutFrame, "visibility")
+            WorldMapFrame.BlackoutFrame:Show()
+            boState.blackoutHidden = false
         end
     end
 
@@ -908,10 +888,15 @@ local function ShowAllHiddenForEditMode()
         end
     end
 
-    -- World Map Blackout
-    if WorldMapFrame and WorldMapFrame.BlackoutFrame and settings.hideWorldMapBlackout then
-        WorldMapFrame.BlackoutFrame:SetAlpha(1)
-        WorldMapFrame.BlackoutFrame:EnableMouse(true)
+    -- World Map Blackout: temporarily release the state driver for edit mode.
+    -- ApplyHideSettings re-registers it on exit.
+    if WorldMapFrame and WorldMapFrame.BlackoutFrame and not InCombatLockdown() then
+        local boState = hookedSecureFrames[WorldMapFrame.BlackoutFrame]
+        if boState and boState.blackoutHidden then
+            UnregisterStateDriver(WorldMapFrame.BlackoutFrame, "visibility")
+            WorldMapFrame.BlackoutFrame:Show()
+            boState.blackoutHidden = false
+        end
     end
 
     -- UIErrors (restore event registration temporarily)

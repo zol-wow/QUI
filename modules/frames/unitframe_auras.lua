@@ -25,6 +25,7 @@ local GetFontPath = QUI_UF._GetFontPath
 local GetFontOutline = QUI_UF._GetFontOutline
 local GetUnitSettings = QUI_UF._GetUnitSettings
 local UpdateFrame = QUI_UF._UpdateFrame
+local ApplyCooldownFromAura = Helpers.ApplyCooldownFromAura
 
 ---------------------------------------------------------------------------
 -- CONSTANTS
@@ -335,41 +336,14 @@ local function UpdateAuras(frame)
         if not cooldownFrame then return false end
         if not auraData then return false end
 
-        local applied = false
-
-        -- Prefer duration object API (combat-safe on enemy targets)
-        if cooldownFrame.SetCooldownFromDurationObject and auraData.auraInstanceID then
-            local durationObj
-            if C_UnitAuras and C_UnitAuras.GetAuraDuration then
-                local ok, obj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
-                if ok and obj then
-                    durationObj = obj
-                end
-            end
-
-            if durationObj then
-                local setOk = pcall(cooldownFrame.SetCooldownFromDurationObject, cooldownFrame, durationObj, true)
-                if setOk then
-                    applied = true
-                end
-            end
-        end
-
-        -- Fallback: numeric start/duration (only when values are non-secret)
-        if not applied then
-            local duration = auraData.duration
-            local expirationTime = auraData.expirationTime
-            if duration and expirationTime then
-                if IsSecretValue and (IsSecretValue(duration) or IsSecretValue(expirationTime)) then
-                    return false
-                end
-                local startTime = expirationTime - duration
-                cooldownFrame:SetCooldown(startTime, duration)
-                applied = true
-            end
-        end
-
-        return applied
+        return ApplyCooldownFromAura(
+            cooldownFrame,
+            unit,
+            auraData.auraInstanceID,
+            auraData.expirationTime,
+            auraData.duration,
+            true
+        )
     end
 
     -- Helper to safely display stack count using combat-safe API

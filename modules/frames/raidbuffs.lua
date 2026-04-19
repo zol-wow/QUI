@@ -1032,25 +1032,31 @@ UpdateDisplay = function()
     for i, icon in ipairs(buffIcons) do
         if i <= #missing then
             local buff = missing[i]
-            icon:SetSize(iconSize, iconSize)
-            icon:ClearAllPoints()
 
-            local offset = (i - 1) * (iconSize + iconSpacing)
+            -- Icon geometry uses protected APIs — each icon has a SecureActionButtonTemplate
+            -- child with SetAllPoints(), so SetSize/SetPoint on the parent is blocked in combat.
+            -- PLAYER_REGEN_ENABLED triggers a ThrottledUpdate that reflows after combat ends.
+            if not inCombat then
+                icon:SetSize(iconSize, iconSize)
+                icon:ClearAllPoints()
 
-            if growDir == "RIGHT" then
-                icon:SetPoint("LEFT", mainFrame.iconContainer, "LEFT", offset, 0)
-            elseif growDir == "LEFT" then
-                icon:SetPoint("RIGHT", mainFrame.iconContainer, "RIGHT", -offset, 0)
-            elseif growDir == "CENTER_H" then
-                local startX = -totalSize / 2 + iconSize / 2
-                icon:SetPoint("CENTER", mainFrame.iconContainer, "CENTER", startX + offset, 0)
-            elseif growDir == "UP" then
-                icon:SetPoint("BOTTOM", mainFrame.iconContainer, "BOTTOM", 0, offset)
-            elseif growDir == "DOWN" then
-                icon:SetPoint("TOP", mainFrame.iconContainer, "TOP", 0, -offset)
-            elseif growDir == "CENTER_V" then
-                local startY = -totalSize / 2 + iconSize / 2
-                icon:SetPoint("CENTER", mainFrame.iconContainer, "CENTER", 0, startY + offset)
+                local offset = (i - 1) * (iconSize + iconSpacing)
+
+                if growDir == "RIGHT" then
+                    icon:SetPoint("LEFT", mainFrame.iconContainer, "LEFT", offset, 0)
+                elseif growDir == "LEFT" then
+                    icon:SetPoint("RIGHT", mainFrame.iconContainer, "RIGHT", -offset, 0)
+                elseif growDir == "CENTER_H" then
+                    local startX = -totalSize / 2 + iconSize / 2
+                    icon:SetPoint("CENTER", mainFrame.iconContainer, "CENTER", startX + offset, 0)
+                elseif growDir == "UP" then
+                    icon:SetPoint("BOTTOM", mainFrame.iconContainer, "BOTTOM", 0, offset)
+                elseif growDir == "DOWN" then
+                    icon:SetPoint("TOP", mainFrame.iconContainer, "TOP", 0, -offset)
+                elseif growDir == "CENTER_V" then
+                    local startY = -totalSize / 2 + iconSize / 2
+                    icon:SetPoint("CENTER", mainFrame.iconContainer, "CENTER", 0, startY + offset)
+                end
             end
 
             -- Set icon texture (self-buffs resolve dynamically)
