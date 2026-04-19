@@ -4,6 +4,31 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+
+## v3.4.1 - 2026-04-19
+
+### Added
+- added option to show crafted item quality markers on action bars and custom trackers
+- added option to only show player-cast aura indicators in group frames
+
+### Changed
+- removed group frames party tracker features ahead of 12.0.5 release, as they will break
+- skyriding: hide bar while FarmHud is visible
+
+### Fixed
+- fixed group frame tracking icon and rotation assist icon layering over fullscreen UI
+- fixed several procs not triggering glows in CDM viewers
+- fixed cdm custom entries not obeying tooltip visibility settings and row opacity settings
+- fix(cdm): evict tick aura caches on encounter/M+/PvP start
+- fix(groupframes): event dispatch + raid-only spotlight
+- fix(inspect): resolve empty tooltips, flashing overlays, and skinning races
+- loot: skip repositioning in combat to avoid taint
+- cdm: extract child metadata helpers to spelldata, dedupe in bars
+- rotationassist: remove dead spellToKeybind cache
+- memaudit: register ~38 probes across previously-invisible caches
+- castbar: pool channel tick observation structs
+- skyriding: defer frame creation until canGlide context
+- perf: reduce allocations across party tracker, private auras, and castbar
 ## Unreleased
 
 ### Removed
