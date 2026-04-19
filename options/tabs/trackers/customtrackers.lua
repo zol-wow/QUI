@@ -1016,6 +1016,11 @@ local function CreateCustomTrackersPage(parent)
         zoomSlider:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        local qualityCheck = GUI:CreateFormCheckbox(lowerContainer, "Show Crafted Item Quality", "showProfessionQuality", barConfig, RefreshThisBar)
+        qualityCheck:SetPoint("TOPLEFT", 0, y)
+        qualityCheck:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         -----------------------------------------------------------------------
         -- DURATION TEXT SECTION
         -----------------------------------------------------------------------

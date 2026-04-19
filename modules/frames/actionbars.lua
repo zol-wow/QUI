@@ -222,6 +222,8 @@ end
 ActionBarsOwned._activeButtons = ActionBarsOwned._activeButtons
     or setmetatable({}, { __mode = "k" })
 
+local UpdateButtonProfessionQuality
+
 function ActionBarsOwned.SafeUpdate(self)
     local action = self.action
     if not action then return end
@@ -257,6 +259,8 @@ function ActionBarsOwned.SafeUpdate(self)
             self.icon:Hide()
             if self.SlotBackground then self.SlotBackground:Show() end
         end
+
+        UpdateButtonProfessionQuality(self)
 
         self:SetAlpha(1.0)
 
@@ -342,6 +346,7 @@ function ActionBarsOwned.SafeUpdate(self)
         self.Count:SetText("")
         self.Name:SetText("")
         self.Border:Hide()
+        UpdateButtonProfessionQuality(self)
         if self.LevelLinkLockIcon then
             self.LevelLinkLockIcon:SetShown(false)
         end
@@ -5583,9 +5588,61 @@ local function SuppressButtonProcVisuals(button)
     end)
 end
 
+UpdateButtonProfessionQuality = function(button, settings)
+    if not button then return end
+
+    local overlay = button.ProfessionQualityOverlayTexture
+    if settings == nil then
+        local db = GetDB()
+        settings = db and db.global
+    end
+    if settings and settings.showProfessionQuality == false then
+        if overlay then
+            overlay:Hide()
+        end
+        return
+    end
+
+    local action = GetSafeActionSlot(button)
+    if not action or not (C_ActionBar and C_ActionBar.GetProfessionQualityInfo) then
+        if overlay then
+            overlay:Hide()
+        end
+        return
+    end
+
+    local ok, qualityInfo = pcall(C_ActionBar.GetProfessionQualityInfo, action)
+    local atlas = ok and qualityInfo and qualityInfo.iconInventory
+    if not atlas then
+        if overlay then
+            overlay:Hide()
+        end
+        return
+    end
+
+    if not overlay then
+        overlay = button:CreateTexture(nil, "OVERLAY", nil, 7)
+        overlay:SetPoint("CENTER", button, "TOPLEFT", 14, -14)
+        overlay:SetDrawLayer("OVERLAY", 7)
+        button.ProfessionQualityOverlayTexture = overlay
+    end
+
+    overlay:SetAtlas(
+        atlas,
+        TextureKitConstants and TextureKitConstants.UseAtlasSize or true
+    )
+    overlay:Show()
+end
+
 -- Apply QUI skin to a single button
 SkinButton = function(button, settings)
-    if not button or not settings or not settings.skinEnabled then
+    if not button or not settings then
+        return
+    end
+
+    UpdateButtonProfessionQuality(button, settings)
+
+    if not settings.skinEnabled then
         return
     end
     local state = GetFrameState(button)

@@ -1302,6 +1302,7 @@ local defaults = {
                 glossAlpha = 0.3,           -- Gloss opacity (0-1)
                 showFlash = "qui",          -- Pushed texture style: "off", "blizzard", "qui"
                 showBorders = true,         -- Show button borders
+                showProfessionQuality = true, -- Show crafted/profession-quality marker
                 showKeybinds = true,        -- Show hotkey text
                 showMacroNames = true,     -- Show macro name text
                 showCounts = true,          -- Show stack/charge count
@@ -3401,6 +3402,7 @@ local defaults = {
                     -- Background
                     bgOpacity = 0,
                     bgColor = {0, 0, 0, 1},
+                    showProfessionQuality = true, -- Show crafted/profession-quality marker
                     hideGCD = true,
                     hideNonUsable = false,
                     showOnlyOnCooldown = false,
