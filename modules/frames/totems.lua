@@ -19,6 +19,7 @@ ns.QUI_TotemBar = TotemBar
 
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local ApplyCooldownFromStart = Helpers.ApplyCooldownFromStart
 
 local MAX_SLOTS = MAX_TOTEMS or 4
 local BASE_CROP = 0.08
@@ -365,14 +366,15 @@ local function UpdateTotems()
             pcall(btn.icon.SetTexture, btn.icon, icon)
             -- Prefer DurationObject API for swipe (secret-safe)
             local cd = btn.cooldown
-            if GetTotemDuration and cd.SetCooldownFromDurationObject then
-                local dok, durObj = pcall(GetTotemDuration, slot)
-                if dok and durObj then
-                    pcall(cd.SetCooldownFromDurationObject, cd, durObj)
+            local durObj = nil
+            if GetTotemDuration then
+                local dok, fetchedDurObj = pcall(GetTotemDuration, slot)
+                if dok and fetchedDurObj then
+                    durObj = fetchedDurObj
                 end
-            elseif not Helpers.IsSecretValue(startTime)
-               and not Helpers.IsSecretValue(duration) then
-                pcall(cd.SetCooldown, cd, startTime, duration)
+            end
+            if not ApplyCooldownFromStart(cd, durObj, startTime, duration, nil, nil) then
+                cd:Clear()
             end
             StyleButton(btn)
             SafeShowButton(btn)
