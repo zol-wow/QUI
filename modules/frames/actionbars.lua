@@ -740,17 +740,21 @@ end
 local function IsSpellFlyoutActiveForBar(barKey)
     if not barKey then return false end
 
-    local flyout = _G.SpellFlyout
-    if not (flyout and flyout.IsShown and flyout:IsShown()) then
-        return false
+    local activeFlyouts = {
+        _G.QUI_SpellFlyout,
+        _G.SpellFlyout,
+    }
+
+    for _, flyout in ipairs(activeFlyouts) do
+        if flyout and flyout.IsShown and flyout:IsShown() then
+            local sourceBarKey = GetSpellFlyoutSourceBarKey(flyout)
+            if sourceBarKey == barKey then
+                return true
+            end
+        end
     end
 
-    local sourceBarKey = GetSpellFlyoutSourceBarKey(flyout)
-    if not sourceBarKey then
-        return false
-    end
-
-    return sourceBarKey == barKey
+    return false
 end
 
 local function ShouldSuspendMouseoverFade(barKey)
@@ -1193,6 +1197,9 @@ local function SetBarContainerShown(container, shown)
     if shown then
         container:Show()
     else
+        if ActionBarsOwned and ActionBarsOwned.HideOwnedFlyout then
+            ActionBarsOwned.HideOwnedFlyout()
+        end
         container:Hide()
     end
 end
@@ -1218,6 +1225,9 @@ local function InstallSecureActionFlagRefresh(btn)
     ]])
 end
 ActionBarsOwned.SetBarContainerShown = SetBarContainerShown
+
+local EnsureOwnedFlyoutFrame
+local SyncOwnedFlyoutInfoToHandler
 
 ---------------------------------------------------------------------------
 -- LAYOUT ENGINE
@@ -2021,6 +2031,9 @@ end
 
 local function OnEditModeEnter()
     ActionBarsOwned.editModeActive = true
+    if ActionBarsOwned.HideOwnedFlyout then
+        ActionBarsOwned.HideOwnedFlyout()
+    end
 
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         local container = ActionBarsOwned.containers[barKey]
@@ -2375,7 +2388,7 @@ local function BuildStandardOwnedButtons(container, barKey)
     return buttons
 end
 
-local function SetupStandardOwnedButtonRuntime(btn)
+local function SetupStandardOwnedButtonRuntime(container, btn)
     btn:UnregisterAllEvents()
     btn:SetScript("OnEvent", function(self, event, ...)
         if event == "ACTIONBAR_UPDATE_COOLDOWN"
@@ -2464,6 +2477,30 @@ local function SetupStandardOwnedButtonRuntime(btn)
                 self._quiPreClickKeyDownBackup = nil
             end
         end)
+        if container then
+            SecureHandlerWrapScript(btn, "OnClick", container, [[
+                local flyoutHandler = owner:GetFrameRef("qui-flyout-handler")
+                if self:GetAttribute("type") == "action" then
+                    local action = self:GetAttribute("action")
+                    local actionType, flyoutID = action and GetActionInfo(action)
+                    if actionType == "flyout" and flyoutHandler then
+                        if not down then
+                            flyoutHandler:SetAttribute("flyoutParentHandle", self)
+                            flyoutHandler:RunAttribute("HandleFlyout", flyoutID)
+                        end
+                        return false
+                    end
+                    if flyoutHandler then
+                        flyoutHandler:Hide()
+                    end
+                elseif flyoutHandler and (not down or self:GetParent() ~= flyoutHandler) then
+                    flyoutHandler:Hide()
+                end
+                if button == "Keybind" then
+                    return "LeftButton"
+                end
+            ]])
+        end
 
         btn:SetScript("OnDragStart", nil)
         SecureHandlerWrapScript(btn, "OnDragStart", btn, [[
@@ -3049,6 +3086,12 @@ local function BuildBar(barKey)
     ActionBarsOwned.nativeButtons[barKey] = buttons
     if barKey ~= "pet" and barKey ~= "stance" and barKey ~= "microbar" and barKey ~= "bags" then
         FinalizeStandardOwnedActionButtons(container, barKey, buttons)
+        if EnsureOwnedFlyoutFrame then
+            local flyoutHandler = EnsureOwnedFlyoutFrame()
+            if flyoutHandler then
+                container:SetFrameRef("qui-flyout-handler", flyoutHandler)
+            end
+        end
     end
 
     -- Build slot→{button, barKey} lookup for O(1) ACTIONBAR_SLOT_CHANGED dispatch
@@ -3070,7 +3113,7 @@ local function BuildBar(barKey)
     -- hits SafeUpdate instead of the original mixin code.
     if barKey ~= "pet" and barKey ~= "stance" and barKey ~= "microbar" and barKey ~= "bags" then
         for _, btn in ipairs(buttons) do
-            SetupStandardOwnedButtonRuntime(btn)
+            SetupStandardOwnedButtonRuntime(container, btn)
         end
 
         -- Populate visuals via the mixin (safe — GetActionCount is
@@ -3288,6 +3331,9 @@ UpdatePetBarVisibility = function()
     if barDB and barDB.enabled == false then
         container:SetAttribute("qui-user-shown", false)
         if not InCombatLockdown() or inInitSafeWindow then
+            if ActionBarsOwned.HideOwnedFlyout then
+                ActionBarsOwned.HideOwnedFlyout()
+            end
             container:Hide()
         else
             ActionBarsOwned.pendingPetUpdate = true
@@ -3327,6 +3373,9 @@ UpdatePetBarVisibility = function()
         ActionBarsOwned.pendingPetUpdate = true
     else
         container:SetAttribute("qui-user-shown", false)
+        if ActionBarsOwned.HideOwnedFlyout then
+            ActionBarsOwned.HideOwnedFlyout()
+        end
         container:Hide()
     end
     -- Notify anchoring system when visibility changed so dependents re-anchor
@@ -3349,6 +3398,9 @@ UpdateStanceBarLayout = function()
     local barDB = GetBarSettings("stance")
     if barDB and barDB.enabled == false then
         container:SetAttribute("qui-user-shown", false)
+        if ActionBarsOwned.HideOwnedFlyout then
+            ActionBarsOwned.HideOwnedFlyout()
+        end
         container:Hide()
         if _G.QUI_UpdateFramesAnchoredTo then _G.QUI_UpdateFramesAnchoredTo("stanceBar") end
         return
@@ -3367,6 +3419,9 @@ UpdateStanceBarLayout = function()
             return
         end
         container:SetAttribute("qui-user-shown", false)
+        if ActionBarsOwned.HideOwnedFlyout then
+            ActionBarsOwned.HideOwnedFlyout()
+        end
         container:Hide()
         if wasShown and _G.QUI_UpdateFramesAnchoredTo then
             _G.QUI_UpdateFramesAnchoredTo("stanceBar")
@@ -4383,6 +4438,9 @@ abSlotFrame:SetScript("OnUpdate", function(self)
     wipe(abDirtySlots)
     -- Rebuild spell-to-button map after slot content changes (drag/drop)
     ActionBarsOwned.RebuildSpellIdMap()
+    if SyncOwnedFlyoutInfoToHandler then
+        SyncOwnedFlyoutInfoToHandler()
+    end
     -- Slot contents changed — the rotation action may have moved to a
     -- different button.  Invalidate the cached rotation button so the
     -- next UpdateAllAssistedCombatRotation re-discovers it from the
@@ -4423,6 +4481,9 @@ local function OnOwnedEvent(self, event, ...)
         _lastPagingTime = GetTime()
         -- Page swap may remap which button holds the rotation action.
         _assistRotationButton = nil
+        if HideOwnedFlyout then
+            HideOwnedFlyout()
+        end
         -- Paging is handled by state driver: _childupdate-offset sets the
         -- action attribute and calls CallMethod("SafeSyncAction") which
         -- syncs self.action and refreshes visuals on each button.
@@ -4541,6 +4602,14 @@ local function OnOwnedEvent(self, event, ...)
             ActionBarsOwned.pendingFlyoutDirection = false
             if ApplyAllFlyoutDirections then ApplyAllFlyoutDirections() end
         end
+        if ActionBarsOwned.pendingFlyoutSkin then
+            ActionBarsOwned.pendingFlyoutSkin = false
+            if SkinSpellFlyoutButtons then SkinSpellFlyoutButtons() end
+        end
+        if ActionBarsOwned.pendingOwnedFlyoutSync then
+            ActionBarsOwned.pendingOwnedFlyoutSync = false
+            if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
+        end
         -- SafeUpdate keeps all visuals live during combat (icon, cooldown,
         -- glow, usability, count, checked state).  Skinning state does not
         -- drift in combat, so no post-combat re-skin pass is needed.
@@ -4602,6 +4671,7 @@ local function OnOwnedEvent(self, event, ...)
         UpdatePetBarVisibility()
         UpdateStanceBarLayout()
         ApplyAllFlyoutDirections()
+        if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
         inInitSafeWindow = false
         ns._inInitSafeWindow = false
         -- Second pass after Blizzard frames settle; defer if safe period ended
@@ -4625,6 +4695,7 @@ local function OnOwnedEvent(self, event, ...)
             UpdatePetBarVisibility()
             UpdateStanceBarLayout()
             ApplyAllFlyoutDirections()
+            if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
         end)
         local db = GetDB()
         if db and db.bars and db.bars.bar1 then
@@ -4742,6 +4813,7 @@ local function OnOwnedEvent(self, event, ...)
         end
         -- Rebuild spell-to-button map (slot contents may have changed)
         ActionBarsOwned.RebuildSpellIdMap()
+        if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
 
     elseif event == "PLAYER_ENTER_COMBAT" or event == "PLAYER_LEAVE_COMBAT" then
         -- Auto-attack flash state changes (SafeUpdate handles flash now)
@@ -4771,6 +4843,7 @@ local function OnOwnedEvent(self, event, ...)
             end
         end
         ApplyAllFlyoutDirections()
+        if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
             local btns = ActionBarsOwned.nativeButtons[barKey]
             local s = GetEffectiveSettings(barKey)
@@ -4794,6 +4867,7 @@ local function OnOwnedEvent(self, event, ...)
             end
         end
         ApplyAllFlyoutDirections()
+        if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
 
     elseif event == "SPELL_UPDATE_USABLE" then
         -- Spell usability changed (e.g. resource gained/spent, GCD ended).
@@ -5443,6 +5517,9 @@ end
 local FadeHideEffects
 local FadeShowEffects
 local SkinSpellFlyoutButtons
+local ApplySpellFlyoutButtonStateTextures
+local ShowOwnedFlyoutForButton
+local HideOwnedFlyout
 local PROC_ALERT_REGION_KEYS = {
     "ProcStartFlipbook",
     "ProcLoopFlipbook",
@@ -6695,6 +6772,10 @@ ApplyFlyoutDirection = function(barKey)
         return
     end
 
+    if HideOwnedFlyout then
+        HideOwnedFlyout()
+    end
+
     local dir = layout.flyoutDirection
     if not VALID_FLYOUT_DIRS[dir] then dir = nil end -- AUTO / unset
 
@@ -7464,6 +7545,345 @@ do -- spell flyout skinning
 
 local spellFlyoutSkinHooked = false
 
+do -- owned spell flyout (retail migration)
+
+local USE_OWNED_FLYOUT = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
+ActionBarsOwned.useOwnedFlyout = USE_OWNED_FLYOUT
+
+local ownedFlyout
+local ownedFlyoutButtons = {}
+local lastOwnedFlyoutSyncPayload
+
+local function GetOwnedFlyoutSettings(parentButton)
+    local barKey = GetBarKeyFromButton(parentButton)
+    if barKey then
+        local settings = GetEffectiveSettings(barKey)
+        if settings then return settings end
+    end
+    return GetGlobalSettings()
+end
+
+local function ApplyOwnedFlyoutButtonVisuals(button, spellID)
+    if not button then return end
+    button._quiFlyoutSpellID = spellID
+    if button.icon then
+        button.icon:SetTexture(spellID and GetSpellTexture(spellID) or nil)
+        if spellID then
+            button.icon:Show()
+        else
+            button.icon:Hide()
+        end
+    end
+    if button.Name then button.Name:SetText("") end
+    if button.Count then button.Count:SetText("") end
+    ApplySpellFlyoutButtonStateTextures(button)
+
+    if InCombatLockdown() then return end
+    local sourceButton = ownedFlyout and ownedFlyout:GetParent()
+    local settings = GetOwnedFlyoutSettings(sourceButton)
+    if settings and settings.skinEnabled then
+        SkinButton(button, settings)
+    end
+end
+
+EnsureOwnedFlyoutFrame = function()
+    if ownedFlyout or not USE_OWNED_FLYOUT then return ownedFlyout end
+
+    ownedFlyout = CreateFrame("Frame", "QUI_SpellFlyout", UIParent, "SecureHandlerBaseTemplate")
+    ownedFlyout:SetFrameStrata("DIALOG")
+    ownedFlyout:SetClampedToScreen(true)
+    ownedFlyout:Hide()
+
+    ownedFlyout.Background = CreateFrame("Frame", nil, ownedFlyout)
+    ownedFlyout.Background:SetAllPoints()
+    ownedFlyout.BackgroundTex = ownedFlyout.Background:CreateTexture(nil, "BACKGROUND")
+    ownedFlyout.BackgroundTex:SetAllPoints()
+    ownedFlyout.BackgroundTex:SetColorTexture(0, 0, 0, 0.35)
+    ownedFlyout:SetAttribute("numFlyoutButtons", 0)
+    ownedFlyout:Execute([[QUI_FlyoutInfo = newtable()]])
+    ownedFlyout:SetAttribute("HandleFlyout", [[
+        local parent = self:GetAttribute("flyoutParentHandle")
+        if not parent then
+            self:Hide()
+            return
+        end
+
+        if self:IsShown() and self:GetParent() == parent then
+            self:Hide()
+            return
+        end
+
+        local flyoutID = ...
+        local info = QUI_FlyoutInfo and QUI_FlyoutInfo[flyoutID]
+        if not info or not info.slots then
+            self:Hide()
+            return
+        end
+
+        local direction = parent:GetAttribute("flyoutDirection") or "UP"
+        local width = tonumber(parent:GetWidth()) or 45
+        local height = tonumber(parent:GetHeight()) or 45
+        if width <= 0 then width = 45 end
+        if height <= 0 then height = 45 end
+
+        local usedSlots = 0
+        local prevButton
+        for slotID, slotInfo in ipairs(info.slots) do
+            if slotInfo and slotInfo.isKnown and slotInfo.spellID then
+                usedSlots = usedSlots + 1
+                local slotButton = self:GetFrameRef("flyoutButton" .. usedSlots)
+                if slotButton then
+                    slotButton:SetAttribute("type", "spell")
+                    slotButton:SetAttribute("spell", slotInfo.spellID)
+                    slotButton:SetAttribute("qui-flyout-spell", slotInfo.spellID)
+                    slotButton:SetWidth(width)
+                    slotButton:SetHeight(height)
+                    slotButton:CallMethod("QUI_UpdateOwnedFlyoutVisuals", slotInfo.spellID)
+                    slotButton:ClearAllPoints()
+
+                    if direction == "DOWN" then
+                        if prevButton then
+                            slotButton:SetPoint("TOP", prevButton, "BOTTOM", 0, -4)
+                        else
+                            slotButton:SetPoint("TOP", self, "TOP", 0, -7)
+                        end
+                    elseif direction == "LEFT" then
+                        if prevButton then
+                            slotButton:SetPoint("RIGHT", prevButton, "LEFT", -4, 0)
+                        else
+                            slotButton:SetPoint("RIGHT", self, "RIGHT", -7, 0)
+                        end
+                    elseif direction == "RIGHT" then
+                        if prevButton then
+                            slotButton:SetPoint("LEFT", prevButton, "RIGHT", 4, 0)
+                        else
+                            slotButton:SetPoint("LEFT", self, "LEFT", 7, 0)
+                        end
+                    else
+                        if prevButton then
+                            slotButton:SetPoint("BOTTOM", prevButton, "TOP", 0, 4)
+                        else
+                            slotButton:SetPoint("BOTTOM", self, "BOTTOM", 0, 7)
+                        end
+                    end
+
+                    slotButton:Show()
+                    prevButton = slotButton
+                end
+            end
+        end
+
+        for i = usedSlots + 1, self:GetAttribute("numFlyoutButtons") do
+            local slotButton = self:GetFrameRef("flyoutButton" .. i)
+            if slotButton then
+                slotButton:Hide()
+                slotButton:SetAttribute("type", nil)
+                slotButton:SetAttribute("spell", nil)
+                slotButton:SetAttribute("qui-flyout-spell", nil)
+                slotButton:CallMethod("QUI_ClearOwnedFlyoutVisuals")
+            end
+        end
+
+        if usedSlots == 0 then
+            self:Hide()
+            return
+        end
+
+        local extent
+        if direction == "LEFT" or direction == "RIGHT" then
+            extent = 14 + usedSlots * width + (usedSlots - 1) * 4
+            self:SetSize(extent, height)
+        else
+            extent = 14 + usedSlots * height + (usedSlots - 1) * 4
+            self:SetSize(width, extent)
+        end
+
+        self:SetParent(parent)
+        self:ClearAllPoints()
+        if direction == "DOWN" then
+            self:SetPoint("TOP", parent, "BOTTOM", 0, -4)
+        elseif direction == "LEFT" then
+            self:SetPoint("RIGHT", parent, "LEFT", -4, 0)
+        elseif direction == "RIGHT" then
+            self:SetPoint("LEFT", parent, "RIGHT", 4, 0)
+        else
+            self:SetPoint("BOTTOM", parent, "TOP", 0, 4)
+        end
+
+        self:Show()
+    ]])
+
+    return ownedFlyout
+end
+
+local function EnsureOwnedFlyoutButton(index)
+    local btn = ownedFlyoutButtons[index]
+    if btn then return btn end
+
+    local flyout = EnsureOwnedFlyoutFrame()
+    if not flyout then return nil end
+
+    local name = "QUI_SpellFlyoutButton" .. index
+    btn = CreateFrame("CheckButton", name, flyout, "ActionButtonTemplate, SecureActionButtonTemplate")
+    btn:RegisterForClicks("AnyDown", "AnyUp")
+    do
+        local _db = GetDB()
+        local _g = _db and _db.global
+        btn:SetAttribute("useOnKeyDown", _g and _g.useOnKeyDown == true)
+    end
+    btn:SetAttribute("checkselfcast", true)
+    btn:SetAttribute("checkfocuscast", true)
+    btn:SetAttribute("checkmouseovercast", true)
+    btn:SetAttribute("type", nil)
+    btn._quiOwnedFlyout = true
+
+    btn:SetScript("OnDragStart", nil)
+    btn:SetScript("OnReceiveDrag", nil)
+    btn.QUI_UpdateOwnedFlyoutVisuals = function(self, spellID)
+        ApplyOwnedFlyoutButtonVisuals(self, spellID)
+    end
+    btn.QUI_ClearOwnedFlyoutVisuals = function(self)
+        ApplyOwnedFlyoutButtonVisuals(self, nil)
+    end
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self._quiFlyoutSpellID then
+            GameTooltip:SetSpellByID(self._quiFlyoutSpellID)
+        end
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", GameTooltip_Hide)
+    ApplySpellFlyoutButtonStateTextures(btn)
+    if btn.Name then btn.Name:SetText("") end
+    if btn.Count then btn.Count:SetText("") end
+    SecureHandlerWrapScript(btn, "OnClick", flyout, [[
+        if not down then
+            owner:Hide()
+        end
+        if button == "Keybind" then
+            return "LeftButton"
+        end
+    ]])
+
+    flyout:SetFrameRef("flyoutButton" .. index, btn)
+    ownedFlyoutButtons[index] = btn
+    return btn
+end
+
+local function RebuildOwnedFlyoutIdSet()
+    local activeFlyoutIds = {}
+
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        local buttons = ActionBarsOwned.nativeButtons and ActionBarsOwned.nativeButtons[barKey]
+        if buttons then
+            for _, btn in ipairs(buttons) do
+                local action = btn and btn.action
+                if type(action) == "number" and action > 0 then
+                    local actionType, flyoutID = GetActionInfo(action)
+                    if actionType == "flyout" and type(flyoutID) == "number" and flyoutID > 0 then
+                        activeFlyoutIds[flyoutID] = true
+                    end
+                end
+            end
+        end
+    end
+
+    ActionBarsOwned.activeFlyoutIds = activeFlyoutIds
+    return activeFlyoutIds
+end
+
+HideOwnedFlyout = function()
+    if ownedFlyout then
+        ownedFlyout:Hide()
+    end
+end
+ActionBarsOwned.HideOwnedFlyout = HideOwnedFlyout
+
+SyncOwnedFlyoutInfoToHandler = function()
+    if not USE_OWNED_FLYOUT then return end
+    if InCombatLockdown() then
+        ActionBarsOwned.pendingOwnedFlyoutSync = true
+        return
+    end
+
+    local flyout = EnsureOwnedFlyoutFrame()
+    if not flyout then return end
+
+    local activeFlyoutIds = RebuildOwnedFlyoutIdSet()
+    local infoByFlyout = {}
+    local maxNumSlots = 0
+    local data = "QUI_FlyoutInfo = newtable();\n"
+    for flyoutID in pairs(activeFlyoutIds) do
+        local _, _, numSlots, isKnown = GetFlyoutInfo(flyoutID)
+        if isKnown and type(numSlots) == "number" and numSlots > 0 then
+            local info = { slots = {} }
+            infoByFlyout[flyoutID] = info
+            if numSlots > maxNumSlots then
+                maxNumSlots = numSlots
+            end
+            for slot = 1, numSlots do
+                local spellID, overrideSpellID, isKnownSlot = GetFlyoutSlotInfo(flyoutID, slot)
+                local castSpellID = (overrideSpellID and overrideSpellID > 0) and overrideSpellID or spellID
+                info.slots[slot] = {
+                    spellID = castSpellID,
+                    isKnown = isKnownSlot and type(castSpellID) == "number" and castSpellID > 0 or false,
+                }
+            end
+        end
+    end
+
+    for flyoutID, info in pairs(infoByFlyout) do
+        data = data .. ("QUI_FlyoutInfo[%d] = newtable();QUI_FlyoutInfo[%d].slots = newtable();\n"):format(flyoutID, flyoutID)
+        for slotID, slotInfo in ipairs(info.slots) do
+            local spellID = (slotInfo and type(slotInfo.spellID) == "number" and slotInfo.spellID > 0) and slotInfo.spellID or 0
+            data = data .. ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
+                :format(flyoutID, slotID, flyoutID, slotID, spellID, flyoutID, slotID, slotInfo and slotInfo.isKnown and "true" or "nil")
+        end
+    end
+
+    if maxNumSlots > #ownedFlyoutButtons then
+        for i = #ownedFlyoutButtons + 1, maxNumSlots do
+            EnsureOwnedFlyoutButton(i)
+        end
+        flyout:SetAttribute("numFlyoutButtons", #ownedFlyoutButtons)
+    end
+
+    if data ~= lastOwnedFlyoutSyncPayload then
+        flyout:Execute(data)
+        lastOwnedFlyoutSyncPayload = data
+    end
+
+    ActionBarsOwned.pendingOwnedFlyoutSync = false
+end
+
+ShowOwnedFlyoutForButton = function(parentButton)
+    if not USE_OWNED_FLYOUT or not parentButton then
+        return false
+    end
+
+    local action = parentButton.action
+    if not action then
+        HideOwnedFlyout()
+        return false
+    end
+
+    local actionType, flyoutID = GetActionInfo(action)
+    if actionType ~= "flyout" or not flyoutID then
+        HideOwnedFlyout()
+        return false
+    end
+
+    SyncOwnedFlyoutInfoToHandler()
+    local flyout = EnsureOwnedFlyoutFrame()
+    if not flyout then return false end
+
+    flyout:SetAttribute("flyoutParentHandle", parentButton)
+    flyout:RunAttribute("HandleFlyout", flyoutID)
+    return flyout:IsShown()
+end
+
+end -- do (owned spell flyout)
+
 local function IsSpellFlyoutButtonFrame(button, flyout)
     if not button then return false end
     if flyout and button.GetParent and button:GetParent() == flyout then
@@ -7552,7 +7972,7 @@ local function SkinSpellFlyoutContainer(flyout)
     if bg.VerticalMiddle then bg.VerticalMiddle:SetAlpha(0) end
 end
 
-local function ApplySpellFlyoutButtonStateTextures(button)
+ApplySpellFlyoutButtonStateTextures = function(button)
     if not button then return end
 
     if button.SetHitRectInsets then
@@ -7589,8 +8009,13 @@ local function ApplySpellFlyoutButtonStateTextures(button)
 end
 
 SkinSpellFlyoutButtons = function()
+    if ActionBarsOwned.useOwnedFlyout then return end
     local flyout = _G.SpellFlyout
     if not (flyout and flyout.IsShown and flyout:IsShown()) then return end
+    if InCombatLockdown() then
+        ActionBarsOwned.pendingFlyoutSkin = true
+        return
+    end
 
     SkinSpellFlyoutContainer(flyout)
 
@@ -8075,6 +8500,10 @@ function ActionBarsOwned:Refresh()
         return
     end
 
+    if HideOwnedFlyout then
+        HideOwnedFlyout()
+    end
+
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         BuildBar(barKey)
     end
@@ -8116,6 +8545,9 @@ function ActionBarsOwned:Refresh()
     -- Apply bar layout settings (spacing, empty slot visibility)
     ApplyAllBarSpacing()
     ApplyAllFlyoutDirections()
+    if SyncOwnedFlyoutInfoToHandler then
+        SyncOwnedFlyoutInfoToHandler()
+    end
 
     -- Hide bars that are disabled in DB
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
@@ -8165,6 +8597,16 @@ _G.QUI_ApplyUseOnKeyDown = function()
     for bar = 1, 8 do
         for i = 1, 12 do
             local btn = _G["QUI_Bar" .. bar .. "Button" .. i]
+            if btn then
+                btn:SetAttribute("useOnKeyDown", value)
+            end
+        end
+    end
+    if EnsureOwnedFlyoutFrame then
+        local flyout = EnsureOwnedFlyoutFrame()
+        local count = (flyout and flyout.GetAttribute and flyout:GetAttribute("numFlyoutButtons")) or 0
+        for i = 1, count do
+            local btn = _G["QUI_SpellFlyoutButton" .. i]
             if btn then
                 btn:SetAttribute("useOnKeyDown", value)
             end
@@ -8326,6 +8768,9 @@ do
                         if val then
                             container:Show()
                         else
+                            if ActionBarsOwned.HideOwnedFlyout then
+                                ActionBarsOwned.HideOwnedFlyout()
+                            end
                             container:Hide()
                         end
                     end
@@ -8361,6 +8806,9 @@ do
                     if not container then return end
                     container:SetAttribute("qui-user-shown", (not hide) and true or false)
                     if hide then
+                        if ActionBarsOwned.HideOwnedFlyout then
+                            ActionBarsOwned.HideOwnedFlyout()
+                        end
                         container:Hide()
                     else
                         container:Show()
