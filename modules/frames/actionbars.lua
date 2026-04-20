@@ -2446,6 +2446,16 @@ local function SetupStandardOwnedButtonRuntime(container, btn)
             if name == "action" and IsPressHoldReleaseSpell and type(value) == "number" then
                 self:RunAttribute("QUI_UpdateActionFlags")
             end
+            if name == "action" then
+                local container = self:GetParent()
+                local flyoutHandler = container and container.GetFrameRef and container:GetFrameRef("qui-flyout-handler")
+                if flyoutHandler and flyoutHandler:GetAttribute("flyoutParentHandle") == self then
+                    local actionType, flyoutID = value and GetActionInfo(value)
+                    if actionType ~= "flyout" or flyoutID ~= flyoutHandler:GetAttribute("flyoutID") then
+                        flyoutHandler:Hide()
+                    end
+                end
+            end
         ]])
 
         btn:HookScript("OnEnter", function(self)
@@ -2491,9 +2501,11 @@ local function SetupStandardOwnedButtonRuntime(container, btn)
                         return false
                     end
                     if flyoutHandler then
+                        flyoutHandler:SetAttribute("flyoutID", nil)
                         flyoutHandler:Hide()
                     end
                 elseif flyoutHandler and (not down or self:GetParent() ~= flyoutHandler) then
+                    flyoutHandler:SetAttribute("flyoutID", nil)
                     flyoutHandler:Hide()
                 end
                 if button == "Keybind" then
@@ -7604,11 +7616,13 @@ EnsureOwnedFlyoutFrame = function()
     ownedFlyout:SetAttribute("HandleFlyout", [[
         local parent = self:GetAttribute("flyoutParentHandle")
         if not parent then
+            self:SetAttribute("flyoutID", nil)
             self:Hide()
             return
         end
 
         if self:IsShown() and self:GetParent() == parent then
+            self:SetAttribute("flyoutID", nil)
             self:Hide()
             return
         end
@@ -7616,6 +7630,7 @@ EnsureOwnedFlyoutFrame = function()
         local flyoutID = ...
         local info = QUI_FlyoutInfo and QUI_FlyoutInfo[flyoutID]
         if not info or not info.slots then
+            self:SetAttribute("flyoutID", nil)
             self:Hide()
             return
         end
@@ -7685,6 +7700,7 @@ EnsureOwnedFlyoutFrame = function()
         end
 
         if usedSlots == 0 then
+            self:SetAttribute("flyoutID", nil)
             self:Hide()
             return
         end
@@ -7699,6 +7715,7 @@ EnsureOwnedFlyoutFrame = function()
         end
 
         self:SetParent(parent)
+        self:SetAttribute("flyoutID", flyoutID)
         self:ClearAllPoints()
         if direction == "DOWN" then
             self:SetPoint("TOP", parent, "BOTTOM", 0, -4)
@@ -7758,6 +7775,7 @@ local function EnsureOwnedFlyoutButton(index)
     if btn.Count then btn.Count:SetText("") end
     SecureHandlerWrapScript(btn, "OnClick", flyout, [[
         if not down then
+            owner:SetAttribute("flyoutID", nil)
             owner:Hide()
         end
         if button == "Keybind" then
@@ -7794,7 +7812,11 @@ end
 
 HideOwnedFlyout = function()
     if ownedFlyout then
+        if InCombatLockdown() then
+            return
+        end
         ownedFlyout:Hide()
+        ownedFlyout:SetAttribute("flyoutID", nil)
     end
 end
 ActionBarsOwned.HideOwnedFlyout = HideOwnedFlyout
