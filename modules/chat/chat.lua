@@ -66,6 +66,7 @@ local QUI_COLORS = {
 -- Get settings from database
 ---------------------------------------------------------------------------
 local GetSettings = Helpers.CreateDBGetter("chat")
+local HAS_PROTECTED_CHAT_HISTORY = (tonumber((select(4, GetBuildInfo()))) or 0) >= 120000
 
 local function IsTemporaryChatFrame(chatFrame)
     if not chatFrame then return false end
@@ -1022,6 +1023,15 @@ local function InitializeChatHistory(editBox)
 
     local settings = GetSettings()
     if not settings or not settings.messageHistory or not settings.messageHistory.enabled then
+        return
+    end
+
+    -- Midnight moved whisper bookkeeping into protected HistoryKeeper tables.
+    -- Hooking edit-box history methods from addon code can taint that path and
+    -- break incoming whispers in combat/instances. Keep Blizzard's native
+    -- history behavior instead of layering our own hooks on top.
+    if HAS_PROTECTED_CHAT_HISTORY then
+        editBox:SetAltArrowKeyMode(false)
         return
     end
 
