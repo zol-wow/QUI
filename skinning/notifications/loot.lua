@@ -88,6 +88,7 @@ local frameParts = Helpers.CreateStateTable()     -- frame → { bg, text, etc. 
 -- Forward declarations (needed for mutual references)
 local ProcessRollQueue
 local StartRoll
+local pendingLootFrameHeight = nil
 
 ---=================================================================================
 --- UTILITY FUNCTIONS
@@ -270,6 +271,22 @@ local function CreateLootWindow()
     return frame
 end
 
+local function ApplyLootFrameHeight(height)
+    if not lootFrame or not height then
+        return
+    end
+
+    -- Geometry writes on the named loot frame can become protected during combat.
+    -- Cache the latest requested size and apply it once combat ends.
+    if InCombatLockdown() then
+        pendingLootFrameHeight = height
+        return
+    end
+
+    pendingLootFrameHeight = nil
+    lootFrame:SetHeight(height)
+end
+
 local function OnLootOpened(autoLoot)
     local numItems = GetNumLootItems()
     if numItems == 0 then return end
@@ -357,7 +374,7 @@ local function OnLootOpened(autoLoot)
 
     -- Resize window to fit items
     local height = 40 + (visibleSlots * (SLOT_HEIGHT + SLOT_SPACING))
-    lootFrame:SetHeight(height)
+    ApplyLootFrameHeight(height)
     lootFrame:Show()
 end
 
@@ -1054,6 +1071,10 @@ local combatDeferFrame = CreateFrame("Frame")
 combatDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatDeferFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_ENABLED" then
+        if pendingLootFrameHeight and lootFrame then
+            lootFrame:SetHeight(pendingLootFrameHeight)
+            pendingLootFrameHeight = nil
+        end
         if pendingDisableBlizzard then
             pendingDisableBlizzard = false
             DisableBlizzardLoot()
@@ -1391,7 +1412,7 @@ function Loot:ShowLootPreview()
 
     -- Resize
     local height = 40 + (#testItems * (SLOT_HEIGHT + SLOT_SPACING))
-    lootFrame:SetHeight(height)
+    ApplyLootFrameHeight(height)
     lootFrame:Show()
 
     lootPreviewActive = true
