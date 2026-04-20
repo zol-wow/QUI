@@ -7908,12 +7908,6 @@ function ActionBarsOwned:Initialize()
     end
     ownedEventFrame:Show()
 
-    -- Force all action bars enabled so owned buttons function correctly
-    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_1", "1")
-    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_2", "1")
-    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_3", "1")
-    C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_4", "1")
-
     -- Build all managed bars (1-8 + pet/stance)
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         BuildBar(barKey)
