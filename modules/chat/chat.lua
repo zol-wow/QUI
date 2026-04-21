@@ -349,22 +349,38 @@ local function PlayNewMessageSound(event, ...)
     local entries = settings.newMessageSound.entries
     if not entries or #entries == 0 then return end
 
-    -- Skip messages from self (never play when we are the sender)
+    -- Skip messages from self (never play when we are the sender).
+    -- In restricted contexts (raids/M+) whisper payloads and UnitName/UnitGUID
+    -- can return secret values; comparing or string-indexing those taints the
+    -- chat event dispatch and makes Blizzard's ChatHistory_GetAccessID fail on
+    -- its forbidden `accessIDs` table. Bail out of the self-check rather than
+    -- taint — worst case we play one duplicate sound on our own message.
     local guid = select(12, ...)
     local myGUID = UnitGUID("player")
-    if guid and myGUID and guid == myGUID then return end
+    if guid and myGUID
+        and not Helpers.IsSecretValue(guid)
+        and not Helpers.IsSecretValue(myGUID)
+        and guid == myGUID then
+        return
+    end
 
     local author = select(2, ...)
     local playerName = UnitName("player")
-    if author and playerName then
-        local authorHasRealm = author:find("-", 1, true) ~= nil
-        if authorHasRealm then
-            local playerRealm = GetNormalizedRealmName and GetNormalizedRealmName()
-            if playerRealm and author == (playerName .. "-" .. playerRealm) then
+    if author and playerName
+        and type(author) == "string"
+        and not Helpers.IsSecretValue(author)
+        and not Helpers.IsSecretValue(playerName) then
+        local ok, hasRealm = pcall(string.find, author, "-", 1, true)
+        if ok then
+            if hasRealm then
+                local playerRealm = GetNormalizedRealmName and GetNormalizedRealmName()
+                if playerRealm and not Helpers.IsSecretValue(playerRealm)
+                    and author == (playerName .. "-" .. playerRealm) then
+                    return
+                end
+            elseif author == playerName then
                 return
             end
-        elseif author == playerName then
-            return
         end
     end
 
