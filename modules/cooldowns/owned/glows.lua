@@ -727,14 +727,20 @@ end
 ---------------------------------------------------------------------------
 -- CHECK OVERLAY STATE: query API + event-based tracking
 ---------------------------------------------------------------------------
+local function IsOverlayQueryActive(spellID)
+    if not spellID or not IsSpellOverlayed then return false end
+    local ok, result = pcall(IsSpellOverlayed, spellID)
+    return ok and result and true or false
+end
+
 local function IsOverlayed(spellID)
     if not spellID then return false end
-    -- Query API (works for base spell IDs)
+    -- Prefer the live query API whenever it exists. The event cache is a
+    -- fallback for clients/API paths where the query function is unavailable;
+    -- otherwise a missed HIDE event can leave a spell looking permanently procced.
     if IsSpellOverlayed then
-        local ok, result = pcall(IsSpellOverlayed, spellID)
-        if ok and result then return true end
+        return IsOverlayQueryActive(spellID)
     end
-    -- Event-based tracking (catches override IDs and API gaps)
     return overlayedSpells[spellID] or false
 end
 
@@ -754,15 +760,21 @@ local function EvaluateGlowForIcon(icon, includeHidden)
     elseif spellOvr and spellOvr.glowEnabled == true then
         shouldGlow = true
     else
-        shouldGlow = false
-        ForEachIconSpellID(icon, function(spellID)
-            if not shouldGlow and IsOverlayed(spellID) then
-                shouldGlow = true
-            end
-        end)
+        -- First trust the live Blizzard visual on the mirrored child. This
+        -- keeps us aligned with the actual proc state even if overlay events
+        -- were dropped or delayed.
+        shouldGlow = IsBlizzProcVisualActive(icon)
+
+        if not shouldGlow then
+            ForEachIconSpellID(icon, function(spellID)
+                if not shouldGlow and IsOverlayed(spellID) then
+                    shouldGlow = true
+                end
+            end)
+        end
     end
 
-    if not shouldGlow and spellOvr and spellOvr.procOnUsable then
+    if not shouldGlow and spellOvr and spellOvr.procOnUsable == true then
         shouldGlow = IsSpellCastable(icon)
     end
 
