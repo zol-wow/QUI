@@ -1108,6 +1108,29 @@ local function InitContainerPosition(container, trackerKey)
     RestoreContainerPosition(container, trackerKey)
 end
 
+local function EnsureContainerBootstrapSize(container, trackerKey)
+    if not container then return end
+    local cw = Helpers.SafeValue(container:GetWidth(), 0)
+    local ch = Helpers.SafeValue(container:GetHeight(), 0)
+    if cw > 1 and ch > 1 then return end
+
+    local vs = viewerState[container]
+    local boundsW = vs and Helpers.SafeToNumber(vs.cdmIconWidth, 0) or 0
+    local boundsH = vs and Helpers.SafeToNumber(vs.cdmTotalHeight, 0) or 0
+    if boundsW > 1 and boundsH > 1 then
+        container:SetSize(boundsW, boundsH)
+        return
+    end
+
+    if trackerKey == "trackedBar" then
+        local db = GetDB()
+        local tbs = db and db.trackedBar
+        container:SetSize((tbs and tbs.barWidth) or 215, (tbs and tbs.barHeight) or 25)
+    else
+        container:SetSize(100, 40)
+    end
+end
+
 -- Blizzard viewer name lookup (used by Edit Mode and position save)
 local VIEWER_NAMES_MAP = {
     essential  = "EssentialCooldownViewer",
@@ -1137,6 +1160,11 @@ local function InitContainers()
     if barAnchorTo == "disabled" then
         InitContainerPosition(containers.trackedBar, "trackedBar")
     end
+
+    EnsureContainerBootstrapSize(containers.essential, "essential")
+    EnsureContainerBootstrapSize(containers.utility, "utility")
+    EnsureContainerBootstrapSize(containers.buff, "buff")
+    EnsureContainerBootstrapSize(containers.trackedBar, "trackedBar")
 
     -- Phase G: Create frames for any custom containers in the unified table
     if db and db.containers then
@@ -1192,11 +1220,14 @@ local function LayoutContainer(trackerKey)
     local container = containers[trackerKey]
     if not container then return end
 
-    -- Never rebuild during combat — Blizzard CooldownFrames adopted onto our
-    -- icons are updated natively.  Rebuilding mid-combat destroys the working
-    -- layout (ClearPool) and may produce wrong positions.
-    -- A full rebuild fires on PLAYER_REGEN_ENABLED via _G.QUI_RefreshNCDM.
-    if InCombatLockdown() then
+    -- Never rebuild most containers during combat — Blizzard CooldownFrames
+    -- adopted onto our icons are updated natively. Rebuilding mid-combat can
+    -- destroy the working layout (ClearPool) and produce wrong positions.
+    --
+    -- Buff icons are the exception: slot-backed aura rows can change identity
+    -- while the summon is active, and the icon container must be allowed to
+    -- rebuild into the shared slot-row set during combat to match buff bars.
+    if InCombatLockdown() and trackerKey ~= "buff" then
         return
     end
 
@@ -1273,18 +1304,14 @@ local function LayoutContainer(trackerKey)
 
         -- Ensure buff container has a minimum size so overlays and anchor
         -- proxies have valid bounds before any buffs are active.
-        -- Size from the underlying Blizzard viewer which auto-sizes from its children.
+        -- Do NOT size from Blizzard's BuffIconCooldownViewer: in some states
+        -- it reports one-icon bounds, which shrinks the owned container and
+        -- clips overlapping slot-backed icons. Prefer the owned-layout bounds
+        -- cached by LayoutBuffIcons() via QUI_SetCDMViewerBounds().
         local cw = Helpers.SafeValue(container:GetWidth(), 0)
         local ch = Helpers.SafeValue(container:GetHeight(), 0)
         if cw <= 1 or ch <= 1 then
-            local blizzViewer = _G["BuffIconCooldownViewer"]
-            if blizzViewer then
-                local bw = Helpers.SafeValue(blizzViewer:GetWidth(), 0)
-                local bh = Helpers.SafeValue(blizzViewer:GetHeight(), 0)
-                if bw > 1 and bh > 1 then
-                    container:SetSize(bw, bh)
-                end
-            end
+            EnsureContainerBootstrapSize(container, "buff")
         end
 
         -- Fingerprint: skip rebuild when the same buff spellIDs are active.
@@ -1293,7 +1320,13 @@ local function LayoutContainer(trackerKey)
         local spellData = ns.CDMSpellData and ns.CDMSpellData:GetSpellList("buff") or {}
         local parts = {}
         for i, entry in ipairs(spellData) do
-            parts[i] = tostring(entry.spellID or 0)
+            parts[i] = table.concat({
+                tostring(entry.spellID or 0),
+                tostring(entry.id or 0),
+                tostring(entry._isTotemInstance and 1 or 0),
+                tostring(entry._totemSlot or 0),
+                tostring(entry._instanceKey or ""),
+            }, ":")
         end
         local fingerprint = table.concat(parts, ",")
 
@@ -1308,10 +1341,10 @@ local function LayoutContainer(trackerKey)
         -- Build addon-owned icons (adopts Blizzard CooldownFrames)
         local allIcons = ns.CDMIcons:BuildIcons("buff", container)
         for _, icon in ipairs(allIcons) do
-            icon:Show()
             -- During Edit Mode, new icons need mouse disabled so clicks
             -- reach Blizzard's .Selection in secure context.
             if Helpers.IsEditModeActive() then
+                icon:Show()
                 icon:EnableMouse(false)
                 _disabledMouseFrames[icon] = true
             end
@@ -1319,8 +1352,15 @@ local function LayoutContainer(trackerKey)
 
         applying[trackerKey] = false
 
-        -- Notify buffbar.lua to position + style icons immediately
-        -- (no delay -- icons are parented and visible, ready for layout)
+        -- Apply full visibility rules before buff icon layout so the
+        -- buffbar callback measures and positions the final shown/hidden
+        -- set, instead of laying out once pre-visibility and again after
+        -- active-only filtering settles.
+        if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
+            ns.CDMIcons:UpdateAllCooldowns()
+        end
+        -- Notify buffbar.lua to position + style icons immediately once
+        -- visibility has settled for this rebuild batch.
         if _G.QUI_OnBuffLayoutReady then
             _G.QUI_OnBuffLayoutReady()
         end

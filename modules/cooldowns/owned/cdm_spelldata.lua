@@ -55,6 +55,13 @@ local scanTimer = nil
 local initialized = false
 local lastSpellFingerprints = { essential = "", utility = "", buff = "" }
 local buffChildrenHooked = false  -- one-time hook for buff viewer aura events
+local FireChangeCallback
+
+-- Per-child cache of resolved totem slot. layoutIndex reads intermittently
+-- secret in combat for secondary slot templates; caching the first plain
+-- read keeps _totemSlot stable across Refresh cycles (prevents flicker).
+-- Weak keys so entries drop when the Blizzard child goes away.
+local _blizzChildToTotemSlot = setmetatable({}, { __mode = "k" })
 
 -- DurationObject cache: Blizzard child → captured DurationObject/start/duration.
 local _spellIDToChild = {}  -- [spellID] = { child1, child2, ... } (built OOC during scan)
@@ -171,6 +178,62 @@ local function _collectChildren(...)
 end
 local function _safeGetChildren(viewer) _collectChildren(viewer:GetChildren()) end
 
+local function _appendUniqueViewerChildren(dst, seen, viewer)
+    if not viewer then return end
+
+    local function addChild(ch)
+        if ch and not seen[ch] then
+            seen[ch] = true
+            dst[#dst + 1] = ch
+        end
+    end
+
+    local ok = pcall(_safeGetChildren, viewer)
+    if ok and _nChildren > 0 then
+        for ci = 1, _nChildren do
+            addChild(_childScratch[ci])
+        end
+    end
+
+    local itemPool = rawget(viewer, "itemFramePool")
+    if itemPool and itemPool.EnumerateActive then
+        for ch in itemPool:EnumerateActive() do
+            addChild(ch)
+        end
+    end
+
+    local pandemicPool = rawget(viewer, "pandemicIconPool")
+    if pandemicPool and pandemicPool.EnumerateActive then
+        for ch in pandemicPool:EnumerateActive() do
+            addChild(ch)
+        end
+    end
+end
+
+local function _isViewerPoolActive(viewer, child)
+    if not viewer or not child then return false end
+
+    local itemPool = rawget(viewer, "itemFramePool")
+    if itemPool and itemPool.EnumerateActive then
+        for activeCh in itemPool:EnumerateActive() do
+            if activeCh == child then
+                return true
+            end
+        end
+    end
+
+    local pandemicPool = rawget(viewer, "pandemicIconPool")
+    if pandemicPool and pandemicPool.EnumerateActive then
+        for activeCh in pandemicPool:EnumerateActive() do
+            if activeCh == child then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 local _childBySpellID = {}  -- [spellID] = { child1, child2, ... } (may span viewers)
 local _childMapDirty = true -- set true on aura/cooldown events, not per-cycle
 do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "CDM_childBySpellID", tbl = _childBySpellID } end
@@ -234,25 +297,23 @@ local function RebuildChildMap()
     wipe(_childBySpellID)
     EnsureViewerFrames()
     for _, viewer in ipairs(VIEWER_FRAMES) do
-        _nChildren = 0
-        local ok = pcall(_safeGetChildren, viewer)
-        if ok and _nChildren > 0 then
-            for ci = 1, _nChildren do
-                local ch = _childScratch[ci]
-                local hasID = ch and (ch.cooldownID or ch.cooldownInfo or ch.auraInstanceID)
-                if hasID then
-                    local cdID = ch.cooldownID
-                    local cachedIDs = ch._resolvedIDs
-                    local ids = cachedIDs and ch._resolvedKey == cdID and cachedIDs or ResolveChildIDs(ch)
-                    for k = 1, #ids do
-                        local sid = ids[k]
-                        local list = _childBySpellID[sid]
-                        if not list then
-                            list = {}
-                            _childBySpellID[sid] = list
-                        end
-                        list[#list + 1] = ch
+        local seenChildren = {}
+        local allChildren = {}
+        _appendUniqueViewerChildren(allChildren, seenChildren, viewer)
+        for _, ch in ipairs(allChildren) do
+            local hasID = ch and (ch.cooldownID or ch.cooldownInfo or ch.auraInstanceID)
+            if hasID then
+                local cdID = ch.cooldownID
+                local cachedIDs = ch._resolvedIDs
+                local ids = cachedIDs and ch._resolvedKey == cdID and cachedIDs or ResolveChildIDs(ch)
+                for k = 1, #ids do
+                    local sid = ids[k]
+                    local list = _childBySpellID[sid]
+                    if not list then
+                        list = {}
+                        _childBySpellID[sid] = list
                     end
+                    list[#list + 1] = ch
                 end
             end
         end
@@ -322,12 +383,251 @@ local function FindBuffChildForSpell(viewerType, id1, id2, id3)
     local buffViewer = _G["BuffIconCooldownViewer"]
     local buffBarViewer = _G["BuffBarCooldownViewer"]
     local buffContainer = _G["QUI_BuffContainer"]
-    local primaryViewer = (viewerType == "trackedBar") and buffBarViewer or buffViewer
+    local primaryViewer = buffViewer
     local fallbackViewer = (primaryViewer == buffViewer) and buffBarViewer or buffViewer
 
     local found = _scanViewerForIDs(primaryViewer, buffContainer, id1, id2, id3)
     if found then return found end
     return _scanViewerForIDs(fallbackViewer, buffContainer, id1, id2, id3)
+end
+
+local childTracksSpell
+
+local function SafeMaybeNumber(value)
+    if Helpers.IsSecretValue(value) then
+        return nil
+    end
+    return tonumber(value)
+end
+
+local function ResolveChildTotemSlot(child, explicitSlot)
+    local slot = SafeMaybeNumber(explicitSlot)
+    if slot and slot > 0 then
+        return slot
+    end
+    if not child then return nil end
+    local preferredSlot = SafeMaybeNumber(rawget(child, "preferredTotemUpdateSlot"))
+    if preferredSlot and preferredSlot > 0 then
+        _blizzChildToTotemSlot[child] = preferredSlot
+        return preferredSlot
+    end
+
+    local cachedSlot = _blizzChildToTotemSlot[child]
+    if cachedSlot then
+        return cachedSlot
+    end
+
+    return nil
+end
+
+local function ResolveVirtualAuraState(primaryChild, secondaryChild, explicitSlot)
+    local child = primaryChild or secondaryChild
+    local slot = ResolveChildTotemSlot(child, explicitSlot)
+    local state = { slot = slot }
+
+    local function childMatchesSlot(candidate)
+        if not candidate then return false end
+        local candidateSlot = ResolveChildTotemSlot(candidate, nil)
+        return candidateSlot and slot and candidateSlot == slot
+    end
+
+    if slot then
+        if childMatchesSlot(primaryChild) then
+            child = primaryChild
+        elseif childMatchesSlot(secondaryChild) then
+            child = secondaryChild
+        end
+    end
+    state.child = child
+
+    if slot and GetTotemInfo then
+        local tok, _, totemName, _, _, totemIcon = pcall(GetTotemInfo, slot)
+        if tok then
+            state.totemName = totemName
+            state.totemIcon = totemIcon
+        end
+    end
+
+    if slot and GetTotemDuration then
+        local ok, durObj = pcall(GetTotemDuration, slot)
+        if ok and durObj and type(durObj) ~= "number" then
+            -- Totem-slot strategy: do not branch on secret booleans from slot APIs.
+            -- If the slot resolves and yields a DurationObject, treat that object as
+            -- the authoritative active-state source. Display payload comes from the
+            -- slot-bound Blizzard child, not from GetTotemInfo in Lua.
+            state.isActive = true
+            state.auraUnit = "player"
+            state.durObj = durObj
+            state.isTotemInstance = true
+            return state
+        end
+    end
+
+    return state
+end
+
+local function GetChildCooldownID(child)
+    if not child then return nil end
+    return SafeMaybeNumber(rawget(child, "cooldownID"))
+        or SafeMaybeNumber(child.cooldownInfo and rawget(child.cooldownInfo, "cooldownID"))
+end
+
+local function _appendViewerChildren(dst, seen, targetViewer, buffContainer, id1, id2, id3)
+    local function addList(list)
+        if not list then return end
+        for _, ch in ipairs(list) do
+            if _matchesViewer(ch, targetViewer, buffContainer) and not seen[ch] then
+                seen[ch] = true
+                dst[#dst + 1] = ch
+            end
+        end
+    end
+
+    if id1 then addList(_childBySpellID[id1]) end
+    if id2 then addList(_childBySpellID[id2]) end
+    if id3 then addList(_childBySpellID[id3]) end
+end
+
+-- Append bar-viewer sibling children whose layoutIndex corresponds to a
+-- secondary totem slot. For totem-capable CDM entries Blizzard allocates one
+-- child per slot (slot 1 at lidx=1, slot 2 at lidx=2, etc.); only the primary
+-- slot's child carries a readable cooldownID, so the secondary slot is
+-- invisible to _childBySpellID and must be surfaced positionally. lidx is
+-- non-secret even in combat.
+local _totemDebugEnabled = false
+local function _totemDbg(...) if _totemDebugEnabled then print("|cffFF8800[Totem]|r", ...) end end
+
+local function _appendTotemSiblings(dst, seen, primary, viewer)
+    if not viewer or #primary == 0 then
+        _totemDbg("skip viewer=", viewer and viewer:GetName(), "primaryN=", #primary)
+        return
+    end
+    local anchor
+    for _, ch in ipairs(primary) do
+        if ch.viewerFrame == viewer and ch.GetTotemSlot then
+            anchor = ch
+            break
+        end
+    end
+    if not anchor then
+        _totemDbg("no anchor in", viewer:GetName(), "primaryN=", #primary)
+        return
+    end
+    local anchorLidx = SafeMaybeNumber(rawget(anchor, "layoutIndex"))
+    _totemDbg("anchor in", viewer:GetName(), "lidx=", tostring(anchorLidx))
+    if not anchorLidx then return end
+    local numSlots = SafeMaybeNumber((GetNumTotemSlots and GetNumTotemSlots()) or 5) or 5
+    local added = 0
+    local allChildren = {}
+    local viewerSeen = {}
+    _appendUniqueViewerChildren(allChildren, viewerSeen, viewer)
+
+    local anchorIDs = anchor._resolvedIDs or ResolveChildIDs(anchor)
+    local anchorIDSet = {}
+    for _, id in ipairs(anchorIDs or {}) do
+        if id then
+            anchorIDSet[id] = true
+        end
+    end
+
+    local byLidx = {}
+    for _, ch in ipairs(allChildren) do
+        if ch and ch.GetTotemSlot then
+            local lidx = SafeMaybeNumber(rawget(ch, "layoutIndex"))
+            if lidx and lidx >= 1 and lidx <= numSlots then
+                byLidx[lidx] = byLidx[lidx] or ch
+            end
+        end
+    end
+
+    local function childMatchesAnchorSpell(ch)
+        if not ch then return nil end
+        local ids = ch._resolvedIDs or ResolveChildIDs(ch)
+        if ids and #ids > 0 then
+            for _, id in ipairs(ids) do
+                if anchorIDSet[id] then
+                    return true
+                end
+            end
+            return false
+        end
+        return nil
+    end
+
+    local function walkDirection(step)
+        local lidx = anchorLidx + step
+        while lidx >= 1 and lidx <= numSlots do
+            local ch = byLidx[lidx]
+            if not ch or ch == anchor then
+                break
+            end
+            local match = childMatchesAnchorSpell(ch)
+            if match == false then
+                _totemDbg("  stop at lidx=", lidx, "(different spell)")
+                break
+            end
+            if not seen[ch] then
+                seen[ch] = true
+                dst[#dst + 1] = ch
+                added = added + 1
+                _totemDbg("  added sibling lidx=", lidx)
+            end
+            lidx = lidx + step
+        end
+    end
+
+    walkDirection(1)
+    walkDirection(-1)
+    _totemDbg("total siblings added:", added, "from", viewer:GetName())
+end
+
+SLASH_QUI_TOTEMDBG1 = "/totemdbg"
+SlashCmdList["QUI_TOTEMDBG"] = function()
+    _totemDebugEnabled = not _totemDebugEnabled
+    print("Totem debug:", _totemDebugEnabled and "ON" or "OFF")
+end
+
+local function GetBuffChildrenForSpell(viewerType, id1, id2, id3)
+    RebuildChildMap()
+    local buffViewer = _G["BuffIconCooldownViewer"]
+    local buffBarViewer = _G["BuffBarCooldownViewer"]
+    local buffContainer = _G["QUI_BuffContainer"]
+    local primaryViewer = (viewerType == "trackedBar") and buffBarViewer or buffViewer
+    local fallbackViewer = (primaryViewer == buffViewer) and buffBarViewer or buffViewer
+    local primary, fallback, seenPrimary, seenFallback = {}, {}, {}, {}
+
+    if primaryViewer then
+        _appendViewerChildren(primary, seenPrimary, primaryViewer, buffContainer, id1, id2, id3)
+    end
+    if fallbackViewer then
+        _appendViewerChildren(fallback, seenFallback, fallbackViewer, buffContainer, id1, id2, id3)
+    end
+
+    return primary, fallback
+end
+
+local function ChildHasLiveState(ch, id1, id2, id3)
+    if not ch then return false end
+    if ch.auraInstanceID and childTracksSpell(ch, id1, id2, id3) and C_UnitAuras.GetAuraDataByAuraInstanceID then
+        local unit = ch.auraDataUnit or "player"
+        local vdata = TickCacheGetAuraData(unit, ch.auraInstanceID)
+        if vdata then
+            return true
+        end
+    end
+    local viewer = ch.viewerFrame
+    local pool = viewer and rawget(viewer, "itemFramePool")
+    if pool and pool.EnumerateActive then
+        for activeCh in pool:EnumerateActive() do
+            if activeCh == ch then
+                _totemDbg("live: pool-active lidx=", SafeMaybeNumber(rawget(ch, "layoutIndex")) or "?")
+                return true
+            end
+        end
+    end
+    local ok, shown = pcall(ch.IsShown, ch)
+    _totemDbg("live: fallback shown=", tostring(ok and shown), "lidx=", SafeMaybeNumber(rawget(ch, "layoutIndex")) or "?")
+    return ok and shown or false
 end
 
 function CDMSpellData:InvalidateChildMap()
@@ -341,6 +641,7 @@ end
 
 CDMSpellData.FindChildForSpell = FindChildForSpell
 CDMSpellData.FindBuffChildForSpell = FindBuffChildForSpell
+CDMSpellData.GetBuffChildrenForSpell = GetBuffChildrenForSpell
 CDMSpellData._childBySpellID = _childBySpellID
 
 ---------------------------------------------------------------------------
@@ -446,6 +747,10 @@ local _auraResult = {
     blizzBarChild = nil,
     stacks = nil,
     auraData = nil,
+    totemSlot = nil,
+    totemName = nil,
+    totemIcon = nil,
+    isTotemInstance = false,
 }
 
 local function WipeAuraResult()
@@ -457,11 +762,15 @@ local function WipeAuraResult()
     _auraResult.blizzBarChild = nil
     _auraResult.stacks = nil
     _auraResult.auraData = nil
+    _auraResult.totemSlot = nil
+    _auraResult.totemName = nil
+    _auraResult.totemIcon = nil
+    _auraResult.isTotemInstance = false
 end
 
 --- Validate that a Blizzard child still tracks the given spell IDs.
 --- Prevents cross-contamination from recycled children.
-local function childTracksSpell(ch, spellID, altID1, altID2)
+childTracksSpell = function(ch, spellID, altID1, altID2)
     if not ch then return false end
     local ids = ch._resolvedIDs
     if not ids then return true end
@@ -507,12 +816,104 @@ function CDMSpellData:ResolveAuraState(params)
     -----------------------------------------------------------------------
     local buffIconViewer = _G["BuffIconCooldownViewer"]
     local buffBarViewer  = _G["BuffBarCooldownViewer"]
-    local expectedPrimary = (viewerType == "trackedBar") and buffBarViewer or buffIconViewer
+    local explicitTotemSlot = params.totemSlot
+    local disableLooseVisibilityFallback = params.disableLooseVisibilityFallback
 
-    -- Validate cached blzChild. If its resolved IDs still match but it is
-    -- from the non-preferred viewer, demote it to blzBarChild so callers'
-    -- write-backs (entry._blizzChild) stay viewer-correct while phase 3
-    -- keeps access to its auraInstanceID.
+    local function scoreSlotChild(child, slot)
+        if not child or not slot then return -1 end
+        local childSlot = ResolveChildTotemSlot(child, nil)
+        if not childSlot or childSlot ~= slot then
+            return -1
+        end
+        local score = 0
+        if _isViewerPoolActive(child.viewerFrame, child) then
+            score = score + 4
+        end
+        if child.cooldownInfo then
+            score = score + 2
+        end
+        if child.auraInstanceID then
+            score = score + 1
+        end
+        if child._cachedCdInfo then
+            score = score + 1
+        end
+        local prefSlot = SafeMaybeNumber(rawget(child, "preferredTotemUpdateSlot"))
+        if prefSlot and prefSlot == slot then
+            score = score + 1
+        end
+        return score
+    end
+
+    local function childHasReadableTexture(child)
+        if not child then return false end
+        local iconRegion = child.Icon or child.icon
+        local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
+        if texRegion and texRegion.GetTexture then
+            local ok, tex = pcall(texRegion.GetTexture, texRegion)
+            return ok and tex ~= nil
+        end
+        return false
+    end
+
+    local function scoreDisplayChild(child, slot)
+        local score = scoreSlotChild(child, slot)
+        if score < 0 then return score end
+        if CDMSpellData.GetChildSpellName and CDMSpellData.GetChildSpellName(child) then
+            score = score + 3
+        end
+        if childHasReadableTexture(child) then
+            score = score + 3
+        end
+        if child.cooldownInfo then
+            score = score + 1
+        end
+        return score
+    end
+
+    local function scoreFillChild(child, slot)
+        local score = scoreSlotChild(child, slot)
+        if score < 0 then return score end
+        if child.Bar then
+            score = score + 3
+        end
+        if child.Cooldown then
+            score = score + 2
+        end
+        if child.auraInstanceID then
+            score = score + 2
+        end
+        return score
+    end
+
+    local function findViewerChildForSlot(targetViewer, slot, id1, id2, id3)
+        if not targetViewer or not slot then return nil end
+        RebuildChildMap()
+        local bestChild
+        local bestScore = -1
+        local seen = {}
+
+        local function considerList(list)
+            if not list then return end
+            for _, ch in ipairs(list) do
+                if ch and not seen[ch] and _matchesViewer(ch, targetViewer, nil) then
+                    seen[ch] = true
+                    local score = scoreSlotChild(ch, slot)
+                    if score > bestScore then
+                        bestScore = score
+                        bestChild = ch
+                    end
+                end
+            end
+        end
+
+        if id1 then considerList(_childBySpellID[id1]) end
+        if id2 then considerList(_childBySpellID[id2]) end
+        if id3 then considerList(_childBySpellID[id3]) end
+
+        return bestChild
+    end
+
     if blzChild then
         local idsMatch = false
         local ids = blzChild._resolvedIDs
@@ -529,7 +930,7 @@ function CDMSpellData:ResolveAuraState(params)
         local vf = blzChild.viewerFrame
         if not idsMatch then
             blzChild = nil
-        elseif vf ~= expectedPrimary then
+        elseif not explicitTotemSlot and vf ~= buffIconViewer then
             if not blzBarChild and vf == buffBarViewer then
                 blzBarChild = blzChild
             end
@@ -554,8 +955,115 @@ function CDMSpellData:ResolveAuraState(params)
         blzBarChild = _scanViewerForIDs(buffBarViewer, nil,
             auraSpellID, entrySpellID, entryID)
     end
+    if explicitTotemSlot then
+        local slotIconChild = findViewerChildForSlot(
+            buffIconViewer,
+            explicitTotemSlot,
+            auraSpellID,
+            entrySpellID,
+            entryID
+        )
+        if slotIconChild then
+            blzChild = slotIconChild
+        end
+        local slotBarChild = findViewerChildForSlot(
+            buffBarViewer,
+            explicitTotemSlot,
+            auraSpellID,
+            entrySpellID,
+            entryID
+        )
+        if slotBarChild then
+            blzBarChild = slotBarChild
+        end
+
+        local bestDisplayChild = blzChild
+        local bestDisplayScore = scoreDisplayChild(bestDisplayChild, explicitTotemSlot)
+        local bestFillChild = blzBarChild
+        local bestFillScore = scoreFillChild(bestFillChild, explicitTotemSlot)
+
+        local function considerSlotCandidate(candidate)
+            if not candidate then return end
+            local displayScore = scoreDisplayChild(candidate, explicitTotemSlot)
+            if displayScore > bestDisplayScore then
+                bestDisplayScore = displayScore
+                bestDisplayChild = candidate
+            end
+            local fillScore = scoreFillChild(candidate, explicitTotemSlot)
+            if fillScore > bestFillScore then
+                bestFillScore = fillScore
+                bestFillChild = candidate
+            end
+        end
+
+        considerSlotCandidate(blzChild)
+        considerSlotCandidate(blzBarChild)
+        considerSlotCandidate(slotIconChild)
+        considerSlotCandidate(slotBarChild)
+
+        blzChild = bestDisplayChild
+        blzBarChild = bestFillChild
+    end
     r.blizzChild    = blzChild
     r.blizzBarChild = blzBarChild
+
+    if explicitTotemSlot then
+        local virtualState = ResolveVirtualAuraState(blzChild, blzBarChild, explicitTotemSlot)
+        if virtualState.slot then
+            r.totemSlot = virtualState.slot
+            r.totemName = virtualState.totemName
+            r.totemIcon = virtualState.totemIcon
+            r.isTotemInstance = true
+            local vChild = virtualState.child
+            if vChild then
+                local vf = vChild.viewerFrame
+                if vf == buffBarViewer then
+                    r.blizzBarChild = vChild
+                elseif vf == buffIconViewer then
+                    r.blizzChild = vChild
+                end
+            end
+            if virtualState.isActive then
+                r.isActive = true
+                r.auraUnit = virtualState.auraUnit or "player"
+                r.durObj = virtualState.durObj
+                return r
+            end
+        end
+    end
+
+    -- Promote generic aura rows into explicit slot-backed resolution as soon
+    -- as a resolved Blizzard child exposes a real totem slot. This prevents
+    -- generic auraInstanceID lookups from latching onto sibling summons
+    -- (e.g. Wild Imp) and makes the slot the single source of truth.
+    if not explicitTotemSlot then
+        local inferredTotemSlot = ResolveChildTotemSlot(blzChild, nil)
+            or ResolveChildTotemSlot(blzBarChild, nil)
+        if inferredTotemSlot then
+            local virtualState = ResolveVirtualAuraState(blzChild, blzBarChild, inferredTotemSlot)
+            if virtualState.slot then
+                r.totemSlot = virtualState.slot
+                r.totemName = virtualState.totemName
+                r.totemIcon = virtualState.totemIcon
+                r.isTotemInstance = true
+                local vChild = virtualState.child
+                if vChild then
+                    local vf = vChild.viewerFrame
+                    if vf == buffBarViewer then
+                        r.blizzBarChild = vChild
+                    elseif vf == buffIconViewer then
+                        r.blizzChild = vChild
+                    end
+                end
+                if virtualState.isActive then
+                    r.isActive = true
+                    r.auraUnit = virtualState.auraUnit or "player"
+                    r.durObj = virtualState.durObj
+                end
+                return r
+            end
+        end
+    end
 
     -----------------------------------------------------------------------
     -- Phase 3: Direct aura query via child's auraInstanceID
@@ -662,6 +1170,27 @@ function CDMSpellData:ResolveAuraState(params)
             r.auraData = vdata
         end
     end
+    -- 5b. Primary child visibility fallback
+    -- Some Blizzard-tracked summons/buffs expose their active state only by
+    -- showing the viewer child, without a readable player aura or readable
+    -- auraInstanceID path. Mirror the bar-child fallback for the primary
+    -- child so buff icons and tracked bars can both treat a shown child as active.
+    if not isActive and blzChild then
+        if blzChild.auraInstanceID and childTracksSpell(blzChild, auraSpellID, entrySpellID, entryID) then
+            local bok, bshown = pcall(blzChild.IsShown, blzChild)
+            if bok and bshown then
+                childAuraInstID = blzChild.auraInstanceID
+                auraUnit = blzChild.auraDataUnit or "player"
+                isActive = true
+            end
+        end
+        if not disableLooseVisibilityFallback and not isActive then
+            local bok, bshown = pcall(blzChild.IsShown, blzChild)
+            if bok and bshown then
+                isActive = true
+            end
+        end
+    end
     -- 6. Bar-specific: blizzBarChild visibility fallback
     if not isActive and blzBarChild then
         if blzBarChild.auraInstanceID and childTracksSpell(blzBarChild, auraSpellID, entrySpellID, entryID) then
@@ -672,7 +1201,7 @@ function CDMSpellData:ResolveAuraState(params)
                 isActive = true
             end
         end
-        if not isActive then
+        if not disableLooseVisibilityFallback and not isActive then
             local bok, bshown = pcall(blzBarChild.IsShown, blzBarChild)
             if bok and bshown then
                 isActive = true
@@ -693,6 +1222,33 @@ function CDMSpellData:ResolveAuraState(params)
                 local durObj2 = TickCacheGetAuraDuration(dynUnit, dynChild.auraInstanceID)
                 if durObj2 then
                     r.durObj = durObj2
+                end
+            end
+        end
+    end
+
+    -- 8. Totem / virtual-summon detection for non-slot-backed callers.
+    if not isActive and not explicitTotemSlot then
+        local virtualState = ResolveVirtualAuraState(blzChild, blzBarChild, nil)
+        if virtualState.slot then
+            r.totemSlot = virtualState.slot
+            r.totemName = virtualState.totemName
+            r.totemIcon = virtualState.totemIcon
+            r.isTotemInstance = true
+            local vChild = virtualState.child
+            if vChild then
+                local vf = vChild.viewerFrame
+                if vf == buffBarViewer then
+                    r.blizzBarChild = vChild
+                elseif vf == buffIconViewer then
+                    r.blizzChild = vChild
+                end
+            end
+            if virtualState.isActive then
+                isActive = true
+                auraUnit = virtualState.auraUnit or "player"
+                if virtualState.durObj then
+                    r.durObj = virtualState.durObj
                 end
             end
         end
@@ -1152,10 +1708,12 @@ end
 ---------------------------------------------------------------------------
 local buffEventPending = false
 local function OnBuffAuraEvent()
-    -- Debounce: batch rapid aura events into a single rescan + reparent
+    -- Debounce: batch rapid aura events into a single rescan + reparent.
+    -- Keep this short: buff bars already tick on a 100ms loop, so stacking a
+    -- second 100ms debounce here makes slot-backed summons feel visually late.
     if buffEventPending then return end
     buffEventPending = true
-    C_Timer.After(0.1, function()
+    C_Timer.After(0.02, function()
         buffEventPending = false
         -- Rescan buff viewer to update spell list (needed for reparent)
         ScanCooldownViewer("buff")
@@ -1198,39 +1756,44 @@ end
 local function HookBuffViewerChildren()
     if buffChildrenHooked then return end
 
-    local viewer = _G[VIEWER_NAMES["buff"]]
-    if not viewer then return end
+    local function hookViewer(viewerKey)
+        local viewer = _G[VIEWER_NAMES[viewerKey]]
+        if not viewer then return end
 
-    local container = viewer.viewerFrame or viewer
-    local numChildren = container:GetNumChildren()
+        local container = viewer.viewerFrame or viewer
+        local numChildren = container:GetNumChildren()
 
-    for i = 1, numChildren do
-        local child = select(i, container:GetChildren())
-        if child and child ~= viewer.Selection then
-            -- Hook aura lifecycle methods
-            -- TAINT SAFETY: Track hook state in hookedBuffChildren (weak-keyed)
-            -- instead of writing _quiBuffHooked to the Blizzard frame directly.
-            local hookState = hookedBuffChildren[child]
-            if not hookState then
-                hookState = {}
-                hookedBuffChildren[child] = hookState
+        for i = 1, numChildren do
+            local child = select(i, container:GetChildren())
+            if child and child ~= viewer.Selection then
+                -- Hook aura lifecycle methods
+                -- TAINT SAFETY: Track hook state in hookedBuffChildren (weak-keyed)
+                -- instead of writing _quiBuffHooked to the Blizzard frame directly.
+                local hookState = hookedBuffChildren[child]
+                if not hookState then
+                    hookState = {}
+                    hookedBuffChildren[child] = hookState
+                end
+                if child.OnActiveStateChanged and not hookState.active then
+                    hooksecurefunc(child, "OnActiveStateChanged", OnBuffAuraEvent)
+                    hookState.active = true
+                end
+                if child.OnUnitAuraAddedEvent and not hookState.added then
+                    hooksecurefunc(child, "OnUnitAuraAddedEvent", OnBuffAuraEvent)
+                    hookState.added = true
+                end
+                if child.OnUnitAuraRemovedEvent and not hookState.removed then
+                    hooksecurefunc(child, "OnUnitAuraRemovedEvent", OnBuffAuraEvent)
+                    hookState.removed = true
+                end
+                -- Also hook Cooldown frame for DurationObject capture
+                HookChildCooldown(child)
             end
-            if child.OnActiveStateChanged and not hookState.active then
-                hooksecurefunc(child, "OnActiveStateChanged", OnBuffAuraEvent)
-                hookState.active = true
-            end
-            if child.OnUnitAuraAddedEvent and not hookState.added then
-                hooksecurefunc(child, "OnUnitAuraAddedEvent", OnBuffAuraEvent)
-                hookState.added = true
-            end
-            if child.OnUnitAuraRemovedEvent and not hookState.removed then
-                hooksecurefunc(child, "OnUnitAuraRemovedEvent", OnBuffAuraEvent)
-                hookState.removed = true
-            end
-            -- Also hook Cooldown frame for DurationObject capture
-            HookChildCooldown(child)
         end
     end
+
+    hookViewer("buff")
+    hookViewer("trackedBar")
 
     buffChildrenHooked = true
 end
@@ -1591,11 +2154,21 @@ local function ResolveOwnedEntry(entry, containerKey, index)
         else
             resolved.overrideSpellID = displayID
         end
-        -- Get spell name
+        -- Get spell name: try the resolved display/aura ID first, then fall back to
+        -- the original entry ID. This handles cases where the CDM maps an ability to
+        -- an aura/debuff spell ID whose GetSpellInfo returns no name (e.g. target
+        -- debuffs that use internal rank IDs not exposed via C_Spell, or CD-only
+        -- entries like Call Dreadstalkers where the aura ID lookup yields nothing).
         if C_Spell and C_Spell.GetSpellInfo then
-            local ok, info = pcall(C_Spell.GetSpellInfo, resolved.overrideSpellID or displayID)
-            if ok and info then
-                resolved.name = info.name or ""
+            local lookupID = resolved.overrideSpellID or displayID
+            local ok, info = pcall(C_Spell.GetSpellInfo, lookupID)
+            if ok and info and info.name and info.name ~= "" then
+                resolved.name = info.name
+            elseif lookupID ~= entry.id then
+                local ok2, info2 = pcall(C_Spell.GetSpellInfo, entry.id)
+                if ok2 and info2 then
+                    resolved.name = info2.name or ""
+                end
             end
         end
         -- Check for multi-charge spells (runtime + SavedVariables fallback)
@@ -1774,9 +2347,294 @@ local function ResolveOwnedEntry(entry, containerKey, index)
             end
         end
     end
-    resolved._blizzChild = bestChild
+    if bestChild and bestChild.viewerFrame
+        and (bestChild.viewerFrame == buffViewer or bestChild.viewerFrame == buffBarViewer) then
+        resolved._blizzChild = bestChild
+    else
+        resolved._blizzChild = nil
+    end
+    resolved._blizzBarChild = _scanViewerForIDs(buffBarViewer, nil,
+        resolved.overrideSpellID, resolved.spellID, resolved.id)
+    local iconSeedSlot = ResolveChildTotemSlot(resolved._blizzChild, nil)
+    local barSeedSlot = ResolveChildTotemSlot(resolved._blizzBarChild, nil)
+    resolved._isTotemBacked = resolved.isAura and (iconSeedSlot ~= nil or barSeedSlot ~= nil)
 
     return resolved
+end
+
+local function CloneResolvedEntry(entry)
+    local clone = {}
+    for k, v in pairs(entry) do
+        clone[k] = v
+    end
+    return clone
+end
+
+local function BuildAuraInstanceKey(containerKey, child, ordinal)
+    local viewerName = child and child.viewerFrame and child.viewerFrame.GetName and child.viewerFrame:GetName() or nil
+    local auraInstanceID = child and Helpers.SafeValue(child.auraInstanceID, nil)
+    if auraInstanceID then
+        return string.format("%s:%s:%s", containerKey or "aura", viewerName or "viewer", auraInstanceID)
+    end
+    if child then
+        return string.format("%s:%s:%s", containerKey or "aura", viewerName or "viewer", tostring(child))
+    end
+    return string.format("%s:entry:%d", containerKey or "aura", ordinal or 1)
+end
+
+local function ExpandResolvedAuraEntry(containerKey, resolved)
+    local viewerType = (containerKey == "trackedBar") and "trackedBar" or "buff"
+    local primaryChildren, fallbackChildren = GetBuffChildrenForSpell(
+        viewerType,
+        resolved.overrideSpellID,
+        resolved.spellID,
+        resolved.id
+    )
+    local buffViewer = _G["BuffIconCooldownViewer"]
+    local buffBarViewer = _G["BuffBarCooldownViewer"]
+    local activeChildren = {}
+    local byAuraInstanceID = {}
+    local byTotemSlot = {}
+    local byFrameKey = {}
+
+    local function scoreTotemChild(child)
+        if not child then return -1 end
+        local score = 0
+        local viewer = child.viewerFrame
+        if _isViewerPoolActive(viewer, child) then
+            score = score + 4
+        end
+        if child.cooldownInfo then
+            score = score + 2
+        end
+        if child.auraInstanceID then
+            score = score + 1
+        end
+        if child._cachedCdInfo then
+            score = score + 1
+        end
+        if SafeMaybeNumber(rawget(child, "preferredTotemUpdateSlot")) then
+            score = score + 1
+        end
+        return score
+    end
+
+    local function slotHasLiveDuration(slot)
+        if not slot or not GetTotemDuration then return false end
+        local ok, durObj = pcall(GetTotemDuration, slot)
+        return ok and durObj and type(durObj) ~= "number"
+    end
+
+    local anchorCooldownID = GetChildCooldownID(resolved._blizzChild) or GetChildCooldownID(resolved._blizzBarChild)
+
+    local function findAnySlotChild(targetViewer, slot)
+        if not targetViewer or not slot then return nil end
+        local allChildren = {}
+        local seen = {}
+        _appendUniqueViewerChildren(allChildren, seen, targetViewer)
+        local bestChild
+        local bestScore = -1
+        for _, ch in ipairs(allChildren) do
+            local childCooldownID = GetChildCooldownID(ch)
+            local cooldownMatches = (not anchorCooldownID) or (childCooldownID and childCooldownID == anchorCooldownID)
+            if cooldownMatches and ResolveChildTotemSlot(ch, nil) == slot then
+                local score = scoreTotemChild(ch)
+                if score > bestScore then
+                    bestScore = score
+                    bestChild = ch
+                end
+            end
+        end
+        return bestChild
+    end
+
+    if resolved._isTotemBacked then
+        local expanded = {}
+        local candidateSlots = {}
+        local function addCandidateSlot(slot)
+            if slot and slot > 0 and not candidateSlots[slot] then
+                candidateSlots[slot] = true
+            end
+        end
+        addCandidateSlot(ResolveChildTotemSlot(resolved._blizzChild, nil))
+        addCandidateSlot(ResolveChildTotemSlot(resolved._blizzBarChild, nil))
+        for _, ch in ipairs(primaryChildren) do
+            addCandidateSlot(ResolveChildTotemSlot(ch, nil))
+        end
+        for _, ch in ipairs(fallbackChildren) do
+            addCandidateSlot(ResolveChildTotemSlot(ch, nil))
+        end
+        if anchorCooldownID then
+            local function addCooldownLinkedSlots(targetViewer)
+                if not targetViewer then return end
+                local allChildren = {}
+                local seen = {}
+                _appendUniqueViewerChildren(allChildren, seen, targetViewer)
+                for _, ch in ipairs(allChildren) do
+                    if GetChildCooldownID(ch) == anchorCooldownID then
+                        addCandidateSlot(ResolveChildTotemSlot(ch, nil))
+                    end
+                end
+            end
+            addCooldownLinkedSlots(buffViewer)
+            addCooldownLinkedSlots(buffBarViewer)
+        end
+        local numSlots = SafeMaybeNumber((GetNumTotemSlots and GetNumTotemSlots()) or 5) or 5
+        for slot = 1, numSlots do
+            if slotHasLiveDuration(slot) or (containerKey == "buff" and candidateSlots[slot]) then
+                local clone = CloneResolvedEntry(resolved)
+                local primaryChild = findAnySlotChild(buffBarViewer, slot)
+                local fallbackChild = findAnySlotChild(buffViewer, slot)
+                clone._instanceKey = string.format("%s:totem:%d", containerKey or "aura", slot)
+                if containerKey == "trackedBar" then
+                    clone._blizzBarChild = primaryChild or fallbackChild
+                    clone._blizzChild = fallbackChild or primaryChild
+                else
+                    clone._blizzChild = fallbackChild or primaryChild
+                    clone._blizzBarChild = primaryChild or fallbackChild
+                end
+                clone._isTotemInstance = true
+                clone._totemSlot = slot
+                expanded[#expanded + 1] = clone
+            end
+        end
+        if #expanded > 0 then
+            return expanded
+        end
+    end
+
+    local function assignRowChild(row, key, child)
+        if not child then return end
+        local current = row[key]
+        if not current or scoreTotemChild(child) > scoreTotemChild(current) then
+            row[key] = child
+        end
+    end
+
+    local function addActive(children, isPrimary)
+        for _, child in ipairs(children) do
+            if ChildHasLiveState(child, resolved.overrideSpellID, resolved.spellID, resolved.id) then
+                local totemSlot = ResolveChildTotemSlot(child, nil)
+                if totemSlot then
+                    local row = byTotemSlot[totemSlot]
+                    if not row then
+                        row = { primary = nil, fallback = nil, totemSlot = totemSlot }
+                        byTotemSlot[totemSlot] = row
+                        activeChildren[#activeChildren + 1] = row
+                    end
+                    if isPrimary then
+                        assignRowChild(row, "primary", child)
+                    else
+                        assignRowChild(row, "fallback", child)
+                    end
+                else
+                    local auraInstanceID = child and Helpers.SafeValue(child.auraInstanceID, nil)
+                    if auraInstanceID then
+                        local row = byAuraInstanceID[auraInstanceID]
+                        if not row then
+                            row = { primary = nil, fallback = nil, auraInstanceID = auraInstanceID }
+                            byAuraInstanceID[auraInstanceID] = row
+                            activeChildren[#activeChildren + 1] = row
+                        end
+                        if isPrimary then
+                            row.primary = row.primary or child
+                        else
+                            row.fallback = row.fallback or child
+                        end
+                    else
+                        local frameKey = tostring(child)
+                        if not byFrameKey[frameKey] then
+                            local row = { primary = nil, fallback = nil, frameKey = frameKey }
+                            if isPrimary then
+                                row.primary = child
+                            else
+                                row.fallback = child
+                            end
+                            byFrameKey[frameKey] = row
+                            activeChildren[#activeChildren + 1] = row
+                        else
+                            local row = byFrameKey[frameKey]
+                            if isPrimary then
+                                row.primary = row.primary or child
+                            else
+                                row.fallback = row.fallback or child
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    addActive(primaryChildren, true)
+    addActive(fallbackChildren, false)
+
+    _totemDbg("Expand: container=", containerKey, "primaryN=", #primaryChildren,
+        "fallbackN=", #fallbackChildren, "activeN=", #activeChildren)
+
+    -- Slot-backed virtual auras should not fall back to a generic base row
+    -- once their slot instances have collapsed. That creates a teardown
+    -- flash where the summon briefly reappears as a non-slot row before
+    -- the next batch finally removes it.
+    if resolved._isTotemBacked and #activeChildren == 0 then
+        return {}
+    end
+
+    if resolved._isTotemBacked and #activeChildren == 1 then
+        local row = activeChildren[1]
+        local clone = CloneResolvedEntry(resolved)
+        local primaryChild = row.primary
+        local fallbackChild = row.fallback
+        if containerKey == "trackedBar" then
+            clone._blizzBarChild = primaryChild or fallbackChild or resolved._blizzBarChild
+            clone._blizzChild = fallbackChild or primaryChild or resolved._blizzChild
+        else
+            clone._blizzChild = primaryChild or fallbackChild or resolved._blizzChild
+            clone._blizzBarChild = fallbackChild or primaryChild or resolved._blizzBarChild
+        end
+        clone._instanceKey = row.totemSlot
+            and string.format("%s:totem:%d", containerKey or "aura", row.totemSlot)
+            or BuildAuraInstanceKey(containerKey, clone._blizzChild or clone._blizzBarChild, 1)
+        clone._isTotemInstance = row.totemSlot and true or nil
+        clone._totemSlot = row.totemSlot
+        return { clone }
+    end
+
+    if #activeChildren <= 1 then
+        resolved._instanceKey = BuildAuraInstanceKey(containerKey, resolved._blizzChild, 1)
+        return { resolved }
+    end
+
+    local expanded = {}
+    for idx, row in ipairs(activeChildren) do
+        local clone = CloneResolvedEntry(resolved)
+        local primaryChild = row.primary
+        local fallbackChild = row.fallback
+        local keyChild = primaryChild or fallbackChild or resolved._blizzChild
+        clone._instanceKey = BuildAuraInstanceKey(containerKey, keyChild, idx)
+        if containerKey == "trackedBar" then
+            clone._blizzBarChild = primaryChild or fallbackChild or resolved._blizzBarChild
+            clone._blizzChild = fallbackChild or primaryChild or resolved._blizzChild
+        else
+            clone._blizzChild = primaryChild or fallbackChild or resolved._blizzChild
+            clone._blizzBarChild = fallbackChild or primaryChild or resolved._blizzBarChild
+        end
+        -- Only rows that were grouped by a real resolved totem slot are
+        -- allowed to become totem-instance clones. Do not infer slot-backed
+        -- identity here from generic child capabilities; that causes normal
+        -- aura rows to inherit stale _totemSlot state and contaminate the
+        -- icon/bar build paths.
+        if row.totemSlot then
+            clone._isTotemInstance = true
+            clone._totemSlot = row.totemSlot
+        else
+            clone._isTotemInstance = nil
+            clone._totemSlot = nil
+        end
+        expanded[#expanded + 1] = clone
+    end
+
+    return expanded
 end
 
 -- SnapshotBlizzardCDM: One-time capture of Blizzard viewer spells into ownedSpells
@@ -1964,6 +2822,9 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
 
     -- Fallback: merge any viewer-child spells not already found by the API
     -- (handles edge cases where children exist but the API doesn't list them).
+    -- Buff + trackedBar are allowed to cross-pull from each other because they
+    -- are two views of the same aura-backed data. The important boundary is
+    -- against non-aura categories, not between the two aura viewers.
     if scanList and type(scanList) == "table" then
         for _, entry in ipairs(scanList) do
             local sid = entry.spellID
@@ -2057,6 +2918,7 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
 
     -- Resolve entries, preserving row assignment from ownedSpells
     local result = {}
+    local seenInstanceKeys = {}
     for i, entry in ipairs(ownedSpells) do
         if entry and entry.id then
             -- Skip removed spells
@@ -2072,7 +2934,28 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
                 local resolved = ResolveOwnedEntry(entry, containerKey, i)
                 if resolved then
                     resolved._assignedRow = entry.row  -- carry row assignment
-                    result[#result + 1] = resolved
+                    local expanded = resolved
+                    if resolved.isAura then
+                        expanded = ExpandResolvedAuraEntry(containerKey, resolved)
+                    else
+                        resolved._instanceKey = BuildAuraInstanceKey(containerKey, resolved._blizzChild, 1)
+                        expanded = { resolved }
+                    end
+                    for _, expandedEntry in ipairs(expanded) do
+                        local instanceKey = expandedEntry and expandedEntry._instanceKey
+                        local shouldDedupe = expandedEntry and (
+                            expandedEntry._isTotemInstance
+                            or (expandedEntry.isAura and instanceKey and not instanceKey:find(":entry:", 1, true))
+                        )
+                        if shouldDedupe and instanceKey then
+                            if not seenInstanceKeys[instanceKey] then
+                                seenInstanceKeys[instanceKey] = true
+                                result[#result + 1] = expandedEntry
+                            end
+                        else
+                            result[#result + 1] = expandedEntry
+                        end
+                    end
                 end
             end
         end
@@ -2095,6 +2978,7 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
         end)
     end
 
+    _totemDbg("BuildSpellListFromOwned container=", containerKey, "result=", #result)
     return result
 end
 
@@ -2339,9 +3223,6 @@ local HEALTH_ITEMS = {
     { itemID = 5512,   spellID = 6262 },
     { itemID = 224464, spellID = 452930, class = "WARLOCK" },
 }
-
--- Forward declaration: defined in MUTATION HELPERS section below
-local FireChangeCallback
 
 ---------------------------------------------------------------------------
 -- SPELLID RESOLUTION
@@ -3622,16 +4503,37 @@ SlashCmdList["QUI_CDMDUMP"] = function(msg)
     end
     local filterNum = tonumber(filter)
     local viewers = {
+        { name = "EssentialCooldownViewer", type = "ess"  },
+        { name = "UtilityCooldownViewer",   type = "util" },
         { name = "BuffIconCooldownViewer",  type = "icon" },
         { name = "BuffBarCooldownViewer",   type = "bar"  },
     }
     local found = 0
+    local seenChildren = {}
     for _, v in ipairs(viewers) do
         local viewer = _G[v.name]
         if viewer then
+            local allChildren = {}
             local numChildren = viewer:GetNumChildren()
             for i = 1, numChildren do
-                local child = select(i, viewer:GetChildren())
+                local ch = select(i, viewer:GetChildren())
+                if ch and not seenChildren[ch] then
+                    seenChildren[ch] = true
+                    allChildren[#allChildren + 1] = { ch, "GetChildren", i }
+                end
+            end
+            if viewer.itemFramePool and viewer.itemFramePool.EnumerateActive then
+                local idx = 0
+                for ch in viewer.itemFramePool:EnumerateActive() do
+                    idx = idx + 1
+                    if ch and not seenChildren[ch] then
+                        seenChildren[ch] = true
+                        allChildren[#allChildren + 1] = { ch, "PoolActive", idx }
+                    end
+                end
+            end
+            for _, rec in ipairs(allChildren) do
+                local child, source, i = rec[1], rec[2], rec[3]
                 if child then
                     local ci = child.cooldownInfo
                     local childName = ci and Helpers.SafeValue(ci.name, nil)
@@ -3658,9 +4560,14 @@ SlashCmdList["QUI_CDMDUMP"] = function(msg)
                         local auraUnit = child.auraDataUnit or "nil"
                         local cooldownID = ci.cooldownID
                             and Helpers.SafeValue(ci.cooldownID, "secret") or "nil"
-                        print("|cff34D399[CDM-Dump]|r", v.type, "#" .. i, childName)
+                        local totemSlot = child.totemSlot
+                            and Helpers.SafeValue(child.totemSlot, "secret") or "nil"
+                        local layoutIdx = child.layoutIndex
+                            and Helpers.SafeValue(child.layoutIndex, "secret") or "nil"
+                        print("|cff34D399[CDM-Dump]|r", v.type, source .. "#" .. i, childName)
                         print("  spellID=", sid, "overrideSpellID=", ov)
                         print("  iconFileID=", iconFile, "cooldownID=", cooldownID)
+                        print("  totemSlot=", totemSlot, "layoutIndex=", layoutIdx)
                         print("  wasSetFromAura=", tostring(wasAura),
                               "useAuraDisplayTime=", tostring(useAuraTime))
                         print("  shown=", tostring(shown),
@@ -3708,6 +4615,147 @@ SlashCmdList["QUI_CDMDUMP"] = function(msg)
         print("|cff34D399[CDM-Dump]|r No viewer children matching '" .. msg .. "'")
     else
         print("|cff34D399[CDM-Dump]|r", found, "children found")
+    end
+    if filterNum then
+        RebuildChildMap()
+        local list = _childBySpellID[filterNum]
+        local n = list and #list or 0
+        print("|cff34D399[CDM-Dump]|r _childBySpellID[" .. filterNum .. "] =",
+            n, "entr" .. (n == 1 and "y" or "ies"))
+        if list then
+            for i, ch in ipairs(list) do
+                local parent = ch:GetParent()
+                local pname = parent and parent:GetName() or "nil"
+                local cdID = ch.cooldownID or "nil"
+                local totSlot = ch.totemSlot and Helpers.SafeValue(ch.totemSlot, "secret") or "nil"
+                print("  [" .. i .. "] parent=", pname,
+                    "cooldownID=", cdID, "totemSlot=", totSlot)
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- DEBUG: /cdmdumpall [viewer] — dump every child from a viewer, plus
+-- GetTotemInfo per slot. Taint-light variant: reads only safe frame
+-- methods (GetName/GetObjectType/GetID) and rawget on non-secret keys
+-- (layoutIndex, cooldownID). Does NOT access cooldownInfo, totemData, or
+-- call Get* accessor methods on Blizzard viewer children (those return
+-- secret values and poison Blizzard's own CDM state).
+-- viewer: ess | util | icon | bar | all (default: all)
+---------------------------------------------------------------------------
+SLASH_QUI_CDMDUMPALL1 = "/cdmdumpall"
+SlashCmdList["QUI_CDMDUMPALL"] = function(msg)
+    local which = (msg and strtrim(msg):lower()) or "all"
+    if which == "" then which = "all" end
+    local map = {
+        ess  = { "EssentialCooldownViewer" },
+        util = { "UtilityCooldownViewer" },
+        icon = { "BuffIconCooldownViewer" },
+        bar  = { "BuffBarCooldownViewer" },
+        all  = { "EssentialCooldownViewer", "UtilityCooldownViewer",
+                 "BuffIconCooldownViewer", "BuffBarCooldownViewer" },
+    }
+    local names = map[which]
+    if not names then
+        print("|cff34D399[CDM-DumpAll]|r Usage: /cdmdumpall [ess|util|icon|bar|all]")
+        return
+    end
+    for _, vname in ipairs(names) do
+        local viewer = _G[vname]
+        if not viewer then
+            print("|cff34D399[CDM-DumpAll]|r", vname, "not found")
+        else
+            local seen = {}
+            local rows = {}
+            local numChildren = viewer:GetNumChildren()
+            for i = 1, numChildren do
+                local ch = select(i, viewer:GetChildren())
+                if ch and not seen[ch] then
+                    seen[ch] = true
+                    rows[#rows+1] = { ch, "GC", i }
+                end
+            end
+            -- Enumerate the Blizzard item pool too — totem-spawned bars often
+            -- live here rather than among the template GetChildren set.
+            local poolCount = 0
+            if rawget(viewer, "itemFramePool") then
+                local pool = rawget(viewer, "itemFramePool")
+                if pool and pool.EnumerateActive then
+                    local idx = 0
+                    for ch in pool:EnumerateActive() do
+                        idx = idx + 1
+                        poolCount = poolCount + 1
+                        if ch and not seen[ch] then
+                            seen[ch] = true
+                            rows[#rows+1] = { ch, "Pool", idx }
+                        end
+                    end
+                end
+            end
+            -- Also peek at the pandemic icon pool (some effect buffs/totems may use it).
+            local pandemicCount = 0
+            if rawget(viewer, "pandemicIconPool") then
+                local pool = rawget(viewer, "pandemicIconPool")
+                if pool and pool.EnumerateActive then
+                    local idx = 0
+                    for ch in pool:EnumerateActive() do
+                        idx = idx + 1
+                        pandemicCount = pandemicCount + 1
+                        if ch and not seen[ch] then
+                            seen[ch] = true
+                            rows[#rows+1] = { ch, "Pand", idx }
+                        end
+                    end
+                end
+            end
+            print(string.format(
+                "|cff34D399[CDM-DumpAll]|r %s — %d total (GC=%d Pool=%d Pand=%d)",
+                vname, #rows, numChildren, poolCount, pandemicCount))
+            for _, rec in ipairs(rows) do
+                local ch, src, i = rec[1], rec[2], rec[3]
+                -- Safe: basic frame methods + rawget on shallow non-secret keys.
+                local otype = ch.GetObjectType and ch:GetObjectType() or "?"
+                local fname = ch.GetName and ch:GetName() or "?"
+                local fid = ch.GetID and ch:GetID() or "?"
+                local lidx = rawget(ch, "layoutIndex")
+                local cdID = rawget(ch, "cooldownID")
+                local hasTotemData = rawget(ch, "totemData") ~= nil
+                local prefSlot = rawget(ch, "preferredTotemUpdateSlot")
+                local shown = ch.IsShown and ch:IsShown()
+                local w = ch.GetWidth and ch:GetWidth() or 0
+                local h = ch.GetHeight and ch:GetHeight() or 0
+                local alpha = ch.GetAlpha and ch:GetAlpha() or 0
+                print(string.format(
+                    "  [%s#%d] %s name=%s id=%s lidx=%s cdID=%s totemData=%s prefSlot=%s shown=%s size=%.0fx%.0f alpha=%.2f",
+                    src, i, tostring(otype), tostring(fname), tostring(fid),
+                    tostring(Helpers.SafeValue(lidx, "secret")),
+                    tostring(Helpers.SafeValue(cdID, "secret")),
+                    tostring(hasTotemData),
+                    tostring(Helpers.SafeValue(prefSlot, "secret")),
+                    tostring(shown), w, h, alpha))
+            end
+        end
+    end
+    -- Per-slot GetTotemInfo dump (non-viewer-child path; low taint risk).
+    local numSlots = Helpers.SafeValue(
+        (GetNumTotemSlots and GetNumTotemSlots()) or 5, 5)
+    for slot = 1, numSlots do
+        local r1, r2, r3, r4, r5, r6, r7, r8 = GetTotemInfo(slot)
+        local safeHas = Helpers.SafeValue(r1, false)
+        if safeHas == true then
+            print(string.format(
+                "|cff34D399[CDM-DumpAll]|r TotemSlot[%d] r1=%s r2=%s r3=%s r4=%s r5=%s r6=%s r7=%s r8=%s",
+                slot,
+                tostring(Helpers.SafeValue(r1, "secret")),
+                tostring(Helpers.SafeValue(r2, "secret")),
+                tostring(Helpers.SafeValue(r3, "secret")),
+                tostring(Helpers.SafeValue(r4, "secret")),
+                tostring(Helpers.SafeValue(r5, "secret")),
+                tostring(Helpers.SafeValue(r6, "secret")),
+                tostring(Helpers.SafeValue(r7, "secret")),
+                tostring(Helpers.SafeValue(r8, "secret"))))
+        end
     end
 end
 

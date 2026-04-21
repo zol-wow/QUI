@@ -1101,14 +1101,8 @@ UpdateBuffIcons = function()
     if not settings then return end
     if previewActive then return end
     if not settings.enableBuffs or settings.hideBuffFrame then
-        if not InCombatLockdown() then
-            buffContainer:Hide()
-        end
         buffContainer:SetAlpha(0)
         return
-    end
-    if not buffContainer:IsShown() and not InCombatLockdown() then
-        buffContainer:Show()
     end
     buffContainer:SetAlpha(1)
     StyleHeaderChildren(buffContainer, settings, true)
@@ -1139,14 +1133,8 @@ UpdateDebuffIcons = function()
     if not settings then return end
     if previewActive then return end
     if not settings.enableDebuffs or settings.hideDebuffFrame then
-        if not InCombatLockdown() then
-            debuffContainer:Hide()
-        end
         debuffContainer:SetAlpha(0)
         return
-    end
-    if not debuffContainer:IsShown() and not InCombatLockdown() then
-        debuffContainer:Show()
     end
     debuffContainer:SetAlpha(1)
     StyleHeaderChildren(debuffContainer, settings, false)
@@ -1355,13 +1343,11 @@ local function Init()
     -- Setup private aura display for player
     SetupPrivateAuras()
 
-    -- Show headers to activate aura tracking (only if enabled)
-    if settings and settings.enableBuffs and not settings.hideBuffFrame then
-        buffContainer:Show()
-    end
-    if settings and settings.enableDebuffs and not settings.hideDebuffFrame then
-        debuffContainer:Show()
-    end
+    -- Keep secure headers alive and drive runtime visibility with alpha.
+    -- Addon-driven Show()/Hide() on SecureAuraHeaderTemplate can taint
+    -- Blizzard's restricted aura sort path when it compares secret values.
+    buffContainer:SetAlpha((settings and settings.enableBuffs and not settings.hideBuffFrame) and 1 or 0)
+    debuffContainer:SetAlpha((settings and settings.enableDebuffs and not settings.hideDebuffFrame) and 1 or 0)
 
     -- Hook the header's OnEvent to style children when auras change.
     buffContainer:HookScript("OnEvent", function()

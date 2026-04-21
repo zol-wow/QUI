@@ -54,6 +54,7 @@ local C_Item = C_Item
 local C_CooldownViewer = C_CooldownViewer
 local C_StringUtil = C_StringUtil
 local issecretvalue = issecretvalue
+local DebugIconSwipe
 
 local function IsSafeNumeric(val)
     if IsSecretValue(val) then return false end
@@ -227,6 +228,39 @@ local function FindChildForSpell(id1, id2, id3)
 end
 local function FindBuffChildForSpell(viewerType, id1, id2, id3)
     return ns.CDMSpellData.FindBuffChildForSpell(viewerType, id1, id2, id3)
+end
+
+local function IsTotemSlotEntry(entry)
+    return entry and entry._isTotemInstance and entry._totemSlot ~= nil
+end
+
+local DumpDebugIcon
+
+local function QueueTotemSlotRebuild(icon, entry, r)
+    if not icon or icon._pendingTotemSlotRefresh then return end
+    if not entry or IsTotemSlotEntry(entry) then return end
+    if entry.viewerType ~= "buff" then return end
+
+    local child = (r and (r.blizzChild or r.blizzBarChild)) or entry._blizzChild or entry._blizzBarChild
+    local pref = child and rawget(child, "preferredTotemUpdateSlot")
+    local hasExplicitSlotSignal = pref ~= nil and not Helpers.IsSecretValue(pref) and tonumber(pref) ~= nil
+    local shouldRebuild = (r and r.isTotemInstance and r.totemSlot) or hasExplicitSlotSignal
+    if not shouldRebuild then
+        return
+    end
+
+    icon._pendingTotemSlotRefresh = true
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if _G.QUI_OnBuffDataChanged then
+                _G.QUI_OnBuffDataChanged()
+            elseif _G.QUI_OnSpellDataChanged then
+                _G.QUI_OnSpellDataChanged()
+            elseif _G.QUI_RefreshNCDM then
+                _G.QUI_RefreshNCDM()
+            end
+        end)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -522,6 +556,25 @@ local function ApplyResolvedCooldown(cd, startTime, duration, durObj, reverse)
     return ApplyCooldownFromStart(cd, durObj, startTime, duration, nil, reverse)
 end
 
+local function CooldownHasExpiredNow(startTime, duration, durObj, now)
+    if durObj and durObj.IsZero then
+        local ok, isZero = pcall(durObj.IsZero, durObj)
+        if ok and isZero then
+            return true
+        end
+    end
+    if durObj and durObj.GetRemainingDuration then
+        local ok, remaining = pcall(durObj.GetRemainingDuration, durObj)
+        if ok and remaining and not IsSecretValue(remaining) then
+            return remaining <= 0.02
+        end
+    end
+    if IsSafeNumeric(startTime) and IsSafeNumeric(duration) and duration > 0 then
+        return ((startTime + duration) - (now or GetTime())) <= 0.02
+    end
+    return false
+end
+
 -- Expose for external use
 CDMIcons.GetBestSpellCooldown = GetBestSpellCooldown
 CDMCooldown.GetBestSpellCooldown = GetBestSpellCooldown
@@ -742,15 +795,36 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 -- viewer child can fire stale DurationObjects after our Clear(),
                 -- re-applying the swipe and causing a visual delay on procs/resets.
                 local tSkipInactive = (targetIcon._hasCooldownActive == false)
+                local tIsZero = false
+                if durationObj and durationObj.IsZero then
+                    local okZero, isZero = pcall(durationObj.IsZero, durationObj)
+                    if okZero and isZero then
+                        tIsZero = true
+                    end
+                end
 
-                if not tSkipCharge and not tSkipAura and not tSkipInactive and cd and cd.SetCooldownFromDurationObject then
+                if tIsZero then
+                    if cd and cd.Clear then
+                        pcall(cd.Clear, cd)
+                    end
+                    targetIcon._durObjHookSync = nil
+                    DebugIconSwipe(targetIcon, "mirror-clear-zero",
+                        "shown=", tostring(targetIcon:IsShown()),
+                        "auraActive=", tostring(targetIcon._auraActive),
+                        "hasCooldownActive=", tostring(targetIcon._hasCooldownActive))
+                elseif not tSkipCharge and not tSkipAura and not tSkipInactive and cd and cd.SetCooldownFromDurationObject then
                     pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
                     -- Track that this hook successfully forwarded a DurationObject
                     -- so the API path can skip competing CooldownFrame writes.
                     targetIcon._durObjHookSync = GetTime()
+                    DebugIconSwipe(targetIcon, "mirror-apply-durObj",
+                        "shown=", tostring(targetIcon:IsShown()),
+                        "auraActive=", tostring(targetIcon._auraActive),
+                        "hasCooldownActive=", tostring(targetIcon._hasCooldownActive))
                 end
                 ChargeDebug(tEntry and tEntry.name, "MIRROR hook: tSkipCharge=", tSkipCharge,
                     "tSkipAura=", tSkipAura, "tSkipInactive=", tSkipInactive,
+                    "tIsZero=", tIsZero,
                     "_hasCooldownActive=", targetIcon._hasCooldownActive)
 
                 if not tSkipCharge and not tSkipAura then
@@ -1228,7 +1302,7 @@ local function CreateIcon(parent, spellEntry)
         pcall(GameTooltip.Hide, GameTooltip)
     end)
 
-    icon:Show()
+    icon:Hide()
     return icon
 end
 
@@ -1785,6 +1859,19 @@ local _showGCDSwipe = false
 -- the icon shows the recharge/cooldown timer instead of the aura duration.
 local _showBuffSwipe = true
 
+local function GetChildIconTexture(child)
+    if not child then return nil end
+    local blzIcon = child.Icon or child.icon
+    local texRegion = blzIcon and (blzIcon.Icon or blzIcon.icon or blzIcon)
+    if texRegion and texRegion.GetTexture then
+        local ok, tex = pcall(texRegion.GetTexture, texRegion)
+        if ok then
+            return tex
+        end
+    end
+    return nil
+end
+
 local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
@@ -1822,16 +1909,22 @@ local function UpdateIconCooldown(icon)
                     p.viewerType = entry.viewerType
                     p.blizzChild = entry._blizzChild
                     p.blizzBarChild = entry._blizzBarChild
+                    p.totemSlot = IsTotemSlotEntry(entry) and entry._totemSlot or nil
+                    p.disableLooseVisibilityFallback = true
 
                     local r = ns.CDMSpellData:ResolveAuraState(p)
+                    local isTotemSlot = IsTotemSlotEntry(entry)
+                    icon._totemSlot = entry._totemSlot or nil
                     if r.blizzChild and r.blizzChild ~= entry._blizzChild then
                         -- Blizzard child changed — reconnect mirror/texture/stack
                         -- hooks to the new child. Old hooks on the previous child
                         -- self-disable via stale mapping guards in each callback.
                         entry._blizzChild = r.blizzChild
-                        MirrorBlizzCooldown(icon, r.blizzChild)
-                        HookBlizzTexture(icon, r.blizzChild)
-                        HookBlizzStackText(icon, r.blizzChild)
+                        if not isTotemSlot then
+                            MirrorBlizzCooldown(icon, r.blizzChild)
+                            HookBlizzTexture(icon, r.blizzChild)
+                            HookBlizzStackText(icon, r.blizzChild)
+                        end
                     end
                     -- Cache bar-viewer counterpart so the next tick passes it
                     -- through without rescanning BuffBarCooldownViewer.
@@ -1840,6 +1933,7 @@ local function UpdateIconCooldown(icon)
                     if r.isActive then
                         icon._auraActive = true
                         icon._auraUnit = r.auraUnit
+                        icon._isTotemInstance = isTotemSlot or nil
 
                         if icon.Cooldown and r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
                             pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
@@ -1852,9 +1946,12 @@ local function UpdateIconCooldown(icon)
                         -- hook by 1+ frames and may return secret values in
                         -- combat — only use it as a fallback when hooks aren't
                         -- actively driving stack text for this icon.
-                        local _auraHookActive = IsHookStackActive(entry, icon)
+                        local _auraHookActive = (not r.isTotemInstance) and IsHookStackActive(entry, icon)
                         if not _auraHookActive then
-                            if r.stacks then
+                            if r.isTotemInstance then
+                                icon.StackText:SetText("")
+                                icon.StackText:Hide()
+                            elseif r.stacks then
                                 -- Charged abilities: "0" is meaningful (all
                                 -- charges depleted). Only truncate zero for
                                 -- non-charged resource stacks.
@@ -1871,31 +1968,33 @@ local function UpdateIconCooldown(icon)
                         end
 
                         -- Keep texture showing the active aura buff.
-                        -- Spells like Roll the Bones cycle between multiple
-                        -- buff IDs — mirror the Blizzard child's live Icon
-                        -- texture each tick. linkedSpellIDs[1] is always
-                        -- the first entry of the linked set (wrong buff in
-                        -- combat once a different one is rolled); the
-                        -- child's Icon region is Blizzard-driven and
-                        -- tracks the active buff. Texture may be secret
-                        -- in combat — forward C-side, no Lua comparison.
+                        -- Totem instances use slot payloads from GetTotemInfo:
+                        -- active state comes from GetTotemDuration(slot),
+                        -- display icon comes from the same slot.
                         if icon.Icon then
                             local mirrored = false
-                            if entry._blizzChild then
-                                local blzIcon = entry._blizzChild.Icon or entry._blizzChild.icon
-                                local texRegion = blzIcon and (blzIcon.Icon or blzIcon.icon or blzIcon)
-                                if texRegion and texRegion.GetTexture then
-                                    local tok, tex = pcall(texRegion.GetTexture, texRegion)
-                                    if tok and tex then
-                                        pcall(icon.Icon.SetTexture, icon.Icon, tex)
-                                        mirrored = true
-                                    end
+                            if r.isTotemInstance then
+                                if r.totemIcon then
+                                    icon._totemIconCache = r.totemIcon
+                                end
+                                local totemTex = r.totemIcon or icon._totemIconCache
+                                if totemTex then
+                                    icon._desiredTexture = nil
+                                    pcall(icon.Icon.SetTexture, icon.Icon, totemTex)
+                                    icon._lastTexture = totemTex
+                                    mirrored = true
+                                end
+                            elseif entry._blizzChild then
+                                local tex = GetChildIconTexture(entry._blizzChild)
+                                if tex then
+                                    pcall(icon.Icon.SetTexture, icon.Icon, tex)
+                                    mirrored = true
                                 end
                             end
                             -- Fallback: auraData.icon then base aura spell
                             -- texture (used when child Icon region isn't
                             -- yet resolvable, e.g. first show).
-                            if not mirrored then
+                            if not mirrored and not r.isTotemInstance then
                                 local texID
                                 if r.auraData then
                                     local aIcon = SafeValue(r.auraData.icon, nil)
@@ -1915,11 +2014,13 @@ local function UpdateIconCooldown(icon)
                         return  -- Aura path complete
                     else
                         icon._auraActive = false
+                        icon._isTotemInstance = nil
+                        icon._totemSlot = entry._totemSlot or nil
                         if icon.Cooldown then icon.Cooldown:Clear() end
 
                         -- Only clear our StackText overlay if Blizzard's
                         -- native stack frames aren't actively displaying.
-                        if not IsHookStackActive(entry, icon) then
+                        if r.isTotemInstance or not IsHookStackActive(entry, icon) then
                             icon.StackText:SetText("")
                             icon.StackText:Hide()
                         end
@@ -2003,6 +2104,7 @@ local function UpdateIconCooldown(icon)
                 -- When buff/debuff swipe is disabled, skip aura detection
                 -- so the icon shows the recharge/cooldown timer instead.
                 local _ncAuraActive = false
+                local _ncTotemTexture = nil
                 if ns.CDMSpellData and _showBuffSwipe then
                     local p = icon._auraParams or {}
                     icon._auraParams = p
@@ -2013,12 +2115,26 @@ local function UpdateIconCooldown(icon)
                     p.viewerType = entry.viewerType
                     p.blizzChild = entry._blizzChild
                     p.blizzBarChild = entry._blizzBarChild
+                    p.totemSlot = IsTotemSlotEntry(entry) and entry._totemSlot or nil
+                    p.disableLooseVisibilityFallback = true
 
                     local r = ns.CDMSpellData:ResolveAuraState(p)
                     entry._blizzBarChild = r.blizzBarChild
 
                     if r.isActive then
                         _ncAuraActive = true
+                        icon._totemSlot = entry._totemSlot or nil
+                        if IsTotemSlotEntry(entry) then
+                            icon._isTotemInstance = true
+                            if r.totemIcon then
+                                icon._totemIconCache = r.totemIcon
+                            end
+                            _ncTotemTexture = r.totemIcon or icon._totemIconCache
+                            icon.StackText:SetText("")
+                            icon.StackText:Hide()
+                        else
+                            icon._isTotemInstance = nil
+                        end
                         icon._auraActive = true
                         icon._auraUnit = r.auraUnit
                         if icon.Cooldown and r.durObj and icon.Cooldown.SetCooldownFromDurationObject then
@@ -2027,6 +2143,8 @@ local function UpdateIconCooldown(icon)
                             ReapplySwipeStyle(icon.Cooldown, icon)
                         end
                     else
+                        icon._isTotemInstance = nil
+                        icon._totemSlot = entry._totemSlot or nil
                         if icon._auraActive then
                             icon._auraActive = false
                             if icon.Cooldown then
@@ -2085,7 +2203,11 @@ local function UpdateIconCooldown(icon)
                 -- texture bleed (e.g. Outbreak → Virulent Plague).
                 -- Uses persistent _textureCycleCache (wiped on SPELLS_CHANGED)
                 -- so GetSpellInfo isn't called 20×/sec per icon.
-                if icon.Icon and entry._blizzChild and not entry.isAura then
+                if icon.Icon and _ncAuraActive and _ncTotemTexture then
+                    icon._desiredTexture = nil
+                    pcall(icon.Icon.SetTexture, icon.Icon, _ncTotemTexture)
+                    icon._lastTexture = _ncTotemTexture
+                elseif icon.Icon and entry._blizzChild and not entry.isAura then
                     local texID = GetSpellTexture(cdSid)
                     if texID then
                         if icon._desiredTexture ~= texID then
@@ -2111,6 +2233,7 @@ local function UpdateIconCooldown(icon)
                 -- When buff/debuff swipe is disabled, skip aura detection
                 -- so the icon shows the recharge/cooldown timer instead.
                 local _chargedAuraActive = false
+                local _chargedTotemTexture = nil
                 if entry.hasCharges and ns.CDMSpellData and _showBuffSwipe then
                     local _cBaseID = _runtimeSid
 
@@ -2123,6 +2246,8 @@ local function UpdateIconCooldown(icon)
                     p.viewerType = entry.viewerType
                     p.blizzChild = entry._blizzChild
                     p.blizzBarChild = entry._blizzBarChild
+                    p.totemSlot = IsTotemSlotEntry(entry) and entry._totemSlot or nil
+                    p.disableLooseVisibilityFallback = true
 
                     local r = ns.CDMSpellData:ResolveAuraState(p)
                     entry._blizzBarChild = r.blizzBarChild
@@ -2130,6 +2255,18 @@ local function UpdateIconCooldown(icon)
                     if r.isActive then
                         icon._auraActive = true
                         icon._auraUnit = r.auraUnit
+                        icon._totemSlot = entry._totemSlot or nil
+                        if IsTotemSlotEntry(entry) then
+                            icon._isTotemInstance = true
+                            if r.totemIcon then
+                                icon._totemIconCache = r.totemIcon
+                            end
+                            _chargedTotemTexture = r.totemIcon or icon._totemIconCache
+                            icon.StackText:SetText("")
+                            icon.StackText:Hide()
+                        else
+                            icon._isTotemInstance = nil
+                        end
                         -- Only block the normal cooldown path when we have
                         -- a DurationObject to display. If ResolveAuraState
                         -- reports active but has no durObj (spurious match),
@@ -2142,6 +2279,8 @@ local function UpdateIconCooldown(icon)
                             ReapplySwipeStyle(icon.Cooldown, icon)
                         end
                     else
+                        icon._isTotemInstance = nil
+                        icon._totemSlot = entry._totemSlot or nil
                         if icon._auraActive then
                             icon._auraActive = false
                             if icon.Cooldown then
@@ -2183,7 +2322,11 @@ local function UpdateIconCooldown(icon)
                 -- non-charged path). Keeps _desiredTexture set to block
                 -- debuff bleed, but updates it for talent swaps.
                 -- Uses persistent _textureCycleCache (wiped on SPELLS_CHANGED).
-                if icon.Icon and entry._blizzChild and not entry.isAura then
+                if icon.Icon and _chargedAuraActive and _chargedTotemTexture then
+                    icon._desiredTexture = nil
+                    pcall(icon.Icon.SetTexture, icon.Icon, _chargedTotemTexture)
+                    icon._lastTexture = _chargedTotemTexture
+                elseif icon.Icon and entry._blizzChild and not entry.isAura then
                     local texID = GetSpellTexture(_runtimeSid)
                     if texID then
                         if icon._desiredTexture ~= texID then
@@ -2243,8 +2386,16 @@ local function UpdateIconCooldown(icon)
             -- When GCD swipe is enabled, allow GCD-only cooldowns through so
             -- the swipe animation renders instead of being cleared every tick.
             local gcdSwipeWanted = icon._isOnGCD and _showGCDSwipe
-            if apiIsActive == false and not gcdSwipeWanted then
+            local expiredNow = CooldownHasExpiredNow(startTime, duration, durObj, _batchTime)
+            if (apiIsActive == false or expiredNow) and not gcdSwipeWanted then
                 icon.Cooldown:Clear()
+                icon._durObjHookSync = nil
+                DebugIconSwipe(icon, "tick-clear",
+                    "apiIsActive=", tostring(apiIsActive),
+                    "expiredNow=", tostring(expiredNow),
+                    "start=", tostring(startTime),
+                    "duration=", tostring(duration),
+                    "mirrorActive=", tostring(mirrorActive))
             elseif not mirrorActive then
                 -- Skip applying the swipe during GCD — the override system
                 -- lags by one tick, so the base CD briefly shows before the
@@ -2253,8 +2404,18 @@ local function UpdateIconCooldown(icon)
                 -- Exception: when GCD swipe is enabled, apply so it renders.
                 if not icon._isOnGCD or gcdSwipeWanted then
                     ApplyResolvedCooldown(icon.Cooldown, startTime, duration, durObj, false)
+                    DebugIconSwipe(icon, "tick-apply",
+                        "apiIsActive=", tostring(apiIsActive),
+                        "expiredNow=", tostring(expiredNow),
+                        "start=", tostring(startTime),
+                        "duration=", tostring(duration),
+                        "durObj=", durObj and "yes" or "no")
                 end
             else
+                DebugIconSwipe(icon, "tick-skip-mirror",
+                    "apiIsActive=", tostring(apiIsActive),
+                    "expiredNow=", tostring(expiredNow),
+                    "durObjHookAge=", tostring(icon._durObjHookSync and (_batchTime - icon._durObjHookSync) or nil))
             end
 
             -- Reapply swipe styling when GCD or cooldown-active state
@@ -2608,6 +2769,10 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._isOnGCD = nil
         icon._wasOnGCD = nil
         icon._hasCooldownActive = nil
+        icon._isTotemInstance = nil
+        icon._totemSlot = spellEntry and spellEntry._totemSlot or nil
+        icon._totemIconCache = nil
+        icon._pendingTotemSlotRefresh = nil
 
         -- Update texture
         local texID
@@ -2640,7 +2805,7 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         if spellEntry.viewerType ~= "buff" then
             UpdateIconSecureAttributes(icon, spellEntry, spellEntry.viewerType)
         end
-        icon:Show()
+        icon:Hide()
         -- Notify rotation helper that an icon was assigned a spell
         if ns._onIconAssigned then pcall(ns._onIconAssigned, icon) end
         return icon
@@ -2677,6 +2842,10 @@ function CDMIcons:ReleaseIcon(icon)
     icon._isOnGCD = nil
     icon._wasOnGCD = nil
     icon._hasCooldownActive = nil
+    icon._isTotemInstance = nil
+    icon._totemSlot = nil
+    icon._totemIconCache = nil
+    icon._pendingTotemSlotRefresh = nil
     -- Reset grey-out child alpha (set by greyOutInactive/greyOutInactiveBuffs)
     icon._greyType = nil
     if icon._greyedOut then
@@ -2915,21 +3084,23 @@ function CDMIcons:BuildIcons(viewerType, container)
     for _, icon in ipairs(pool) do
         local entry = icon._spellEntry
         if entry and entry._blizzChild then
-            MirrorBlizzCooldown(icon, entry._blizzChild)
-            HookBlizzTexture(icon, entry._blizzChild)
-            HookBlizzStackText(icon, entry._blizzChild)
+            if not IsTotemSlotEntry(entry) then
+                MirrorBlizzCooldown(icon, entry._blizzChild)
+                HookBlizzTexture(icon, entry._blizzChild)
+                HookBlizzStackText(icon, entry._blizzChild)
+            end
 
             -- Hook pandemic state from Blizzard CDM child
             if ns._OwnedGlows and ns._OwnedGlows.HookBlizzPandemic then
                 ns._OwnedGlows.HookBlizzPandemic(icon, entry._blizzChild)
             end
 
-            -- Buff icons are always auras — initialize _auraActive so the
-            -- swipe module classifies them correctly before the
-            -- SetCooldownFromDurationObject hook fires.
+            -- Buff icons are aura containers, but the active state must still
+            -- come from UpdateIconCooldown/ResolveAuraState. Pre-marking them
+            -- active here makes empty rows render as active-looking.
             if entry.viewerType == "buff" then
-                icon._auraActive = true
-                icon._auraUnit = "player"
+                icon._auraActive = false
+                icon._auraUnit = nil
                 InitBuffVisibility(icon, entry._blizzChild)
             end
         end
@@ -3003,6 +3174,7 @@ function CDMIcons:UpdateAllCooldowns()
             else
                 UpdateIconCooldown(icon)
             end
+            DumpDebugIcon(icon)
 
             -- Per-spell hidden override: always hide regardless of display mode
             local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
@@ -3232,7 +3404,99 @@ function CDMIcons:UpdateCooldownsForType(viewerType)
     if pool then
         for _, icon in ipairs(pool) do
             UpdateIconCooldown(icon)
+            DumpDebugIcon(icon)
         end
+    end
+end
+
+---------------------------------------------------------------------------
+-- DEBUG: /cdmicondebug — toggle per-tick icon state dump.
+---------------------------------------------------------------------------
+SLASH_QUI_CDMICONDEBUG1 = "/cdmicondebug"
+SlashCmdList["QUI_CDMICONDEBUG"] = function(msg)
+    local filter = msg and strtrim(msg) or ""
+    if filter == "" then
+        _G.QUI_CDM_ICON_DEBUG = not _G.QUI_CDM_ICON_DEBUG
+        print("|cff34D399[CDM-IconDebug]|r", _G.QUI_CDM_ICON_DEBUG and "ON (all icons)" or "OFF")
+        return
+    end
+    _G.QUI_CDM_ICON_DEBUG = filter
+    print("|cff34D399[CDM-IconDebug]|r ON - filter:", filter)
+end
+
+local function ShouldDebugIcon(icon)
+    local dbg = _G.QUI_CDM_ICON_DEBUG
+    if not dbg then return false end
+    local entry = icon and icon._spellEntry
+    if not entry or entry.viewerType ~= "buff" then
+        return false
+    end
+    if dbg == true then return true end
+    local filter = tostring(dbg):lower()
+    local name = entry and entry.name and tostring(entry.name):lower() or ""
+    local sid = icon and icon._runtimeSpellID and tostring(icon._runtimeSpellID) or ""
+    local eid = entry and entry.id and tostring(entry.id) or ""
+    return name:find(filter, 1, true) ~= nil
+        or sid == filter
+        or eid == filter
+end
+
+DebugIconSwipe = function(icon, ...)
+    if not ShouldDebugIcon(icon) then return end
+    print("|cff34D399[CDM-IconSwipe]|r", ...)
+end
+
+DumpDebugIcon = function(icon)
+    if not ShouldDebugIcon(icon) then return end
+    local Helpers = ns.Helpers
+    local entry = icon and icon._spellEntry
+    if not entry then return end
+    local P = "|cff34D399[CDM-IconDbg]|r"
+    print(P, entry.name or "?", "viewerType=", tostring(entry.viewerType),
+        "spellID=", tostring(entry.spellID), "entry.id=", tostring(entry.id))
+    print(P, "  shown=", tostring(icon:IsShown()),
+        "auraActive=", tostring(icon._auraActive),
+        "isTotemInstance=", tostring(icon._isTotemInstance),
+        "entry._totemSlot=", tostring(entry._totemSlot),
+        "icon._totemSlot=", tostring(icon._totemSlot),
+        "instanceKey=", tostring(entry._instanceKey))
+    if icon.Icon and icon.Icon.GetTexture then
+        local okTex, tex = pcall(icon.Icon.GetTexture, icon.Icon)
+        print(P, "  iconTexture=", okTex and tostring(tex) or "err")
+    end
+    if icon.StackText and icon.StackText.GetText then
+        local okStack, stack = pcall(icon.StackText.GetText, icon.StackText)
+        print(P, "  stackText=", okStack and tostring(Helpers.SafeValue(stack, "secret")) or "err")
+    end
+    if icon.DurationText and icon.DurationText.GetText then
+        local okDur, dur = pcall(icon.DurationText.GetText, icon.DurationText)
+        print(P, "  durationText=", okDur and tostring(Helpers.SafeValue(dur, "secret")) or "err")
+    end
+    local blz = entry._blizzChild
+    if blz then
+        print(P, "  blizzChild layoutIndex=",
+            tostring(Helpers.SafeValue(rawget(blz, "layoutIndex"), "secret")),
+            "prefSlot=", tostring(Helpers.SafeValue(rawget(blz, "preferredTotemUpdateSlot"), "secret")),
+            "auraInstanceID=", tostring(Helpers.SafeValue(rawget(blz, "auraInstanceID"), "secret")))
+        if blz.GetSpellID then
+            local ok, gsid = pcall(blz.GetSpellID, blz)
+            print(P, "  blizzChild:GetSpellID()=", ok and Helpers.SafeValue(gsid, "secret") or "err")
+        end
+    else
+        print(P, "  blizzChild=nil")
+    end
+    local blzBar = entry._blizzBarChild
+    if blzBar then
+        print(P, "  blizzBarChild layoutIndex=",
+            tostring(Helpers.SafeValue(rawget(blzBar, "layoutIndex"), "secret")),
+            "prefSlot=", tostring(Helpers.SafeValue(rawget(blzBar, "preferredTotemUpdateSlot"), "secret")),
+            "auraInstanceID=", tostring(Helpers.SafeValue(rawget(blzBar, "auraInstanceID"), "secret")))
+        if blzBar.GetSpellID then
+            local ok, gsid = pcall(blzBar.GetSpellID, blzBar)
+            print(P, "  blizzBarChild:GetSpellID()=", ok and Helpers.SafeValue(gsid, "secret") or "err")
+        end
+    else
+        print(P, "  blizzBarChild=nil")
     end
 end
 
