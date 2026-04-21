@@ -1220,16 +1220,9 @@ local function LayoutContainer(trackerKey)
     local container = containers[trackerKey]
     if not container then return end
 
-    -- Never rebuild most containers during combat — Blizzard CooldownFrames
-    -- adopted onto our icons are updated natively. Rebuilding mid-combat can
-    -- destroy the working layout (ClearPool) and produce wrong positions.
-    --
-    -- Buff icons are the exception: slot-backed aura rows can change identity
-    -- while the summon is active, and the icon container must be allowed to
-    -- rebuild into the shared slot-row set during combat to match buff bars.
-    if InCombatLockdown() and trackerKey ~= "buff" then
-        return
-    end
+    -- Owned containers are allowed to rebuild during combat. The frames we
+    -- create here are addon-owned, and Blizzard CooldownFrames/DurationObjects
+    -- are still mirrored through the existing taint-safe paths.
 
     -- Edit Mode: containers are visible with overlays but skip layout
     -- to avoid flicker while the user is looking at overlays.  Icons are
