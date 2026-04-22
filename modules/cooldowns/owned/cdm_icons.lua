@@ -534,7 +534,9 @@ local function GetItemCooldown(itemID)
     if not itemID or not C_Item.GetItemCooldown then return nil, nil, nil end
     local startTime, duration = C_Item.GetItemCooldown(itemID)
     if IsSecretValue(startTime) or IsSecretValue(duration) then
-        return startTime, duration, nil -- CooldownFrame can handle secret values
+        -- Secret values can no longer be forwarded via SetCooldown (12.0.5+).
+        -- No DurationObject API exists for items; graceful degradation.
+        return nil, nil, nil
     end
     if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) or duration <= 0 then
         return nil, nil, nil
@@ -545,9 +547,6 @@ end
 local function GetSlotCooldown(slotID)
     if not slotID or not GetInventoryItemCooldown then return nil, nil, nil end
     local startTime, duration, enabled = GetInventoryItemCooldown("player", slotID)
-    if IsSecretValue(startTime) or IsSecretValue(duration) then
-        return startTime, duration, nil -- CooldownFrame can handle secret values
-    end
     if not IsSafeNumeric(startTime) or not IsSafeNumeric(duration) then
         return nil, nil, nil
     end
@@ -2479,8 +2478,13 @@ local function UpdateIconCooldown(icon)
             -- Decide what to draw from the actual rendered state first:
             -- aura swipe wins, then real cooldown/recharge, then GCD.
             local auraSwipeActive = icon._auraActive or entry.viewerType == "buff"
+            local isItemEntry = entry.type == "item" or entry.type == "trinket" or entry.type == "slot"
             local spellUsable = nil
-            if _runtimeSid and C_Spell and C_Spell.IsSpellUsable then
+            -- Spell usability is only meaningful for actual spell entries.
+            -- For item/trinket/slot entries, _runtimeSid is an item / slot ID
+            -- and C_Spell.IsSpellUsable returns garbage that can false-positive
+            -- the "spell is usable → no real cooldown" override below.
+            if not isItemEntry and _runtimeSid and C_Spell and C_Spell.IsSpellUsable then
                 local okUsable, isUsable = pcall(C_Spell.IsSpellUsable, _runtimeSid)
                 if okUsable then
                     spellUsable = (isUsable == true)
@@ -2490,8 +2494,9 @@ local function UpdateIconCooldown(icon)
             -- For non-charged spells, spell usability is the best runtime split
             -- between "pure GCD" (still usable) and "real cooldown/resource
             -- wait" (not usable).  Do not let a mirrored GCD DurationObject
-            -- masquerade as a real cooldown.
-            if not entry.hasCharges and not auraSwipeActive then
+            -- masquerade as a real cooldown.  Skipped for item entries since
+            -- spellUsable doesn't apply there.
+            if not entry.hasCharges and not auraSwipeActive and not isItemEntry then
                 if spellUsable == true then
                     mirrorActive = false
                     blizzRealCooldownActive = false
