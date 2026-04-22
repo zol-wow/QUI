@@ -2518,15 +2518,26 @@ local function UpdateIconCooldown(icon)
             local expiredNow = CooldownHasExpiredNow(startTime, duration, durObj, _batchTime)
             local cooldownInactive = (apiIsActive == false)
                 or (apiIsActive == nil and expiredNow)
-            if icon._mirrorDriven then
-                -- ISOLATED TEST: mirror path already wrote via
-                -- SetCooldownFromDurationObject upstream. Skip all Clear/apply
-                -- gating and let the C-side CooldownFrame decide draw state.
+            if icon._mirrorDriven and not entry.hasCharges then
+                -- Mirror path already wrote via SetCooldownFromDurationObject
+                -- upstream (non-charged Blizzard-backed entries). Skip all
+                -- Clear/apply gating and let the C-side CooldownFrame decide
+                -- draw state. Charged entries never qualify because the
+                -- upstream mirror runs only on the non-charged branch; guard
+                -- against stale _mirrorDriven from pool reuse across entries.
+                DebugIconSwipe(icon, "tick-mirror-driven",
+                    "apiIsActive=", tostring(apiIsActive),
+                    "hasCharges=", tostring(entry.hasCharges))
             elseif cooldownInactive and not gcdSwipeWanted and not realCooldownActive then
                 icon.Cooldown:Clear()
                 icon._durObjHookSync = nil
                 icon._showingGCDSwipe = nil
                 icon._showingRealCooldownSwipe = nil
+                DebugIconSwipe(icon, "tick-clear",
+                    "apiIsActive=", tostring(apiIsActive),
+                    "hasCharges=", tostring(entry.hasCharges),
+                    "realCooldownActive=", tostring(realCooldownActive),
+                    "gcdSwipeWanted=", tostring(gcdSwipeWanted))
             elseif realCooldownActive and not mirrorActive then
                 local applied = ApplyResolvedCooldown(icon.Cooldown, startTime, duration, durObj, false)
                 icon._showingGCDSwipe = nil
@@ -2534,6 +2545,13 @@ local function UpdateIconCooldown(icon)
                 if applied then
                     icon._durObjHookSync = GetTime()
                 end
+                DebugIconSwipe(icon, "tick-apply",
+                    "applied=", tostring(applied),
+                    "apiIsActive=", tostring(apiIsActive),
+                    "hasCharges=", tostring(entry.hasCharges),
+                    "durObj=", durObj and "yes" or "no",
+                    "startTime=", tostring(startTime),
+                    "duration=", tostring(duration))
             elseif gcdSwipeWanted then
                 -- GCD fallback should not be blocked by stale mirrored state.
                 -- If there is no real cooldown active for this icon, let the
@@ -2542,6 +2560,17 @@ local function UpdateIconCooldown(icon)
                 local applied = ApplyCooldownFromSpell(icon.Cooldown, GCD_SPELL_ID, false)
                 icon._showingRealCooldownSwipe = nil
                 icon._showingGCDSwipe = applied and true or nil
+                DebugIconSwipe(icon, "tick-gcd",
+                    "applied=", tostring(applied),
+                    "hasCharges=", tostring(entry.hasCharges))
+            else
+                DebugIconSwipe(icon, "tick-skip",
+                    "apiIsActive=", tostring(apiIsActive),
+                    "hasCharges=", tostring(entry.hasCharges),
+                    "mirrorActive=", tostring(mirrorActive),
+                    "realCooldownActive=", tostring(realCooldownActive),
+                    "gcdSwipeWanted=", tostring(gcdSwipeWanted),
+                    "cooldownInactive=", tostring(cooldownInactive))
             end
 
             -- Reapply swipe styling when GCD or cooldown-active state
@@ -2888,6 +2917,7 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._wasOnGCD = nil
         icon._showingGCDSwipe = nil
         icon._showingRealCooldownSwipe = nil
+        icon._mirrorDriven = nil
         icon._wasShowingGCDSwipe = nil
         icon._hasCooldownActive = nil
         icon._isTotemInstance = nil
