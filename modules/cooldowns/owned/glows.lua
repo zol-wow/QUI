@@ -94,57 +94,6 @@ local function GetPreferredSpellID(icon)
     return entry.overrideSpellID or entry.spellID or entry.id
 end
 
-local PROC_ALERT_REGION_KEYS = {
-    "ProcStartFlipbook",
-    "ProcLoopFlipbook",
-}
-
-local function IsFrameActive(frame)
-    if not frame then return false end
-
-    local ok, active = pcall(function()
-        if type(frame.IsActive) == "function" then
-            return frame:IsActive()
-        end
-        return frame.active or frame.isActive
-    end)
-    if ok and type(active) == "boolean" and active then
-        return true
-    end
-
-    local alphaActive = nil
-    ok, active = pcall(function()
-        return (frame.GetAlpha and frame:GetAlpha() or 0) > 0.05
-    end)
-    if ok then
-        alphaActive = active and true or false
-        if alphaActive then
-            return true
-        end
-    end
-
-    -- Blizzard proc visuals can linger with IsShown() == true while faded out.
-    -- Treat shown/visible as active only when alpha is unknown; if alpha is
-    -- readable and near zero, that should win and clear our mirrored glow.
-    if alphaActive == nil then
-        ok, active = pcall(function()
-            return frame:IsShown()
-        end)
-        if ok and active then
-            return true
-        end
-
-        ok, active = pcall(function()
-            return frame:IsVisible()
-        end)
-        if ok and active then
-            return true
-        end
-    end
-
-    return false
-end
-
 local function ClearOverlaySource(sourceSpellID)
     local mapped = sourceSpellID and overlayedSourceMap[sourceSpellID]
     if not mapped then return end
@@ -173,30 +122,6 @@ local function MarkOverlaySource(sourceSpellID)
         end
     end)
     overlayedSourceMap[sourceSpellID] = mapped
-end
-
-local function IsBlizzProcVisualActive(icon)
-    if not icon or not icon._spellEntry then return false end
-
-    local child = icon._spellEntry._blizzChild
-    if not child then return false end
-
-    if IsFrameActive(child.SpellActivationAlert)
-        or IsFrameActive(child.OverlayGlow)
-        or IsFrameActive(child._ButtonGlow) then
-        return true
-    end
-
-    local alert = child.SpellActivationAlert
-    if alert then
-        for _, key in ipairs(PROC_ALERT_REGION_KEYS) do
-            if IsFrameActive(alert[key]) then
-                return true
-            end
-        end
-    end
-
-    return false
 end
 
 local function ForEachIconSpellID(icon, callback)
@@ -760,18 +685,11 @@ local function EvaluateGlowForIcon(icon, includeHidden)
     elseif spellOvr and spellOvr.glowEnabled == true then
         shouldGlow = true
     else
-        -- First trust the live Blizzard visual on the mirrored child. This
-        -- keeps us aligned with the actual proc state even if overlay events
-        -- were dropped or delayed.
-        shouldGlow = IsBlizzProcVisualActive(icon)
-
-        if not shouldGlow then
-            ForEachIconSpellID(icon, function(spellID)
-                if not shouldGlow and IsOverlayed(spellID) then
-                    shouldGlow = true
-                end
-            end)
-        end
+        ForEachIconSpellID(icon, function(spellID)
+            if not shouldGlow and IsOverlayed(spellID) then
+                shouldGlow = true
+            end
+        end)
     end
 
     if not shouldGlow and spellOvr and spellOvr.procOnUsable == true then

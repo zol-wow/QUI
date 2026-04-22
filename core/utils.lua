@@ -158,6 +158,34 @@ local function DeepCopyDefaults(src)
     return copy
 end
 
+-- Merge missing defaults into an existing settings table without
+-- overwriting user-saved values. Returns true if the existing data had a
+-- structural mismatch (table default replaced by a scalar), which callers
+-- can treat as corruption and rebuild from defaults.
+local function MergeMissingDefaults(target, defaults)
+    local hadStructuralMismatch = false
+    if type(target) ~= "table" or type(defaults) ~= "table" then
+        return hadStructuralMismatch
+    end
+
+    for k, v in pairs(defaults) do
+        local cur = target[k]
+        if cur == nil then
+            target[k] = type(v) == "table" and DeepCopyDefaults(v) or v
+        elseif type(v) == "table" then
+            if type(cur) ~= "table" then
+                hadStructuralMismatch = true
+            else
+                if MergeMissingDefaults(cur, v) then
+                    hadStructuralMismatch = true
+                end
+            end
+        end
+    end
+
+    return hadStructuralMismatch
+end
+
 local function CreateDefaultAuraIndicatorRecord(indicatorType, index)
     indicatorType = indicatorType or "icon"
     local record = {
@@ -320,19 +348,14 @@ function Helpers.GetModuleSettings(moduleName, defaults)
         if not profile[moduleName] then
             profile[moduleName] = DeepCopyDefaults(defaults)
         else
-            -- Corruption guard: if a key that should be a table is a scalar,
-            -- the SavedVariables are corrupt — wipe and re-merge defaults.
             local settings = profile[moduleName]
-            for k, v in pairs(defaults) do
-                if type(v) == "table" and type(settings[k]) ~= "table" and settings[k] ~= nil then
-                    wipe(settings)
-                    for dk, dv in pairs(defaults) do
-                        if settings[dk] == nil then
-                            settings[dk] = type(dv) == "table" and DeepCopyDefaults(dv) or dv
-                        end
-                    end
-                    break
-                end
+            -- Backfill newly-added keys into existing module tables so runtime
+            -- code and the options UI read the same effective values.
+            -- If a table-shaped default was overwritten by a scalar, treat the
+            -- module settings as corrupted and rebuild from defaults.
+            if MergeMissingDefaults(settings, defaults) then
+                wipe(settings)
+                MergeMissingDefaults(settings, defaults)
             end
         end
         return profile[moduleName]

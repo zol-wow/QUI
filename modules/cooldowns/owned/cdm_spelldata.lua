@@ -123,11 +123,11 @@ local function TickCacheGetAuraDuration(unit, instanceID)
     return nil
 end
 
-local function IsAuraOwnedByPlayerOrPet(auraData)
+local function IsAuraOwnedByPlayerOrPet(auraData, strictSource)
     if not auraData then return false end
 
     local ownedFlag = Helpers.SafeValue(auraData.isFromPlayerOrPlayerPet, nil)
-    if ownedFlag ~= nil then
+    if ownedFlag ~= nil and not strictSource then
         return ownedFlag == true
     end
 
@@ -151,15 +151,99 @@ local function IsAuraOwnedByPlayerOrPet(auraData)
         return sourceGUID == playerGUID or sourceGUID == petGUID or sourceGUID == vehicleGUID
     end
 
+    if ownedFlag ~= nil then
+        return strictSource and false or ownedFlag == true
+    end
+
     return false
 end
 
 local function IsUsableResolvedAuraData(auraUnit, auraData)
     if not auraData then return false end
     if auraUnit == "target" then
-        return IsAuraOwnedByPlayerOrPet(auraData)
+        return IsAuraOwnedByPlayerOrPet(auraData, true)
     end
     return true
+end
+
+local function FindOwnedTargetAura(matchFn, filter)
+    if not matchFn then return nil end
+
+    if AuraUtil and AuraUtil.ForEachAura then
+        local found
+        AuraUtil.ForEachAura("target", filter or "HARMFUL", nil, function(auraData)
+            if auraData and matchFn(auraData) and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                found = auraData
+                return true
+            end
+            return false
+        end, true)
+        if found then
+            return found
+        end
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+        local ok, auras = pcall(C_UnitAuras.GetUnitAuras, "target", filter or "HARMFUL", 40)
+        if ok and auras then
+            for i = 1, #auras do
+                local auraData = auras[i]
+                if auraData and matchFn(auraData) and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                    return auraData
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function FindOwnedTargetAuraBySpellID(spellID, filter)
+    if not spellID then return nil end
+    return FindOwnedTargetAura(function(auraData)
+        return Helpers.SafeValue(auraData.spellId, nil) == spellID
+    end, filter)
+end
+
+local function FindOwnedTargetAuraByName(spellName, filter)
+    if not spellName or spellName == "" then return nil end
+    return FindOwnedTargetAura(function(auraData)
+        return Helpers.SafeValue(auraData.name, nil) == spellName
+    end, filter)
+end
+
+local function FindOwnedAuraBySpellID(spellID)
+    if not spellID then return nil end
+
+    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+        if ok and ad and ad.auraInstanceID then
+            return ad
+        end
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
+        for _, unit in ipairs({ "player", "pet" }) do
+            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellID, unit, spellID)
+            if ok and ad and ad.auraInstanceID then
+                return ad
+            end
+        end
+
+        local targetAura = FindOwnedTargetAuraBySpellID(spellID, "HARMFUL")
+        if targetAura then
+            return targetAura
+        end
+    end
+
+    if AuraUtil and AuraUtil.FindAuraBySpellID then
+        local harmfulAura = FindOwnedTargetAuraBySpellID(spellID, "HARMFUL")
+        if harmfulAura then
+            return harmfulAura
+        end
+    end
+
+    return nil
 end
 
 --- Check if a Blizzard viewer child matches a given spell ID.
@@ -807,6 +891,34 @@ local function WipeAuraResult()
     _auraResult.isTotemInstance = false
 end
 
+local function ShouldDebugAuraState(entryName, spellID, entryID)
+    local filter = _G.QUI_CDM_AURA_DEBUG
+    if not filter then return false end
+    if filter == true then return true end
+    local text = tostring(filter):lower()
+    if entryName and type(entryName) == "string" and entryName:lower():find(text, 1, true) then
+        return true
+    end
+    if tostring(spellID or "") == text or tostring(entryID or "") == text then
+        return true
+    end
+    return false
+end
+
+local function AuraStateDebug(enabled, ...)
+    if not enabled then return end
+    local parts = { "|cff34D399[CDM-Aura]|r" }
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if Helpers.IsSecretValue(v) then
+            parts[#parts + 1] = "<secret>"
+        else
+            parts[#parts + 1] = tostring(v)
+        end
+    end
+    print(table.concat(parts, " "))
+end
+
 --- Validate that a Blizzard child still tracks the given spell IDs.
 --- Prevents cross-contamination from recycled children.
 childTracksSpell = function(ch, spellID, altID1, altID2)
@@ -835,6 +947,15 @@ function CDMSpellData:ResolveAuraState(params)
     local viewerType = params.viewerType
     local blzChild = params.blizzChild
     local blzBarChild = params.blizzBarChild
+    local debugAura = ShouldDebugAuraState(entryName, spellID, entryID)
+
+    AuraStateDebug(debugAura,
+        "begin",
+        "name=", entryName or "?",
+        "spellID=", spellID,
+        "entrySpellID=", entrySpellID,
+        "entryID=", entryID,
+        "viewerType=", viewerType)
 
     -----------------------------------------------------------------------
     -- Phase 1: Resolve aura spell ID
@@ -1127,6 +1248,7 @@ function CDMSpellData:ResolveAuraState(params)
     if childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
         local vdata = TickCacheGetAuraData(auraUnit, childAuraInstID)
         if IsUsableResolvedAuraData(auraUnit, vdata) then
+            AuraStateDebug(debugAura, "phase3-inst", "unit=", auraUnit, "inst=", childAuraInstID)
             isActive = true
             r.auraData = vdata
             local durObj = TickCacheGetAuraDuration(auraUnit, childAuraInstID)
@@ -1153,6 +1275,7 @@ function CDMSpellData:ResolveAuraState(params)
                 if ok and ad and ad.auraInstanceID then
                     local helpful = Helpers.SafeValue(ad.isHelpful, nil)
                     if helpful ~= false then
+                        AuraStateDebug(debugAura, "phase4-player-id", "tryID=", tryID, "inst=", ad.auraInstanceID)
                         isActive = true
                         childAuraInstID = ad.auraInstanceID
                         auraUnit = "player"
@@ -1166,6 +1289,7 @@ function CDMSpellData:ResolveAuraState(params)
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
         if ok and ad and ad.auraInstanceID then
+            AuraStateDebug(debugAura, "phase4-player-name", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
             auraUnit = "player"
@@ -1176,35 +1300,29 @@ function CDMSpellData:ResolveAuraState(params)
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "pet", entryName, "HELPFUL")
         if ok and ad and ad.auraInstanceID then
+            AuraStateDebug(debugAura, "phase4-pet-name", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
             auraUnit = "pet"
             r.auraData = ad
         end
     end
-    -- 4. Target debuff by name, then target helpful
+    -- 4. Target debuff by name
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HARMFUL")
-        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad) then
+        local ad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
+        if ad and ad.auraInstanceID then
+            AuraStateDebug(debugAura, "phase4-target-harmful", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
             auraUnit = "target"
             r.auraData = ad
-        end
-        if not isActive then
-            local ok2, ad2 = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HELPFUL")
-            if ok2 and ad2 and ad2.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad2) then
-                isActive = true
-                childAuraInstID = ad2.auraInstanceID
-                auraUnit = "target"
-                r.auraData = ad2
-            end
         end
     end
     -- 5. Validate child auraInstanceID via GetAuraDataByAuraInstanceID
     if not isActive and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
         local vdata = TickCacheGetAuraData(auraUnit, childAuraInstID)
         if IsUsableResolvedAuraData(auraUnit, vdata) then
+            AuraStateDebug(debugAura, "phase5-validate-inst", "unit=", auraUnit, "inst=", childAuraInstID)
             isActive = true
             r.auraData = vdata
         end
@@ -1223,7 +1341,8 @@ function CDMSpellData:ResolveAuraState(params)
                     and C_UnitAuras.GetAuraDataByAuraInstanceID
                     and TickCacheGetAuraData(shownAuraUnit, blzChild.auraInstanceID)
                     or nil
-                if shownAuraUnit ~= "target" or IsAuraOwnedByPlayerOrPet(shownAuraData) then
+                if shownAuraUnit ~= "target" or IsAuraOwnedByPlayerOrPet(shownAuraData, true) then
+                    AuraStateDebug(debugAura, "phase5b-primary-shown", "unit=", shownAuraUnit, "inst=", blzChild.auraInstanceID)
                     childAuraInstID = blzChild.auraInstanceID
                     auraUnit = shownAuraUnit
                     r.auraData = shownAuraData or r.auraData
@@ -1249,7 +1368,8 @@ function CDMSpellData:ResolveAuraState(params)
                     and C_UnitAuras.GetAuraDataByAuraInstanceID
                     and TickCacheGetAuraData(shownAuraUnit, blzBarChild.auraInstanceID)
                     or nil
-                if shownAuraUnit ~= "target" or IsAuraOwnedByPlayerOrPet(shownAuraData) then
+                if shownAuraUnit ~= "target" or IsAuraOwnedByPlayerOrPet(shownAuraData, true) then
+                    AuraStateDebug(debugAura, "phase6-bar-shown", "unit=", shownAuraUnit, "inst=", blzBarChild.auraInstanceID)
                     childAuraInstID = blzBarChild.auraInstanceID
                     auraUnit = shownAuraUnit
                     r.auraData = shownAuraData or r.auraData
@@ -1272,6 +1392,7 @@ function CDMSpellData:ResolveAuraState(params)
             local dynUnit = dynChild.auraDataUnit or "player"
             local vdata2 = TickCacheGetAuraData(dynUnit, dynChild.auraInstanceID)
             if IsUsableResolvedAuraData(dynUnit, vdata2) then
+                AuraStateDebug(debugAura, "phase7-dyn-child", "unit=", dynUnit, "inst=", dynChild.auraInstanceID)
                 isActive = true
                 childAuraInstID = dynChild.auraInstanceID
                 auraUnit = dynUnit
@@ -1302,6 +1423,7 @@ function CDMSpellData:ResolveAuraState(params)
                 end
             end
             if virtualState.isActive then
+                AuraStateDebug(debugAura, "phase8-virtual", "slot=", virtualState.slot)
                 isActive = true
                 auraUnit = virtualState.auraUnit or "player"
                 if virtualState.durObj then
@@ -1317,8 +1439,8 @@ function CDMSpellData:ResolveAuraState(params)
     -- If active but no auraInstanceID, try name-based lookups
     if isActive and not childAuraInstID and entryName and entryName ~= "" then
         if C_UnitAuras.GetAuraDataBySpellName then
-            local tok, tad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HARMFUL")
-            if tok and tad and tad.auraInstanceID and IsAuraOwnedByPlayerOrPet(tad) then
+            local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
+            if tad and tad.auraInstanceID then
                 childAuraInstID = tad.auraInstanceID
                 auraUnit = "target"
             end
@@ -1366,15 +1488,9 @@ function CDMSpellData:ResolveAuraState(params)
                 end
             end
             if not apps then
-                local tok, tad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HARMFUL")
-                if tok and tad and tad.applications and IsAuraOwnedByPlayerOrPet(tad) then
+                local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
+                if tad and tad.applications then
                     apps = tad.applications
-                end
-                if not apps then
-                    local tok2, tad2 = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", entryName, "HELPFUL")
-                    if tok2 and tad2 and tad2.applications and IsAuraOwnedByPlayerOrPet(tad2) then
-                        apps = tad2.applications
-                    end
                 end
             end
         end
@@ -1390,6 +1506,7 @@ function CDMSpellData:ResolveAuraState(params)
     r.isActive = isActive
     r.auraInstanceID = childAuraInstID
     r.auraUnit = auraUnit
+    AuraStateDebug(debugAura, "end", "active=", isActive, "unit=", auraUnit, "inst=", childAuraInstID)
     return r
 end
 
@@ -2115,13 +2232,7 @@ local function IsMemoAuraActive(lsid)
     if not lsid then return false end
     local cached = _resolveAuraActiveMemo[lsid]
     if cached ~= nil then return cached end
-    local active = false
-    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
-        local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, lsid)
-        if ok and ad and ad.auraInstanceID then
-            active = true
-        end
-    end
+    local active = FindOwnedAuraBySpellID(lsid) ~= nil
     _resolveAuraActiveMemo[lsid] = active
     return active
 end
