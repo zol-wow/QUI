@@ -1626,6 +1626,7 @@ local FRAME_RESOLVERS = {
         if IsModuleDisabled("general", "skinReadyCheck") then return nil end
         return _G["ReadyCheckFrame"]
     end,
+    bonusRollFrame = function() return _G["BonusRollFrame"] end,
     consumables = function() return _G["QUI_ConsumablesFrame"] end,
     alertAnchor = function() return _G["QUI_AlertFrameHolder"] end,
     toastAnchor = function() return _G["QUI_EventToastHolder"] end,
@@ -1852,6 +1853,7 @@ local FRAME_ANCHOR_INFO = {
     debuffFrame     = { displayName = "Debuff Frame",          category = "Display",           order = 6 },
     chatFrame1      = { displayName = "Chat Frame",            category = "Display",           order = 7 },
     datatextPanel   = { displayName = "Datatext Panel",        category = "Display",           order = 8 },
+    bonusRollFrame  = { displayName = "Bonus Roll",            category = "Display",           order = 9 },
     dandersParty    = { displayName = "DandersFrames Party",   category = "External",          order = 1 },
     dandersRaid     = { displayName = "DandersFrames Raid",    category = "External",          order = 2 },
     abilityTimelineTimeline = { displayName = "AbilityTimeline Timeline", category = "External", order = 3 },

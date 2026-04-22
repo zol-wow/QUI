@@ -2633,6 +2633,7 @@ do
             { key = "belowMinimapWidgets", label = "Below Minimap Widgets", frame = "UIWidgetBelowMinimapContainerFrame", order = 15, minWidth = 180, minHeight = 24 },
             { key = "extraActionButton", label = "Extra Ability",   frame = "ExtraActionBarFrame", holder = "QUI_extraActionButtonHolder", order = 5 },
             { key = "zoneAbility",     label = "Zone Ability",      frame = "ZoneAbilityFrame",    holder = "QUI_zoneAbilityHolder",      order = 6 },
+            { key = "bonusRollFrame",  label = "Bonus Roll",        frame = "BonusRollFrame",      order = 16, minWidth = 200, minHeight = 80 },
         }
 
         for _, info in ipairs(DISPLAY_ELEMENTS) do
@@ -2673,6 +2674,19 @@ do
                 end
             end
             um:RegisterElement(regDef)
+        end
+
+        -- BonusRollFrame: reapply our saved anchor when Blizzard shows the
+        -- prompt. Blizzard re-SetPoints the frame on each bonus roll start.
+        if _G.BonusRollFrame and not _G.BonusRollFrame._QUI_AnchorHooked then
+            _G.BonusRollFrame._QUI_AnchorHooked = true
+            hooksecurefunc(_G.BonusRollFrame, "Show", function()
+                C_Timer.After(0, function()
+                    if not InCombatLockdown() and _G.QUI_ApplyFrameAnchor then
+                        _G.QUI_ApplyFrameAnchor("bonusRollFrame")
+                    end
+                end)
+            end)
         end
 
         -- Chat frame — child overlay so the handle matches the Blizzard
