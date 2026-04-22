@@ -7,6 +7,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.5.0 - 2026-04-23
+
+### Added
+- feat(layoutmode): register Bonus Roll as movable Display element
+- feat(frames): private auras on player/target/focus + 12.0.5 isContainer fix
+
+### Changed
+- updated Nokterian Healing Profile preset
+- perf: move group frame aura handling to shared cache
+
+### Fixed
+- fixed whisper sound causing taints in raids/m+, making ppl unable to read whispers
+- fix: retry buff border refresh after reload
+- fix(cdm): forward secret item/slot cooldowns to C-side SetCooldown
+- fix(cdm): render resource-wait and recharge swipes via durObj mirror
+- fix(cdm): sharper GCD/real-cooldown classification and aura ownership
+- fix(cdm): ignore target auras not cast by player
+- fix(cdm): enable cooldown swipe by default
+- fix(cdm): allow owned tracker rebuilds in combat
+- fix(buffborders): ensure secure aura headers render after login/reload
+- fix(actionbars): render pet bar when summoning pet in combat
+- fix: owned CDM aura ownership, flyout rework, defaults backfill
+- Fix stale owned proc glow detection
+- Fix owned CDM proc glow tracking
+- Fix owned CDM aura slot handling and buff icon rebuilds
 ## v3.4.3 - 2026-04-21
 
 ### Fixed
