@@ -1696,13 +1696,13 @@ local FRAME_RESOLVERS = {
         local owned = _G["QUI_BuffIconContainer"]
         if owned then return owned end
         if IsModuleDisabled("buffBorders", "enableBuffs") then return nil end
-        return _G["BuffFrame"]
+        return nil
     end,
     debuffFrame = function()
         local owned = _G["QUI_DebuffIconContainer"]
         if owned then return owned end
         if IsModuleDisabled("buffBorders", "enableDebuffs") then return nil end
-        return _G["DebuffFrame"]
+        return nil
     end,
     chatFrame1 = function()
         if IsModuleDisabled("chat") then return nil end
