@@ -22,6 +22,8 @@ local backdropFrame, backdrop, mask
 local clockFrame, clockText
 local coordsFrame, coordsText
 local zoneTextFrame, zoneTextFont
+local greatVaultButton
+local customMailButton
 local minimapTooltip
 local middleClickMenuFrame
 local middleClickMenuBlocker
@@ -1256,6 +1258,284 @@ local function ForEachDifficultyFrame(callback)
     handle(_G.MiniMapChallengeMode)
 end
 
+---=================================================================================
+--- GREAT VAULT SHORTCUT
+---=================================================================================
+
+local ADDON_ASSET_ROOT = ("Interface\\AddOns\\%s\\assets\\"):format(ADDON_NAME or "QUI")
+local GREAT_VAULT_ICON_PATH = ADDON_ASSET_ROOT .. "great_vault_64.png"
+local GREAT_VAULT_BUTTON_SIZE = 24
+local GREAT_VAULT_DEFAULT_ANCHOR = "TOPLEFT"
+local GREAT_VAULT_VALID_ANCHORS = {
+    TOPLEFT = true,
+    TOP = true,
+    TOPRIGHT = true,
+    LEFT = true,
+    CENTER = true,
+    RIGHT = true,
+    BOTTOMLEFT = true,
+    BOTTOM = true,
+    BOTTOMRIGHT = true,
+}
+local MAIL_ICON_UP_ATLAS = "UI-HUD-Minimap-Mail-Up"
+local MAIL_ICON_OVER_ATLAS = "UI-HUD-Minimap-Mail-Mouseover"
+local greatVaultHoverHooksInstalled = false
+
+local function HasUnreadMailSafe()
+    if type(HasNewMail) ~= "function" then
+        return false
+    end
+
+    local ok, raw = pcall(HasNewMail)
+    if not ok then
+        return false
+    end
+
+    if type(issecretvalue) == "function" and issecretvalue(raw) then
+        return false
+    end
+
+    return raw and true or false
+end
+
+local function ApplyMinimapButtonBackground(button)
+    local bg = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    bg:SetBackdrop({ bgFile = "Interface\\ChatFrame\\ChatFrameBackground" })
+    bg:SetBackdropColor(0, 0, 0, 0.8)
+    bg:SetAllPoints(button)
+    bg:SetFrameLevel(button:GetFrameLevel() - 1)
+    return bg
+end
+
+local function GetGreatVaultTargetAlpha()
+    local settings = GetSettings()
+    local vaultSettings = settings and settings.greatVault
+    if not vaultSettings or not vaultSettings.enabled or not vaultSettings.fadeWhenMouseOut then
+        return 1
+    end
+
+    if (greatVaultButton and greatVaultButton:IsMouseOver()) or (Minimap and Minimap:IsMouseOver()) then
+        return 1
+    end
+
+    local alpha = vaultSettings.fadeOpacity
+    if type(alpha) ~= "number" then
+        alpha = 0
+    end
+
+    if alpha < 0 then
+        alpha = 0
+    elseif alpha > 1 then
+        alpha = 1
+    end
+
+    return alpha
+end
+
+local function UpdateGreatVaultButtonAlpha()
+    if not greatVaultButton then return end
+    greatVaultButton:SetAlpha(GetGreatVaultTargetAlpha())
+end
+
+local function ScheduleGreatVaultButtonAlphaUpdate()
+    C_Timer.After(0, function()
+        if greatVaultButton and greatVaultButton:IsShown() then
+            UpdateGreatVaultButtonAlpha()
+        end
+    end)
+end
+
+local function RegisterGreatVaultEscClose()
+    if not UISpecialFrames then return end
+    for _, name in ipairs(UISpecialFrames) do
+        if name == "WeeklyRewardsFrame" then
+            return
+        end
+    end
+    table.insert(UISpecialFrames, "WeeklyRewardsFrame")
+end
+
+local function ToggleGreatVault()
+    local IsLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or _G.IsAddOnLoaded
+    local Load = (C_AddOns and C_AddOns.LoadAddOn) or _G.LoadAddOn
+    if Load and IsLoaded and not IsLoaded("Blizzard_WeeklyRewards") then
+        Load("Blizzard_WeeklyRewards")
+    end
+
+    RegisterGreatVaultEscClose()
+    if WeeklyRewardsFrame then
+        WeeklyRewardsFrame:SetShown(not WeeklyRewardsFrame:IsShown())
+    end
+end
+
+local function CreateGreatVaultButton()
+    if greatVaultButton then return end
+
+    greatVaultButton = CreateFrame("Button", "QUI_GreatVaultButton", UIParent)
+    greatVaultButton:SetSize(GREAT_VAULT_BUTTON_SIZE, GREAT_VAULT_BUTTON_SIZE)
+    greatVaultButton:SetFrameStrata("MEDIUM")
+    greatVaultButton:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 10)
+    greatVaultButton:EnableMouse(true)
+    greatVaultButton:RegisterForClicks("LeftButtonUp")
+
+    local icon = greatVaultButton:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexture(GREAT_VAULT_ICON_PATH)
+    icon:SetVertexColor(0.85, 0.85, 0.85, 1)
+    greatVaultButton.icon = icon
+
+    greatVaultButton:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("Great Vault", 1, 1, 1)
+        GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Great Vault", 0.2, 1, 0.2)
+        GameTooltip:Show()
+        UpdateGreatVaultButtonAlpha()
+    end)
+    greatVaultButton:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(0.85, 0.85, 0.85, 1)
+        GameTooltip:Hide()
+        ScheduleGreatVaultButtonAlphaUpdate()
+    end)
+    greatVaultButton:SetScript("OnMouseDown", function(self)
+        self.icon:SetVertexColor(0.72, 0.72, 0.72, 1)
+    end)
+    greatVaultButton:SetScript("OnMouseUp", function(self)
+        local v = self:IsMouseOver() and 1 or 0.85
+        self.icon:SetVertexColor(v, v, v, 1)
+    end)
+    greatVaultButton:SetScript("OnClick", function()
+        ToggleGreatVault()
+    end)
+
+    if not greatVaultHoverHooksInstalled and Minimap then
+        greatVaultHoverHooksInstalled = true
+        Minimap:HookScript("OnEnter", ScheduleGreatVaultButtonAlphaUpdate)
+        Minimap:HookScript("OnLeave", ScheduleGreatVaultButtonAlphaUpdate)
+    end
+end
+
+local function UpdateGreatVaultButton()
+    local settings = GetSettings()
+    local vaultSettings = settings and settings.greatVault
+
+    if not vaultSettings or not vaultSettings.enabled then
+        if greatVaultButton then
+            greatVaultButton:SetAlpha(1)
+            greatVaultButton:Hide()
+        end
+        return
+    end
+
+    CreateGreatVaultButton()
+
+    if not vaultSettings.anchor then
+        vaultSettings.anchor = GREAT_VAULT_DEFAULT_ANCHOR
+    end
+    if vaultSettings.offsetX == nil then
+        vaultSettings.offsetX = 1
+    end
+    if vaultSettings.offsetY == nil then
+        vaultSettings.offsetY = -1
+    end
+
+    local anchor = vaultSettings.anchor or GREAT_VAULT_DEFAULT_ANCHOR
+    if not GREAT_VAULT_VALID_ANCHORS[anchor] then
+        anchor = GREAT_VAULT_DEFAULT_ANCHOR
+        vaultSettings.anchor = anchor
+    end
+    greatVaultButton:SetParent(UIParent)
+    greatVaultButton:SetFrameStrata("MEDIUM")
+    greatVaultButton:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 10)
+    greatVaultButton:ClearAllPoints()
+    greatVaultButton:SetPoint(anchor, Minimap, anchor, vaultSettings.offsetX or 0, vaultSettings.offsetY or 0)
+    greatVaultButton:SetScale(vaultSettings.scale or 1.0)
+    greatVaultButton:Show()
+    UpdateGreatVaultButtonAlpha()
+end
+
+local function RestoreBlizzardMailIndicator()
+    local indicator = MinimapCluster and MinimapCluster.IndicatorFrame
+    local mailFrame = indicator and indicator.MailFrame
+    if not mailFrame then return end
+
+    mailFrame:SetAlpha(1)
+    mailFrame:EnableMouse(true)
+end
+
+local function CreateCustomMailButton()
+    if customMailButton then return end
+
+    customMailButton = CreateFrame("Button", "QUI_MinimapMailButton", UIParent)
+    customMailButton:SetSize(20, 20)
+    customMailButton:SetFrameStrata("MEDIUM")
+    customMailButton:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 10)
+    customMailButton:EnableMouse(true)
+
+    customMailButton.bg = ApplyMinimapButtonBackground(customMailButton)
+
+    local icon = customMailButton:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("TOPLEFT", customMailButton, "TOPLEFT", 3, -3)
+    icon:SetPoint("BOTTOMRIGHT", customMailButton, "BOTTOMRIGHT", -3, 3)
+    icon:SetAtlas(MAIL_ICON_UP_ATLAS)
+    customMailButton.icon = icon
+
+    customMailButton:SetScript("OnEnter", function(self)
+        self.icon:SetAtlas(MAIL_ICON_OVER_ATLAS)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine(HAVE_MAIL or "Unread Mail", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    customMailButton:SetScript("OnLeave", function(self)
+        self.icon:SetAtlas(MAIL_ICON_UP_ATLAS)
+        GameTooltip:Hide()
+    end)
+end
+
+local function UpdateCustomMailButton()
+    local settings = GetSettings()
+    local indicator = MinimapCluster and MinimapCluster.IndicatorFrame
+    local mailFrame = indicator and indicator.MailFrame
+    local hasMail = HasUnreadMailSafe()
+
+    if mailFrame and not hasMail then
+        hasMail = mailFrame:IsShown()
+    end
+
+    if not settings or not settings.enabled or not settings.showMail or not hasMail then
+        if customMailButton then
+            customMailButton:Hide()
+        end
+        return
+    end
+
+    CreateCustomMailButton()
+
+    if mailFrame then
+        mailFrame:SetAlpha(0)
+        mailFrame:EnableMouse(false)
+        if not mailFrame._quiVisibilityHooked then
+            mailFrame._quiVisibilityHooked = true
+            local function RefreshMailIndicator()
+                if InCombatLockdown() then
+                    pendingMinimapRefresh = true
+                    return
+                end
+                UpdateCustomMailButton()
+            end
+            hooksecurefunc(mailFrame, "Show", RefreshMailIndicator)
+            hooksecurefunc(mailFrame, "Hide", RefreshMailIndicator)
+        end
+    end
+
+    customMailButton:SetParent(UIParent)
+    customMailButton:SetFrameStrata("MEDIUM")
+    customMailButton:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 10)
+    customMailButton:ClearAllPoints()
+    customMailButton:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 2, 2)
+    customMailButton:Show()
+end
+
 -- Hook Show() on zoom buttons to prevent Blizzard from re-showing them
 -- Use local guard variables instead of writing properties to Blizzard frames
 local zoomInShowHooked = false
@@ -1346,33 +1626,17 @@ local function UpdateButtonVisibility()
         end
     end
 
-    -- Mail indicator - position at bottom left
+    -- Mail indicator - use a custom visible icon and keep Blizzard's hotspot hidden
     if MinimapCluster and MinimapCluster.IndicatorFrame and MinimapCluster.IndicatorFrame.MailFrame then
         local mailFrame = MinimapCluster.IndicatorFrame.MailFrame
-
-        -- Hook SetParent so that any new parent always has a Layout method.
-        -- Blizzard's IndicatorFrame layout code walks up the parent chain calling
-        -- :Layout(), and reparenting MailFrame to a frame without one produces
-        -- a nil-method error. We install a no-op on any parent that lacks it
-        -- (Minimap and hiddenButtonParent already have Layout defined upstream).
-        if not mailFrame._quiSetParentHooked then
-            mailFrame._quiSetParentHooked = true
-            hooksecurefunc(mailFrame, "SetParent", function(_, parent)
-                if type(parent) == "table" and parent.Layout == nil then
-                    parent.Layout = function() end
-                end
-            end)
-        end
-
         if settings.showMail then
-            mailFrame:SetParent(Minimap)
-            mailFrame:ClearAllPoints()
-            mailFrame:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 2, 2)
-            mailFrame:SetScale(0.8)  -- Scale down slightly for cleaner look
-            mailFrame:Show()
+            mailFrame:SetAlpha(0)
+            mailFrame:EnableMouse(false)
+            UpdateCustomMailButton()
         else
-            mailFrame:SetParent(hiddenButtonParent)
-            mailFrame:Hide()
+            if customMailButton then
+                customMailButton:Hide()
+            end
         end
     end
     
@@ -1475,6 +1739,8 @@ local function UpdateButtonVisibility()
             trackingFrame:SetParent(hiddenButtonParent)
         end
     end
+
+    UpdateGreatVaultButton()
 end
 
 -- (SetupMicroBagVisibilityHooks and UpdateMicroAndBagVisibility removed —
@@ -2534,7 +2800,7 @@ local function CreateDrawerToggleButton()
     local hammer = drawerToggleButton:CreateTexture(nil, "ARTWORK")
     hammer:SetPoint("TOPLEFT", 2, -2)
     hammer:SetPoint("BOTTOMRIGHT", -2, 2)
-    hammer:SetTexture("Interface\\AddOns\\QUI\\assets\\quazii_hammer")
+    hammer:SetTexture(ADDON_ASSET_ROOT .. "quazii_hammer")
     drawerToggleButton._hammerIcon = hammer
 
     -- Grid icon: 4 small squares (2x2 grid) — store refs for resizing
@@ -3158,6 +3424,8 @@ local function HideAllDecorations()
     if clockFrame then clockFrame:Hide() end
     if coordsFrame then coordsFrame:Hide() end
     if zoneTextFrame then zoneTextFrame:Hide() end
+    if greatVaultButton then greatVaultButton:Hide() end
+    if customMailButton then customMailButton:Hide() end
     if datatextFrame then datatextFrame:Hide() end
     if drawerToggleButton then drawerToggleButton:Hide() end
     if drawerFrame then drawerFrame:Hide() end
@@ -3599,6 +3867,13 @@ function Minimap_Module:Refresh()
         if backdropFrame then
             backdropFrame:Hide()
         end
+        if greatVaultButton then
+            greatVaultButton:Hide()
+        end
+        if customMailButton then
+            customMailButton:Hide()
+        end
+        RestoreBlizzardMailIndicator()
         if datatextFrame then
             datatextFrame:Hide()
         end
@@ -3754,8 +4029,16 @@ petBattleFrame:RegisterEvent("PET_BATTLE_CLOSE")
 petBattleFrame:SetScript("OnEvent", function(self, event)
     if event == "PET_BATTLE_OPENING_START" then
         Minimap:Hide()
+        if greatVaultButton then greatVaultButton:Hide() end
+        if customMailButton then customMailButton:Hide() end
     else
         Minimap:Show()
+        local settings = GetSettings()
+        if settings and settings.enabled then
+            C_Timer.After(0, function()
+                Minimap_Module:Refresh()
+            end)
+        end
     end
 end)
 

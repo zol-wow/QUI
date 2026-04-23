@@ -502,7 +502,88 @@ local function BuildMinimapTab(tabContent)
         y = y - FORM_ROW
     end
 
-    -- SECTION 6: Button Drawer
+    -- SECTION 6: Great Vault
+    if true then
+        y = y - 10
+        GUI:SetSearchSection("Great Vault")
+        local vaultHeader = GUI:CreateSectionHeader(tabContent, "Great Vault")
+        vaultHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - vaultHeader.gap
+
+        local vaultDesc = GUI:CreateLabel(tabContent, "Adds a clickable Great Vault shortcut anchored relative to the minimap.", 11, C.textMuted)
+        vaultDesc:SetPoint("TOPLEFT", PAD, y)
+        vaultDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        vaultDesc:SetJustifyH("LEFT")
+        y = y - 20
+
+        local mm = db.minimap
+        if not mm.greatVault then
+            mm.greatVault = {
+                enabled = false,
+                anchor = "TOPLEFT",
+                fadeWhenMouseOut = false,
+                fadeOpacity = 0,
+                scale = 1.0,
+                offsetX = 1,
+                offsetY = -1,
+            }
+        end
+        if not mm.greatVault.anchor then mm.greatVault.anchor = "TOPLEFT" end
+        if mm.greatVault.fadeWhenMouseOut == nil then mm.greatVault.fadeWhenMouseOut = false end
+        if mm.greatVault.fadeOpacity == nil then mm.greatVault.fadeOpacity = 0 end
+        if mm.greatVault.offsetX == nil then mm.greatVault.offsetX = 1 end
+        if mm.greatVault.offsetY == nil then mm.greatVault.offsetY = -1 end
+        local vault = mm.greatVault
+
+        local vaultAnchorOptions = {
+            {value = "TOPLEFT", text = "Top Left"},
+            {value = "TOP", text = "Top"},
+            {value = "TOPRIGHT", text = "Top Right"},
+            {value = "LEFT", text = "Left"},
+            {value = "CENTER", text = "Center"},
+            {value = "RIGHT", text = "Right"},
+            {value = "BOTTOMLEFT", text = "Bottom Left"},
+            {value = "BOTTOM", text = "Bottom"},
+            {value = "BOTTOMRIGHT", text = "Bottom Right"},
+        }
+
+        local vaultEnable = GUI:CreateFormCheckbox(tabContent, "Enable Great Vault Button", "enabled", vault, RefreshMinimap)
+        vaultEnable:SetPoint("TOPLEFT", PAD, y)
+        vaultEnable:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local vaultFade = GUI:CreateFormCheckbox(tabContent, "Fade When Not Hovered", "fadeWhenMouseOut", vault, RefreshMinimap)
+        vaultFade:SetPoint("TOPLEFT", PAD, y)
+        vaultFade:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local vaultFadeOpacity = GUI:CreateFormSlider(tabContent, "Fade Opacity", 0, 1, 0.05, "fadeOpacity", vault, RefreshMinimap, {precision = 2})
+        vaultFadeOpacity:SetPoint("TOPLEFT", PAD, y)
+        vaultFadeOpacity:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local vaultAnchor = GUI:CreateFormDropdown(tabContent, "Anchor", vaultAnchorOptions, "anchor", vault, RefreshMinimap)
+        vaultAnchor:SetPoint("TOPLEFT", PAD, y)
+        vaultAnchor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local vaultScale = GUI:CreateFormSlider(tabContent, "Icon Scale", 0.5, 2.0, 0.1, "scale", vault, RefreshMinimap)
+        vaultScale:SetPoint("TOPLEFT", PAD, y)
+        vaultScale:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local vaultOffsetX = GUI:CreateFormSlider(tabContent, "X Offset", -200, 200, 1, "offsetX", vault, RefreshMinimap)
+        vaultOffsetX:SetPoint("TOPLEFT", PAD, y)
+        vaultOffsetX:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local vaultOffsetY = GUI:CreateFormSlider(tabContent, "Y Offset", -200, 200, 1, "offsetY", vault, RefreshMinimap)
+        vaultOffsetY:SetPoint("TOPLEFT", PAD, y)
+        vaultOffsetY:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+    end
+
+    -- SECTION 7: Button Drawer
     if true then
         y = y - 10
 
