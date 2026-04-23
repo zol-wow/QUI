@@ -42,14 +42,13 @@ local function KillBlizzardFrame(frame, allowInEditMode)
     frame:SetAlpha(0)
     frame:EnableMouse(false)
 
-    -- Move it off-screen as extra measure
-    frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10000, 10000)
-
     -- NOTE: Do NOT use RegisterStateDriver(frame, "visibility", "hide") here.
     -- Hidden frames return nil from GetRect(), which crashes Blizzard's
     -- GetScaledSelectionSides() when the Edit Mode magnetic snap system
-    -- iterates all registered systems.  Alpha 0 + off-screen is sufficient.
+    -- iterates all registered systems. Keep the original geometry intact:
+    -- touching ClearAllPoints/SetPoint on secure Blizzard unit frames taints
+    -- their layout data and later trips ADDON_ACTION_BLOCKED inside Blizzard's
+    -- secure position managers (for example PetFrame:ClearAllPointsBase()).
 end
 
 local function KillBlizzardChildFrame(frame)

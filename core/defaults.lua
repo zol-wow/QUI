@@ -3283,6 +3283,17 @@ local defaults = {
                 offsetY = 0,
             },
 
+            -- Great Vault shortcut (opt-in) - anchored just outside the minimap
+            greatVault = {
+                enabled = false,
+                anchor = "TOPLEFT",
+                fadeWhenMouseOut = false,
+                fadeOpacity = 0,
+                scale = 1.0,
+                offsetX = 1,
+                offsetY = -1,
+            },
+
             -- Clock (anchored top-left) - disabled by default, user can enable
             showClock = false,
             clockConfig = {

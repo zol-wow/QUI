@@ -107,6 +107,25 @@ local function GetFrameTopEdge(frame)
 end
 
 local function GetTopVisibleResourceBarFrame()
+    -- Prefer the bounding-box proxy when available.  The proxy represents the
+    -- combined outer rectangle of primary + secondary in their visible state
+    -- (and shrinks to the visible bar when hidePrimaryOnSwap is active), so
+    -- anchoring its TOP edge stays stable across swap toggles regardless of
+    -- which bar is currently on top.
+    if QUICore and QUICore.GetResourceBarsProxy then
+        local proxy = QUICore:GetResourceBarsProxy()
+        if proxy and IsFrameVisiblyShown(proxy) then
+            -- Only use the proxy when at least one underlying bar is actually
+            -- contributing to its bbox.  Otherwise fall through to the bar
+            -- scan below (handles startup ordering edge cases).
+            local hasPrimary = QUICore.powerBar and IsFrameVisiblyShown(QUICore.powerBar)
+            local hasSecondary = QUICore.secondaryPowerBar and IsFrameVisiblyShown(QUICore.secondaryPowerBar)
+            if hasPrimary or hasSecondary then
+                return proxy
+            end
+        end
+    end
+
     local candidates = {}
     if QUICore then
         if QUICore.powerBar then
@@ -142,8 +161,20 @@ local function ResolveTrackedBarAnchorFrame(anchorTo)
     elseif anchorTo == "utility" then
         return GetUtilityViewer()
     elseif anchorTo == "primary" then
+        -- Swap-aware: when the resource bar swap mechanic is active, the
+        -- frame at primary's natural slot is the secondary bar.  Routing
+        -- through GetSwapAwareBarFor keeps user-anchored buff bars at the
+        -- same visual position regardless of swap state.
+        if QUICore and QUICore.GetSwapAwareBarFor then
+            local f = QUICore:GetSwapAwareBarFor("primary")
+            if f then return f end
+        end
         return QUICore and QUICore.powerBar
     elseif anchorTo == "secondary" then
+        if QUICore and QUICore.GetSwapAwareBarFor then
+            local f = QUICore:GetSwapAwareBarFor("secondary")
+            if f then return f end
+        end
         return QUICore and QUICore.secondaryPowerBar
     elseif anchorTo == "playerFrame" then
         return _G.QUI_UnitFrames and _G.QUI_UnitFrames.player

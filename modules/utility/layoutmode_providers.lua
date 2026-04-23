@@ -507,6 +507,37 @@ local function RegisterAllProviders()
             P(GUI:CreateFormSlider(body, "Y Offset", -30, 30, 1, "offsetY", eye, Refresh), body, sy)
         end, sections, relayout)
 
+        if not mm.greatVault then
+            mm.greatVault = { enabled = false, anchor = "TOPLEFT", fadeWhenMouseOut = false, fadeOpacity = 0, scale = 1.0, offsetX = 1, offsetY = -1 }
+        end
+        if not mm.greatVault.anchor then mm.greatVault.anchor = "TOPLEFT" end
+        if mm.greatVault.fadeWhenMouseOut == nil then mm.greatVault.fadeWhenMouseOut = false end
+        if mm.greatVault.fadeOpacity == nil then mm.greatVault.fadeOpacity = 0 end
+        if mm.greatVault.offsetX == nil then mm.greatVault.offsetX = 1 end
+        if mm.greatVault.offsetY == nil then mm.greatVault.offsetY = -1 end
+        local vault = mm.greatVault
+        local vaultAnchorOptions = {
+            { value = "TOPLEFT", text = "Top Left" },
+            { value = "TOP", text = "Top" },
+            { value = "TOPRIGHT", text = "Top Right" },
+            { value = "LEFT", text = "Left" },
+            { value = "CENTER", text = "Center" },
+            { value = "RIGHT", text = "Right" },
+            { value = "BOTTOMLEFT", text = "Bottom Left" },
+            { value = "BOTTOM", text = "Bottom" },
+            { value = "BOTTOMRIGHT", text = "Bottom Right" },
+        }
+        U.CreateCollapsible(content, "Great Vault", 7 * FORM_ROW + 8, function(body)
+            local sy = -4
+            sy = P(GUI:CreateFormCheckbox(body, "Enable Great Vault Button", "enabled", vault, Refresh), body, sy)
+            sy = P(GUI:CreateFormCheckbox(body, "Fade When Not Hovered", "fadeWhenMouseOut", vault, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Fade Opacity", 0, 1, 0.05, "fadeOpacity", vault, Refresh, { precision = 2 }), body, sy)
+            sy = P(GUI:CreateFormDropdown(body, "Anchor", vaultAnchorOptions, "anchor", vault, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "Icon Scale", 0.5, 2.0, 0.1, "scale", vault, Refresh), body, sy)
+            sy = P(GUI:CreateFormSlider(body, "X Offset", -200, 200, 1, "offsetX", vault, Refresh), body, sy)
+            P(GUI:CreateFormSlider(body, "Y Offset", -200, 200, 1, "offsetY", vault, Refresh), body, sy)
+        end, sections, relayout)
+
         -- Button Drawer section
         if not mm.buttonDrawer then
             mm.buttonDrawer = {

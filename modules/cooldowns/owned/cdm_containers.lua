@@ -25,6 +25,7 @@ local pcall = pcall
 local C_Timer = C_Timer
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
+local hooksecurefunc = hooksecurefunc
 
 ---------------------------------------------------------------------------
 -- CONSTANTS
@@ -53,6 +54,9 @@ local buffFingerprint = nil  -- fingerprint string for buff icon rebuild skippin
 local applying = {}    -- re-entry guard per tracker
 local refreshTimers = {} -- stored timer handles so overlapping RefreshAll calls cancel prior timers
 local initialized = false
+local RegisterContainerFrame
+local SyncContainerMouseState
+local SyncAllContainerMouseStates
 
 -- Anchor proxy for Utility below Essential
 local UtilityAnchorProxy = nil
@@ -712,8 +716,7 @@ function CDMContainers_API:CreateContainer(name, containerType)
 
     -- Create the container frame
     local frameName = "QUI_CDM_" .. key
-    local frame = CreateContainer(frameName)
-    containers[key] = frame
+    local frame = RegisterContainerFrame(key, CreateContainer(frameName))
     -- Position at center initially with a minimum size so the mover is visible.
     -- Override alpha=0 from CreateContainer (hud_visibility handles built-in containers,
     -- but custom containers created during edit mode need to be visible immediately).
@@ -980,7 +983,23 @@ CreateContainer = function(name)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetAlpha(0)  -- start invisible; hud_visibility fades in after icons are built
     frame:Show()
+    if not frame._quiAlphaMouseHooked then
+        frame._quiAlphaMouseHooked = true
+        hooksecurefunc(frame, "SetAlpha", function(self, alpha)
+            if SyncContainerMouseState then
+                SyncContainerMouseState(self, alpha)
+            end
+        end)
+    end
     viewerState[frame] = {}
+    return frame
+end
+
+RegisterContainerFrame = function(key, frame)
+    containers[key] = frame
+    if frame then
+        frame._quiCdmKey = key
+    end
     return frame
 end
 
@@ -1157,10 +1176,10 @@ local VIEWER_NAMES_MAP = {
 local function InitContainers()
     if containers.essential then return end -- already created
 
-    containers.essential  = CreateContainer("QUI_EssentialContainer")
-    containers.utility    = CreateContainer("QUI_UtilityContainer")
-    containers.buff       = CreateContainer("QUI_BuffContainer")
-    containers.trackedBar = CreateContainer("QUI_BuffBarContainer")
+    RegisterContainerFrame("essential", CreateContainer("QUI_EssentialContainer"))
+    RegisterContainerFrame("utility", CreateContainer("QUI_UtilityContainer"))
+    RegisterContainerFrame("buff", CreateContainer("QUI_BuffContainer"))
+    RegisterContainerFrame("trackedBar", CreateContainer("QUI_BuffBarContainer"))
 
     InitContainerPosition(containers.essential, "essential")
     InitContainerPosition(containers.utility, "utility")
@@ -1186,8 +1205,8 @@ local function InitContainers()
         for key, settings in pairs(db.containers) do
             if not BUILTIN_NAMES[key] and not containers[key] then
                 local frameName = "QUI_CDM_" .. key
-                containers[key] = CreateContainer(frameName)
-                InitContainerPosition(containers[key], key)
+                local frame = RegisterContainerFrame(key, CreateContainer(frameName))
+                InitContainerPosition(frame, key)
                 -- Ensure icon pool exists
                 if ns.CDMIcons then
                     ns.CDMIcons:EnsurePool(key)
@@ -1206,7 +1225,7 @@ end
 local function InitBuffContainer()
     if not containers.buff then
         -- InitContainers hasn't run yet -- create the container now
-        containers.buff = CreateContainer("QUI_BuffContainer")
+        RegisterContainerFrame("buff", CreateContainer("QUI_BuffContainer"))
     end
     -- Restore position from DB (or seed from Blizzard viewer on first-ever init).
     -- Skip when anchored — ApplyBuffIconAnchor manages position.
@@ -1226,6 +1245,193 @@ end
 local _editModeActive = false
 local _disabledMouseFrames = {}
 local _forceLayoutKey = nil  -- set temporarily to bypass edit mode check for one container
+
+local function IsCDMMouseoverFadeEnabled()
+    local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
+    return vis and not vis.showAlways and vis.showOnMouseover
+end
+
+local function SetFrameMouseDisabled(frame)
+    if not frame or frame._quiMouseMode == "disabled" then
+        return
+    end
+    if frame.SetMouseClickEnabled then
+        frame:SetMouseClickEnabled(false)
+    end
+    if frame.SetMouseMotionEnabled then
+        frame:SetMouseMotionEnabled(false)
+    end
+    frame:EnableMouse(false)
+    frame._quiMouseMode = "disabled"
+end
+
+local function SetFrameHoverOnly(frame)
+    if not frame or frame._quiMouseMode == "hover" then
+        return
+    end
+    frame:EnableMouse(true)
+    if frame.SetMouseClickEnabled then
+        frame:SetMouseClickEnabled(false)
+    end
+    if frame.SetMouseMotionEnabled then
+        frame:SetMouseMotionEnabled(true)
+    end
+    frame._quiMouseMode = "hover"
+end
+
+local function SetIconMouseDefault(icon)
+    if not icon or icon._quiMouseMode == "default" then
+        return
+    end
+    icon:EnableMouse(true)
+    if icon.SetMouseClickEnabled then
+        icon:SetMouseClickEnabled(true)
+    end
+    if icon.SetMouseMotionEnabled then
+        icon:SetMouseMotionEnabled(true)
+    end
+    icon._quiMouseMode = "default"
+end
+
+local function SyncClickButtonForVisibility(icon, viewerType, hidden)
+    if not icon or not icon.clickButton then
+        return
+    end
+
+    if InCombatLockdown() then
+        icon._pendingVisibilityMouseSync = true
+        return
+    end
+
+    local button = icon.clickButton
+    if hidden then
+        if icon._quiClickButtonSuppressed then
+            return
+        end
+        button:EnableMouse(false)
+        if button.SetMouseClickEnabled then
+            button:SetMouseClickEnabled(false)
+        end
+        if button.SetMouseMotionEnabled then
+            button:SetMouseMotionEnabled(false)
+        end
+        button:Hide()
+        icon._quiClickButtonSuppressed = true
+        icon._pendingVisibilityMouseSync = nil
+        return
+    end
+
+    if not icon._quiClickButtonSuppressed and not icon._pendingVisibilityMouseSync then
+        return
+    end
+
+    button:EnableMouse(true)
+    if button.SetMouseClickEnabled then
+        button:SetMouseClickEnabled(true)
+    end
+    if button.SetMouseMotionEnabled then
+        button:SetMouseMotionEnabled(true)
+    end
+    if ns.CDMIcons and ns.CDMIcons.UpdateIconSecureAttributes then
+        ns.CDMIcons.UpdateIconSecureAttributes(icon, icon._spellEntry, viewerType)
+    end
+    icon._quiClickButtonSuppressed = nil
+    icon._pendingVisibilityMouseSync = nil
+end
+
+local function SyncContainerIconsForVisibility(containerKey, hidden, hoverOnly)
+    if not ns.CDMIcons or not ns.CDMIcons.GetIconPool then
+        return
+    end
+
+    local pool = ns.CDMIcons:GetIconPool(containerKey) or {}
+    for _, icon in ipairs(pool) do
+        if hidden then
+            if hoverOnly then
+                SetFrameHoverOnly(icon)
+            else
+                SetFrameMouseDisabled(icon)
+            end
+        else
+            SetIconMouseDefault(icon)
+        end
+
+        if containerKey == "essential" or containerKey == "utility" then
+            SyncClickButtonForVisibility(icon, containerKey, hidden)
+        end
+    end
+end
+
+local function SyncContainerBarsForVisibility(container)
+    if not ns.CDMBars or not ns.CDMBars.GetActiveBars then
+        return
+    end
+
+    local bars = ns.CDMBars:GetActiveBars() or {}
+    for _, bar in ipairs(bars) do
+        if bar and bar.GetParent and bar:GetParent() == container then
+            SetFrameMouseDisabled(bar)
+        end
+    end
+end
+
+SyncContainerMouseState = function(container, alphaOverride, force)
+    if not container or _editModeActive or Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
+        return
+    end
+
+    local containerKey = container._quiCdmKey
+    if not containerKey then
+        return
+    end
+
+    local alpha
+    if alphaOverride ~= nil then
+        alpha = Helpers.SafeToNumber(alphaOverride, nil)
+    end
+    if alpha == nil and container.GetAlpha then
+        alpha = Helpers.SafeToNumber(container:GetAlpha(), 1)
+    end
+    alpha = alpha or 1
+
+    local hidden = alpha <= 0.001
+    local hoverOnly = IsCDMMouseoverFadeEnabled()
+    local stateChanged = (container._quiAlphaHidden ~= hidden) or (container._quiHoverOnly ~= hoverOnly)
+
+    if hoverOnly then
+        SetFrameHoverOnly(container)
+    else
+        SetFrameMouseDisabled(container)
+    end
+
+    if not (force or stateChanged) then
+        return
+    end
+
+    container._quiAlphaHidden = hidden
+    container._quiHoverOnly = hoverOnly
+
+    local settings = GetTrackerSettings(containerKey)
+    local containerType = settings and settings.containerType or BUILTIN_CONTAINER_TYPES[containerKey]
+    if containerType == "auraBar" then
+        SyncContainerBarsForVisibility(container)
+    else
+        SyncContainerIconsForVisibility(containerKey, hidden, hoverOnly)
+    end
+end
+
+SyncAllContainerMouseStates = function(force)
+    if _editModeActive or Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
+        return
+    end
+
+    for key, frame in pairs(containers) do
+        if frame then
+            frame._quiCdmKey = frame._quiCdmKey or key
+            SyncContainerMouseState(frame, nil, force)
+        end
+    end
+end
 
 ---------------------------------------------------------------------------
 -- CORE: Layout icons in a container
@@ -1359,7 +1565,7 @@ local function LayoutContainer(trackerKey)
             if Helpers.IsEditModeActive() then
                 icon:Show()
                 icon:EnableMouse(false)
-                _disabledMouseFrames[icon] = true
+                _disabledMouseFrames[icon] = "icon"
             end
         end
 
@@ -1422,7 +1628,7 @@ local function LayoutContainer(trackerKey)
             icon:Show()
             if editModeActive then
                 icon:EnableMouse(false)
-                _disabledMouseFrames[icon] = true
+                _disabledMouseFrames[icon] = "icon"
                 if icon.clickButton and not InCombatLockdown() then
                     icon.clickButton:EnableMouse(false)
                     icon.clickButton:Hide()
@@ -1928,6 +2134,7 @@ RefreshAll = function(forceSync)
         if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
             ns.CDMIcons:UpdateAllCooldowns()
         end
+        SyncAllContainerMouseStates(true)
     else
         refreshTimers[1] = C_Timer.NewTimer(0.01, function()
             refreshTimers[1] = nil
@@ -1982,6 +2189,7 @@ RefreshAll = function(forceSync)
             if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
                 ns.CDMIcons:UpdateAllCooldowns()
             end
+            SyncAllContainerMouseStates(true)
         end)
     end
 end
@@ -2199,13 +2407,13 @@ local function DisableMouseForEditMode(viewerType)
     if not container then return end
 
     container:EnableMouse(false)
-    _disabledMouseFrames[container] = true
+    _disabledMouseFrames[container] = "container"
 
     -- Disable mouse on all icons/bars in this pool
     local pool = ns.CDMIcons and ns.CDMIcons:GetIconPool(viewerType) or {}
     for _, icon in ipairs(pool) do
         icon:EnableMouse(false)
-        _disabledMouseFrames[icon] = true
+        _disabledMouseFrames[icon] = "icon"
         -- Hide click-to-cast buttons so they don't intercept edit mode clicks
         if icon.clickButton and not InCombatLockdown() then
             icon.clickButton:EnableMouse(false)
@@ -2217,15 +2425,19 @@ local function DisableMouseForEditMode(viewerType)
         local bars = ns.CDMBars:GetActiveBars()
         for _, bar in ipairs(bars) do
             bar:EnableMouse(false)
-            _disabledMouseFrames[bar] = true
+            _disabledMouseFrames[bar] = "bar"
         end
     end
 end
 
 -- Restore mouse on all frames we disabled
 local function RestoreMouseAfterEditMode()
-    for frame in pairs(_disabledMouseFrames) do
-        frame:EnableMouse(true)
+    for frame, mouseRole in pairs(_disabledMouseFrames) do
+        if mouseRole == "icon" then
+            SetIconMouseDefault(frame)
+        else
+            SetFrameMouseDisabled(frame)
+        end
     end
     wipe(_disabledMouseFrames)
 
@@ -2242,6 +2454,8 @@ local function RestoreMouseAfterEditMode()
             end
         end
     end
+
+    SyncAllContainerMouseStates(true)
 end
 
 -- Force all buff icons to full alpha (called on edit mode enter).
@@ -2529,6 +2743,13 @@ function ownedEngine:Initialize()
     end
     UpdateAllLockedBars()
 
+    if _G.QUI_RefreshCDMVisibility and not ownedEngine._mouseSyncHooked then
+        ownedEngine._mouseSyncHooked = true
+        hooksecurefunc("QUI_RefreshCDMVisibility", function()
+            SyncAllContainerMouseStates(true)
+        end)
+    end
+
     -- Apply HUD visibility now that containers exist (covers /reload while mounted).
     -- Containers start at alpha=0 (CreateContainer). Set the correct target
     -- alpha instantly so StartCDMFade sees "already at target" and skips
@@ -2546,6 +2767,7 @@ function ownedEngine:Initialize()
             frame:SetAlpha(targetAlpha)
         end
     end
+    SyncAllContainerMouseStates(true)
     if _G.QUI_RefreshCDMVisibility then
         _G.QUI_RefreshCDMVisibility()
     end

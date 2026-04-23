@@ -55,6 +55,7 @@ local UnitThreatSituation = UnitThreatSituation
 local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
 local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
 local UnitIsUnit = UnitIsUnit
+local UnitIsGhost = UnitIsGhost
 local UnitGUID = UnitGUID
 local GetNumGroupMembers = GetNumGroupMembers
 local GetRaidRosterInfo = GetRaidRosterInfo
@@ -724,6 +725,28 @@ local function GetPowerBarColor(unit, isRaid)
     return 0, 0.5, 1, 1 -- Default mana blue
 end
 
+local function NormalizeUnitFlag(value, fallback)
+    if IsSecretValue(value) then
+        return fallback or false
+    end
+    return value and true or false
+end
+
+local function GetUnitLifeState(unit)
+    local isConnected = NormalizeUnitFlag(UnitIsConnected(unit), true)
+    if not isConnected and IsNPCPartyMember(unit) then
+        isConnected = true
+    end
+
+    local isDeadOrGhost = NormalizeUnitFlag(UnitIsDeadOrGhost(unit), false)
+    local isGhost = false
+    if isDeadOrGhost then
+        isGhost = NormalizeUnitFlag(UnitIsGhost(unit), false)
+    end
+
+    return isConnected, isDeadOrGhost, isGhost
+end
+
 ---------------------------------------------------------------------------
 -- UPDATE: Health
 ---------------------------------------------------------------------------
@@ -743,8 +766,7 @@ local function UpdateHealth(frame)
     -- a full frame refresh.
     UpdateDarkModeVisuals(frame)
 
-    local isDeadOrGhost = UnitIsDeadOrGhost(unit)
-    local isConnected = UnitIsConnected(unit) or IsNPCPartyMember(unit)
+    local isConnected, isDeadOrGhost, isGhost = GetUnitLifeState(unit)
 
     -- Health bar value — use percentage-based approach
     -- UnitHealthPercent returns 0-100 via CurveConstants.ScaleTo100, C-side handles secrets
@@ -789,7 +811,6 @@ local function UpdateHealth(frame)
             frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
             frame.statusText:Show()
         elseif isDeadOrGhost then
-            local isGhost = UnitIsGhost(unit)
             frame.statusText:SetText(isGhost and "GHOST" or "DEAD")
             frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
             frame.statusText:Show()
@@ -1003,7 +1024,8 @@ local function UpdateAbsorbs(frame, _unit, _maxHP)
 
     -- When called standalone (UNIT_ABSORB_AMOUNT_CHANGED), do our own guards.
     if not _unit then
-        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+        local _, isDeadOrGhost = GetUnitLifeState(unit)
+        if not UnitExists(unit) or isDeadOrGhost then
             frame.absorbBar:Hide()
             return
         end
@@ -1075,7 +1097,8 @@ local function UpdateHealAbsorb(frame, _unit, _maxHP)
     if not unit then return end
 
     if not _unit then
-        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+        local _, isDeadOrGhost = GetUnitLifeState(unit)
+        if not UnitExists(unit) or isDeadOrGhost then
             frame.healAbsorbBar:Hide()
             return
         end
@@ -1132,7 +1155,8 @@ local function UpdateHealPrediction(frame, _unit, _maxHP)
 
     -- When called standalone (UNIT_HEAL_PREDICTION), do our own guards.
     if not _unit then
-        if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+        local _, isDeadOrGhost = GetUnitLifeState(unit)
+        if not UnitExists(unit) or isDeadOrGhost then
             frame.healPredictionBar:Hide()
             return
         end
@@ -1427,12 +1451,7 @@ local function UpdateConnection(frame)
     if not frame or not frame.unit then return end
     local unit = frame.unit
 
-    -- Guard against secret values (WoW 12.0+ combat taint)
-    local isConnected = UnitIsConnected(unit) or IsNPCPartyMember(unit)
-    if IsSecretValue(isConnected) then isConnected = true end
-
-    local isDead = UnitIsDeadOrGhost(unit)
-    if IsSecretValue(isDead) then isDead = false end
+    local isConnected, isDead = GetUnitLifeState(unit)
 
     if not isConnected and UnitExists(unit) then
         frame:SetAlpha(0.5)
@@ -1536,7 +1555,8 @@ local function UpdateDispelOverlay(frame)
         return
     end
 
-    if not UnitExists(frame.unit) or UnitIsDeadOrGhost(frame.unit) then
+    local _, isDeadOrGhost = GetUnitLifeState(frame.unit)
+    if not UnitExists(frame.unit) or isDeadOrGhost then
         frame.dispelOverlay:Hide()
         return
     end
@@ -1633,7 +1653,10 @@ local DEFENSIVE_GROWTH_OFFSETS = {
 local _defensive = {
     foundAuras = {},     -- pooled scratch (wipe and reuse)
     seen = {},           -- pooled scratch (wipe and reuse)
-    cache = {},          -- auraInstanceID → true/false (immutable per ID)
+    -- Positive-only cache. Negative hits are effectively one-shot because each
+    -- auraInstanceID is classified once when it enters the shared aura cache;
+    -- storing false for every non-defensive aura just creates fight-long growth.
+    cache = {},          -- auraInstanceID → true
     filterBig = nil,     -- pre-cached filter string
     filterExternal = nil,
 }
@@ -1698,8 +1721,8 @@ local function IsVerifiedDefensiveAura(unit, auraData)
 
     -- Check cache first
     local cached = _defensive.cache[auraInstanceID]
-    if cached ~= nil then
-        return cached
+    if cached then
+        return true
     end
 
     if AuraMatchesDefensiveClassification(unit, auraInstanceID, filters.BigDefensive) then
@@ -1711,7 +1734,6 @@ local function IsVerifiedDefensiveAura(unit, auraData)
         return true
     end
 
-    _defensive.cache[auraInstanceID] = false
     return false
 end
 
@@ -1733,7 +1755,8 @@ local function UpdateDefensiveIndicator(frame)
     end
 
     local unit = frame.unit
-    if not UnitExists(unit) or UnitIsDeadOrGhost(unit) then
+    local _, isDeadOrGhost = GetUnitLifeState(unit)
+    if not UnitExists(unit) or isDeadOrGhost then
         for _, icon in ipairs(frame.defensiveIcons) do icon:Hide() end
         return
     end
@@ -1858,8 +1881,7 @@ local function UpdatePortrait(frame)
     frame.portraitTexture:SetTexCoord(0.15, 0.85, 0.15, 0.85)
 
     -- Desaturate for dead/offline
-    local isDeadOrGhost = UnitIsDeadOrGhost(unit)
-    local isConnected = UnitIsConnected(unit) or IsNPCPartyMember(unit)
+    local isConnected, isDeadOrGhost = GetUnitLifeState(unit)
     frame.portraitTexture:SetDesaturated(isDeadOrGhost or not isConnected)
 
     frame.portrait:Show()
@@ -4752,9 +4774,9 @@ local function OnEvent(self, event, arg1, ...)
         -- don't prevent OOC methods from updating.
         wipe(_range.cache)
         wipe(_range.cacheTime)
-        -- Evict defensive classification cache — auraInstanceIDs are globally
-        -- unique per application, so entries accumulate unboundedly during
-        -- long encounters. Safe to wipe OOC since new auras get fresh IDs.
+        -- Evict the positive defensive classification cache. Even without
+        -- negative entries, defensive auraInstanceIDs stay unique for the life
+        -- of the application, so OOC is still the right time to reset it.
         wipe(_defensive.cache)
 
         -- Process deferred operations

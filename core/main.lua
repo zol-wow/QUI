@@ -729,8 +729,9 @@ function QUICore:HookEditMode()
         local _bossContainerScaledSidesHooked = false
 
         -- Blizzard Edit Mode movers to suppress for frames QUI replaces.
-        -- Hook HighlightSystem/SelectSystem on each so the blue selection overlay never appears.
-        local _editModeSuppressionInstalled = false
+        -- Hook HighlightSystem/SelectSystem on each so the blue selection
+        -- overlay and magnetic snap registration get cleared immediately.
+        local _editModeSuppressedFrames = {}
         local _editModeSuppressedFrameNames = {
             -- Unit frames
             "PlayerFrame", "PetFrame", "PartyFrame",
@@ -738,9 +739,14 @@ function QUICore:HookEditMode()
             -- Aura frames
             "BuffFrame", "DebuffFrame",
             -- Action bars
+            "MainMenuBar", "MainActionBar",
+            "MultiBarBottomLeft", "MultiBarBottomRight",
+            "MultiBarRight", "MultiBarLeft",
+            "MultiBar5", "MultiBar6", "MultiBar7",
             "StanceBar", "MicroMenuContainer", "BagsBar",
             "PetActionBar", "ExtraAbilityContainer",
-            "MainMenuBarVehicleLeaveButton",
+            "ExtraActionBarFrame", "ZoneAbilityFrame",
+            "OverrideActionBar", "MainMenuBarVehicleLeaveButton",
             -- Cooldown viewers
             "EssentialCooldownViewer", "UtilityCooldownViewer",
             "BuffIconCooldownViewer", "BuffBarCooldownViewer",
@@ -764,21 +770,37 @@ function QUICore:HookEditMode()
             return true
         end
 
+        local function SuppressEditModeSelection(frame)
+            if not frame then return end
+            if frame.ClearHighlight then
+                pcall(frame.ClearHighlight, frame)
+            end
+            local selection = frame.Selection
+            if selection and selection.Hide then
+                pcall(selection.Hide, selection)
+            end
+            if EditModeMagnetismManager and EditModeMagnetismManager.UnregisterFrame then
+                pcall(EditModeMagnetismManager.UnregisterFrame, EditModeMagnetismManager, frame)
+            end
+        end
+
         local function InstallEditModeSuppression()
-            if _editModeSuppressionInstalled then return end
-            _editModeSuppressionInstalled = true
             for _, name in ipairs(_editModeSuppressedFrameNames) do
                 if ShouldSuppressEditModeFrame(name) then
                     local frame = _G[name]
-                    if frame and frame.HighlightSystem then
-                        hooksecurefunc(frame, "HighlightSystem", function(f)
-                            if f.ClearHighlight then f:ClearHighlight() end
-                        end)
-                        if frame.SelectSystem then
-                            hooksecurefunc(frame, "SelectSystem", function(f)
-                                if f.ClearHighlight then f:ClearHighlight() end
+                    if frame and not _editModeSuppressedFrames[frame] then
+                        _editModeSuppressedFrames[frame] = true
+                        if frame.HighlightSystem then
+                            hooksecurefunc(frame, "HighlightSystem", function(f)
+                                SuppressEditModeSelection(f)
                             end)
                         end
+                        if frame.SelectSystem then
+                            hooksecurefunc(frame, "SelectSystem", function(f)
+                                SuppressEditModeSelection(f)
+                            end)
+                        end
+                        SuppressEditModeSelection(frame)
                     end
                 end
             end
@@ -802,9 +824,7 @@ function QUICore:HookEditMode()
                 for _, name in ipairs(_editModeSuppressedFrameNames) do
                     if ShouldSuppressEditModeFrame(name) then
                         local frame = _G[name]
-                        if frame and frame.ClearHighlight then
-                            pcall(frame.ClearHighlight, frame)
-                        end
+                        SuppressEditModeSelection(frame)
                     end
                 end
             end)
