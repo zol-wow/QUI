@@ -262,6 +262,116 @@ local function ResolveTooltipUnit(tooltip)
     return unit
 end
 
+local tooltipHideFadeState = {
+    active = false,
+    duration = 0,
+    elapsed = 0,
+    startAlpha = 1,
+}
+
+local function ResetTooltipHideFade()
+    tooltipHideFadeState.active = false
+    tooltipHideFadeState.duration = 0
+    tooltipHideFadeState.elapsed = 0
+    tooltipHideFadeState.startAlpha = 1
+    if GameTooltip and GameTooltip.IsShown and GameTooltip:IsShown() then
+        pcall(GameTooltip.SetAlpha, GameTooltip, 1)
+    end
+end
+
+local function StartTooltipHideFade(duration)
+    duration = tonumber(duration) or 0
+    if not GameTooltip or not (GameTooltip.IsShown and GameTooltip:IsShown()) then
+        ResetTooltipHideFade()
+        return
+    end
+
+    if duration <= 0 then
+        ResetTooltipHideFade()
+        GameTooltip:Hide()
+        return
+    end
+
+    local okAlpha, currentAlpha = pcall(GameTooltip.GetAlpha, GameTooltip)
+    tooltipHideFadeState.active = true
+    tooltipHideFadeState.duration = duration
+    tooltipHideFadeState.elapsed = 0
+    tooltipHideFadeState.startAlpha = (okAlpha and type(currentAlpha) == "number" and currentAlpha) or 1
+end
+
+local function IsChildOfFrame(frame, ancestor)
+    if not frame or not ancestor then
+        return false
+    end
+
+    local depth = 0
+    while frame and depth < 12 do
+        if frame == ancestor then
+            return true
+        end
+        if frame == UIParent then
+            break
+        end
+        if not frame.GetParent then
+            break
+        end
+        local ok, parent = pcall(frame.GetParent, frame)
+        if not ok or not parent then
+            break
+        end
+        frame = parent
+        depth = depth + 1
+    end
+
+    return false
+end
+
+local function IsTooltipOwnerHovered(owner)
+    if not owner or not Provider then
+        return false
+    end
+
+    local focus = Provider.GetTopMouseFrame and Provider:GetTopMouseFrame()
+    if focus and IsChildOfFrame(focus, owner) then
+        return true
+    end
+
+    if owner.IsMouseOver then
+        local ok, isOver = pcall(owner.IsMouseOver, owner)
+        if ok and isOver then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function ShouldKeepTooltipVisible(tooltip)
+    if not tooltip or not Provider then
+        return false
+    end
+
+    local owner = tooltip.GetOwner and tooltip:GetOwner() or nil
+    if owner and not Provider:IsTransientTooltipOwner(owner) then
+        return IsTooltipOwnerHovered(owner)
+    end
+
+    local unit = ResolveTooltipUnit(tooltip)
+    if unit and UnitExists(unit) then
+        return true
+    end
+
+    if UnitExists("mouseover") then
+        return true
+    end
+
+    if Provider.IsFrameBlockingMouse and Provider:IsFrameBlockingMouse() then
+        return true
+    end
+
+    return false
+end
+
 local function GetPlayerItemLevelColor(itemLevel)
     if Helpers.IsSecretValue(itemLevel) then
         return 1, 1, 1
@@ -850,13 +960,43 @@ local function SetupTooltipHook()
     -- HookScript on GameTooltip permanently taints its dispatch tables.
     local gtSpellIDWatcher = CreateFrame("Frame")
     local gtSpellIDWasShown = false
-    gtSpellIDWatcher:SetScript("OnUpdate", function()
+    gtSpellIDWatcher:SetScript("OnUpdate", function(_, elapsed)
         local shown = GameTooltip:IsShown()
+        if shown and not gtSpellIDWasShown then
+            ResetTooltipHideFade()
+        end
         if gtSpellIDWasShown and not shown then
+            ResetTooltipHideFade()
             InvalidatePendingSetUnit()
             tooltipSpellIDAdded[GameTooltip] = nil
             tooltipPlayerItemLevelGUID[GameTooltip] = nil
             tooltipUnitInfoState[GameTooltip] = nil
+        elseif shown then
+            local settings = Provider:GetSettings()
+            if not settings or not settings.enabled then
+                ResetTooltipHideFade()
+            elseif ShouldKeepTooltipVisible(GameTooltip) then
+                if tooltipHideFadeState.active then
+                    ResetTooltipHideFade()
+                end
+            else
+                if not tooltipHideFadeState.active then
+                    StartTooltipHideFade(settings.hideDelay)
+                end
+            end
+
+            if tooltipHideFadeState.active then
+                tooltipHideFadeState.elapsed = tooltipHideFadeState.elapsed + (elapsed or 0)
+                local duration = tooltipHideFadeState.duration
+                local progress = (duration > 0) and (tooltipHideFadeState.elapsed / duration) or 1
+                if progress >= 1 then
+                    ResetTooltipHideFade()
+                    GameTooltip:Hide()
+                else
+                    local nextAlpha = math.max(0, tooltipHideFadeState.startAlpha * (1 - progress))
+                    pcall(GameTooltip.SetAlpha, GameTooltip, nextAlpha)
+                end
+            end
         end
         gtSpellIDWasShown = shown
     end)
