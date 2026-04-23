@@ -24,6 +24,7 @@ local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local string_format = string.format
 local math_floor = math.floor
+local math_max = math.max
 
 -- Upvalue hot-path WoW APIs
 local UnitExists = UnitExists
@@ -281,6 +282,48 @@ local function ApplyHealthFillDirection(frame, settings)
     local reverseFill = IsTargetHealthDirectionInverted(frame.unitKey, settings)
     frame.healthBar:SetReverseFill(reverseFill)
     return reverseFill
+end
+
+-- Cache the full health-bar extents during layout work so combat-time absorb
+-- and prediction updates never need live GetWidth()/GetHeight() reads.
+local function CacheHealthBarExtents(frame, settings, frameWidth, frameHeight)
+    if not frame then return end
+    settings = settings or (frame.unitKey and GetUnitSettings(frame.unitKey))
+    if not settings then return end
+
+    local width = frameWidth
+    local height = frameHeight
+    if type(width) ~= "number" or type(height) ~= "number" then
+        width = frame:GetWidth()
+        height = frame:GetHeight()
+    end
+
+    local borderPx = settings.borderSize or 1
+    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
+    local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
+    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
+
+    frame._healthBarExtentWidth = math_max((width or 0) - (borderSize * 2), 0)
+    frame._healthBarExtentHeight = math_max((height or 0) - (borderSize * 2) - powerHeight - separatorHeight, 0)
+end
+
+local function GetCachedHealthBarExtents(frame, settings)
+    if not frame then return nil, nil end
+
+    local width = frame._healthBarExtentWidth
+    local height = frame._healthBarExtentHeight
+
+    if (not width or width <= 0 or not height or height <= 0) and not InCombatLockdown() then
+        CacheHealthBarExtents(frame, settings)
+        width = frame._healthBarExtentWidth
+        height = frame._healthBarExtentHeight
+    end
+
+    if not width or width <= 0 or not height or height <= 0 then
+        return nil, nil
+    end
+
+    return width, height
 end
 
 ---------------------------------------------------------------------------
@@ -859,6 +902,12 @@ local function UpdateAbsorbs(frame)
 
         -- ALWAYS position and show BOTH bars - alpha controls which is visible
         -- No branching based on secret values - just pass alpha directly
+        local healthBarWidth, healthBarHeight = GetCachedHealthBarExtents(frame, settings)
+        if not healthBarWidth or not healthBarHeight then
+            frame.absorbBar:Hide()
+            if frame.absorbOverflowBar then frame.absorbOverflowBar:Hide() end
+            return
+        end
 
         -- ATTACHED BAR: Starts where health ENDS, grows RIGHTWARD into empty space
         -- Anchor to the empty side of the health fill (normal: right side, reversed: left side).
@@ -868,8 +917,8 @@ local function UpdateAbsorbs(frame)
         else
             frame.absorbBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
         end
-        frame.absorbBar:SetHeight(frame.healthBar:GetHeight())
-        frame.absorbBar:SetWidth(frame.healthBar:GetWidth())  -- Full width available for absorb to fill
+        frame.absorbBar:SetHeight(healthBarHeight)
+        frame.absorbBar:SetWidth(healthBarWidth)  -- Full width available for absorb to fill
         frame.absorbBar:SetReverseFill(healthReversed)
         frame.absorbBar:SetMinMaxValues(0, maxHealth or 1)
         frame.absorbBar:SetValue(clampedAbsorbs)  -- Clamped value (secret-safe via StatusBar)
@@ -988,14 +1037,19 @@ local function UpdateHealPrediction(frame)
     end
 
     local healthTexture = frame.healthBar:GetStatusBarTexture()
+    local healthBarWidth, healthBarHeight = GetCachedHealthBarExtents(frame, settings)
+    if not healthBarWidth or not healthBarHeight then
+        frame.healPredictionBar:Hide()
+        return
+    end
     frame.healPredictionBar:ClearAllPoints()
     if healthReversed then
         frame.healPredictionBar:SetPoint("RIGHT", healthTexture, "LEFT", 0, 0)
     else
         frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
     end
-    frame.healPredictionBar:SetHeight(frame.healthBar:GetHeight())
-    frame.healPredictionBar:SetWidth(frame.healthBar:GetWidth())
+    frame.healPredictionBar:SetHeight(healthBarHeight)
+    frame.healPredictionBar:SetWidth(healthBarWidth)
     frame.healPredictionBar:SetReverseFill(healthReversed)
     frame.healPredictionBar:SetMinMaxValues(0, maxHealth or 1)
     frame.healPredictionBar:SetValue(incomingHeals)
@@ -1605,6 +1659,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     healthBar:EnableMouse(false)
     frame.healthBar = healthBar
     ApplyHealthFillDirection(frame, settings)
+    CacheHealthBarExtents(frame, settings, width, height)
     -- Absorb bar (StatusBar handles secret values via SetValue)
     -- Use stripe texture directly on StatusBar (no overlay) to avoid 1px sliver at 0 width
     local absorbSettings = settings.absorbs or {}
@@ -2010,6 +2065,7 @@ local function CreateUnitFrame(unit, unitKey)
     healthBar:EnableMouse(false)
     frame.healthBar = healthBar
     ApplyHealthFillDirection(frame, settings)
+    CacheHealthBarExtents(frame, settings, width, height)
 
     -- Heal prediction bar (player/target only)
     if unitKey == "player" or unitKey == "target" then
@@ -2708,14 +2764,19 @@ function QUI_UF:ShowPreview(unitKey)
             local clamped = incoming > missing and missing or incoming
             local healthTexture = frame.healthBar:GetStatusBarTexture()
             local healthReversed = IsTargetHealthDirectionInverted(unitKey, settings)
+            local healthBarWidth, healthBarHeight = GetCachedHealthBarExtents(frame, settings)
             frame.healPredictionBar:ClearAllPoints()
             if healthReversed then
                 frame.healPredictionBar:SetPoint("RIGHT", healthTexture, "LEFT", 0, 0)
             else
                 frame.healPredictionBar:SetPoint("LEFT", healthTexture, "RIGHT", 0, 0)
             end
-            frame.healPredictionBar:SetHeight(frame.healthBar:GetHeight())
-            frame.healPredictionBar:SetWidth(frame.healthBar:GetWidth())
+            if not healthBarWidth or not healthBarHeight then
+                frame.healPredictionBar:Hide()
+                return
+            end
+            frame.healPredictionBar:SetHeight(healthBarHeight)
+            frame.healPredictionBar:SetWidth(healthBarWidth)
             frame.healPredictionBar:SetReverseFill(healthReversed)
             frame.healPredictionBar:SetMinMaxValues(0, hpMax)
             frame.healPredictionBar:SetValue(clamped)
@@ -2942,6 +3003,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 frame.healthBar:ClearAllPoints()
                 frame.healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
                 frame.healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
+                CacheHealthBarExtents(frame, settings, width, height)
                 
                 -- Update power bar
                 if frame.powerBar then
@@ -3239,6 +3301,7 @@ function QUI_UF:RefreshFrame(unitKey)
     frame.healthBar:ClearAllPoints()
     frame.healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     frame.healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
+    CacheHealthBarExtents(frame, settings, width, height)
     
     -- Update power bar (create dynamically if needed)
     if settings.showPowerBar then
