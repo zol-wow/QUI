@@ -1633,7 +1633,10 @@ local DEFENSIVE_GROWTH_OFFSETS = {
 local _defensive = {
     foundAuras = {},     -- pooled scratch (wipe and reuse)
     seen = {},           -- pooled scratch (wipe and reuse)
-    cache = {},          -- auraInstanceID → true/false (immutable per ID)
+    -- Positive-only cache. Negative hits are effectively one-shot because each
+    -- auraInstanceID is classified once when it enters the shared aura cache;
+    -- storing false for every non-defensive aura just creates fight-long growth.
+    cache = {},          -- auraInstanceID → true
     filterBig = nil,     -- pre-cached filter string
     filterExternal = nil,
 }
@@ -1698,8 +1701,8 @@ local function IsVerifiedDefensiveAura(unit, auraData)
 
     -- Check cache first
     local cached = _defensive.cache[auraInstanceID]
-    if cached ~= nil then
-        return cached
+    if cached then
+        return true
     end
 
     if AuraMatchesDefensiveClassification(unit, auraInstanceID, filters.BigDefensive) then
@@ -1711,7 +1714,6 @@ local function IsVerifiedDefensiveAura(unit, auraData)
         return true
     end
 
-    _defensive.cache[auraInstanceID] = false
     return false
 end
 
@@ -4752,9 +4754,9 @@ local function OnEvent(self, event, arg1, ...)
         -- don't prevent OOC methods from updating.
         wipe(_range.cache)
         wipe(_range.cacheTime)
-        -- Evict defensive classification cache — auraInstanceIDs are globally
-        -- unique per application, so entries accumulate unboundedly during
-        -- long encounters. Safe to wipe OOC since new auras get fresh IDs.
+        -- Evict the positive defensive classification cache. Even without
+        -- negative entries, defensive auraInstanceIDs stay unique for the life
+        -- of the application, so OOC is still the right time to reset it.
         wipe(_defensive.cache)
 
         -- Process deferred operations
