@@ -1385,7 +1385,10 @@ SyncContainerMouseState = function(container, alphaOverride, force)
         return
     end
 
-    local alpha = Helpers.SafeToNumber(alphaOverride, nil)
+    local alpha
+    if alphaOverride ~= nil then
+        alpha = Helpers.SafeToNumber(alphaOverride, nil)
+    end
     if alpha == nil and container.GetAlpha then
         alpha = Helpers.SafeToNumber(container:GetAlpha(), 1)
     end

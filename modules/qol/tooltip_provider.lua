@@ -197,6 +197,115 @@ local function IsCDMOwnerState(state)
     return state and (state.skinned or state._isQUICDMIcon or state._spellEntry)
 end
 
+local BUILTIN_CDM_KEYS = {
+    essential = true,
+    utility = true,
+    buff = true,
+    trackedBar = true,
+}
+
+local MAX_CONTEXT_PARENT_DEPTH = 6
+
+local function GetParentFrame(frame)
+    if not frame or not frame.GetParent then
+        return nil
+    end
+    local ok, parent = pcall(frame.GetParent, frame)
+    if not ok or parent == frame then
+        return nil
+    end
+    return parent
+end
+
+local function GetFrameChain(frame)
+    local chain = {}
+    local depth = 0
+    while frame and depth < MAX_CONTEXT_PARENT_DEPTH do
+        chain[#chain + 1] = frame
+        if frame == UIParent then
+            break
+        end
+        frame = GetParentFrame(frame)
+        depth = depth + 1
+    end
+    return chain
+end
+
+local function GetActionSlot(frame)
+    if not frame then
+        return nil
+    end
+
+    if frame.GetAttribute then
+        local ok, actionSlot = pcall(frame.GetAttribute, frame, "action")
+        if ok and actionSlot and not Helpers.IsSecretValue(actionSlot) then
+            return actionSlot
+        end
+    end
+
+    local actionSlot = frame.action
+    if actionSlot and not Helpers.IsSecretValue(actionSlot) then
+        return actionSlot
+    end
+
+    return nil
+end
+
+local function IsActionFrameName(name)
+    if name == "" then
+        return false
+    end
+
+    return strmatch(name, "ActionButton") or
+        strmatch(name, "MultiBar") or
+        strmatch(name, "PetActionButton") or
+        strmatch(name, "StanceButton") or
+        strmatch(name, "OverrideActionBar") or
+        strmatch(name, "ExtraActionButton") or
+        strmatch(name, "BT4Button") or
+        strmatch(name, "DominosActionButton") or
+        strmatch(name, "ElvUI_Bar") or
+        strmatch(name, "^QUI_Bar%d+Button%d+$") or
+        strmatch(name, "^QUI_PetButton%d+$") or
+        strmatch(name, "^QUI_StanceButton%d+$") or
+        strmatch(name, "^QUI_SpellFlyoutButton%d+$") or
+        strmatch(name, "^SpellFlyoutPopupButton%d+$") or
+        strmatch(name, "^SpellFlyoutButton%d+$")
+end
+
+local function IsItemFrameName(name)
+    if name == "" then
+        return false
+    end
+
+    return strmatch(name, "ContainerFrame") or
+        strmatch(name, "BagSlot") or
+        strmatch(name, "BankFrame") or
+        strmatch(name, "ReagentBank") or
+        strmatch(name, "BagItem") or
+        strmatch(name, "Baganator") or
+        strmatch(name, "^Character.+Slot$") or
+        strmatch(name, "^Inspect.+Slot$")
+end
+
+local function IsUnitFrameName(frame, name)
+    if not frame then
+        return false
+    end
+
+    return frame.unit or
+        strmatch(name, "UnitFrame") or
+        strmatch(name, "PlayerFrame") or
+        strmatch(name, "TargetFrame") or
+        strmatch(name, "FocusFrame") or
+        strmatch(name, "PartyMemberFrame") or
+        strmatch(name, "CompactRaidFrame") or
+        strmatch(name, "CompactPartyFrame") or
+        strmatch(name, "NamePlate") or
+        strmatch(name, "Quazii.*Frame") or
+        strmatch(name, "^QUI_.*Frame$")
+end
+
 ---------------------------------------------------------------------------
 -- Context Detection
 -- Determines what triggered the tooltip based on owner frame
@@ -207,87 +316,74 @@ function TooltipProvider:GetTooltipContext(owner)
     if owner == WorldFrame then return "npcs" end
     if self:IsTransientTooltipOwner(owner) then return nil end
 
-    -- CDM: Check for skinned CDM icons
     local getIS = _G.QUI_GetIconState or _G.QUI_GetCDMIconState
-    local ownerIS = getIS and getIS(owner)
-    if IsCDMOwnerState(ownerIS) then
-        return "cdm"
-    end
+    local getViewer = _G.QUI_GetCDMViewerFrame
+    local chain = GetFrameChain(owner)
 
-    local parent = owner:GetParent()
-    if parent then
-        local parentIS = getIS and getIS(parent)
-        if IsCDMOwnerState(parentIS) then
+    for _, frame in ipairs(chain) do
+        local state = getIS and getIS(frame)
+        local entry = state and state._spellEntry
+        local viewerType = entry and entry.viewerType
+        if type(viewerType) == "string" and not BUILTIN_CDM_KEYS[viewerType] then
+            return "customTrackers"
+        end
+
+        local cdmKey = frame._quiCdmKey
+        if type(cdmKey) == "string" and not BUILTIN_CDM_KEYS[cdmKey] then
+            return "customTrackers"
+        end
+
+        if IsCDMOwnerState(state) then
             return "cdm"
         end
-        local getViewer = _G.QUI_GetCDMViewerFrame
+
         if getViewer and (
-           parent == getViewer("essential") or
-           parent == getViewer("utility") or
-           parent == getViewer("buffIcon") or
-           parent == getViewer("buffBar")) then
+            frame == getViewer("essential") or
+            frame == getViewer("utility") or
+            frame == getViewer("buffIcon") or
+            frame == getViewer("buffBar")
+        ) then
             return "cdm"
         end
     end
 
-    -- Custom Trackers
-    if owner.__customTrackerIcon then
-        return "customTrackers"
+    for _, frame in ipairs(chain) do
+        local frameName = GetFrameName(frame)
+        if frame.__customTrackerIcon or
+            frame._quiTooltipContext == "customTrackers" or
+            frame.__quiTooltipContext == "customTrackers" or
+            strmatch(frameName, "[Cc]ustomTracker") then
+            return "customTrackers"
+        end
     end
 
-    local name = owner:GetName() or ""
-
-    -- Abilities: action button patterns
-    if strmatch(name, "ActionButton") or
-       strmatch(name, "MultiBar") or
-       strmatch(name, "PetActionButton") or
-       strmatch(name, "StanceButton") or
-       strmatch(name, "OverrideActionBar") or
-       strmatch(name, "ExtraActionButton") or
-       strmatch(name, "BT4Button") or
-       strmatch(name, "DominosActionButton") or
-       strmatch(name, "ElvUI_Bar") then
-        local actionSlot = owner:GetAttribute("action")
-        if actionSlot and not Helpers.IsSecretValue(actionSlot) then
+    for _, frame in ipairs(chain) do
+        local actionSlot = GetActionSlot(frame)
+        if actionSlot then
             local actionType = GetActionInfo(actionSlot)
             if actionType == "item" then
                 return "items"
             end
+            if actionType then
+                return "abilities"
+            end
         end
-        return "abilities"
+
+        if IsActionFrameName(GetFrameName(frame)) then
+            return "abilities"
+        end
     end
 
-    -- Items: container/bag patterns
-    if strmatch(name, "ContainerFrame") or
-       strmatch(name, "BagSlot") or
-       strmatch(name, "BankFrame") or
-       strmatch(name, "ReagentBank") or
-       strmatch(name, "BagItem") or
-       strmatch(name, "Baganator") then
-        return "items"
-    end
-
-    if parent then
-        local parentNameItems = parent:GetName() or ""
-        if strmatch(parentNameItems, "ContainerFrame") or
-           strmatch(parentNameItems, "BankFrame") or
-           strmatch(parentNameItems, "Baganator") then
+    for _, frame in ipairs(chain) do
+        if IsItemFrameName(GetFrameName(frame)) then
             return "items"
         end
     end
 
-    -- Frames: unit frame patterns
-    if owner.unit or
-       strmatch(name, "UnitFrame") or
-       strmatch(name, "PlayerFrame") or
-       strmatch(name, "TargetFrame") or
-       strmatch(name, "FocusFrame") or
-       strmatch(name, "PartyMemberFrame") or
-       strmatch(name, "CompactRaidFrame") or
-       strmatch(name, "CompactPartyFrame") or
-       strmatch(name, "NamePlate") or
-       strmatch(name, "Quazii.*Frame") then
-        return "frames"
+    for _, frame in ipairs(chain) do
+        if IsUnitFrameName(frame, GetFrameName(frame)) then
+            return "frames"
+        end
     end
 
     return nil

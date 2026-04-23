@@ -229,26 +229,6 @@ local function InvalidatePendingSetUnit()
     pendingSetUnitToken = pendingSetUnitToken + 1
 end
 
-local function ShouldHideOwnedTooltip(tooltip)
-    local owner = tooltip and tooltip.GetOwner and tooltip:GetOwner() or nil
-    if not owner then
-        return false
-    end
-    if Provider:IsTransientTooltipOwner(owner) then
-        return false
-    end
-    if Provider:IsOwnerFadedOut(owner) then
-        return true
-    end
-    if not InCombatLockdown() then
-        local context = Provider:GetTooltipContext(owner)
-        if context and not Provider:ShouldShowTooltip(context) then
-            return true
-        end
-    end
-    return false
-end
-
 local function ResolveTooltipUnit(tooltip)
     if not tooltip then return nil end
 
@@ -260,6 +240,52 @@ local function ResolveTooltipUnit(tooltip)
     end
 
     return unit
+end
+
+local function ResolveTooltipVisibilityContext(tooltip, fallbackContext)
+    if not tooltip or not Provider then
+        return fallbackContext
+    end
+
+    local owner = tooltip.GetOwner and tooltip:GetOwner() or nil
+    if owner then
+        local context = Provider:GetTooltipContext(owner)
+        if context then
+            return context
+        end
+    end
+
+    local unit = ResolveTooltipUnit(tooltip)
+    if unit and UnitExists(unit) then
+        if owner and not Provider:IsTransientTooltipOwner(owner) then
+            return "frames"
+        end
+        return "npcs"
+    end
+
+    return fallbackContext
+end
+
+local function ShouldHideOwnedTooltip(tooltip, fallbackContext)
+    if not tooltip or not Provider then
+        return false
+    end
+
+    local owner = tooltip.GetOwner and tooltip:GetOwner() or nil
+    if owner and not Provider:IsTransientTooltipOwner(owner) and Provider:IsOwnerFadedOut(owner) then
+        return true
+    end
+
+    if InCombatLockdown() then
+        return false
+    end
+
+    local context = ResolveTooltipVisibilityContext(tooltip, fallbackContext)
+    if context and not Provider:ShouldShowTooltip(context) then
+        return true
+    end
+
+    return false
 end
 
 local tooltipHideFadeState = {
@@ -810,6 +836,11 @@ local function SetupTooltipHook()
             end
         end
 
+        if ShouldHideOwnedTooltip(tooltip) then
+            tooltip:Hide()
+            return
+        end
+
         local owner = tooltip:GetOwner()
         local token = pendingSetUnitToken + 1
         pendingSetUnitToken = token
@@ -975,6 +1006,9 @@ local function SetupTooltipHook()
             local settings = Provider:GetSettings()
             if not settings or not settings.enabled then
                 ResetTooltipHideFade()
+            elseif ShouldHideOwnedTooltip(GameTooltip) then
+                ResetTooltipHideFade()
+                GameTooltip:Hide()
             elseif ShouldKeepTooltipVisible(GameTooltip) then
                 if tooltipHideFadeState.active then
                     ResetTooltipHideFade()
@@ -1160,7 +1194,7 @@ local function SetupTooltipHook()
         local settings = Provider:GetSettings()
         if not settings or not settings.enabled then return end
         InvalidatePendingSetUnit()
-        if ShouldHideOwnedTooltip(tooltip) then
+        if ShouldHideOwnedTooltip(tooltip, "abilities") then
             tooltip:Hide()
         end
     end)
@@ -1180,7 +1214,7 @@ local function SetupTooltipHook()
         local settings = Provider:GetSettings()
         if not settings or not settings.enabled then return end
         InvalidatePendingSetUnit()
-        if ShouldHideOwnedTooltip(tooltip) then
+        if ShouldHideOwnedTooltip(tooltip, "items") then
             tooltip:Hide()
         end
     end)
@@ -1249,8 +1283,7 @@ local function OnModifierStateChanged()
     if not GameTooltip:IsShown() then return end
     local settings = Provider:GetSettings()
     if not settings or not settings.enabled then return end
-    local owner = GameTooltip:GetOwner()
-    local context = Provider:GetTooltipContext(owner)
+    local context = ResolveTooltipVisibilityContext(GameTooltip)
     if context and not Provider:ShouldShowTooltip(context) then
         GameTooltip:Hide()
     end
