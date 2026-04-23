@@ -42,6 +42,19 @@ end
 if not _G[ADDON_NAME .. "SecondaryPowerBar"] then
     CreateFrame("Frame", ADDON_NAME .. "SecondaryPowerBar", UIParent):Hide()
 end
+-- Pre-create the bounding-box proxy frame ("QUIResourceBars") so anchored
+-- elements (e.g., buff bars via GetTopVisibleResourceBarFrame) can reference
+-- it before QUICore initialization finishes.  See GetOrCreateResourceBarsProxy
+-- below for the live configuration applied during normal updates.
+if not _G[ADDON_NAME .. "ResourceBars"] then
+    local proxy = CreateFrame("Frame", ADDON_NAME .. "ResourceBars", UIParent)
+    proxy:SetSize(1, 1)
+    proxy:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    proxy:SetAlpha(1)  -- Frame draws nothing; alpha 1 keeps anchoring valid.
+    if proxy.SetMouseClickEnabled then proxy:SetMouseClickEnabled(false) end
+    if proxy.SetMouseMotionEnabled then proxy:SetMouseMotionEnabled(false) end
+    proxy:Show()
+end
 
 -- Pixel-perfect scaling helper
 local function Scale(x, frame)
@@ -652,6 +665,665 @@ local function ShouldHidePrimaryOnSwap()
     local swapEnabled = cfg.swapSpecs and cfg.swapSpecs[specID]
     local hideEnabled = cfg.hideSpecs and cfg.hideSpecs[specID]
     return (swapEnabled and hideEnabled) or false
+end
+
+-- ========================================================================
+-- BOUNDING-BOX PROXY + NATURAL SLOT MATH
+-- ========================================================================
+-- The "natural slot" of a bar is where it would sit if the swap-to-primary
+-- mechanic were OFF.  Slot computation is purely config-driven (independent
+-- of live frame state) so callers can predict positions without needing the
+-- target bar to already be laid out.  This is critical for the swap math:
+-- to put each bar where the OTHER would naturally be, we need both natural
+-- positions before either bar has been moved.
+--
+-- Asymmetry note:
+--   * Primary in lockedToEssential/Utility: NCDM writes computed CDM-anchored
+--     position into cfg.offsetX/Y directly.  So (offsetX, offsetY) IS the
+--     natural slot center.
+--   * Secondary in lockedToEssential/Utility: NCDM writes the computed
+--     CDM-anchored base into cfg.lockedBaseX/Y, and cfg.offsetX/Y is the
+--     user's nudge on top.  Natural slot center = lockedBase + offset.
+
+-- Effective orientation of the primary bar (resolves AUTO via CDM viewer).
+local function GetPrimaryEffectiveVertical()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.powerBar
+    if not cfg then return false end
+    local orientation = cfg.orientation or "AUTO"
+    if orientation == "VERTICAL" then return true end
+    if orientation == "HORIZONTAL" then return false end
+    if cfg.lockedToEssential then
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
+        local vs = viewer and GetViewerState(viewer)
+        return (vs and vs.layoutDir) == "VERTICAL"
+    elseif cfg.lockedToUtility then
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
+        local vs = viewer and GetViewerState(viewer)
+        return (vs and vs.layoutDir) == "VERTICAL"
+    end
+    return false
+end
+
+-- Resolve a length (= bar's main-axis size in config space) from a cfg.width
+-- value.  When width is missing or 0, fall back to CDM raw content width then
+-- the saved last-known width.
+local function ResolveBarLength(width)
+    if width and width > 0 then return width end
+    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
+    if viewer then
+        local vs = GetViewerState(viewer)
+        local w = GetRawContentWidth(vs)
+        if w and w > 0 then return w end
+    end
+    local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
+    local saved = ncdm and ncdm._lastEssentialWidth
+    if saved and saved > 0 then return saved end
+    return 200
+end
+
+-- Outer thickness (height + 2*border) of the primary bar.
+local function GetPrimaryOuterThickness()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.powerBar
+    if not cfg then return 8 end
+    return (cfg.height or 8) + (2 * (cfg.borderSize or 1))
+end
+
+-- Outer thickness (height + 2*border) of the secondary bar.
+local function GetSecondaryOuterThickness()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.secondaryPowerBar
+    if not cfg then return 8 end
+    return (cfg.height or 8) + (2 * (cfg.borderSize or 1))
+end
+
+-- Compute the primary bar's natural slot.  Returns (centerX, centerY, length, thickness).
+-- centerX/Y are screen-relative offsets from UIParent CENTER.
+local function ComputePrimaryNaturalSlot()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.powerBar
+    if not cfg then return 0, 0, 0, 0 end
+    local cx = cfg.offsetX or 0
+    local cy = cfg.offsetY or 0
+    local thickness = GetPrimaryOuterThickness()
+    local length = ResolveBarLength(cfg.width)
+    return cx, cy, length, thickness
+end
+
+-- Compute the secondary bar's natural slot.  Returns (centerX, centerY, length, thickness).
+-- Independent of swap state.  Handles all lock modes including lockedToPrimary
+-- (which is computed off the primary's CONFIG slot, not its live frame).
+local function ComputeSecondaryNaturalSlot()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.secondaryPowerBar
+    if not cfg then return 0, 0, 0, 0 end
+    local thickness = GetSecondaryOuterThickness()
+    local userOffsetX = cfg.offsetX or 0
+    local userOffsetY = cfg.offsetY or 0
+
+    if cfg.lockedToPrimary then
+        local pcx, pcy, plen, pT = ComputePrimaryNaturalSlot()
+        local isVertical = GetPrimaryEffectiveVertical()
+        if isVertical then
+            -- Secondary stacks to the RIGHT of primary
+            return pcx + (pT / 2) + (thickness / 2) + userOffsetX,
+                   pcy + userOffsetY,
+                   plen,
+                   thickness
+        else
+            -- Secondary stacks ABOVE primary
+            return pcx + userOffsetX,
+                   pcy + (pT / 2) + (thickness / 2) + userOffsetY,
+                   plen,
+                   thickness
+        end
+    elseif cfg.lockedToEssential or cfg.lockedToUtility then
+        local cx = (cfg.lockedBaseX or 0) + userOffsetX
+        local cy = (cfg.lockedBaseY or 0) + userOffsetY
+        return cx, cy, ResolveBarLength(cfg.width), thickness
+    else
+        return userOffsetX, userOffsetY, ResolveBarLength(cfg.width), thickness
+    end
+end
+
+-- Given primary and secondary natural slots, compute the position each bar
+-- should occupy when swap is active so the COMBINED outer bounding box
+-- remains identical (same union rectangle, same snap-gap between bars).
+--
+-- Each bar moves to the OTHER's slot, then is shifted along the stack axis
+-- by (otherThickness - ownThickness)/2 in the "outward" direction so that
+-- the bar's outer-edge facing the bbox boundary stays aligned with the
+-- original slot's same-direction edge.
+local function ComputeSwappedCenters(pcx, pcy, pT, scx, scy, sT, isVertical)
+    local primaryNewCx, primaryNewCy = scx, scy
+    local secondaryNewCx, secondaryNewCy = pcx, pcy
+    if isVertical then
+        local outwardDir = (scx >= pcx) and 1 or -1
+        local shift = outwardDir * (sT - pT) / 2
+        primaryNewCx = scx + shift
+        secondaryNewCx = pcx + shift
+    else
+        local outwardDir = (scy >= pcy) and 1 or -1
+        local shift = outwardDir * (sT - pT) / 2
+        primaryNewCy = scy + shift
+        secondaryNewCy = pcy + shift
+    end
+    return primaryNewCx, primaryNewCy, secondaryNewCx, secondaryNewCy
+end
+
+-- Internal proxy frame ("QUIResourceBars") representing the combined outer
+-- bounding box of primary + secondary in their VISIBLE configuration.
+--
+-- * In normal mode: the union of both bars' outer rectangles.
+-- * In swap mode (no hide): same as normal — bars exchange slots but the
+--   union doesn't change, so the proxy stays put.
+-- * In hidePrimaryOnSwap: shrinks to the secondary's visible area (which
+--   occupies primary's natural slot).
+--
+-- Hidden/internal: never registered in the user-facing anchoring UI.  Used
+-- by GetTopVisibleResourceBarFrame() in buffbar so anchored elements follow
+-- the proxy across swap toggles instead of jumping with individual bars.
+local function GetOrCreateResourceBarsProxy()
+    if QUICore.resourceBars then return QUICore.resourceBars end
+    local proxy = _G[ADDON_NAME .. "ResourceBars"]
+    if not proxy then
+        proxy = CreateFrame("Frame", ADDON_NAME .. "ResourceBars", UIParent)
+    end
+    proxy:SetFrameStrata("BACKGROUND")
+    proxy:SetSize(1, 1)
+    -- Alpha 1 because Frame itself draws nothing; consumers like
+    -- IsFrameVisiblyShown reject alpha=0 frames as anchor targets.  Real
+    -- invisibility comes from the proxy not containing any textures/regions.
+    proxy:SetAlpha(1)
+    if proxy.SetMouseClickEnabled then proxy:SetMouseClickEnabled(false) end
+    if proxy.SetMouseMotionEnabled then proxy:SetMouseMotionEnabled(false) end
+    proxy:ClearAllPoints()
+    proxy:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    proxy:Show()  -- Must be Shown so layout computes.
+    QUICore.resourceBars = proxy
+    return proxy
+end
+
+-- Returns true if a bar frame is "really" contributing to the visible layout
+-- (Shown AND alpha > 0).  Bars use alpha=0 for transient hides (CDM
+-- visibility, swap-hidden primary, etc.) and we must NOT include those in
+-- the proxy bbox or anchored elements would jump to invisible regions.
+local function IsBarVisuallyShown(bar)
+    if not bar then return false end
+    local ok, shown = pcall(function() return bar:IsShown() end)
+    if not ok or not shown then return false end
+    local okA, alpha = pcall(function() return bar:GetEffectiveAlpha() end)
+    if not okA then return false end
+    return type(alpha) == "number" and alpha > 0.01
+end
+
+-- Get a bar's actual UIParent-relative outer rectangle from live frame state.
+-- Returns (centerX, centerY, width, height) where centerX/Y are offsets from
+-- UIParent's center.  Returns nil if the frame isn't laid out yet.
+local function GetLiveBarRect(bar)
+    if not bar then return nil end
+    local okC, cx, cy = pcall(function() return bar:GetCenter() end)
+    if not okC or type(cx) ~= "number" or type(cy) ~= "number" then return nil end
+    local okW, w = pcall(function() return bar:GetWidth() end)
+    local okH, h = pcall(function() return bar:GetHeight() end)
+    if not okW or not okH or type(w) ~= "number" or type(h) ~= "number" or w <= 1 or h <= 1 then
+        return nil
+    end
+    local okU, scx, scy = pcall(function() return UIParent:GetCenter() end)
+    if not okU or type(scx) ~= "number" or type(scy) ~= "number" then return nil end
+    return cx - scx, cy - scy, w, h
+end
+
+-- ========================================================================
+-- LIVE NATURAL-SLOT CAPTURE
+-- ========================================================================
+-- The "natural slot" of a bar is where it would be drawn if swap were OFF.
+-- For users who have positioned bars via Layout Mode (saved frame anchors)
+-- the cfg.offsetX/offsetY values DO NOT reflect the bar's actual on-screen
+-- position — the anchoring system places the bar relative to its anchor
+-- target.  Swapping by cfg coordinates would teleport the bars away from
+-- the user's chosen layout.
+--
+-- To swap correctly, we snapshot each bar's live UIParent-relative center
+-- whenever we know swap is OFF (i.e. each bar IS at its natural slot).  Swap
+-- math then uses those snapshots so the swapped bars stay inside the same
+-- combined bounding box the user laid out.
+local _capturedNaturalPrimary = nil   -- {cx, cy, w, h, isVertical}
+local _capturedNaturalSecondary = nil
+
+local function CaptureLiveBarSlot(bar)
+    local cx, cy, w, h = GetLiveBarRect(bar)
+    if not cx then return nil end
+    return { cx = cx, cy = cy, w = w, h = h }
+end
+
+-- Snapshot whichever bars are currently at their natural slots (i.e. swap
+-- is not currently being applied to them).  Called BEFORE we re-evaluate
+-- the swap state so the snapshot reflects the user-laid-out positions.
+local function CaptureNaturalSlotsIfPossible()
+    if ShouldSwapBars() then return end  -- bars are in swap mode; positions aren't natural
+    if InCombatLockdown() then return end
+    if QUICore and QUICore.powerBar then
+        local snap = CaptureLiveBarSlot(QUICore.powerBar)
+        if snap then _capturedNaturalPrimary = snap end
+    end
+    if QUICore and QUICore.secondaryPowerBar then
+        local snap = CaptureLiveBarSlot(QUICore.secondaryPowerBar)
+        if snap then _capturedNaturalSecondary = snap end
+    end
+end
+
+-- Throttled deferred capture: the anchoring system reapplies positions on a
+-- ~0.15s debounce after our SetPoint calls, so capturing immediately after
+-- UpdatePowerBar would record cfg-only coordinates (wrong for users with
+-- saved frame anchors).  Schedule a capture slightly past the debounce
+-- window so we record the actual final on-screen position.
+local _captureScheduled = false
+local function ScheduleNaturalSlotCapture()
+    if _captureScheduled then return end
+    if ShouldSwapBars() then return end
+    _captureScheduled = true
+    C_Timer.After(0.25, function()
+        _captureScheduled = false
+        CaptureNaturalSlotsIfPossible()
+    end)
+end
+
+-- ========================================================================
+-- BOOTSTRAP FOR FIRST-RELOAD-WITH-SWAP-ON
+-- ========================================================================
+-- When the user reloads with swap already enabled, swap math runs on the
+-- first frame using cfg.offsetX/Y / cfg.lockedBaseX/Y.  Two failure modes:
+--   1. NCDM ordering — primary NCDM may run before secondary's, so primary's
+--      swap target reads stale (zero) secondary base.
+--   2. Layout-Mode anchored bars — cfg.offsetX/Y is meaningless when the
+--      anchoring system is positioning the bar; the captured live position
+--      is the authoritative natural slot, but no capture exists yet.
+--
+-- Fix: bootstrap a natural-slot pass once shortly after world entry.  We
+-- temporarily force the swap math OFF (via _swapBootstrapForcingNatural),
+-- run Update*PowerBar so the bars land at their true natural slots (frame
+-- anchors honored, NCDM computed), capture those positions, then release
+-- the override and re-run with swap fully applied.
+local _swapBootstrapForcingNatural = false
+local _swapBootstrapDone = false
+local _swapBootstrapPending = false
+
+local function BothLockedBarsReady()
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return false end
+    local pcfg = QUICore.db.profile.powerBar
+    local scfg = QUICore.db.profile.secondaryPowerBar
+    if pcfg and (pcfg.lockedToEssential or pcfg.lockedToUtility) and not _primaryLockedReady then
+        return false
+    end
+    if scfg and (scfg.lockedToEssential or scfg.lockedToUtility) and not _secondaryLockedReady then
+        return false
+    end
+    return true
+end
+
+-- Public wrapper queried by Update*PowerBar swap branches to know whether
+-- the caller should bypass swap for the bootstrap natural-slot pass.
+local function IsForcingNaturalDuringBootstrap()
+    return _swapBootstrapForcingNatural
+end
+
+local function ScheduleSwapBootstrap()
+    if _swapBootstrapDone or _swapBootstrapPending then return end
+    if not ShouldSwapBars() then
+        _swapBootstrapDone = true
+        return
+    end
+    _swapBootstrapPending = true
+    -- 0.6s lets NCDM updates settle (they fire shortly after CDM is laid
+    -- out, typically within a few frames of PLAYER_ENTERING_WORLD).
+    C_Timer.After(0.6, function()
+        _swapBootstrapPending = false
+        if InCombatLockdown() then
+            -- Geometry calls are protected; retry post-combat.
+            ScheduleSwapBootstrap()
+            return
+        end
+        if not BothLockedBarsReady() then
+            -- One side hasn't initialized yet; wait another 0.6s.
+            ScheduleSwapBootstrap()
+            return
+        end
+        -- Phase 1: force a natural-slot pass and capture live positions so
+        -- swap math has authoritative slot data.
+        _swapBootstrapForcingNatural = true
+        if QUICore and QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
+        if QUICore and QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
+        -- Phase 2: after the anchoring system has reapplied frame anchors
+        -- (~0.15s debounce), capture the final settled positions and apply
+        -- swap.
+        C_Timer.After(0.3, function()
+            if InCombatLockdown() then
+                _swapBootstrapForcingNatural = false
+                ScheduleSwapBootstrap()
+                return
+            end
+            if QUICore and QUICore.powerBar then
+                local snap = CaptureLiveBarSlot(QUICore.powerBar)
+                if snap then _capturedNaturalPrimary = snap end
+            end
+            if QUICore and QUICore.secondaryPowerBar then
+                local snap = CaptureLiveBarSlot(QUICore.secondaryPowerBar)
+                if snap then _capturedNaturalSecondary = snap end
+            end
+            _swapBootstrapForcingNatural = false
+            _swapBootstrapDone = true
+            -- Force a fresh swap-applied pass: clear caches so the SetPoint
+            -- check inside Update*PowerBar can't match the natural-slot
+            -- coordinates and skip applying swap.  Inline cache reset to
+            -- avoid forward-reference to ResetBarPositionCache (declared
+            -- later in this file).
+            if QUICore then
+                local pBar = QUICore.powerBar
+                if pBar then
+                    pBar._cachedX = nil
+                    pBar._cachedY = nil
+                    pBar._cachedAnchor = nil
+                    pBar._cachedAutoMode = nil
+                end
+                local sBar = QUICore.secondaryPowerBar
+                if sBar then
+                    sBar._cachedX = nil
+                    sBar._cachedY = nil
+                    sBar._cachedAnchor = nil
+                    sBar._cachedAutoMode = nil
+                end
+            end
+            if QUICore and QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
+            if QUICore and QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
+        end)
+    end)
+end
+
+-- Get the primary's natural slot, preferring the live capture taken while
+-- swap was OFF.  Falls back to config-based math when no capture exists yet
+-- (first frame after addon load).  Returns (cx, cy, length, thickness).
+local function GetPrimaryNaturalSlotForSwap()
+    local isVertical = GetPrimaryEffectiveVertical()
+    local cap = _capturedNaturalPrimary
+    if cap then
+        local length, thickness
+        if isVertical then
+            length, thickness = cap.h, cap.w
+        else
+            length, thickness = cap.w, cap.h
+        end
+        return cap.cx, cap.cy, length, thickness
+    end
+    return ComputePrimaryNaturalSlot()
+end
+
+local function GetSecondaryNaturalSlotForSwap()
+    -- Secondary's effective orientation can differ when locked to primary or
+    -- a CDM viewer; fall back to primary's orientation as a reasonable proxy
+    -- (only used to map captured w/h to length/thickness).
+    local isVertical = GetPrimaryEffectiveVertical()
+    local cap = _capturedNaturalSecondary
+    if cap then
+        local length, thickness
+        if isVertical then
+            length, thickness = cap.h, cap.w
+        else
+            length, thickness = cap.w, cap.h
+        end
+        return cap.cx, cap.cy, length, thickness
+    end
+    return ComputeSecondaryNaturalSlot()
+end
+
+-- ========================================================================
+-- ANCHORING SYSTEM HANDOFF FOR SWAP
+-- ========================================================================
+-- When a user has positioned the resource bars via Layout Mode, their
+-- frameAnchoring entries cause the anchoring system to actively reapply
+-- positions on every UpdateAnchoredFrames pass.  Without coordination,
+-- our swap SetPoint calls get overwritten ~150ms later by the debounced
+-- reapply, so swap looks like a no-op to the user.
+--
+-- Solution: while swap is active, claim both bars' anchor keys so the
+-- anchoring system skips them.  When swap turns off, release the claim
+-- and force a re-apply so the bars snap back to the user's saved anchors.
+local _swapOwnershipActive = false
+
+-- Reset position-cache fields on a bar so the next Update*PowerBar pass
+-- always re-applies SetPoint, even if the new desired offset happens to
+-- equal the previously cached offset (e.g. swap toggle round-trip lands
+-- the bar back at the same coordinates after lockedToPrimary maths).
+local function ResetBarPositionCache(bar)
+    if not bar then return end
+    bar._cachedX = nil
+    bar._cachedY = nil
+    bar._cachedAnchor = nil
+    bar._cachedAutoMode = nil
+end
+
+local function SyncSwapAnchorOwnership(active)
+    local transitioning = (active ~= _swapOwnershipActive)
+
+    if transitioning then
+        -- Clearing caches guarantees the next swap-on/off pass calls
+        -- ClearAllPoints+SetPoint regardless of cached coordinates.  This
+        -- defends against silent toggle no-ops once stale autoMode strings
+        -- happen to coincide with new coordinates in rare layouts.
+        if QUICore then
+            ResetBarPositionCache(QUICore.powerBar)
+            ResetBarPositionCache(QUICore.secondaryPowerBar)
+        end
+    end
+
+    if active then
+        _swapOwnershipActive = true
+        if _G.QUI_ClaimAnchorKey then
+            _G.QUI_ClaimAnchorKey("primaryPower", true)
+            _G.QUI_ClaimAnchorKey("secondaryPower", true)
+        end
+    else
+        if not _swapOwnershipActive then
+            -- Already released; nothing to undo, but if a transition snuck
+            -- through (e.g. bars cleared but state was already false), skip
+            -- the rest cleanly.
+            return
+        end
+        _swapOwnershipActive = false
+        if _G.QUI_ClaimAnchorKey then
+            _G.QUI_ClaimAnchorKey("primaryPower", false)
+            _G.QUI_ClaimAnchorKey("secondaryPower", false)
+        end
+        if _G.QUI_ForceReapplyFrameAnchor then
+            _G.QUI_ForceReapplyFrameAnchor("primaryPower")
+            _G.QUI_ForceReapplyFrameAnchor("secondaryPower")
+        end
+    end
+
+    -- On every transition, notify dependents (unit frames anchored to
+    -- power bars, buff bars, frame anchors) so they re-resolve which bar
+    -- now occupies a given slot.  This is required for the swap-aware
+    -- "anchor follows the bbox slot" behavior in GetSwapAwareBarFor.
+    if transitioning then
+        if _G.QUI_UpdateAnchoredUnitFrames then
+            pcall(_G.QUI_UpdateAnchoredUnitFrames)
+        end
+        if _G.QUI_UpdateAnchoredFrames then
+            pcall(_G.QUI_UpdateAnchoredFrames)
+        end
+        if _G.QUI_RefreshBuffBar then
+            pcall(_G.QUI_RefreshBuffBar)
+        end
+    end
+end
+
+-- ========================================================================
+-- RECIPROCAL SWAP UPDATE
+-- ========================================================================
+-- The swap math for each bar depends on the OTHER bar's natural slot
+-- (primary moves to secondary's slot and vice-versa).  When NCDM updates
+-- one side's locked offsets and triggers Update*PowerBar, the other bar's
+-- swap target is computed against still-stale data and lands wrong.
+--
+-- Solution: after either Update*PowerBar finishes positioning in swap
+-- mode, schedule a reciprocal call so the OTHER bar re-evaluates with
+-- fresh data.  A reentry guard prevents infinite recursion (the inner
+-- call's own reciprocal request short-circuits to a no-op).
+local _swapReciprocalGuard = false
+
+local function TriggerSwapReciprocalUpdate()
+    if _swapReciprocalGuard then return end
+    if not ShouldSwapBars() then return end
+    if InCombatLockdown() then return end
+    if not QUICore then return end
+    _swapReciprocalGuard = true
+    if QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
+    if QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
+    _swapReciprocalGuard = false
+end
+
+-- ========================================================================
+-- SWAP-AWARE BAR RESOLVER
+-- ========================================================================
+-- External anchors (buff bars, unit frames, etc.) target a logical SLOT
+-- via keys like "primaryPower"/"secondaryPower" or "primary"/"secondary".
+-- The user's intent is positional: "anchor at the location of the primary
+-- bar".  When swap is active, the FRAME at that location changes (the
+-- secondary bar now sits at primary's natural slot and vice-versa), so
+-- naive "return powerBar / secondaryPowerBar" anchoring causes external
+-- elements to follow the moved frame instead of staying put.
+--
+-- This resolver returns whichever bar currently occupies the requested
+-- slot, so anchors track the bbox slot rather than the underlying frame.
+--
+-- Special case (hidePrimaryOnSwap):
+--   * Primary's natural slot has the visible secondary bar — return it.
+--   * Secondary's natural slot is empty (bbox shrank) — return the proxy
+--     when available so dependent elements anchor to a stable invisible
+--     frame at the bbox; otherwise fall back to secondary so anchors
+--     don't go nil.
+function QUICore:GetSwapAwareBarFor(key)
+    if not self then return nil end
+    if key == "primaryPower" or key == "primary" then
+        if not ShouldSwapBars() then return self.powerBar end
+        if ShouldHidePrimaryOnSwap() then return self.secondaryPowerBar end
+        return self.secondaryPowerBar
+    elseif key == "secondaryPower" or key == "secondary" then
+        if not ShouldSwapBars() then return self.secondaryPowerBar end
+        if ShouldHidePrimaryOnSwap() then
+            -- Secondary's natural slot is empty in shrink-box mode; the
+            -- proxy provides a stable invisible anchor at the bbox.
+            local proxy = self.GetResourceBarsProxy and self:GetResourceBarsProxy()
+            if proxy then return proxy end
+            return self.secondaryPowerBar
+        end
+        return self.powerBar
+    end
+    return nil
+end
+
+-- Compute the union outer rectangle of the bars in their VISIBLE state and
+-- write it onto the proxy frame.  Safe to call from anywhere; no-ops in
+-- combat (geometry is protected on named frames).
+--
+-- Strategy: prefer live frame state (handles UI-anchored bars correctly),
+-- fall back to natural-slot config math when bars haven't been laid out yet.
+function QUICore:UpdateResourceBarsProxy()
+    if InCombatLockdown() then return end
+    local proxy = GetOrCreateResourceBarsProxy()
+
+    local primaryCfg = self.db.profile.powerBar
+    local secondaryCfg = self.db.profile.secondaryPowerBar
+
+    -- A bar contributes to the bbox only when it's actually visible.
+    local primaryConsidered = primaryCfg and primaryCfg.enabled and IsBarVisuallyShown(self.powerBar)
+    local secondaryConsidered = secondaryCfg and secondaryCfg.enabled and IsBarVisuallyShown(self.secondaryPowerBar)
+
+    if not primaryConsidered and not secondaryConsidered then
+        proxy:ClearAllPoints()
+        proxy:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        proxy:SetSize(1, 1)
+        return
+    end
+
+    local isVertical = GetPrimaryEffectiveVertical()
+    local swapped = ShouldSwapBars()
+    local hidePrimary = ShouldHidePrimaryOnSwap()
+
+    local rects = {}
+
+    -- PRIMARY: exclude when hidePrimaryOnSwap is active (parked at alpha 0).
+    if primaryConsidered and not hidePrimary then
+        local lcx, lcy, lw, lh = GetLiveBarRect(self.powerBar)
+        if lcx then
+            rects[#rects + 1] = { cx = lcx, cy = lcy, w = lw, h = lh }
+        else
+            local pcx, pcy, plen, pT = ComputePrimaryNaturalSlot()
+            local cx, cy = pcx, pcy
+            if swapped then
+                local scx, scy, _, sT = ComputeSecondaryNaturalSlot()
+                cx, cy = ComputeSwappedCenters(pcx, pcy, pT, scx, scy, sT, isVertical)
+            end
+            if isVertical then
+                rects[#rects + 1] = { cx = cx, cy = cy, w = pT, h = plen }
+            else
+                rects[#rects + 1] = { cx = cx, cy = cy, w = plen, h = pT }
+            end
+        end
+    end
+
+    if secondaryConsidered then
+        local lcx, lcy, lw, lh = GetLiveBarRect(self.secondaryPowerBar)
+        if lcx then
+            rects[#rects + 1] = { cx = lcx, cy = lcy, w = lw, h = lh }
+        else
+            local pcx, pcy, _, pT = ComputePrimaryNaturalSlot()
+            local scx, scy, slen, sT = ComputeSecondaryNaturalSlot()
+            local cx, cy = scx, scy
+            if swapped then
+                if hidePrimary then
+                    cx, cy = pcx, pcy
+                else
+                    local _, _, s2x, s2y = ComputeSwappedCenters(pcx, pcy, pT, scx, scy, sT, isVertical)
+                    cx, cy = s2x, s2y
+                end
+            end
+            if isVertical then
+                rects[#rects + 1] = { cx = cx, cy = cy, w = sT, h = slen }
+            else
+                rects[#rects + 1] = { cx = cx, cy = cy, w = slen, h = sT }
+            end
+        end
+    end
+
+    if #rects == 0 then
+        proxy:ClearAllPoints()
+        proxy:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        proxy:SetSize(1, 1)
+        return
+    end
+
+    local minX, maxX, minY, maxY
+    for _, r in ipairs(rects) do
+        local left, right = r.cx - r.w / 2, r.cx + r.w / 2
+        local bottom, top = r.cy - r.h / 2, r.cy + r.h / 2
+        minX = minX and math_min(minX, left) or left
+        maxX = maxX and math_max(maxX, right) or right
+        minY = minY and math_min(minY, bottom) or bottom
+        maxY = maxY and math_max(maxY, top) or top
+    end
+
+    local width = math_max(1, maxX - minX)
+    local height = math_max(1, maxY - minY)
+    local centerX = (minX + maxX) / 2
+    local centerY = (minY + maxY) / 2
+
+    proxy:ClearAllPoints()
+    proxy:SetPoint("CENTER", UIParent, "CENTER",
+        QUICore:PixelRound(centerX, proxy),
+        QUICore:PixelRound(centerY, proxy))
+    proxy:SetSize(QUICore:PixelRound(width, proxy), QUICore:PixelRound(height, proxy))
+end
+
+-- Public accessor (used by buffbar etc.).  Always returns a frame.
+function QUICore:GetResourceBarsProxy()
+    return GetOrCreateResourceBarsProxy()
 end
 
 -- RESOURCE DETECTION
@@ -1284,12 +1956,39 @@ function QUICore:UpdatePowerBar()
         return
     end
 
-    -- Auto-hide primary when secondary is swapped to primary position (per-spec)
-    if ShouldHidePrimaryOnSwap() then
-        if self.powerBar then
-            self.powerBar:SetAlpha(0)
-            SafeShow(self.powerBar)  -- Keep shown at alpha 0 so anchored frames retain reference
+    -- Auto-hide primary when secondary is swapped to primary position (per-spec).
+    -- Park the bar at its natural slot (alpha 0) so anything anchored directly
+    -- to QUIPowerBar keeps its visual position aligned with the visible
+    -- secondary bar (which now occupies primary's natural slot).
+    -- Skip during bootstrap natural-slot pass: we need primary visible at its
+    -- true natural position so we can capture it.
+    if ShouldHidePrimaryOnSwap() and not IsForcingNaturalDuringBootstrap() then
+        SyncSwapAnchorOwnership(true)
+        local primaryBar = self.powerBar
+        if primaryBar then
+            if not InCombatLockdown() then
+                local pcx, pcy = GetPrimaryNaturalSlotForSwap()
+                local pxRounded = QUICore:PixelRound(pcx, primaryBar)
+                local pyRounded = QUICore:PixelRound(pcy, primaryBar)
+                if primaryBar._cachedX ~= pxRounded or primaryBar._cachedY ~= pyRounded or primaryBar._cachedAutoMode ~= "hiddenAtNaturalSlot" then
+                    primaryBar:ClearAllPoints()
+                    primaryBar:SetPoint("CENTER", UIParent, "CENTER", pxRounded, pyRounded)
+                    primaryBar._cachedX = pxRounded
+                    primaryBar._cachedY = pyRounded
+                    primaryBar._cachedAutoMode = "hiddenAtNaturalSlot"
+                    if _G.QUI_UpdateAnchoredUnitFrames then
+                        _G.QUI_UpdateAnchoredUnitFrames()
+                    end
+                end
+            end
+            primaryBar:SetAlpha(0)
+            SafeShow(primaryBar)
         end
+        if self.UpdateResourceBarsProxy then self:UpdateResourceBarsProxy() end
+        -- Re-run secondary positioning so its swap target reflects the
+        -- now-known primary natural slot (handles NCDM ordering on first
+        -- frame after reload where one side updates before the other).
+        TriggerSwapReciprocalUpdate()
         return
     end
 
@@ -1376,37 +2075,27 @@ function QUICore:UpdatePowerBar()
     -- Calculate desired position and size (pixel-snapped for crisp borders)
     local offsetX, offsetY
     local isSwapped = ShouldSwapBars()
+    -- Bootstrap pass: pretend swap is OFF so the bar lands at its true
+    -- natural slot.  Capture phase reads that position; the second
+    -- (post-bootstrap) call positions the bar with swap fully applied.
+    if isSwapped and IsForcingNaturalDuringBootstrap() then
+        isSwapped = false
+    end
+    -- Hand swap on/off events to the anchoring system: while swap is active
+    -- we own positioning; when it deactivates we restore the user's saved
+    -- frame anchors via QUI_ForceReapplyFrameAnchor.
+    SyncSwapAnchorOwnership(isSwapped)
     if isSwapped then
-        -- Swap: move primary bar to where the secondary bar would normally be
-        local secCfg = self.db.profile.secondaryPowerBar
-        if secCfg.lockedToPrimary then
-            -- Secondary is normally locked above primary — compute that position from config values
-            local primaryHeight = cfg.height or 8
-            local primaryBorderSize = cfg.borderSize or 1
-            local secondaryHeight = secCfg.height or 8
-            local secondaryBorderSize = secCfg.borderSize or 1
-            local primaryOuterThickness = primaryHeight + (2 * primaryBorderSize)
-            local secondaryOuterThickness = secondaryHeight + (2 * secondaryBorderSize)
-            local baseCenterX = cfg.offsetX or 0
-            local baseCenterY = cfg.offsetY or 25
-
-            -- In swapped mode, Secondary is first moved onto Primary while preserving bottom edge.
-            -- Then Primary moves above that swapped Secondary without overlap.
-            local swappedSecondaryCenterY = baseCenterY + ((secondaryOuterThickness - primaryOuterThickness) / 2)
-            local swappedSecondaryTop = swappedSecondaryCenterY + (secondaryOuterThickness / 2)
-            local aboveCenterY = swappedSecondaryTop + (primaryOuterThickness / 2)
-
-            offsetX = QUICore:PixelRound(baseCenterX + (secCfg.offsetX or 0), bar)
-            offsetY = QUICore:PixelRound(aboveCenterY + (secCfg.offsetY or 0), bar)
-        else
-            -- Secondary has its own standalone position — use it directly
-            offsetX = QUICore:PixelRound(secCfg.offsetX or 0, bar)
-            offsetY = QUICore:PixelRound(secCfg.offsetY or 0, bar)
-            local secWidth = secCfg.width
-            if secWidth and secWidth > 0 then
-                width = secWidth
-            end
-        end
+        -- Compute primary's swapped position from natural slots so it works
+        -- for ALL secondary lock modes (lockedToEssential/Utility/Primary or
+        -- standalone), preserving the combined bounding box.  Prefer live
+        -- captures so swap honors user-saved anchor positions.
+        local pcx, pcy, _, pT = GetPrimaryNaturalSlotForSwap()
+        local scx, scy, _, sT = GetSecondaryNaturalSlotForSwap()
+        local primaryNewCx, primaryNewCy = ComputeSwappedCenters(pcx, pcy, pT, scx, scy, sT, isVertical)
+        offsetX = QUICore:PixelRound(primaryNewCx, bar)
+        offsetY = QUICore:PixelRound(primaryNewCy, bar)
+        -- Primary keeps its own length when swapping (existing 'width' is correct).
     else
         offsetX = QUICore:PixelRound(cfg.offsetX or 0, bar)
         offsetY = QUICore:PixelRound(cfg.offsetY or 0, bar)
@@ -1416,10 +2105,12 @@ function QUICore:UpdatePowerBar()
     -- protected on named frames during combat.  Config-driven dimensions
     -- don't change mid-fight; PLAYER_REGEN_ENABLED triggers a full update.
     if not InCombatLockdown() then
-        -- Only reposition when offset actually changed (prevents flicker)
-        -- Skip if frame has an active anchoring override
+        -- While swap is active we own positioning even if the user has saved
+        -- frame anchor entries — those are deferred to swap-off via the
+        -- ownership handoff above.  Otherwise honor saved anchors.
         local swapMode = isSwapped and "swappedToSecondary" or nil
-        if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("primaryPower")) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode) then
+        local positionAllowed = isSwapped or not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("primaryPower"))
+        if positionAllowed and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode) then
             bar:ClearAllPoints()
             bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
             bar._cachedX = offsetX
@@ -1557,6 +2248,12 @@ function QUICore:UpdatePowerBar()
     if secondaryCfg and secondaryCfg.lockedToPrimary then
         self:UpdateSecondaryPowerBar()
     end
+
+    if self.UpdateResourceBarsProxy then self:UpdateResourceBarsProxy() end
+    ScheduleNaturalSlotCapture()
+    -- See TriggerSwapReciprocalUpdate doc: ensures both bars settle to
+    -- correct positions across NCDM ordering and lockedBase updates.
+    TriggerSwapReciprocalUpdate()
 end
 
 function QUICore:UpdatePowerBarTicks(bar, resource, max)
@@ -2790,6 +3487,10 @@ function QUICore:UpdateSecondaryPowerBar()
     -- is available for Edit Mode layout anchoring even when the bar is disabled.
     local bar = self:GetSecondaryPowerBar()
 
+    -- Keep swap ownership in sync with the current swap state in case this
+    -- function is invoked without a preceding UpdatePowerBar call.
+    SyncSwapAnchorOwnership(ShouldSwapBars())
+
     if not cfg.enabled then
         local wasShown = bar:IsShown()
         SafeHide(bar)
@@ -2797,6 +3498,7 @@ function QUICore:UpdateSecondaryPowerBar()
         if wasShown and not bar:IsShown() and _G.QUI_UpdateAnchoredFrames then
             _G.QUI_UpdateAnchoredFrames()
         end
+        if self.UpdateResourceBarsProxy then self:UpdateResourceBarsProxy() end
         return
     end
 
@@ -2814,6 +3516,7 @@ function QUICore:UpdateSecondaryPowerBar()
         if wasShown and not bar:IsShown() and _G.QUI_UpdateAnchoredFrames then
             _G.QUI_UpdateAnchoredFrames()
         end
+        if self.UpdateResourceBarsProxy then self:UpdateResourceBarsProxy() end
         return
     end
 
@@ -2885,44 +3588,55 @@ function QUICore:UpdateSecondaryPowerBar()
     local width
     local lockedToPrimaryHandled = false
 
-    if cfg.swapToPrimaryPosition and ShouldSwapBars() then
-        -- Position secondary bar at primary bar's configured position with primary bar's width
-        local primaryCfg = self.db.profile.powerBar
-        if primaryCfg then
-            local offsetX = QUICore:PixelRound(primaryCfg.offsetX or 0, bar)
-            local offsetY = QUICore:PixelRound(primaryCfg.offsetY or 25, bar)
-            local primaryOuterThickness = (primaryCfg.height or 8) + ((primaryCfg.borderSize or 1) * 2)
-            local secondaryOuterThickness = (cfg.height or 8) + ((cfg.borderSize or 1) * 2)
+    if cfg.swapToPrimaryPosition and ShouldSwapBars() and not IsForcingNaturalDuringBootstrap() then
+        -- Compute the secondary's swap target from natural slots so it works
+        -- across all primary lock modes and preserves the combined bbox.
+        -- Prefer live captures so swap honors user-saved anchor positions.
+        local pcx, pcy, plen, pT = GetPrimaryNaturalSlotForSwap()
+        local scx, scy, _, sT = GetSecondaryNaturalSlotForSwap()
 
-            -- Keep the edge nearest the viewer aligned when swapping.
-            -- This prevents overlap when primary/secondary heights differ.
-            if isVertical then
-                local deltaX = QUICore:PixelRound((secondaryOuterThickness - primaryOuterThickness) / 2, bar)
-                offsetX = offsetX + deltaX
-            else
-                -- Keep bottom edges aligned after swap:
-                -- secondaryCenter = primaryCenter + (secondaryOuter - primaryOuter) / 2
-                local deltaY = QUICore:PixelRound((secondaryOuterThickness - primaryOuterThickness) / 2, bar)
-                offsetY = offsetY + deltaY
-            end
+        -- We own the primary AND secondary while swap is active so the
+        -- anchoring system doesn't fight our SetPoint calls.
+        SyncSwapAnchorOwnership(true)
 
-            if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("secondaryPower")) and (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= "swappedToPrimary") then
-                bar:ClearAllPoints()
-                bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
-                bar._cachedX = offsetX
-                bar._cachedY = offsetY
-                bar._cachedAnchor = nil
-                bar._cachedAutoMode = "swappedToPrimary"
-                if _G.QUI_UpdateAnchoredUnitFrames then
-                    _G.QUI_UpdateAnchoredUnitFrames()
-                end
-            end
-
-            -- Use primary bar's width
-            width = primaryCfg.width
-            if not width or width <= 0 then width = 326 end
-            lockedToPrimaryHandled = true
+        local offsetX, offsetY
+        if ShouldHidePrimaryOnSwap() then
+            -- Primary is invisible; secondary just lands centered on primary's
+            -- natural slot (no edge-shift since there's no other visible bar
+            -- to align against).  Bbox shrinks to the secondary's footprint.
+            offsetX = QUICore:PixelRound(pcx, bar)
+            offsetY = QUICore:PixelRound(pcy, bar)
+        else
+            local _, _, secondaryNewCx, secondaryNewCy = ComputeSwappedCenters(pcx, pcy, pT, scx, scy, sT, isVertical)
+            offsetX = QUICore:PixelRound(secondaryNewCx, bar)
+            offsetY = QUICore:PixelRound(secondaryNewCy, bar)
         end
+
+        if (bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= "swappedToPrimary") then
+            bar:ClearAllPoints()
+            bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+            bar._cachedX = offsetX
+            bar._cachedY = offsetY
+            bar._cachedAnchor = nil
+            bar._cachedAutoMode = "swappedToPrimary"
+            if _G.QUI_UpdateAnchoredUnitFrames then
+                _G.QUI_UpdateAnchoredUnitFrames()
+            end
+        end
+
+        -- Width handling:
+        --   * lockedToPrimary: keep existing behavior — secondary inherits
+        --     primary's width, so the swapped secondary visually matches
+        --     where primary used to be.
+        --   * Otherwise: each bar keeps its own length when the bars exchange
+        --     slots (per design — preserves user-intended sizes).
+        if cfg.lockedToPrimary then
+            width = plen
+        else
+            width = cfg.width
+            if not width or width <= 0 then width = plen end
+        end
+        lockedToPrimaryHandled = true
     end
 
     -- =====================================================
@@ -3406,6 +4120,13 @@ end
 
     bar:SetAlpha(1)
     SafeShow(bar)
+
+    if self.UpdateResourceBarsProxy then self:UpdateResourceBarsProxy() end
+    ScheduleNaturalSlotCapture()
+    -- See TriggerSwapReciprocalUpdate doc: re-runs primary positioning so
+    -- its swap target reflects the now-known secondary natural slot
+    -- (NCDM ordering on first frame, lockedBase late-arrival, etc.).
+    TriggerSwapReciprocalUpdate()
 end
 
 -- EVENT HANDLER
@@ -3530,6 +4251,10 @@ local function InitializeResourceBars(self)
     self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
         EnsureDemonHunterSoulBar()
         self:OnUnitPower()
+        -- First-reload-with-swap-on bootstrap: capture true natural slots
+        -- before applying swap so swap math sees user-anchored positions
+        -- and post-NCDM offsets, not stale cfg defaults.
+        ScheduleSwapBootstrap()
     end)
 
     -- POWER UPDATES — use a raw frame with RegisterUnitEvent("player") so

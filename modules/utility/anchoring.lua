@@ -31,6 +31,13 @@ QUI_Anchoring.anchoredFrames = {}
 
 -- Frames with active anchoring overrides — module positioning is blocked for these
 QUI_Anchoring.layoutOwnedFrames = {}
+-- Keys that a module has claimed for direct (module-driven) positioning.
+-- ApplyFrameAnchor and ApplyAllFrameAnchors will SKIP these keys entirely,
+-- including any saved or default frameAnchoring entries.  Used by features
+-- like the resource bar swap that need to override anchored layouts
+-- temporarily while still letting them snap back on release.  Module is
+-- responsible for re-triggering anchor application when releasing the claim.
+QUI_Anchoring.claimedAnchorKeys = {}
 
 local Helpers = {}
 
@@ -1489,8 +1496,25 @@ local FRAME_RESOLVERS = {
         return nil
     end,
     -- Resource Bars
-    primaryPower = function() return QUICore and QUICore.powerBar end,
-    secondaryPower = function() return QUICore and QUICore.secondaryPowerBar end,
+    -- Swap-aware: when the primary/secondary swap mechanic is active, the
+    -- bar physically occupying each natural slot changes (the bars exchange
+    -- positions).  Anchoring is positional intent ("anchor at primary's
+    -- slot"), not frame identity, so route through GetSwapAwareBarFor so
+    -- external anchored elements stay visually stable across swap toggles.
+    primaryPower = function()
+        if QUICore and QUICore.GetSwapAwareBarFor then
+            local f = QUICore:GetSwapAwareBarFor("primaryPower")
+            if f then return f end
+        end
+        return QUICore and QUICore.powerBar
+    end,
+    secondaryPower = function()
+        if QUICore and QUICore.GetSwapAwareBarFor then
+            local f = QUICore:GetSwapAwareBarFor("secondaryPower")
+            if f then return f end
+        end
+        return QUICore and QUICore.secondaryPowerBar
+    end,
     -- Unit Frames
     playerFrame = function() return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.player end,
     targetFrame = function() return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.target end,
@@ -2457,6 +2481,11 @@ end
 function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     if type(settings) ~= "table" then return end
 
+    -- Skip keys that a module has claimed for direct positioning. The module
+    -- (e.g. resourcebars swap) is fully responsible for SetPoint while
+    -- claimed; we must not fight it from the anchoring system.
+    if self.claimedAnchorKeys[key] then return end
+
     if not HasFrameResolverForKey(key) then
         return
     end
@@ -2976,6 +3005,19 @@ _G.QUI_SetFrameLayoutOwned = function(frame, key)
     if QUI_Anchoring and frame then
         QUI_Anchoring.layoutOwnedFrames[frame] = key or nil
     end
+end
+
+-- Claim/release an anchoring key for module-driven positioning.  While
+-- claimed, the anchoring system will not call SetPoint on the resolved
+-- frame for that key — neither during single-key applies nor during the
+-- full ApplyAllFrameAnchors pass.  Releasing the claim does NOT
+-- automatically reapply: callers should follow up with
+-- QUI_ForceReapplyFrameAnchor(key) if they want the frame snapped back to
+-- its saved anchor immediately.
+_G.QUI_ClaimAnchorKey = function(key, claimed)
+    if not key then return end
+    if not QUI_Anchoring then return end
+    QUI_Anchoring.claimedAnchorKeys[key] = claimed and true or nil
 end
 
 _G.QUI_ApplyAllFrameAnchors = function(force)
