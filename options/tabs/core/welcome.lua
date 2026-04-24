@@ -53,10 +53,11 @@ local function CreateWelcomePage(parent)
     y = y - (tagline:GetStringHeight() or 14) - 14
 
     -- Links (both on one row, parented directly to content)
+    local AssetPath = ns.Helpers.AssetPath
     local discordItem = CreateLinkItem(content,
         "|cff5865F2Discord|r", "https://discord.gg/FFUjA4JXnH",
         0.345, 0.396, 0.949,  -- Discord blurple
-        "Interface\\AddOns\\QUI\\assets\\discord",
+        AssetPath .. "discord",
         "Copy Discord Invite")
     discordItem:SetPoint("TOPLEFT", PADDING, y)
     discordItem:SetSize(320, 22)
@@ -64,7 +65,7 @@ local function CreateWelcomePage(parent)
     local githubItem = CreateLinkItem(content,
         "|cffF0F6FCGitHub|r", "https://github.com/zol-wow/QUI",
         0.941, 0.965, 0.988,  -- GitHub light
-        "Interface\\AddOns\\QUI\\assets\\github",
+        AssetPath .. "github",
         "Copy GitHub URL")
     githubItem:SetPoint("TOPLEFT", PADDING + 330, y)
     githubItem:SetSize(350, 22)

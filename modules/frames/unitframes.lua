@@ -392,7 +392,7 @@ local function GetAbsorbTexturePath(textureName)
     if not name or name == "" then
         name = "QUI Stripes"
     end
-    return LSM:Fetch("statusbar", name) or "Interface\\AddOns\\QUI\\assets\\absorb_stripe"
+    return LSM:Fetch("statusbar", name) or (Helpers.AssetPath .. "absorb_stripe")
 end
 
 ---------------------------------------------------------------------------

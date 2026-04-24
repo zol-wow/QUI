@@ -7,6 +7,7 @@
 local ADDON_NAME, ns = ...
 
 local QUI_HelpContent = {}
+local AssetPath = ns.Helpers.AssetPath
 
 ---------------------------------------------------------------------------
 -- GETTING STARTED
@@ -162,14 +163,14 @@ QUI_HelpContent.Links = {
         label = "|cff5865F2Discord|r",
         url = "https://discord.gg/FFUjA4JXnH",
         iconR = 0.345, iconG = 0.396, iconB = 0.949,
-        iconTexture = "Interface\\AddOns\\QUI\\assets\\discord",
+        iconTexture = AssetPath .. "discord",
         popupTitle = "Copy Discord Invite",
     },
     {
         label = "|cffF0F6FCGitHub|r",
         url = "https://github.com/zol-wow/QUI",
         iconR = 0.941, iconG = 0.965, iconB = 0.988,
-        iconTexture = "Interface\\AddOns\\QUI\\assets\\github",
+        iconTexture = AssetPath .. "github",
         popupTitle = "Copy GitHub URL",
     },
     {
