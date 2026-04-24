@@ -233,13 +233,17 @@ ActionBarsOwned._activeButtons = ActionBarsOwned._activeButtons
     or setmetatable({}, { __mode = "k" })
 
 local UpdateButtonProfessionQuality
+local SafeHasAction
+local HasButtonContent
 
 function ActionBarsOwned.SafeUpdate(self)
     local action = self.action
     if not action then return end
+    local hasAction = SafeHasAction(action)
+    local hasContent = hasAction or (self.GetAttribute and self:GetAttribute("gse-button"))
 
-    if HasAction(action) then
-        if not InCombatLockdown() then
+    if hasContent then
+        if not InCombatLockdown() and hasAction then
             local flyoutID
             local actionType, actionID, subType = GetActionInfo(action)
             if actionType == "flyout" then
@@ -263,18 +267,19 @@ function ActionBarsOwned.SafeUpdate(self)
         local gseSeq = self:GetAttribute("gse-button")
         local texture
         if gseSeq then
-            -- Prefer the compiled macro icon registered by GSE
-            if GetMacroIndexByName then
+            if _G.QUI_GetGSEButtonIcon then
+                texture = _G.QUI_GetGSEButtonIcon(self)
+            end
+            if not texture and GetMacroIndexByName then
                 local idx = GetMacroIndexByName(gseSeq)
                 if idx and idx > 0 then
                     local _, macTex = GetMacroInfo(idx)
-                    texture = macTex
+                    local logoIcon = _G.GSE and _G.GSE.Static
+                        and _G.GSE.Static.Icons and _G.GSE.Static.Icons.GSE_Logo_Dark
+                    if macTex and macTex ~= logoIcon then
+                        texture = macTex
+                    end
                 end
-            end
-            -- Fall back to the action slot texture (may be the original
-            -- spell icon, which is still a reasonable fallback)
-            if not texture then
-                texture = GetActionTexture(action)
             end
         else
             texture = GetActionTexture(action)
@@ -293,7 +298,7 @@ function ActionBarsOwned.SafeUpdate(self)
         self:SetAlpha(1.0)
 
         -- Checked state (autoattack, toggle abilities)
-        if IsCurrentAction(action) or IsAutoRepeatAction(action) then
+        if hasAction and (IsCurrentAction(action) or IsAutoRepeatAction(action)) then
             self:SetChecked(true)
         else
             self:SetChecked(false)
@@ -305,7 +310,7 @@ function ActionBarsOwned.SafeUpdate(self)
         self.icon:SetVertexColor(1, 1, 1)
 
         -- Equipped border
-        if IsEquippedAction(action) then
+        if hasAction and IsEquippedAction(action) then
             self.Border:SetVertexColor(0, 1, 0, 0.35)
             self.Border:Show()
         else
@@ -313,7 +318,11 @@ function ActionBarsOwned.SafeUpdate(self)
         end
 
         -- Action text (macro name)
-        self.Name:SetText(GetActionText(action) or "")
+        if hasAction then
+            self.Name:SetText(GetActionText(action) or "")
+        else
+            self.Name:SetText("")
+        end
 
         -- Delegated to shadowed methods
         self:UpdateCount()
@@ -331,14 +340,15 @@ function ActionBarsOwned.SafeUpdate(self)
         -- Set everActive flag here — SafeUpdate already confirmed
         -- IsAssistedCombatAction, so unblock the rotation frame's
         -- fast-path early return.
-        if C_ActionBar and C_ActionBar.IsAssistedCombatAction
+        if hasAction
+            and C_ActionBar and C_ActionBar.IsAssistedCombatAction
             and C_ActionBar.IsAssistedCombatAction(action) then
             ActionBarsOwned._assistedCombatEverActive = true
         end
         UpdateAssistedCombatRotationFrame(self)
 
         -- Level link lock
-        if self.LevelLinkLockIcon and C_LevelLink and C_LevelLink.IsActionLocked then
+        if hasAction and self.LevelLinkLockIcon and C_LevelLink and C_LevelLink.IsActionLocked then
             if C_LevelLink.IsActionLocked(action) then
                 self.icon:SetDesaturated(true)
                 self.LevelLinkLockIcon:SetShown(true)
@@ -349,8 +359,10 @@ function ActionBarsOwned.SafeUpdate(self)
         end
 
         -- Flash animation (auto-attack / auto-repeat)
-        local shouldFlash = (IsAttackAction(action) and IsCurrentAction(action))
+        local shouldFlash = hasAction and (
+            (IsAttackAction(action) and IsCurrentAction(action))
             or IsAutoRepeatAction(action)
+        )
         if shouldFlash then
             if not self.flashing then
                 if ActionButton_StartFlash then
@@ -614,8 +626,18 @@ end
 -- (==, ~=, >) — so secret booleans/numbers pass through without error.
 -- No pcall needed since truthiness evaluation never triggers the
 -- secret-value error (only comparisons and arithmetic do).
-local function SafeHasAction(action)
+SafeHasAction = function(action)
     if HasAction(action) then return true end
+    return false
+end
+
+HasButtonContent = function(button, action)
+    if button and button.GetAttribute and button:GetAttribute("gse-button") then
+        return true
+    end
+    if action then
+        return SafeHasAction(action)
+    end
     return false
 end
 
@@ -1256,7 +1278,23 @@ local function InstallSecureActionFlagRefresh(btn)
     btn._quiActionFlagRefreshInstalled = true
     btn:SetAttribute("QUI_UpdateActionFlags", [[
         local action = self:GetAttribute("action")
+        local gseButton = self:GetAttribute("gse-button")
         local pressAndHold = false
+
+        if gseButton then
+            -- When useOnKeyDown=true, the press fires the click → forwards to the
+            -- sequence frame and advances the step.  typerelease="click" would fire
+            -- a SECOND click on release, double-advancing the sequence.  Clear it
+            -- in that mode; keep it for useOnKeyDown=false so release-mode still
+            -- forwards reliably even when BAR_SWAP flips type to "action".
+            if self:GetAttribute("useOnKeyDown") then
+                self:SetAttribute("typerelease", nil)
+            else
+                self:SetAttribute("typerelease", "click")
+            end
+            self:SetAttribute("pressAndHoldAction", false)
+            return
+        end
 
         self:SetAttribute("typerelease", "actionrelease")
         if action and IsPressHoldReleaseSpell then
@@ -2171,7 +2209,8 @@ local function ApplyBarOverrideBindings(barKey)
                     -- whose OnClick handlers check for "LeftButton" specifically.  Standard
                     -- action bars (SecureActionButtonTemplate) fire via secure attributes
                     -- regardless of button string, so "Keybind" works for them.
-                    local vBtn = (barKey == "pet" or barKey == "stance") and "LeftButton" or "Keybind"
+                    local vBtn = ((barKey == "pet" or barKey == "stance") or btn:GetAttribute("gse-button"))
+                        and "LeftButton" or "Keybind"
                     SetOverrideBindingClick(container, false, key, btn:GetName(), vBtn)
                 end
             end
@@ -2329,6 +2368,7 @@ local function EnsureOwnedActionButton(container, barKey, btnName, index)
     else
         btn:SetParent(container)
     end
+    btn:SetAttribute("qui-button-index", index)
 
     btn:SetAttribute("qui-refresh-ref", "btn-refresh-" .. barKey .. "-" .. index)
     InstallSecureActionFlagRefresh(btn)
@@ -5729,7 +5769,7 @@ SkinButton = function(button, settings)
         local barKey = GetBarKeyFromButton(button)
         local action = GetSafeActionSlot(button)
         if action and barKey ~= "stance" and barKey ~= "pet" and not isSpellFlyoutButton
-            and not SafeHasAction(action) then
+            and not HasButtonContent(button, action) then
             icon:SetTexture(nil)
         end
         icon:SetAlpha(1)
@@ -5985,7 +6025,7 @@ UpdateKeybindText = function(button, settings)
     if shouldShow and settings.hideEmptyKeybinds then
         local action = GetSafeActionSlot(button)
         if action then
-            local hasAction = SafeHasAction(action)
+            local hasAction = HasButtonContent(button, action)
             if not hasAction then
                 shouldShow = false
             end
@@ -6238,7 +6278,7 @@ UpdateEmptySlotVisibility = function(button, settings)
     -- Only applies to action buttons with action property
     local action = GetSafeActionSlot(button)
     if action then
-        local hasAction = SafeHasAction(action)
+        local hasAction = HasButtonContent(button, action)
         if hasAction then
             button:SetAlpha(1)
             if state.hiddenEmpty then
@@ -8714,6 +8754,9 @@ _G.QUI_ApplyUseOnKeyDown = function()
             local btn = _G["QUI_Bar" .. bar .. "Button" .. i]
             if btn then
                 btn:SetAttribute("useOnKeyDown", value)
+                if btn.RunAttribute then
+                    btn:RunAttribute("QUI_UpdateActionFlags")
+                end
             end
         end
     end
@@ -8727,6 +8770,14 @@ _G.QUI_ApplyUseOnKeyDown = function()
             end
         end
     end
+end
+
+_G.QUI_ReapplyActionBarBindings = function()
+    if InCombatLockdown() then
+        ActionBarsOwned.pendingBindings = true
+        return
+    end
+    RefreshNativeKeybinds()
 end
 
 -- Lightweight refresh: only re-evaluate mouseover fade state for all bars.

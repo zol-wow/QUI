@@ -127,6 +127,23 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r CDM Spell Composer not available. Enable CDM first.")
         end
         return
+    elseif input and input:match("^gse") then
+        -- /qui gse          → dump current override state
+        -- /qui gse debug    → toggle click-event logging
+        -- /qui gse tail [N] → print last N events from the log
+        local sub, arg = input:match("^gse%s+(%S+)%s*(%S*)")
+        if sub == "debug" then
+            if _G.QUI_GSEToggleDebug then _G.QUI_GSEToggleDebug() end
+        elseif sub == "tail" then
+            if _G.QUI_GSETail then _G.QUI_GSETail(tonumber(arg) or 20) end
+        else
+            if _G.QUI_GSEDump then
+                _G.QUI_GSEDump()
+            else
+                print("|cff60A5FAQUI:|r GSE compat shim not loaded.")
+            end
+        end
+        return
     elseif input and input:match("^migration") then
         -- /qui migration             → status (current schema version + backup slots)
         -- /qui migration status      → same
