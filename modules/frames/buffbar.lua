@@ -26,6 +26,15 @@ local QUI_BuffBar = {}
 ns.BuffBar = QUI_BuffBar
 
 ---------------------------------------------------------------------------
+-- ADDON_LOADED / PLAYER_ENTERING_WORLD safe window flag: during a combat
+-- /reload, InCombatLockdown() returns true but protected calls are still
+-- allowed inside the synchronous event handler body. Sub-functions
+-- (anchor apply, dimension writes, HUD frame level) check this flag to
+-- bypass their combat guards during the safe window.
+---------------------------------------------------------------------------
+local inInitSafeWindow = false
+
+---------------------------------------------------------------------------
 -- HELPER: Get font from general settings (uses shared helpers)
 ---------------------------------------------------------------------------
 local Helpers = ns.Helpers
@@ -207,7 +216,9 @@ local function ApplyTrackedBarAnchor(settings)
     -- Respect centralized frame anchoring overrides
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("buffBar") then return end
     -- Avoid ClearAllPoints/SetPoint churn on protected Blizzard viewers during combat.
-    if InCombatLockdown() then return end
+    -- Bypass during the ADDON_LOADED / PEW safe window where protected calls are
+    -- allowed even though InCombatLockdown() returns true on combat /reload.
+    if InCombatLockdown() and not inInitSafeWindow then return end
     -- Don't reposition during Edit Mode — let the user drag/nudge freely.
     -- Blizzard's Edit Mode system handles position save/restore.
     if Helpers.IsEditModeActive() then return end
@@ -314,7 +325,9 @@ local function ApplyBuffIconAnchor(settings)
     if not viewer then return end
     -- Respect centralized frame anchoring overrides
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("buffIcon") then return end
-    if InCombatLockdown() then return end
+    -- Bypass during the ADDON_LOADED / PEW safe window where protected calls are
+    -- allowed even though InCombatLockdown() returns true on combat /reload.
+    if InCombatLockdown() and not inInitSafeWindow then return end
     if Helpers.IsEditModeActive() then return end
 
     local anchorTo = settings.anchorTo or "disabled"
@@ -967,7 +980,9 @@ local function ApplyBarStyle(frame, settings, overrideBarWidth)
     -- repositions bars with default spacing, causing visible jumping. During
     -- combat, skip dimension changes — bars keep their pre-combat size and
     -- dimensions are corrected on PLAYER_REGEN_ENABLED.
-    if not InCombatLockdown() then
+    -- Exception: during the ADDON_LOADED / PEW safe window, protected calls
+    -- are allowed even though InCombatLockdown() reports true on /reload.
+    if (not InCombatLockdown()) or inInitSafeWindow then
         pcall(function()
             frame:SetHeight(frameHeight)
             frame:SetWidth(frameWidth)
@@ -1329,8 +1344,10 @@ LayoutBuffIcons = function()
     -- Optional anchoring to CDM/resource/unitframe targets.
     ApplyBuffIconAnchor(settings)
 
-    -- Apply HUD layer priority (protected on secure frames — skip in combat)
-    if not InCombatLockdown() then
+    -- Apply HUD layer priority (protected on secure frames — skip in combat).
+    -- Exception: during the ADDON_LOADED / PEW safe window, protected calls
+    -- are allowed even though InCombatLockdown() reports true on /reload.
+    if (not InCombatLockdown()) or inInitSafeWindow then
         local core = GetCore()
         local hudLayering = core and core.db and core.db.profile and core.db.profile.hudLayering
         local layerPriority = hudLayering and hudLayering.buffIcon or 5
@@ -1657,6 +1674,13 @@ local function Initialize()
     if initialized then return end
     initialized = true
 
+    -- ADDON_LOADED safe window: protected calls are allowed inside this
+    -- synchronous handler body even though InCombatLockdown() returns true
+    -- during a combat /reload. Set both the module-local flag and the
+    -- shared namespace flag so the central anchoring system cooperates.
+    inInitSafeWindow = true
+    ns._inInitSafeWindow = true
+
     -- CRITICAL: Set layout direction IMMEDIATELY at login, before combat can start
     -- This prevents Blizzard's Layout() from using wrong axis if first buff appears during combat
     -- TAINT SAFETY: Store in local table instead of writing to Blizzard viewer
@@ -1787,11 +1811,17 @@ local function Initialize()
         end)
     end
 
-    -- Initial layouts (after force populate)
-    C_Timer.After(0.3, function()
-        LayoutBuffIcons()  -- Direct calls
-        LayoutBuffBars()
-    end)
+    -- Initial layouts — run synchronously inside the ADDON_LOADED safe window.
+    -- Deferring via C_Timer.After pushes this past the safe window boundary;
+    -- on a combat /reload ApplyBuffIconAnchor / ApplyTrackedBarAnchor would
+    -- then bail on InCombatLockdown() and the viewer would stay un-positioned.
+    LayoutBuffIcons()
+    LayoutBuffBars()
+
+    -- Close the safe window — subsequent C_Timer callbacks and event handlers
+    -- run outside the ADDON_LOADED handler and must respect combat lockdown.
+    inInitSafeWindow = false
+    ns._inInitSafeWindow = false
 end
 
 ---------------------------------------------------------------------------
@@ -1811,19 +1841,37 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isInitialLogin, isReloadingUi = ...
         if isInitialLogin or isReloadingUi then
-            C_Timer.After(1.5, function()
-                ForcePopulateBuffIcons()
-                -- Invalidate anchor cache so ApplyBuffIconAnchor re-applies
-                -- even if a prior call silently failed (anchor frame unavailable).
+            -- PEW fires inside the safe window on combat /reload — protected
+            -- calls are allowed even though InCombatLockdown() returns true.
+            -- Run the initial layout synchronously here so the viewer is
+            -- positioned before the safe window closes.
+            inInitSafeWindow = true
+            ns._inInitSafeWindow = true
+            ForcePopulateBuffIcons()
+            do
                 local viewer = GetBuffIconViewer()
                 if viewer and viewerBuffState[viewer] then
                     viewerBuffState[viewer].anchorCache = nil
                 end
-                LayoutBuffIcons()  -- Direct calls
+            end
+            LayoutBuffIcons()
+            LayoutBuffBars()
+            inInitSafeWindow = false
+            ns._inInitSafeWindow = false
+
+            -- Deferred second pass: Blizzard viewer children may populate
+            -- after PEW (first login or cinematic). These run outside the
+            -- safe window and respect combat lockdown; they're recovery,
+            -- not the primary path.
+            C_Timer.After(1.5, function()
+                ForcePopulateBuffIcons()
+                local viewer = GetBuffIconViewer()
+                if viewer and viewerBuffState[viewer] then
+                    viewerBuffState[viewer].anchorCache = nil
+                end
+                LayoutBuffIcons()
                 LayoutBuffBars()
             end)
-            -- Staggered retry: anchor frame or proxy may not exist at 1.5s.
-            -- By 3.5s all CDM containers, proxies, and Blizzard layout are settled.
             C_Timer.After(3.5, function()
                 if InCombatLockdown() then return end
                 local viewer = GetBuffIconViewer()

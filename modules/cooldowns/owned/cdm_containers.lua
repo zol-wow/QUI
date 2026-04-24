@@ -28,6 +28,15 @@ local InCombatLockdown = InCombatLockdown
 local hooksecurefunc = hooksecurefunc
 
 ---------------------------------------------------------------------------
+-- ADDON_LOADED / PLAYER_ENTERING_WORLD safe window flag: during a combat
+-- /reload, InCombatLockdown() returns true but protected calls are still
+-- allowed inside the synchronous event handler body. RefreshAll and other
+-- combat-gated paths check this flag to bypass their combat guards during
+-- the safe window so the initial layout renders.
+---------------------------------------------------------------------------
+local inInitSafeWindow = false
+
+---------------------------------------------------------------------------
 -- CONSTANTS
 ---------------------------------------------------------------------------
 local HUD_MIN_WIDTH_DEFAULT = Helpers.HUD_MIN_WIDTH_DEFAULT or 200
@@ -2044,7 +2053,9 @@ RefreshAll = function(forceSync)
     -- Defer to combat end — rebuilding destroys the current layout.
     -- A follow-up refresh on PLAYER_REGEN_ENABLED routes here and provides
     -- recovery after combat lockdown ends.
-    if InCombatLockdown() then
+    -- Exception: during the ADDON_LOADED / PEW safe window, protected calls
+    -- are allowed even though InCombatLockdown() reports true on /reload.
+    if InCombatLockdown() and not inInitSafeWindow then
         return
     end
 
@@ -2699,8 +2710,12 @@ function ownedEngine:Initialize()
     end
 
     -- Create containers immediately (addon-owned frames, no external dependency).
-    -- During a combat /reload this runs in the ADDON_LOADED safe window where
-    -- InCombatLockdown() returns false, matching the group frames pattern.
+    -- During a combat /reload this runs inside the ADDON_LOADED safe window
+    -- where protected calls are allowed even though InCombatLockdown() returns
+    -- true. Set the flag so RefreshAll and other combat-gated sub-functions
+    -- bypass their combat guards for the duration of this synchronous block.
+    inInitSafeWindow = true
+    ns._inInitSafeWindow = true
     InitContainers()
     InitBuffContainer()
 
@@ -2772,6 +2787,11 @@ function ownedEngine:Initialize()
         _G.QUI_RefreshCDMVisibility()
     end
 
+    -- Close the safe window — subsequent C_Timer callbacks run outside the
+    -- ADDON_LOADED handler and must respect combat lockdown normally.
+    inInitSafeWindow = false
+    ns._inInitSafeWindow = false
+
     -- Deferred re-layout: catches first-login cases where Blizzard viewers
     -- populate after us, or where the immediate scan found empty data.
     C_Timer.After(1.0, function()
@@ -2807,10 +2827,14 @@ function ownedEngine:Initialize()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             local isLogin, isReload = arg1, arg2
-            if isReload and not InCombatLockdown() then
+            if isReload then
                 -- Second layout pass during combat /reload safe window.
                 -- Catches Blizzard viewer children that populated after
-                -- the initial ADDON_LOADED scan.
+                -- the initial ADDON_LOADED scan. PEW fires inside the
+                -- safe window: protected calls are allowed even though
+                -- InCombatLockdown() returns true on combat /reload.
+                inInitSafeWindow = true
+                ns._inInitSafeWindow = true
                 if ns.CDMSpellData then
                     ns.CDMSpellData:ForceScan()
                 end
@@ -2818,6 +2842,8 @@ function ownedEngine:Initialize()
                 if _G.QUI_ApplyAllFrameAnchors then
                     _G.QUI_ApplyAllFrameAnchors()
                 end
+                inInitSafeWindow = false
+                ns._inInitSafeWindow = false
             elseif isLogin then
                 -- Fresh login (or character switch): run dormant spell cleanup
                 -- so cross-class/spec spells are removed before the first
