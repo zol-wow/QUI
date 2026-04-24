@@ -3111,12 +3111,17 @@ local function ConfigureRaidGroupHeaders()
                 local unitsPerColumn = math_max(1, math_min(section.memberCount, GetRaidSectionUnitsPerColumn(layout)))
                 header:SetAttribute("maxColumns", math_max(1, math.ceil(section.memberCount / unitsPerColumn)))
                 header:SetAttribute("unitsPerColumn", unitsPerColumn)
-                header:SetAttribute("groupBy", nil)
-                header:SetAttribute("groupFilter", nil)
-                header:SetAttribute("groupingOrder", nil)
+                -- Switching INTO nameList mode: set nameList/sortMethod BEFORE
+                -- clearing groupBy/groupFilter/groupingOrder. The reverse order
+                -- leaves the secure header in an invalid intermediate state
+                -- where Blizzard's private-aura anchor hook calls Hide on a
+                -- stale child frame, throwing "calling 'Hide' on bad self".
                 header:SetAttribute("nameList", section.nameList)
                 header:SetAttribute("sortMethod", "NAMELIST")
                 header:SetAttribute("sortDir", "ASC")
+                header:SetAttribute("groupBy", nil)
+                header:SetAttribute("groupFilter", nil)
+                header:SetAttribute("groupingOrder", nil)
             elseif raidSelfFirst then
                 header:SetAttribute("maxColumns", 1)
                 header:SetAttribute("unitsPerColumn", 1)

@@ -65,6 +65,69 @@ local _blizzChildToTotemSlot = setmetatable({}, { __mode = "k" })
 
 -- DurationObject cache: Blizzard child → captured DurationObject/start/duration.
 local _spellIDToChild = {}  -- [spellID] = { child1, child2, ... } (built OOC during scan)
+local _spellMapState = Helpers.CreateStateTable()
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "CDM_spellIDToChild", tbl = _spellIDToChild } end
+
+local function RemoveSpellChildMapping(spellID, child)
+    local list = spellID and _spellIDToChild[spellID]
+    if not list then return end
+
+    for i = #list, 1, -1 do
+        if list[i] == child then
+            table.remove(list, i)
+        end
+    end
+
+    if #list == 0 then
+        _spellIDToChild[spellID] = nil
+    end
+end
+
+local function ClearChildSpellMappings(child)
+    if not child then return end
+
+    local state = _spellMapState[child]
+    local ids = state and state.ids
+    if not ids then return end
+
+    for i = 1, #ids do
+        local spellID = ids[i]
+        if spellID then
+            RemoveSpellChildMapping(spellID, child)
+            ids[i] = nil
+        end
+    end
+end
+
+local function MapSpellIDToChild(spellID, child)
+    if not spellID or not child then return end
+
+    local state = _spellMapState[child]
+    if not state then
+        state = {}
+        _spellMapState[child] = state
+    end
+
+    local ids = state.ids
+    if not ids then
+        ids = {}
+        state.ids = ids
+    end
+
+    for i = 1, #ids do
+        if ids[i] == spellID then
+            return
+        end
+    end
+
+    local list = _spellIDToChild[spellID]
+    if not list then
+        list = {}
+        _spellIDToChild[spellID] = list
+    end
+    list[#list + 1] = child
+    ids[#ids + 1] = spellID
+end
 
 -- Per-batch memo caches for ResolveOwnedEntry candidate scoring.
 -- Wiped at the start of each BuildSpellListFromOwned call so all owned
@@ -1768,6 +1831,12 @@ local function ScanCooldownViewer(viewerType)
                 -- QUI mirrors Blizzard child alpha for visibility; pool size
                 -- and container dimensions are always based on all icons.
                 if hasTex or hasCDInfo then
+                    -- Replace this child's prior spell mappings before adding the
+                    -- current IDs. Buff aura rescans run frequently and only
+                    -- touch the buff viewer, so append-only mapping causes
+                    -- fight-long growth and stale spell→child candidates.
+                    ClearChildSpellMappings(child)
+
                     local spellID, overrideSpellID, name, isAura
                     local layoutIndex = child.layoutIndex or 9999
 
@@ -1826,12 +1895,10 @@ local function ScanCooldownViewer(viewerType)
                         -- Map by info struct IDs, corrected IDs, and aura-specific IDs
                         -- so tracked spells can find their Blizzard child in combat.
                         local mappedIDs = { [spellID] = true }
-                        if not _spellIDToChild[spellID] then _spellIDToChild[spellID] = {} end
-                        _spellIDToChild[spellID][#_spellIDToChild[spellID] + 1] = child
+                        MapSpellIDToChild(spellID, child)
                         if overrideSpellID and overrideSpellID ~= spellID then
                             mappedIDs[overrideSpellID] = true
-                            if not _spellIDToChild[overrideSpellID] then _spellIDToChild[overrideSpellID] = {} end
-                            _spellIDToChild[overrideSpellID][#_spellIDToChild[overrideSpellID] + 1] = child
+                            MapSpellIDToChild(overrideSpellID, child)
                         end
                         -- Also map by corrected aura ID (from _cdIDToCorrectSID)
                         -- and GetAuraSpellID — these are the IDs tracked spells use.
@@ -1840,8 +1907,7 @@ local function ScanCooldownViewer(viewerType)
                         if cdID and _cdIDToCorrectSID and _cdIDToCorrectSID[cdID] and not mappedIDs[_cdIDToCorrectSID[cdID]] then
                             local correctSid = _cdIDToCorrectSID[cdID]
                             mappedIDs[correctSid] = true
-                            if not _spellIDToChild[correctSid] then _spellIDToChild[correctSid] = {} end
-                            _spellIDToChild[correctSid][#_spellIDToChild[correctSid] + 1] = child
+                            MapSpellIDToChild(correctSid, child)
                         end
                         if child.GetAuraSpellID then
                             local aok, auraSid = pcall(child.GetAuraSpellID, child)
@@ -1849,8 +1915,7 @@ local function ScanCooldownViewer(viewerType)
                                 local safeAuraSid = Helpers.SafeValue(auraSid, nil)
                                 if safeAuraSid and safeAuraSid > 0 and not mappedIDs[safeAuraSid] then
                                     mappedIDs[safeAuraSid] = true
-                                    if not _spellIDToChild[safeAuraSid] then _spellIDToChild[safeAuraSid] = {} end
-                                    _spellIDToChild[safeAuraSid][#_spellIDToChild[safeAuraSid] + 1] = child
+                                    MapSpellIDToChild(safeAuraSid, child)
                                 end
                             end
                         end
@@ -1860,8 +1925,7 @@ local function ScanCooldownViewer(viewerType)
                                 local safeFrameSid = Helpers.SafeValue(frameSid, nil)
                                 if safeFrameSid and safeFrameSid > 0 and not mappedIDs[safeFrameSid] then
                                     mappedIDs[safeFrameSid] = true
-                                    if not _spellIDToChild[safeFrameSid] then _spellIDToChild[safeFrameSid] = {} end
-                                    _spellIDToChild[safeFrameSid][#_spellIDToChild[safeFrameSid] + 1] = child
+                                    MapSpellIDToChild(safeFrameSid, child)
                                 end
                             end
                         end
@@ -1874,8 +1938,7 @@ local function ScanCooldownViewer(viewerType)
                                     local safeLsid = Helpers.SafeValue(lsid, nil)
                                     if safeLsid and safeLsid > 0 and not mappedIDs[safeLsid] then
                                         mappedIDs[safeLsid] = true
-                                        if not _spellIDToChild[safeLsid] then _spellIDToChild[safeLsid] = {} end
-                                        _spellIDToChild[safeLsid][#_spellIDToChild[safeLsid] + 1] = child
+                                        MapSpellIDToChild(safeLsid, child)
                                     end
                                 end
                             end
