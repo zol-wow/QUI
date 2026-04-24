@@ -175,7 +175,7 @@ local function CreateAuraIcon(parent, index, size, auraSettings, isDebuff)
         local auraID = state and state.auraInstanceID
         if unit and auraID then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            if self.filter == "HELPFUL" then
+            if self.filter and self.filter:find("HELPFUL", 1, true) then
                 GameTooltip:SetUnitBuffByAuraInstanceID(unit, auraID)
             else
                 GameTooltip:SetUnitDebuffByAuraInstanceID(unit, auraID)
@@ -366,15 +366,18 @@ local function UpdateAuras(frame)
     -- Populate debuffs (skip if preview is active)
     local debuffCount = 0
     local debuffIndex = 1
-    -- Filter: player frame always shows all; others respect onlyMyDebuffs setting
-    local debuffFilter = "HARMFUL"
-    if unit ~= "player" and onlyMyDebuffs then
-        debuffFilter = "HARMFUL|PLAYER"
-    end
+    -- Player frame shows all debuffs; non-player frames respect the
+    -- user-facing onlyMyDebuffs toggle. "Mine" means player/pet/vehicle
+    -- (post-filtered via IsAuraOwnedByPlayerOrPet so pet-cast auras count).
+    local filterDebuffsByMine = (unit ~= "player") and onlyMyDebuffs
     if showDebuffs and not debuffPreviewActive then
         while debuffCount < debuffMaxIcons do
-            local auraData = C_UnitAuras.GetAuraDataByIndex(unit, debuffIndex, debuffFilter)
+            local auraData = C_UnitAuras.GetAuraDataByIndex(unit, debuffIndex, "HARMFUL")
             if not auraData then break end
+            debuffIndex = debuffIndex + 1
+            if filterDebuffsByMine and not Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
+                -- skip: foreign-source debuff while onlyMyDebuffs is on
+            else
 
             debuffCount = debuffCount + 1
 
@@ -385,7 +388,7 @@ local function UpdateAuras(frame)
             if not state then state = {}; auraIconState[icon] = state end
             state.unit = unit
             state.auraInstanceID = auraData.auraInstanceID
-            icon.filter = debuffFilter
+            icon.filter = "HARMFUL"
 
             -- Safely set texture (icon field is always safe)
             if auraData.icon then
@@ -451,8 +454,7 @@ local function UpdateAuras(frame)
             icon:ClearAllPoints()
             icon:SetPoint(iconPoint, frame, framePoint, xPos + (borderOffsetX or 0), yPos)
             icon:Show()
-
-            debuffIndex = debuffIndex + 1
+            end
         end
     end
 
@@ -463,6 +465,10 @@ local function UpdateAuras(frame)
         while buffCount < buffMaxIcons do
             local auraData = C_UnitAuras.GetAuraDataByIndex(unit, buffIndex, "HELPFUL")
             if not auraData then break end
+            buffIndex = buffIndex + 1
+            if not Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
+                -- skip: buff not cast by player/pet/vehicle
+            else
 
             buffCount = buffCount + 1
 
@@ -539,8 +545,7 @@ local function UpdateAuras(frame)
             icon:ClearAllPoints()
             icon:SetPoint(iconPoint, frame, framePoint, xPos + (borderOffsetX or 0), yPos)
             icon:Show()
-
-            buffIndex = buffIndex + 1
+            end
         end
     end
 end
