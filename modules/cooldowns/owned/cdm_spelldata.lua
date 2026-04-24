@@ -186,40 +186,7 @@ local function TickCacheGetAuraDuration(unit, instanceID)
     return nil
 end
 
-local function IsAuraOwnedByPlayerOrPet(auraData, strictSource)
-    if not auraData then return false end
-
-    local ownedFlag = Helpers.SafeValue(auraData.isFromPlayerOrPlayerPet, nil)
-    if ownedFlag ~= nil and not strictSource then
-        return ownedFlag == true
-    end
-
-    local sourceUnit = Helpers.SafeValue(auraData.sourceUnit, nil)
-    if sourceUnit then
-        if sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle" then
-            return true
-        end
-        if UnitIsUnit then
-            if UnitExists("player") and UnitIsUnit(sourceUnit, "player") then return true end
-            if UnitExists("pet") and UnitIsUnit(sourceUnit, "pet") then return true end
-            if UnitExists("vehicle") and UnitIsUnit(sourceUnit, "vehicle") then return true end
-        end
-    end
-
-    local sourceGUID = Helpers.SafeValue(auraData.sourceGUID, nil)
-    if sourceGUID then
-        local playerGUID = UnitGUID and UnitGUID("player") or nil
-        local petGUID = UnitGUID and UnitGUID("pet") or nil
-        local vehicleGUID = UnitGUID and UnitGUID("vehicle") or nil
-        return sourceGUID == playerGUID or sourceGUID == petGUID or sourceGUID == vehicleGUID
-    end
-
-    if ownedFlag ~= nil then
-        return strictSource and false or ownedFlag == true
-    end
-
-    return false
-end
+local IsAuraOwnedByPlayerOrPet = Helpers.IsAuraOwnedByPlayerOrPet
 
 -- Units whose auras are inherently "ours" — buffs on player/pet/vehicle
 -- don't need a source check (other players' buffs on us are still ours to see).
@@ -301,7 +268,7 @@ local function FindOwnedAuraBySpellID(spellID)
 
     if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
         local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-        if ok and ad and ad.auraInstanceID then
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
             return ad
         end
     end
@@ -309,7 +276,7 @@ local function FindOwnedAuraBySpellID(spellID)
     if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
         for _, unit in ipairs({ "player", "pet" }) do
             local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellID, unit, spellID)
-            if ok and ad and ad.auraInstanceID then
+            if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
                 return ad
             end
         end
@@ -1349,6 +1316,9 @@ function CDMSpellData:ResolveAuraState(params)
     -- Reject harmful passives (always-present talent auras like Perdition).
     -----------------------------------------------------------------------
     -- 1. Player aura by spell ID (helpful only)
+    -- GetPlayerAuraBySpellID returns ANY aura on the player with that spellID
+    -- regardless of caster, so a class-mate's buff on us would otherwise
+    -- mark our tracker active. Reject unless the source is the player/pet.
     if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
         for tryIdx = 1, 3 do
             if isActive then break end
@@ -1358,7 +1328,7 @@ function CDMSpellData:ResolveAuraState(params)
                 local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
                 if ok and ad and ad.auraInstanceID then
                     local helpful = Helpers.SafeValue(ad.isHelpful, nil)
-                    if helpful ~= false then
+                    if helpful ~= false and IsAuraOwnedByPlayerOrPet(ad, true) then
                         AuraStateDebug(debugAura, "phase4-player-id", "tryID=", tryID, "inst=", ad.auraInstanceID)
                         isActive = true
                         childAuraInstID = ad.auraInstanceID
@@ -1372,7 +1342,7 @@ function CDMSpellData:ResolveAuraState(params)
     -- 2. Player buff by name
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
-        if ok and ad and ad.auraInstanceID then
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
             AuraStateDebug(debugAura, "phase4-player-name", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
@@ -1383,7 +1353,7 @@ function CDMSpellData:ResolveAuraState(params)
     -- 3. Pet buff by name
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "pet", entryName, "HELPFUL")
-        if ok and ad and ad.auraInstanceID then
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
             AuraStateDebug(debugAura, "phase4-pet-name", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
@@ -1518,7 +1488,9 @@ function CDMSpellData:ResolveAuraState(params)
     -----------------------------------------------------------------------
     -- Phase 6: Post-detection resolution
     -----------------------------------------------------------------------
-    -- If active but no auraInstanceID, try name-based lookups
+    -- If active but no auraInstanceID, try name-based lookups.
+    -- Reject foreign-source hits so we don't pull duration/stack info from
+    -- a class-mate's aura on us.
     if isActive and not childAuraInstID and entryName and entryName ~= "" then
         if C_UnitAuras.GetAuraDataBySpellName then
             local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
@@ -1528,7 +1500,7 @@ function CDMSpellData:ResolveAuraState(params)
             end
             if not childAuraInstID then
                 local pok, pad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
-                if pok and pad and pad.auraInstanceID then
+                if pok and pad and pad.auraInstanceID and IsAuraOwnedByPlayerOrPet(pad, true) then
                     childAuraInstID = pad.auraInstanceID
                     auraUnit = "player"
                 end
@@ -1540,7 +1512,7 @@ function CDMSpellData:ResolveAuraState(params)
                 local tryID = tryIdx == 1 and auraSpellID or tryIdx == 2 and entrySpellID or entryID
                 if tryID then
                     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
-                    if ok and ad and ad.auraInstanceID then
+                    if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
                         childAuraInstID = ad.auraInstanceID
                         auraUnit = "player"
                     end
@@ -1564,7 +1536,7 @@ function CDMSpellData:ResolveAuraState(params)
             for _, stackUnit in ipairs({"player", "pet"}) do
                 if not apps then
                     local nok, nad = pcall(C_UnitAuras.GetAuraDataBySpellName, stackUnit, entryName, "HELPFUL")
-                    if nok and nad and nad.applications then
+                    if nok and nad and nad.applications and IsAuraOwnedByPlayerOrPet(nad, true) then
                         apps = nad.applications
                     end
                 end
