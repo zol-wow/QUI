@@ -19,9 +19,9 @@ Keybind features are available by default. To configure display options:
 
 - Open `/qui` -- keybind display settings are within each module's settings.
 - Type `/kb` in chat to toggle keybind mode for hover-and-press binding.
-- Click-casting settings are in the dedicated **Click-Cast** tab in `/qui`.
+- Click-casting settings are in **General > Click-Cast** inside `/qui`.
 
-Third-party integrations are configured in their respective tabs within `/qui`, and most activate automatically when the relevant addon is detected.
+Third-party integrations are configured through **General > Third-party** and the related feature tiles, and most activate automatically when the relevant addon is detected.
 
 ## Keybind Features
 
@@ -80,11 +80,11 @@ QUI detects DandersFrames automatically and enables frame anchoring integration:
 
 ### Plater and Platynator
 
-- **Bundled import strings** -- QUI ships with pre-built Plater and Platynator nameplate profiles that complement QUI's visual style. These are available in the **Import & Export Strings** tab and can be applied with one click.
+- **Bundled import strings** -- QUI ships with pre-built Plater and Platynator nameplate profiles that complement QUI's visual style. These are available in **General > Import / Export** and can be applied with one click.
 
 ### LibDualSpec
 
-- **Automatic profile switching** -- LibDualSpec integration lets QUI automatically switch to a different profile when you change specializations. Configure which profile maps to each spec in the **Profiles** tab.
+- **Automatic profile switching** -- LibDualSpec integration lets QUI automatically switch to a different profile when you change specializations. Configure which profile maps to each spec in **General > Profiles**.
 
 ### LibSharedMedia
 

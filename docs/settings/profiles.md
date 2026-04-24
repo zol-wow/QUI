@@ -7,7 +7,7 @@ nav_order: 11
 
 # Profiles
 
-The Profiles tab manages AceDB profile storage, switching, and specialization-based auto-switching via LibDualSpec.
+The **General > Profiles** page manages AceDB profile storage, switching, and specialization-based auto-switching via LibDualSpec.
 
 ---
 

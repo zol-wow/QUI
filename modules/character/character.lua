@@ -2399,7 +2399,6 @@ local function UpdateStatsPanel(panel, unit)
             { label = "Stamina", statIndex = 3, func = function() return UnitStat(unit, 3) end },
             { label = "Intellect", statIndex = 4, func = function() return UnitStat(unit, 4) end },
         }
-
         for _, stat in ipairs(stats) do
             local statValue, effectiveStat, posBuff, negBuff = UnitStat(unit, stat.statIndex)
             if effectiveStat and effectiveStat > 0 then
@@ -3547,7 +3546,8 @@ local function HookCharacterFrame()
         local scaleSlider = GUI:CreateFormSlider(scrollChild, "Panel Scale", 0.75, 1.5, 0.05, "panelScale", charDB, function()
             local multiplier = charDB.panelScale or 1.0
             SafeSetCharScale(BASE_SCALE * multiplier)
-        end, { deferOnDrag = true })
+        end, { deferOnDrag = true },
+            { description = "Zoom factor applied to the character panel on top of the base scale. 1.0 leaves the panel at the default QUI size." })
         scaleSlider:SetPoint("TOPLEFT", PAD, y)
         scaleSlider:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -3567,7 +3567,8 @@ local function HookCharacterFrame()
                 if _G.QUI_RefreshCharacterFrameColors then
                     _G.QUI_RefreshCharacterFrameColors()
                 end
-            end)
+            end, nil,
+                { description = "Background color applied to the character panel. Shared with the global skinning background so character and inspect panels match." })
             bgColorPicker:SetPoint("TOPLEFT", PAD, y)
             bgColorPicker:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
@@ -3590,27 +3591,32 @@ local function HookCharacterFrame()
         overlayHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - overlayHeader.gap
 
-        local showItemName = GUI:CreateFormCheckbox(scrollChild, "Show Equipment Name", "showItemName", charDB, RefreshAll)
+        local showItemName = GUI:CreateFormCheckbox(scrollChild, "Show Equipment Name", "showItemName", charDB, RefreshAll,
+            { description = "Show the equipped item's name on each character panel slot overlay." })
         showItemName:SetPoint("TOPLEFT", PAD, y)
         showItemName:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local showIlvl = GUI:CreateFormCheckbox(scrollChild, "Show Item Level & Track", "showItemLevel", charDB, RefreshAll)
+        local showIlvl = GUI:CreateFormCheckbox(scrollChild, "Show Item Level & Track", "showItemLevel", charDB, RefreshAll,
+            { description = "Show the item level and upgrade track label on each slot overlay." })
         showIlvl:SetPoint("TOPLEFT", PAD, y)
         showIlvl:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local showEnchants = GUI:CreateFormCheckbox(scrollChild, "Show Enchant Status", "showEnchants", charDB, RefreshAll)
+        local showEnchants = GUI:CreateFormCheckbox(scrollChild, "Show Enchant Status", "showEnchants", charDB, RefreshAll,
+            { description = "Show the enchant name on each slot, or a missing-enchant marker if the slot has no enchant." })
         showEnchants:SetPoint("TOPLEFT", PAD, y)
         showEnchants:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local showGems = GUI:CreateFormCheckbox(scrollChild, "Show Gem Indicators", "showGems", charDB, RefreshAll)
+        local showGems = GUI:CreateFormCheckbox(scrollChild, "Show Gem Indicators", "showGems", charDB, RefreshAll,
+            { description = "Show colored gem dots indicating how many gem slots the item has and whether each is filled." })
         showGems:SetPoint("TOPLEFT", PAD, y)
         showGems:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local showDura = GUI:CreateFormCheckbox(scrollChild, "Show Durability Bars", "showDurability", charDB, RefreshAll)
+        local showDura = GUI:CreateFormCheckbox(scrollChild, "Show Durability Bars", "showDurability", charDB, RefreshAll,
+            { description = "Show a small durability bar on each slot overlay that has durability damage." })
         showDura:SetPoint("TOPLEFT", PAD, y)
         showDura:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -3630,7 +3636,7 @@ local function HookCharacterFrame()
             if statsPanel then
                 UpdateStatsPanel(statsPanel, "player")
             end
-        end)
+        end, { description = "Show Blizzard's detailed stat tooltip when hovering any row in the QUI stats panel." })
         showTooltips:SetPoint("TOPLEFT", PAD, y)
         showTooltips:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -3649,7 +3655,8 @@ local function HookCharacterFrame()
             { value = "rating", text = "Rating (1,234)" },
             { value = "both", text = "Both (1,234 (19.5%))" },
         }
-        local secondaryFormat = GUI:CreateFormDropdown(scrollChild, "Display Format", formatOptions, "secondaryStatFormat", charDB, RefreshAll)
+        local secondaryFormat = GUI:CreateFormDropdown(scrollChild, "Display Format", formatOptions, "secondaryStatFormat", charDB, RefreshAll,
+            { description = "How secondary stats (Crit, Haste, Mastery, Versatility) are formatted: percent only, rating only, or both side by side." })
         secondaryFormat:SetPoint("TOPLEFT", PAD, y)
         secondaryFormat:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -3663,17 +3670,20 @@ local function HookCharacterFrame()
         textSizeHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - textSizeHeader.gap
 
-        local slotTextSize = GUI:CreateFormSlider(scrollChild, "Slot Text Size", 6, 40, 1, "slotTextSize", charDB, RefreshAll)
+        local slotTextSize = GUI:CreateFormSlider(scrollChild, "Slot Text Size", 6, 40, 1, "slotTextSize", charDB, RefreshAll, nil,
+            { description = "Font size for the text labels on each equipment slot overlay (item name, item level, enchant status)." })
         slotTextSize:SetPoint("TOPLEFT", PAD, y)
         slotTextSize:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local headerTextSize = GUI:CreateFormSlider(scrollChild, "Header Text Size", 6, 40, 1, "headerTextSize", charDB, RefreshAll)
+        local headerTextSize = GUI:CreateFormSlider(scrollChild, "Header Text Size", 6, 40, 1, "headerTextSize", charDB, RefreshAll, nil,
+            { description = "Font size for section headers in the stats panel (Attributes, Secondary Stats, etc.)." })
         headerTextSize:SetPoint("TOPLEFT", PAD, y)
         headerTextSize:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local statsTextSize = GUI:CreateFormSlider(scrollChild, "Stats Text Size", 6, 40, 1, "statsTextSize", charDB, RefreshAll)
+        local statsTextSize = GUI:CreateFormSlider(scrollChild, "Stats Text Size", 6, 40, 1, "statsTextSize", charDB, RefreshAll, nil,
+            { description = "Font size for the stat rows under each section header." })
         statsTextSize:SetPoint("TOPLEFT", PAD, y)
         statsTextSize:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -3687,7 +3697,8 @@ local function HookCharacterFrame()
         textColorHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - textColorHeader.gap
 
-        local statsTextColor = GUI:CreateFormColorPicker(scrollChild, "Stats Text Color", "statsTextColor", charDB, RefreshAll)
+        local statsTextColor = GUI:CreateFormColorPicker(scrollChild, "Stats Text Color", "statsTextColor", charDB, RefreshAll, nil,
+            { description = "Color used for the stat values in the stats panel." })
         statsTextColor:SetPoint("TOPLEFT", PAD, y)
         statsTextColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -3699,12 +3710,13 @@ local function HookCharacterFrame()
                 local alpha = charDB.headerClassColor and 0.4 or 1.0
                 widgetRefs.headerColor:SetAlpha(alpha)
             end
-        end)
+        end, { description = "Color the stats-panel section headers with your class color instead of the Header Color below." })
         headerClassColor:SetPoint("TOPLEFT", PAD, y)
         headerClassColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local headerColor = GUI:CreateFormColorPicker(scrollChild, "Header Color", "headerColor", charDB, RefreshAll)
+        local headerColor = GUI:CreateFormColorPicker(scrollChild, "Header Color", "headerColor", charDB, RefreshAll, nil,
+            { description = "Fallback color for the stats-panel section headers when Header Class Color is off." })
         headerColor:SetPoint("TOPLEFT", PAD, y)
         headerColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         widgetRefs.headerColor = headerColor
@@ -3718,24 +3730,27 @@ local function HookCharacterFrame()
                 local alpha = charDB.enchantClassColor and 0.4 or 1.0
                 widgetRefs.enchantColor:SetAlpha(alpha)
             end
-        end)
+        end, { description = "Color the enchant text using your class color instead of the Enchant Text Color below." })
         enchantClassColor:SetPoint("TOPLEFT", PAD, y)
         enchantClassColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local enchantColor = GUI:CreateFormColorPicker(scrollChild, "Enchant Text Color", "enchantTextColor", charDB, RefreshAll)
+        local enchantColor = GUI:CreateFormColorPicker(scrollChild, "Enchant Text Color", "enchantTextColor", charDB, RefreshAll, nil,
+            { description = "Fallback color for the enchant text when Enchant Class Color is off." })
         enchantColor:SetPoint("TOPLEFT", PAD, y)
         enchantColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         widgetRefs.enchantColor = enchantColor
         enchantColor:SetAlpha(charDB.enchantClassColor and 0.4 or 1.0)
         y = y - FORM_ROW
 
-        local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, "No Enchant Color", "noEnchantTextColor", charDB, RefreshAll)
+        local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, "No Enchant Color", "noEnchantTextColor", charDB, RefreshAll, nil,
+            { description = "Color used for the missing-enchant marker on slots that are not enchanted." })
         noEnchantColor:SetPoint("TOPLEFT", PAD, y)
         noEnchantColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, "Upgrade Track Color", "upgradeTrackColor", charDB, RefreshAll)
+        local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, "Upgrade Track Color", "upgradeTrackColor", charDB, RefreshAll, nil,
+            { description = "Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level." })
         upgradeTrackColor:SetPoint("TOPLEFT", PAD, y)
         upgradeTrackColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW

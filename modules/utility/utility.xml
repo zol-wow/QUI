@@ -4,9 +4,8 @@
     <Script file="layoutmode_ui.lua"/>
     <Script file="layoutmode_settings.lua"/>
     <Script file="layoutmode_utils.lua"/>
-    <Script file="layoutmode_providers.lua"/>
-    <Script file="layoutmode_providers_groupframes.lua"/>
-    <Script file="layoutmode_providers_dandersframes.lua"/>
+    <Script file="settings/ready_check.lua"/>
+    <Script file="settings/ready_check_provider.lua"/>
     <Script file="layoutmode_composer.lua"/>
     <Script file="keybinds.lua"/>
     <Script file="anchoring.lua"/>

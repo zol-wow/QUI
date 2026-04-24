@@ -41,11 +41,12 @@ local function ShowProviderUnavailable(parent, message)
 end
 
 local function GetProvider(providerKey)
-    local settingsPanel = ns.QUI_LayoutMode_Settings
-    if not settingsPanel or not settingsPanel._providers then
+    local Settings = ns.Settings
+    local providers = Settings and (Settings.Providers or Settings.ProviderRegistry)
+    if not providers or type(providers.Get) ~= "function" then
         return nil
     end
-    return settingsPanel._providers[providerKey]
+    return providers:Get(providerKey)
 end
 
 local function IsSurfaceVisible(frame)
@@ -154,16 +155,17 @@ function SettingsBuilders.NotifyProviderChanged(providerKey, opts)
     end
 end
 
+local function ErrorHandler(err)
+    local message = tostring(err)
+    if type(_G.debugstack) == "function" then
+        message = message .. "\n" .. _G.debugstack(2, 20, 20)
+    end
+    return message
+end
+
 local function WithSuppressedPosition(includePosition, fn)
     local U = ns.QUI_LayoutMode_Utils
     local original = U and U.BuildPositionCollapsible
-    local function ErrorHandler(err)
-        local message = tostring(err)
-        if type(_G.debugstack) == "function" then
-            message = message .. "\n" .. _G.debugstack(2, 20, 20)
-        end
-        return message
-    end
 
     if U and includePosition == false then
         U.BuildPositionCollapsible = function() end
@@ -182,6 +184,401 @@ local function WithSuppressedPosition(includePosition, fn)
 
     return result
 end
+
+-- Inverse of WithSuppressedPosition. Suppresses every Utils.CreateCollapsible
+-- call inside fn EXCEPT when that call originates from BuildPositionCollapsible
+-- (which wraps its anchoring widgets in a "Position" card). The
+-- BuildOpenFullSettingsLink helper builds its own row and is unaffected.
+--
+-- Result: Layout Mode drawer renders only Position + "Open full settings →".
+local function WithOnlyPosition(fn)
+    local U = ns.QUI_LayoutMode_Utils
+    if not U or not U.CreateCollapsible or not U.BuildPositionCollapsible then
+        return xpcall(fn, ErrorHandler)
+    end
+
+    local originalCreate = U.CreateCollapsible
+    local originalBuildPosition = U.BuildPositionCollapsible
+    local insidePosition = false
+
+    U.CreateCollapsible = function(...)
+        if insidePosition then
+            return originalCreate(...)
+        end
+        -- Suppress: skip buildFunc, do not insert into sections, return nil.
+        return nil
+    end
+
+    U.BuildPositionCollapsible = function(...)
+        local prev = insidePosition
+        insidePosition = true
+        local ok, err = xpcall(originalBuildPosition, ErrorHandler, ...)
+        insidePosition = prev
+        if not ok then geterrorhandler()(err) end
+    end
+
+    local ok, result = xpcall(fn, ErrorHandler)
+
+    U.CreateCollapsible = originalCreate
+    U.BuildPositionCollapsible = originalBuildPosition
+
+    if not ok then
+        geterrorhandler()(result)
+        return nil
+    end
+
+    return result
+end
+
+-- Generalized tab-content filter. `whitelist` is a map { [title] = true }
+-- of Utils.CreateCollapsible titles that should render; all other
+-- CreateCollapsible calls return nil inside `fn`. Position is ALSO
+-- suppressed (Position has its own tab). BuildPositionCollapsible is
+-- a no-op inside this wrapper. Used by the Cooldown Manager tile's
+-- per-container tabs to render subsets of BuildTrackerSettings.
+---------------------------------------------------------------------------
+-- Dual-column post-layout. The provider builders anchor widgets via
+-- Helpers.PlaceRow (TOPLEFT at (0, sy), RIGHT to body RIGHT → full width).
+-- After CreateCollapsible returns, we walk the body's direct children in
+-- creation order (matches their stacking order), pair them into card rows,
+-- and re-anchor each pair LEFT-half / RIGHT-half with a center divider +
+-- alternating row bg. Mirrors the element-tab dual-column rendering in
+-- layoutmode_composer.lua so every tile tab looks the same.
+---------------------------------------------------------------------------
+local CARD_ROW_HEIGHT = 32
+
+local function GetDualColumnRowHeight(widget)
+    if not widget then return CARD_ROW_HEIGHT end
+    local customHeight = widget._quiDualColumnRowHeight
+    if type(customHeight) == "number" and customHeight > 0 then
+        return customHeight
+    end
+
+    local widgetHeight = widget.GetHeight and widget:GetHeight() or nil
+    if type(widgetHeight) == "number" and widgetHeight > 0 then
+        return math.max(CARD_ROW_HEIGHT, math.ceil(widgetHeight))
+    end
+
+    return CARD_ROW_HEIGHT
+end
+
+local function ApplyDualColumnLayout(section)
+    if not section or not section._body then return end
+    local body = section._body
+    if section._quiSkipDualColumnLayout or body._quiSkipDualColumnLayout then return end
+    body._dualRowFrames = body._dualRowFrames or {}
+
+    local pooledRowFrames = {}
+    for _, rf in ipairs(body._dualRowFrames) do
+        pooledRowFrames[rf] = true
+    end
+
+    local children = {}
+    local childOrder = {}
+    for _, child in ipairs({ body:GetChildren() }) do
+        if not pooledRowFrames[child] and not child._quiDualRowFrame then
+            table.insert(children, child)
+            childOrder[child] = #children
+        end
+    end
+
+    if #children == 0 then return end
+
+    -- Pre-rendered card groups (from CreateSettingsCardGroup) already
+    -- pair their content into two columns with their own row frames.
+    -- Reanchoring the card inside a 32px row frame scrambles the inner
+    -- layout and causes siblings to overlap — skip this section entirely
+    -- if any direct child is a marked card group.
+    for _, child in ipairs(children) do
+        if child._quiCardGroup then return end
+    end
+
+    -- Stable sort by descending top edge so order matches PlaceRow's
+    -- vertical layout (top-most widgets first).
+    table.sort(children, function(a, b)
+        local at = a.GetTop and a:GetTop() or 0
+        local bt = b.GetTop and b:GetTop() or 0
+        if math.abs(at - bt) <= 1 then
+            return (childOrder[a] or 0) < (childOrder[b] or 0)
+        end
+        return at > bt
+    end)
+
+    -- Reset row-chrome pool attached to the body so repeated renders don't
+    -- leak textures.
+    for _, rf in ipairs(body._dualRowFrames) do
+        rf:Hide()
+        rf._divider:Hide()
+        rf._bg:Hide()
+    end
+
+    local function AcquireRowFrame(idx)
+        local rf = body._dualRowFrames[idx]
+        if not rf then
+            rf = CreateFrame("Frame", nil, body)
+            rf._quiDualRowFrame = true
+            rf._bg = rf:CreateTexture(nil, "BACKGROUND")
+            rf._bg:SetAllPoints(rf)
+            rf._bg:Hide()
+            rf._divider = rf:CreateTexture(nil, "ARTWORK")
+            rf._divider:SetWidth(1)
+            rf._divider:SetColorTexture(1, 1, 1, 0.05)
+            rf._divider:Hide()
+            body._dualRowFrames[idx] = rf
+        end
+        return rf
+    end
+
+    -- Some sections anchor an intro FontString directly to the body above the
+    -- first real row. Regions aren't in GetChildren(), so the row wrappers
+    -- would otherwise render behind that intro copy. Only measure regions
+    -- whose top edge sits above the top-most child row; later subheaders and
+    -- footnotes should not push the whole section down.
+    local regionPadBottom = 0
+    local bodyTop = body.GetTop and body:GetTop()
+    if bodyTop then
+        local deepestBottom = bodyTop
+        local firstChildTop = children[1] and children[1].GetTop and children[1]:GetTop() or nil
+        local regionCount = body.GetNumRegions and body:GetNumRegions() or 0
+        for i = 1, regionCount do
+            local region = select(i, body:GetRegions())
+            local objectType = region and region.GetObjectType and region:GetObjectType() or nil
+            local regionTop = region and region.GetTop and region:GetTop() or nil
+            if region
+                and objectType == "FontString"
+                and region.GetBottom
+                and region.IsShown
+                and region:IsShown()
+                and regionTop
+                and (not firstChildTop or regionTop >= (firstChildTop - 1))
+            then
+                local rb = region:GetBottom()
+                if rb and rb < deepestBottom then
+                    deepestBottom = rb
+                end
+            end
+        end
+        regionPadBottom = math.max(0, math.ceil(bodyTop - deepestBottom))
+    end
+
+    local ly = -4 - regionPadBottom
+    if regionPadBottom > 0 then ly = ly - 4 end  -- extra breathing room below regions
+    local rowIdx = 0
+    local i = 1
+    while i <= #children do
+        local left = children[i]
+        if left and left._quiDualColumnFullWidth then
+            rowIdx = rowIdx + 1
+            local rf = AcquireRowFrame(rowIdx)
+            local rowHeight = GetDualColumnRowHeight(left)
+            rf:ClearAllPoints()
+            rf:SetPoint("TOPLEFT", body, "TOPLEFT", -2, ly)
+            rf:SetPoint("TOPRIGHT", body, "TOPRIGHT", 2, ly)
+            rf:SetHeight(rowHeight)
+            rf:Show()
+            rf._bg:Hide()
+            rf._divider:Hide()
+
+            left:ClearAllPoints()
+            left:SetPoint("LEFT", rf, "LEFT", 12, 0)
+            left:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
+
+            ly = ly - rowHeight
+            i = i + 1
+        else
+            local right = children[i + 1]
+            if right and right._quiDualColumnFullWidth then
+                right = nil
+            end
+
+            rowIdx = rowIdx + 1
+            local rf = AcquireRowFrame(rowIdx)
+            rf:ClearAllPoints()
+            rf:SetPoint("TOPLEFT", body, "TOPLEFT", -2, ly)
+            rf:SetPoint("TOPRIGHT", body, "TOPRIGHT", 2, ly)
+            rf:SetHeight(CARD_ROW_HEIGHT)
+            rf:Show()
+
+            if (rowIdx % 2) == 0 then
+                rf._bg:SetColorTexture(1, 1, 1, 0.02)
+                rf._bg:Show()
+            end
+
+            left:ClearAllPoints()
+            left:SetPoint("LEFT", rf, "LEFT", 12, 0)
+            if right then
+                left:SetPoint("RIGHT", rf, "CENTER", -12, 0)
+                right:ClearAllPoints()
+                right:SetPoint("LEFT", rf, "CENTER", 12, 0)
+                right:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
+                rf._divider:ClearAllPoints()
+                rf._divider:SetPoint("TOP", rf, "TOP", 0, -6)
+                rf._divider:SetPoint("BOTTOM", rf, "BOTTOM", 0, 6)
+                rf._divider:Show()
+                i = i + 2
+            else
+                left:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
+                i = i + 1
+            end
+
+            ly = ly - CARD_ROW_HEIGHT
+        end
+    end
+
+    local contentHeight = math.abs(ly) + 4
+
+    -- Providers set section._contentHeight to the full-width totalHeight
+    -- at the end of their buildFunc (≈ nRows × FORM_ROW). RefreshContentHeight
+    -- does math.max between that and the freshly-measured height, so if we
+    -- don't reset it, the section retains the old tall height and leaves
+    -- dead space below the compacted dual-column content. Clear both
+    -- caches, then let RefreshContentHeight re-measure from the current
+    -- child layout.
+    section._contentHeight = 0
+    body._contentHeight = contentHeight
+    if section.SetExpanded then
+        section:SetExpanded(true)
+    elseif section.RefreshContentHeight then
+        section:RefreshContentHeight()
+    end
+end
+
+local function ApplyDualColumnLayoutWhenReady(section)
+    if not section then return end
+
+    ApplyDualColumnLayout(section)
+
+    -- Tile sub-pages build into containers that start hidden and are only
+    -- shown after the current selection finishes rendering. Re-run the
+    -- compaction on the next frame so direct body regions (intro copy,
+    -- helper text, etc.) have resolved geometry before we place row 1.
+    C_Timer.After(0, function()
+        if not section or not section._body or not section.GetParent then return end
+        if not section:GetParent() then return end
+        if section.IsShown and not section:IsShown() then return end
+        ApplyDualColumnLayout(section)
+    end)
+end
+
+local function WithOnlySections(whitelist, fn)
+    local U = ns.QUI_LayoutMode_Utils
+    if not U or not U.CreateCollapsible then
+        return xpcall(fn, ErrorHandler)
+    end
+
+    local originalCreate = U.CreateCollapsible
+    local originalBuildPosition = U.BuildPositionCollapsible
+    local originalOpenLink = U.BuildOpenFullSettingsLink
+
+    -- Single-entry whitelists mean the tile tab label already names the
+    -- section — the collapsible's own accent-dot header becomes redundant.
+    -- Flag the next matching CreateCollapsible call as headerless.
+    local whitelistCount = 0
+    if whitelist then
+        for _ in pairs(whitelist) do whitelistCount = whitelistCount + 1 end
+    end
+    local singleEntry = whitelistCount == 1
+
+    U.CreateCollapsible = function(parent, title, contentHeight, buildFunc, sections, relayout)
+        if whitelist and whitelist[title] then
+            if singleEntry then
+                U._nextHeaderless = true
+            end
+            -- Tile tabs already frame the content; drop the outer card so it
+            -- matches the actionbars-tile flat style.
+            U._nextBorderless = true
+            local section = originalCreate(parent, title, contentHeight, buildFunc, sections, relayout)
+            -- Post-process: fold the provider's PlaceRow-anchored widgets
+            -- into dual-column card rows so sliced provider tabs match the
+            -- element tabs visually.
+            ApplyDualColumnLayoutWhenReady(section)
+            return section
+        end
+        return nil
+    end
+
+    if originalBuildPosition then
+        U.BuildPositionCollapsible = function() end
+    end
+
+    -- Tile tabs are already "inside" the settings surface; an "Open
+    -- full settings →" link is redundant (and misleading — it navigates
+    -- back to the page the user is already on). Suppress it here.
+    if originalOpenLink then
+        U.BuildOpenFullSettingsLink = function() end
+    end
+
+    local ok, result = xpcall(fn, ErrorHandler)
+
+    U.CreateCollapsible = originalCreate
+    if originalBuildPosition then
+        U.BuildPositionCollapsible = originalBuildPosition
+    end
+    if originalOpenLink then
+        U.BuildOpenFullSettingsLink = originalOpenLink
+    end
+
+    if not ok then
+        geterrorhandler()(result)
+        return nil
+    end
+    return result
+end
+
+---------------------------------------------------------------------------
+-- WithTileLayout
+-- Wraps `fn` so every U.CreateCollapsible call inside it renders as a
+-- borderless section and gets the dual-column post-process applied — the
+-- V2 tile look (accent-dot header, no card border, rows paired into 32 px
+-- cells with a center divider and alternating bg). Use for tile tabs that
+-- call BuildProvider / BuildProviderStack / BuildXSettings directly
+-- (i.e. not via WithOnlySections, which already applies this chrome).
+---------------------------------------------------------------------------
+local function WithTileLayout(fn)
+    local U = ns.QUI_LayoutMode_Utils
+    if not U or not U.CreateCollapsible then
+        return xpcall(fn, ErrorHandler)
+    end
+
+    local originalCreate = U.CreateCollapsible
+    local originalBuildPosition = U.BuildPositionCollapsible
+    local originalOpenLink = U.BuildOpenFullSettingsLink
+
+    U.CreateCollapsible = function(parent, title, contentHeight, buildFunc, sections, relayout)
+        U._nextBorderless = true
+        local section = originalCreate(parent, title, contentHeight, buildFunc, sections, relayout)
+        ApplyDualColumnLayoutWhenReady(section)
+        return section
+    end
+
+    if originalBuildPosition then
+        U.BuildPositionCollapsible = function() end
+    end
+    if originalOpenLink then
+        U.BuildOpenFullSettingsLink = function() end
+    end
+
+    local ok, result = xpcall(fn, ErrorHandler)
+
+    U.CreateCollapsible = originalCreate
+    if originalBuildPosition then
+        U.BuildPositionCollapsible = originalBuildPosition
+    end
+    if originalOpenLink then
+        U.BuildOpenFullSettingsLink = originalOpenLink
+    end
+
+    if not ok then
+        geterrorhandler()(result)
+        return nil
+    end
+    return result
+end
+
+SettingsBuilders.WithSuppressedPosition = WithSuppressedPosition
+SettingsBuilders.WithOnlyPosition = WithOnlyPosition
+SettingsBuilders.WithOnlySections = WithOnlySections
+SettingsBuilders.WithTileLayout = WithTileLayout
 
 local function BuildViaProvider(providerKey, parent, width, options)
     if not parent then return 80 end
@@ -230,12 +627,28 @@ local function BuildViaProvider(providerKey, parent, width, options)
             SettingsBuilders.RegisterProviderSurface(info.providerKey, info.surfaceId, info.refreshFn, function()
                 return IsSurfaceVisible(self)
             end)
+            C_Timer.After(0, function()
+                local latestInfo = self._quiProviderSurfaceInfo
+                if latestInfo ~= info or not IsSurfaceVisible(self) then
+                    return
+                end
+                info.refreshFn()
+            end)
         end)
     end
 
-    local height = WithSuppressedPosition(options and options.includePosition, function()
-        return provider.build(parent, providerKey, targetWidth)
-    end)
+    local function BuildSurfaceContent()
+        return WithSuppressedPosition(options and options.includePosition, function()
+            return provider.build(parent, providerKey, targetWidth)
+        end)
+    end
+
+    local height
+    if options and options.tileLayout then
+        height = WithTileLayout(BuildSurfaceContent)
+    else
+        height = BuildSurfaceContent()
+    end
 
     if not height and parent and parent.GetHeight then
         height = parent:GetHeight()
@@ -246,44 +659,62 @@ local function BuildViaProvider(providerKey, parent, width, options)
     return height or 80
 end
 
-function SettingsBuilders.BuildXPTrackerSettings(parent, width, options)
-    return BuildViaProvider("xpTracker", parent, width, options)
-end
-
-function SettingsBuilders.BuildTooltipSettings(parent, width, options)
-    return BuildViaProvider("tooltipAnchor", parent, width, options)
-end
-
-function SettingsBuilders.BuildChatSettings(parent, width, options)
-    return BuildViaProvider("chatFrame1", parent, width, options)
-end
-
-function SettingsBuilders.BuildSkyridingSettings(parent, width, options)
-    return BuildViaProvider("skyriding", parent, width, options)
-end
-
-function SettingsBuilders.BuildPartyKeystonesSettings(parent, width, options)
-    return BuildViaProvider("partyKeystones", parent, width, options)
-end
-
-function SettingsBuilders.BuildMissingRaidBuffsSettings(parent, width, options)
-    return BuildViaProvider("missingRaidBuffs", parent, width, options)
-end
-
-function SettingsBuilders.BuildMinimapSettings(parent, width, options)
-    return BuildViaProvider("minimap", parent, width, options)
-end
-
-function SettingsBuilders.BuildDatatextSettings(parent, width, options)
-    return BuildViaProvider("datatextPanel", parent, width, options)
-end
-
-function SettingsBuilders.BuildBuffDebuffSettings(kind, parent, width, options)
-    local providerKey = kind == "debuff" and "debuffFrame" or "buffFrame"
+function SettingsBuilders.BuildProvider(providerKey, parent, width, options)
     return BuildViaProvider(providerKey, parent, width, options)
 end
 
-function SettingsBuilders.BuildGroupFrameSettings(contextMode, parent, width, options)
-    local providerKey = contextMode == "raid" and "raidFrames" or "partyFrames"
-    return BuildViaProvider(providerKey, parent, width, options)
-end
+-- Friendly display names for provider/feature keys. Used by higher-level
+-- stacked feature composition to label each feature section without relying
+-- on raw internal keys.
+SettingsBuilders.PROVIDER_LABELS = {
+    -- Gameplay · Combat
+    combatTimer        = "Combat Timer",
+    brezCounter        = "Battle Res Counter",
+    atonementCounter   = "Atonement Counter",
+    rotationAssistIcon = "Rotation Assist",
+    focusCastAlert     = "Focus Cast Alert",
+    petWarning         = "Pet Warning",
+    readyCheck         = "Ready Check",
+    mplusTimer         = "Mythic+ Timer",
+    actionTracker      = "Action Tracker",
+
+    -- Gameplay · Raid Buffs & Consumables
+    missingRaidBuffs   = "Missing Raid Buffs",
+    consumables        = "Consumables",
+
+    -- Cooldown Manager
+    buffIcon           = "Buff Icons",
+    buffBar            = "Buff Bars",
+    primaryPower       = "Primary Resource",
+    secondaryPower     = "Secondary Resource",
+
+    -- Appearance · widget anchoring labels
+    topCenterWidgets    = "Top-Center Widgets",
+    belowMinimapWidgets = "Below-Minimap Widgets",
+    objectiveTracker    = "Objective Tracker",
+
+    -- Action Bars · Per-Bar
+    bar1 = "Bar 1", bar2 = "Bar 2", bar3 = "Bar 3", bar4 = "Bar 4",
+    bar5 = "Bar 5", bar6 = "Bar 6", bar7 = "Bar 7", bar8 = "Bar 8",
+    stanceBar = "Stance Bar",
+    petBar    = "Pet Bar",
+    microMenu = "Micro Menu",
+    bagBar    = "Bag Bar",
+    extraActionButton = "Extra Action Button",
+    zoneAbility       = "Zone Ability",
+    totemBar          = "Totem Bar",
+
+    -- Group Frames
+    partyFrames     = "Party Frames",
+    raidFrames      = "Raid Frames",
+    spotlightFrames = "Spotlight Frames",
+    dandersParty    = "Danders Party",
+    dandersRaid     = "Danders Raid",
+    dandersPinned1  = "Danders Pinned Set 1",
+    dandersPinned2  = "Danders Pinned Set 2",
+
+    -- Minimap & Datatext
+    datatextPanel = "Datatext Panel",
+    minimap       = "Minimap",
+}
+

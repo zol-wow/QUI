@@ -14,6 +14,23 @@
     <Script file="font_system.lua"/>
     <Script file="scaling.lua"/>
     <Script file="uikit.lua"/>
+    <Script file="settings/providers.lua"/>
+    <Script file="settings/provider_panels.lua"/>
     <Script file="settings_builders.lua"/>
+    <Script file="settings/compat_render.lua"/>
+    <Script file="settings/registry.lua"/>
+    <Script file="settings/fields.lua"/>
+    <Script file="settings/schema.lua"/>
+    <Script file="settings/provider_features.lua"/>
+    <Script file="settings/surfaces.lua"/>
+    <Script file="settings/full_surface.lua"/>
+    <Script file="settings/surface_features.lua"/>
+    <Script file="settings/nav.lua"/>
+    <Script file="settings/sync.lua"/>
+    <Script file="settings/pins.lua"/>
+    <Script file="settings/pins_lifecycle.lua"/>
+    <Script file="settings/renderer.lua"/>
+    <Script file="settings/pins_ui.lua"/>
+    <Script file="settings/legacy_pages.lua"/>
     <Script file="rangeutils.lua"/>
 </Ui>

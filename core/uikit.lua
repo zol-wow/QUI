@@ -180,14 +180,13 @@ local function RefreshAccentCheckboxLayout(checkbox)
     local state = accentCheckboxState[checkbox]
     if not state then return end
 
-    UIKit.SetSizePx(checkbox, state.sizePixels or 16, state.sizePixels or 16)
+    UIKit.SetSizePx(checkbox, state.sizePixels or 25, state.sizePixels or 25)
 
-    local leftWidth = max(4, floor((state.sizePixels or 16) * 0.31))
-    local rightWidth = max(6, floor((state.sizePixels or 16) * 0.5))
-    SetRegionSizePx(checkbox.checkLeft, leftWidth, 2, checkbox)
-    SetRegionSizePx(checkbox.checkRight, rightWidth, 2, checkbox)
-    UIKit.SetPointPx(checkbox.checkLeft, "CENTER", checkbox, "CENTER", -2, -1)
-    UIKit.SetPointPx(checkbox.checkRight, "CENTER", checkbox, "CENTER", 2, 0)
+    if checkbox.mark then
+        local markSize = (state.sizePixels or 25) * 1.4
+        UIKit.SetSizePx(checkbox.mark, markSize, markSize)
+        UIKit.SetPointPx(checkbox.mark, "CENTER", checkbox, "CENTER", 0, 0)
+    end
 end
 
 local function RefreshChevronCaretLayout(caret)
@@ -643,7 +642,7 @@ end
 --- @return Button                  Checkbox with helpers: GetChecked/SetChecked/Toggle/SetHovered
 function UIKit.CreateAccentCheckbox(parent, options)
     options = options or {}
-    local size = options.size or 16
+    local size = options.size or 25
     local checked = options.checked and true or false
     local onChange = options.onChange
 
@@ -653,6 +652,10 @@ function UIKit.CreateAccentCheckbox(parent, options)
     end
     colors = colors or DEFAULT_CHECKBOX_COLORS
 
+    local accent = colors.accent or {0.204, 0.827, 0.6, 1}
+    local accentHover = colors.accentHover or accent
+    local bgDark = colors.bg or {0.051, 0.067, 0.09, 1}
+
     local checkbox = CreateFrame("Button", nil, parent)
     accentCheckboxState[checkbox] = { sizePixels = size }
     UIKit.SetSizePx(checkbox, size, size)
@@ -660,34 +663,34 @@ function UIKit.CreateAccentCheckbox(parent, options)
     checkbox.bg = UIKit.CreateBackground(checkbox)
     UIKit.CreateBorderLines(checkbox)
 
-    checkbox.checkLeft = checkbox:CreateTexture(nil, "OVERLAY")
-    ApplyColorTexture(checkbox.checkLeft, colors.accent[1], colors.accent[2], colors.accent[3], 0.7)
-    checkbox.checkLeft:SetRotation(math.rad(-45))
-
-    checkbox.checkRight = checkbox:CreateTexture(nil, "OVERLAY")
-    ApplyColorTexture(checkbox.checkRight, colors.accent[1], colors.accent[2], colors.accent[3], 0.7)
-    checkbox.checkRight:SetRotation(math.rad(45))
+    local mark = checkbox:CreateTexture(nil, "OVERLAY")
+    mark:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    mark:SetDesaturated(true)
+    mark:SetVertexColor(bgDark[1], bgDark[2], bgDark[3], 1)
+    -- UI-CheckBox-Check is naturally drawn ~40% bigger than the box; size accordingly.
+    mark:SetSize(size * 1.4, size * 1.4)
+    mark:SetPoint("CENTER", checkbox, "CENTER", 0, 0)
+    mark:Hide()
+    checkbox.mark = mark
 
     local hovered = false
     local function UpdateVisual()
         if checked then
-            checkbox.bg:SetVertexColor(colors.accent[1], colors.accent[2], colors.accent[3], 0.15)
+            checkbox.bg:SetVertexColor(accent[1], accent[2], accent[3], 1)
             if hovered then
-                UIKit.UpdateBorderLines(checkbox, 1, colors.accentHover[1], colors.accentHover[2], colors.accentHover[3], 1)
+                UIKit.UpdateBorderLines(checkbox, 1, accentHover[1], accentHover[2], accentHover[3], 1)
             else
-                UIKit.UpdateBorderLines(checkbox, 1, colors.accent[1] * 0.8, colors.accent[2] * 0.8, colors.accent[3] * 0.8, 1)
+                UIKit.UpdateBorderLines(checkbox, 1, accent[1], accent[2], accent[3], 1)
             end
-            checkbox.checkLeft:Show()
-            checkbox.checkRight:Show()
+            checkbox.mark:Show()
         else
-            checkbox.bg:SetVertexColor(colors.toggleOff[1], colors.toggleOff[2], colors.toggleOff[3], 1)
+            checkbox.bg:SetVertexColor(1, 1, 1, 0.06)
             if hovered then
-                UIKit.UpdateBorderLines(checkbox, 1, 0.25, 0.28, 0.35, 1)
+                UIKit.UpdateBorderLines(checkbox, 1, accent[1], accent[2], accent[3], 1)
             else
-                UIKit.UpdateBorderLines(checkbox, 1, 0.12, 0.14, 0.18, 1)
+                UIKit.UpdateBorderLines(checkbox, 1, 1, 1, 1, 0.2)
             end
-            checkbox.checkLeft:Hide()
-            checkbox.checkRight:Hide()
+            checkbox.mark:Hide()
         end
     end
 

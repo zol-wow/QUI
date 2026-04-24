@@ -3,6 +3,19 @@
     <Script file="actionbars.lua"/>
     <Script file="gse_compat.lua"/>
     <Script file="resourcebars.lua"/>
+    <Script file="settings/resource_bars.lua"/>
+    <Script file="settings/resource_bars_builders.lua"/>
+    <Script file="settings/action_bars.lua"/>
+	<Script file="settings/action_bars_per_bar.lua"/>
+	<Script file="settings/unit_frames_schema.lua"/>
+	<Script file="settings/unit_frames_model.lua"/>
+	<Script file="settings/unit_frames.lua"/>
+	<Script file="settings/group_frames_spell_list.lua"/>
+	<Script file="settings/group_frames_aura_indicators_editor.lua"/>
+	<Script file="settings/group_frames_pinned_editor.lua"/>
+	<Script file="settings/group_frames_schema.lua"/>
+	<Script file="settings/group_frames_model.lua"/>
+	<Script file="settings/group_frames.lua"/>
     <Script file="castbar.lua"/>
     <Script file="unitframes.lua"/>
     <Script file="unitframe_auras.lua"/>
@@ -20,5 +33,6 @@
     <Script file="groupframes_editmode.lua"/>
     <Script file="buffbar.lua"/>
     <Script file="raidbuffs.lua"/>
+    <Script file="settings/raid_buffs.lua"/>
     <Script file="totems.lua"/>
 </Ui>

@@ -97,11 +97,35 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        bypasses resourcebars.lua's swap / quick-position logic. Delete only
 --        entries that still match the seeded defaults so the power-bar module
 --        regains ownership; real user customizations stay intact.)
+-- v30 = MigrateCustomTrackersToContainers
+--       (Phase B: converge legacy custom-tracker bars (db.customTrackers.bars)
+--        into the unified CDM containers table (db.ncdm.containers) as a new
+--        "customBar" container type. Idempotent and non-destructive: legacy
+--        db.customTrackers stays in place so the existing renderer keeps
+--        working until Phase B.3 ships the unified renderer. Migration only
+--        creates new container entries; does not modify or delete anything
+--        in the source data. Each customTrackers.bars[i] becomes
+--        db.ncdm.containers["customBar_<id>"] with identical settings,
+--        marked _migratedFromCustomTrackers = true for trace-back.)
+-- v31 = RemovePartyTrackerData
+--       (Party tracker feature removed before the 12.0.5 release. Nil the
+--        orphaned subtree at quiGroupFrames.party.partyTracker and
+--        quiGroupFrames.raid.partyTracker on existing profiles so the dead
+--        keys don't linger forever. Idempotent: nil-ing a missing key is a
+--        no-op.)
+-- v32 = FinalizeCustomBarContainers
+--       (Phase B.3: complete the customBar migration now that the unified
+--        renderer owns them. Synthesizes a row1 config from the flat
+--        iconSize/spacing/borderSize/aspectRatioCrop fields so the shared
+--        CDM layout pipeline can render. Also ports per-bar spec-specific
+--        entries from db.global.specTrackerSpells[legacyID] to
+--        db.global.ncdm.specTrackerSpells[containerKey] and flags
+--        container.specSpecific=true when the source bar had it.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 29
+local CURRENT_SCHEMA_VERSION = 32
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1952,6 +1976,212 @@ local function MigrateNCDMContainers(profile)
 end
 
 ---------------------------------------------------------------------------
+-- v30: MigrateCustomTrackersToContainers
+--
+-- Mirror each legacy custom tracker (db.customTrackers.bars[i]) into the
+-- unified ncdm container table (db.ncdm.containers["customBar_<id>"]) as
+-- a new container of type "customBar". The legacy data is left in place
+-- so the existing customtrackers.lua renderer keeps working — Phase B.3
+-- will wire the new renderer that consumes the migrated containers.
+--
+-- Safety properties:
+--   * Idempotent: only creates a destination entry when one is absent for
+--     the same legacy id. Re-running over a partially-migrated profile
+--     does not clobber user edits to the migrated container.
+--   * Non-destructive: source `customTrackers.bars` is never read for
+--     deletion, only for cloning.
+--   * Trace-back: each migrated entry is stamped with
+--     `_migratedFromCustomTrackers = true` and `_legacyId = <originalId>`
+--     so a future cleanup pass can locate and verify them.
+--
+-- Position semantics:
+--   Legacy bars store offsetX/offsetY relative to screen center. CDM
+--   containers use `pos = { ox, oy }` for free positioning when
+--   `anchorTo = "disabled"`. The migration translates by copying the
+--   offsets verbatim and forcing anchorTo="disabled".
+---------------------------------------------------------------------------
+local function MigrateCustomTrackersToContainers(profile)
+    if not profile then return end
+    if not profile.customTrackers or type(profile.customTrackers.bars) ~= "table" then
+        return
+    end
+    if not profile.ncdm then profile.ncdm = {} end
+    if not profile.ncdm.containers then profile.ncdm.containers = {} end
+
+    local containers = profile.ncdm.containers
+
+    -- Build a fast lookup for already-migrated legacy IDs so we don't add
+    -- duplicates if someone hand-edited a key prefix.
+    local seenLegacyIds = {}
+    for k, c in pairs(containers) do
+        if type(c) == "table" and c._legacyId then
+            seenLegacyIds[c._legacyId] = k
+        end
+    end
+
+    for i, bar in ipairs(profile.customTrackers.bars) do
+        if type(bar) == "table" then
+            local legacyId = bar.id or ("anon_" .. tostring(i))
+            local destKey = "customBar_" .. tostring(legacyId)
+
+            -- Skip if a destination already exists (either by exact key
+            -- or by trace-back stamp).
+            if containers[destKey] == nil and seenLegacyIds[legacyId] == nil then
+                local migrated = CloneValue(bar)
+                migrated.builtIn = false
+                migrated.containerType = "customBar"
+                migrated.name = bar.name or ("Custom Bar " .. tostring(i))
+
+                -- Translate position from screen-center offsets to ncdm
+                -- pos table; force free-position anchor.
+                migrated.pos = {
+                    ox = bar.offsetX or 0,
+                    oy = bar.offsetY or 0,
+                }
+                migrated.anchorTo = "disabled"
+
+                migrated._migratedFromCustomTrackers = true
+                migrated._legacyId = legacyId
+
+                containers[destKey] = migrated
+                seenLegacyIds[legacyId] = destKey
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- v31: RemovePartyTrackerData
+--
+-- The party tracker feature (CC icons, kick timer, party cooldowns) was
+-- removed before the 12.0.5 release. Strip its orphan subtree from existing
+-- profiles so the dead keys don't linger.
+---------------------------------------------------------------------------
+local function RemovePartyTrackerData(profile)
+    if not profile then return end
+    local gf = profile.quiGroupFrames
+    if type(gf) ~= "table" then return end
+    if type(gf.party) == "table" then gf.party.partyTracker = nil end
+    if type(gf.raid) == "table" then gf.raid.partyTracker = nil end
+end
+
+---------------------------------------------------------------------------
+-- v32: FinalizeCustomBarContainers
+--
+-- Phase B.3: legacy customTrackers bars were mirrored into ncdm.containers
+-- as customBar_* entries in v30, but they lacked two things the unified
+-- renderer needs:
+--
+--   1. row1 config — the CDM layout pipeline reads iconSize/spacing/etc.
+--      from tracker.row1/row2/row3, not from flat top-level fields. Legacy
+--      bars stored these flat (tracker.iconSize, tracker.spacing, ...), so
+--      LayoutContainer would see #rows == 0 and bail. We synthesize row1
+--      from the flat fields and leave row2/row3 as zero-count defaults.
+--
+--   2. per-spec entry port — legacy bars with specSpecificSpells=true
+--      stored their entries under db.global.specTrackerSpells[legacyID]
+--      [specKey]. The CDM engine expects per-spec lists under
+--      db.global.ncdm.specTrackerSpells[containerKey][specKey]. We copy
+--      them across and flag container.specSpecific = true.
+--
+-- Idempotent: the row1 synthesis only runs when tracker.row1 is absent;
+-- the spec port only runs when the destination is empty. Source data is
+-- not modified (legacy db.customTrackers / db.global.specTrackerSpells
+-- stays intact for B.4 cleanup).
+---------------------------------------------------------------------------
+local _currentGlobalDB = nil  -- set by Migrations.Run for cross-profile access
+
+local function FinalizeCustomBarContainers(profile)
+    if not profile then return end
+    local ncdm = profile.ncdm
+    if type(ncdm) ~= "table" or type(ncdm.containers) ~= "table" then return end
+
+    for containerKey, container in pairs(ncdm.containers) do
+        if type(container) == "table" and container.containerType == "customBar" then
+            -- 1. Row1 synthesis
+            if type(container.row1) ~= "table" then
+                container.row1 = {
+                    iconCount      = container.maxIcons or 8,
+                    iconSize       = container.iconSize or 36,
+                    borderSize     = container.borderSize or 1,
+                    borderColorTable = container.borderColor
+                        or container.borderColorTable
+                        or {0, 0, 0, 1},
+                    aspectRatioCrop = container.aspectRatioCrop or 1.0,
+                    zoom           = 0,
+                    padding        = container.spacing or 2,
+                    xOffset        = 0,
+                    yOffset        = 0,
+                    hideDurationText = container.hideDurationText or false,
+                    durationSize   = container.durationTextSize or 14,
+                    durationOffsetX = 0,
+                    durationOffsetY = 0,
+                    durationTextColor = container.durationTextColor or {1, 1, 1, 1},
+                    durationAnchor = "CENTER",
+                    stackSize      = container.stackTextSize or 12,
+                    stackOffsetX   = 0,
+                    stackOffsetY   = 2,
+                    stackTextColor = container.stackColor or {1, 1, 1, 1},
+                    stackAnchor    = "BOTTOMRIGHT",
+                    opacity        = 1.0,
+                }
+                -- Zero-count rows so the 1..3 row loop sees a single row.
+                container.row2 = container.row2 or { iconCount = 0 }
+                container.row3 = container.row3 or { iconCount = 0 }
+            end
+
+            -- Layout direction: legacy bars used growDirection RIGHT/LEFT/UP/DOWN.
+            -- Collapse to CDM's HORIZONTAL/VERTICAL if the unified direction
+            -- isn't already set.
+            if not container.layoutDirection then
+                local gd = container.growDirection
+                if gd == "UP" or gd == "DOWN" then
+                    container.layoutDirection = "VERTICAL"
+                else
+                    container.layoutDirection = "HORIZONTAL"
+                end
+            end
+
+            -- 2. Per-spec entry port (only if legacy bar had specSpecific)
+            local legacyID = container._legacyId
+            local global = _currentGlobalDB
+            if legacyID and global
+               and type(global.specTrackerSpells) == "table"
+               and type(global.specTrackerSpells[legacyID]) == "table"
+               and not container._specEntriesPortedB3 then
+
+                if type(global.ncdm) ~= "table" then global.ncdm = {} end
+                if type(global.ncdm.specTrackerSpells) ~= "table" then
+                    global.ncdm.specTrackerSpells = {}
+                end
+
+                local dstRoot = global.ncdm.specTrackerSpells
+                if type(dstRoot[containerKey]) ~= "table" then
+                    dstRoot[containerKey] = {}
+                end
+                local dst = dstRoot[containerKey]
+                local src = global.specTrackerSpells[legacyID]
+                local anyPorted = false
+                for specKey, specList in pairs(src) do
+                    if type(specList) == "table" and type(dst[specKey]) ~= "table" then
+                        local copy = {}
+                        for i, entry in ipairs(specList) do
+                            copy[i] = CloneValue(entry)
+                        end
+                        dst[specKey] = copy
+                        anyPorted = true
+                    end
+                end
+                if anyPorted then
+                    container.specSpecific = true
+                end
+                container._specEntriesPortedB3 = true
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Late migration: import action bar / micro menu / bag bar positions from
 -- Blizzard Edit Mode for users whose QUI profile predates frame anchoring
 -- for these bars. Runs at PLAYER_LOGIN (not at addon-init time) because it
@@ -2429,6 +2659,18 @@ function Migrations.RunOnProfile(profile)
     -- bars so resourcebars.lua regains control of swap/quick positioning.
     if stored < 29 then RestorePowerBarModulePositioning(profile) end
 
+    -- v30: mirror legacy customTrackers.bars[] into ncdm.containers as
+    -- "customBar" containers so the unified renderer can take over once
+    -- shipped. Idempotent and non-destructive — see function docstring.
+    if stored < 30 then MigrateCustomTrackersToContainers(profile) end
+
+    -- v31: strip orphan partyTracker subtree (feature removed before 12.0.5).
+    if stored < 31 then RemovePartyTrackerData(profile) end
+
+    -- v32: finalize customBar containers for the unified renderer — row1
+    -- synthesis + per-spec entry port. See function docstring for details.
+    if stored < 32 then FinalizeCustomBarContainers(profile) end
+
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame
         MigLog("post-mig debuffFrame: parent=%s point=%s ofs=%s/%s enabled=%s",
@@ -2459,6 +2701,12 @@ end
 function Migrations.Run(db)
     if not db then return false end
 
+    -- Expose db.global to migrations that need cross-profile / global
+    -- reads (e.g. v32's legacy spec-tracker port). Cleared on exit so
+    -- individual RunOnProfile calls from other entry points (profile
+    -- import, profile switch) get nil and handle its absence gracefully.
+    _currentGlobalDB = db.global
+
     local profiles = db.sv and db.sv.profiles
     if type(profiles) == "table" then
         local any = false
@@ -2467,8 +2715,35 @@ function Migrations.Run(db)
                 any = true
             end
         end
+
+        local pins = ns.Settings and ns.Settings.Pins
+        if pins and type(pins.IsAutoApplySuppressed) == "function"
+            and not pins:IsAutoApplySuppressed() then
+            if type(pins.PrepareActiveProfileForApply) == "function" then
+                pins:PrepareActiveProfileForApply(db)
+            end
+            if type(pins.ApplyAllForDB) == "function" then
+                pins:ApplyAllForDB(db)
+            end
+        end
+
+        _currentGlobalDB = nil
         return any
     end
 
-    return Migrations.RunOnProfile(db.profile)
+    local result = Migrations.RunOnProfile(db.profile)
+
+    local pins = ns.Settings and ns.Settings.Pins
+    if pins and type(pins.IsAutoApplySuppressed) == "function"
+        and not pins:IsAutoApplySuppressed() then
+        if type(pins.PrepareActiveProfileForApply) == "function" then
+            pins:PrepareActiveProfileForApply(db)
+        end
+        if type(pins.ApplyAllForDB) == "function" then
+            pins:ApplyAllForDB(db)
+        end
+    end
+
+    _currentGlobalDB = nil
+    return result
 end

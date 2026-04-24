@@ -178,7 +178,6 @@ local function ForEachIconSpellID(icon, callback)
         end
     end
 end
-
 -- Safe wrapper: C_Spell.IsSpellUsable can return secret values in Midnight.
 local function SafeIsSpellUsable(spellID)
     if not spellID or not C_Spell or not C_Spell.IsSpellUsable then return true, false end
@@ -194,7 +193,9 @@ local function IsSpellCastable(icon)
     -- GCD-only cooldowns don't make a spell uncastable — skip the check
     -- so procOnUsable glow persists through the GCD swipe window.
     if icon._hasCooldownActive and not icon._isOnGCD then return false end
-    local spellID = GetPreferredSpellID(icon)
+    local spellID = icon._cachedOverrideID
+        or icon._spellEntry.overrideSpellID
+        or icon._spellEntry.spellID
     if not spellID then return false end
     return SafeIsSpellUsable(spellID)
 end
@@ -262,16 +263,10 @@ local function RebuildGlowSpellMap()
         for _, icon in ipairs(pool) do
             if icon._spellEntry then
                 local ids = {}
-                local seen = {}
-                local function AddID(id)
-                    if id and not seen[id] then
-                        seen[id] = true
-                        ids[#ids + 1] = id
-                    end
+                if icon._spellEntry.spellID then ids[#ids + 1] = icon._spellEntry.spellID end
+                if icon._spellEntry.overrideSpellID and icon._spellEntry.overrideSpellID ~= icon._spellEntry.spellID then
+                    ids[#ids + 1] = icon._spellEntry.overrideSpellID
                 end
-
-                ForEachIconSpellID(icon, AddID)
-
                 for _, id in ipairs(ids) do
                     local list = spellIdToGlowIcons[id]
                     if not list then
@@ -669,13 +664,15 @@ local function IsOverlayed(spellID)
     return overlayedSpells[spellID] or false
 end
 
-local function EvaluateGlowForIcon(icon, includeHidden)
-    if not icon or not icon._spellEntry then
+local function EvaluateGlowForIcon(icon)
+    if not icon or not icon:IsShown() or not icon._spellEntry then
         return false, nil
     end
-    if not includeHidden and not icon:IsShown() then
-        return false, nil
-    end
+
+    local entry = icon._spellEntry
+    local viewerType = entry.viewerType
+    local baseID = entry.spellID
+    local overrideID = entry.overrideSpellID
 
     local spellOvr = GetSpellGlowOverride(icon)
 
@@ -747,13 +744,18 @@ local function ScanGlowsForSpell(spellID)
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
 
+    -- Collect all candidate spellIDs to look up
+    local candidates = { spellID }
+    if C_Spell and C_Spell.GetOverrideSpell then
+        local ov = C_Spell.GetOverrideSpell(spellID)
+        if ov and ov ~= spellID then candidates[#candidates + 1] = ov end
+    end
+
     -- Deduplicate icons across candidates
     local visited = {}
-    local matched = false
-    ForEachSpellCandidate(spellID, function(id)
+    for _, id in ipairs(candidates) do
         local icons = spellIdToGlowIcons[id]
         if icons then
-            matched = true
             for _, icon in ipairs(icons) do
                 if not visited[icon] then
                     visited[icon] = true
@@ -763,13 +765,6 @@ local function ScanGlowsForSpell(spellID)
                 end
             end
         end
-    end)
-
-    if not matched then
-        -- Proc events are infrequent; if the fast reverse map misses because
-        -- Blizzard reported a related spellID we do not currently index,
-        -- rescan all visible icons immediately so short overlays are not lost.
-        ScanAllGlows()
     end
 end
 
@@ -867,11 +862,6 @@ ns._OwnedGlows = {
     activeGlowIcons = activeGlowIcons,
     ScheduleGlowScan = ScanAllGlows,
     IsSpellCastable = IsSpellCastable,
-    ShouldIconGlow = function(icon)
-        local shouldGlow = EvaluateGlowForIcon(icon, true)
-        return shouldGlow and true or false
-    end,
-    SyncGlowForIcon = SyncGlowForIcon,
     HookBlizzPandemic = HookBlizzPandemic,
     ClearPandemicState = ClearPandemicState,
     GetGlowState = function(icon)

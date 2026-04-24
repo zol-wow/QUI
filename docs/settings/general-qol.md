@@ -1,13 +1,13 @@
 ---
 layout: default
-title: General & QoL
+title: Global Settings (Legacy Grouping)
 parent: Settings Reference
 nav_order: 1
 ---
 
-# General & QoL Settings
+# Global Settings (Legacy Grouping)
 
-The **General & QoL** tab controls global appearance settings, dark mode, color overrides, quality-of-life automation, popup blocking, pet warnings, consumable checking, dungeon utilities, and Blizzard frame skinning. All settings are stored under `QUI.db.profile.general` unless otherwise noted.
+This page documents settings that were historically grouped under **General & QoL**. In the current `/qui` UI, most of these options now live across **General**, **Appearance**, **Gameplay**, and **Quality of Life**. The database paths below remain useful when you want a deeper technical reference.
 
 ---
 

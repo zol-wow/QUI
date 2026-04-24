@@ -34,7 +34,6 @@ local BORDER_SIZE = 1
 local SCROLL_STEP = 60
 
 -- State
-QUI_LayoutMode_Settings._providers = {}  -- { [key] = { build, refresh } }
 QUI_LayoutMode_Settings._currentKey = nil
 QUI_LayoutMode_Settings._panel = nil
 QUI_LayoutMode_Settings._built = false
@@ -43,16 +42,19 @@ QUI_LayoutMode_Settings._built = false
 -- PROVIDER REGISTRY
 ---------------------------------------------------------------------------
 
---- Register a settings provider for a frame key (or array of keys).
---- @param key string|table Single key or array of keys
---- @param provider table { build = function(content, key, width) → height, refresh = function() }
-function QUI_LayoutMode_Settings:RegisterProvider(key, provider)
-    if type(key) == "table" then
-        for _, k in ipairs(key) do
-            self._providers[k] = provider
-        end
-    else
-        self._providers[key] = provider
+local function GetSharedProviderRegistry()
+    local Settings = ns.Settings
+    if not Settings then
+        return nil
+    end
+
+    return Settings.Providers or Settings.ProviderRegistry
+end
+
+function QUI_LayoutMode_Settings:RegisterSharedProvider(key, provider)
+    local sharedProviders = GetSharedProviderRegistry()
+    if sharedProviders and type(sharedProviders.Register) == "function" then
+        sharedProviders:Register(key, provider)
     end
 end
 
@@ -326,7 +328,6 @@ end
 
 local function ClearContent(panel)
     local content = panel._content
-    local builders = ns.SettingsBuilders
     local GUI = _G.QUI and _G.QUI.GUI
 
     -- Save collapsible expanded states before clearing
@@ -422,38 +423,106 @@ local function BuildAnchorChainText(key)
     return table.concat(lines, "\n")
 end
 
+local function ResolveSharedFeature(key)
+    local Settings = ns.Settings
+    local Registry = Settings and Settings.Registry
+    if not Registry then
+        return nil
+    end
+
+    if type(Registry.GetFeatureByLookupKey) == "function" then
+        local byLookup = Registry:GetFeatureByLookupKey(key)
+        if byLookup then
+            return byLookup
+        end
+    end
+
+    if type(Registry.GetFeatureByMoverKey) == "function" then
+        return Registry:GetFeatureByMoverKey(key)
+    end
+
+    return nil
+end
+
 local function BuildContent(panel, key)
     ClearContent(panel)
 
     local content = panel._content
     local contentWidth = content:GetWidth()
+    local feature = ResolveSharedFeature(key)
     content._quiProviderSync = {
         providerKey = key,
+        featureId = feature and feature.id or nil,
         surfaceId = "layoutmode-settings",
     }
 
-    local provider = QUI_LayoutMode_Settings._providers[key]
     local providerHeight = 0
+    local Settings = ns.Settings
+    local CompatRender = Settings and Settings.CompatRender
+    local Renderer = Settings and Settings.Renderer
+    local U = ns.QUI_LayoutMode_Utils
 
-    if provider and provider.build then
-        local ok, totalHeight = pcall(provider.build, content, key, contentWidth)
-        if ok and totalHeight and totalHeight > 0 then
-            providerHeight = totalHeight
-        else
-            -- Fallback: measure children
-            local maxBottom = 0
-            for _, child in pairs({content:GetChildren()}) do
-                if child:IsShown() then
-                    local bottom = -(child:GetBottom() and (content:GetTop() - child:GetBottom()) or 0)
-                    if bottom > maxBottom then maxBottom = bottom end
-                end
+    if feature and Renderer and type(Renderer.RenderFeature) == "function" then
+        if type(feature.onNavigate) == "function" then
+            pcall(feature.onNavigate, key, nil, {
+                source = "layoutmode-drawer",
+            })
+        end
+
+        local usePositionOnly = feature.layoutPositionOnly ~= false
+        local ok, totalHeight
+
+        local function renderSharedFeature()
+            local previousMinimalDrawerChrome = U and U._useMinimalDrawerChrome
+            if U then
+                U._useMinimalDrawerChrome = true
             end
-            providerHeight = math.max(maxBottom + 20, 80)
+            local ok2, h = pcall(Renderer.RenderFeature, Renderer, feature, content, {
+                surface = "layout",
+                width = contentWidth,
+                includePosition = true,
+                positionOnly = usePositionOnly,
+                providerKey = key,
+            })
+            if U then
+                U._useMinimalDrawerChrome = previousMinimalDrawerChrome
+            end
+            ok = ok2
+            return h
+        end
+
+        if usePositionOnly and CompatRender and CompatRender.WithOnlyPosition then
+            totalHeight = CompatRender.WithOnlyPosition(renderSharedFeature)
+        else
+            totalHeight = renderSharedFeature()
+        end
+
+        if ok then
+            if totalHeight and totalHeight > 0 then
+                providerHeight = totalHeight
+            else
+                local maxBottom = 0
+                for _, child in pairs({content:GetChildren()}) do
+                    if child:IsShown() then
+                        local bottom = -(child:GetBottom() and (content:GetTop() - child:GetBottom()) or 0)
+                        if bottom > maxBottom then maxBottom = bottom end
+                    end
+                end
+                providerHeight = math.max(maxBottom + 20, 80)
+            end
+        else
+            ClearContent(panel)
+            content = panel._content
+            contentWidth = content:GetWidth()
+            content._quiProviderSync = {
+                providerKey = key,
+                featureId = feature and feature.id or nil,
+                surfaceId = "layoutmode-settings",
+            }
         end
     end
 
     -- Anchoring Details section — appended after provider content
-    local U = ns.QUI_LayoutMode_Utils
     if U and U.CreateCollapsible then
         -- Determine anchor status
         local fa
@@ -721,9 +790,9 @@ function QUI_LayoutMode_Settings:Show(key)
         end
     end
 
-    local builders = ns.SettingsBuilders
-    if builders and builders.RegisterProviderSurface then
-        builders.RegisterProviderSurface(key, "layoutmode-settings", function(meta)
+    local compat = ns.Settings and ns.Settings.CompatRender
+    if compat and compat.RegisterProviderSurface then
+        compat.RegisterProviderSurface(key, "layoutmode-settings", function(meta)
             self:Refresh(meta)
         end, function()
             return panel:IsShown()
@@ -746,9 +815,9 @@ function QUI_LayoutMode_Settings:Hide()
     if self._panel then
         self._panel:Hide()
     end
-    local builders = ns.SettingsBuilders
-    if builders and builders.UnregisterProviderSurface then
-        builders.UnregisterProviderSurface("layoutmode-settings")
+    local compat = ns.Settings and ns.Settings.CompatRender
+    if compat and compat.UnregisterProviderSurface then
+        compat.UnregisterProviderSurface("layoutmode-settings")
     end
 end
 

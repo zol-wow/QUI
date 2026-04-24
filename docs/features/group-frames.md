@@ -7,50 +7,31 @@ nav_order: 3
 
 # Group Frames
 
-QUI Group Frames are an opt-in replacement for Blizzard's party and raid frames. They are disabled by default and must be explicitly enabled. Once active, they provide auto-scaling layouts, extensive healer-focused features, click-casting, and fine-grained control over indicators and auras.
+QUI Group Frames are an opt-in party and raid frame system built for players who need more control and more information than the default group UI provides.
 
-## Overview
+![Actual QUI Group Frames page]({{ '/assets/images/qui-group-frames-full.png' | relative_url }})
+_The Group Frames page in `/qui`, with the unit-group selector, preview frame, and detailed page tabs visible._
 
-Group frames automatically adapt their size based on your current group composition. In a 5-player party they are larger and more detailed; in a 40-player raid they shrink to keep everything visible. The frames support role-based sorting, group-based organization, click-casting bindings, dispel overlays, and custom aura indicators per specialization.
+## Important First Note
+
+Group Frames are **disabled by default**. QUI does not take over your party or raid frames unless you tell it to.
 
 ## How to Enable
 
-Group frames are **disabled by default**. To enable them:
-
-1. Enter Layout Mode with `/qui layout`.
-2. Access Group Frames settings through the Layout Mode toolbar or drawer.
-3. Toggle the **Enable Group Frames** option.
+1. Open `/qui` and select **Group Frames**.
+2. Choose the unit group you want to work on, such as **Party** or **Raid**.
+3. Toggle **Enable QUI Group Frames**.
 4. Reload your UI when prompted.
+5. Use **Edit in Layout Mode** only when you want to move the frames on screen.
 
-Group frame settings are managed through Layout Mode, not the main `/qui` options panel. Click-casting settings are in the dedicated **Click-Cast** tab in `/qui`.
+Most group frame behavior is configured directly from the main `/qui` page. Click-casting is configured separately under **General > Click-Cast**.
 
-## Key Features
+## Who Should Turn Them On
 
-- **Auto-scaling dimensions** -- Frame sizes adjust by context: party (200x40), small raid (180x36), medium raid (160x30), large raid (140x24).
-- **Layout controls** -- Grow direction (up/down), group grow direction (left/right), spacing between frames, and sorting by role, index, or name.
-- **Group organization** -- Group by GROUP, ROLE, or CLASS.
-- **Health display** -- Styles include percent, absolute, both, or deficit (showing missing health).
-- **Power bar** -- Optional, with power-type-specific coloring.
-- **Name text** -- Class color option and maximum length truncation.
-- **Indicators** -- Role icon, ready check, resurrection status, summon pending, leader/assistant, target marker (raid icons), threat border, and phase icon.
-- **Healer features** -- Dispel overlay highlighting dispellable debuffs, target highlight showing your current target in the group, my-buff indicator for tracking your own HoTs/shields, and defensive indicator for tracking external cooldowns.
-- **Separate party and raid profiles** -- Party and raid frame settings are stored independently, allowing different sizing, sorting, and indicator options for each context.
-- **Row growth direction** -- Configurable growth direction options for horizontal and vertical layouts, including CENTER growth direction for icon layouts.
-- **Click-casting** -- Customizable mouse-button bindings per specialization. Includes smart resurrection, unit menu actions, ping actions, and scroll wheel click-casting. Click-casting also extends to unit frames and target-of-target. Settings are in the dedicated Click-Cast tab.
-- **Auras** -- Debuff icons (default 3 max), buff icons, duration-based coloring, and expiring pulse animation when a buff is about to fall off.
-- **Power Infusion tracking** -- Option to track Power Infusion on group frames.
-- **Custom aura indicators** -- Per-specialization presets for tracking specific buffs and debuffs with custom positioning on the frame.
-- **Always show me first** -- Option to pin your own frame at the top of the group frame list regardless of sorting rules, ensuring you always know where your frame is in raid.
-- **Spotlight** -- Pin specific group members by role or name to a separate group, useful for keeping tanks or key players always visible in a consistent location.
-- **Range check** -- Out-of-range players fade to a configurable alpha, giving you instant visual feedback on who you can reach.
-- **Class power pips** -- Optional display of combo points, holy power, chi, etc.
-- **Castbar** -- Optional per-unit castbar. Disabled by default for performance in large groups.
-- **Portrait** -- Optional unit portrait on each frame.
-- **Pet frames** -- Optional frames for group members' pets.
-- **Indicator sizing** -- Configurable sizing options for indicators on group frames.
-- **Blacklist filter** -- Filter out specific auras from the group frame display.
-- **Group Frame Composer** -- A visual tool for configuring group frame layout and settings within Layout Mode.
-- **Test mode** -- Preview group frames with configurable party or raid counts without needing an actual group. Available through Layout Mode.
+- Healers who need strong dispel, HoT, buff, and debuff visibility
+- Support players who want better group awareness
+- Raid players who dislike the feel of default group frames
+- Anyone who wants separate party and raid layouts
 
 ## Important Settings
 
@@ -67,7 +48,24 @@ Group frame settings are managed through Layout Mode, not the main `/qui` option
 | Castbar | Show castbars on group frames | Disabled |
 | Pet frames | Show pet frames | Disabled |
 
-## Tips
+## Best First Tweaks
+
+1. Enable the frames and reload.
+2. Use test mode to preview party or raid sizes without waiting for a real group.
+3. Set the size and spacing before turning on lots of indicators.
+4. Add click-casting only after the frames already feel readable.
+5. Turn on castbars only if you truly need them.
+
+## What Makes Them Powerful
+
+- Auto-scaling layouts for party, small raid, and large raid contexts
+- Separate party and raid profiles
+- Click-casting with spec-based bindings
+- Healer-focused indicators like dispels, my-buffs, and defensives
+- Spotlight rules and sorting controls for keeping important players visible
+- Range fading, aura handling, and optional power or cast information
+
+## Good To Know
 
 {: .important }
 Group frames require a UI reload when first enabled or disabled. This is because they replace Blizzard's secure group frame headers, which can only be swapped at load time.

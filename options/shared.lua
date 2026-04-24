@@ -9,6 +9,7 @@ local QUI = QUI
 local GUI = QUI.GUI
 local QUICore = ns.Addon
 local UIKit = ns.UIKit
+local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- CONSTANTS - Match panel width (750px panel)
@@ -619,16 +620,6 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
             scrollParent = scrollParent,
             contentParent = parent,
         }
-        if scrollParent then
-            GUI:AttachSidebarSectionScrollSpy(scrollParent)
-        end
-
-        GUI:RegisterSectionNavigateHandler(tabIndex, subTabIndex, title, function()
-            if section.SetExpanded then
-                section:SetExpanded(true)
-            end
-            return false
-        end)
     end
 
     local function relayout()
@@ -643,32 +634,15 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
         parent:SetHeight(math.abs(cy) + 20)
     end
 
-    local bulkActions = CreateFrame("Frame", nil, parent)
-    bulkActions:SetHeight(controlsHeight)
-    bulkActions:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, startY)
-    bulkActions:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
+    -- V3: no Expand/Close All buttons — sections are always open.
+    -- The bulk-action strip is dropped entirely; controlsHeight stays at 0 so
+    -- relayout() starts at startY with no offset.
+    controlsHeight = 0
+    controlsGap = 0
 
-    local closeAllBtn
-    local expandAllBtn = GUI:CreateButton(bulkActions, "Expand All", 110, 24, function()
-        for _, section in ipairs(sections) do
-            if section.SetExpanded then
-                section:SetExpanded(true, true)
-            end
-        end
-        relayout()
-    end)
-    expandAllBtn:SetPoint("TOPRIGHT", bulkActions, "TOPRIGHT", -96, -2)
-
-    closeAllBtn = GUI:CreateButton(bulkActions, "Close All", 90, 24, function()
-        for _, section in ipairs(sections) do
-            if section.SetExpanded then
-                section:SetExpanded(false, true)
-            end
-        end
-        relayout()
-    end)
-    closeAllBtn:SetPoint("TOPRIGHT", bulkActions, "TOPRIGHT", 0, -2)
-
+    -- V3 card group: always-visible accent-dot header + subtle card body.
+    -- Signature preserved for every tab-builder caller. Legacy fields kept
+    -- for backwards compat (_expanded pinned true, _body, _sectionTitle).
     local function CreateCollapsible(title, contentHeight, buildFunc)
         local suppressedAtCreation = GUI._suppressSearchRegistration
         local searchContext = {
@@ -677,90 +651,66 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
             subTabIndex = GUI._searchContext.subTabIndex,
             subTabName = GUI._searchContext.subTabName,
         }
-        local stateKey
-        if searchContext.tabIndex and title and title ~= "" then
-            stateKey = table.concat({
-                tostring(searchContext.tabIndex or 0),
-                tostring(searchContext.subTabIndex or 0),
-                title,
-            }, ":")
-        end
         if title and not suppressedAtCreation then
             GUI:SetSearchSection(title)
         end
 
+        local CARD_GAP = 6
+        local CARD_PAD = 8
+
         local section = CreateFrame("Frame", nil, parent)
-        section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
         section._sectionTitle = title
         section._searchContext = searchContext
-        section._stateKey = stateKey
-        section._hasStoredState = stateKey and GUI._optionsCollapsibleStates[stateKey] ~= nil or false
-
-        local btn = CreateFrame("Button", nil, section)
-        btn:SetPoint("TOPLEFT", 0, 0)
-        btn:SetPoint("TOPRIGHT", 0, 0)
-        btn:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
 
         local ar, ag, ab = GetCollapsibleAccent()
-        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
-            point = "LEFT",
-            relativeTo = btn,
-            relativePoint = "LEFT",
-            xPixels = 2,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = false,
-            collapsedDirection = "right",
-            r = ar,
-            g = ag,
-            b = ab,
-            a = 1,
-        }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        if not (UIKit and UIKit.CreateChevronCaret) then
-            chevron:SetPoint("LEFT", 2, 0)
-            chevron:SetTextColor(ar, ag, ab, 1)
-            chevron:SetText(">")
-        end
 
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+        -- Header: accent dot + title + 1px accent underline
+        local dot = section:CreateTexture(nil, "OVERLAY")
+        dot:SetSize(4, 4)
+        dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((COLLAPSIBLE_HEADER_HEIGHT - 4) / 2))
+        dot:SetColorTexture(ar, ag, ab, 1)
+
+        local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("LEFT", dot, "RIGHT", 8, 0)
         label:SetTextColor(ar, ag, ab, 1)
         label:SetText(title)
 
-        local underline = btn:CreateTexture(nil, "ARTWORK")
+        local underline = section:CreateTexture(nil, "ARTWORK")
         underline:SetHeight(1)
-        underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-        underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+        underline:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
+        underline:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
         underline:SetColorTexture(ar, ag, ab, 0.3)
 
-        local bodyClip = CreateFrame("ScrollFrame", nil, section)
-        bodyClip:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
-        bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
-        bodyClip:SetHeight(0)
-        bodyClip:Hide()
+        -- Card surface: subtle bg fill + 1px pixel-perfect hairline border.
+        -- UIKit.CreateBorderLines draws 4 OVERLAY textures each exactly 1
+        -- physical pixel wide (PP.perfect / effectiveScale), so the border
+        -- stays razor-crisp at any UI scale — no blurry edge files, no
+        -- thick Blizzard tooltip border.
+        local cardBg = CreateFrame("Frame", nil, section)
+        cardBg:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP))
+        cardBg:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", 0, 0)
+        local fill = cardBg:CreateTexture(nil, "BACKGROUND")
+        fill:SetAllPoints(cardBg)
+        fill:SetColorTexture(1, 1, 1, 0.02)
+        if ns.UIKit and ns.UIKit.CreateBorderLines then
+            ns.UIKit.CreateBorderLines(cardBg)
+            ns.UIKit.UpdateBorderLines(cardBg, 1, 1, 1, 1, 0.12, false)
+        end
 
-        local body = CreateFrame("Frame", nil, bodyClip)
+        -- Body: full section width so widget positioning math survives
+        local body = CreateFrame("Frame", nil, section)
+        body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + CARD_PAD))
+        body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
         body:SetHeight(contentHeight)
-        body:SetWidth(1)
-        bodyClip:SetScrollChild(body)
-        bodyClip:SetScript("OnSizeChanged", function(self, width)
-            body:SetWidth(math.max(width or 1, 1))
-        end)
-        body:SetAlpha(0)
         body._logicalSection = section
-        bodyClip._logicalSection = section
 
-        section._expanded = false
+        section._expanded = true
         section._contentHeight = contentHeight
         section._body = body
-        section._bodyClip = bodyClip
 
         local function MeasureBodyContentHeight()
             local bodyTop = body.GetTop and body:GetTop()
             if not bodyTop then return nil end
-
             local maxOffset = 0
             local function Accumulate(region)
                 if not region or not region.GetBottom then return end
@@ -770,21 +720,14 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
                     maxOffset = math.max(maxOffset, bodyTop - bottom)
                 end
             end
-
-            local childCount = body.GetNumChildren and body:GetNumChildren() or 0
-            for i = 1, childCount do
+            for i = 1, (body.GetNumChildren and body:GetNumChildren() or 0) do
                 Accumulate(select(i, body:GetChildren()))
             end
-
-            local regionCount = body.GetNumRegions and body:GetNumRegions() or 0
-            for i = 1, regionCount do
+            for i = 1, (body.GetNumRegions and body:GetNumRegions() or 0) do
                 Accumulate(select(i, body:GetRegions()))
             end
-
-            if maxOffset <= 0 then
-                return nil
-            end
-            return math.ceil(maxOffset + 8)
+            if maxOffset <= 0 then return nil end
+            return math.ceil(maxOffset + 4)
         end
 
         local function RefreshContentHeight()
@@ -792,119 +735,124 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
                 section._contentHeight = math.max(section._contentHeight or 0, body._contentHeight)
                 body._contentHeight = nil
             end
-            if type(bodyClip._contentHeight) == "number" and bodyClip._contentHeight > 0 then
-                section._contentHeight = math.max(section._contentHeight or 0, bodyClip._contentHeight)
-                bodyClip._contentHeight = nil
+            local measured = MeasureBodyContentHeight()
+            if measured and measured > 0 then
+                section._contentHeight = math.max(section._contentHeight or 0, measured)
             end
-
-            local measuredHeight = MeasureBodyContentHeight()
-            if measuredHeight and measuredHeight > 0 then
-                section._contentHeight = math.max(section._contentHeight or 0, measuredHeight)
-            end
-
-            body:SetHeight(section._contentHeight or contentHeight)
+            local bh = section._contentHeight or contentHeight
+            body:SetHeight(bh)
+            section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + (CARD_PAD * 2) + bh)
         end
+        section.RefreshContentHeight = RefreshContentHeight
 
-        local function ApplyExpandedState(currentHeight)
-            local height = math.max(0, math.min(section._contentHeight, currentHeight or 0))
-            bodyClip:SetHeight(height)
-            section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + height)
-        end
-
-        section.SetExpanded = function(self, expanded, skipRelayout)
-            section._expanded = expanded and true or false
-            if stateKey then
-                GUI._optionsCollapsibleStates[stateKey] = section._expanded
-            end
-            if UIKit and UIKit.SetChevronCaretExpanded then
-                UIKit.SetChevronCaretExpanded(chevron, section._expanded)
-            else
-                chevron:SetText(section._expanded and "v" or ">")
-            end
-
+        -- Legacy no-op shim: V3 sections are always expanded.
+        section.SetExpanded = function(self, _expanded, skipRelayout)
             RefreshContentHeight()
-            local targetHeight = section._expanded and section._contentHeight or 0
-            local currentHeight = bodyClip:GetHeight() or 0
-
-            if section._expanded then
-                bodyClip:Show()
-                body:SetAlpha(skipRelayout and 1 or body:GetAlpha())
-            end
-
-            if skipRelayout or not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
-                if UIKit and UIKit.CancelValueAnimation then
-                    UIKit.CancelValueAnimation(section, "optionsCollapsible")
-                end
-                ApplyExpandedState(targetHeight)
-                body:SetAlpha(section._expanded and 1 or 0)
-                if not section._expanded then
-                    bodyClip:Hide()
-                end
-                if not skipRelayout then
-                    relayout()
-                end
-                return
-            end
-
-            UIKit.CancelValueAnimation(section, "optionsCollapsible")
-            UIKit.AnimateValue(section, "optionsCollapsible", {
-                fromValue = currentHeight,
-                toValue = targetHeight,
-                duration = (GUI and GUI._sidebarAnimDuration) or 0.16,
-                onUpdate = function(_, progressHeight)
-                    local totalRange = math.max(section._contentHeight, 1)
-                    local ratio = math.max(0, math.min(1, progressHeight / totalRange))
-                    ApplyExpandedState(progressHeight)
-                    body:SetAlpha(ratio)
-                    relayout()
-                end,
-                onFinish = function(_, finalHeight)
-                    ApplyExpandedState(finalHeight)
-                    body:SetAlpha(section._expanded and 1 or 0)
-                    if not section._expanded then
-                        bodyClip:Hide()
-                    end
-                    relayout()
-                end,
-            })
+            if not skipRelayout then relayout() end
         end
-
-        btn:SetScript("OnClick", function()
-            section:SetExpanded(not section._expanded)
-        end)
-
-        btn:SetScript("OnEnter", function()
-            label:SetTextColor(1, 1, 1, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
-            else
-                chevron:SetTextColor(1, 1, 1, 1)
-            end
-        end)
-        btn:SetScript("OnLeave", function()
-            local lr, lg, lb = GetCollapsibleAccent()
-            label:SetTextColor(lr, lg, lb, 1)
-            if UIKit and UIKit.SetChevronCaretColor then
-                UIKit.SetChevronCaretColor(chevron, lr, lg, lb, 1)
-            else
-                chevron:SetTextColor(lr, lg, lb, 1)
-            end
-        end)
 
         buildFunc(body)
         RefreshContentHeight()
-        if stateKey and GUI._optionsCollapsibleStates[stateKey] then
-            section:SetExpanded(true, true)
-        end
         C_Timer.After(0, function()
             if not section or not body then return end
             RefreshContentHeight()
-            if section._expanded then
-                ApplyExpandedState(section._contentHeight)
-                relayout()
-            end
+            relayout()
         end)
         table.insert(sections, section)
+        return section
+    end
+
+    return sections, relayout, CreateCollapsible
+end
+
+---------------------------------------------------------------------------
+-- TILE PAGE (dual-column ready)
+-- Drop-in replacement for CreateCollapsiblePage that delegates to
+-- Utils.CreateCollapsible so SB.WithTileLayout's monkey-patch can apply
+-- dual-column chrome. SectionRegistry wiring + GUI:SetSearchSection are
+-- preserved so jump-to-section search keeps working.
+---------------------------------------------------------------------------
+local function CreateTilePage(parent, pad, topOffset)
+    local PAD = pad or PADDING
+    local startY = topOffset or -10
+    local sections = {}
+    local db = GetDB()
+    if db then
+        db.optionsPanelCollapsibleStates = db.optionsPanelCollapsibleStates or {}
+        GUI._optionsCollapsibleStates = db.optionsPanelCollapsibleStates
+    else
+        GUI._optionsCollapsibleStates = GUI._optionsCollapsibleStates or {}
+    end
+
+    local function GetSectionRegistryKey(tabIndex, subTabIndex)
+        return (tabIndex or 0) * 10000 + (subTabIndex or 0)
+    end
+
+    local function FindScrollParent(frame)
+        local current = frame
+        while current do
+            if current.GetVerticalScroll and current.SetVerticalScroll then
+                return current
+            end
+            current = current:GetParent()
+        end
+        return nil
+    end
+
+    local function RegisterCollapsibleSection(section)
+        local title = section and section._sectionTitle
+        local context = section and section._searchContext
+        if not title or not context or not context.tabIndex then return end
+
+        local tabIndex = context.tabIndex
+        local subTabIndex = context.subTabIndex or 0
+        local numKey = GetSectionRegistryKey(tabIndex, subTabIndex)
+        local scrollParent = FindScrollParent(parent)
+
+        GUI.SectionRegistry[numKey] = GUI.SectionRegistry[numKey] or {}
+        GUI.SectionRegistryOrder[numKey] = GUI.SectionRegistryOrder[numKey] or {}
+        if not GUI.SectionRegistry[numKey][title] then
+            table.insert(GUI.SectionRegistryOrder[numKey], title)
+        end
+        GUI.SectionRegistry[numKey][title] = {
+            frame = section,
+            scrollParent = scrollParent,
+            contentParent = parent,
+        }
+    end
+
+    local function relayout()
+        local cy = startY
+        for _, s in ipairs(sections) do
+            s:ClearAllPoints()
+            s:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, cy)
+            s:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
+            RegisterCollapsibleSection(s)
+            cy = cy - s:GetHeight() - 4
+        end
+        parent:SetHeight(math.abs(cy) + 20)
+    end
+
+    local function CreateCollapsible(title, contentHeight, buildFunc)
+        local U = ns.QUI_LayoutMode_Utils
+        if not U or not U.CreateCollapsible then return end
+
+        local suppressedAtCreation = GUI._suppressSearchRegistration
+        local searchContext = {
+            tabIndex = GUI._searchContext.tabIndex,
+            tabName = GUI._searchContext.tabName,
+            subTabIndex = GUI._searchContext.subTabIndex,
+            subTabName = GUI._searchContext.subTabName,
+        }
+        if title and not suppressedAtCreation then
+            GUI:SetSearchSection(title)
+        end
+
+        local section = U.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
+        if section then
+            section._sectionTitle = title
+            section._searchContext = searchContext
+        end
         return section
     end
 
@@ -920,73 +868,71 @@ end
 --
 -- Returns: section (outer frame), body (inner frame to build content into)
 ---------------------------------------------------------------------------
+-- V3 card group variant of the inline collapsible. Always visible; the
+-- onResize callback is fired after content remeasures so callers (import.lua)
+-- can reflow their outer layout when the body grows or shrinks.
 local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
-    local section = CreateFrame("Frame", nil, parent)
-    section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+    local CARD_GAP = 6
+    local CARD_PAD = 8
 
-    -- Header button (clickable bar) -------------------------------------------
-    local btn = CreateFrame("Button", nil, section)
-    btn:SetPoint("TOPLEFT", 0, 0)
-    btn:SetPoint("TOPRIGHT", 0, 0)
-    btn:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+    local section = CreateFrame("Frame", nil, parent)
 
     local ar, ag, ab = GetCollapsibleAccent()
-    local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
-        point = "LEFT",
-        relativeTo = btn,
-        relativePoint = "LEFT",
-        xPixels = 2,
-        yPixels = 0,
-        sizePixels = 10,
-        lineWidthPixels = 6,
-        lineHeightPixels = 1,
-        expanded = false,
-        collapsedDirection = "right",
-        r = ar, g = ag, b = ab, a = 1,
-    }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    if not (UIKit and UIKit.CreateChevronCaret) then
-        chevron:SetPoint("LEFT", 2, 0)
-        chevron:SetTextColor(ar, ag, ab, 1)
-        chevron:SetText(">")
-    end
 
-    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+    -- Header: accent dot + title + 1px accent underline
+    local dot = section:CreateTexture(nil, "OVERLAY")
+    dot:SetSize(4, 4)
+    dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((COLLAPSIBLE_HEADER_HEIGHT - 4) / 2))
+    dot:SetColorTexture(ar, ag, ab, 1)
+
+    local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("LEFT", dot, "RIGHT", 8, 0)
     label:SetTextColor(ar, ag, ab, 1)
     label:SetText(title)
 
-    local underline = btn:CreateTexture(nil, "ARTWORK")
+    local underline = section:CreateTexture(nil, "ARTWORK")
     underline:SetHeight(1)
-    underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-    underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+    underline:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
+    underline:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
     underline:SetColorTexture(ar, ag, ab, 0.3)
 
-    -- Body clip (ScrollFrame that masks the content) --------------------------
-    local bodyClip = CreateFrame("ScrollFrame", nil, section)
-    bodyClip:SetPoint("TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
-    bodyClip:SetPoint("RIGHT", section, "RIGHT", 0, 0)
-    bodyClip:SetHeight(0)
-    bodyClip:Hide()
+    -- Card surface
+    local cardBg = section:CreateTexture(nil, "BACKGROUND")
+    cardBg:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP))
+    cardBg:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", 0, 0)
+    cardBg:SetColorTexture(1, 1, 1, 0.02)
 
-    local body = CreateFrame("Frame", nil, bodyClip)
+    local function Hairline()
+        local t = section:CreateTexture(nil, "BORDER")
+        t:SetColorTexture(1, 1, 1, 0.06)
+        return t
+    end
+    local cardTop = Hairline(); cardTop:SetHeight(1)
+    cardTop:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
+    cardTop:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
+    local cardBot = Hairline(); cardBot:SetHeight(1)
+    cardBot:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
+    cardBot:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
+    local cardLeft = Hairline(); cardLeft:SetWidth(1)
+    cardLeft:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
+    cardLeft:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
+    local cardRight = Hairline(); cardRight:SetWidth(1)
+    cardRight:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
+    cardRight:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
+
+    -- Body
+    local body = CreateFrame("Frame", nil, section)
+    body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + CARD_PAD))
+    body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
     body:SetHeight(contentHeight)
-    body:SetWidth(1)
-    bodyClip:SetScrollChild(body)
-    bodyClip:SetScript("OnSizeChanged", function(self, width)
-        body:SetWidth(math.max(width or 1, 1))
-    end)
-    body:SetAlpha(0)
 
-    section._expanded = false
+    section._expanded = true
     section._contentHeight = contentHeight
     section._body = body
-    section._bodyClip = bodyClip
 
-    -- Height measurement ------------------------------------------------------
     local function MeasureBodyContentHeight()
         local bodyTop = body.GetTop and body:GetTop()
         if not bodyTop then return nil end
-
         local maxOffset = 0
         local function Accumulate(region)
             if not region or not region.GetBottom then return end
@@ -996,117 +942,38 @@ local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
                 maxOffset = math.max(maxOffset, bodyTop - bottom)
             end
         end
-
         for i = 1, (body.GetNumChildren and body:GetNumChildren() or 0) do
             Accumulate(select(i, body:GetChildren()))
         end
         for i = 1, (body.GetNumRegions and body:GetNumRegions() or 0) do
             Accumulate(select(i, body:GetRegions()))
         end
-
         if maxOffset <= 0 then return nil end
-        return math.ceil(maxOffset + 8)
+        return math.ceil(maxOffset + 4)
     end
 
     local function RefreshContentHeight()
-        -- Unlike the page-level CreateCollapsible, the inline variant allows
-        -- the content height to shrink.  This is needed because the import
-        -- collapsible is rebuilt dynamically via RenderPreview and may have
-        -- fewer rows on subsequent analyses.
+        -- Inline variant allows the content height to shrink (import preview
+        -- rebuilds with fewer rows on each analysis).
         if type(body._contentHeight) == "number" and body._contentHeight > 0 then
             section._contentHeight = body._contentHeight
             body._contentHeight = nil
         end
-        if type(bodyClip._contentHeight) == "number" and bodyClip._contentHeight > 0 then
-            section._contentHeight = bodyClip._contentHeight
-            bodyClip._contentHeight = nil
-        end
-
         local measured = MeasureBodyContentHeight()
         if measured and measured > 0 then
             section._contentHeight = measured
         end
-
-        body:SetHeight(section._contentHeight or contentHeight)
+        local bh = section._contentHeight or contentHeight
+        body:SetHeight(bh)
+        section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + (CARD_PAD * 2) + bh)
+        if onResize then onResize() end
     end
     section.RefreshContentHeight = RefreshContentHeight
 
-    -- Apply height to clip + outer frame --------------------------------------
-    local function ApplyExpandedState(currentHeight)
-        local h = math.max(0, math.min(section._contentHeight, currentHeight or 0))
-        bodyClip:SetHeight(h)
-        section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + h)
-    end
-
-    -- Expand / collapse -------------------------------------------------------
-    section.SetExpanded = function(self, expanded)
-        section._expanded = expanded and true or false
-
-        if UIKit and UIKit.SetChevronCaretExpanded then
-            UIKit.SetChevronCaretExpanded(chevron, section._expanded)
-        else
-            chevron:SetText(section._expanded and "v" or ">")
-        end
-
+    -- Legacy no-op shim: V3 sections are always expanded.
+    section.SetExpanded = function(self, _expanded)
         RefreshContentHeight()
-        local targetHeight = section._expanded and section._contentHeight or 0
-
-        if section._expanded then
-            bodyClip:Show()
-        end
-
-        if not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
-            ApplyExpandedState(targetHeight)
-            body:SetAlpha(section._expanded and 1 or 0)
-            if not section._expanded then bodyClip:Hide() end
-            if onResize then onResize() end
-            return
-        end
-
-        UIKit.CancelValueAnimation(section, "inlineCollapsible")
-        local currentHeight = bodyClip:GetHeight() or 0
-        UIKit.AnimateValue(section, "inlineCollapsible", {
-            fromValue = currentHeight,
-            toValue = targetHeight,
-            duration = (GUI and GUI._sidebarAnimDuration) or 0.16,
-            onUpdate = function(_, progressHeight)
-                local totalRange = math.max(section._contentHeight, 1)
-                local ratio = math.max(0, math.min(1, progressHeight / totalRange))
-                ApplyExpandedState(progressHeight)
-                body:SetAlpha(ratio)
-                if onResize then onResize() end
-            end,
-            onFinish = function(_, finalHeight)
-                ApplyExpandedState(finalHeight)
-                body:SetAlpha(section._expanded and 1 or 0)
-                if not section._expanded then bodyClip:Hide() end
-                if onResize then onResize() end
-            end,
-        })
     end
-
-    -- Click / hover -----------------------------------------------------------
-    btn:SetScript("OnClick", function()
-        section:SetExpanded(not section._expanded)
-    end)
-
-    btn:SetScript("OnEnter", function()
-        label:SetTextColor(1, 1, 1, 1)
-        if UIKit and UIKit.SetChevronCaretColor then
-            UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
-        else
-            chevron:SetTextColor(1, 1, 1, 1)
-        end
-    end)
-    btn:SetScript("OnLeave", function()
-        local lr, lg, lb = GetCollapsibleAccent()
-        label:SetTextColor(lr, lg, lb, 1)
-        if UIKit and UIKit.SetChevronCaretColor then
-            UIKit.SetChevronCaretColor(chevron, lr, lg, lb, 1)
-        else
-            chevron:SetTextColor(lr, lg, lb, 1)
-        end
-    end)
 
     return section, body
 end
@@ -1121,6 +988,7 @@ ns.QUI_Options = {
     GetDB = GetDB,
     CreateScrollableContent = CreateScrollableContent,
     CreateCollapsiblePage = CreateCollapsiblePage,
+    CreateTilePage = CreateTilePage,
     CreateInlineCollapsible = CreateInlineCollapsible,
     GetTextureList = GetTextureList,
     GetFontList = GetFontList,
@@ -1144,3 +1012,831 @@ ns.QUI_Options = {
     RefreshReticle = RefreshReticle,
     RefreshRangeCheck = RefreshRangeCheck,
 }
+
+--[[
+    Shared.CreateAdvancedDrawer(parent, yOffset)
+
+    Creates an "Advanced" collapsible section styled distinctly from normal
+    collapsibles (dashed amber border). Always intended to be the last section
+    on a page. Collapsed by default. Shows a live count of child rows in its header.
+
+    Returns:
+        body          - frame to parent advanced rows to
+        setCount(n)   - update the "(N settings)" count in the header
+        relayout()    - call after adding rows to resize the body
+
+    Usage:
+        local drawer, setCount, relayout = Shared.CreateAdvancedDrawer(tabContent, currentY)
+        local checkbox = GUI:CreateFormCheckbox(drawer, "Obscure option", ...)
+        setCount(1)
+        relayout()
+]]
+local AMBER = { 0.98, 0.75, 0.14 } -- matches #fbbf24 used in spec mockups
+function ns.QUI_Options_CreateAdvancedDrawer(parent, yOffset)
+    local PAD = 15
+    local HEADER_H = 28
+
+    local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, yOffset)
+    frame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -PAD, yOffset)
+    frame:SetHeight(HEADER_H)
+
+    -- Dashed amber border. We simulate a dashed border by drawing a tiled
+    -- solid border with low alpha — visually distinct from normal sections
+    -- without needing custom textures.
+    frame.border = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    frame.border:SetAllPoints()
+    QUICore.SafeSetBackdrop(frame.border, {
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    frame.border:SetBackdropBorderColor(AMBER[1], AMBER[2], AMBER[3], 0.35)
+
+    -- Header row (clickable)
+    local header = CreateFrame("Button", nil, frame)
+    header:SetPoint("TOPLEFT", 0, 0)
+    header:SetPoint("TOPRIGHT", 0, 0)
+    header:SetHeight(HEADER_H)
+
+    header.caret = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header.caret:SetPoint("LEFT", 10, 0)
+    header.caret:SetText("▸")
+    header.caret:SetTextColor(AMBER[1], AMBER[2], AMBER[3], 1)
+
+    header.title = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header.title:SetPoint("LEFT", header.caret, "RIGHT", 6, 0)
+    header.title:SetText("Advanced")
+    header.title:SetTextColor(AMBER[1], AMBER[2], AMBER[3], 1)
+
+    header.count = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header.count:SetPoint("LEFT", header.title, "RIGHT", 6, 0)
+    header.count:SetText("(0 settings)")
+    header.count:SetTextColor(0.7, 0.7, 0.7, 1)
+
+    -- Body: hidden by default
+    local body = CreateFrame("Frame", nil, frame)
+    body:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 6, -4)
+    body:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -6, -4)
+    body:SetHeight(1)
+    body:Hide()
+    frame.body = body
+
+    local isOpen = false
+    local function relayout()
+        if isOpen then
+            local contentHeight = 1
+            local n = body:GetNumChildren()
+            for i = 1, n do
+                local child = select(i, body:GetChildren())
+                if child and child:IsShown() then
+                    local _, childH = child:GetSize()
+                    contentHeight = contentHeight + (childH or 0)
+                end
+            end
+            body:SetHeight(math.max(1, contentHeight))
+            frame:SetHeight(HEADER_H + body:GetHeight() + 10)
+        else
+            frame:SetHeight(HEADER_H)
+        end
+    end
+
+    header:SetScript("OnClick", function()
+        isOpen = not isOpen
+        if isOpen then
+            header.caret:SetText("▾")
+            body:Show()
+        else
+            header.caret:SetText("▸")
+            body:Hide()
+        end
+        relayout()
+    end)
+
+    local function setCount(n)
+        if n == 1 then
+            header.count:SetText("(1 setting)")
+        else
+            header.count:SetText(("(%d settings)"):format(n or 0))
+        end
+    end
+
+    return body, setCount, relayout
+end
+
+-- Attach to existing Shared table (options/shared.lua uses ns.QUI_Options).
+ns.QUI_Options = ns.QUI_Options or {}
+ns.QUI_Options.CreateAdvancedDrawer = ns.QUI_Options_CreateAdvancedDrawer
+
+--[[
+    ns.QUI_Options.CreateTileAdvancedDrawer(pageFrame, bottomMargin)
+
+    Bottom-docked Advanced drawer for V2 tile pages. Anchors to the bottom
+    of pageFrame (above the footer bar). Grows upward when expanded so it
+    overlays the scroll viewport rather than shifting content around.
+
+    Use this INSTEAD of CreateAdvancedDrawer on tile pages where the inner
+    page builder creates its own scroll (minimap_page.lua, etc.) — a flow-
+    positioned drawer inside the container would land below the scroll
+    viewport and be invisible.
+
+    pageFrame: the tile's _pageFrame.
+    bottomMargin: pixels above the footer bar where the drawer's BOTTOM
+                  should sit. Typically 8 (small gap above the footer).
+
+    Returns: body (Frame for drawer contents), setCount, relayout.
+]]
+function ns.QUI_Options_CreateTileAdvancedDrawer(pageFrame, bottomMargin)
+    local PAD = 15
+    local HEADER_H = 28
+    local BOTTOM_MARGIN = bottomMargin or 8
+
+    local frame = CreateFrame("Frame", nil, pageFrame, "BackdropTemplate")
+    frame:SetPoint("BOTTOMLEFT", pageFrame, "BOTTOMLEFT", PAD, BOTTOM_MARGIN)
+    frame:SetPoint("BOTTOMRIGHT", pageFrame, "BOTTOMRIGHT", -PAD, BOTTOM_MARGIN)
+    frame:SetHeight(HEADER_H)
+    -- Draw above scroll content so expanded-drawer body overlays cleanly.
+    frame:SetFrameLevel((pageFrame:GetFrameLevel() or 0) + 5)
+
+    -- Frame fill + amber border (subtle). Deferred-safe via SafeSetBackdrop.
+    QUICore.SafeSetBackdrop(frame, {
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.85)
+    frame:SetBackdropBorderColor(AMBER[1], AMBER[2], AMBER[3], 0.5)
+
+    -- Header row (clickable), docked to the BOTTOM of the frame.
+    local header = CreateFrame("Button", nil, frame)
+    header:SetPoint("BOTTOMLEFT", 0, 0)
+    header:SetPoint("BOTTOMRIGHT", 0, 0)
+    header:SetHeight(HEADER_H)
+
+    header.caret = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header.caret:SetPoint("LEFT", 10, 0)
+    header.caret:SetText("\226\150\184") -- ▸
+    header.caret:SetTextColor(AMBER[1], AMBER[2], AMBER[3], 1)
+
+    header.title = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header.title:SetPoint("LEFT", header.caret, "RIGHT", 6, 0)
+    header.title:SetText("Advanced")
+    header.title:SetTextColor(AMBER[1], AMBER[2], AMBER[3], 1)
+
+    header.count = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header.count:SetPoint("LEFT", header.title, "RIGHT", 6, 0)
+    header.count:SetText("(0 settings)")
+    header.count:SetTextColor(0.7, 0.7, 0.7, 1)
+
+    -- Body is anchored to frame TOP so it grows DOWNWARD inside the frame
+    -- toward the header. The frame itself grows upward when expanded, but
+    -- body's TOPLEFT stays pinned to frame TOPLEFT + a small inset — this
+    -- gives widgets a stable anchor point. Children positioned with
+    -- TOPLEFT + negative y flow down from body.TOP as expected.
+    local body = CreateFrame("Frame", nil, frame)
+    body:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
+    body:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -6, -6)
+    body:SetHeight(1)
+    body:Hide()
+    frame.body = body
+
+    local isOpen = false
+    local function relayout()
+        if isOpen then
+            -- Trust whatever height the build() callback set on body.
+            local h = body:GetHeight() or 1
+            if h < 1 then h = 1 end
+            frame:SetHeight(HEADER_H + h + 10)
+        else
+            frame:SetHeight(HEADER_H)
+        end
+    end
+
+    header:SetScript("OnClick", function()
+        isOpen = not isOpen
+        if isOpen then
+            header.caret:SetText("\226\150\190") -- ▾
+            body:Show()
+        else
+            header.caret:SetText("\226\150\184") -- ▸
+            body:Hide()
+        end
+        relayout()
+    end)
+
+    local function setCount(n)
+        if n == 1 then
+            header.count:SetText("(1 setting)")
+        else
+            header.count:SetText(("(%d settings)"):format(n or 0))
+        end
+    end
+
+    return body, setCount, relayout
+end
+ns.QUI_Options.CreateTileAdvancedDrawer = ns.QUI_Options_CreateTileAdvancedDrawer
+
+--[[
+    ns.QUI_Options.CreateAccentDotLabel(parent, text, yOffset)
+
+    Creates an accent-dot section label. Used OUTSIDE of card groups to
+    introduce a grouped set of settings below.
+
+    parent: Frame to anchor to (uses TOPLEFT/TOPRIGHT).
+    text: label text, rendered as provided.
+    yOffset (number, optional): y offset from parent's top-left, default 0.
+
+    Returns: container Frame with ._dot (Texture) and ._label (FontString).
+]]
+local function CreateAccentDotLabel(parent, text, yOffset)
+    local ar, ag, ab = GetCollapsibleAccent()
+
+    -- Grow the container to include the 1px separator line that
+    -- delimits the section from its rows below.
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetHeight(22)
+    container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset or 0)
+    container:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, yOffset or 0)
+
+    local dot = container:CreateTexture(nil, "OVERLAY")
+    dot:SetSize(5, 5)
+    dot:SetColorTexture(ar, ag, ab, 1)
+    dot:SetPoint("LEFT", container, "LEFT", 0, 4)
+
+    local label = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(QUI.GUI:GetFontPath())
+    label:SetFont(fpath or select(1, label:GetFont()), 12, "")
+    label:SetPoint("LEFT", dot, "RIGHT", 7, 0)
+    label:SetTextColor(ar, ag, ab, 1)
+    label:SetText(text or "")
+
+    -- 1px separator line under the label, spanning full container width.
+    local sep = container:CreateTexture(nil, "BORDER")
+    sep:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0)
+    sep:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    sep:SetHeight(1)
+    sep:SetColorTexture(ar, ag, ab, 0.3)
+
+    container._dot = dot
+    container._label = label
+    container._separator = sep
+    return container
+end
+
+ns.QUI_Options = ns.QUI_Options or {}
+ns.QUI_Options.CreateAccentDotLabel = CreateAccentDotLabel
+
+--[[
+    ns.QUI_Options.CreateSettingsCardGroup(parent, yOffset)
+
+    Creates a subtle-surface card group for settings rows. Populate with
+    .AddRow(leftCell, rightCell) or .AddRow(fullWidthCell). Call .Finalize()
+    after all rows are added to size the card and hide the trailing divider.
+
+    parent: Frame to anchor to.
+    yOffset (optional): y offset from parent TOPLEFT, default 0.
+
+    Returns: table { frame, AddRow, Finalize, GetRowCount }
+]]
+local function CreateSettingsCardGroup(parent, yOffset)
+    local C = QUI.GUI and QUI.GUI.Colors or {}
+
+    -- "Section" pattern: NO card border, NO card fill. Rows stack directly,
+    -- alternating row backgrounds give the rhythm. Much lighter visual weight
+    -- than a boxed card. Center divider between the two columns.
+    local card = CreateFrame("Frame", nil, parent)
+    card:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset or 0)
+    card:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, yOffset or 0)
+    -- Marker so settings_builders.lua's ApplyDualColumnLayout can detect
+    -- a pre-rendered card group and skip its own row-pairing pass (which
+    -- would scramble the already-paired rows + vertical-center the card
+    -- inside a 32px row frame, causing content overlap).
+    card._quiCardGroup = true
+
+    local rows = {}
+    local rowHeight = 32
+    local padX = 2
+    local cumulativeY = 0
+
+    local function AddRow(leftChild, rightChild)
+        local row = CreateFrame("Frame", nil, card)
+        row:SetPoint("TOPLEFT", card, "TOPLEFT", padX, cumulativeY)
+        row:SetPoint("TOPRIGHT", card, "TOPRIGHT", -padX, cumulativeY)
+        row:SetHeight(rowHeight)
+
+        -- Alternating row background tint — subtle (~3% white) on even rows,
+        -- nothing on odd rows. Gives rhythm without the heavy card border.
+        if (#rows % 2) == 1 then
+            local rowBg = row:CreateTexture(nil, "BACKGROUND")
+            rowBg:SetAllPoints(row)
+            rowBg:SetColorTexture(1, 1, 1, 0.02)
+            row._rowBg = rowBg
+        end
+
+        if rightChild then
+            leftChild:SetParent(row)
+            leftChild:ClearAllPoints()
+            leftChild:SetPoint("LEFT", row, "LEFT", 12, 0)
+            leftChild:SetPoint("RIGHT", row, "CENTER", -12, 0)
+            rightChild:SetParent(row)
+            rightChild:ClearAllPoints()
+            rightChild:SetPoint("LEFT", row, "CENTER", 12, 0)
+            rightChild:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+
+            -- 1px center divider between the two columns (matches reference)
+            local cdiv = row:CreateTexture(nil, "ARTWORK")
+            cdiv:SetPoint("TOP", row, "TOP", 0, -6)
+            cdiv:SetPoint("BOTTOM", row, "BOTTOM", 0, 6)
+            cdiv:SetWidth(1)
+            cdiv:SetColorTexture(1, 1, 1, 0.05)
+            row._centerDivider = cdiv
+        else
+            leftChild:SetParent(row)
+            leftChild:ClearAllPoints()
+            leftChild:SetPoint("LEFT", row, "LEFT", 12, 0)
+            leftChild:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+        end
+
+        rows[#rows + 1] = row
+        cumulativeY = cumulativeY - rowHeight
+        return row
+    end
+
+    local function Finalize()
+        card:SetHeight(math.abs(cumulativeY))
+    end
+
+    local function GetRowCount() return #rows end
+
+    return {
+        frame = card,
+        AddRow = AddRow,
+        Finalize = Finalize,
+        GetRowCount = GetRowCount,
+    }
+end
+
+ns.QUI_Options.CreateSettingsCardGroup = CreateSettingsCardGroup
+
+--[[
+    ns.QUI_Options.CreatePreviewArea(parent, yOffset, height)
+
+    Creates a framed preview area — a bounded region at the top of a tile
+    page where tile builders can populate a live preview of the feature
+    being configured (e.g. action buttons for the Action Bars tile, a unit
+    frame for the Unit Frames tile, a nameplate for Nameplates).
+
+    Returns a Frame scoped to (yOffset, yOffset - height) with a subtle
+    1px hairline border and slight bg fill so the preview area visually
+    stands apart from the settings content below it.
+]]
+local function CreatePreviewArea(parent, yOffset, height)
+    local C = QUI.GUI and QUI.GUI.Colors or {}
+    local border = C.border or {1, 1, 1, 0.06}
+
+    local preview = CreateFrame("Frame", nil, parent)
+    preview:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset or 0)
+    preview:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, yOffset or 0)
+    preview:SetHeight(height or 90)
+
+    local fill = preview:CreateTexture(nil, "BACKGROUND")
+    fill:SetAllPoints(preview)
+    fill:SetColorTexture(0, 0, 0, 0.2)
+
+    if ns.UIKit and ns.UIKit.CreateBorderLines then
+        ns.UIKit.CreateBorderLines(preview)
+        ns.UIKit.UpdateBorderLines(preview, 1, border[1], border[2], border[3], 0.15, false)
+    end
+
+    -- Small "PREVIEW" label in the top-left
+    local accent = C.accent or {0.204, 0.827, 0.6, 1}
+    local lbl = preview:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(QUI.GUI:GetFontPath())
+    lbl:SetFont(fpath or select(1, lbl:GetFont()), 8, "")
+    lbl:SetTextColor(accent[1], accent[2], accent[3], 0.7)
+    lbl:SetPoint("TOPLEFT", preview, "TOPLEFT", 8, -6)
+    local spaced = ("PREVIEW"):gsub(".", "%0 "):sub(1, -2)
+    lbl:SetText(spaced)
+    preview._label = lbl
+
+    return preview
+end
+ns.QUI_Options.CreatePreviewArea = CreatePreviewArea
+
+--[[
+    ns.QUI_Options.BuildSettingRow(parent, labelText, widget, desc)
+
+    Creates a single setting cell: label (left) + widget (right). Pass the
+    returned Frame to CreateSettingsCardGroup.AddRow() as a left or right cell.
+
+    parent: parent Frame (usually the card's frame).
+    labelText: displayed label.
+    widget: the control (toggle, slider, dropdown, etc.) to place on the right.
+    desc (optional): secondary description text under the label.
+
+    Returns: the cell Frame (with ._label, ._desc, ._widget, ._widgetLabel).
+]]
+local function BuildSettingRow(parent, labelText, widget, desc)
+    local C = QUI.GUI and QUI.GUI.Colors or {}
+    local textCol = C.text or {1, 1, 1, 1}
+    local mutedCol = C.textMuted or {1, 1, 1, 0.45}
+
+    local cell = CreateFrame("Frame", nil, parent)
+    cell:SetHeight(28)
+
+    local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(QUI.GUI:GetFontPath())
+
+    local label = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetFont(fpath or select(1, label:GetFont()), 11, "")
+    label:SetTextColor(textCol[1], textCol[2], textCol[3], 1)
+    label:SetPoint("LEFT", cell, "LEFT", 0, desc and 5 or 0)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
+    label:SetNonSpaceWrap(false)
+    label:SetText(labelText or "")
+    cell._label = label
+
+    if desc then
+        local d = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        d:SetFont(fpath or select(1, d:GetFont()), 9, "")
+        d:SetTextColor(mutedCol[1], mutedCol[2], mutedCol[3], 1)
+        d:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -1)
+        d:SetText(desc)
+        cell._desc = d
+    end
+
+    if widget then
+        widget:SetParent(cell)
+        widget:ClearAllPoints()
+        widget:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
+        cell._widget = widget
+        -- Constrain the label so it can't overlap the widget. Clip with "..."
+        -- if the label is too long for the space left after the widget.
+        label:SetPoint("RIGHT", widget, "LEFT", -6, 0)
+    end
+
+    local pins = ns.Settings and ns.Settings.Pins
+    if pins and widget and type(pins.AttachSettingRow) == "function" then
+        pins:AttachSettingRow(cell, widget, labelText)
+    end
+
+    cell._widgetLabel = labelText  -- For search jump-to-setting
+    return cell
+end
+
+ns.QUI_Options.BuildSettingRow = BuildSettingRow
+
+local function MergeOptions(base, extra)
+    local merged = {}
+    if type(base) == "table" then
+        for key, value in pairs(base) do
+            merged[key] = value
+        end
+    end
+    if type(extra) == "table" then
+        for key, value in pairs(extra) do
+            merged[key] = value
+        end
+    end
+    return merged
+end
+
+local function ClearDynamicContent(frame)
+    if not frame then
+        return
+    end
+
+    local gui = QUI and QUI.GUI
+    if gui and type(gui.CleanupWidgetTree) == "function" then
+        gui:CleanupWidgetTree(frame)
+    end
+
+    if frame.GetChildren then
+        for _, child in ipairs({ frame:GetChildren() }) do
+            if child.Hide then child:Hide() end
+            if child.ClearAllPoints then child:ClearAllPoints() end
+            if child.SetParent then child:SetParent(nil) end
+        end
+    end
+
+    if frame.GetRegions then
+        for _, region in ipairs({ frame:GetRegions() }) do
+            if region.Hide then region:Hide() end
+            if region.SetParent then region:SetParent(nil) end
+        end
+    end
+end
+
+local function ResolveFeatureSearchContext(featureId, searchContext)
+    local merged = MergeOptions(searchContext, nil)
+
+    local Settings = ns.Settings
+    local Nav = Settings and Settings.Nav
+    local route = Nav and type(Nav.GetRoute) == "function" and Nav:GetRoute(featureId) or nil
+    if type(route) == "table" then
+        if type(route.tileId) == "string" and route.tileId ~= "" then
+            merged.tileId = route.tileId
+        end
+        if route.subPageIndex ~= nil then
+            merged.subPageIndex = route.subPageIndex
+        end
+    end
+
+    return merged
+end
+
+local function BuildFeatureTabPage(tabContent, featureId, searchContext, renderOptions)
+    local GUI = QUI and QUI.GUI
+    if not GUI then return end
+    local featureSearchContext = ResolveFeatureSearchContext(featureId, searchContext)
+    if featureSearchContext then GUI:SetSearchContext(featureSearchContext) end
+    ClearDynamicContent(tabContent)
+
+    local PAD = ns.QUI_Options.PADDING
+    local host = CreateFrame("Frame", nil, tabContent)
+    host:SetPoint("TOPLEFT", PAD, -10)
+    host:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    host:SetHeight(1)
+
+    local Settings = ns.Settings
+    local Renderer = Settings and Settings.Renderer
+    if not Renderer or type(Renderer.RenderFeature) ~= "function" then return end
+
+    local width = math.max(300, (tabContent:GetWidth() or 760) - (PAD * 2))
+    local height = Renderer:RenderFeature(featureId, host, MergeOptions({
+        surface = "tile",
+        includePosition = false,
+        tileLayout = true,
+        width = width,
+    }, renderOptions))
+
+    tabContent:SetHeight((height or 80) + 20)
+end
+
+ns.QUI_Options.BuildFeatureTabPage = BuildFeatureTabPage
+
+local function BuildFeatureDirectPage(tabContent, featureId, searchContext, renderOptions)
+    local GUI = QUI and QUI.GUI
+    if not GUI then return end
+    local featureSearchContext = ResolveFeatureSearchContext(featureId, searchContext)
+    if featureSearchContext then GUI:SetSearchContext(featureSearchContext) end
+    ClearDynamicContent(tabContent)
+
+    local Settings = ns.Settings
+    local Renderer = Settings and Settings.Renderer
+    if not Renderer or type(Renderer.RenderFeature) ~= "function" then return end
+
+    local PAD = ns.QUI_Options.PADDING
+    local width = math.max(300, (tabContent:GetWidth() or 760) - (PAD * 2))
+    return Renderer:RenderFeature(featureId, tabContent, MergeOptions({
+        surface = "tile",
+        includePosition = false,
+        tileLayout = true,
+        width = width,
+    }, renderOptions))
+end
+
+ns.QUI_Options.BuildFeatureDirectPage = BuildFeatureDirectPage
+
+local function GetRegisteredFeature(featureId)
+    local Settings = ns.Settings
+    local Registry = Settings and Settings.Registry
+    if not Registry or type(Registry.GetFeature) ~= "function" then
+        return nil
+    end
+    return Registry:GetFeature(featureId)
+end
+
+local function HasRegisteredFeature(featureId)
+    return GetRegisteredFeature(featureId) ~= nil
+end
+
+ns.QUI_Options.HasFeature = HasRegisteredFeature
+
+local function ShowUnavailableFeaturePage(body, label)
+    local text = body:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("TOPLEFT", 20, -20)
+    text:SetText((label or "Settings") .. " unavailable.")
+end
+
+local function TryBuildFeaturePage(body, renderHelper, featureId, searchContext, fallback, renderOptions)
+    local Opts = ns.QUI_Options
+    local render = Opts and Opts[renderHelper]
+    if featureId and HasRegisteredFeature(featureId) and type(render) == "function" then
+        render(body, featureId, searchContext, renderOptions)
+        return true
+    end
+
+    if type(fallback) == "function" then
+        fallback(body)
+        return true
+    end
+
+    return false
+end
+
+local function MakeFeatureBuilder(renderHelper, featureId, searchContext, fallback, renderOptions, unavailableLabel)
+    return function(body)
+        if TryBuildFeaturePage(body, renderHelper, featureId, searchContext, fallback, renderOptions) then
+            return
+        end
+        ShowUnavailableFeaturePage(body, unavailableLabel or featureId)
+    end
+end
+
+function ns.QUI_Options.MakeFeatureTabBuilder(featureId, searchContext, fallback, renderOptions, unavailableLabel)
+    return MakeFeatureBuilder(
+        "BuildFeatureTabPage",
+        featureId,
+        searchContext,
+        fallback,
+        renderOptions,
+        unavailableLabel
+    )
+end
+
+function ns.QUI_Options.MakeFeatureDirectBuilder(featureId, searchContext, fallback, renderOptions, unavailableLabel)
+    return MakeFeatureBuilder(
+        "BuildFeatureDirectPage",
+        featureId,
+        searchContext,
+        fallback,
+        renderOptions,
+        unavailableLabel
+    )
+end
+
+local function RegisterFeatureTile(frame, spec)
+    local GUI = QUI and QUI.GUI
+    if not GUI or type(spec) ~= "table" or type(spec.id) ~= "string" or spec.id == "" then
+        return
+    end
+
+    local feature = GetRegisteredFeature(spec.featureId)
+    local preview = feature and feature.preview
+
+    for _, route in ipairs(spec.navRoutes or {}) do
+        GUI:RegisterV2NavRoute(
+            route.tabIndex,
+            route.subTabIndex,
+            route.tileId or spec.id,
+            route.subPageIndex or 1
+        )
+    end
+
+    local previewHeight = (preview and preview.height) or spec.previewHeight
+    local previewBuild = (preview and preview.build) or spec.previewBuild or function() end
+
+    GUI:AddFeatureTile(frame, {
+        id = spec.id,
+        icon = spec.icon,
+        name = spec.name,
+        primaryCTA = spec.primaryCTA,
+        preview = previewHeight and {
+            height = previewHeight,
+            build = previewBuild,
+        } or nil,
+        noScroll = spec.noScroll ~= false,
+        buildFunc = function(body)
+            if TryBuildFeaturePage(
+                body,
+                "BuildFeatureDirectPage",
+                spec.featureId,
+                spec.searchContext,
+                nil,
+                spec.renderOptions
+            ) then
+                return
+            end
+            ShowUnavailableFeaturePage(body, spec.unavailableLabel or spec.name or "Settings")
+        end,
+        relatedSettings = spec.relatedSettings,
+    })
+end
+
+ns.QUI_Options.RegisterFeatureTile = RegisterFeatureTile
+
+local function ResolveFeatureStackLabel(featureId, explicitLabel)
+    if type(explicitLabel) == "string" and explicitLabel ~= "" then
+        return explicitLabel
+    end
+
+    local feature = GetRegisteredFeature(featureId)
+    local providerKey = feature and feature.providerKey
+    if type(providerKey) ~= "string" or providerKey == "" then
+        providerKey = featureId
+    end
+
+    local Settings = ns.Settings
+    local CompatRender = Settings and Settings.CompatRender
+    if CompatRender and type(CompatRender.GetProviderLabel) == "function" then
+        local label = CompatRender.GetProviderLabel(providerKey)
+        if type(label) == "string" and label ~= "" then
+            return label
+        end
+    end
+
+    return providerKey
+end
+
+local function BuildFeatureStackPage(tabContent, featureIds, searchContext, options)
+    local GUI = QUI and QUI.GUI
+    if not GUI then return end
+    if searchContext then GUI:SetSearchContext(searchContext) end
+    ClearDynamicContent(tabContent)
+
+    local Settings = ns.Settings
+    local Renderer = Settings and Settings.Renderer
+    if not Renderer or type(Renderer.RenderFeature) ~= "function" then return end
+
+    local PAD = 10
+    local GAP = 20
+    local HEADER_HEIGHT = 26
+    local HEADER_TO_CARD_GAP = 6
+    local C = (QUI and QUI.GUI and QUI.GUI.Colors) or {}
+    local accent = C.accent or { 0.204, 0.827, 0.6, 1 }
+    local yOffset = -10
+    local width = math.max(300, ((tabContent.GetWidth and tabContent:GetWidth()) or 760) - (PAD * 2))
+
+    if type(featureIds) ~= "table" or #featureIds == 0 then
+        tabContent:SetHeight(80)
+        return
+    end
+
+    for _, item in ipairs(featureIds) do
+        local featureId, explicitLabel
+        if type(item) == "string" then
+            featureId = item
+        elseif type(item) == "table" and type(item.key) == "string" then
+            featureId = item.key
+            explicitLabel = item.label
+        end
+
+        if featureId and HasRegisteredFeature(featureId) then
+            local featureSearchContext = ResolveFeatureSearchContext(featureId, searchContext)
+            if featureSearchContext then
+                GUI:SetSearchContext(featureSearchContext)
+            end
+            local label = ResolveFeatureStackLabel(featureId, explicitLabel)
+
+            local titleRow = CreateFrame("Frame", nil, tabContent)
+            titleRow:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, yOffset)
+            titleRow:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            titleRow:SetHeight(HEADER_HEIGHT)
+
+            local dot = titleRow:CreateTexture(nil, "OVERLAY")
+            dot:SetSize(6, 6)
+            dot:SetPoint("LEFT", titleRow, "LEFT", 0, 1)
+            dot:SetColorTexture(accent[1], accent[2], accent[3], 1)
+
+            local text = titleRow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            text:SetPoint("LEFT", dot, "RIGHT", 10, 0)
+            text:SetTextColor(1, 1, 1, 0.95)
+            text:SetText(label)
+
+            local underline = titleRow:CreateTexture(nil, "ARTWORK")
+            underline:SetPoint("BOTTOMLEFT", titleRow, "BOTTOMLEFT", 0, 0)
+            underline:SetPoint("BOTTOMRIGHT", titleRow, "BOTTOMRIGHT", 0, 0)
+            underline:SetHeight(1)
+            underline:SetColorTexture(accent[1], accent[2], accent[3], 0.5)
+
+            yOffset = yOffset - HEADER_HEIGHT - HEADER_TO_CARD_GAP
+
+            local host = CreateFrame("Frame", nil, tabContent)
+            host:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, yOffset)
+            host:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            host:SetHeight(1)
+
+            local height = Renderer:RenderFeature(featureId, host, MergeOptions({
+                surface = "tile",
+                includePosition = false,
+                tileLayout = true,
+                width = width,
+            }, options))
+            if type(height) ~= "number" or height <= 0 then
+                height = host.GetHeight and host:GetHeight() or 80
+            end
+            height = math.max(80, height)
+            host:SetHeight(height)
+            yOffset = yOffset - height - GAP
+        end
+    end
+
+    tabContent:SetHeight(math.max(80, math.abs(yOffset) + 10))
+end
+
+ns.QUI_Options.BuildFeatureStackPage = BuildFeatureStackPage
+
+function ns.QUI_Options.MakeFeatureStackBuilder(featureIds, searchContext, options, fallback, unavailableLabel)
+    return function(body)
+        local Opts = ns.QUI_Options
+        if Opts and Opts.BuildFeatureStackPage then
+            Opts.BuildFeatureStackPage(body, featureIds, searchContext, options)
+            return
+        end
+        if type(fallback) == "function" then
+            fallback(body)
+            return
+        end
+        ShowUnavailableFeaturePage(body, unavailableLabel or "Feature stack")
+    end
+end

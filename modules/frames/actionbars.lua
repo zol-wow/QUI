@@ -8942,16 +8942,19 @@ do
     C_Timer.After(2, RegisterLayoutModeElements)
 end
 
----------------------------------------------------------------------------
--- UNLOCK MODE SETTINGS PROVIDER
+-- ACTION BARS PER-BAR SETTINGS BUILDERS
 ---------------------------------------------------------------------------
 do
-    local function RegisterSettingsProviders()
-        local settingsPanel = ns.QUI_LayoutMode_Settings
-        if not settingsPanel then return end
+    local ActionBarsPerBarBuilders = ns.QUI_ActionBarsPerBarBuilders or {}
+    ns.QUI_ActionBarsPerBarBuilders = ActionBarsPerBarBuilders
+
+    local function InitializePerBarBuilders()
+        if type(ActionBarsPerBarBuilders.BuildBarSettings) == "function" then
+            return ActionBarsPerBarBuilders.BuildBarSettings
+        end
 
         local GUI = QUI and QUI.GUI
-        if not GUI then return end
+        if not GUI then return nil end
 
         local C = GUI.Colors or {}
         local U = ns.QUI_LayoutMode_Utils
@@ -9019,6 +9022,10 @@ do
             petBar = "pet", stanceBar = "stance",
             microMenu = "microbar", bagBar = "bags",
         }
+        local TOGGLEABLE_MAIN_BARS = {
+            bar2 = true, bar3 = true, bar4 = true, bar5 = true,
+            bar6 = true, bar7 = true, bar8 = true,
+        }
 
         local copyKeys = {
             "iconZoom", "showBackdrop", "backdropAlpha", "showGloss", "glossAlpha", "showBorders",
@@ -9080,16 +9087,51 @@ do
             end
             local DEFER_SIZE = { deferOnDrag = true, onDragPreview = PreviewBarSize }
 
+            local function ApplyBarEnabledState(val)
+                if type(_G.QUI_RefreshActionBars) == "function" then
+                    _G.QUI_RefreshActionBars()
+                end
+                if type(_G.QUI_RefreshActionBarsVisibility) == "function" then
+                    _G.QUI_RefreshActionBarsVisibility()
+                end
+                if type(_G.QUI_UpdateFramesAnchoredTo) == "function" then
+                    _G.QUI_UpdateFramesAnchoredTo(dbKey)
+                end
+                if ns.QUI_ActionBarsOptions and ns.QUI_ActionBarsOptions.RefreshPreview then
+                    ns.QUI_ActionBarsOptions.RefreshPreview()
+                end
+
+                local QUI = _G.QUI
+                local GUI = QUI and QUI.GUI
+                if GUI and GUI.ShowConfirmation then
+                    GUI:ShowConfirmation({
+                        title = "Reload UI?",
+                        message = "Enabling or disabling an action bar requires a UI reload to fully take effect.",
+                        acceptText = "Reload",
+                        cancelText = "Later",
+                        onAccept = function() QUI:SafeReload() end,
+                    })
+                end
+            end
+
+            if TOGGLEABLE_MAIN_BARS[dbKey] then
+                CreateCollapsible(content, "Bar", FORM_ROW + 8, function(body)
+                    local sy = -4
+                    P(GUI:CreateFormCheckbox(body, "Enabled",
+                        "enabled", barDB, ApplyBarEnabledState,
+                        { description = "Show or hide this action bar. Bars 2-8 can be individually disabled without affecting the pet or stance bars." }), body, sy)
+                end, sections, relayout)
+            end
+
             -- SECTION: Layout
             if hasLayout and layout then
                 local isMicroBag = (dbKey == "microbar" or dbKey == "bags")
                 local maxButtons = BUTTON_COUNTS[dbKey] or (dbKey == "microbar" and 12 or (dbKey == "bags" and 6 or 12))
-                local extraRows = isMicroBag and 1 or 2
+                local extraRows = 1
                 if barKey == "bar1" then extraRows = extraRows + 1 end
                 if FLYOUT_BARS[barKey] then extraRows = extraRows + 1 end
                 local numRows = 7 + extraRows
-                local descHeight = isMicroBag and 0 or 16
-                CreateCollapsible(content, "Layout", numRows * FORM_ROW + descHeight + 8, function(body)
+                CreateCollapsible(content, "Layout", numRows * FORM_ROW + 8, function(body)
                     local sy = -4
 
                     if barKey == "bar1" then
@@ -9099,46 +9141,10 @@ do
                                 if _G.QUI_ApplyPageArrowVisibility then
                                     _G.QUI_ApplyPageArrowVisibility(val)
                                 end
-                            end), body, sy)
+                            end, { description = "Hide Blizzard's small paging arrow attached to the main action bar. Only affects Bar 1." }), body, sy)
                     end
 
                     if not isMicroBag then
-                    local applyAllBtn = CreateFrame("Button", nil, body)
-                    applyAllBtn:SetSize(200, 22)
-                    applyAllBtn:SetPoint("TOPLEFT", 0, sy)
-
-                    local applyBg = applyAllBtn:CreateTexture(nil, "BACKGROUND")
-                    applyBg:SetAllPoints()
-                    applyBg:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.25)
-
-                    local applyText = applyAllBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    applyText:SetPoint("CENTER")
-                    applyText:SetText("Apply To All Bars")
-                    applyText:SetTextColor(1, 1, 1, 1)
-
-                    applyAllBtn:SetScript("OnClick", function()
-                        for i = 1, 8 do
-                            local otherKey = "bar" .. i
-                            if otherKey ~= barKey then
-                                local otherDbKey = SETTINGS_DB_KEY_MAP[otherKey] or otherKey
-                                local otherDB = db.bars[otherDbKey]
-                                if otherDB then
-                                    for _, key in ipairs(copyKeys) do
-                                        otherDB[key] = barDB[key]
-                                    end
-                                end
-                            end
-                        end
-                        RefreshActionBars()
-                    end)
-                    applyAllBtn:SetScript("OnEnter", function()
-                        applyBg:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.4)
-                    end)
-                    applyAllBtn:SetScript("OnLeave", function()
-                        applyBg:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.25)
-                    end)
-                    sy = sy - FORM_ROW
-
                     local filteredCopyOptions = {}
                     for _, opt in ipairs(copyBarOptions) do
                         if opt.value ~= barKey then
@@ -9154,16 +9160,13 @@ do
                             for _, key in ipairs(copyKeys) do
                                 barDB[key] = sourceDB[key]
                             end
+                            if sourceDB.ownedLayout then
+                                barDB.ownedLayout = barDB.ownedLayout or {}
+                                for sk in pairs(barDB.ownedLayout) do barDB.ownedLayout[sk] = nil end
+                                for sk, sv in pairs(sourceDB.ownedLayout) do barDB.ownedLayout[sk] = sv end
+                            end
                             RefreshActionBars()
-                        end), body, sy)
-
-                    local copyDesc = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    copyDesc:SetPoint("TOPLEFT", 2, sy + 4)
-                    copyDesc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                    copyDesc:SetTextColor(0.5, 0.5, 0.5, 1)
-                    copyDesc:SetText("Copies visual, keybind, macro, and count settings. Layout is per-bar.")
-                    copyDesc:SetJustifyH("LEFT")
-                    sy = sy - 16
+                        end, { description = "Clone another bar's layout, visual, keybind, macro name, and stack count settings onto this bar. Position/anchor is not copied." }), body, sy)
                     end -- isMicroBag guard
 
                     if isMicroBag then
@@ -9175,39 +9178,47 @@ do
                                         btn:EnableMouse(not val)
                                     end
                                 end
-                            end), body, sy)
+                            end, { description = "Make this bar ignore mouse clicks so they pass through to whatever is underneath. Useful when placing the bar over the world view." }), body, sy)
                     end
 
                     sy = P(GUI:CreateFormDropdown(body, "Orientation",
-                        orientationOptions, "orientation", layout, RefreshActionBars), body, sy)
+                        orientationOptions, "orientation", layout, RefreshActionBars,
+                        { description = "Lay out buttons horizontally (left-to-right rows) or vertically (top-to-bottom columns)." }), body, sy)
 
                     sy = P(GUI:CreateFormSlider(body, "Buttons Per Row",
-                        1, maxButtons, 1, "columns", layout, RefreshActionBars, DEFER_SIZE), body, sy)
+                        1, maxButtons, 1, "columns", layout, RefreshActionBars, DEFER_SIZE,
+                        { description = "How many buttons fit in a single row before wrapping. Pair with Visible Buttons to shape multi-row layouts." }), body, sy)
 
                     sy = P(GUI:CreateFormSlider(body, "Visible Buttons",
-                        1, maxButtons, 1, "iconCount", layout, RefreshActionBars, DEFER_SIZE), body, sy)
+                        1, maxButtons, 1, "iconCount", layout, RefreshActionBars, DEFER_SIZE,
+                        { description = "How many buttons on this bar are visible. Hidden buttons are still keybindable but not drawn." }), body, sy)
 
                     sy = P(GUI:CreateFormSlider(body, "Button Size",
-                        20, 64, 1, "buttonSize", layout, RefreshActionBars, DEFER_SIZE), body, sy)
+                        20, 64, 1, "buttonSize", layout, RefreshActionBars, DEFER_SIZE,
+                        { description = "Square size of each button in pixels." }), body, sy)
 
                     sy = P(GUI:CreateFormSlider(body, "Button Spacing",
-                        -10, 10, 1, "buttonSpacing", layout, RefreshActionBars, DEFER_SIZE), body, sy)
+                        -10, 10, 1, "buttonSpacing", layout, RefreshActionBars, DEFER_SIZE,
+                        { description = "Pixel gap between adjacent buttons. Negative values overlap buttons for compact layouts." }), body, sy)
 
                     sy = P(GUI:CreateFormCheckbox(body, "Grow Upward",
-                        "growUp", layout, RefreshActionBars), body, sy)
+                        "growUp", layout, RefreshActionBars,
+                        { description = "Add new rows above the anchor row instead of below, so the bar grows up from its anchor." }), body, sy)
 
                     if FLYOUT_BARS[barKey] then
                         sy = P(GUI:CreateFormCheckbox(body, "Grow Left",
-                            "growLeft", layout, RefreshActionBars), body, sy)
+                            "growLeft", layout, RefreshActionBars,
+                            { description = "Add new buttons to the left of the anchor instead of the right, so the bar grows leftward." }), body, sy)
 
                         P(GUI:CreateFormDropdown(body, "Flyout Direction",
                             flyoutDirectionOptions, "flyoutDirection", layout,
                             function()
                                 ApplyFlyoutDirection(barKey)
-                            end), body, sy)
+                            end, { description = "Direction a secure-owned spell flyout opens from buttons on this bar." }), body, sy)
                     else
                         P(GUI:CreateFormCheckbox(body, "Grow Left",
-                            "growLeft", layout, RefreshActionBars), body, sy)
+                            "growLeft", layout, RefreshActionBars,
+                            { description = "Add new buttons to the left of the anchor instead of the right, so the bar grows leftward." }), body, sy)
                     end
                 end, sections, relayout)
             end
@@ -9217,22 +9228,28 @@ do
             CreateCollapsible(content, "Visual", 7 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormSlider(body, "Icon Crop",
-                    0.05, 0.15, 0.01, "iconZoom", barDB, RefreshActionBars, DEFER), body, sy)
+                    0.05, 0.15, 0.01, "iconZoom", barDB, RefreshActionBars, DEFER,
+                    { description = "Crop the edges of each icon to hide the default Blizzard border. Higher values crop more." }), body, sy)
 
                 sy = P(GUI:CreateFormCheckbox(body, "Show Backdrop",
-                    "showBackdrop", barDB, RefreshActionBars), body, sy)
+                    "showBackdrop", barDB, RefreshActionBars,
+                    { description = "Draw a dark backdrop behind this bar to separate it visually from the world." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Backdrop Opacity",
-                    0, 1, 0.05, "backdropAlpha", barDB, RefreshActionBars, DEFER), body, sy)
+                    0, 1, 0.05, "backdropAlpha", barDB, RefreshActionBars, DEFER,
+                    { description = "Opacity of the backdrop fill. 0 is fully transparent, 1 is fully opaque." }), body, sy)
 
                 sy = P(GUI:CreateFormCheckbox(body, "Show Gloss",
-                    "showGloss", barDB, RefreshActionBars), body, sy)
+                    "showGloss", barDB, RefreshActionBars,
+                    { description = "Overlay a subtle glossy highlight on each button for a glass-like finish." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Gloss Opacity",
-                    0, 1, 0.05, "glossAlpha", barDB, RefreshActionBars, DEFER), body, sy)
+                    0, 1, 0.05, "glossAlpha", barDB, RefreshActionBars, DEFER,
+                    { description = "Opacity of the gloss overlay when Show Gloss is on." }), body, sy)
 
                 sy = P(GUI:CreateFormCheckbox(body, "Show Borders",
-                    "showBorders", barDB, RefreshActionBars), body, sy)
+                    "showBorders", barDB, RefreshActionBars,
+                    { description = "Draw a thin border around each button on this bar." }), body, sy)
 
                 local pressedOptions = {
                     {value = "off", text = "Off"},
@@ -9240,98 +9257,116 @@ do
                     {value = "qui", text = "QUI"},
                 }
                 P(GUI:CreateFormDropdown(body, "Pressed Effect",
-                    pressedOptions, "showFlash", barDB, RefreshActionBars), body, sy)
+                    pressedOptions, "showFlash", barDB, RefreshActionBars,
+                    { description = "Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both." }), body, sy)
             end, sections, relayout)
 
             -- SECTION: Keybind Text
             CreateCollapsible(content, "Keybind Text", 7 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, "Show Keybinds",
-                    "showKeybinds", barDB, RefreshActionBars), body, sy)
+                    "showKeybinds", barDB, RefreshActionBars,
+                    { description = "Display the bound key on each button in the corner set below." }), body, sy)
 
                 sy = P(GUI:CreateFormCheckbox(body, "Hide Empty Keybinds",
-                    "hideEmptyKeybinds", barDB, RefreshActionBars), body, sy)
+                    "hideEmptyKeybinds", barDB, RefreshActionBars,
+                    { description = "Only show keybind text on buttons that actually have an ability assigned." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Font Size",
-                    8, 18, 1, "keybindFontSize", barDB, RefreshActionBars, DEFER), body, sy)
+                    8, 18, 1, "keybindFontSize", barDB, RefreshActionBars, DEFER,
+                    { description = "Font size used for the keybind text on this bar's buttons." }), body, sy)
 
                 sy = P(GUI:CreateFormDropdown(body, "Anchor",
-                    anchorOptions, "keybindAnchor", barDB, RefreshActionBars), body, sy)
+                    anchorOptions, "keybindAnchor", barDB, RefreshActionBars,
+                    { description = "Which corner of each button the keybind text is anchored to." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "X-Offset",
-                    -20, 20, 1, "keybindOffsetX", barDB, RefreshActionBars, DEFER), body, sy)
+                    -20, 20, 1, "keybindOffsetX", barDB, RefreshActionBars, DEFER,
+                    { description = "Horizontal pixel offset for the keybind text from its anchor corner." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Y-Offset",
-                    -20, 20, 1, "keybindOffsetY", barDB, RefreshActionBars, DEFER), body, sy)
+                    -20, 20, 1, "keybindOffsetY", barDB, RefreshActionBars, DEFER,
+                    { description = "Vertical pixel offset for the keybind text from its anchor corner." }), body, sy)
 
                 P(GUI:CreateFormColorPicker(body, "Color",
-                    "keybindColor", barDB, RefreshActionBars), body, sy)
+                    "keybindColor", barDB, RefreshActionBars, nil,
+                    { description = "Color used for the keybind text on this bar." }), body, sy)
             end, sections, relayout)
 
             -- SECTION: Macro Names
             CreateCollapsible(content, "Macro Names", 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, "Show Macro Names",
-                    "showMacroNames", barDB, RefreshActionBars), body, sy)
+                    "showMacroNames", barDB, RefreshActionBars,
+                    { description = "Show the macro name (or ability name, if no macro) across the bottom of each button." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Font Size",
-                    8, 18, 1, "macroNameFontSize", barDB, RefreshActionBars, DEFER), body, sy)
+                    8, 18, 1, "macroNameFontSize", barDB, RefreshActionBars, DEFER,
+                    { description = "Font size used for the macro name text." }), body, sy)
 
                 sy = P(GUI:CreateFormDropdown(body, "Anchor",
-                    anchorOptions, "macroNameAnchor", barDB, RefreshActionBars), body, sy)
+                    anchorOptions, "macroNameAnchor", barDB, RefreshActionBars,
+                    { description = "Which corner of each button the macro name is anchored to." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "X-Offset",
-                    -20, 20, 1, "macroNameOffsetX", barDB, RefreshActionBars, DEFER), body, sy)
+                    -20, 20, 1, "macroNameOffsetX", barDB, RefreshActionBars, DEFER,
+                    { description = "Horizontal pixel offset for the macro name from its anchor corner." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Y-Offset",
-                    -20, 20, 1, "macroNameOffsetY", barDB, RefreshActionBars, DEFER), body, sy)
+                    -20, 20, 1, "macroNameOffsetY", barDB, RefreshActionBars, DEFER,
+                    { description = "Vertical pixel offset for the macro name from its anchor corner." }), body, sy)
 
                 P(GUI:CreateFormColorPicker(body, "Color",
-                    "macroNameColor", barDB, RefreshActionBars), body, sy)
+                    "macroNameColor", barDB, RefreshActionBars, nil,
+                    { description = "Color used for the macro name text on this bar." }), body, sy)
             end, sections, relayout)
 
             -- SECTION: Stack Count
             CreateCollapsible(content, "Stack Count", 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, "Show Counts",
-                    "showCounts", barDB, RefreshActionBars), body, sy)
+                    "showCounts", barDB, RefreshActionBars,
+                    { description = "Show the stack count / charge count on each button (e.g. reagent stacks, charge counts)." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Font Size",
-                    8, 20, 1, "countFontSize", barDB, RefreshActionBars, DEFER), body, sy)
+                    8, 20, 1, "countFontSize", barDB, RefreshActionBars, DEFER,
+                    { description = "Font size used for the stack count text." }), body, sy)
 
                 sy = P(GUI:CreateFormDropdown(body, "Anchor",
-                    anchorOptions, "countAnchor", barDB, RefreshActionBars), body, sy)
+                    anchorOptions, "countAnchor", barDB, RefreshActionBars,
+                    { description = "Which corner of each button the stack count is anchored to." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "X-Offset",
-                    -20, 20, 1, "countOffsetX", barDB, RefreshActionBars, DEFER), body, sy)
+                    -20, 20, 1, "countOffsetX", barDB, RefreshActionBars, DEFER,
+                    { description = "Horizontal pixel offset for the stack count from its anchor corner." }), body, sy)
 
                 sy = P(GUI:CreateFormSlider(body, "Y-Offset",
-                    -20, 20, 1, "countOffsetY", barDB, RefreshActionBars, DEFER), body, sy)
+                    -20, 20, 1, "countOffsetY", barDB, RefreshActionBars, DEFER,
+                    { description = "Vertical pixel offset for the stack count from its anchor corner." }), body, sy)
 
                 P(GUI:CreateFormColorPicker(body, "Color",
-                    "countColor", barDB, RefreshActionBars), body, sy)
+                    "countColor", barDB, RefreshActionBars, nil,
+                    { description = "Color used for the stack count text on this bar." }), body, sy)
             end, sections, relayout)
             end -- SKINNABLE_BAR_KEYS guard
 
             -- Position / Anchoring
             U.BuildPositionCollapsible(content, barKey, nil, sections, relayout)
+            U.BuildOpenFullSettingsLink(content, barKey, sections, relayout)
 
             -- Initial layout
             relayout()
             return content:GetHeight()
         end
 
-        local ALL_BAR_KEYS = {
-            "bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8",
-            "stanceBar", "petBar", "microMenu", "bagBar",
-        }
+        ActionBarsPerBarBuilders.BuildBarSettings = function(content, barKey, width)
+            return BuildBarSettings(content, barKey, width)
+        end
 
-        settingsPanel:RegisterProvider(ALL_BAR_KEYS, {
-            build = BuildBarSettings,
-        })
+        return ActionBarsPerBarBuilders.BuildBarSettings
     end
 
-    C_Timer.After(3, RegisterSettingsProviders)
+    ActionBarsPerBarBuilders.EnsureInitialized = InitializePerBarBuilders
 end
 
 ---------------------------------------------------------------------------

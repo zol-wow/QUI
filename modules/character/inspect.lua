@@ -1244,7 +1244,8 @@ local function CreateInspectSettingsButton()
         if InspectFrame then
             InspectFrame:SetScale(INSPECT_CONFIG.BASE_SCALE * multiplier)
         end
-    end, { deferOnDrag = true })
+    end, { deferOnDrag = true },
+        { description = "Zoom factor applied to the inspect panel on top of the base scale. 1.0 leaves the panel at the default QUI size." })
     scaleSlider:SetPoint("TOPLEFT", PAD, y)
     scaleSlider:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
@@ -1261,7 +1262,8 @@ local function CreateInspectSettingsButton()
             if _G.QUI_InspectFrameSkinning and _G.QUI_InspectFrameSkinning.Refresh then
                 _G.QUI_InspectFrameSkinning.Refresh()
             end
-        end)
+        end, nil,
+            { description = "Background color applied to the inspect panel. Shared with the global skinning background so character and inspect panels match." })
         bgColorPicker:SetPoint("TOPLEFT", PAD, y)
         bgColorPicker:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
@@ -1284,22 +1286,26 @@ local function CreateInspectSettingsButton()
     overlayHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - overlayHeader.gap
 
-    local showItemName = GUI:CreateFormCheckbox(scrollChild, "Show Equipment Name", "showInspectItemName", charDB, RefreshInspect)
+    local showItemName = GUI:CreateFormCheckbox(scrollChild, "Show Equipment Name", "showInspectItemName", charDB, RefreshInspect,
+        { description = "Show the equipped item's name on each inspect slot overlay." })
     showItemName:SetPoint("TOPLEFT", PAD, y)
     showItemName:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
 
-    local showIlvl = GUI:CreateFormCheckbox(scrollChild, "Show Item Level", "showInspectItemLevel", charDB, RefreshInspect)
+    local showIlvl = GUI:CreateFormCheckbox(scrollChild, "Show Item Level", "showInspectItemLevel", charDB, RefreshInspect,
+        { description = "Show the item level on each inspect slot overlay." })
     showIlvl:SetPoint("TOPLEFT", PAD, y)
     showIlvl:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
 
-    local showEnchants = GUI:CreateFormCheckbox(scrollChild, "Show Enchant Status", "showInspectEnchants", charDB, RefreshInspect)
+    local showEnchants = GUI:CreateFormCheckbox(scrollChild, "Show Enchant Status", "showInspectEnchants", charDB, RefreshInspect,
+        { description = "Show the enchant name on each inspect slot, or a missing-enchant marker if the slot has no enchant." })
     showEnchants:SetPoint("TOPLEFT", PAD, y)
     showEnchants:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
 
-    local showGems = GUI:CreateFormCheckbox(scrollChild, "Show Gem Indicators", "showInspectGems", charDB, RefreshInspect)
+    local showGems = GUI:CreateFormCheckbox(scrollChild, "Show Gem Indicators", "showInspectGems", charDB, RefreshInspect,
+        { description = "Show colored gem dots indicating how many gem slots the item has and whether each is filled." })
     showGems:SetPoint("TOPLEFT", PAD, y)
     showGems:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
@@ -1313,7 +1319,8 @@ local function CreateInspectSettingsButton()
     textSizeHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - textSizeHeader.gap
 
-    local slotTextSize = GUI:CreateFormSlider(scrollChild, "Slot Text Size", 6, 40, 1, "inspectSlotTextSize", charDB, RefreshInspectFonts)
+    local slotTextSize = GUI:CreateFormSlider(scrollChild, "Slot Text Size", 6, 40, 1, "inspectSlotTextSize", charDB, RefreshInspectFonts, nil,
+        { description = "Font size used for the text labels on each inspect slot overlay (item name, item level, enchant status)." })
     slotTextSize:SetPoint("TOPLEFT", PAD, y)
     slotTextSize:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
@@ -1337,24 +1344,27 @@ local function CreateInspectSettingsButton()
             local alpha = charDB.inspectEnchantClassColor and 0.4 or 1.0
             widgetRefs.enchantColor:SetAlpha(alpha)
         end
-    end)
+    end, { description = "Color the enchant text using the inspected character's class color instead of the Enchant Text Color below." })
     enchantClassColor:SetPoint("TOPLEFT", PAD, y)
     enchantClassColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
 
-    local enchantColor = GUI:CreateFormColorPicker(scrollChild, "Enchant Text Color", "inspectEnchantTextColor", charDB, RefreshInspect)
+    local enchantColor = GUI:CreateFormColorPicker(scrollChild, "Enchant Text Color", "inspectEnchantTextColor", charDB, RefreshInspect, nil,
+        { description = "Fallback color for the enchant text when Enchant Class Color is off." })
     enchantColor:SetPoint("TOPLEFT", PAD, y)
     enchantColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     widgetRefs.enchantColor = enchantColor
     enchantColor:SetAlpha(charDB.inspectEnchantClassColor and 0.4 or 1.0)
     y = y - FORM_ROW
 
-    local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, "No Enchant Color", "inspectNoEnchantTextColor", charDB, RefreshInspect)
+    local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, "No Enchant Color", "inspectNoEnchantTextColor", charDB, RefreshInspect, nil,
+        { description = "Color used for the missing-enchant marker on slots that are not enchanted." })
     noEnchantColor:SetPoint("TOPLEFT", PAD, y)
     noEnchantColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW
 
-    local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, "Upgrade Track Color", "inspectUpgradeTrackColor", charDB, RefreshInspect)
+    local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, "Upgrade Track Color", "inspectUpgradeTrackColor", charDB, RefreshInspect, nil,
+        { description = "Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level." })
     upgradeTrackColor:SetPoint("TOPLEFT", PAD, y)
     upgradeTrackColor:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
     y = y - FORM_ROW

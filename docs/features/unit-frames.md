@@ -7,42 +7,42 @@ nav_order: 2
 
 # Unit Frames
 
-QUI replaces Blizzard's default unit frames with fully customizable alternatives. Every aspect of the frames -- size, textures, colors, text formatting, and ancillary elements like castbars and auras -- is configurable through the options panel.
+QUI's Unit Frames replace the default combat frames with cleaner, more readable versions that are easier to position around your central HUD.
 
-## Overview
+## What You Get
 
-QUI provides custom frames for Player, Target, Target of Target, Pet, Focus, and Boss units. Each frame can be independently styled and positioned. The frames support class coloring, hostility coloring, dark mode, absorb shield overlays, heal prediction, portraits, and per-unit castbars.
+- Player, target, focus, pet, boss, and target-of-target frames
+- Optional castbars, portraits, auras, absorb overlays, and heal prediction
+- Flexible sizing and text formats for health, power, and names
+- A darker visual style that pairs well with QUI's CDM and action bars
 
-## How to Enable
+## Best For
 
-Unit frames are controlled per-frame in the QUI options panel. Open `/qui` and navigate to the **Frames > Unit Frames** tab. Each unit type has its own enable toggle.
+- Players who want their health and target information close to the middle of the screen
+- Anyone building a cleaner PvE or PvP HUD
+- Users who want a custom castbar even if they keep other parts of the UI fairly simple
 
-To reposition frames, use `/qui editmode` to enter the drag-and-drop edit mode.
+## Where To Configure Them
 
-## Key Features
+- Open `/qui` and go to the **Unit Frames** section.
+- Use `/qui layout` if you want to reposition them visually.
 
-- **Per-unit customization** -- Player, Target, Target of Target, Pet, Focus, and Boss frames each have independent width, height, texture, and border settings.
-- **Health bar** -- Display styles include percent, absolute value, or both. Supports class colors, custom colors, and dark mode with separate background opacity.
-- **Power bar** -- Optional power bar beneath health with configurable height and power-type-specific colors (mana, rage, energy, etc.).
-- **Power text** -- Formats include percent, current value, or both. Anchor position is adjustable.
-- **Name text** -- Optional class coloring, configurable font size, anchor position, and maximum length truncation to prevent overflow.
-- **Portrait** -- Optional unit portrait on the left or right side with border options.
-- **Castbar** -- Per-unit castbar with configurable width, height, color, and spell icon. Can be anchored to its unit frame or placed standalone. Highlights interruptible casts with customizable non-interruptible cast color, displays channel tick marks, and supports GCD display as a castbar for instant spells.
-- **Target inline ToT** -- On the target frame, shows the target-of-target name inline as ">> TotName" after the target's name.
-- **Auras (buffs/debuffs)** -- Configurable icon size, anchor position, growth direction, maximum icon count, and duration/stack text.
-- **Indicators** -- Rested indicator, combat indicator, stance indicator (player only), target marker (raid icons), and leader/assistant icons.
-- **Absorb shields** -- Visual overlay on the health bar showing absorb amounts with configurable opacity and texture.
-- **Heal prediction** -- Incoming heal overlay on the health bar.
-- **Dark mode** -- Separate health and background colors with independent opacity controls for a subdued visual style.
-- **Resource bar breakpoint indicators** -- Configurable breakpoint indicators on resource bars for specs that have meaningful thresholds.
-- **Totem bars** -- Totem and utility bars for applicable classes. Shaman totems, Brewmaster stagger tracking, and other class-specific utility displays are shown in a dedicated bar that can be positioned independently.
-- **Charged combo points** -- Support for charged combo points with distinct visual styling to differentiate regular and charged combo points.
-- **Secondary resource bar swap** -- Option to swap primary and secondary resource bar positions for certain specs (Balance Druid, Frost DK, Enhancement Shaman, Devourer DH, and others), with option to hide primary when swapped.
-- **Classification icons** -- Target, Focus, and Boss frames can display classification icons (elite, rare, rare-elite, etc.).
-- **Reverse health fill** -- Option to reverse the fill direction on target health bars.
-- **Health and power text options** -- Options to omit percent signs on health text and power text.
-- **Show below 100% health** -- Option to show unit frames only when player health drops below 100%.
-- **Player castbar standalone mode** -- The player castbar can function independently even when QUI unit frames are not enabled, giving you a custom castbar without replacing your frames.
+## Best First Tweaks
+
+1. Move the player and target frames until they sit comfortably around your CDM.
+2. Decide how much text you really want to read in combat.
+3. Turn portraits on only if they help you.
+4. Keep aura counts modest at first so the frames stay readable.
+
+## What You Can Customize
+
+- Size, texture, colors, and border styling for each frame type
+- Health and power display styles
+- Name formatting and class coloring
+- Castbars with interrupt and channel support
+- Aura placement and icon count
+- Heal prediction, absorb shields, indicators, and class resources
+- Optional standalone player castbar mode
 
 ## Important Settings
 
@@ -58,26 +58,13 @@ To reposition frames, use `/qui editmode` to enter the drag-and-drop edit mode.
 | Aura max icons | Maximum buffs/debuffs shown | Varies by unit |
 | Absorb overlay | Show absorb shield on health bar | Enabled |
 
-## Visibility Rules
-
-Unit frames support several visibility modes:
-
-- Always visible
-- In combat only
-- When target exists
-- While in a group or instance
-- On mouseover
-- While mounted or flying
-
-These can be combined to create the exact behavior you want -- for example, showing the player frame only in combat or when you have a target.
-
-## Tips
+## Good To Know
 
 {: .note }
-The player castbar standalone mode is useful if you prefer Blizzard's default unit frames (or another addon's frames) but still want QUI's castbar styling and positioning.
+The player castbar standalone mode is useful if you want QUI's castbar feel without fully committing to QUI unit frames.
 
 {: .important }
-When repositioning unit frames with `/qui editmode`, make sure you are out of combat. Frame movement during combat is blocked by WoW's secure frame protection.
+When repositioning unit frames, make sure you are out of combat. Protected frame movement is blocked during combat.
 
 {: .note }
-Target inline ToT (">> TotName") is a space-efficient alternative to a separate Target of Target frame. You can use both simultaneously or choose one or the other.
+If your target frame feels crowded, try the inline target-of-target option before enabling another full frame.

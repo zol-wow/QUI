@@ -7,22 +7,32 @@ has_children: true
 
 # Getting Started
 
-Welcome to QUI (QuaziiUI Community Edition), a comprehensive UI replacement addon for World of Warcraft Midnight (12.0+).
+This section is the fastest route from a fresh install to a working, comfortable QUI setup.
 
-This section walks you through everything you need to get QUI up and running, from installation to daily usage.
+![Actual QUI sidebar navigation]({{ '/assets/images/qui-sidebar-navigation.png' | relative_url }})
+_Actual QUI sidebar and tools strip, showing where to search, browse features, and open layout-related tools._
+
+## Recommended 10-Minute Setup
+
+1. Install QUI with your addon manager or manually.
+2. Open `/qui` in game.
+3. Import the bundled base layout and a profile you want to start from.
+4. Reload once so everything settles into place.
+5. Enter `/qui layout` to move your frames and open the layout-side settings.
+
+If you only read one page after this one, make it [First Setup](first-setup).
 
 ## In This Section
 
-- [Installation](installation) -- How to download and install QUI via CurseForge, WoWUp, or manually from GitHub.
-- [First Setup](first-setup) -- Step-by-step guide to importing layouts, profiles, and configuring the addon for the first time.
-- [Profiles](profiles) -- Managing profiles, per-spec switching, importing and exporting settings, and bundled presets.
-- [Slash Commands](slash-commands) -- Complete reference of all slash commands available in QUI.
-- [FAQ](faq) -- Answers to frequently asked questions about QUI features, troubleshooting, and configuration.
-- [Troubleshooting](troubleshooting) -- Solutions for common issues like missing frames, invisible bars, and click-casting problems.
+- [Installation](installation) for app-based and manual installs.
+- [First Setup](first-setup) for the exact order most players should follow on first login.
+- [Profiles](profiles) for shared setups, character-specific setups, and imports.
+- [Slash Commands](slash-commands) for the commands you will actually use day to day.
+- [FAQ](faq) for short answers to the most common setup questions.
+- [Troubleshooting](troubleshooting) for missing frames, hidden bars, reload prompts, and other common friction points.
 
-## Quick Links
+## Good To Know Up Front
 
-- **GitHub:** [github.com/zol-wow/QUI](https://github.com/zol-wow/QUI)
-- **CurseForge:** [QUI Community Edition](https://www.curseforge.com/wow/addons/qui-community-edition)
-- **Discord:** [discord.gg/FFUjA4JXnH](https://discord.gg/FFUjA4JXnH)
-- **Current Version:** 2.55.2
+- **Layout Mode matters.** Major HUD pieces like CDM, Group Frames, and Minimap controls are managed there, not only from `/qui`.
+- **Profiles save time.** Starting from a profile and then tuning it is much faster than building everything from scratch.
+- **A reload is normal.** Some secure UI pieces need one reload when you first enable or swap them.

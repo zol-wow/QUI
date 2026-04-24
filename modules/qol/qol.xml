@@ -5,16 +5,27 @@
     <Script file="blizzard_mover_frames.lua"/>
     <Script file="quicksalvage.lua"/>
     <Script file="petwarning.lua"/>
+    <Script file="settings/pet_warning.lua"/>
     <Script file="consumablecheck.lua"/>
+    <Script file="settings/consumables.lua"/>
     <Script file="tooltip_provider.lua"/>
     <Script file="tooltip_inspect.lua"/>
     <Script file="tooltip.lua"/>
+    <Script file="settings/shared.lua"/>
+    <Script file="settings/legacy_general_sections.lua"/>
     <Script file="combattimer.lua"/>
+    <Script file="settings/combat_timer.lua"/>
+    <Script file="settings/tooltip_anchor.lua"/>
+    <Script file="settings/provider_panels.lua"/>
     <Script file="actiontracker.lua"/>
+    <Script file="settings/action_tracker.lua"/>
     <Script file="crosshair.lua"/>
     <Script file="rangecheck.lua"/>
     <Script file="reticle.lua"/>
     <Script file="skyriding.lua"/>
+    <Script file="settings/skyriding.lua"/>
     <Script file="xptracker.lua"/>
+    <Script file="settings/xp_tracker.lua"/>
     <Script file="focuscastalert.lua"/>
+    <Script file="settings/focus_cast_alert.lua"/>
 </Ui>

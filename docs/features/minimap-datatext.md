@@ -7,75 +7,39 @@ nav_order: 9
 
 # Minimap & Data Panels
 
-QUI provides extensive minimap customization alongside a data panels system for displaying useful information. The minimap module controls shape, size, border styling, button management, and the various elements surrounding the minimap. The data panels module offers configurable info displays for stats, system performance, and game information.
+QUI's Minimap and Data Panels help you move utility information out of the center of your screen and into the corners where it belongs.
 
-## Overview
+![Actual QUI Minimap settings page]({{ '/assets/images/qui-minimap-settings.png' | relative_url }})
+_The Minimap page is where you control map dimensions, button handling, borders, labels, and other corner-HUD details._
 
-The minimap module goes well beyond simple border skinning. It lets you choose between square and round shapes, manage the clutter of addon buttons through an organized button drawer, customize the clock and coordinate displays, control which Blizzard minimap elements are visible, and reposition the dungeon queue eye. Every visual element around the minimap -- zone text, clock, coordinates -- has independent font, color, and formatting options.
+## Why Players Use It
+
+- A cleaner minimap area with less button clutter
+- Better use of screen corners for stats and utility panels
+- Quick access to coordinates, clock, performance info, and currencies
+- Strong visual consistency with the rest of QUI
 
 ## How to Enable
 
-The minimap module is enabled by default. To configure it:
+The minimap module is enabled by default. Configure it in `/qui` under **Minimap & Datatext**.
 
-- Enter Layout Mode with `/qui layout` and access Minimap settings through the toolbar or drawer. Minimap settings have been moved to Layout Mode from the main options panel.
+The tile is split into **Minimap** and **Datatext** so you can manage the map itself separately from the information panels around it. Use **Edit in Layout Mode** when you want to reposition those elements on your screen.
 
-## Key Features
+## Best First Tweaks
 
-### Shape and Size
+1. Pick a shape and size that fits your screen corners.
+2. Decide whether you want addon buttons hidden, shown on hover, or collected into the drawer.
+3. Turn on only the data panels you will actually glance at.
+4. Keep the corner clean enough that the minimap still reads instantly.
 
-- **Shape selection** -- Choose between SQUARE and ROUND minimap shapes.
-- **Size control** -- Adjust the minimap dimensions to your preference.
-- **Scale** -- Overall minimap scale multiplier.
-- **Border** -- Customizable border size and color, with options for class color or accent color.
-- **Lock position** -- Lock the minimap in place to prevent accidental dragging.
+## What You Can Customize
 
-### Button Management
-
-- **Hide addon buttons** -- Cleans up the minimap border by hiding addon buttons, with an option to show them on mouseover.
-- **Button drawer** -- Collects addon minimap buttons into an organized drawer panel that expands on demand. Configurable anchor point, button size, spacing, column count, auto-hide delay after mouse leaves, and option to open on mouseover. Supports a configurable toggle button size and a second icon option for the drawer toggle.
-
-### Blizzard Element Visibility
-
-Toggle visibility for each built-in minimap element independently:
-
-- Zoom buttons
-- Mail indicator
-- Work order (crafting order) notification
-- Addon compartment button
-- Difficulty indicator
-- Mission reports
-- Calendar
-- Tracking button
-
-### Dungeon Eye (Queue Status)
-
-The LFG queue status eye can be repositioned to a minimap corner for a cleaner look, with an adjustable scale.
-
-### Clock
-
-- **Time source** -- Switch between local time and server time.
-- **Font customization** -- Font face, size, and color.
-- **Class color option** -- Color the clock text by your class.
-
-### Coordinates
-
-- **Precision formats** -- Choose how many decimal places to display.
-- **Update interval** -- Control how frequently coordinates refresh.
-- **Font customization** -- Independent font face, size, and color.
-
-### Zone Text
-
-- **Font customization** -- Font face, size, and color for the zone name.
-- **All caps option** -- Display zone text in uppercase for a stylized look.
-
-### Other Controls
-
-- **Auto zoom out** -- Automatically zooms the minimap back out after 10 seconds when you zoom in.
-- **Middle click menu** -- Access a quick menu via middle-clicking the minimap. Middle-click overlay prevents ping taint.
-- **Crafting order indicator** -- Shows a notification indicator on the minimap when crafting orders are available.
-- **Custom data panels** -- Configurable data panels that can be locked in place. Includes system memory stats datatext and currency ordering options.
-- **Hide micro menu** -- Remove the micro menu bar from the UI.
-- **Hide bag bar** -- Remove the bag bar from the UI.
+- Minimap shape, size, border, scale, and lock state
+- Button hiding and the expandable button drawer
+- Clock, coordinates, and zone text styling
+- Visibility of built-in minimap elements
+- Queue status eye placement
+- Standalone data panels for stats, currencies, and system info
 
 ## Important Settings
 
@@ -92,7 +56,7 @@ The LFG queue status eye can be repositioned to a minimap corner for a cleaner l
 | Clock time source | Local or server time | Local |
 | Coordinate precision | Decimal places for coordinates | 1 |
 
-## Tips
+## Good To Know
 
 {: .note }
 The button drawer is the recommended way to handle addon minimap buttons. Instead of hiding them entirely or letting them clutter the minimap border, the drawer collects them into a clean panel that you can expand when needed and auto-hides after a configurable delay.

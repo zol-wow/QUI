@@ -15,6 +15,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
       - name: Get version from tag
         id: version
         run: |
@@ -32,6 +37,9 @@ jobs:
             echo "release_type=release" >> $GITHUB_OUTPUT
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Generate search cache
+        run: lua5.1 tools/generate_search_cache.lua
 
       - name: Create addon zip
         run: |

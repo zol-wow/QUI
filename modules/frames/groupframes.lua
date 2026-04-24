@@ -4099,15 +4099,19 @@ ApplyChildFrameLayout = function()
         while true do
             local child = header:GetAttribute("child" .. i)
             if not child then break end
+            if not child._quiDecorated and (not inCombat or _state.inInitSafeWindow) then
+                QUI_GF:InitializeHeaderChild(child)
+            end
+            local isRaidChild = child._isRaid and true or false
             if not inCombat then
-                local cw, ch = child._isRaid and raidW or partyW, child._isRaid and raidH or partyH
+                local cw, ch = isRaidChild and raidW or partyW, isRaidChild and raidH or partyH
                 child:SetSize(cw, ch)
             end
             if child.healthBar and child.powerBar then
-                local general = GetGeneralSettings(child._isRaid)
+                local general = GetGeneralSettings(isRaidChild)
                 local borderPx = general and general.borderSize or 1
                 local borderSize = borderPx > 0 and (QUICore.Pixels and QUICore:Pixels(borderPx, child) or borderPx) or 0
-                local powerSettings = GetPowerSettings(child._isRaid)
+                local powerSettings = GetPowerSettings(isRaidChild)
                 local powerHeight = powerSettings and powerSettings.showPowerBar ~= false and
                     (QUICore.PixelRound and QUICore:PixelRound(powerSettings.powerBarHeight or 4, child) or 4) or 0
                 local px = QUICore.GetPixelSize and QUICore:GetPixelSize(child) or 1
@@ -4118,7 +4122,7 @@ ApplyChildFrameLayout = function()
                 child.healthBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + sepH)
                 ApplyStatusBarTexture(child.healthBar)
 
-                local vertFill = (GetHealthFillDirection(child._isRaid) == "VERTICAL")
+                local vertFill = (GetHealthFillDirection(isRaidChild) == "VERTICAL")
                 child.healthBar:SetOrientation(vertFill and "VERTICAL" or "HORIZONTAL")
                 child._isVerticalFill = vertFill
 
@@ -5275,6 +5279,11 @@ _G.QUI_RefreshGroupFrames = function()
     local editMode = ns.QUI_GroupFrameEditMode
     if editMode and editMode.RefreshTestMode then
         editMode:RefreshTestMode()
+    end
+    -- Keep the Group Frames tile's hoisted preview in sync with the same
+    -- refresh path used by the layout/test frames.
+    if _G.QUI_RefreshGroupFramePreview then
+        _G.QUI_RefreshGroupFramePreview()
     end
 end
 

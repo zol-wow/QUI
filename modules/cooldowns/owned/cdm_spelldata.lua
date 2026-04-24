@@ -3724,7 +3724,11 @@ local function CombatGuard()
     return InCombatLockdown()
 end
 
--- Fire the change callback after any mutation
+-- Fire the change callback after any mutation.
+-- Phase B.3: the legacy customTrackers bridge (SyncCustomBarsToLegacy
+-- + its field/color tables + CT:RefreshAll kick) was removed along
+-- with the legacy renderer. customBar containers now render via the
+-- unified CDM pipeline driven by QUI_OnSpellDataChanged.
 FireChangeCallback = function()
     if _G.QUI_OnSpellDataChanged then
         _G.QUI_OnSpellDataChanged()
@@ -3750,6 +3754,120 @@ end
 -- MUTATION API
 ---------------------------------------------------------------------------
 
+-- customBar containers store their entries in `db.entries` (mixed spell/
+-- item/slot types from the legacy customTrackers schema). Built-in CDM
+-- containers store them in `db.ownedSpells`.
+local function GetEntryListField(db)
+    if not db then return nil end
+    if db.containerType == "customBar" then return "entries" end
+    return "ownedSpells"
+end
+
+---------------------------------------------------------------------------
+-- PER-SPEC ENTRY STORAGE (Phase B.3)
+-- When a container has db.specSpecific = true, its entry list is served
+-- from db.global.ncdm.specTrackerSpells[containerKey][specKey] instead of
+-- db.entries / db.ownedSpells. Each spec keeps its own list. Rendering
+-- re-reads via GetSpecEntries on PLAYER_SPECIALIZATION_CHANGED.
+---------------------------------------------------------------------------
+
+local function GetCurrentSpecKey()
+    local _, class = UnitClass("player")
+    local specIdx = GetSpecialization and GetSpecialization() or nil
+    if not specIdx then return class or "UNKNOWN" end
+    local specID = GetSpecializationInfo and GetSpecializationInfo(specIdx) or nil
+    if not class or not specID then return class or "UNKNOWN" end
+    return class .. "-" .. tostring(specID)
+end
+
+local function GetSpecTrackerRoot(createIfMissing)
+    local core = ns.Addon
+    local globalDB = core and core.db and core.db.global
+    if not globalDB then return nil end
+    if not globalDB.ncdm then
+        if not createIfMissing then return nil end
+        globalDB.ncdm = {}
+    end
+    if not globalDB.ncdm.specTrackerSpells then
+        if not createIfMissing then return nil end
+        globalDB.ncdm.specTrackerSpells = {}
+    end
+    return globalDB.ncdm.specTrackerSpells
+end
+
+local function GetSpecEntryList(containerKey, specKey, createIfMissing)
+    local root = GetSpecTrackerRoot(createIfMissing)
+    if not root then return nil end
+    local byContainer = root[containerKey]
+    if not byContainer then
+        if not createIfMissing then return nil end
+        byContainer = {}
+        root[containerKey] = byContainer
+    end
+    specKey = specKey or GetCurrentSpecKey()
+    local list = byContainer[specKey]
+    if not list and createIfMissing then
+        list = {}
+        byContainer[specKey] = list
+    end
+    return list, specKey
+end
+
+local function CloneEntry(entry)
+    if type(entry) ~= "table" then return entry end
+    local out = {}
+    for k, v in pairs(entry) do out[k] = v end
+    return out
+end
+
+-- Resolve the mutable entry list for a container. Honors specSpecific —
+-- specSpecific containers mutate the current spec's private list instead
+-- of the container's shared field.
+local function GetMutableEntryList(db, containerKey, createIfMissing)
+    if not db then return nil end
+    if db.specSpecific then
+        return GetSpecEntryList(containerKey, nil, createIfMissing)
+    end
+    local field = GetEntryListField(db)
+    if createIfMissing and db[field] == nil then db[field] = {} end
+    return db[field]
+end
+
+-- Public: read the entry list for a given spec (defaults to current).
+-- Used by cdm_icons BuildIcons to render specSpecific containers.
+function CDMSpellData:GetSpecEntries(containerKey, specKey)
+    local list = GetSpecEntryList(containerKey, specKey, false)
+    return list
+end
+
+-- Composer fires this when the user flips the specSpecific toggle.
+-- Enabling: seed the current spec with a clone of whatever was in the
+-- container's shared list so the user doesn't lose their setup.
+-- Disabling: fold the current spec's list back into the shared field
+-- so the visible arrangement persists across the toggle.
+function CDMSpellData:OnSpecSpecificToggled(containerKey)
+    local db = GetContainerDB(containerKey)
+    if not db then return end
+    local field = GetEntryListField(db)
+    if db.specSpecific then
+        local specList = GetSpecEntryList(containerKey, nil, true)
+        if specList and #specList == 0 and type(db[field]) == "table" and #db[field] > 0 then
+            for i, e in ipairs(db[field]) do
+                specList[i] = CloneEntry(e)
+            end
+        end
+    else
+        local specList = GetSpecEntryList(containerKey, nil, false)
+        if specList and #specList > 0 then
+            db[field] = {}
+            for i, e in ipairs(specList) do
+                db[field][i] = CloneEntry(e)
+            end
+        end
+    end
+    FireChangeCallback()
+end
+
 function CDMSpellData:AddEntry(containerKey, entry)
     if CombatGuard() then return false end
     if not ValidateEntry(entry) then return false end
@@ -3757,19 +3875,20 @@ function CDMSpellData:AddEntry(containerKey, entry)
     local db = GetContainerDB(containerKey)
     if not db then return false end
 
-    if db.ownedSpells == nil then
-        db.ownedSpells = {}
-    end
+    local list = GetMutableEntryList(db, containerKey, true)
+    if not list then return false end
 
-    -- Layer 4: Within-container dedup — prevent adding duplicates
-    for _, existing in ipairs(db.ownedSpells) do
+    -- Within-container dedup — prevent adding duplicates. customBar
+    -- entries are already typed as {type,id}; ownedSpells may have the
+    -- older {id=N} shape which NormalizeOwnedEntry handles.
+    for _, existing in ipairs(list) do
         local norm = NormalizeOwnedEntry(existing)
         if norm and norm.type == entry.type and norm.id == entry.id then
             return false  -- already exists
         end
     end
 
-    db.ownedSpells[#db.ownedSpells + 1] = entry
+    list[#list + 1] = entry
     FireChangeCallback()
     return true
 end
@@ -3778,14 +3897,19 @@ function CDMSpellData:RemoveEntry(containerKey, index)
     if CombatGuard() then return false end
 
     local db = GetContainerDB(containerKey)
-    if not db or type(db.ownedSpells) ~= "table" then return false end
-    if index < 1 or index > #db.ownedSpells then return false end
+    if not db then return false end
+    local list = GetMutableEntryList(db, containerKey, false)
+    if type(list) ~= "table" then return false end
+    if index < 1 or index > #list then return false end
 
-    local entry = db.ownedSpells[index]
-    table.remove(db.ownedSpells, index)
+    local entry = list[index]
+    table.remove(list, index)
 
-    -- Track removed entry so re-snapshot won't re-add it
-    if entry and entry.id then
+    -- removedSpells bookkeeping applies only to ownedSpells-backed
+    -- containers (for re-snapshot protection). customBar and spec-scoped
+    -- lists have no snapshot concept.
+    if not db.specSpecific and GetEntryListField(db) == "ownedSpells"
+        and entry and entry.id then
         if not db.removedSpells then
             db.removedSpells = {}
         end
@@ -3800,16 +3924,18 @@ function CDMSpellData:ReorderEntry(containerKey, fromIndex, toIndex)
     if CombatGuard() then return false end
 
     local db = GetContainerDB(containerKey)
-    if not db or type(db.ownedSpells) ~= "table" then return false end
+    if not db then return false end
+    local list = GetMutableEntryList(db, containerKey, false)
+    if type(list) ~= "table" then return false end
 
-    local len = #db.ownedSpells
+    local len = #list
     if fromIndex < 1 or fromIndex > len then return false end
     if toIndex < 1 then return false end
     if fromIndex == toIndex then return true end
 
-    local entry = table.remove(db.ownedSpells, fromIndex)
-    local insertAt = math.min(toIndex, #db.ownedSpells + 1)
-    table.insert(db.ownedSpells, insertAt, entry)
+    local entry = table.remove(list, fromIndex)
+    local insertAt = math.min(toIndex, #list + 1)
+    table.insert(list, insertAt, entry)
 
     FireChangeCallback()
     return true
@@ -4277,35 +4403,23 @@ end
 
 function CDMSpellData:GetActiveAuras(filter)
     local result = {}
+    local seen = {}  -- dedupe by spellID: many buffs stack with multiple instances
 
-    if not C_UnitAuras then return result end
+    if not (AuraUtil and AuraUtil.ForEachAura) then return result end
 
-    -- Get aura instance IDs for the player with the given filter
-    if C_UnitAuras.GetUnitAuraInstanceIDs then
-        local filterObj = { filter = filter or "HELPFUL" }
-        local ok, instanceIDs = pcall(C_UnitAuras.GetUnitAuraInstanceIDs, "player", filterObj)
-        if ok and instanceIDs then
-            for _, instanceID in ipairs(instanceIDs) do
-                if C_UnitAuras.GetAuraDataByAuraInstanceID then
-                    local okA, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceID)
-                    if okA and auraData then
-                        local sid = Helpers.SafeValue(auraData.spellId, nil)
-                        local name = Helpers.SafeValue(auraData.name, nil)
-                        local icon = Helpers.SafeValue(auraData.icon, nil)
-                        local duration = Helpers.SafeToNumber(auraData.duration, 0) or 0
-                        if sid then
-                            result[#result + 1] = {
-                                spellID = sid,
-                                name = name or "",
-                                icon = icon or 0,
-                                duration = duration,
-                            }
-                        end
-                    end
-                end
-            end
-        end
-    end
+    AuraUtil.ForEachAura("player", filter or "HELPFUL", nil, function(auraData)
+        if not auraData then return false end
+        local sid = Helpers.SafeValue(auraData.spellId, nil)
+        if not sid or seen[sid] then return false end
+        seen[sid] = true
+        result[#result + 1] = {
+            spellID = sid,
+            name = Helpers.SafeValue(auraData.name, nil) or "",
+            icon = Helpers.SafeValue(auraData.icon, nil) or 0,
+            duration = Helpers.SafeToNumber(auraData.duration, 0) or 0,
+        }
+        return false
+    end, true)  -- usePackedAura=true: callback receives an auraData table (not individual args)
 
     return result
 end

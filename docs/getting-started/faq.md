@@ -9,25 +9,19 @@ nav_order: 5
 
 ## What is QUI?
 
-QUI (QuaziiUI Community Edition) is a comprehensive UI replacement addon for World of Warcraft Midnight (12.0+). It provides custom unit frames, cooldown tracking (CDM), action bar styling, group frames, buff/debuff displays, data panels, HUD layering, frame skinning, and much more -- all in a single addon. QUI is designed to replace the need for multiple separate UI addons.
+QUI is a full UI addon for World of Warcraft Midnight that combines a combat HUD, frame positioning tools, action bar styling, minimap and panel customization, group tools, quality-of-life helpers, and profile management in one package.
 
 ## How do I move frames?
 
-It depends on the type of frame:
-
-- **Blizzard default frames** (action bars, minimap, chat, etc.) are moved through Blizzard's built-in **Edit Mode**. Press `Escape` > `Edit Mode` to enter it.
-- **QUI-specific frames** (unit frames, CDM bars, group frames, data panels, etc.) are moved through **Layout Mode**. Type `/qui layout` to enter it. Drag the frame handles to reposition, then click **Save**.
-- Some frame positions can also be fine-tuned via **Frame Positioning** in the `/qui` options panel.
+Use **Layout Mode** for QUI-controlled HUD elements like CDM, unit frames, group frames, minimap-related panels, and similar custom pieces. Use Blizzard's own **Edit Mode** for Blizzard-controlled elements. If something still needs fine tuning, check the positioning settings inside `/qui`.
 
 ## What is CDM?
 
-CDM stands for **Cooldown Manager**. It displays your ability cooldowns as icon bars on screen, giving you clear visibility of when your abilities are ready. CDM tracks cooldowns, charges, and procs for your class and spec.
-
-To configure CDM, use `/qui layout` to enter Layout Mode and access CDM settings through the toolbar, or type `/cdm` to open CDM settings directly. CDM is enabled by default with the "owned" engine.
+CDM stands for **Cooldown Manager**. It is QUI's signature cooldown display system, built to keep your important abilities, buffs, and procs close to your character so your eyes stay near the action.
 
 ## What is Layout Mode?
 
-Layout Mode (`/qui layout`) is QUI's primary frame positioning tool. It provides an edge-docked slide-out toolbar with settings panels and a drawer with collapsible groups. CDM, Group Frames, and Minimap settings are accessed through Layout Mode rather than the main options panel.
+Layout Mode (`/qui layout`) is QUI's visual editor. It lets you drag major HUD elements, open layout-specific settings, and keep related pieces aligned without guessing at offsets.
 
 ## How do I set up keybinds?
 
@@ -39,84 +33,29 @@ Type `/kb` to enter keybind mode (powered by LibKeyBound). In this mode:
 4. To unbind, hover over the button and press the currently bound key again.
 5. Type `/kb` again to exit keybind mode.
 
-## Where do I report bugs?
-
-You can report bugs in two places:
-
-- **GitHub Issues:** [github.com/zol-wow/QUI/issues](https://github.com/zol-wow/QUI/issues)
-- **Discord:** [discord.gg/FFUjA4JXnH](https://discord.gg/FFUjA4JXnH)
-
-When reporting a bug, include the QUI version (shown in `/qui`), any error messages (install BugSack/BugGrabber to capture Lua errors), and steps to reproduce the issue.
-
 ## Why are my action bars hidden?
 
-QUI enables **mouseover fade** on action bars by default. Your action bars are still there -- they fade to invisible and become visible when you move your mouse over them.
-
-To disable this behavior:
-
-1. Open `/qui`.
-2. Go to the **Action Bars** tab.
-3. Disable the mouseover fade option.
-4. Your action bars will remain visible at all times.
+Most likely, mouseover fade is active. Move your mouse over the area where the bars should be. If you want them always visible, open `/qui`, go to **Action Bars**, and turn the fade behavior off.
 
 ## How do I enable group frames?
 
-QUI Group Frames are **opt-in** and disabled by default. The addon does not override your group frames until you explicitly enable them.
+QUI Group Frames are opt-in. Open `/qui`, select **Group Frames**, enable them, and reload if prompted. Use **Edit in Layout Mode** afterward if you want to reposition them.
 
-To enable QUI Group Frames:
-
-1. Enter Layout Mode with `/qui layout`.
-2. Access the Group Frames settings through the Layout Mode toolbar or drawer.
-3. Enable QUI Group Frames.
-4. Reload the UI with `/rl`.
-
-Group frames have separate profiles for party and raid, with their own sizing, sorting, and indicator options.
+They have separate party and raid setups, so you can keep them lightweight in small groups and more information-dense in raids.
 
 ## Why can I not click things in combat?
 
-World of Warcraft 12.0 introduced stricter **taint protection** for the UI. This means that certain protected operations (moving frames, toggling frame visibility, modifying secure elements) cannot be performed during combat.
-
-QUI respects these restrictions and automatically defers protected operations until combat ends. If you notice that a setting change or frame adjustment does not take effect immediately during combat, it will apply as soon as you leave combat. This is by design and prevents UI errors that could break your interface mid-encounter.
+Combat locks down some protected UI actions. If a move, toggle, or secure interaction does not apply immediately during combat, QUI will wait and apply it after combat ends.
 
 ## How do I change fonts and textures?
 
-QUI provides global font, texture, and outline settings that apply across the entire addon.
-
-1. Open `/qui`.
-2. Go to the **General & QoL** tab.
-3. Adjust the **font**, **texture**, and **outline** settings to your preference.
-4. Changes apply across all QUI elements that use the global settings.
-
-Individual modules may also have their own font or texture overrides available in their respective settings.
-
-## What is the difference between the CDM engines?
-
-QUI ships with two CDM engines:
-
-- **Owned** (default) -- Addon-created frames managed entirely by QUI. This is the active, maintained engine with all features (containers, Composer, per-spell settings, aura bars, etc.).
-- **Classic** -- A legacy engine that hooks into Blizzard frames. It exists for backward compatibility but is no longer actively developed.
-
-If you experience issues with cooldown tracking, make sure your engine is set to "owned."
-
-## How do I move Blizzard frames without Edit Mode?
-
-QUI includes a **Blizzard Frame Mover** feature (added in v2.54.0) that lets you drag default Blizzard UI elements directly.
-
-1. Open `/qui`.
-2. Navigate to the **QoL** tab.
-3. Enable the **Blizzard Frame Mover**.
-4. Drag the frames you want to reposition.
-
-Positions persist across reloads and sessions. For more details, see the [Blizzard Frame Mover](../features/blizzard-frame-mover) feature page.
-
-## What are totem bars?
-
-Totem bars display class-specific utility elements like Shaman totems and Brewmaster stagger bars. They were added in v2.54.0 and are automatically available for applicable classes. Configure them through the unit frames settings or Layout Mode.
-
-## How do I use the performance monitor?
-
-Type `/qui perf` to toggle the performance monitor overlay. It shows real-time memory usage, event frequency, and helps identify performance bottlenecks. This is primarily a debugging tool for advanced users and addon developers.
+Open `/qui`, go to **Appearance**, and start with **Fonts** or **UI Scale**. Those pages change a large part of the addon's overall look very quickly.
 
 ## Can I import just part of a profile?
 
-Yes. Since v2.53.0, QUI supports **partial profile imports**. When importing a profile string, you can choose to import only specific categories (like Theme/Fonts/Colors or Layout/Positions) without overwriting your other settings. See the [Profiles](profiles) page for details.
+Yes. During import, you can choose only the parts you want, such as visual styling or layout positions, without replacing the rest of your setup.
+
+## Where do I get help?
+
+- [GitHub Issues](https://github.com/zol-wow/QUI/issues) for bug reports and tracked issues
+- [Discord](https://discord.gg/FFUjA4JXnH) for setup help and discussion

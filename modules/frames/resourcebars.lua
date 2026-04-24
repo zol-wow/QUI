@@ -4418,355 +4418,356 @@ do
 end
 
 ---------------------------------------------------------------------------
--- UNLOCK MODE SETTINGS PROVIDERS
+-- OPTIONS PANEL PREVIEW
 ---------------------------------------------------------------------------
 do
-    local function RegisterSettingsProviders()
-        local settingsPanel = ns.QUI_LayoutMode_Settings
-        if not settingsPanel then return end
-
-        local GUI = QUI and QUI.GUI
-        if not GUI then return end
-
-        local C = GUI.Colors or {}
-        local U = ns.QUI_LayoutMode_Utils
-        local FORM_ROW = U and U.FORM_ROW or 32
-
-        local function GetProfileDB()
-            local core = Helpers.GetCore()
-            return core and core.db and core.db.profile
-        end
-
-        local function RefreshPowerBars()
-            if QUICore and QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
-            if QUICore and QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
-        end
-
-        local visibilityOptions = {
-            {value = "always", text = "Always"},
-            {value = "combat", text = "In Combat"},
-            {value = "hostile", text = "Hostile Target"},
-        }
-
-        local orientationOptions = {
-            {value = "HORIZONTAL", text = "Horizontal"},
-            {value = "VERTICAL", text = "Vertical"},
-        }
-
-        local colorModeOptions = {
-            {value = "power", text = "Power Type Color"},
-            {value = "class", text = "Class Color"},
-            {value = "custom", text = "Custom Color"},
-        }
-
-        local textAlignOptions = {
-            {value = "LEFT", text = "Left"},
-            {value = "CENTER", text = "Center"},
-            {value = "RIGHT", text = "Right"},
-        }
-
-        -----------------------------------------------------------------------
-        -- Primary Power Bar settings builder
-        -----------------------------------------------------------------------
-        local function BuildPrimaryPowerSettings(content, key, width)
-            local profile = GetProfileDB()
-            local primary = profile and profile.powerBar
-            if not primary then return 80 end
-
-            local sections = {}
-            local function relayout() U.StandardRelayout(content, sections) end
-
-            -- Enable toggle (standalone row)
-            local enableRow = CreateFrame("Frame", nil, content)
-            enableRow:SetHeight(FORM_ROW)
-            local enableCheck = GUI:CreateFormCheckbox(enableRow, "Enable", "enabled", primary, function()
-                RefreshPowerBars()
-            end)
-            enableCheck:SetPoint("TOPLEFT", 0, 0)
-            enableCheck:SetPoint("RIGHT", enableRow, "RIGHT", 0, 0)
-            sections[#sections + 1] = enableRow
-
-            -- General
-            U.CreateCollapsible(content, "General", 4 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local visDD = GUI:CreateFormDropdown(body, "Visibility", visibilityOptions, "visibility", primary, RefreshPowerBars)
-                sy = U.PlaceRow(visDD, body, sy)
-
-                local oriDD = GUI:CreateFormDropdown(body, "Orientation", orientationOptions, "orientation", primary, RefreshPowerBars)
-                sy = U.PlaceRow(oriDD, body, sy)
-
-                local autoCheck = GUI:CreateFormCheckbox(body, "Auto Attach", "autoAttach", primary, RefreshPowerBars)
-                sy = U.PlaceRow(autoCheck, body, sy)
-
-                local standCheck = GUI:CreateFormCheckbox(body, "Standalone Mode", "standaloneMode", primary, RefreshPowerBars)
-                U.PlaceRow(standCheck, body, sy)
-            end, sections, relayout)
-
-            -- Dimensions
-            U.CreateCollapsible(content, "Dimensions", 5 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local wSlider = GUI:CreateFormSlider(body, "Width", 50, 600, 1, "width", primary, RefreshPowerBars)
-                sy = U.PlaceRow(wSlider, body, sy)
-
-                local hSlider = GUI:CreateFormSlider(body, "Height", 2, 40, 1, "height", primary, RefreshPowerBars)
-                sy = U.PlaceRow(hSlider, body, sy)
-
-                local snapSlider = GUI:CreateFormSlider(body, "Snap Gap", 0, 20, 1, "snapGap", primary, RefreshPowerBars)
-                sy = U.PlaceRow(snapSlider, body, sy)
-
-                local xSlider = GUI:CreateFormSlider(body, "X Offset", -500, 500, 1, "offsetX", primary, RefreshPowerBars)
-                sy = U.PlaceRow(xSlider, body, sy)
-
-                local ySlider = GUI:CreateFormSlider(body, "Y Offset", -500, 500, 1, "offsetY", primary, RefreshPowerBars)
-                U.PlaceRow(ySlider, body, sy)
-            end, sections, relayout)
-
-            -- Appearance
-            U.CreateCollapsible(content, "Appearance", 2 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local texDD = GUI:CreateFormDropdown(body, "Bar Texture", U.GetTextureList(), "texture", primary, RefreshPowerBars)
-                sy = U.PlaceRow(texDD, body, sy)
-
-                local borderSlider = GUI:CreateFormSlider(body, "Border Size", 0, 5, 1, "borderSize", primary, RefreshPowerBars)
-                U.PlaceRow(borderSlider, body, sy)
-            end, sections, relayout)
-
-            -- Text
-            U.CreateCollapsible(content, "Text", 7 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", primary, RefreshPowerBars)
-                sy = U.PlaceRow(showTextCheck, body, sy)
-
-                local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", primary, RefreshPowerBars)
-                sy = U.PlaceRow(showPctCheck, body, sy)
-
-                local hidePctSymbolCheck = GUI:CreateFormCheckbox(body, "Hide % Symbol", "hidePercentSymbol", primary, RefreshPowerBars)
-                sy = U.PlaceRow(hidePctSymbolCheck, body, sy)
-
-                local textAlignDD = GUI:CreateFormDropdown(body, "Text Alignment", textAlignOptions, "textAlign", primary, RefreshPowerBars)
-                sy = U.PlaceRow(textAlignDD, body, sy)
-
-                local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", primary, RefreshPowerBars)
-                sy = U.PlaceRow(textSizeSlider, body, sy)
-
-                local textXSlider = GUI:CreateFormSlider(body, "Text X Offset", -50, 50, 1, "textX", primary, RefreshPowerBars)
-                sy = U.PlaceRow(textXSlider, body, sy)
-
-                local textYSlider = GUI:CreateFormSlider(body, "Text Y Offset", -50, 50, 1, "textY", primary, RefreshPowerBars)
-                U.PlaceRow(textYSlider, body, sy)
-            end, sections, relayout)
-
-            -- Colors
-            U.CreateCollapsible(content, "Colors", 3 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local colorDD = GUI:CreateFormDropdown(body, "Color Mode", colorModeOptions, "colorMode", primary, RefreshPowerBars)
-                sy = U.PlaceRow(colorDD, body, sy)
-
-                local customPicker = GUI:CreateFormColorPicker(body, "Custom Color", "customColor", primary, RefreshPowerBars)
-                sy = U.PlaceRow(customPicker, body, sy)
-
-                local bgPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", primary, RefreshPowerBars)
-                U.PlaceRow(bgPicker, body, sy)
-            end, sections, relayout)
-
-            -- Lock
-            U.CreateCollapsible(content, "Lock", 2 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local lockEss = GUI:CreateFormCheckbox(body, "Lock to Essential", "lockedToEssential", primary, RefreshPowerBars)
-                sy = U.PlaceRow(lockEss, body, sy)
-
-                local lockUtil = GUI:CreateFormCheckbox(body, "Lock to Utility", "lockedToUtility", primary, RefreshPowerBars)
-                U.PlaceRow(lockUtil, body, sy)
-            end, sections, relayout)
-
-            -- Position / Anchoring (with auto-width support)
-            U.BuildPositionCollapsible(content, key, { autoWidth = true }, sections, relayout)
-
-            relayout()
-            return content:GetHeight()
-        end
-
-        -----------------------------------------------------------------------
-        -- Secondary Power Bar settings builder
-        -----------------------------------------------------------------------
-        local function BuildSecondaryPowerSettings(content, key, width)
-            local profile = GetProfileDB()
-            local secondary = profile and profile.secondaryPowerBar
-            if not secondary then return 80 end
-
-            local sections = {}
-            local function relayout() U.StandardRelayout(content, sections) end
-
-            -- Enable toggle (standalone row)
-            local enableRow = CreateFrame("Frame", nil, content)
-            enableRow:SetHeight(FORM_ROW)
-            local enableCheck = GUI:CreateFormCheckbox(enableRow, "Enable", "enabled", secondary, function()
-                RefreshPowerBars()
-            end)
-            enableCheck:SetPoint("TOPLEFT", 0, 0)
-            enableCheck:SetPoint("RIGHT", enableRow, "RIGHT", 0, 0)
-            sections[#sections + 1] = enableRow
-
-            -- General (extra controls for secondary)
-            U.CreateCollapsible(content, "General", 7 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local visDD = GUI:CreateFormDropdown(body, "Visibility", visibilityOptions, "visibility", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(visDD, body, sy)
-
-                local oriDD = GUI:CreateFormDropdown(body, "Orientation", orientationOptions, "orientation", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(oriDD, body, sy)
-
-                local autoCheck = GUI:CreateFormCheckbox(body, "Auto Attach", "autoAttach", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(autoCheck, body, sy)
-
-                local standCheck = GUI:CreateFormCheckbox(body, "Standalone Mode", "standaloneMode", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(standCheck, body, sy)
-
-                local swapCheck = GUI:CreateFormCheckbox(body, "Swap to Primary Position", "swapToPrimaryPosition", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(swapCheck, body, sy)
-
-                local hideCheck = GUI:CreateFormCheckbox(body, "Hide Primary on Swap", "hidePrimaryOnSwap", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(hideCheck, body, sy)
-
-                local fragCheck = GUI:CreateFormCheckbox(body, "Show Fragmented Power Bar Text", "showFragmentedPowerBarText", secondary, RefreshPowerBars)
-                U.PlaceRow(fragCheck, body, sy)
-            end, sections, relayout)
-
-            -- Dimensions
-            U.CreateCollapsible(content, "Dimensions", 5 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local wSlider = GUI:CreateFormSlider(body, "Width", 50, 600, 1, "width", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(wSlider, body, sy)
-
-                local hSlider = GUI:CreateFormSlider(body, "Height", 2, 40, 1, "height", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(hSlider, body, sy)
-
-                local snapSlider = GUI:CreateFormSlider(body, "Snap Gap", 0, 20, 1, "snapGap", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(snapSlider, body, sy)
-
-                local xSlider = GUI:CreateFormSlider(body, "X Offset", -500, 500, 1, "offsetX", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(xSlider, body, sy)
-
-                local ySlider = GUI:CreateFormSlider(body, "Y Offset", -500, 500, 1, "offsetY", secondary, RefreshPowerBars)
-                U.PlaceRow(ySlider, body, sy)
-            end, sections, relayout)
-
-            -- Appearance
-            U.CreateCollapsible(content, "Appearance", 2 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local texDD = GUI:CreateFormDropdown(body, "Bar Texture", U.GetTextureList(), "texture", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(texDD, body, sy)
-
-                local borderSlider = GUI:CreateFormSlider(body, "Border Size", 0, 5, 1, "borderSize", secondary, RefreshPowerBars)
-                U.PlaceRow(borderSlider, body, sy)
-            end, sections, relayout)
-
-            -- Text
-            -- Proxy table: dynamically routes reads/writes to the per-spec override
-            -- table when textPerSpec is enabled, otherwise to the base config.
-            -- This avoids the need to rebuild the panel when the toggle changes.
-            local textProxy = setmetatable({}, {
-                __index = function(_, k)
-                    if secondary.textPerSpec then
-                        local specID = GetCurrentSpecID()
-                        if specID ~= 0 then
-                            return EnsureTextSpecOverrides(secondary, specID)[k]
-                        end
-                    end
-                    return secondary[k]
-                end,
-                __newindex = function(_, k, v)
-                    if secondary.textPerSpec then
-                        local specID = GetCurrentSpecID()
-                        if specID ~= 0 then
-                            EnsureTextSpecOverrides(secondary, specID)[k] = v
-                            return
-                        end
-                    end
-                    secondary[k] = v
-                end,
-            })
-
-            U.CreateCollapsible(content, "Text", 9 * FORM_ROW + 8, function(body)
-                local sy = -4
-
-                -- Per-spec toggle (always writes to base config)
-                local perSpecCheck = GUI:CreateFormCheckbox(body, "Per-Spec Text Settings", "textPerSpec", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(perSpecCheck, body, sy)
-
-                -- Show current spec label when per-spec is active
-                if secondary.textPerSpec then
-                    local specName = select(2, GetSpecializationInfo(GetSpecialization() or 0)) or "Unknown"
-                    local specLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    specLabel:SetPoint("TOPLEFT", body, "TOPLEFT", 4, sy - 2)
-                    specLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
-                    specLabel:SetText("Editing: " .. specName)
-                    sy = sy - 16
-                end
-
-                local showTextCheck = GUI:CreateFormCheckbox(body, "Show Text", "showText", textProxy, RefreshPowerBars)
-                sy = U.PlaceRow(showTextCheck, body, sy)
-
-                local showPctCheck = GUI:CreateFormCheckbox(body, "Show Percent", "showPercent", textProxy, RefreshPowerBars)
-                sy = U.PlaceRow(showPctCheck, body, sy)
-
-                local hidePctSymbolCheck = GUI:CreateFormCheckbox(body, "Hide % Symbol", "hidePercentSymbol", textProxy, RefreshPowerBars)
-                sy = U.PlaceRow(hidePctSymbolCheck, body, sy)
-
-                local textAlignDD = GUI:CreateFormDropdown(body, "Text Alignment", textAlignOptions, "textAlign", textProxy, RefreshPowerBars)
-                sy = U.PlaceRow(textAlignDD, body, sy)
-
-                local textSizeSlider = GUI:CreateFormSlider(body, "Text Size", 6, 24, 1, "textSize", textProxy, RefreshPowerBars)
-                sy = U.PlaceRow(textSizeSlider, body, sy)
-
-                local textXSlider = GUI:CreateFormSlider(body, "Text X Offset", -50, 50, 1, "textX", textProxy, RefreshPowerBars)
-                sy = U.PlaceRow(textXSlider, body, sy)
-
-                local textYSlider = GUI:CreateFormSlider(body, "Text Y Offset", -50, 50, 1, "textY", textProxy, RefreshPowerBars)
-                U.PlaceRow(textYSlider, body, sy)
-            end, sections, relayout)
-
-            -- Colors
-            U.CreateCollapsible(content, "Colors", 3 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local colorDD = GUI:CreateFormDropdown(body, "Color Mode", colorModeOptions, "colorMode", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(colorDD, body, sy)
-
-                local customPicker = GUI:CreateFormColorPicker(body, "Custom Color", "customColor", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(customPicker, body, sy)
-
-                local bgPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", secondary, RefreshPowerBars)
-                U.PlaceRow(bgPicker, body, sy)
-            end, sections, relayout)
-
-            -- Lock
-            U.CreateCollapsible(content, "Lock", 2 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local lockEss = GUI:CreateFormCheckbox(body, "Lock to Essential", "lockedToEssential", secondary, RefreshPowerBars)
-                sy = U.PlaceRow(lockEss, body, sy)
-
-                local lockUtil = GUI:CreateFormCheckbox(body, "Lock to Utility", "lockedToUtility", secondary, RefreshPowerBars)
-                U.PlaceRow(lockUtil, body, sy)
-            end, sections, relayout)
-
-            -- Position / Anchoring
-            U.BuildPositionCollapsible(content, key, { autoWidth = true }, sections, relayout)
-
-            relayout()
-            return content:GetHeight()
-        end
-
-        -----------------------------------------------------------------------
-        -- Register all providers
-        -----------------------------------------------------------------------
-        settingsPanel:RegisterProvider("primaryPower", {
-            build = BuildPrimaryPowerSettings,
-        })
-
-        settingsPanel:RegisterProvider("secondaryPower", {
-            build = BuildSecondaryPowerSettings,
-        })
+    local POWER_DISPLAY_NAMES = {
+        [Enum.PowerType.Mana]            = "Mana",
+        [Enum.PowerType.Rage]            = "Rage",
+        [Enum.PowerType.Focus]           = "Focus",
+        [Enum.PowerType.Energy]          = "Energy",
+        [Enum.PowerType.RunicPower]      = "Runic Power",
+        [Enum.PowerType.SoulShards]      = "Soul Shards",
+        [Enum.PowerType.LunarPower]      = "Lunar Power",
+        [Enum.PowerType.HolyPower]       = "Holy Power",
+        [Enum.PowerType.Maelstrom]       = "Maelstrom",
+        [Enum.PowerType.Chi]             = "Chi",
+        [Enum.PowerType.Insanity]        = "Insanity",
+        [Enum.PowerType.ArcaneCharges]   = "Arcane Charges",
+        [Enum.PowerType.Runes]           = "Runes",
+        [Enum.PowerType.Fury]            = "Fury",
+        [Enum.PowerType.Essence]         = "Essence",
+        [Enum.PowerType.ComboPoints]     = "Combo Points",
+        [Enum.PowerType.MaelstromWeapon] = "Maelstrom Weapon",
+        [Enum.PowerType.TipOfTheSpear]   = "Tip of the Spear",
+        [Enum.PowerType.Whirlwind]       = "Whirlwind",
+        ["STAGGER"]                      = "Stagger",
+        ["SOUL"]                         = "Soul Fragments",
+    }
+    if Enum.PowerType.VengSoulFragments then
+        POWER_DISPLAY_NAMES[Enum.PowerType.VengSoulFragments] = "Soul Fragments"
     end
 
-    C_Timer.After(3, RegisterSettingsProviders)
+    local MOCK_PRIMARY_FILL             = 0.70
+    local MOCK_SECONDARY_FILL           = 0.60
+    local BAR_PAD_X                     = 12
+    local PREVIEW_LABEL_GAP             = 2
+    local PREVIEW_SECTION_GAP           = 8
+    local PREVIEW_MIN_HORIZONTAL_LENGTH = 80
+    local PREVIEW_MIN_VERTICAL_LENGTH   = 20
+    local PREVIEW_MIN_THICKNESS         = 8
+    local PREVIEW_MAX_THICKNESS         = 22
+
+    local function MapPreviewMetric(value, minValue, maxValue, minPixels, maxPixels)
+        value = tonumber(value) or minValue
+        value = math_max(minValue, math_min(maxValue, value))
+
+        if maxValue <= minValue or maxPixels <= minPixels then
+            return minPixels
+        end
+
+        local pct = (value - minValue) / (maxValue - minValue)
+        return math_floor(minPixels + ((maxPixels - minPixels) * pct) + 0.5)
+    end
+
+    local function GetPreviewTextConfig(cfg, isSecondary)
+        if isSecondary then
+            return GetSecondaryTextConfig(cfg)
+        end
+        return cfg
+    end
+
+    local function GetPreviewDisplaySize(cfg, pv, visibleCount)
+        local orientation = cfg and cfg.orientation or "HORIZONTAL"
+        local isVertical = orientation == "VERTICAL"
+        local previewWidth = pv and pv.GetWidth and pv:GetWidth() or 280
+        local maxHorizontalLength = math_max(PREVIEW_MIN_HORIZONTAL_LENGTH, previewWidth - (BAR_PAD_X * 2))
+        local maxVerticalLength = visibleCount > 1 and 30 or 42
+        local maxThickness = visibleCount > 1 and 18 or PREVIEW_MAX_THICKNESS
+
+        local displayLength = MapPreviewMetric(cfg and cfg.width or 200, 50, 600,
+            isVertical and PREVIEW_MIN_VERTICAL_LENGTH or PREVIEW_MIN_HORIZONTAL_LENGTH,
+            isVertical and maxVerticalLength or maxHorizontalLength)
+        local displayThickness = MapPreviewMetric(cfg and cfg.height or 8, 2, 40,
+            PREVIEW_MIN_THICKNESS, maxThickness)
+
+        if isVertical then
+            return displayThickness, displayLength, true
+        end
+
+        return displayLength, displayThickness, false
+    end
+
+    local function GetPreviewBarColor(cfg, resource)
+        local mode = cfg and cfg.colorMode or "power"
+        if mode == "custom" and cfg and cfg.customColor then
+            local c = cfg.customColor
+            return (c[1] or c.r or 0.2), (c[2] or c.g or 0.5), (c[3] or c.b or 1.0)
+        elseif mode == "class" then
+            local _, class = UnitClass("player")
+            local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+            if cc then return cc.r, cc.g, cc.b end
+        end
+        local col = resource and GetResourceColor(resource)
+        if col then return col.r, col.g, col.b end
+        return 0.2, 0.5, 1.0
+    end
+
+    local function ApplyPreviewTicks(section, cfg, resource)
+        section.ticks = section.ticks or {}
+        for _, t in ipairs(section.ticks) do t:Hide() end
+        if not cfg or not cfg.showTicks then return end
+        if type(resource) ~= "number" or not tickedPowerTypes[resource] then return end
+
+        local max = UnitPowerMax("player", resource) or 0
+        if max < 2 then return end
+
+        local bar = section.bar
+        local width, height = bar:GetWidth(), bar:GetHeight()
+        if width <= 0 or height <= 0 then return end
+
+        local thickness = math_max(1, cfg.tickThickness or 1)
+        local tc = cfg.tickColor or { 0, 0, 0, 1 }
+        local isVertical = (cfg and cfg.orientation) == "VERTICAL"
+
+        for i = 1, max - 1 do
+            local tick = section.ticks[i]
+            if not tick then
+                tick = bar:CreateTexture(nil, "OVERLAY")
+                section.ticks[i] = tick
+            end
+            tick:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 1)
+            tick:ClearAllPoints()
+            if isVertical then
+                local y = (i / max) * height
+                tick:SetPoint("BOTTOM", bar, "BOTTOM", 0, y - (thickness / 2))
+                tick:SetSize(width, thickness)
+            else
+                local x = (i / max) * width
+                tick:SetPoint("LEFT", bar, "LEFT", x - (thickness / 2), 0)
+                tick:SetSize(thickness, height)
+            end
+            tick:Show()
+        end
+    end
+
+    local function GetPreviewBgColor(cfg)
+        local bg = cfg and cfg.bgColor
+        if bg then
+            return (bg[1] or bg.r or 0), (bg[2] or bg.g or 0), (bg[3] or bg.b or 0), (bg[4] or bg.a or 0.4)
+        end
+        return 0, 0, 0, 0.4
+    end
+
+    local function MockValueText(cfg, textCfg, pct, resource)
+        if type(resource) == "number" and fragmentedPowerTypes and fragmentedPowerTypes[resource] then
+            if cfg and cfg.showFragmentedPowerBarText == false then
+                return ""
+            end
+            local maxValue = UnitPowerMax("player", resource) or 0
+            if maxValue <= 0 then
+                maxValue = 5
+            end
+            local current = math_max(1, math_floor((pct * maxValue) + 0.5))
+            return string_format("%d / %d", current, maxValue)
+        end
+
+        if not textCfg or not textCfg.showText then return "" end
+        if textCfg.showPercent then
+            local v = math.floor(pct * 100)
+            return textCfg.hidePercentSymbol and tostring(v) or (v .. "%")
+        end
+        return math.floor(pct * 100000)  -- fake raw value
+    end
+
+    local function MakeMockBar(parent, fpath)
+        local section = CreateFrame("Frame", nil, parent)
+
+        local lbl = section:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if fpath then lbl:SetFont(fpath, 9, "") end
+        lbl:SetTextColor(1, 1, 1, 0.75)
+        lbl:SetPoint("TOP", section, "TOP", 0, 0)
+        section.lbl = lbl
+
+        local barFrame = CreateFrame("Frame", nil, section)
+        barFrame:SetPoint("TOP", lbl, "BOTTOM", 0, -PREVIEW_LABEL_GAP)
+        section.barFrame = barFrame
+
+        local bg = barFrame:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(barFrame)
+        bg:SetColorTexture(0, 0, 0, 0.4)
+        section.bg = bg
+
+        local bar = CreateFrame("StatusBar", nil, barFrame)
+        bar:SetAllPoints(barFrame)
+        bar:SetMinMaxValues(0, 1)
+        bar:SetValue(0.7)
+        section.bar = bar
+
+        if UIKit and UIKit.CreateBorderLines then
+            UIKit.CreateBorderLines(barFrame)
+        end
+
+        local val = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if fpath then val:SetFont(fpath, 9, "") end
+        val:SetTextColor(1, 1, 1, 0.9)
+        val:SetPoint("CENTER", barFrame, "CENTER", 0, 0)
+        section.val = val
+
+        return section
+    end
+
+    local function ApplyPreviewSectionLayout(section, cfg, pv, visibleCount)
+        local width, height, isVertical = GetPreviewDisplaySize(cfg, pv, visibleCount)
+        section:SetSize(math_max(width, 80), 12 + PREVIEW_LABEL_GAP + height)
+
+        section.barFrame:ClearAllPoints()
+        section.barFrame:SetSize(width, height)
+        section.barFrame:SetPoint("TOP", section.lbl, "BOTTOM", 0, -PREVIEW_LABEL_GAP)
+
+        section.bar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+
+        local borderSize = cfg and cfg.borderSize or 0
+        if UIKit and UIKit.UpdateBorderLines then
+            UIKit.UpdateBorderLines(section.barFrame, borderSize, 0, 0, 0, 1, borderSize <= 0)
+        end
+    end
+
+    local previewRef = nil
+
+    _G.QUI_BuildResourceBarPreview = function(pv)
+        local GUI    = QUI and QUI.GUI
+        local C      = (GUI and GUI.Colors) or {}
+        local accent = C.accent or { 0.204, 0.827, 0.6, 1 }
+        local border = C.border or { 1, 1, 1, 0.06 }
+        local fpath  = ns.UIKit and ns.UIKit.ResolveFontPath
+                       and ns.UIKit.ResolveFontPath(GUI and GUI:GetFontPath())
+
+        local fill = pv:CreateTexture(nil, "BACKGROUND")
+        fill:SetAllPoints(pv)
+        fill:SetColorTexture(0, 0, 0, 0.2)
+
+        if ns.UIKit and ns.UIKit.CreateBorderLines then
+            ns.UIKit.CreateBorderLines(pv)
+            ns.UIKit.UpdateBorderLines(pv, 1, border[1] or 1, border[2] or 1, border[3] or 1, 0.15, false)
+        end
+
+        local lbl = pv:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if fpath then lbl:SetFont(fpath, 8, "") end
+        lbl:SetTextColor(accent[1], accent[2], accent[3], 0.7)
+        lbl:SetPoint("TOPLEFT", pv, "TOPLEFT", 8, -6)
+        lbl:SetText(("PREVIEW"):gsub(".", "%0 "):sub(1, -2))
+
+        local primary = MakeMockBar(pv, fpath)
+        primary:SetPoint("TOPLEFT",  pv, "TOPLEFT",  BAR_PAD_X,  -20)
+        primary:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -BAR_PAD_X, -20)
+        primary:SetSize(100, 24)
+
+        local secondary = MakeMockBar(pv, fpath)
+        secondary:Hide()
+
+        previewRef = { pv = pv, primary = primary, secondary = secondary, fpath = fpath }
+
+        pv:SetScript("OnSizeChanged", function()
+            if _G.QUI_RefreshResourceBarPreview then
+                _G.QUI_RefreshResourceBarPreview()
+            end
+        end)
+
+        _G.QUI_RefreshResourceBarPreview()
+    end
+
+    _G.QUI_RefreshResourceBarPreview = function()
+        if not previewRef then return end
+        local p   = previewRef.primary
+        local s   = previewRef.secondary
+        local fp  = previewRef.fpath
+
+        local core    = GetCore()
+        local profile = core and core.db and core.db.profile
+        if not profile then return end
+
+        local pc  = profile.powerBar
+        local sc  = profile.secondaryPowerBar
+
+        local primaryResource   = GetPrimaryResource()
+        local secondaryResource = GetSecondaryResource()
+        local primaryTextCfg    = GetPreviewTextConfig(pc, false)
+        local secondaryTextCfg  = GetPreviewTextConfig(sc, true)
+        local showPrimary       = pc and pc.enabled ~= false
+        local showSecondary     = sc and sc.enabled ~= false and secondaryResource ~= nil
+        local swapBars          = showSecondary and ShouldSwapBars()
+
+        if showPrimary and swapBars and ShouldHidePrimaryOnSwap() then
+            showPrimary = false
+        end
+
+        local visibleCount = (showPrimary and 1 or 0) + (showSecondary and 1 or 0)
+        if visibleCount == 0 then
+            p:Hide()
+            s:Hide()
+            return
+        end
+
+        p:Hide()
+        s:Hide()
+
+        local orderedSections = {}
+        if swapBars then
+            if showSecondary then
+                orderedSections[#orderedSections + 1] = { section = s, cfg = sc, textCfg = secondaryTextCfg, resource = secondaryResource, fill = MOCK_SECONDARY_FILL, label = POWER_DISPLAY_NAMES[secondaryResource] or "Secondary" }
+            end
+            if showPrimary then
+                orderedSections[#orderedSections + 1] = { section = p, cfg = pc, textCfg = primaryTextCfg, resource = primaryResource, fill = MOCK_PRIMARY_FILL, label = POWER_DISPLAY_NAMES[primaryResource] or "Power" }
+            end
+        else
+            if showPrimary then
+                orderedSections[#orderedSections + 1] = { section = p, cfg = pc, textCfg = primaryTextCfg, resource = primaryResource, fill = MOCK_PRIMARY_FILL, label = POWER_DISPLAY_NAMES[primaryResource] or "Power" }
+            end
+            if showSecondary then
+                orderedSections[#orderedSections + 1] = { section = s, cfg = sc, textCfg = secondaryTextCfg, resource = secondaryResource, fill = MOCK_SECONDARY_FILL, label = POWER_DISPLAY_NAMES[secondaryResource] or "Secondary" }
+            end
+        end
+
+        local nextY = -20
+        for _, info in ipairs(orderedSections) do
+            local section = info.section
+            local cfg = info.cfg
+            local textCfg = info.textCfg
+            local resource = info.resource
+
+            section:Show()
+            section:ClearAllPoints()
+            ApplyPreviewSectionLayout(section, cfg, previewRef.pv, visibleCount)
+            section:SetPoint("TOP", previewRef.pv, "TOP", 0, nextY)
+            nextY = nextY - section:GetHeight() - PREVIEW_SECTION_GAP
+
+            section.lbl:SetText(info.label)
+
+            local r, g, b = GetPreviewBarColor(cfg, resource)
+            local bgr, bgg, bgb, bga = GetPreviewBgColor(cfg)
+            section.bg:SetColorTexture(bgr, bgg, bgb, bga)
+
+            local tex = LSM and LSM:Fetch("statusbar", GetBarTexture(cfg))
+            if tex then section.bar:SetStatusBarTexture(tex) end
+            section.bar:SetStatusBarColor(r, g, b)
+            section.bar:SetValue(info.fill)
+
+            ApplyPreviewTicks(section, cfg, resource)
+
+            local fontSize = textCfg and math.max(7, math.min(textCfg.textSize or 9, 13)) or 9
+            if fp then section.val:SetFont(fp, fontSize, "") end
+            section.val:SetText(MockValueText(cfg, textCfg, info.fill, resource))
+
+            local align = textCfg and textCfg.textAlign or "CENTER"
+            section.val:ClearAllPoints()
+            if align == "LEFT" then
+                section.val:SetPoint("LEFT", section.barFrame, "LEFT", 4, (textCfg and textCfg.textY or 0))
+            elseif align == "RIGHT" then
+                section.val:SetPoint("RIGHT", section.barFrame, "RIGHT", -4, (textCfg and textCfg.textY or 0))
+            else
+                section.val:SetPoint("CENTER", section.barFrame, "CENTER", (textCfg and textCfg.textX or 0), (textCfg and textCfg.textY or 0))
+            end
+        end
+    end
 end

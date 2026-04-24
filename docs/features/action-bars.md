@@ -7,41 +7,42 @@ nav_order: 4
 
 # Action Bars
 
-QUI skins and enhances all 8 standard action bars plus special bars like Pet, Stance, Microbar, and Bags. The action bar module focuses on clean visual styling, mouseover fade for a minimal HUD, and per-bar customization so each bar can look and behave exactly how you want.
+QUI's Action Bars clean up the bottom of your screen without forcing you into one rigid layout. You can keep them obvious and traditional, or fade them back and let CDM do most of the visual work.
 
-## Overview
+![Actual QUI Action Bars General page]({{ '/assets/images/qui-action-bars-general.png' | relative_url }})
+_The General page handles the master action bar toggles, range and usability feedback, and quick keybind access._
 
-QUI uses a **native action bar engine** built on Blizzard's `ActionBarButtonTemplate`. Bar 1 is created with paging support, and bars 2-8 are reparented Blizzard frames. The module applies visual skinning to your buttons (icon zoom, backdrops, borders) and adds functional enhancements like mouseover fade, range and usability indicators, and customizable text overlays. You can configure settings globally and then override them on a per-bar basis for fine control.
+## Why Players Like It
+
+- Cleaner buttons and more readable keybinds
+- Mouseover fade for a minimalist HUD
+- Per-bar overrides when one size does not fit all
+- Better range and usability feedback than a plain default setup
 
 ## How to Enable
 
-Action bar enhancements are enabled by default. To access settings, open `/qui` and navigate to the **Action Bars** tab.
+Action bar enhancements are enabled by default. To access settings, open `/qui` and navigate to **Action Bars**.
 
-## Key Features
+Within that tile, the top strip is split into **General**, **Buff/Debuff**, and **Per-Bar** so you can decide whether you want broad changes or one-off overrides.
 
-- **Button skinning** -- Icon zoom crops the default icon border, backdrop adds a background behind each button, gloss adds a subtle shine, and borders frame each icon cleanly.
-- **Text display** -- Keybind text, macro names, and stack counts are all customizable. Adjust anchor position, font size, and color per bar.
-- **Mouseover fade system** -- Bars fade to a configurable alpha when not hovered. Control fade speed, out-of-focus alpha, and hover delay. Bars reappear instantly on mouseover.
-- **Per-bar fade** -- Each bar (1-8) can have independent fade settings or inherit from the global configuration.
-- **Always show flag** -- Keep specific bars permanently visible even when the fade system is active.
-- **Always show in combat** -- Override fade and keep bars visible during combat encounters.
-- **Show when Spellbook open** -- Bars become visible when you open the Spellbook, useful for drag-and-drop spell placement.
-- **Keep Leave Vehicle button visible** -- Ensures the vehicle exit button is always accessible.
-- **Disable below max level** -- Keeps bars visible while leveling so new players are not confused by hidden bars.
-- **Linked mouseover (bars 1-8)** -- Hovering any linked bar reveals all linked bars simultaneously.
-- **Hide page arrow on bar 1** -- Removes the page-switching arrow from the main action bar for a cleaner look.
-- **Per-bar style overrides** -- Each bar 1-8 can override global icon zoom, backdrop, keybind display, and other style settings.
-- **Special bars** -- Pet bar, Stance bar, Microbar, and Bags bar support fade behavior but do not have full style override options.
-- **Extra Action Button** -- Configurable scale, position, and option to hide default artwork.
-- **Zone Ability Button** -- Configurable scale, position, and option to hide default artwork.
-- **Global scale** -- Scale all bars uniformly from 0.5x to 2.0x.
-- **Button spacing** -- Adjust the gap between buttons on all bars.
-- **Hide empty slots** -- Empty action bar slots become invisible for a cleaner look.
-- **Lock buttons** -- Prevent accidentally dragging spells off your bars.
-- **Range indicator** -- Out-of-range abilities are tinted red on the action bar.
-- **Usability indicator** -- Unusable abilities are dimmed or desaturated.
-- **Fast usability updates** -- Optional 50ms update interval (default is 250ms) for more responsive usability coloring.
-- **Action bar art hiding** -- Remove Blizzard's default action bar artwork and gryphons.
+## Best First Tweaks
+
+1. Decide whether you want bars always visible or mouseover-faded.
+2. Make sure the keybind text is readable before changing visual flourishes.
+3. Adjust spacing and scale so your bars feel intentional, not cramped.
+4. Use per-bar overrides only after the global style is close.
+
+![Actual QUI Action Bars Per-Bar page]({{ '/assets/images/qui-action-bars-per-bar.png' | relative_url }})
+_Use the Per-Bar page when one bar needs its own size, spacing, or layout without changing the rest of the setup._
+
+## What You Can Customize
+
+- Global scale, spacing, and button styling
+- Keybind, macro, and stack text presentation
+- Mouseover fade timing and alpha
+- Per-bar override rules for the main bars
+- Range and usability indicators
+- Special bars like pet, stance, bags, and vehicle-related buttons
 
 ## Important Settings
 
@@ -58,7 +59,7 @@ Action bar enhancements are enabled by default. To access settings, open `/qui` 
 | Range indicator | Tint out-of-range red | Enabled |
 | Fast usability | 50ms usability checks | Disabled |
 
-## Tips
+## Good To Know
 
 {: .note }
 The mouseover fade system pairs well with QUI's Cooldown Manager. With your rotation cooldowns visible via the CDM, you can safely fade your action bars to keep a clean HUD and still know exactly what is available.
