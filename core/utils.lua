@@ -18,6 +18,10 @@ local table_remove = table.remove
 local LSM = LibStub("LibSharedMedia-3.0", true)
 ns.LSM = LSM
 
+-- Resolve asset paths against the actual addon folder name (e.g. "QUI", "QUI5",
+-- "QUI-main"), so hardcoding a single folder name doesn't break renamed installs.
+Helpers.AssetPath = "Interface\\AddOns\\" .. ADDON_NAME .. "\\assets\\"
+
 -- Cache global secret-value API functions at file scope (avoids repeated _G lookups)
 local issecretvalue = _G.issecretvalue
 local canaccesstable = _G.canaccesstable

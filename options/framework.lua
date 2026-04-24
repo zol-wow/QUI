@@ -3307,7 +3307,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     toggle.track = track
 
     local trackMask = toggle:CreateMaskTexture()
-    trackMask:SetTexture("Interface\\AddOns\\QUI\\assets\\pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    trackMask:SetTexture(Helpers.AssetPath .. "pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     trackMask:SetAllPoints(track)
     track:AddMaskTexture(trackMask)
     toggle._trackMask = trackMask
@@ -3450,7 +3450,7 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, r
     toggle.track = track
 
     local trackMask = toggle:CreateMaskTexture()
-    trackMask:SetTexture("Interface\\AddOns\\QUI\\assets\\pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    trackMask:SetTexture(Helpers.AssetPath .. "pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     trackMask:SetAllPoints(track)
     track:AddMaskTexture(trackMask)
     toggle._trackMask = trackMask
@@ -7483,7 +7483,7 @@ function GUI:AddFeatureTile(frame, config)
     local textX = 15
     local iconTexturePath = config.iconTexture
     if iconTexturePath == nil and config.id then
-        iconTexturePath = "Interface\\AddOns\\QUI\\assets\\sidebar\\" .. config.id
+        iconTexturePath = Helpers.AssetPath .. "sidebar\\" .. config.id
     end
     if iconTexturePath then
         local SIDEBAR_ICON_SIZE = 20
@@ -8209,7 +8209,7 @@ function GUI:AddToolsStripButton(frame, config)
 
     local iconTexturePath = config.iconTexture
     if iconTexturePath == nil and config.id then
-        iconTexturePath = "Interface\\AddOns\\QUI\\assets\\sidebar_tools\\" .. config.id
+        iconTexturePath = Helpers.AssetPath .. "sidebar_tools\\" .. config.id
     end
 
     if iconTexturePath then

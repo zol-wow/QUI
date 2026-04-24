@@ -20,7 +20,7 @@ local tostring = tostring
 local type = type
 local wipe = wipe
 
-local PIN_ICON_TEXTURE = "Interface\\AddOns\\QUI\\assets\\pin_icon.png"
+local PIN_ICON_TEXTURE = ns.Helpers.AssetPath .. "pin_icon.png"
 
 local function CloneValue(value, seen)
     if type(value) ~= "table" then

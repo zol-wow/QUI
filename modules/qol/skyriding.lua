@@ -72,7 +72,7 @@ local UPDATE_THROTTLE = 0.05  -- 50ms = 20 FPS
 local elapsed = 0
 
 -- Texture paths
-local DOT_TEXTURE = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_reticle_dot"
+local DOT_TEXTURE = Helpers.AssetPath .. "cursor\\qui_reticle_dot"
 
 ---------------------------------------------------------------------------
 -- Settings Helper

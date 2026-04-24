@@ -3,7 +3,6 @@
 
 local ADDON_NAME, ns = ...
 local QUI = QUI
-local ADDON_NAME = "QUI"
 
 -- Upvalue frequently-used globals (core/main.lua is ~3000 lines)
 local type = type
@@ -708,7 +707,7 @@ function QUICore:CreateMinimapButton()
     -- Create DataBroker object
     local dataObj = LDB:NewDataObject(ADDON_NAME, {
         type = "launcher",
-        icon = "Interface\\AddOns\\QUI\\assets\\QUI.tga",
+        icon = ns.Helpers.AssetPath .. "QUI.tga",
         label = "QUI",
         OnClick = function(clickedframe, button)
             if button == "LeftButton" then

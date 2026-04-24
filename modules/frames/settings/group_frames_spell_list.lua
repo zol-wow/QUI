@@ -35,7 +35,7 @@ local function CreateMiniToggle(parent)
     toggle.track = track
 
     local trackMask = toggle:CreateMaskTexture()
-    trackMask:SetTexture("Interface\\AddOns\\QUI\\assets\\pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    trackMask:SetTexture(ns.Helpers.AssetPath .. "pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     trackMask:SetAllPoints(track)
     track:AddMaskTexture(trackMask)
     toggle._trackMask = trackMask
