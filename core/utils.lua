@@ -105,6 +105,50 @@ function Helpers.SafeToString(value, fallback)
     return fallback
 end
 
+--- Is an aura sourced from the player / pet / vehicle?
+--- Taint-safe: reads sourceUnit / sourceGUID / isFromPlayerOrPlayerPet via
+--- SafeValue so secret values become nil instead of returning into Lua.
+--- @param auraData table AuraData struct from C_UnitAuras.*
+--- @param strictSource boolean? When true, require explicit sourceUnit/sourceGUID
+---        to match; do not trust isFromPlayerOrPlayerPet alone. Use for defenses
+---        against Blizzard viewer children that report "player" while carrying
+---        a foreign aura instance.
+--- @return boolean
+function Helpers.IsAuraOwnedByPlayerOrPet(auraData, strictSource)
+    if not auraData then return false end
+
+    local ownedFlag = Helpers.SafeValue(auraData.isFromPlayerOrPlayerPet, nil)
+    if ownedFlag ~= nil and not strictSource then
+        return ownedFlag == true
+    end
+
+    local sourceUnit = Helpers.SafeValue(auraData.sourceUnit, nil)
+    if sourceUnit then
+        if sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle" then
+            return true
+        end
+        if UnitIsUnit then
+            if UnitExists("player") and UnitIsUnit(sourceUnit, "player") then return true end
+            if UnitExists("pet") and UnitIsUnit(sourceUnit, "pet") then return true end
+            if UnitExists("vehicle") and UnitIsUnit(sourceUnit, "vehicle") then return true end
+        end
+    end
+
+    local sourceGUID = Helpers.SafeValue(auraData.sourceGUID, nil)
+    if sourceGUID then
+        local playerGUID = UnitGUID and UnitGUID("player") or nil
+        local petGUID = UnitGUID and UnitGUID("pet") or nil
+        local vehicleGUID = UnitGUID and UnitGUID("vehicle") or nil
+        return sourceGUID == playerGUID or sourceGUID == petGUID or sourceGUID == vehicleGUID
+    end
+
+    if ownedFlag ~= nil then
+        return strictSource and false or ownedFlag == true
+    end
+
+    return false
+end
+
 ---------------------------------------------------------------------------
 -- DATABASE ACCESS HELPERS
 -- Standardized pattern for accessing QUICore database profiles
