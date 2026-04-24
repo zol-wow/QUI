@@ -343,6 +343,16 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r Memory audit not loaded yet.")
         end
         return
+    elseif input and input:match("^diagnose") then
+        -- /qui diagnose        → report Edit Mode state + recent ADDON_ACTION_BLOCKED events
+        -- /qui diagnose clear  → clear the diagnostic ring buffer
+        if _G.QUI_DiagnoseEditMode then
+            local subcmd = input:match("^diagnose%s+(%S+)")
+            _G.QUI_DiagnoseEditMode(subcmd)
+        else
+            print("|cff60A5FAQUI:|r Edit Mode diagnostic not loaded yet.")
+        end
+        return
     elseif input and input == "perf" then
         if _G.QUI_TogglePerfMonitor then
             _G.QUI_TogglePerfMonitor()
