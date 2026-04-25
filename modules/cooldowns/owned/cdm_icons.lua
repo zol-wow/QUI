@@ -116,6 +116,8 @@ local blizzTexState = setmetatable({}, { __mode = "k" })
 -- Applications frames are reparented onto our CDM icons and Blizzard
 -- manages SetText/Show/Hide natively — no hook forwarding needed.
 local blizzStackState = setmetatable({}, { __mode = "k" })
+local blizzStackTextHooked = setmetatable({}, { __mode = "k" })
+local SetGlowStackCount
 
 ---------------------------------------------------------------------------
 -- DEBUG: Charge/stack transform debugging.
@@ -1088,11 +1090,27 @@ local function HookBlizzStackText(icon, blizzChild)
     local chargeFrame = blizzChild.ChargeCount
     local appFrame = blizzChild.Applications
 
+    local function HookNativeStackFontString(fs)
+        if not fs or blizzStackTextHooked[fs] then return end
+        blizzStackTextHooked[fs] = true
+        hooksecurefunc(fs, "SetText", function(self, text)
+            local state = blizzStackState[blizzChild]
+            if state and state.icon and SetGlowStackCount then
+                SetGlowStackCount(state.icon, text)
+            end
+        end)
+        hooksecurefunc(fs, "Hide", function()
+            local state = blizzStackState[blizzChild]
+            if state and state.icon and SetGlowStackCount then
+                SetGlowStackCount(state.icon, nil)
+            end
+        end)
+    end
+
     -- Reparent and style Blizzard's native ChargeCount and Applications
     -- frames onto our CDM icon.  Blizzard manages SetText/Show/Hide
-    -- natively — no hooks needed for stack text forwarding.  This avoids
-    -- all secret-value comparison issues: Blizzard's C-side code handles
-    -- zero detection, visibility toggling, and clearing internally.
+    -- natively; the small FontString hooks below only mirror the numeric
+    -- value into icon state so stack-threshold glow rules can evaluate it.
     --
     -- For non-charged entries (Spirit Bomb / Soul Fragments): the native
     -- ChargeCount.Current and Applications.Applications FontStrings
@@ -1119,6 +1137,7 @@ local function HookBlizzStackText(icon, blizzChild)
         if not (entry and entry.hasCharges) then
             chargeFrame:Show()
         end
+        HookNativeStackFontString(chargeFrame.Current)
     end
 
     -- Same for Applications.
@@ -1129,6 +1148,7 @@ local function HookBlizzStackText(icon, blizzChild)
             pcall(appFrame.SetParent, appFrame, textOverlay)
             pcall(appFrame.SetFrameLevel, appFrame, lvl)
         end
+        HookNativeStackFontString(appFrame.Applications)
     end
 
     -- Style the native FontStrings (font/color/position applied in
@@ -1934,6 +1954,70 @@ local function GetChildIconTexture(child)
     return nil
 end
 
+local function GetDisplayTextFromCountAPI(sid, maxCharges, countAPI)
+    if not countAPI then return nil end
+
+    local okDisplay, displayCount = pcall(countAPI, sid)
+    if not okDisplay or displayCount == nil then return nil end
+
+    if maxCharges and maxCharges > 1 then
+        return displayCount, displayCount
+    end
+
+    local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, displayCount)
+    local displayText = truncOk and truncText or displayCount
+    local hasText = displayText ~= nil
+    if hasText then
+        local etOk, etEq = pcall(function() return displayText == "" end)
+        if etOk and etEq then hasText = false end
+    end
+    return hasText and displayText or nil, hasText and displayCount or nil
+end
+
+local function GetSpellDisplayCountText(entry, runtimeSid, cachedChargeInfo)
+    if not entry or entry.type ~= "spell"
+        or not ((C_Spell and (C_Spell.GetSpellDisplayCount or C_Spell.GetSpellCastCount)) or GetSpellCount) then
+        return nil
+    end
+
+    local candidates = {
+        runtimeSid,
+        entry.overrideSpellID,
+        entry.spellID,
+        entry.id,
+    }
+    for _, sid in ipairs(candidates) do
+        if sid then
+            local maxCharges = cachedChargeInfo and SafeToNumber(cachedChargeInfo.maxCharges, nil)
+            if not maxCharges and C_Spell and C_Spell.GetSpellCharges then
+                local okCharges, ci = pcall(C_Spell.GetSpellCharges, sid)
+                maxCharges = okCharges and ci and SafeToNumber(ci.maxCharges, nil)
+            end
+
+            local displayText, rawCount = GetDisplayTextFromCountAPI(sid, maxCharges, C_Spell and C_Spell.GetSpellDisplayCount)
+            if displayText == nil then
+                displayText, rawCount = GetDisplayTextFromCountAPI(sid, maxCharges, C_Spell and C_Spell.GetSpellCastCount)
+            end
+            if displayText == nil then
+                displayText, rawCount = GetDisplayTextFromCountAPI(sid, maxCharges, GetSpellCount)
+            end
+            if displayText ~= nil then return displayText, rawCount end
+        end
+    end
+
+    return nil
+end
+
+SetGlowStackCount = function(icon, count)
+    if not icon then return end
+    local numeric = SafeToNumber(count, nil)
+    if icon._glowStackCount == numeric then return end
+    icon._glowStackCount = numeric
+    if ns._OwnedGlows and ns._OwnedGlows.SyncGlowForIcon then
+        ns._OwnedGlows.SyncGlowForIcon(icon)
+    end
+end
+
 local function UpdateIconCooldown(icon)
     if not icon or not icon._spellEntry then return end
     local entry = icon._spellEntry
@@ -2009,23 +2093,31 @@ local function UpdateIconCooldown(icon)
                         -- combat — only use it as a fallback when hooks aren't
                         -- actively driving stack text for this icon.
                         local _auraHookActive = (not r.isTotemInstance) and IsHookStackActive(entry, icon)
-                        if not _auraHookActive then
-                            if r.isTotemInstance then
-                                icon.StackText:SetText("")
-                                icon.StackText:Hide()
-                            elseif r.stacks then
-                                -- Charged abilities: "0" is meaningful (all
-                                -- charges depleted). Only truncate zero for
-                                -- non-charged resource stacks.
-                                if entry.hasCharges then
-                                    pcall(icon.StackText.SetText, icon.StackText, r.stacks)
-                                else
-                                    pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
-                                end
+                        if r.isTotemInstance then
+                            icon.StackText:SetText("")
+                            icon.StackText:Hide()
+                            SetGlowStackCount(icon, nil)
+                        elseif r.stacks and not _auraHookActive then
+                            -- Charged abilities: "0" is meaningful (all
+                            -- charges depleted). Only truncate zero for
+                            -- non-charged resource stacks.
+                            if entry.hasCharges then
+                                pcall(icon.StackText.SetText, icon.StackText, r.stacks)
+                            else
+                                pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
+                            end
+                            icon.StackText:Show()
+                            SetGlowStackCount(icon, r.stacks)
+                        elseif not r.stacks then
+                            local displayText, rawCount = GetSpellDisplayCountText(entry, _runtimeSid, nil)
+                            if displayText ~= nil then
+                                pcall(icon.StackText.SetText, icon.StackText, displayText)
                                 icon.StackText:Show()
-                            elseif not InCombatLockdown() then
+                                SetGlowStackCount(icon, rawCount)
+                            elseif not _auraHookActive and not InCombatLockdown() then
                                 icon.StackText:SetText("")
                                 icon.StackText:Hide()
+                                SetGlowStackCount(icon, nil)
                             end
                         end
 
@@ -2085,6 +2177,7 @@ local function UpdateIconCooldown(icon)
                         if r.isTotemInstance or not IsHookStackActive(entry, icon) then
                             icon.StackText:SetText("")
                             icon.StackText:Hide()
+                            SetGlowStackCount(icon, nil)
                         end
                         return  -- Aura path complete
                     end
@@ -2138,6 +2231,7 @@ local function UpdateIconCooldown(icon)
             -- Hide stack text for trinkets
             icon.StackText:SetText("")
             icon.StackText:Hide()
+            SetGlowStackCount(icon, nil)
         elseif entry.type == "item" then
             startTime, duration, durObj = GetItemCooldown(entry.id)
             -- Show item count as stack text (includeUses=true for charge items)
@@ -2146,9 +2240,11 @@ local function UpdateIconCooldown(icon)
                 if ok and count and count > 0 then
                     icon.StackText:SetText(tostring(count))
                     icon.StackText:Show()
+                    SetGlowStackCount(icon, count)
                 else
                     icon.StackText:SetText("0")
                     icon.StackText:Show()
+                    SetGlowStackCount(icon, 0)
                 end
             end
         else
@@ -2194,6 +2290,7 @@ local function UpdateIconCooldown(icon)
                             _ncTotemTexture = r.totemIcon or icon._totemIconCache
                             icon.StackText:SetText("")
                             icon.StackText:Hide()
+                            SetGlowStackCount(icon, nil)
                         else
                             icon._isTotemInstance = nil
                         end
@@ -2355,6 +2452,7 @@ local function UpdateIconCooldown(icon)
                             _chargedTotemTexture = r.totemIcon or icon._totemIconCache
                             icon.StackText:SetText("")
                             icon.StackText:Hide()
+                            SetGlowStackCount(icon, nil)
                         else
                             icon._isTotemInstance = nil
                         end
@@ -2693,26 +2791,37 @@ local function UpdateIconCooldown(icon)
             if ccc ~= nil then
                 pcall(icon.StackText.SetText, icon.StackText, ccc)
                 icon.StackText:Show()
+                SetGlowStackCount(icon, ccc)
                 _chargeCountForwarded = true
             end
         elseif ci and ci.maxCharges then
             ChargeDebug(entry.name, "FWD path CLEAR: baseSid=", baseSid,
-                "maxCharges=", ci.maxCharges, "(<=1, clearing stacks)",
+                "maxCharges=", ci.maxCharges, "(<=1, yielding to display-count fallback)",
                 "overrideSpellID=", entry.overrideSpellID)
-            icon.StackText:SetText("")
-            _chargeCountForwarded = true
         end
     end
 
-    -- Charged entries where the FWD path couldn't find charges:
-    -- Blizzard's native ChargeCount.Current (reparented onto our icon)
-    -- displays the correct value natively — no fallback forwarding needed.
-
-    if _hookActive or _chargeCountForwarded then
-        ChargeDebug(entry.name, "SKIP API path: hookActive=", _hookActive,
-            "chargeCountForwarded=", _chargeCountForwarded)
+    -- Some abilities expose their count via GetSpellDisplayCount without
+    -- reporting as multi-charge spells (Mana Tea is one such case).  Run this
+    -- before the hook-active skip so a reparented-but-empty Blizzard stack
+    -- frame cannot suppress the API count.
+    local _displayCountForwarded = false
+    if not _chargeCountForwarded then
+        local displayText, rawCount = GetSpellDisplayCountText(entry, _runtimeSid, _cachedChargeInfo)
+        if displayText ~= nil then
+            pcall(icon.StackText.SetText, icon.StackText, displayText)
+            icon.StackText:Show()
+            SetGlowStackCount(icon, rawCount)
+            _displayCountForwarded = true
+        end
     end
-    if not _hookActive and not _chargeCountForwarded then
+
+    if _hookActive or _chargeCountForwarded or _displayCountForwarded then
+        ChargeDebug(entry.name, "SKIP API path: hookActive=", _hookActive,
+            "chargeCountForwarded=", _chargeCountForwarded,
+            "displayCountForwarded=", _displayCountForwarded)
+    end
+    if not _hookActive and not _chargeCountForwarded and not _displayCountForwarded then
         if entry.type == "item" then
             -- Item stack text was already set above in the cooldown section;
             -- nothing to do here — just prevent the else clause from clearing it.
@@ -2759,6 +2868,7 @@ local function UpdateIconCooldown(icon)
                     -- Always show charge count — "0" is meaningful
                     pcall(icon.StackText.SetText, icon.StackText, stackVal)
                     icon.StackText:Show()
+                    SetGlowStackCount(icon, stackVal)
                 else
                     local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackVal)
                     local displayText = truncOk and truncText or stackVal
@@ -2770,14 +2880,17 @@ local function UpdateIconCooldown(icon)
                     if hasText then
                         pcall(icon.StackText.SetText, icon.StackText, displayText)
                         icon.StackText:Show()
+                        SetGlowStackCount(icon, stackVal)
                     else
                         icon.StackText:SetText("")
                         icon.StackText:Hide()
+                        SetGlowStackCount(icon, nil)
                     end
                 end
             elseif not InCombatLockdown() then
                 icon.StackText:SetText("")
                 icon.StackText:Hide()
+                SetGlowStackCount(icon, nil)
             end
         else
             -- Harvested entries and other types: hooks drive stack text.
@@ -2787,6 +2900,7 @@ local function UpdateIconCooldown(icon)
 
                 icon.StackText:SetText("")
                 icon.StackText:Hide()
+                SetGlowStackCount(icon, nil)
             end
         end
     end
@@ -2958,6 +3072,7 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         end
         icon.StackText:SetText("")
         icon.StackText:Hide()
+        SetGlowStackCount(icon, nil)
         -- Update click-to-cast secure attributes for recycled icons
         if spellEntry.viewerType ~= "buff" then
             UpdateIconSecureAttributes(icon, spellEntry, spellEntry.viewerType)
@@ -3024,6 +3139,8 @@ function CDMIcons:ReleaseIcon(icon)
         icon.Cooldown:Clear()
     end
     icon.StackText:SetText("")
+    icon.StackText:Hide()
+    SetGlowStackCount(icon, nil)
     icon.Border:Hide()
 
     -- Clear click-to-cast secure button

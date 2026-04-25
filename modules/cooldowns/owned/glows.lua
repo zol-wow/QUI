@@ -669,6 +669,15 @@ local function IsOverlayed(spellID)
     return overlayedSpells[spellID] or false
 end
 
+local function IsStackThresholdMet(icon, spellOvr)
+    if not icon or not spellOvr then return false end
+    local threshold = Helpers.SafeToNumber(spellOvr.glowStackThreshold, nil)
+    if not threshold or threshold <= 0 then return false end
+
+    local count = Helpers.SafeToNumber(icon._glowStackCount, nil)
+    return count and count >= threshold
+end
+
 local function EvaluateGlowForIcon(icon, includeHidden)
     if not icon or not icon._spellEntry then
         return false, nil
@@ -682,6 +691,8 @@ local function EvaluateGlowForIcon(icon, includeHidden)
     local shouldGlow
     if spellOvr and spellOvr.glowEnabled == false then
         shouldGlow = false
+    elseif IsStackThresholdMet(icon, spellOvr) then
+        shouldGlow = true
     elseif spellOvr and spellOvr.glowEnabled == true then
         shouldGlow = true
     else

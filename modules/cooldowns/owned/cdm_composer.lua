@@ -995,6 +995,51 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     local procCheck = GUI:CreateFormCheckbox(overridePanel, "Proc on Usable", "procOnUsable", proxyDB, OnOverrideChange)
     PlaceWidget(procCheck)
 
+    -- Stack threshold for using the container's configured CDM glow.
+    local stackGlowRow = CreateFrame("Frame", nil, overridePanel)
+    stackGlowRow:SetHeight(FORM_ROW)
+    local stackGlowLabel = stackGlowRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    stackGlowLabel:SetPoint("LEFT", 0, 0)
+    stackGlowLabel:SetText("Glow at Stacks")
+    stackGlowLabel:SetTextColor(0.85, 0.85, 0.85, 1)
+
+    local stackGlowHint = stackGlowRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    stackGlowHint:SetPoint("LEFT", stackGlowLabel, "RIGHT", 6, 0)
+    stackGlowHint:SetText("(0 = off)")
+    stackGlowHint:SetTextColor(0.45, 0.45, 0.45, 1)
+
+    local stackGlowBox = CreateFrame("EditBox", nil, stackGlowRow, "BackdropTemplate")
+    stackGlowBox:SetSize(48, 20)
+    stackGlowBox:SetPoint("RIGHT", stackGlowRow, "RIGHT", 0, 0)
+    SetSimpleBackdrop(stackGlowBox, 0.1, 0.1, 0.12, 1, 0.3, 0.3, 0.3, 1)
+    stackGlowBox:SetFontObject("GameFontNormalSmall")
+    stackGlowBox:SetTextInsets(4, 4, 0, 0)
+    stackGlowBox:SetAutoFocus(false)
+    stackGlowBox:SetMaxLetters(2)
+    stackGlowBox:SetNumeric(true)
+    stackGlowBox:SetText(tostring(overrides.glowStackThreshold or 0))
+    stackGlowBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        local val = tonumber(self:GetText()) or 0
+        if val < 0 then val = 0 end
+        if val > 99 then val = 99 end
+        self:SetText(tostring(val))
+        if val == 0 then
+            spellData:ClearSpellOverride(containerKey, spellID, "glowStackThreshold")
+        else
+            spellData:SetSpellOverride(containerKey, spellID, "glowStackThreshold", val)
+        end
+        OnOverrideChange()
+    end)
+    stackGlowBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    stackGlowBox:SetScript("OnEditFocusGained", function(self)
+        self:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+    end)
+    stackGlowBox:SetScript("OnEditFocusLost", function(self)
+        self:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    end)
+    PlaceWidget(stackGlowRow)
+
     -- Glow color
     -- For color pickers, we need a real table reference. Use a temp table synced back.
     local glowColorDB = { glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
