@@ -7568,6 +7568,12 @@ end)
 
 -- Skin all buttons for a specific bar
 local function SkinBar(barKey)
+    -- Micro menu and bag bar buttons are not action buttons and must not
+    -- be skinned — see SKINNABLE_BAR_KEYS at the top of this file. The
+    -- initial skin pass iterates ALL_MANAGED_BAR_KEYS without a gate, so
+    -- the rule has to be enforced here.
+    if not SKINNABLE_BAR_KEYS[barKey] then return end
+
     local db = GetDB()
     if not db or not db.enabled then return end
 
@@ -7699,6 +7705,75 @@ local function ApplyOwnedFlyoutButtonVisuals(button, spellID)
     end
 end
 
+-- DurationObject-driven CD swipe for popup buttons (no `action` slot, so the
+-- ActionBarsOwned action-cooldown loop can't drive these — we mirror Blizzard
+-- spell cooldowns directly via the only remaining secret-safe setter).
+local function UpdateOwnedFlyoutButtonCooldown(button)
+    if not button then return end
+    local cooldown = button.cooldown or button.Cooldown
+    if not cooldown then return end
+
+    local spellID = button._quiFlyoutSpellID
+    if not spellID or not C_Spell or not C_Spell.GetSpellCooldownDuration then
+        cooldown:Clear()
+        if button.chargeCooldown then button.chargeCooldown:Clear() end
+        return
+    end
+
+    local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
+    local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+    local showCharge = chargeInfo and chargeInfo.currentCharges and chargeInfo.maxCharges
+        and chargeInfo.currentCharges < chargeInfo.maxCharges
+    local showNormal = cdInfo and cdInfo.isEnabled and cdInfo.duration and cdInfo.duration > 0
+
+    if showNormal then
+        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if ok and durObj then
+            cooldown:SetCooldownFromDurationObject(durObj)
+        else
+            cooldown:Clear()
+        end
+    else
+        cooldown:Clear()
+    end
+
+    if showCharge and C_Spell.GetSpellChargeDuration then
+        if not button.chargeCooldown then
+            local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+            cd:SetHideCountdownNumbers(true)
+            cd:SetDrawSwipe(false)
+            cd:SetAllPoints(cooldown)
+            cd:SetFrameLevel(button:GetFrameLevel())
+            button.chargeCooldown = cd
+        end
+        local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
+        if ok and durObj then
+            button.chargeCooldown:SetCooldownFromDurationObject(durObj)
+        else
+            button.chargeCooldown:Clear()
+        end
+    elseif button.chargeCooldown then
+        button.chargeCooldown:Clear()
+    end
+end
+
+local function UpdateAllOwnedFlyoutButtonCooldowns()
+    if not ownedFlyout or not ownedFlyout:IsShown() then return end
+    for i = 1, (ownedFlyout:GetAttribute("numFlyoutButtons") or 0) do
+        local btn = ownedFlyoutButtons[i]
+        if btn and btn:IsShown() then
+            UpdateOwnedFlyoutButtonCooldown(btn)
+        end
+    end
+end
+
+local function ClearOwnedFlyoutButtonCooldown(button)
+    if not button then return end
+    local cooldown = button.cooldown or button.Cooldown
+    if cooldown then cooldown:Clear() end
+    if button.chargeCooldown then button.chargeCooldown:Clear() end
+end
+
 EnsureOwnedFlyoutFrame = function()
     if ownedFlyout or not USE_OWNED_FLYOUT then return ownedFlyout end
 
@@ -7716,6 +7791,7 @@ EnsureOwnedFlyoutFrame = function()
             local btn = ownedFlyoutButtons[i]
             if btn and btn:IsShown() then
                 ApplyOwnedFlyoutButtonVisuals(btn, btn:GetAttribute("qui-flyout-spell"))
+                UpdateOwnedFlyoutButtonCooldown(btn)
             end
         end
     end)
@@ -7724,6 +7800,7 @@ EnsureOwnedFlyoutFrame = function()
             local btn = ownedFlyoutButtons[i]
             if btn then
                 ApplyOwnedFlyoutButtonVisuals(btn, nil)
+                ClearOwnedFlyoutButtonCooldown(btn)
             end
         end
     end)
@@ -7763,9 +7840,8 @@ EnsureOwnedFlyoutFrame = function()
                 usedSlots = usedSlots + 1
                 local slotButton = self:GetFrameRef("flyoutButton" .. usedSlots)
                 if slotButton then
-                    local castSpellID = slotInfo.castSpellID or slotInfo.spellID
                     slotButton:SetAttribute("type", "spell")
-                    slotButton:SetAttribute("spell", castSpellID)
+                    slotButton:SetAttribute("spell", slotInfo.spellID)
                     slotButton:SetAttribute("qui-flyout-spell", slotInfo.spellID)
                     slotButton:CallMethod("QUI_UpdateOwnedFlyoutVisuals", slotInfo.spellID)
                     slotButton:SetWidth(width)
@@ -7875,9 +7951,11 @@ local function EnsureOwnedFlyoutButton(index)
     btn:SetScript("OnReceiveDrag", nil)
     btn.QUI_UpdateOwnedFlyoutVisuals = function(self, spellID)
         ApplyOwnedFlyoutButtonVisuals(self, spellID)
+        UpdateOwnedFlyoutButtonCooldown(self)
     end
     btn.QUI_ClearOwnedFlyoutVisuals = function(self)
         ApplyOwnedFlyoutButtonVisuals(self, nil)
+        ClearOwnedFlyoutButtonCooldown(self)
     end
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -7923,10 +8001,7 @@ local function PopulateOwnedFlyoutInfoEntry(info, flyoutID, numSlots, isKnown)
         end
 
         info.slots[slot] = info.slots[slot] or {}
-        local castSpellID = (overrideSpellID and overrideSpellID > 0) and overrideSpellID or spellID
         info.slots[slot].spellID = spellID
-        info.slots[slot].castSpellID = castSpellID
-        info.slots[slot].overrideSpellID = overrideSpellID
         info.slots[slot].isKnown = isKnownSlot and true or false
     end
 
@@ -8007,9 +8082,8 @@ SyncOwnedFlyoutInfoToHandler = function()
             data = data .. ("QUI_FlyoutInfo[%d] = newtable();QUI_FlyoutInfo[%d].slots = newtable();\n"):format(flyoutID, flyoutID)
             for slotID, slotInfo in ipairs(info.slots) do
                 local spellID = (slotInfo and type(slotInfo.spellID) == "number" and slotInfo.spellID > 0) and slotInfo.spellID or 0
-                local castSpellID = (slotInfo and type(slotInfo.castSpellID) == "number" and slotInfo.castSpellID > 0) and slotInfo.castSpellID or spellID
-                data = data .. ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].castSpellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
-                    :format(flyoutID, slotID, flyoutID, slotID, spellID, flyoutID, slotID, castSpellID, flyoutID, slotID, slotInfo and slotInfo.isKnown and "true" or "nil")
+                data = data .. ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
+                    :format(flyoutID, slotID, flyoutID, slotID, spellID, flyoutID, slotID, slotInfo and slotInfo.isKnown and "true" or "nil")
             end
         end
     end
@@ -8027,6 +8101,16 @@ SyncOwnedFlyoutInfoToHandler = function()
     end
 
     ActionBarsOwned.pendingOwnedFlyoutSync = false
+end
+
+do
+    -- Mirror SPELL_UPDATE_COOLDOWN/CHARGES into popup-button swipes while the
+    -- flyout is open. No-op when hidden — OnHide path already clears.
+    local cdEventFrame = CreateFrame("Frame")
+    cdEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+    cdEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
+    cdEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
+    cdEventFrame:SetScript("OnEvent", UpdateAllOwnedFlyoutButtonCooldowns)
 end
 
 ShowOwnedFlyoutForButton = function(parentButton)
