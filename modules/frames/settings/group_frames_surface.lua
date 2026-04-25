@@ -22,11 +22,6 @@ local Settings = ns.Settings
 local FullSurface = Settings and Settings.FullSurface
 local ClearFrame = FullSurface and FullSurface.ClearFrame
 
-local ACCENT_R, ACCENT_G, ACCENT_B = 0.2, 0.83, 0.6
-if GUI and GUI.Colors and GUI.Colors.accent then
-    ACCENT_R, ACCENT_G, ACCENT_B = GUI.Colors.accent[1], GUI.Colors.accent[2], GUI.Colors.accent[3]
-end
-
 local function ResolveModel(feature)
     local model = feature and feature.model or nil
     if type(model) == "function" then
@@ -141,7 +136,6 @@ end
 ---------------------------------------------------------------------------
 local function BuildTabStrip(parent)
     return FullSurface.CreateTabStrip(parent, {
-        accent = { ACCENT_R, ACCENT_G, ACCENT_B },
         wrapRows = true,
         rowSpacing = 2,
         fallbackWidth = 780,

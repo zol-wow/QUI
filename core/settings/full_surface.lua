@@ -6,12 +6,30 @@ ns.Settings = Settings
 local FullSurface = Settings.FullSurface or {}
 Settings.FullSurface = FullSurface
 
-local function ResolveAccent(options)
-    local accent = type(options) == "table" and options.accent or nil
+local function ResolveCurrentThemeAccent()
+    local gui = _G.QUI and _G.QUI.GUI
+    local accent = gui and gui.Colors and gui.Colors.accent
     if type(accent) == "table" then
         return accent[1] or 1, accent[2] or 1, accent[3] or 1
     end
     return 0.2, 0.83, 0.6
+end
+
+local function ResolveAccent(options)
+    local accent = type(options) == "table" and options.accent or nil
+    if type(accent) == "function" then
+        local r, g, b = accent()
+        if type(r) == "table" then
+            return r[1] or 1, r[2] or 1, r[3] or 1
+        end
+        if r and g and b then
+            return r, g, b
+        end
+    end
+    if type(accent) == "table" then
+        return accent[1] or 1, accent[2] or 1, accent[3] or 1
+    end
+    return ResolveCurrentThemeAccent()
 end
 
 function FullSurface.ClearFrame(frame)
@@ -413,7 +431,6 @@ function FullSurface.CreateTabStrip(parent, options)
     local labelSize = options.labelSize or 11
     local wrapRows = options.wrapRows == true
     local fallbackWidth = options.fallbackWidth or 780
-    local accentR, accentG, accentB = ResolveAccent(options)
 
     local strip = CreateFrame("Frame", nil, parent)
     strip:SetHeight(rowHeight)
@@ -445,6 +462,7 @@ function FullSurface.CreateTabStrip(parent, options)
         activeBar:SetPoint("BOTTOMLEFT", 4, 0)
         activeBar:SetPoint("BOTTOMRIGHT", -4, 0)
         activeBar:SetHeight(2)
+        local accentR, accentG, accentB = ResolveAccent(options)
         activeBar:SetColorTexture(accentR, accentG, accentB, 1)
         activeBar:Hide()
         button._activeBar = activeBar
@@ -464,6 +482,8 @@ function FullSurface.CreateTabStrip(parent, options)
         end
 
         if button._tabKey == activeKey then
+            local accentR, accentG, accentB = ResolveAccent(options)
+            button._activeBar:SetColorTexture(accentR, accentG, accentB, 1)
             button._label:SetTextColor(1, 1, 1, 1)
             button._activeBar:Show()
         else
