@@ -119,23 +119,33 @@ local function EnsureCursorFollowHooks(tooltip)
         -- Use a separate watcher frame for GameTooltip to avoid taint
         if not gtCursorWatcher then
             gtCursorWatcher = CreateFrame("Frame")
-            gtCursorWatcher:SetScript("OnUpdate", function()
-                if not cursorFollowActive[GameTooltip] then return end
+            gtCursorWatcher:Hide()
+            ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+            ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "TooltipCursorFollow", frame = gtCursorWatcher, scriptType = "OnUpdate" }
+            gtCursorWatcher:SetScript("OnUpdate", function(self)
+                if not cursorFollowActive[GameTooltip] then
+                    self:Hide()
+                    return
+                end
                 if not GameTooltip:IsShown() then
                     cursorFollowActive[GameTooltip] = nil
+                    self:Hide()
                     return
                 end
                 if HasActiveMoneyFrame(GameTooltip) then
                     cursorFollowActive[GameTooltip] = nil
+                    self:Hide()
                     return
                 end
                 if HasActiveWidgetContainer(GameTooltip) then
                     cursorFollowActive[GameTooltip] = nil
+                    self:Hide()
                     return
                 end
                 local settings = Provider:GetSettings()
                 if not settings or not settings.enabled or not settings.anchorToCursor then
                     cursorFollowActive[GameTooltip] = nil
+                    self:Hide()
                     return
                 end
                 Provider:PositionTooltipAtCursor(GameTooltip, settings)
@@ -170,6 +180,9 @@ local function AnchorTooltipToCursor(tooltip, parent, settings)
     EnsureCursorFollowHooks(tooltip)
     tooltip:SetOwner(parent or UIParent, "ANCHOR_NONE")
     cursorFollowActive[tooltip] = true
+    if tooltip == GameTooltip and gtCursorWatcher then
+        gtCursorWatcher:Show()
+    end
     Provider:PositionTooltipAtCursor(tooltip, settings or Provider:GetSettings())
     return true
 end
@@ -824,15 +837,22 @@ local function SetupTooltipHook()
         if settings.anchorToCursor then
             EnsureCursorFollowHooks(tooltip)
             cursorFollowActive[tooltip] = true
+            if tooltip == GameTooltip and gtCursorWatcher then
+                gtCursorWatcher:Show()
+            end
             Provider:PositionTooltipAtCursor(tooltip, settings)
         else
             cursorFollowActive[tooltip] = nil
+            if tooltip == GameTooltip and gtCursorWatcher then
+                gtCursorWatcher:Hide()
+            end
             Provider:PositionTooltipAtAnchor(tooltip, settings)
         end
     end)
 
     -- TAINT SAFETY: Use TooltipDataProcessor instead of hooksecurefunc(GameTooltip, "SetUnit")
-    -- to avoid tainting GameTooltip's dispatch tables.
+    -- to avoid tainting GameTooltip's dispatch tables. Keep unit tooltip work
+    -- in one post-call so each unit tooltip pays settings/unit lookup once.
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
         if tooltip ~= GameTooltip then return end
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
@@ -851,6 +871,7 @@ local function SetupTooltipHook()
             return
         end
 
+        InvalidatePendingSetUnit()
         local owner = tooltip:GetOwner()
         local token = pendingSetUnitToken + 1
         pendingSetUnitToken = token
@@ -867,125 +888,89 @@ local function SetupTooltipHook()
                 tooltip:Hide()
             end
         end)
-    end)
-
-    -- Strip server name / player title
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
-        if tooltip ~= GameTooltip then return end
-        local settings = Provider:GetSettings()
-        if not settings or not settings.enabled then return end
-
-        local hideServer = settings.hideServerName
-        local hideTitle = settings.hidePlayerTitle
-        if not hideServer and not hideTitle then return end
 
         local unit = ResolveTooltipUnit(tooltip)
-        if not unit then return end
+        if unit then
+            local okPlayer, isPlayer = pcall(UnitIsPlayer, unit)
+            if okPlayer and isPlayer then
+                local hideServer = settings.hideServerName
+                local hideTitle = settings.hidePlayerTitle
 
-        local okPlayer, isPlayer = pcall(UnitIsPlayer, unit)
-        if not okPlayer or not isPlayer then return end
-
-        -- Strip title from name line (line 1)
-        if hideTitle then
-            local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
-            if nameLine then
-                local okText, lineText = pcall(nameLine.GetText, nameLine)
-                if okText and lineText and not Helpers.IsSecretValue(lineText) then
-                    local okName, bareName = pcall(UnitName, unit)
-                    if okName and bareName and not Helpers.IsSecretValue(bareName) and lineText ~= bareName then
-                        pcall(nameLine.SetText, nameLine, bareName)
-                    end
-                end
-            end
-        end
-
-        -- Hide server/realm line
-        if hideServer then
-            local _, unitRealm = UnitName(unit)
-            if unitRealm and unitRealm ~= "" and not Helpers.IsSecretValue(unitRealm) then
-                -- Scan lines 2-5 for the realm name line
-                for i = 2, 5 do
-                    local line = tooltip.GetLeftLine and tooltip:GetLeftLine(i)
-                        or _G["GameTooltipTextLeft" .. i]
-                    if line then
-                        local okLT, lt = pcall(line.GetText, line)
-                        if okLT and lt and not Helpers.IsSecretValue(lt) then
-                            if lt == unitRealm then
-                                pcall(line.SetText, line, "")
-                                pcall(line.Hide, line)
-                                break
+                -- Strip title from name line (line 1)
+                if hideTitle then
+                    local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
+                    if nameLine then
+                        local okText, lineText = pcall(nameLine.GetText, nameLine)
+                        if okText and lineText and not Helpers.IsSecretValue(lineText) then
+                            local okName, bareName = pcall(UnitName, unit)
+                            if okName and bareName and not Helpers.IsSecretValue(bareName) and lineText ~= bareName then
+                                pcall(nameLine.SetText, nameLine, bareName)
                             end
                         end
                     end
                 end
-            end
-        end
-    end)
 
-    -- Class color player names
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
-        if tooltip ~= GameTooltip then return end
-        local settings = Provider:GetSettings()
-        if not settings or not settings.enabled or not settings.classColorName then return end
+                -- Hide server/realm line
+                if hideServer then
+                    local _, unitRealm = UnitName(unit)
+                    if unitRealm and unitRealm ~= "" and not Helpers.IsSecretValue(unitRealm) then
+                        -- Scan lines 2-5 for the realm name line
+                        for i = 2, 5 do
+                            local line = tooltip.GetLeftLine and tooltip:GetLeftLine(i)
+                                or _G["GameTooltipTextLeft" .. i]
+                            if line then
+                                local okLT, lt = pcall(line.GetText, line)
+                                if okLT and lt and not Helpers.IsSecretValue(lt) then
+                                    if lt == unitRealm then
+                                        pcall(line.SetText, line, "")
+                                        pcall(line.Hide, line)
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
 
-        local unit = ResolveTooltipUnit(tooltip)
-        if not unit then return end
+                -- Class color player names
+                if settings.classColorName then
+                    local okClass, _, class = pcall(UnitClass, unit)
+                    if okClass and class then
+                        local classColor
+                        if InCombatLockdown() then
+                            if C_ClassColor and C_ClassColor.GetClassColor then
+                                local okColor, color = pcall(C_ClassColor.GetClassColor, class)
+                                if okColor and color then classColor = color end
+                            end
+                        else
+                            classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+                        end
 
-        local okPlayer, isPlayer = pcall(UnitIsPlayer, unit)
-        if not okPlayer or not isPlayer then return end
-        local okClass, _, class = pcall(UnitClass, unit)
-        if not okClass or not class then return end
+                        if classColor then
+                            local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
+                            if nameLine then
+                                local okText, text = pcall(nameLine.GetText, nameLine)
+                                if okText and text and not Helpers.IsSecretValue(text) then
+                                    pcall(nameLine.SetTextColor, nameLine, classColor.r, classColor.g, classColor.b)
+                                end
+                            end
+                        end
+                    end
+                end
 
-        local classColor
-        if InCombatLockdown() then
-            if C_ClassColor and C_ClassColor.GetClassColor then
-                local okColor, color = pcall(C_ClassColor.GetClassColor, class)
-                if okColor and color then classColor = color end
-            end
-        else
-            classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
-        end
+                -- Add target/mount/M+ info (combat-aware)
+                AddUnitTooltipInfoToTooltip(tooltip, unit, settings)
 
-        if classColor then
-            local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
-            if nameLine then
-                local okText, text = pcall(nameLine.GetText, nameLine)
-                if okText and text and not Helpers.IsSecretValue(text) then
-                    pcall(nameLine.SetTextColor, nameLine, classColor.r, classColor.g, classColor.b)
+                -- Add player item level (out of combat only)
+                if not InCombatLockdown() then
+                    tooltipPlayerItemLevelGUID[tooltip] = nil
+                    AddPlayerItemLevelToTooltip(tooltip, unit, true)
                 end
             end
         end
-    end)
 
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
-        if tooltip ~= GameTooltip then return end
-        local settings = Provider:GetSettings()
-        if not settings or not settings.enabled then return end
-
-        local unit = ResolveTooltipUnit(tooltip)
-        if not unit then return end
-
-        local okPlayer, isPlayer = pcall(UnitIsPlayer, unit)
-        if not okPlayer or not isPlayer then return end
-
-        -- Add target/mount/M+ info (combat-aware)
-        AddUnitTooltipInfoToTooltip(tooltip, unit, settings)
-
-        -- Add player item level (out of combat only)
-        if not InCombatLockdown() then
-            tooltipPlayerItemLevelGUID[tooltip] = nil
-            AddPlayerItemLevelToTooltip(tooltip, unit, true)
-        end
-    end)
-
-    -- Hide health bar
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
-        if tooltip ~= GameTooltip then return end
-        if InCombatLockdown() then return end
-        local settings = Provider:GetSettings()
-        if not settings or not settings.enabled then return end
-
-        if settings.hideHealthBar then
+        -- Hide health bar
+        if settings.hideHealthBar and not InCombatLockdown() then
             if GameTooltipStatusBar and not (GameTooltipStatusBar.IsForbidden and GameTooltipStatusBar:IsForbidden()) then
                 pcall(GameTooltipStatusBar.SetShown, GameTooltipStatusBar, false)
                 pcall(GameTooltipStatusBar.SetAlpha, GameTooltipStatusBar, 0)
@@ -1001,7 +986,13 @@ local function SetupTooltipHook()
     -- HookScript on GameTooltip permanently taints its dispatch tables.
     local gtSpellIDWatcher = CreateFrame("Frame")
     local gtSpellIDWasShown = false
-    gtSpellIDWatcher:SetScript("OnUpdate", function(_, elapsed)
+    gtSpellIDWatcher:Hide()
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "TooltipState", frame = gtSpellIDWatcher, scriptType = "OnUpdate" }
+    hooksecurefunc(GameTooltip, "Show", function()
+        gtSpellIDWatcher:Show()
+    end)
+    gtSpellIDWatcher:SetScript("OnUpdate", function(self, elapsed)
         local shown = GameTooltip:IsShown()
         if shown and not gtSpellIDWasShown then
             ResetTooltipHideFade()
@@ -1012,6 +1003,7 @@ local function SetupTooltipHook()
             tooltipSpellIDAdded[GameTooltip] = nil
             tooltipPlayerItemLevelGUID[GameTooltip] = nil
             tooltipUnitInfoState[GameTooltip] = nil
+            self:Hide()
         elseif shown then
             local settings = Provider:GetSettings()
             if not settings or not settings.enabled then
@@ -1041,6 +1033,8 @@ local function SetupTooltipHook()
                     pcall(GameTooltip.SetAlpha, GameTooltip, nextAlpha)
                 end
             end
+        else
+            self:Hide()
         end
         gtSpellIDWasShown = shown
     end)

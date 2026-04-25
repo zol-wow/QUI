@@ -512,9 +512,27 @@ function UIKit.UpdateBorderLines(frame, sizePixels, r, g, b, a, hide)
     end
     if not state then return end
 
-    state.sizePixels = sizePixels or state.sizePixels or 1
-    state.color = { r or 0, g or 0, b or 0, a or 1 }
-    state.hidden = hide or (state.sizePixels or 0) <= 0
+    local newSize = sizePixels or state.sizePixels or 1
+    local newR, newG, newB, newA = r or 0, g or 0, b or 0, a or 1
+    local newHidden = hide or (newSize or 0) <= 0
+    local color = state.color
+    if state.sizePixels == newSize
+        and state.hidden == newHidden
+        and color
+        and color[1] == newR
+        and color[2] == newG
+        and color[3] == newB
+        and color[4] == newA then
+        return
+    end
+
+    state.sizePixels = newSize
+    if not color then
+        color = {}
+        state.color = color
+    end
+    color[1], color[2], color[3], color[4] = newR, newG, newB, newA
+    state.hidden = newHidden
     RefreshBorderLines(frame)
 end
 

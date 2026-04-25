@@ -132,6 +132,19 @@ end)
 local cachedMouseFrame = nil
 local cachedMouseFrameTime = 0
 local MOUSE_FRAME_CACHE_TTL = 0.2  -- 200ms cache
+local contextCache = Helpers.CreateStateTable()
+local CONTEXT_CACHE_TTL = 0.12
+local NIL_CONTEXT = {}
+
+local function SetCachedContext(owner, value, now)
+    local entry = contextCache[owner]
+    if not entry then
+        entry = {}
+        contextCache[owner] = entry
+    end
+    entry.value = value or NIL_CONTEXT
+    entry.time = now
+end
 
 function TooltipProvider:GetTopMouseFrame()
     local now = GetTime()
@@ -316,6 +329,12 @@ function TooltipProvider:GetTooltipContext(owner)
     if owner == WorldFrame then return "npcs" end
     if self:IsTransientTooltipOwner(owner) then return nil end
 
+    local now = GetTime()
+    local cached = contextCache[owner]
+    if cached and (now - cached.time) < CONTEXT_CACHE_TTL then
+        return cached.value ~= NIL_CONTEXT and cached.value or nil
+    end
+
     local getIS = _G.QUI_GetIconState or _G.QUI_GetCDMIconState
     local getViewer = _G.QUI_GetCDMViewerFrame
     local chain = GetFrameChain(owner)
@@ -325,15 +344,18 @@ function TooltipProvider:GetTooltipContext(owner)
         local entry = state and state._spellEntry
         local viewerType = entry and entry.viewerType
         if type(viewerType) == "string" and not BUILTIN_CDM_KEYS[viewerType] then
+            SetCachedContext(owner, "customTrackers", now)
             return "customTrackers"
         end
 
         local cdmKey = frame._quiCdmKey
         if type(cdmKey) == "string" and not BUILTIN_CDM_KEYS[cdmKey] then
+            SetCachedContext(owner, "customTrackers", now)
             return "customTrackers"
         end
 
         if IsCDMOwnerState(state) then
+            SetCachedContext(owner, "cdm", now)
             return "cdm"
         end
 
@@ -343,6 +365,7 @@ function TooltipProvider:GetTooltipContext(owner)
             frame == getViewer("buffIcon") or
             frame == getViewer("buffBar")
         ) then
+            SetCachedContext(owner, "cdm", now)
             return "cdm"
         end
     end
@@ -353,6 +376,7 @@ function TooltipProvider:GetTooltipContext(owner)
             frame._quiTooltipContext == "customTrackers" or
             frame.__quiTooltipContext == "customTrackers" or
             strmatch(frameName, "[Cc]ustomTracker") then
+            SetCachedContext(owner, "customTrackers", now)
             return "customTrackers"
         end
     end
@@ -362,30 +386,36 @@ function TooltipProvider:GetTooltipContext(owner)
         if actionSlot then
             local actionType = GetActionInfo(actionSlot)
             if actionType == "item" then
+                SetCachedContext(owner, "items", now)
                 return "items"
             end
             if actionType then
+                SetCachedContext(owner, "abilities", now)
                 return "abilities"
             end
         end
 
         if IsActionFrameName(GetFrameName(frame)) then
+            SetCachedContext(owner, "abilities", now)
             return "abilities"
         end
     end
 
     for _, frame in ipairs(chain) do
         if IsItemFrameName(GetFrameName(frame)) then
+            SetCachedContext(owner, "items", now)
             return "items"
         end
     end
 
     for _, frame in ipairs(chain) do
         if IsUnitFrameName(frame, GetFrameName(frame)) then
+            SetCachedContext(owner, "frames", now)
             return "frames"
         end
     end
 
+    SetCachedContext(owner, nil, now)
     return nil
 end
 

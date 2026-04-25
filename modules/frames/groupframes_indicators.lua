@@ -531,14 +531,23 @@ local function AcquireBar(parent)
     return CreateBarIndicator(parent)
 end
 
+local UnregisterBarTimer
+
 local function ReleaseBar(item)
     item:Hide()
     item:ClearAllPoints()
-    item:SetScript("OnUpdate", nil)
+    if UnregisterBarTimer then
+        UnregisterBarTimer(item)
+    end
     item._elapsed = 0
     item._indicator = nil
     item._auraData = nil
     item._unit = nil
+    item._layoutOrientation = nil
+    item._layoutWidth = nil
+    item._layoutHeight = nil
+    item._layoutAnchor = nil
+    item._layoutTexturePath = nil
     item:SetMinMaxValues(0, 1)
     item:SetValue(1)
     if item.background then
@@ -601,13 +610,48 @@ local function UpdateBarProgress(bar)
     ApplyBarColor(bar, indicator, remaining)
 end
 
-local function BarOnUpdate(self, elapsed)
+local activeTimerBars = {}
+local activeTimerBarCount = 0
+local barTimerFrame = CreateFrame("Frame")
+barTimerFrame:Hide()
+
+local function BarTimerOnUpdate(self, elapsed)
     self._elapsed = (self._elapsed or 0) + elapsed
     if self._elapsed < 0.08 then
         return
     end
     self._elapsed = 0
-    UpdateBarProgress(self)
+    for bar in pairs(activeTimerBars) do
+        if bar:IsShown() then
+            UpdateBarProgress(bar)
+        else
+            activeTimerBars[bar] = nil
+            activeTimerBarCount = math_max(activeTimerBarCount - 1, 0)
+        end
+    end
+    if activeTimerBarCount == 0 then
+        self:Hide()
+    end
+end
+
+barTimerFrame:SetScript("OnUpdate", BarTimerOnUpdate)
+
+local function RegisterBarTimer(bar)
+    if not activeTimerBars[bar] then
+        activeTimerBars[bar] = true
+        activeTimerBarCount = activeTimerBarCount + 1
+    end
+    barTimerFrame:Show()
+end
+
+UnregisterBarTimer = function(bar)
+    if activeTimerBars[bar] then
+        activeTimerBars[bar] = nil
+        activeTimerBarCount = math_max(activeTimerBarCount - 1, 0)
+        if activeTimerBarCount == 0 then
+            barTimerFrame:Hide()
+        end
+    end
 end
 
 local function ConfigureBarIndicator(bar, frame, auraData, indicator)
@@ -626,29 +670,55 @@ local function ConfigureBarIndicator(bar, frame, auraData, indicator)
     local borderSize = math_max(1, SafeToNumber(indicator.borderSize, 1))
     local borderColor = indicator.borderColor or DEFAULT_BORDER_COLOR
     local px = QUICore.GetPixelSize and QUICore:GetPixelSize(bar) or 1
+    local texturePath = GetStatusBarTexturePath(frame._isRaid)
+    local bottomPad = frame._bottomPad or 0
+    local hideBorder = indicator.hideBorder == true
+    local br, bg, bb, ba = borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] or 1
+    local layoutChanged = bar._layoutOrientation ~= orientation
+        or bar._layoutWidth ~= width
+        or bar._layoutHeight ~= height
+        or bar._layoutAnchor ~= anchor
+        or bar._layoutOffsetX ~= offsetX
+        or bar._layoutOffsetY ~= offsetY
+        or bar._layoutBottomPad ~= bottomPad
+        or bar._layoutBorderSize ~= borderSize
+        or bar._layoutHideBorder ~= hideBorder
+        or bar._layoutTexturePath ~= texturePath
+        or bar._layoutBorderR ~= br
+        or bar._layoutBorderG ~= bg
+        or bar._layoutBorderB ~= bb
+        or bar._layoutBorderA ~= ba
 
-    bar:ClearAllPoints()
-    if anchor:find("BOTTOM") then
-        offsetY = offsetY + (frame._bottomPad or 0)
-    end
-    bar:SetPoint(anchor, frame, anchor, offsetX, offsetY)
-    bar:SetSize(width, height)
-    bar:SetOrientation(orientation)
-    bar:SetStatusBarTexture(GetStatusBarTexturePath(frame._isRaid))
+    if layoutChanged then
+        bar._layoutOrientation = orientation
+        bar._layoutWidth = width
+        bar._layoutHeight = height
+        bar._layoutAnchor = anchor
+        bar._layoutOffsetX = offsetX
+        bar._layoutOffsetY = offsetY
+        bar._layoutBottomPad = bottomPad
+        bar._layoutBorderSize = borderSize
+        bar._layoutHideBorder = hideBorder
+        bar._layoutTexturePath = texturePath
+        bar._layoutBorderR, bar._layoutBorderG, bar._layoutBorderB, bar._layoutBorderA = br, bg, bb, ba
+        bar:ClearAllPoints()
+        if anchor:find("BOTTOM") then
+            offsetY = offsetY + bottomPad
+        end
+        bar:SetPoint(anchor, frame, anchor, offsetX, offsetY)
+        bar:SetSize(width, height)
+        bar:SetOrientation(orientation)
+        bar:SetStatusBarTexture(texturePath)
 
-    if indicator.hideBorder then
-        bar:SetBackdrop(nil)
-    else
-        bar:SetBackdrop({
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = borderSize * px,
-        })
-        bar:SetBackdropBorderColor(
-            borderColor[1] or 0,
-            borderColor[2] or 0,
-            borderColor[3] or 0,
-            borderColor[4] or 1
-        )
+        if hideBorder then
+            bar:SetBackdrop(nil)
+        else
+            bar:SetBackdrop({
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = borderSize * px,
+            })
+            bar:SetBackdropBorderColor(br, bg, bb, ba)
+        end
     end
 
     bar._unit = frame.unit
@@ -660,9 +730,9 @@ local function ConfigureBarIndicator(bar, frame, auraData, indicator)
     local duration = SafeToNumber(auraData.duration, 0)
     local expirationTime = SafeToNumber(auraData.expirationTime, 0)
     if duration > 0 and expirationTime > 0 and not IsSecretValue(auraData.duration) and not IsSecretValue(auraData.expirationTime) then
-        bar:SetScript("OnUpdate", BarOnUpdate)
+        RegisterBarTimer(bar)
     else
-        bar:SetScript("OnUpdate", nil)
+        UnregisterBarTimer(bar)
     end
 end
 
@@ -704,9 +774,21 @@ local function PositionIconContainer(frame, ai)
     local anchor = ai.anchor or "TOPLEFT"
     local offX = ai.anchorOffsetX or 0
     local offY = ai.anchorOffsetY or 0
+    local bottomPad = frame._bottomPad or 0
+    if state.iconContainerAnchor == anchor
+        and state.iconContainerOffX == offX
+        and state.iconContainerOffY == offY
+        and state.iconContainerBottomPad == bottomPad then
+        return
+    end
+    state.iconContainerAnchor = anchor
+    state.iconContainerOffX = offX
+    state.iconContainerOffY = offY
+    state.iconContainerBottomPad = bottomPad
+
     container:ClearAllPoints()
     if anchor:find("BOTTOM") then
-        offY = offY + (frame._bottomPad or 0)
+        offY = offY + bottomPad
     end
     container:SetPoint(anchor, frame, anchor, offX, offY)
 end
@@ -807,12 +889,19 @@ end
 
 local function RenderIconIndicators(frame, ai, iconPayloads)
     local state = GetIndicatorState(frame)
-    for _, icon in ipairs(state.icons) do
-        ReleaseIcon(icon)
-    end
-    wipe(state.icons)
 
     if #iconPayloads == 0 then
+        for _, icon in ipairs(state.icons) do
+            ReleaseIcon(icon)
+        end
+        wipe(state.icons)
+        state.iconCount = nil
+        state.iconSize = nil
+        state.iconGrowDir = nil
+        state.iconSpacing = nil
+        state.iconAnchor = nil
+        state.iconHideSwipe = nil
+        state.iconReverseSwipe = nil
         if state.iconContainer then
             state.iconContainer:Hide()
         end
@@ -827,39 +916,67 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
     local maxIcons = ai.maxIndicators or 5
     local anchor = ai.anchor or "TOPLEFT"
     local count = math_min(#iconPayloads, maxIcons)
+    local hideSwipe = ai.hideSwipe == true
+    local reverseSwipe = ai.reverseSwipe == true
+    local layoutChanged = state.iconCount ~= count
+        or state.iconSize ~= iconSize
+        or state.iconGrowDir ~= growDir
+        or state.iconSpacing ~= spacing
+        or state.iconAnchor ~= anchor
+        or state.iconHideSwipe ~= hideSwipe
+        or state.iconReverseSwipe ~= reverseSwipe
+    state.iconCount = count
+    state.iconSize = iconSize
+    state.iconGrowDir = growDir
+    state.iconSpacing = spacing
+    state.iconAnchor = anchor
+    state.iconHideSwipe = hideSwipe
+    state.iconReverseSwipe = reverseSwipe
 
     PositionIconContainer(frame, ai)
     container:Show()
 
     for idx = 1, count do
         local payload = iconPayloads[idx]
-        local icon = AcquireIcon(container)
+        local icon = state.icons[idx]
+        if not icon then
+            icon = AcquireIcon(container)
+            state.icons[idx] = icon
+            layoutChanged = true
+        end
         icon:SetSize(iconSize, iconSize)
-        icon._hideSwipe = ai.hideSwipe == true
-        icon._reverseSwipe = ai.reverseSwipe == true
-        icon:ClearAllPoints()
+        icon._hideSwipe = hideSwipe
+        icon._reverseSwipe = reverseSwipe
 
-        local vertPart = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
-        local firstHoriz = growDir == "LEFT" and "RIGHT" or "LEFT"
-        local firstAnchor = vertPart .. firstHoriz
+        if layoutChanged then
+            icon:ClearAllPoints()
 
-        if idx == 1 then
-            icon:SetPoint(firstAnchor, container, firstAnchor, 0, 0)
-        else
-            local prev = state.icons[idx - 1]
-            if growDir == "LEFT" then
-                icon:SetPoint("RIGHT", prev, "LEFT", -spacing, 0)
+            local vertPart = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
+            local firstHoriz = growDir == "LEFT" and "RIGHT" or "LEFT"
+            local firstAnchor = vertPart .. firstHoriz
+
+            if idx == 1 then
+                icon:SetPoint(firstAnchor, container, firstAnchor, 0, 0)
             else
-                icon:SetPoint("LEFT", prev, "RIGHT", spacing, 0)
+                local prev = state.icons[idx - 1]
+                if growDir == "LEFT" then
+                    icon:SetPoint("RIGHT", prev, "LEFT", -spacing, 0)
+                else
+                    icon:SetPoint("LEFT", prev, "RIGHT", spacing, 0)
+                end
             end
         end
 
         UpdateIconData(icon, frame.unit, payload.auraData)
         icon:Show()
-        state.icons[idx] = icon
     end
 
-    if growDir == "CENTER" and count > 0 then
+    for idx = #state.icons, count + 1, -1 do
+        ReleaseIcon(state.icons[idx])
+        state.icons[idx] = nil
+    end
+
+    if layoutChanged and growDir == "CENTER" and count > 0 then
         local totalSpan = count * iconSize + math_max(count - 1, 0) * spacing
         local startX = -totalSpan / 2
         local vertPart2 = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
@@ -877,17 +994,21 @@ end
 
 local function RenderBarIndicators(frame, barPayloads)
     local state = GetIndicatorState(frame)
-    for _, bar in ipairs(state.bars) do
-        ReleaseBar(bar)
-    end
-    wipe(state.bars)
 
     for idx, payload in ipairs(barPayloads) do
-        local bar = AcquireBar(frame)
+        local bar = state.bars[idx]
+        if not bar then
+            bar = AcquireBar(frame)
+            state.bars[idx] = bar
+        end
         bar:SetFrameLevel(frame:GetFrameLevel() + 9)
         ConfigureBarIndicator(bar, frame, payload.auraData, payload.indicator)
         bar:Show()
-        state.bars[idx] = bar
+    end
+
+    for idx = #state.bars, #barPayloads + 1, -1 do
+        ReleaseBar(state.bars[idx])
+        state.bars[idx] = nil
     end
 
     -- Release payloads back to pool — breaks auraData reference chain
@@ -1013,3 +1134,4 @@ end
 
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_Indicators", frame = eventFrame }
+ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_IndicatorBars", frame = barTimerFrame, scriptType = "OnUpdate" }

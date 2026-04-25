@@ -206,7 +206,15 @@ local styleFrames = Helpers.CreateStateTable()   -- tooltip → chrome frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
 local hookedNineSlices = Helpers.CreateStateTable() -- NineSlice → true
 local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
+local gameTooltipRestyleFrame = nil
 local suppressNSHook = false                      -- suppress NineSlice hook during intentional re-show
+
+local function QueueGameTooltipRestyle()
+    pendingGameTooltipRestyle = true
+    if gameTooltipRestyleFrame then
+        gameTooltipRestyleFrame:Show()
+    end
+end
 
 ---------------------------------------------------------------------------
 -- NineSlice Management
@@ -643,7 +651,7 @@ HookTooltipOnShow = function(tooltip)
             HideNineSlice(self)
             local sf = styleFrames[self]
             if sf then pcall(sf.Show, sf) end
-            pendingGameTooltipRestyle = true
+            QueueGameTooltipRestyle()
         end)
 
         return
@@ -737,7 +745,7 @@ local function SetupBackdropStyleHooks()
                 HideNineSlice(tooltip)
                 local sf = styleFrames[tooltip]
                 if sf then sf:Show() end
-                pendingGameTooltipRestyle = true
+                QueueGameTooltipRestyle()
                 return
             end
 
@@ -772,7 +780,7 @@ local function SetupBackdropStyleHooks()
                 HideNineSlice(tooltip)
                 local sf = styleFrames[tooltip]
                 if sf then sf:Show() end
-                pendingGameTooltipRestyle = true
+                QueueGameTooltipRestyle()
                 return
             end
             local _ns3 = tooltip.NineSlice
@@ -844,7 +852,7 @@ local function SetupPostProcessor()
             HideNineSlice(tooltip)
             local sf = styleFrames[tooltip]
             if sf then sf:Show() end
-            pendingGameTooltipRestyle = true
+            QueueGameTooltipRestyle()
             return
         end
         if InCombatLockdown() then
@@ -969,7 +977,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         local fontsApplied = false
         local wasShown = false
         local deferFrame = CreateFrame("Frame")
-        deferFrame:SetScript("OnUpdate", function()
+        gameTooltipRestyleFrame = deferFrame
+        deferFrame:Hide()
+        ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+        ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "TooltipSkinning", frame = deferFrame, scriptType = "OnUpdate" }
+        deferFrame:SetScript("OnUpdate", function(self)
             -- TAINT SAFETY: Detect GameTooltip hide via IsShown() polling
             -- instead of HookScript("OnHide").  HookScript runs addon code
             -- inside the secure execution context, tainting the caller
@@ -982,6 +994,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 pendingGameTooltipRestyle = false
             end
             wasShown = shown
+
+            if not shown and not pendingGameTooltipRestyle then
+                self:Hide()
+                return
+            end
 
             if not pendingGameTooltipRestyle then return end
             pendingGameTooltipRestyle = false
