@@ -66,6 +66,7 @@ local initialized = false
 local RegisterContainerFrame
 local SyncContainerMouseState
 local SyncAllContainerMouseStates
+local ApplyUtilityAnchor
 
 -- Anchor proxy for Utility below Essential
 local UtilityAnchorProxy = nil
@@ -2012,8 +2013,8 @@ local function LayoutContainer(trackerKey)
             C_Timer.After(0.05, function()
                 -- Skip during combat — PLAYER_REGEN_ENABLED RefreshAll handles recovery
                 if InCombatLockdown() then return end
-                if _G.QUI_ApplyUtilityAnchor then
-                    _G.QUI_ApplyUtilityAnchor()
+                if ApplyUtilityAnchor then
+                    ApplyUtilityAnchor()
                 end
             end)
         end
@@ -2056,6 +2057,7 @@ RefreshAll = function(forceSync)
     -- Exception: during the ADDON_LOADED / PEW safe window, protected calls
     -- are allowed even though InCombatLockdown() reports true on /reload.
     if InCombatLockdown() and not inInitSafeWindow then
+        specTrackingPendingRefresh = true
         return
     end
 
@@ -2112,12 +2114,12 @@ RefreshAll = function(forceSync)
 
     if forceSync then
         -- Synchronous layout: runs inline to leverage the ADDON_LOADED safe
-        -- window on combat /reload where InCombatLockdown() returns false.
+        -- window on combat /reload while InCombatLockdown() still reports true.
         -- No timer stagger needed — nothing to interleave on initial boot.
         LayoutContainer("essential")
         LayoutContainer("utility")
-        if _G.QUI_ApplyUtilityAnchor then
-            _G.QUI_ApplyUtilityAnchor()
+        if ApplyUtilityAnchor then
+            ApplyUtilityAnchor()
         end
         LayoutContainer("buff")
         -- Layout custom containers
@@ -2154,8 +2156,8 @@ RefreshAll = function(forceSync)
         refreshTimers[2] = C_Timer.NewTimer(0.02, function()
             refreshTimers[2] = nil
             LayoutContainer("utility")
-            if _G.QUI_ApplyUtilityAnchor then
-                _G.QUI_ApplyUtilityAnchor()
+            if ApplyUtilityAnchor then
+                ApplyUtilityAnchor()
             end
         end)
         refreshTimers[3] = C_Timer.NewTimer(0.03, function()
@@ -2208,7 +2210,7 @@ end
 ---------------------------------------------------------------------------
 -- UTILITY ANCHOR: Position Utility container below Essential
 ---------------------------------------------------------------------------
-local function ApplyUtilityAnchor()
+ApplyUtilityAnchor = function()
     local db = GetDB()
     if not db or not db.utility then
         return
@@ -2640,6 +2642,14 @@ local BLIZZARD_FALLBACKS = {
 -- Initialize: called by cdm_provider.lua after engine selection
 ---------------------------------------------------------------------------
 function ownedEngine:Initialize()
+    -- During a combat /reload this runs inside the ADDON_LOADED safe window
+    -- where protected calls are allowed even though InCombatLockdown() returns
+    -- true. Set the flag before spell-data bootstrap so Blizzard CDM loading
+    -- and the initial scans are not skipped.
+    inInitSafeWindow = true
+    local previousInitSafeWindow = ns._inInitSafeWindow
+    ns._inInitSafeWindow = true
+
     -- Wire owned-engine exports that are populated after their modules load.
     if ns._OwnedGlows then
         QUI.CustomGlows = ns._OwnedGlows
@@ -2710,12 +2720,6 @@ function ownedEngine:Initialize()
     end
 
     -- Create containers immediately (addon-owned frames, no external dependency).
-    -- During a combat /reload this runs inside the ADDON_LOADED safe window
-    -- where protected calls are allowed even though InCombatLockdown() returns
-    -- true. Set the flag so RefreshAll and other combat-gated sub-functions
-    -- bypass their combat guards for the duration of this synchronous block.
-    inInitSafeWindow = true
-    ns._inInitSafeWindow = true
     InitContainers()
     InitBuffContainer()
 
@@ -2739,7 +2743,7 @@ function ownedEngine:Initialize()
     end
 
     -- Synchronous initial layout: leverages the ADDON_LOADED safe window on
-    -- combat /reload (InCombatLockdown() returns false).  If Blizzard viewers
+    -- combat /reload (InCombatLockdown() still returns true). If Blizzard viewers
     -- aren't populated yet (first login), layout produces empty containers —
     -- the deferred re-layout below fills them once spell data arrives.
     if specReadyNow then
@@ -2749,7 +2753,7 @@ function ownedEngine:Initialize()
     end
 
     -- Synchronous post-layout: apply frame anchoring overrides NOW while
-    -- still in the ADDON_LOADED safe window (InCombatLockdown=false).
+    -- still in the ADDON_LOADED safe window.
     -- Containers anchored to other frames (e.g. utility→essential) need
     -- the anchoring system to set their position. This MUST be synchronous
     -- because deferred timers fire after the safe window closes.
@@ -2790,7 +2794,7 @@ function ownedEngine:Initialize()
     -- Close the safe window — subsequent C_Timer callbacks run outside the
     -- ADDON_LOADED handler and must respect combat lockdown normally.
     inInitSafeWindow = false
-    ns._inInitSafeWindow = false
+    ns._inInitSafeWindow = previousInitSafeWindow
 
     -- Deferred re-layout: catches first-login cases where Blizzard viewers
     -- populate after us, or where the immediate scan found empty data.
@@ -2811,6 +2815,7 @@ function ownedEngine:Initialize()
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     eventFrame:RegisterEvent("CHALLENGE_MODE_START")
     eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     eventFrame:RegisterEvent("CINEMATIC_STOP")
@@ -2833,6 +2838,7 @@ function ownedEngine:Initialize()
                 -- the initial ADDON_LOADED scan. PEW fires inside the
                 -- safe window: protected calls are allowed even though
                 -- InCombatLockdown() returns true on combat /reload.
+                local previousInitSafeWindow = ns._inInitSafeWindow
                 inInitSafeWindow = true
                 ns._inInitSafeWindow = true
                 if ns.CDMSpellData then
@@ -2843,7 +2849,7 @@ function ownedEngine:Initialize()
                     _G.QUI_ApplyAllFrameAnchors()
                 end
                 inInitSafeWindow = false
-                ns._inInitSafeWindow = false
+                ns._inInitSafeWindow = previousInitSafeWindow
             elseif isLogin then
                 -- Fresh login (or character switch): run dormant spell cleanup
                 -- so cross-class/spec spells are removed before the first
@@ -2895,6 +2901,34 @@ function ownedEngine:Initialize()
                     specTrackingPendingRefresh = false
                     RefreshAll()
                 end
+            end
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            if ns.CDMSpellData then
+                ns.CDMSpellData:ForceScan()
+                for _, key in ipairs(BUILTIN_KEYS) do
+                    ns.CDMSpellData:SnapshotBlizzardCDM(key)
+                end
+            end
+
+            local readyNow = specTrackingReady
+            if not specTrackingReady then
+                readyNow = InitSpecTracking()
+                specTrackingReady = readyNow
+            end
+
+            if not readyNow then
+                specTrackingPendingRefresh = true
+                return
+            end
+
+            if specTrackingPendingRefresh then
+                FinalizeSpecTracking()
+            else
+                if ns.CDMSpellData then
+                    ns.CDMSpellData:CheckAllDormantSpells()
+                    ns.CDMSpellData:ReconcileAllContainers()
+                end
+                RefreshAll()
             end
         elseif event == "CHALLENGE_MODE_START" then
             -- Restore dormant spells before refreshing — SPELLS_CHANGED

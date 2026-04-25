@@ -1943,7 +1943,7 @@ end
 -- ticker (0.5s) picks up children once they're ready.
 ---------------------------------------------------------------------------
 local function ForceLoadCDM()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return end
     -- Ensure the Blizzard addon is loaded (no-op if already loaded)
     if C_AddOns and C_AddOns.LoadAddOn then
         pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownManager")
@@ -2344,7 +2344,7 @@ local function ScanViewer(viewerType)
 end
 
 local function ScanAll()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return end
 
     -- Rebuild the spell→child map fresh each scan to prevent unbounded
     -- growth from duplicate entries.  Hooks on child Cooldown frames
@@ -3168,7 +3168,7 @@ end
 
 -- SnapshotBlizzardCDM: One-time capture of Blizzard viewer spells into ownedSpells
 function CDMSpellData:SnapshotBlizzardCDM(containerKey)
-    if InCombatLockdown() then
+    if InCombatLockdown() and not ns._inInitSafeWindow then
         return false
     end
 
@@ -4798,7 +4798,7 @@ function CDMSpellData:ForceScan()
     -- Scan all three viewers synchronously but do NOT fire QUI_OnSpellDataChanged.
     -- This prevents a feedback loop: RefreshAll → ForceScan → changed → callback → RefreshAll.
     -- Update fingerprints so the periodic ScanAll ticker won't re-detect the same change.
-    if InCombatLockdown() then
+    if InCombatLockdown() and not ns._inInitSafeWindow then
         return
     end
     ScanViewer("essential")
@@ -4859,8 +4859,8 @@ function CDMSpellData:Initialize()
     HideBlizzardViewers()
     ForceLoadCDM()
     -- Immediate scan: succeeds during /reload when viewers are already
-    -- populated.  At ADDON_LOADED the safe window allows this even on
-    -- combat reload (InCombatLockdown() returns false).
+    -- populated. At ADDON_LOADED the safe window allows this even on
+    -- combat reload while InCombatLockdown() still reports true.
     ScanAll()
     -- Deferred re-scan: handles first login where viewers populate after us.
     C_Timer.After(0.5, function()
