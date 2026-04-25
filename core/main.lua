@@ -605,6 +605,14 @@ function QUICore:OnEnable()
         end
     end
 
+    -- Create secure player buff/debuff headers while the addon-load safe
+    -- window is still open. A delayed timer misses this window on combat
+    -- reloads, and SecureAuraHeaderTemplate cannot be safely bootstrapped
+    -- from addon code once combat lockdown is active.
+    if QUI.BuffBorders and QUI.BuffBorders.Init then
+        QUI.BuffBorders.Init()
+    end
+
     -- IMMEDIATE: Apply frame anchoring synchronously during ADDON_LOADED
     -- safe window. Protected calls work here even during combat reloads.
     ApplyFrameOverrides()

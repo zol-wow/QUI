@@ -117,6 +117,7 @@ local debuffSortedIcons = {}
 -- Containers (created in Init)
 local buffContainer = nil
 local debuffContainer = nil
+local initialized = false
 
 -- Blizzard frame banish state
 local blizzBuffBanished = false
@@ -263,10 +264,10 @@ end
 
 ---------------------------------------------------------------------------
 -- SYNC HEADER ATTRIBUTES (settings → header layout attributes)
--- MUST only be called out of combat.
+-- MUST only be called out of combat, except during the addon-load safe window.
 ---------------------------------------------------------------------------
 local function SyncHeaderAttributes(header, settings, prefix)
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return end
     if not header or not settings then return end
 
     local iconSize = settings[prefix .. "IconSize"] or 0
@@ -344,7 +345,7 @@ local function StyleHeaderChildren(header, settings, isBuff)
         if not data then break end
 
         -- Resize child (out of combat only — protected on secure children)
-        if not InCombatLockdown() then
+        if not InCombatLockdown() or ns._inInitSafeWindow then
             child:SetSize(iconSize, iconSize)
         end
 
@@ -450,7 +451,7 @@ local function StyleHeaderChildren(header, settings, isBuff)
             local child = header:GetAttribute(key)
             if child and child:IsShown() then
                 visibleCount = visibleCount + 1
-                if not InCombatLockdown() then
+                if not InCombatLockdown() or ns._inInitSafeWindow then
                     child:SetSize(iconSize, iconSize)
                 end
                 -- Weapon enchant texture: use the equipped item icon
@@ -904,6 +905,7 @@ end
 -- Forward declarations (defined after preview section)
 local UpdateBuffIcons
 local UpdateDebuffIcons
+local Init
 
 local PREVIEW_BUFF_TEXTURES = {
     136012,  -- Mark of the Wild
@@ -1278,6 +1280,8 @@ end
 
 local function FullRefresh()
     if not buffContainer or not debuffContainer then return end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return end
+
     ManageBlizzardFrames()
 
     -- Sync growAnchor from the user's grow direction settings. This catches
@@ -1288,7 +1292,7 @@ local function FullRefresh()
 
     -- Sync layout attributes from settings
     local settings = GetSettings()
-    if settings and not InCombatLockdown() then
+    if settings and (not InCombatLockdown() or ns._inInitSafeWindow) then
         SyncHeaderAttributes(buffContainer, settings, "buff")
         SyncHeaderAttributes(debuffContainer, settings, "debuff")
         -- Keep secure headers alive in normal gameplay. Layout mode preview
@@ -1326,15 +1330,24 @@ end
 -- out-of-combat retries so the headers settle into their real anchored size.
 local function TryDeferredFullRefresh()
     if previewActive then return end
+    if not initialized then
+        Init()
+        return
+    end
     if not buffContainer or not debuffContainer then return end
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return end
     FullRefresh()
 end
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
-local function Init()
+Init = function()
+    if initialized then return true end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return false end
+
+    initialized = true
+
     -- Create secure aura headers
     buffContainer = CreateHeader("QUI_BuffIconContainer", "HELPFUL")
     debuffContainer = CreateHeader("QUI_DebuffIconContainer", "HARMFUL")
@@ -1410,6 +1423,7 @@ local function Init()
 
     C_Timer.After(0.5, TryDeferredFullRefresh)
     C_Timer.After(2.0, TryDeferredFullRefresh)
+    return true
 end
 
 ---------------------------------------------------------------------------
@@ -1441,20 +1455,28 @@ paRegenFrame:SetScript("OnEvent", function()
     TryDeferredFullRefresh()
 end)
 
--- Initialize after AceDB is ready (called from core/main.lua OnEnable)
-C_Timer.After(1, Init)
+-- Primary initialization is called from core/main.lua during the ADDON_LOADED
+-- safe window. Keep this retry for unusual load orders and for combat-end
+-- recovery if the safe-window call was missed.
+C_Timer.After(1, TryDeferredFullRefresh)
 
 ---------------------------------------------------------------------------
 -- EXPORTS
 ---------------------------------------------------------------------------
+local function RefreshBuffBorders()
+    if not initialized and not Init() then return end
+    FullRefresh()
+end
+
 QUI.BuffBorders = {
-    Apply = function() FullRefresh() end,
+    Init = Init,
+    Apply = RefreshBuffBorders,
     ShowPreview = ShowPreview,
     HidePreview = HidePreview,
 }
 
 -- Global function for config panel / layout mode to call
-_G.QUI_RefreshBuffBorders = FullRefresh
+_G.QUI_RefreshBuffBorders = RefreshBuffBorders
 
 -- Layout mode preview hooks
 _G.QUI_BuffBordersShowPreview = ShowPreview
