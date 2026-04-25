@@ -3846,6 +3846,10 @@ end
 -- content changes (visual update, slot change).
 local spellIdToButtons = {}
 local flyoutButtons = {}  -- buttons with flyout actions (checked as fallback)
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "AB_spellIdToButtons", tbl = spellIdToButtons }
+    mp[#mp + 1] = { name = "AB_flyoutButtons",    tbl = flyoutButtons }
+end
 
 local function RebuildSpellIdMap()
     wipe(spellIdToButtons)

@@ -2,13 +2,17 @@ local ADDON_NAME, ns = ...
 ----------------------------------------------------------------------------
 -- Memory Audit — runtime probe for cache/pool sizes
 --
--- Usage:  /qui memaudit        → snapshot current sizes + GC stats
---         /qui memaudit diff   → show delta from last snapshot
---         /qui memaudit gc     → force full GC and report reclaimable
+-- Usage:  /qui memaudit              → snapshot current sizes + GC stats
+--         /qui memaudit diff         → show delta from last snapshot
+--         /qui memaudit gc           → force full GC and report reclaimable
+--         /qui memaudit auto         → toggle 5s combat auto-print on/off
+--         /qui memaudit auto N       → set auto interval to N seconds
+--         /qui memaudit auto off     → turn auto off
 --
 -- Modules register probes BEFORE this file loads by pushing entries onto
 -- ns._memprobes = { { name = "...", tbl = tbl }, ... }
--- This file drains the list at load time.
+-- This file drains the list at load time. Probes can also be `fn = function()
+-- return number end` for computed counts (e.g. multi-table pools).
 ----------------------------------------------------------------------------
 
 local probes = {}
@@ -44,7 +48,16 @@ local function TakeSnapshot()
     for i = 1, #probes do
         local p = probes[i]
         if p.fn then
-            snap[p.name] = p.fn()
+            local ok, count, deep = pcall(p.fn)
+            if ok then
+                if type(count) == "table" then
+                    snap[p.name] = count
+                else
+                    snap[p.name] = { count = count or 0, deep = deep or 0 }
+                end
+            else
+                snap[p.name] = { count = 0, deep = 0 }
+            end
         elseif p.tbl then
             local count, deep = CountEntries(p.tbl)
             snap[p.name] = { count = count, deep = deep }
@@ -64,6 +77,21 @@ local function FormatKB(kb)
         return string.format("%.1f MB", kb / 1024)
     end
     return string.format("%.0f KB", kb)
+end
+
+local function ProbeTotal(snap)
+    local count, deep = 0, 0
+    for name, val in pairs(snap) do
+        if name:sub(1, 1) ~= "_" then
+            if type(val) == "table" then
+                count = count + (val.count or 0)
+                deep = deep + (val.deep or 0)
+            else
+                count = count + (val or 0)
+            end
+        end
+    end
+    return count, deep
 end
 
 local function PrintSnapshot(snap, prev)
@@ -126,7 +154,142 @@ local function PrintSnapshot(snap, prev)
     end
 end
 
-_G.QUI_MemAudit = function(subcmd)
+----------------------------------------------------------------------------
+-- AUTO MODE: periodic snapshots while in combat. Prints a compact one-liner
+-- per tick, and surfaces any probed tables that grew between ticks (so we
+-- can spot retention live without scrolling through a full audit).
+----------------------------------------------------------------------------
+local autoFrame = CreateFrame("Frame")
+autoFrame:Hide()
+local autoEnabled = false
+local autoInterval = 5.0
+local autoElapsed = 0
+local autoLastSnap = nil
+
+local function PrintAutoLine(snap, prev)
+    local P = print
+    local line
+    if prev then
+        local delta = snap._totalKB - prev._totalKB
+        local dt = snap._time - prev._time
+        local rate = dt > 0 and (delta / dt) or 0
+        line = string.format(
+            "|cff60A5FA[memaudit auto]|r  %s  Δ |cff%s%s%s|r over %.0fs (|cffFFFFFF%.1f KB/s|r)",
+            FormatKB(snap._totalKB),
+            delta > 0 and "FF8844" or "44FF44",
+            delta > 0 and "+" or "",
+            FormatKB(delta),
+            dt,
+            rate)
+    else
+        line = string.format("|cff60A5FA[memaudit auto]|r  %s  (baseline)", FormatKB(snap._totalKB))
+    end
+    P(line)
+
+    -- If the total grew, surface which probed tables grew (to attribute the
+    -- delta) and how much of the delta is unaccounted-for (== outside probes).
+    if prev and (snap._totalKB - prev._totalKB) > 0 then
+        local growers = {}
+        for name, val in pairs(snap) do
+            if name:sub(1, 1) ~= "_" and prev[name] then
+                local prevTotal, curTotal
+                if type(prev[name]) == "table" then
+                    prevTotal = prev[name].count + prev[name].deep
+                else
+                    prevTotal = prev[name]
+                end
+                if type(val) == "table" then
+                    curTotal = val.count + val.deep
+                else
+                    curTotal = val
+                end
+                local d = curTotal - prevTotal
+                if d > 0 then
+                    growers[#growers + 1] = { name = name, delta = d }
+                end
+            end
+        end
+        if #growers > 0 then
+            table.sort(growers, function(a, b) return a.delta > b.delta end)
+            local parts = {}
+            for i = 1, math.min(5, #growers) do
+                parts[#parts + 1] = string.format("%s +%d", growers[i].name, growers[i].delta)
+            end
+            P("  |cffAAAAAA→ probed grew:|r " .. table.concat(parts, ", "))
+        else
+            P("  |cffAAAAAA→ no probed table grew — retention is outside probes|r")
+        end
+    end
+end
+
+autoFrame:SetScript("OnUpdate", function(self, elapsed)
+    if not autoEnabled then return end
+    autoElapsed = autoElapsed + elapsed
+    if autoElapsed < autoInterval then return end
+    autoElapsed = 0
+    if not InCombatLockdown() then return end
+
+    local snap = TakeSnapshot()
+    PrintAutoLine(snap, autoLastSnap)
+    autoLastSnap = snap
+end)
+
+-- PLAYER_REGEN_DISABLED resets baseline so the first in-combat tick is a
+-- meaningful baseline rather than a stale OOC reading.
+autoFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+autoFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+autoFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        autoElapsed = 0
+        autoLastSnap = autoEnabled and TakeSnapshot() or nil
+    elseif event == "PLAYER_REGEN_ENABLED" and autoEnabled and autoLastSnap then
+        -- Combat ended: print one final summary line.
+        local snap = TakeSnapshot()
+        print(string.format("|cff60A5FA[memaudit auto]|r combat ended — final %s (Δ from combat-start %s)",
+            FormatKB(snap._totalKB),
+            FormatKB(snap._totalKB - autoLastSnap._totalKB)))
+        autoLastSnap = nil
+    end
+end)
+
+local function ToggleAuto(arg)
+    if arg == "off" or arg == "0" or arg == "stop" then
+        autoEnabled = false
+        autoFrame:Hide()
+        autoLastSnap = nil
+        print("|cff60A5FAQUI memaudit auto:|r |cffFF4444off|r")
+        return
+    end
+
+    -- "auto N" sets interval; "auto" toggles
+    local n = tonumber(arg)
+    if n and n >= 1 then
+        autoInterval = n
+    end
+
+    if not autoEnabled then
+        autoEnabled = true
+        autoElapsed = 0
+        autoLastSnap = nil
+        autoFrame:Show()
+        print(string.format(
+            "|cff60A5FAQUI memaudit auto:|r |cff44FF44on|r — printing every %ds while in combat",
+            autoInterval))
+    else
+        -- Already on, just changed interval
+        if n then
+            print(string.format("|cff60A5FAQUI memaudit auto:|r interval = %ds", autoInterval))
+        else
+            -- No arg → toggle off
+            autoEnabled = false
+            autoFrame:Hide()
+            autoLastSnap = nil
+            print("|cff60A5FAQUI memaudit auto:|r |cffFF4444off|r")
+        end
+    end
+end
+
+_G.QUI_MemAudit = function(subcmd, arg)
     if subcmd == "gc" then
         pcall(UpdateAddOnMemoryUsage)
         local ok1, before = pcall(GetAddOnMemoryUsage, ADDON_NAME)
@@ -137,6 +300,11 @@ _G.QUI_MemAudit = function(subcmd)
             print(string.format("|cff60A5FAQUI GC:|r Before: %s  After: %s  Freed: |cff44FF44%s|r",
                 FormatKB(before), FormatKB(after), FormatKB(before - after)))
         end
+        return
+    end
+
+    if subcmd == "auto" then
+        ToggleAuto(arg)
         return
     end
 

@@ -673,7 +673,9 @@ local function GetTrackedBarRuntimeEntries()
 
     local entries = {}
     local selection = viewer.Selection
-    local okN, numChildren = pcall(function() return select('#', viewer:GetChildren()) end)
+    -- Use Frame:GetNumChildren() (C-side, no closure) instead of
+    -- pcall(function() return select('#', viewer:GetChildren()) end).
+    local okN, numChildren = pcall(viewer.GetNumChildren, viewer)
     if not okN or not numChildren or numChildren == 0 then
         return entries
     end
@@ -843,12 +845,13 @@ local function DisableAtlasBorder(tex)
             if _atlasGuard then return end  -- prevent recursion from our own SetAtlas(nil)
             if not self or (self.IsForbidden and self:IsForbidden()) then return end
             _atlasGuard = true
-            pcall(function()
-                self:SetAtlas(nil)
-                self:SetTexture(nil)
-                self:SetAlpha(0)
-                self:Hide()
-            end)
+            -- Method-as-arg pcall avoids the per-call inner closure that
+            -- pcall(function() ... end) would allocate. This hook fires on
+            -- every buff atlas update, so closure churn here is hot.
+            pcall(self.SetAtlas, self, nil)
+            pcall(self.SetTexture, self, nil)
+            pcall(self.SetAlpha, self, 0)
+            pcall(self.Hide, self)
             _atlasGuard = false
         end)
     end

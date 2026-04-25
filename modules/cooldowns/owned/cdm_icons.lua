@@ -95,7 +95,21 @@ local iconPools = {
 }
 -- Phase G: Pools for custom containers are created dynamically via EnsurePool().
 local recyclePool = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "CDM_iconRecyclePool", tbl = recyclePool } end
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_iconRecyclePool", tbl = recyclePool }
+    -- iconPools is a multi-key map of arrays; count across every sub-pool
+    -- (incl. dynamically created Composer pools) so retention growth surfaces.
+    mp[#mp + 1] = { name = "CDM_iconPools", fn = function()
+        local count, deep = 0, 0
+        for _, pool in pairs(iconPools) do
+            count = count + 1
+            if type(pool) == "table" then
+                for _ in pairs(pool) do deep = deep + 1 end
+            end
+        end
+        return count, deep
+    end }
+end
 local iconCounter = 0
 local updateTicker = nil
 
@@ -1921,6 +1935,15 @@ local _showGCDSwipe = false
 -- the icon shows the recharge/cooldown timer instead of the aura duration.
 local _showBuffSwipe = true
 
+local function WipeUpdateTickCaches()
+    wipe(_tickChargeCache)
+    wipe(_tickCooldownCache)
+    wipe(_tickDurationCache)
+    if ns.CDMSpellData and ns.CDMSpellData.WipeTickAuraCache then
+        ns.CDMSpellData:WipeTickAuraCache()
+    end
+end
+
 local function GetChildIconTexture(child)
     if not child then return nil end
     local blzIcon = child.Icon or child.icon
@@ -3291,15 +3314,10 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE ALL COOLDOWNS
 ---------------------------------------------------------------------------
-function CDMIcons:UpdateAllCooldowns()
+function CDMIcons:UpdateAllCooldowns(keepTickCaches)
     -- Wipe per-tick caches: each batch starts fresh so every spellID
     -- is queried at most once via TickCacheGetCharges/TickCacheGetCooldown.
-    wipe(_tickChargeCache)
-    wipe(_tickCooldownCache)
-    wipe(_tickDurationCache)
-    if ns.CDMSpellData and ns.CDMSpellData.WipeTickAuraCache then
-        ns.CDMSpellData:WipeTickAuraCache()
-    end
+    WipeUpdateTickCaches()
 
     -- Child map is invalidated by aura/cooldown event subscribers via
     -- CDMSpellData:InvalidateChildMap(). RebuildChildMap is a no-op when clean.
@@ -3556,6 +3574,9 @@ function CDMIcons:UpdateAllCooldowns()
         end
     end
 
+    if not keepTickCaches then
+        WipeUpdateTickCaches()
+    end
 end
 
 function CDMIcons:UpdateCooldownsForType(viewerType)
@@ -4067,15 +4088,18 @@ cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
 cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
 -- UNIT_AURA handled by centralized dispatcher subscription (below)
 
--- C_Timer coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
+-- Frame-based coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
 -- SPELL_UPDATE_CHARGES, BAG_UPDATE_COOLDOWN, and UNIT_AURA into a single
--- UpdateAllCooldowns after a short delay.
--- Throttled to max ~20 FPS (50ms) — raid combat fires SPELL_UPDATE_COOLDOWN
--- many times per second; 60 FPS updates are excessive for icon display.
-local CDM_MIN_UPDATE_INTERVAL = 0.05
+-- UpdateAllCooldowns after a short delay. Avoid C_Timer here: raid combat can
+-- schedule this path continuously, and timer objects become pure churn.
+local CDM_MIN_UPDATE_INTERVAL_IDLE = 0.05
+local CDM_MIN_UPDATE_INTERVAL_COMBAT = 0.12
 local _lastCDMUpdateTime = 0
 
+local cdmUpdateFrame = CreateFrame("Frame")
 local _cdmUpdatePending = false
+local _cdmUpdateElapsed = 0
+local _cdmUpdateDelay = CDM_MIN_UPDATE_INTERVAL_IDLE
 
 -- Bars are aura-state driven (active/inactive transitions). Gate UpdateOwnedBars
 -- behind a dirty flag so pure cooldown-event flurries (SPELL_UPDATE_COOLDOWN
@@ -4087,25 +4111,44 @@ local _barsDirty = true
 local function _CDMUpdateCallback()
     _cdmUpdatePending = false
     _lastCDMUpdateTime = GetTime()
-    CDMIcons:UpdateAllCooldowns()
+    CDMIcons:UpdateAllCooldowns(true)
     if _barsDirty and ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
         _barsDirty = false
         ns.CDMBars:UpdateOwnedBars()
     end
+    WipeUpdateTickCaches()
 end
 
-local function ScheduleCDMUpdate()
-    if _cdmUpdatePending then return end
+local function CDMUpdateOnUpdate(self, elapsed)
+    _cdmUpdateElapsed = _cdmUpdateElapsed + elapsed
+    if _cdmUpdateElapsed < _cdmUpdateDelay then return end
+    self:SetScript("OnUpdate", nil)
+    _CDMUpdateCallback()
+end
+
+local function ScheduleCDMUpdate(fast)
+    local delay = fast and CDM_MIN_UPDATE_INTERVAL_IDLE
+        or (InCombatLockdown() and CDM_MIN_UPDATE_INTERVAL_COMBAT or CDM_MIN_UPDATE_INTERVAL_IDLE)
+
+    if _cdmUpdatePending then
+        if delay < _cdmUpdateDelay then
+            _cdmUpdateDelay = delay
+        end
+        return
+end
+
     _cdmUpdatePending = true
-    C_Timer.After(CDM_MIN_UPDATE_INTERVAL, _CDMUpdateCallback)
+    _cdmUpdateElapsed = 0
+    _cdmUpdateDelay = delay
+    cdmUpdateFrame:SetScript("OnUpdate", CDMUpdateOnUpdate)
 end
 
 -- Combat safety ticker: periodic UpdateAllCooldowns during combat.
 -- DurationObject sources may resolve late (viewer hook delays); a
 -- low-frequency ticker ensures icons recover even if the initial
 -- event-driven update failed due to secret values. Interval is 1s
--- because the event path (ScheduleCDMUpdate) already coalesces at
--- 50ms — this ticker is a fallback, not the primary update path.
+-- because the event path (ScheduleCDMUpdate) already coalesces quickly
+-- enough — this ticker is a fallback, not the primary update path.
 -- A shorter interval compounds with event-driven rebuilds and was
 -- measurably contributing to raid-combat stutters.
 local safetyTickFrame = CreateFrame("Frame")
@@ -4120,11 +4163,12 @@ local function SafetyTickOnUpdate(self, elapsed)
     -- Safety tick is a fallback for late-resolving DurationObjects, not a
     -- primary update path — skipping when recent is safe.
     if GetTime() - _lastCDMUpdateTime < SAFETY_TICK_INTERVAL then return end
-    CDMIcons:UpdateAllCooldowns()
+    CDMIcons:UpdateAllCooldowns(true)
     if _barsDirty and ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
         _barsDirty = false
         ns.CDMBars:UpdateOwnedBars()  -- safety ticker, don't clear oocInactive
     end
+    WipeUpdateTickCaches()
 end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
@@ -4132,12 +4176,12 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
         CDMIcons:UpdateAllIconRanges()
         -- Target debuffs (e.g. Reaper's Mark) need a CDM refresh when target changes
         ns.CDMSpellData:InvalidateChildMap()
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true)
         return
     end
     if event == "PLAYER_SOFT_ENEMY_CHANGED" then
         CDMIcons:UpdateAllIconRanges()
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true)
         return
     end
     if event == "PLAYER_EQUIPMENT_CHANGED" then
@@ -4161,7 +4205,7 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- One-shot catch-up: refresh all cooldowns after combat ends
         ns.CDMSpellData:InvalidateChildMap()
         _barsDirty = true
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true)
         return
     end
     if event == "UPDATE_MACROS" then
@@ -4171,10 +4215,10 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "SPELLS_CHANGED" then
         -- Talent/spec change: spell icons may have changed.
         wipe(_textureCycleCache)
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true)
         return
     end
-    -- Coalesce cooldown events via C_Timer
+    -- Coalesce cooldown events via the reusable update frame.
     ns.CDMSpellData:InvalidateChildMap()  -- cooldown state changed, children may have shown/hidden
     ScheduleCDMUpdate()
 end)
@@ -4193,13 +4237,13 @@ if ns.AuraEvents then
     ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
         ns.CDMSpellData:InvalidateChildMap()
         _barsDirty = true
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true)
     end)
     ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
         if unit == "target" then
             ns.CDMSpellData:InvalidateChildMap()
             _barsDirty = true
-            ScheduleCDMUpdate()
+            ScheduleCDMUpdate(true)
         end
     end)
 end

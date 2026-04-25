@@ -337,8 +337,11 @@ function QUI:SlashCommandOpen(input)
         return
     elseif input and input:match("^memaudit") then
         if _G.QUI_MemAudit then
-            local subcmd = input:match("^memaudit%s+(%S+)")
-            _G.QUI_MemAudit(subcmd)
+            local subcmd, arg = input:match("^memaudit%s+(%S+)%s+(%S+)")
+            if not subcmd then
+                subcmd = input:match("^memaudit%s+(%S+)")
+            end
+            _G.QUI_MemAudit(subcmd, arg)
         else
             print("|cff60A5FAQUI:|r Memory audit not loaded yet.")
         end
