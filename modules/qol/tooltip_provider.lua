@@ -53,6 +53,7 @@ local strfind = string.find
 local strmatch = string.match
 local GetMouseFoci = GetMouseFoci
 local WorldFrame = WorldFrame
+local wipe = wipe
 
 local function GetFrameName(frame)
     if not frame or not frame.GetName then
@@ -205,6 +206,7 @@ local BUILTIN_CDM_KEYS = {
 }
 
 local MAX_CONTEXT_PARENT_DEPTH = 6
+local frameChainScratch = {}
 
 local function GetParentFrame(frame)
     if not frame or not frame.GetParent then
@@ -218,17 +220,17 @@ local function GetParentFrame(frame)
 end
 
 local function GetFrameChain(frame)
-    local chain = {}
+    wipe(frameChainScratch)
     local depth = 0
     while frame and depth < MAX_CONTEXT_PARENT_DEPTH do
-        chain[#chain + 1] = frame
+        frameChainScratch[#frameChainScratch + 1] = frame
         if frame == UIParent then
             break
         end
         frame = GetParentFrame(frame)
         depth = depth + 1
     end
-    return chain
+    return frameChainScratch
 end
 
 local function GetActionSlot(frame)

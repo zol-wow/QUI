@@ -14,6 +14,8 @@ local GameTooltip = GameTooltip
 local UIParent = UIParent
 local WorldFrame = WorldFrame
 local InCombatLockdown = InCombatLockdown
+local GetTime = GetTime
+local wipe = wipe
 
 ---------------------------------------------------------------------------
 -- ENGINE TABLE
@@ -25,6 +27,8 @@ local TooltipEngine = {}
 ---------------------------------------------------------------------------
 local cursorFollowActive = Helpers.CreateStateTable()
 local cursorFollowHooked = Helpers.CreateStateTable()
+local CURSOR_SAFETY_CHECK_INTERVAL = 0.2
+local gtCursorSafetyElapsed = CURSOR_SAFETY_CHECK_INTERVAL
 
 -- TAINT SAFETY: For GameTooltip, cursor follow uses a SEPARATE watcher
 -- frame instead of HookScript. HookScript on GameTooltip permanently taints
@@ -39,46 +43,47 @@ local gtCursorWatcher
 local function HasActiveWidgetContainer(tooltip)
     if not tooltip or not tooltip.GetChildren then return false end
 
-    local ok, result = pcall(function()
-        for i = 1, select("#", tooltip:GetChildren()) do
-            local child = select(i, tooltip:GetChildren())
-            if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
-                local widgetSetID = child.widgetSetID
-                if widgetSetID ~= nil then
+    local okCount, numChildren = pcall(tooltip.GetNumChildren, tooltip)
+    if not okCount or not numChildren then return false end
+
+    for i = 1, numChildren do
+        local child = select(i, tooltip:GetChildren())
+        if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
+            local widgetSetID = child.widgetSetID
+            if widgetSetID ~= nil then
+                return true
+            end
+
+            local shownWidgetCount = child.shownWidgetCount
+            if shownWidgetCount ~= nil then
+                if Helpers.IsSecretValue(shownWidgetCount) then
                     return true
                 end
-
-                local shownWidgetCount = child.shownWidgetCount
-                if shownWidgetCount ~= nil then
-                    if Helpers.IsSecretValue(shownWidgetCount) then
-                        return true
-                    end
-                    shownWidgetCount = tonumber(shownWidgetCount)
-                    if shownWidgetCount and shownWidgetCount > 0 then
-                        return true
-                    end
-                end
-
-                local numWidgetsShowing = child.numWidgetsShowing
-                if numWidgetsShowing ~= nil then
-                    if Helpers.IsSecretValue(numWidgetsShowing) then
-                        return true
-                    end
-                    numWidgetsShowing = tonumber(numWidgetsShowing)
-                    if numWidgetsShowing and numWidgetsShowing > 0 then
-                        return true
-                    end
-                end
-
-                if child.IsShown and child:IsShown() then
+                shownWidgetCount = tonumber(shownWidgetCount)
+                if shownWidgetCount and shownWidgetCount > 0 then
                     return true
                 end
             end
-        end
-        return false
-    end)
 
-    return ok and result == true
+            local numWidgetsShowing = child.numWidgetsShowing
+            if numWidgetsShowing ~= nil then
+                if Helpers.IsSecretValue(numWidgetsShowing) then
+                    return true
+                end
+                numWidgetsShowing = tonumber(numWidgetsShowing)
+                if numWidgetsShowing and numWidgetsShowing > 0 then
+                    return true
+                end
+            end
+
+            if child.IsShown then
+                local okShown, shown = pcall(child.IsShown, child)
+                if okShown and shown then return true end
+            end
+        end
+    end
+
+    return false
 end
 
 -- Quest/world map reward tooltips can also attach Blizzard MoneyFrame children
@@ -87,28 +92,32 @@ end
 local function HasActiveMoneyFrame(tooltip)
     if not tooltip or not tooltip.GetChildren then return false end
 
-    local ok, result = pcall(function()
-        for i = 1, select("#", tooltip:GetChildren()) do
-            local child = select(i, tooltip:GetChildren())
-            if child then
-                local childName = child.GetName and child:GetName() or nil
-                if child.moneyType ~= nil or child.staticMoney ~= nil or child.lastArgMoney ~= nil or
-                    (type(childName) == "string" and childName:find("MoneyFrame")) then
-                    if child.IsShown then
-                        local okShown, shown = pcall(child.IsShown, child)
-                        if not okShown or shown then
-                            return true
-                        end
-                    else
+    local okCount, numChildren = pcall(tooltip.GetNumChildren, tooltip)
+    if not okCount or not numChildren then return false end
+
+    for i = 1, numChildren do
+        local child = select(i, tooltip:GetChildren())
+        if child then
+            local childName
+            if child.GetName then
+                local okName, name = pcall(child.GetName, child)
+                if okName then childName = name end
+            end
+            if child.moneyType ~= nil or child.staticMoney ~= nil or child.lastArgMoney ~= nil or
+                (type(childName) == "string" and childName:find("MoneyFrame")) then
+                if child.IsShown then
+                    local okShown, shown = pcall(child.IsShown, child)
+                    if not okShown or shown then
                         return true
                     end
+                else
+                    return true
                 end
             end
         end
-        return false
-    end)
+    end
 
-    return ok and result == true
+    return false
 end
 
 local function EnsureCursorFollowHooks(tooltip)
@@ -119,19 +128,23 @@ local function EnsureCursorFollowHooks(tooltip)
         -- Use a separate watcher frame for GameTooltip to avoid taint
         if not gtCursorWatcher then
             gtCursorWatcher = CreateFrame("Frame")
-            gtCursorWatcher:SetScript("OnUpdate", function()
+            gtCursorWatcher:SetScript("OnUpdate", function(_, elapsed)
                 if not cursorFollowActive[GameTooltip] then return end
                 if not GameTooltip:IsShown() then
                     cursorFollowActive[GameTooltip] = nil
                     return
                 end
-                if HasActiveMoneyFrame(GameTooltip) then
-                    cursorFollowActive[GameTooltip] = nil
-                    return
-                end
-                if HasActiveWidgetContainer(GameTooltip) then
-                    cursorFollowActive[GameTooltip] = nil
-                    return
+                gtCursorSafetyElapsed = gtCursorSafetyElapsed + (elapsed or 0)
+                if gtCursorSafetyElapsed >= CURSOR_SAFETY_CHECK_INTERVAL then
+                    gtCursorSafetyElapsed = 0
+                    if HasActiveMoneyFrame(GameTooltip) then
+                        cursorFollowActive[GameTooltip] = nil
+                        return
+                    end
+                    if HasActiveWidgetContainer(GameTooltip) then
+                        cursorFollowActive[GameTooltip] = nil
+                        return
+                    end
                 end
                 local settings = Provider:GetSettings()
                 if not settings or not settings.enabled or not settings.anchorToCursor then
@@ -169,6 +182,9 @@ local function AnchorTooltipToCursor(tooltip, parent, settings)
     if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then return false end
     EnsureCursorFollowHooks(tooltip)
     tooltip:SetOwner(parent or UIParent, "ANCHOR_NONE")
+    if tooltip == GameTooltip then
+        gtCursorSafetyElapsed = CURSOR_SAFETY_CHECK_INTERVAL
+    end
     cursorFollowActive[tooltip] = true
     Provider:PositionTooltipAtCursor(tooltip, settings or Provider:GetSettings())
     return true
@@ -190,9 +206,21 @@ local DEFAULT_PLAYER_ILVL_BRACKETS = {
 -- Tooltip Unit Info State (target, mount, M+ rating)
 local tooltipUnitInfoState = setmetatable({}, {__mode = "k"})
 
--- Mount Name Cache (GUID → {name, timestamp})
+-- Mount Name Cache
 local mountNameCache = {}
+local mountNameCacheTime = {}
+local mountSpellNameCache = {}
+local mountSpellNameCacheCount = 0
+local mountNameCacheCount = 0
+local mountNameCacheLastPrune = 0
 local MOUNT_CACHE_TTL = 0.75
+local MOUNT_CACHE_MAX_ENTRIES = 80
+local MOUNT_SPELL_CACHE_MAX_ENTRIES = 512
+
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "Tooltip_mountNameCache", tbl = mountNameCache }
+    mp[#mp + 1] = { name = "Tooltip_mountSpellCache", tbl = mountSpellNameCache }
+end
 
 local function RefreshTooltipLayout(tooltip)
     if not tooltip then return end
@@ -616,52 +644,118 @@ local function AddTooltipTargetInfo(tooltip, unit, state)
     return true
 end
 
+local function SetMountSpellNameCache(spellID, mountName)
+    if not spellID then return end
+    if mountSpellNameCache[spellID] == nil then
+        mountSpellNameCacheCount = mountSpellNameCacheCount + 1
+    end
+    mountSpellNameCache[spellID] = mountName or false
+
+    if mountSpellNameCacheCount > MOUNT_SPELL_CACHE_MAX_ENTRIES then
+        wipe(mountSpellNameCache)
+        mountSpellNameCacheCount = 0
+    end
+end
+
 local function GetMountNameFromSpellID(spellID)
     if not spellID then return nil end
     if Helpers.IsSecretValue(spellID) then return nil end
     if spellID == 0 then return nil end
 
+    local cached = mountSpellNameCache[spellID]
+    if cached ~= nil then
+        return cached or nil
+    end
+
     if not C_MountJournal or not C_MountJournal.GetMountFromSpell then return nil end
 
     local ok, mountID = pcall(C_MountJournal.GetMountFromSpell, spellID)
     if not ok or not mountID or mountID == 0 or Helpers.IsSecretValue(mountID) then
+        SetMountSpellNameCache(spellID, false)
         return nil
     end
 
-    if not C_MountJournal.GetMountInfoByID then return nil end
+    if not C_MountJournal.GetMountInfoByID then
+        SetMountSpellNameCache(spellID, false)
+        return nil
+    end
 
     local okInfo, mountName = pcall(C_MountJournal.GetMountInfoByID, mountID)
     if not okInfo or not mountName then
+        SetMountSpellNameCache(spellID, false)
         return nil
     end
 
+    SetMountSpellNameCache(spellID, mountName)
     return mountName
 end
 
-local function GetCachedMountName(guid)
-    if not guid then return nil end
-    local entry = mountNameCache[guid]
-    if not entry then return nil end
+local function ClearCachedMountName(guid)
+    if not guid then return end
+    if mountNameCacheTime[guid] ~= nil then
+        mountNameCacheCount = mountNameCacheCount - 1
+    end
+    mountNameCache[guid] = nil
+    mountNameCacheTime[guid] = nil
+end
 
-    local age = GetTime() - (entry.timestamp or 0)
-    if age > MOUNT_CACHE_TTL then
-        mountNameCache[guid] = nil
-        return nil
+local function PruneMountNameCache(now, force)
+    now = now or GetTime()
+    if not force and mountNameCacheCount <= MOUNT_CACHE_MAX_ENTRIES and (now - mountNameCacheLastPrune) < 1 then
+        return
+    end
+    mountNameCacheLastPrune = now
+
+    local oldestGuid
+    local oldestTime = now
+    for guid, timestamp in pairs(mountNameCacheTime) do
+        if (now - timestamp) > MOUNT_CACHE_TTL then
+            mountNameCache[guid] = nil
+            mountNameCacheTime[guid] = nil
+            mountNameCacheCount = mountNameCacheCount - 1
+        elseif timestamp < oldestTime then
+            oldestTime = timestamp
+            oldestGuid = guid
+        end
     end
 
-    return entry.name
+    while mountNameCacheCount > MOUNT_CACHE_MAX_ENTRIES and oldestGuid do
+        ClearCachedMountName(oldestGuid)
+        oldestGuid = nil
+        oldestTime = now
+        for guid, timestamp in pairs(mountNameCacheTime) do
+            if timestamp < oldestTime then
+                oldestTime = timestamp
+                oldestGuid = guid
+            end
+        end
+    end
+end
+
+local function GetCachedMountName(guid)
+    if not guid then return nil, false end
+    local timestamp = mountNameCacheTime[guid]
+    if not timestamp then return nil, false end
+
+    local age = GetTime() - timestamp
+    if age > MOUNT_CACHE_TTL then
+        ClearCachedMountName(guid)
+        return nil, false
+    end
+
+    local cached = mountNameCache[guid]
+    return cached or nil, true
 end
 
 local function SetCachedMountName(guid, mountName)
     if not guid then return end
-    if not mountName then
-        mountNameCache[guid] = nil
-        return
+    local now = GetTime()
+    if mountNameCacheTime[guid] == nil then
+        mountNameCacheCount = mountNameCacheCount + 1
     end
-    mountNameCache[guid] = {
-        name = mountName,
-        timestamp = GetTime(),
-    }
+    mountNameCache[guid] = mountName or false
+    mountNameCacheTime[guid] = now
+    PruneMountNameCache(now, false)
 end
 
 local function GetMountedPlayerMountName(unit)
@@ -670,6 +764,12 @@ local function GetMountedPlayerMountName(unit)
         -- During combat, can't iterate auras, skip mount detection
         return nil
     end
+
+    local guid = UnitGUID(unit)
+    if not guid or Helpers.IsSecretValue(guid) then return nil end
+
+    local cachedName, cacheHit = GetCachedMountName(guid)
+    if cacheHit then return cachedName end
 
     -- Try C_UnitAuras (modern API, WoW 10.0+)
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
@@ -680,7 +780,7 @@ local function GetMountedPlayerMountName(unit)
             if auraData.spellId then
                 local mountName = GetMountNameFromSpellID(auraData.spellId)
                 if mountName then
-                    SetCachedMountName(UnitGUID(unit), mountName)
+                    SetCachedMountName(guid, mountName)
                     return mountName
                 end
             end
@@ -694,18 +794,14 @@ local function GetMountedPlayerMountName(unit)
             if spellID then
                 local mountName = GetMountNameFromSpellID(spellID)
                 if mountName then
-                    SetCachedMountName(UnitGUID(unit), mountName)
+                    SetCachedMountName(guid, mountName)
                     return mountName
                 end
             end
         end
     end
 
-    -- Check if mounted via taxi/flying mount
-    local guid = UnitGUID(unit)
-    local cachedName = GetCachedMountName(guid)
-    if cachedName then return cachedName end
-
+    SetCachedMountName(guid, false)
     return nil
 end
 
@@ -795,6 +891,46 @@ end
 local function SetupTooltipHook()
     ns.QUI_AnchorTooltipToCursor = AnchorTooltipToCursor
 
+    local pendingUnitCheckFrame = CreateFrame("Frame")
+    local pendingUnitCheckTooltip = nil
+    local pendingUnitCheckOwner = nil
+    local pendingUnitCheckToken = 0
+    local pendingUnitCheckElapsed = 0
+    local PENDING_UNIT_CHECK_DELAY = 0.1
+
+    local function PendingUnitCheckOnUpdate(self, elapsed)
+        pendingUnitCheckElapsed = pendingUnitCheckElapsed + (elapsed or 0)
+        if pendingUnitCheckElapsed < PENDING_UNIT_CHECK_DELAY then return end
+        self:SetScript("OnUpdate", nil)
+
+        local tooltip = pendingUnitCheckTooltip
+        local owner = pendingUnitCheckOwner
+        local token = pendingUnitCheckToken
+        pendingUnitCheckTooltip = nil
+        pendingUnitCheckOwner = nil
+
+        if token ~= pendingSetUnitToken then return end
+        if not tooltip then return end
+        if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+        if not tooltip:IsShown() then return end
+        if tooltip:GetOwner() ~= owner then return end
+        if owner ~= UIParent then return end
+        local unit = ResolveTooltipUnit(tooltip)
+        if unit and UnitExists(unit) then return end
+        if UnitExists("mouseover") then return end
+        if Provider:IsFrameBlockingMouse() then
+            tooltip:Hide()
+        end
+    end
+
+    local function SchedulePendingUnitCheck(tooltip, owner, token)
+        pendingUnitCheckTooltip = tooltip
+        pendingUnitCheckOwner = owner
+        pendingUnitCheckToken = token
+        pendingUnitCheckElapsed = 0
+        pendingUnitCheckFrame:SetScript("OnUpdate", PendingUnitCheckOnUpdate)
+    end
+
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         if parent and parent.IsForbidden and parent:IsForbidden() then return end
@@ -823,6 +959,9 @@ local function SetupTooltipHook()
         -- set it and re-calling mid-build disrupts the tooltip chain.
         if settings.anchorToCursor then
             EnsureCursorFollowHooks(tooltip)
+            if tooltip == GameTooltip then
+                gtCursorSafetyElapsed = CURSOR_SAFETY_CHECK_INTERVAL
+            end
             cursorFollowActive[tooltip] = true
             Provider:PositionTooltipAtCursor(tooltip, settings)
         else
@@ -854,19 +993,7 @@ local function SetupTooltipHook()
         local owner = tooltip:GetOwner()
         local token = pendingSetUnitToken + 1
         pendingSetUnitToken = token
-        C_Timer.After(0.1, function()
-            if token ~= pendingSetUnitToken then return end
-            if tooltip.IsForbidden and tooltip:IsForbidden() then return end
-            if not tooltip:IsShown() then return end
-            if tooltip:GetOwner() ~= owner then return end
-            if owner ~= UIParent then return end
-            local unit = ResolveTooltipUnit(tooltip)
-            if unit and UnitExists(unit) then return end
-            if UnitExists("mouseover") then return end
-            if Provider:IsFrameBlockingMouse() then
-                tooltip:Hide()
-            end
-        end)
+        SchedulePendingUnitCheck(tooltip, owner, token)
     end)
 
     -- Strip server name / player title
@@ -1001,31 +1128,39 @@ local function SetupTooltipHook()
     -- HookScript on GameTooltip permanently taints its dispatch tables.
     local gtSpellIDWatcher = CreateFrame("Frame")
     local gtSpellIDWasShown = false
+    local gtVisibilityElapsed = 0
+    local TOOLTIP_VISIBILITY_CHECK_INTERVAL = 0.08
     gtSpellIDWatcher:SetScript("OnUpdate", function(_, elapsed)
         local shown = GameTooltip:IsShown()
         if shown and not gtSpellIDWasShown then
+            gtVisibilityElapsed = TOOLTIP_VISIBILITY_CHECK_INTERVAL
             ResetTooltipHideFade()
         end
         if gtSpellIDWasShown and not shown then
+            gtVisibilityElapsed = 0
             ResetTooltipHideFade()
             InvalidatePendingSetUnit()
             tooltipSpellIDAdded[GameTooltip] = nil
             tooltipPlayerItemLevelGUID[GameTooltip] = nil
             tooltipUnitInfoState[GameTooltip] = nil
         elseif shown then
-            local settings = Provider:GetSettings()
-            if not settings or not settings.enabled then
-                ResetTooltipHideFade()
-            elseif ShouldHideOwnedTooltip(GameTooltip) then
-                ResetTooltipHideFade()
-                GameTooltip:Hide()
-            elseif ShouldKeepTooltipVisible(GameTooltip) then
-                if tooltipHideFadeState.active then
+            gtVisibilityElapsed = gtVisibilityElapsed + (elapsed or 0)
+            if gtVisibilityElapsed >= TOOLTIP_VISIBILITY_CHECK_INTERVAL then
+                gtVisibilityElapsed = 0
+                local settings = Provider:GetSettings()
+                if not settings or not settings.enabled then
                     ResetTooltipHideFade()
-                end
-            else
-                if not tooltipHideFadeState.active then
-                    StartTooltipHideFade(settings.hideDelay)
+                elseif ShouldHideOwnedTooltip(GameTooltip) then
+                    ResetTooltipHideFade()
+                    GameTooltip:Hide()
+                elseif ShouldKeepTooltipVisible(GameTooltip) then
+                    if tooltipHideFadeState.active then
+                        ResetTooltipHideFade()
+                    end
+                else
+                    if not tooltipHideFadeState.active then
+                        StartTooltipHideFade(settings.hideDelay)
+                    end
                 end
             end
 
@@ -1166,26 +1301,37 @@ local function SetupTooltipHook()
         end
     end
 
+    local function TryAddSpellIDFromTooltipData(tooltip, data)
+        local spellID = ResolveSpellIDFromTooltipData(tooltip, data)
+        if spellID then
+            AddSpellIDToTooltip(tooltip, spellID, data)
+        end
+    end
+
+    local function TryAddAuraSpellIDFromTooltipData(tooltip, data)
+        local spellID = ResolveSpellIDFromTooltipData(tooltip, data)
+        if spellID then
+            AddSpellIDToTooltip(tooltip, spellID, data, false)
+        end
+    end
+
+    local function TryAddItemIDFromTooltipData(tooltip, data)
+        local itemID = ResolveItemIDFromTooltipData(tooltip, data)
+        if itemID then
+            AddItemIDToTooltip(tooltip, itemID, data)
+        end
+    end
+
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Spell, function(tooltip, data)
         if InCombatLockdown() then return end
-        pcall(function()
-            local spellID = ResolveSpellIDFromTooltipData(tooltip, data)
-            if spellID then
-                AddSpellIDToTooltip(tooltip, spellID, data)
-            end
-        end)
+        pcall(TryAddSpellIDFromTooltipData, tooltip, data)
     end)
 
     local auraTooltipType = Enum.TooltipDataType.UnitAura or Enum.TooltipDataType.Aura
     if auraTooltipType then
         TooltipDataProcessor.AddTooltipPostCall(auraTooltipType, function(tooltip, data)
             if InCombatLockdown() then return end
-            pcall(function()
-                local spellID = ResolveSpellIDFromTooltipData(tooltip, data)
-                if spellID then
-                    AddSpellIDToTooltip(tooltip, spellID, data, false)
-                end
-            end)
+            pcall(TryAddAuraSpellIDFromTooltipData, tooltip, data)
         end)
     end
 
@@ -1211,12 +1357,7 @@ local function SetupTooltipHook()
 
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
         if not InCombatLockdown() then
-            pcall(function()
-                local itemID = ResolveItemIDFromTooltipData(tooltip, data)
-                if itemID then
-                    AddItemIDToTooltip(tooltip, itemID, data)
-                end
-            end)
+            pcall(TryAddItemIDFromTooltipData, tooltip, data)
         end
 
         if tooltip ~= GameTooltip then return end
@@ -1276,6 +1417,11 @@ local function OnUnitAuraChanged(changedUnit)
     if not GameTooltip:IsShown() then return end
     local unit = ResolveTooltipUnit(GameTooltip)
     if not unit or unit ~= changedUnit then return end
+
+    local guid = UnitGUID(unit)
+    if guid and not Helpers.IsSecretValue(guid) then
+        ClearCachedMountName(guid)
+    end
 
     -- Tooltip is showing this unit and their auras changed (mount status)
     local settings = Provider:GetSettings()
