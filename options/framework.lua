@@ -6871,10 +6871,9 @@ function GUI:CreateMainFrame()
     contentBg:SetAllPoints()
     contentBg:SetColorTexture(unpack(C.bgContent))
 
-    -- Decorative accent glow in top-right corner of content area
+    -- Decorative accent wash across the full content area.
     local glow = contentArea:CreateTexture(nil, "BACKGROUND")
-    glow:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", 0, 0)
-    glow:SetSize(400, 200)
+    glow:SetAllPoints(contentArea)
     glow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
     if glow.SetGradient then
         local ok = pcall(function()
