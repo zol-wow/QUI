@@ -711,13 +711,35 @@ local function ResolveTooltipVisibilityContext(tooltip, fallbackContext)
     return fallbackContext
 end
 
+-- Identify owners that are themselves tooltip frames (addon detail panel
+-- anchored to FriendsTooltip etc.). FriendsTooltip in WoW Midnight is a
+-- styled Frame, not a SharedTooltipTemplate-derived tooltip — its
+-- IsObjectType("GameTooltip") and NumLines/AddLine duck-typing both return
+-- false. Name-based fallback catches it.
+local function IsTooltipFrameOwner(owner)
+    if not owner then return false end
+    if type(owner.NumLines) == "function" and type(owner.AddLine) == "function" then
+        return true
+    end
+    if owner.GetName then
+        local ok, name = pcall(owner.GetName, owner)
+        if ok and type(name) == "string" and name:find("Tooltip") then
+            return true
+        end
+    end
+    return false
+end
+
 local function ShouldHideOwnedTooltip(tooltip, fallbackContext)
     if not tooltip or not Provider then
         return false
     end
 
     local owner = tooltip.GetOwner and tooltip:GetOwner() or nil
-    if owner and not Provider:IsTransientTooltipOwner(owner) and Provider:IsOwnerFadedOut(owner) then
+    -- Tooltip-frame owners: parent's transient fade-in alpha would trigger
+    -- the faded-hide path every frame. Trust the parent's IsShown via
+    -- ShouldKeepTooltipVisible's matching branch instead.
+    if owner and not Provider:IsTransientTooltipOwner(owner) and not IsTooltipFrameOwner(owner) and Provider:IsOwnerFadedOut(owner) then
         return true
     end
 
@@ -824,6 +846,15 @@ local function ShouldKeepTooltipVisible(tooltip)
 
     local owner = tooltip.GetOwner and tooltip:GetOwner() or nil
     if owner and not Provider:IsTransientTooltipOwner(owner) then
+        -- Owner is itself a tooltip frame (addon detail panel anchored to
+        -- FriendsTooltip etc.): cursor sits on the frame that owns the parent
+        -- tooltip, never on this tooltip's rect, so IsTooltipOwnerHovered
+        -- always returns false → hideDelay=0 fires Hide → addon's per-frame
+        -- Show puts it back → 12 Hz flash. Track parent's IsShown instead.
+        if IsTooltipFrameOwner(owner) then
+            local okShown, shown = pcall(owner.IsShown, owner)
+            return okShown and shown
+        end
         return IsTooltipOwnerHovered(owner)
     end
 
