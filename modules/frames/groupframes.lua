@@ -1827,14 +1827,31 @@ local function UpdateDefensiveIndicator(frame)
     local reverseSwipe = defSettings.reverseSwipe ~= false
     local growFn = DEFENSIVE_GROWTH_OFFSETS[growDir] or DEFENSIVE_GROWTH_OFFSETS.RIGHT
     local stepX, stepY = growFn(iconSize, spacing)
+    local visibleCount = math_min(#foundAuras, #frame.defensiveIcons)
 
     -- CENTER: calculate centering offset based on visible count
     local centerOffX = 0
     if growDir == "CENTER" then
-        local visibleCount = math_min(#foundAuras, #frame.defensiveIcons)
         local totalSpan = visibleCount * iconSize + math_max(visibleCount - 1, 0) * spacing
         centerOffX = -totalSpan / 2
     end
+    local bottomPad = frame._bottomPad or 0
+    local layoutChanged = frame._defensiveIndicatorCount ~= visibleCount
+        or frame._defensiveIndicatorIconSize ~= iconSize
+        or frame._defensiveIndicatorPosition ~= position
+        or frame._defensiveIndicatorOffsetX ~= offsetX
+        or frame._defensiveIndicatorOffsetY ~= offsetY
+        or frame._defensiveIndicatorSpacing ~= spacing
+        or frame._defensiveIndicatorGrowDir ~= growDir
+        or frame._defensiveIndicatorBottomPad ~= bottomPad
+    frame._defensiveIndicatorCount = visibleCount
+    frame._defensiveIndicatorIconSize = iconSize
+    frame._defensiveIndicatorPosition = position
+    frame._defensiveIndicatorOffsetX = offsetX
+    frame._defensiveIndicatorOffsetY = offsetY
+    frame._defensiveIndicatorSpacing = spacing
+    frame._defensiveIndicatorGrowDir = growDir
+    frame._defensiveIndicatorBottomPad = bottomPad
 
     -- Expose active defensive auraInstanceIDs for buff deduplication
     if not frame._defensiveAuraIDs then frame._defensiveAuraIDs = {} end
@@ -1869,10 +1886,12 @@ local function UpdateDefensiveIndicator(frame)
             end
 
             -- Position: first icon at anchor, subsequent offset by growth direction
-            defIcon:SetSize(iconSize, iconSize)
-            defIcon:ClearAllPoints()
-            defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), offsetY + stepY * (i - 1))
-            defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
+            if layoutChanged then
+                defIcon:SetSize(iconSize, iconSize)
+                defIcon:ClearAllPoints()
+                defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), offsetY + stepY * (i - 1))
+                defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
+            end
             defIcon:Show()
         else
             defIcon:Hide()
@@ -1900,6 +1919,7 @@ local function UpdatePortrait(frame)
         frame.portrait:Hide()
         return
     end
+
 
     -- Update texture
     pcall(SetPortraitTexture, frame.portraitTexture, unit, true)
