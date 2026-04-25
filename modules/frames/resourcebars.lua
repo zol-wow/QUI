@@ -233,6 +233,7 @@ Enum.PowerType.MaelstromWeapon = 100
 Enum.PowerType.VengSoulFragments = 101
 Enum.PowerType.Whirlwind = 102       -- Fury Warrior Improved Whirlwind stacks
 Enum.PowerType.TipOfTheSpear = 103   -- Survival Hunter Tip of the Spear stacks
+Enum.PowerType.RenewingMistCharges = 104 -- Mistweaver Monk Renewing Mist charges
 
 ---------------------------------------------------------------------------
 -- WHIRLWIND STACK TRACKER (event-driven)
@@ -511,6 +512,44 @@ end
 
 local VDH_SOUL_FRAGMENTS_POWER = (Enum.PowerType and type(Enum.PowerType.SoulFragments) == "number") and Enum.PowerType.SoulFragments or nil
 
+-- Renewing Mist charge spell IDs.  115151 is the player-facing Mistweaver
+-- spell on most builds; 448430 is included as a build/PTR fallback because
+-- Blizzard spell records can shift between releases.
+local RENEWING_MIST_SPELL_IDS = { 115151, 448430 }
+
+local function GetSpellChargesCompat(spellID)
+    -- Dragonflight+/modern API: returns a table.  Some older clients/wrappers
+    -- still return multiple values, so support both forms.
+    if C_Spell and C_Spell.GetSpellCharges then
+        local a, b, c, d, e = C_Spell.GetSpellCharges(spellID)
+        if type(a) == "table" then
+            return a.currentCharges or 0,
+                   a.maxCharges or 0,
+                   a.cooldownStartTime or a.cooldownStart or a.startTime or 0,
+                   a.cooldownDuration or a.duration or 0,
+                   a.chargeModRate or 1
+        end
+        return a, b, c, d, e
+    end
+
+    -- Legacy global fallback.
+    if type(GetSpellCharges) == "function" then
+        return GetSpellCharges(spellID)
+    end
+
+    return nil, nil, nil, nil, nil
+end
+
+local function GetRenewingMistCharges()
+    for _, spellID in ipairs(RENEWING_MIST_SPELL_IDS) do
+        local current, max = GetSpellChargesCompat(spellID)
+        if max and max > 0 then
+            return max, current or 0
+        end
+    end
+    return nil, 0
+end
+
 local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
 
@@ -552,6 +591,7 @@ local tickedPowerTypes = {
     [Enum.PowerType.VengSoulFragments] = true,
     [Enum.PowerType.Whirlwind] = true,
     [Enum.PowerType.TipOfTheSpear] = true,
+    [Enum.PowerType.RenewingMistCharges] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     tickedPowerTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -596,6 +636,7 @@ local instantFeedbackTypes = {
     [Enum.PowerType.VengSoulFragments] = true,
     [Enum.PowerType.Whirlwind] = true,
     [Enum.PowerType.TipOfTheSpear] = true,
+    [Enum.PowerType.RenewingMistCharges] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     instantFeedbackTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -1413,6 +1454,7 @@ local function GetSecondaryResource()
         ["MONK"]        = {
             [268]  = "STAGGER", -- Brewmaster
             [269]  = Enum.PowerType.Chi, -- Windwalker
+            [270]  = Enum.PowerType.RenewingMistCharges, -- Mistweaver Renewing Mist charges
         },
         ["PALADIN"]     = Enum.PowerType.HolyPower,
         ["PRIEST"]      = {
@@ -1525,6 +1567,8 @@ local function GetResourceColor(resource)
             customColor = pc.whirlwind
         elseif resource == Enum.PowerType.TipOfTheSpear then
             customColor = pc.tipOfTheSpear
+        elseif resource == Enum.PowerType.RenewingMistCharges then
+            customColor = pc.renewingMistCharges or pc.renewingMist or pc.chi or pc.mana
         elseif resource == Enum.PowerType.LunarPower then
             customColor = pc.lunarPower
         elseif resource == Enum.PowerType.HolyPower then
@@ -1676,6 +1720,15 @@ local function GetSecondaryResourceValue(resource)
         -- Manual tracker (UNIT_SPELLCAST_SUCCEEDED) is reliable during combat;
         -- C_UnitAuras.GetPlayerAuraBySpellID(260286) returns stale/secret data.
         local max, current = TipOfTheSpearTracker:GetStacks()
+        if not max then return nil, nil, nil, nil end
+        return max, current, current, "number"
+    end
+
+    if resource == Enum.PowerType.RenewingMistCharges then
+        -- Mistweaver Monk Renewing Mist spell charges.
+        -- Uses the spell charge API instead of aura count so this tracks
+        -- available charges on the button, not active HoT applications.
+        local max, current = GetRenewingMistCharges()
         if not max then return nil, nil, nil, nil end
         return max, current, current, "number"
     end
@@ -4173,6 +4226,12 @@ function QUICore:OnUnitAura(_, unit)
     end
 end
 
+function QUICore:OnSpellChargeUpdate()
+    if GetSecondaryResource() == Enum.PowerType.RenewingMistCharges then
+        self:UpdateSecondaryPowerBar()
+    end
+end
+
 function QUICore:OnUnitPowerPointCharge(_, unit)
     if unit and unit ~= "player" then return end
     if GetSecondaryResource() == Enum.PowerType.ComboPoints then
@@ -4266,6 +4325,9 @@ local function InitializeResourceBars(self)
     powerEventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
     powerEventFrame:RegisterUnitEvent("UNIT_AURA", "player")  -- Aura-based resources (Maelstrom Weapon stacks)
     powerEventFrame:RegisterEvent("UNIT_POWER_POINT_CHARGE")  -- Charged combo points
+    powerEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")  -- Spell-charge resources (Renewing Mist)
+    powerEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN") -- Recharge timer completion fallback
+    powerEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") -- Immediate charge updates on cast
     powerEventFrame:RegisterEvent("RUNE_POWER_UPDATE")  -- DK rune updates (no unit filter available)
     powerEventFrame:SetScript("OnEvent", function(_, event, unit, ...)
         if event == "RUNE_POWER_UPDATE" then
@@ -4274,6 +4336,18 @@ local function InitializeResourceBars(self)
             self:OnUnitAura(event, unit, ...)
         elseif event == "UNIT_POWER_POINT_CHARGE" then
             self:OnUnitPowerPointCharge(event, unit, ...)
+        elseif event == "SPELL_UPDATE_CHARGES" or event == "SPELL_UPDATE_COOLDOWN" then
+            self:OnSpellChargeUpdate(event)
+        elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            local _, spellID = ...
+            if unit == "player" then
+                for _, renewingMistSpellID in ipairs(RENEWING_MIST_SPELL_IDS) do
+                    if spellID == renewingMistSpellID then
+                        self:OnSpellChargeUpdate(event)
+                        break
+                    end
+                end
+            end
         else
             self:OnUnitPower(event, unit, ...)
         end
