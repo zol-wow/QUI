@@ -49,28 +49,16 @@ function GUI:InitializeOptions()
     end)
 
     -- Welcome tile (top of sidebar)
-    self:AddFeatureTile(frame, {
-        id = "welcome",
-        icon = "*",
-        name = "Welcome",
-        subtitle = "Getting started · Tips · What's new",
-        noScroll = true, -- CreateWelcomePage self-wraps in CreateScrollableContent
-        buildFunc = function(contentArea)
-            if ns.QUI_WelcomeOptions and ns.QUI_WelcomeOptions.CreateWelcomePage then
-                ns.QUI_WelcomeOptions.CreateWelcomePage(contentArea)
-            else
-                local t = contentArea:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-                t:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 20, -20)
-                t:SetText("Welcome to QUI")
-
-                local d = contentArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                d:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -10)
-                d:SetWidth(contentArea:GetWidth() - 40)
-                d:SetJustifyH("LEFT")
-                d:SetText("QUI options — organized by feature. Use the search bar above, press / to focus it, or click a tile in the sidebar.")
-            end
-        end,
-    })
+    if ns.QUI_Options and type(ns.QUI_Options.RegisterFeatureTile) == "function" then
+        ns.QUI_Options.RegisterFeatureTile(frame, {
+            id = "welcome",
+            icon = "*",
+            name = "Welcome",
+            subtitle = "Getting started · Tips · What's new",
+            featureId = "welcomePage",
+            noScroll = false,
+        })
+    end
 
     -- Feature tiles (guarded; each file in tiles/ attaches its own table to ns).
     if ns.QUI_GlobalTile then

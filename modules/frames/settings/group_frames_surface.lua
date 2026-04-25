@@ -4,9 +4,9 @@
       - Preview block (Party/Raid dropdown + live composer preview)
         persists across inner tabs.
       - Inner tab strip promotes the composer's widget-bar elements to
-        top-level tabs alongside the sliced provider sections. Frame-
+        top-level tabs alongside the frame-level sections. Frame-
         level tabs (Appearance, Layout, Dimensions, Range & Pet,
-        Spotlight) render via WithOnlySections over BuildGroupFrameSettings;
+        Spotlight) render through the shared schema surface;
         element tabs (Health, Power, Name, Buffs, Debuffs, Healer,
         Defensive, Aura Ind., Pinned, Priv. Auras, Indicators) invoke
         the composer's element builders through QUI_BuildGroupFrameElement.

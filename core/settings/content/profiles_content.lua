@@ -5,6 +5,9 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
@@ -12,8 +15,7 @@ local GetCore = Helpers.GetCore
 
 local SECTION_GAP = 14
 
-local function CreateSpecProfilesPage(parent)
-    local scroll, content = CreateScrollableContent(parent)
+local function BuildSpecProfilesContent(content)
     local PAD = PADDING
     local y = -10
 
@@ -392,7 +394,6 @@ local function CreateSpecProfilesPage(parent)
 
     -- Setup refresh hooks
     content:SetScript("OnShow", RefreshProfileDisplay)
-    scroll:SetScript("OnShow", RefreshProfileDisplay)
     C_Timer.After(0.2, RefreshProfileDisplay)
     C_Timer.After(0.5, RefreshProfileDisplay)
     _G.QUI_RefreshSpecProfilesTab = RefreshProfileDisplay
@@ -400,6 +401,32 @@ local function CreateSpecProfilesPage(parent)
     content:SetHeight(math.abs(y) + 20)
 end
 
+local function CreateSpecProfilesPage(parent)
+    local _, content = CreateScrollableContent(parent)
+    BuildSpecProfilesContent(content)
+end
+
 ns.QUI_ProfilesOptions = {
+    BuildSpecProfilesContent = BuildSpecProfilesContent,
     CreateSpecProfilesPage = CreateSpecProfilesPage
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "profilesPage",
+        moverKey = "profiles",
+        category = "global",
+        nav = { tileId = "global", subPageIndex = 1 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildSpecProfilesContent,
+            }),
+        },
+    }))
+end

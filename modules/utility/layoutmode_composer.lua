@@ -659,14 +659,14 @@ local COLLAPSIBLE_HEADER_H = 24
 
 -- When the V2 Group Frames tile renders an element tab, it sets this
 -- flag so composer collapsibles open by default instead of showing as
--- collapsed section headers. Sliced provider tabs (WithOnlySections) get
--- the same "flat content" treatment via headerless/borderless markers —
+-- collapsed section headers. Renderer-hosted tabs get the same flat-content
+-- treatment via headerless/borderless markers —
 -- this mirrors that behavior for element-builder tabs, which use
 -- CreateComposerCollapsible instead of U.CreateCollapsible.
 local _composerAutoExpand = false
 
 -- Flat section renderer. Produces the same visual chrome U.CreateCollapsible
--- renders in WithOnlySections' borderless mode: accent dot + title label +
+-- renders in borderless mode: accent dot + title label +
 -- 1px accent underline, then body content. Keeps the element-tab visuals
 -- consistent with the sliced-provider tabs (Range & Pet, Appearance, etc.)
 -- inside the same Group Frames tile. Returns a frame satisfying the
@@ -3740,8 +3740,8 @@ end
 
 ---------------------------------------------------------------------------
 -- V2 TILE HOISTS — the Group Frames tile owns the preview block (dropdown
--- + hoisted preview) and element-level inner tabs; frame-level tabs slice
--- BuildGroupFrameSettings via WithOnlySections.
+-- + hoisted preview) and element-level inner tabs; frame-level tabs render
+-- through the shared schema surface.
 --
 -- QUI_BuildGroupFramePreview(host, contextMode)   — one-time setup of
 --     the tile's preview block; creates a non-interactive preview.
@@ -3800,9 +3800,8 @@ _G.QUI_RefreshGroupFramePreview = function(contextMode)
 end
 
 -- Widget-bar element settings. Each element's builder uses the composer's
--- own CreateComposerCollapsible (not U.CreateCollapsible), so it can't be
--- sliced through WithOnlySections — the tile calls this global directly
--- per tab instead. All group-frame element data is context-aware, so the
+-- own CreateComposerCollapsible (not U.CreateCollapsible), so the tile calls
+-- this global directly per tab instead. All group-frame element data is context-aware, so the
 -- Party/Raid switch should always route through the visual proxy.
 local function MakeElementOnChange()
     return function()

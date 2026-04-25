@@ -408,7 +408,7 @@ local function RefreshSpotlight()
 end
 
 local function NotifyProvider(providerKey, structural)
-    local compat = ns.Settings and ns.Settings.CompatRender
+    local compat = ns.Settings and ns.Settings.RenderAdapters
     if compat and compat.NotifyProviderChanged then
         compat.NotifyProviderChanged(providerKey, {
             structural = structural == true,

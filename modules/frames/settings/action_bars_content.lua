@@ -14,6 +14,9 @@ local GetFontList = Shared.GetFontList
 
 local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 ---------------------------------------------------------------------------
 -- SHARED CONTEXT & REFRESH CALLBACKS
@@ -1080,3 +1083,23 @@ ns.QUI_ActionBarsOptions = {
     end,
     CreateActionBarsPage   = CreateActionBarsPage,  -- legacy shim
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "barHidingPage",
+        moverKey = "barHiding",
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 5 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildMouseoverHideTab,
+            }),
+        },
+    }))
+end

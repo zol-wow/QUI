@@ -10,6 +10,10 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
+local RenderAdapters = Settings and Settings.RenderAdapters
 
 local PADDING = Shared.PADDING
 local GetCore = ns.Helpers.GetCore
@@ -267,3 +271,32 @@ ns.QUI_ThirdPartyAnchoringOptions = {
     BuildThirdPartyTab = BuildThirdPartyTab,
     BuildLayoutContainerSettings = BuildThirdPartyContainerLayoutSettings,
 }
+
+if Registry and Schema and RenderAdapters
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "thirdPartyAnchoring",
+        moverKey = "thirdPartyAnchoring",
+        lookupKeys = { "dandersParty", "dandersRaid", "dandersPinned1", "dandersPinned2" },
+        category = "global",
+        nav = { tileId = "global", subPageIndex = 4 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildThirdPartyTab,
+            }),
+        },
+        render = {
+            layout = function(host, options)
+                return BuildThirdPartyContainerLayoutSettings(
+                    host,
+                    options and options.providerKey or "thirdPartyAnchoring"
+                )
+            end,
+        },
+    }))
+end

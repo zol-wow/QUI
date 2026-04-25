@@ -10,6 +10,9 @@ local C = GUI.Colors
 
 -- Import shared utilities
 local Shared = ns.QUI_Options
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 local function BuildAutohideTab(tabContent)
     local PAD = 10
@@ -142,3 +145,23 @@ end
 ns.QUI_AutohideOptions = {
     BuildAutohideTab = BuildAutohideTab
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "autohidePage",
+        moverKey = "autohide",
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 4 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildAutohideTab,
+            }),
+        },
+    }))
+end

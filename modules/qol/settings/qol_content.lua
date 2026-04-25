@@ -11,6 +11,13 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
 local P = Helpers.PlaceRow
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
+
+local function ShouldBuildSection(selectedSectionKey, sectionKey)
+    return selectedSectionKey == nil or selectedSectionKey == sectionKey
+end
 
 local function SkipDualColumnLayout(body)
     local section = body and body.GetParent and body:GetParent()
@@ -20,7 +27,7 @@ local function SkipDualColumnLayout(body)
     body._quiSkipDualColumnLayout = true
 end
 
-local function BuildGeneralTab(tabContent, searchContext)
+local function BuildGeneralTab(tabContent, searchContext, selectedSectionKey)
     local FORM_ROW = 32
     local PAD = Shared.PADDING
     local db = Shared.GetDB()
@@ -59,7 +66,7 @@ local function BuildGeneralTab(tabContent, searchContext)
     local sections, relayout, CreateCollapsible = Shared.CreateTilePage(tabContent, PAD)
 
     -- ========== Settings Panel ==========
-    if db.general then
+    if ShouldBuildSection(selectedSectionKey, "settingsPanel") and db.general then
         CreateCollapsible("Settings Panel", 1 * FORM_ROW + 8, function(body)
             local sy = -4
             P(GUI:CreateFormToggle(body, "Show Setting Tooltips", "showOptionTooltips", db.general, nil, {
@@ -69,7 +76,7 @@ local function BuildGeneralTab(tabContent, searchContext)
     end
 
     -- ========== UI Scale ==========
-    if db.general then
+    if ShouldBuildSection(selectedSectionKey, "uiScale") and db.general then
         CreateCollapsible("UI Scale", 1, function(body)
             SkipDualColumnLayout(body)
             local sy = -4
@@ -168,7 +175,7 @@ local function BuildGeneralTab(tabContent, searchContext)
     end
 
     -- ========== Default Font Settings ==========
-    if db.general then
+    if ShouldBuildSection(selectedSectionKey, "defaultFonts") and db.general then
         CreateCollapsible("Default Font Settings", 5 * FORM_ROW + 8, function(body)
             local sy = -4
             local tipText = GUI:CreateLabel(body, "These settings apply throughout the UI. Individual elements with their own font options will override these defaults.", 11, C.textMuted)
@@ -206,72 +213,74 @@ local function BuildGeneralTab(tabContent, searchContext)
     end
 
     -- ========== Quazii Recommended FPS Settings ==========
-    CreateCollapsible("Quazii Recommended FPS Settings", 1, function(body)
-        SkipDualColumnLayout(body)
-        local sy = -4
-        local fpsDesc = GUI:CreateLabel(body,
-            "Apply Quazii's optimized graphics settings for competitive play. " ..
-            "Your current settings are automatically saved when you click Apply - use 'Restore Previous Settings' to revert anytime. " ..
-            "Caution: Clicking Apply again will overwrite your backup with these settings.",
-            11, C.textMuted)
-        fpsDesc:SetPoint("TOPLEFT", 0, sy)
-        fpsDesc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-        fpsDesc:SetJustifyH("LEFT")
-        fpsDesc:SetWordWrap(true)
-        fpsDesc:SetHeight(30)
-        sy = sy - 40
+    if ShouldBuildSection(selectedSectionKey, "fpsPreset") then
+        CreateCollapsible("Quazii Recommended FPS Settings", 1, function(body)
+            SkipDualColumnLayout(body)
+            local sy = -4
+            local fpsDesc = GUI:CreateLabel(body,
+                "Apply Quazii's optimized graphics settings for competitive play. " ..
+                "Your current settings are automatically saved when you click Apply - use 'Restore Previous Settings' to revert anytime. " ..
+                "Caution: Clicking Apply again will overwrite your backup with these settings.",
+                11, C.textMuted)
+            fpsDesc:SetPoint("TOPLEFT", 0, sy)
+            fpsDesc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            fpsDesc:SetJustifyH("LEFT")
+            fpsDesc:SetWordWrap(true)
+            fpsDesc:SetHeight(30)
+            sy = sy - 40
 
-        local restoreFpsBtn
-        local fpsStatusText
+            local restoreFpsBtn
+            local fpsStatusText
 
-        local function UpdateFPSStatus()
-            local allMatch, matched, total = Shared.CheckCVarsMatch()
-            if matched >= 50 then
-                fpsStatusText:SetText("Settings: All applied")
-                fpsStatusText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-            else
-                fpsStatusText:SetText(string.format("Settings: %d/%d match", matched, total))
-                fpsStatusText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+            local function UpdateFPSStatus()
+                local allMatch, matched, total = Shared.CheckCVarsMatch()
+                if matched >= 50 then
+                    fpsStatusText:SetText("Settings: All applied")
+                    fpsStatusText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                else
+                    fpsStatusText:SetText(string.format("Settings: %d/%d match", matched, total))
+                    fpsStatusText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                end
             end
-        end
 
-        local applyFpsBtn = GUI:CreateButton(body, "Apply FPS Settings", 180, 28, function()
-            Shared.ApplyQuaziiFPSSettings()
-            restoreFpsBtn:SetAlpha(1)
-            restoreFpsBtn:Enable()
-            UpdateFPSStatus()
-        end)
-        applyFpsBtn:SetPoint("TOPLEFT", 0, sy)
-        applyFpsBtn:SetPoint("RIGHT", body, "CENTER", -5, 0)
+            local applyFpsBtn = GUI:CreateButton(body, "Apply FPS Settings", 180, 28, function()
+                Shared.ApplyQuaziiFPSSettings()
+                restoreFpsBtn:SetAlpha(1)
+                restoreFpsBtn:Enable()
+                UpdateFPSStatus()
+            end)
+            applyFpsBtn:SetPoint("TOPLEFT", 0, sy)
+            applyFpsBtn:SetPoint("RIGHT", body, "CENTER", -5, 0)
 
-        restoreFpsBtn = GUI:CreateButton(body, "Restore Previous Settings", 180, 28, function()
-            if Shared.RestorePreviousFPSSettings() then
+            restoreFpsBtn = GUI:CreateButton(body, "Restore Previous Settings", 180, 28, function()
+                if Shared.RestorePreviousFPSSettings() then
+                    restoreFpsBtn:SetAlpha(0.5)
+                    restoreFpsBtn:Disable()
+                end
+                UpdateFPSStatus()
+            end)
+            restoreFpsBtn:SetPoint("LEFT", body, "CENTER", 5, 0)
+            restoreFpsBtn:SetPoint("TOP", applyFpsBtn, "TOP", 0, 0)
+            restoreFpsBtn:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            sy = sy - 38
+
+            fpsStatusText = GUI:CreateLabel(body, "", 11, C.accent)
+            fpsStatusText:SetPoint("TOPLEFT", 0, sy)
+
+            if not db.fpsBackup then
                 restoreFpsBtn:SetAlpha(0.5)
                 restoreFpsBtn:Disable()
             end
             UpdateFPSStatus()
+
+            local section = body:GetParent()
+            section._contentHeight = 40 + 38 + 22 + 8
         end)
-        restoreFpsBtn:SetPoint("LEFT", body, "CENTER", 5, 0)
-        restoreFpsBtn:SetPoint("TOP", applyFpsBtn, "TOP", 0, 0)
-        restoreFpsBtn:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-        sy = sy - 38
-
-        fpsStatusText = GUI:CreateLabel(body, "", 11, C.accent)
-        fpsStatusText:SetPoint("TOPLEFT", 0, sy)
-
-        if not db.fpsBackup then
-            restoreFpsBtn:SetAlpha(0.5)
-            restoreFpsBtn:Disable()
-        end
-        UpdateFPSStatus()
-
-        local section = body:GetParent()
-        section._contentHeight = 40 + 38 + 22 + 8
-    end)
+    end
 
     -- ========== Combat Status Text Indicator ==========
     local combatTextDB = db and db.combatText
-    if combatTextDB then
+    if ShouldBuildSection(selectedSectionKey, "combatText") and combatTextDB then
         CreateCollapsible("Combat Status Text Indicator", 1, function(body)
             local sy = -4
             local desc = GUI:CreateLabel(body,
@@ -345,7 +354,7 @@ local function BuildGeneralTab(tabContent, searchContext)
 
     -- ========== Automation ==========
     local generalDB = db and db.general
-    if generalDB then
+    if ShouldBuildSection(selectedSectionKey, "automation") and generalDB then
         CreateCollapsible("Automation", 1, function(body)
             local sy = -4
             local desc = GUI:CreateLabel(body,
@@ -413,7 +422,7 @@ local function BuildGeneralTab(tabContent, searchContext)
     end
 
     -- ========== Popup & Toast Blocker ==========
-    if generalDB then
+    if ShouldBuildSection(selectedSectionKey, "popupBlocker") and generalDB then
         if type(generalDB.popupBlocker) ~= "table" then generalDB.popupBlocker = {} end
         local popupDB = generalDB.popupBlocker
 
@@ -491,7 +500,7 @@ local function BuildGeneralTab(tabContent, searchContext)
 
     -- ========== Quick Salvage ==========
     local qsDB = db and db.general and db.general.quickSalvage
-    if qsDB then
+    if ShouldBuildSection(selectedSectionKey, "quickSalvage") and qsDB then
         CreateCollapsible("Quick Salvage", 3 * FORM_ROW + 8, function(body)
             SkipDualColumnLayout(body)
             local sy = -4
@@ -529,7 +538,7 @@ local function BuildGeneralTab(tabContent, searchContext)
     end
 
     -- ========== Consumable Check ==========
-    if generalDB then
+    if ShouldBuildSection(selectedSectionKey, "consumables") and generalDB then
         CreateCollapsible("Consumable Check", 1, function(body)
             SkipDualColumnLayout(body)
             local sy = -4
@@ -675,7 +684,7 @@ local function BuildGeneralTab(tabContent, searchContext)
 
     -- ========== Consumable Macros ==========
     local cmDB = generalDB and generalDB.consumableMacros
-    if cmDB then
+    if ShouldBuildSection(selectedSectionKey, "consumableMacros") and cmDB then
         CreateCollapsible("Consumable Macros", 1, function(body)
             SkipDualColumnLayout(body)
             local sy = -4
@@ -769,7 +778,7 @@ local function BuildGeneralTab(tabContent, searchContext)
 
     -- ========== Target Distance Bracket Display ==========
     local rangeCheckDB = db and db.rangeCheck
-    if rangeCheckDB then
+    if ShouldBuildSection(selectedSectionKey, "targetDistance") and rangeCheckDB then
         CreateCollapsible("Target Distance Bracket Display", 1, function(body)
             local sy = -4
 
@@ -856,50 +865,54 @@ local function BuildGeneralTab(tabContent, searchContext)
     end
 
     -- ========== QUI Panel Settings ==========
-    CreateCollapsible("QUI Panel Settings", 1, function(body)
-        local sy = -4
+    if ShouldBuildSection(selectedSectionKey, "quiPanel") then
+        CreateCollapsible("QUI Panel Settings", 1, function(body)
+            local sy = -4
 
-        local minimapBtnDB = db and db.minimapButton
-        if minimapBtnDB then
-            sy = P(GUI:CreateFormCheckbox(body, "Hide QUI Minimap Icon", "hide", minimapBtnDB, function(dbVal)
-                local LibDBIcon = LibStub("LibDBIcon-1.0", true)
-                if LibDBIcon then
-                    if dbVal then LibDBIcon:Hide("QUI") else LibDBIcon:Show("QUI") end
-                end
-                if _G.QUI_RefreshMinimapButtonDrawer then _G.QUI_RefreshMinimapButtonDrawer() end
-            end, { description = "Hide the QUI minimap button. You can still open the options panel via /qui." }), body, sy)
-        end
-
-        P(GUI:CreateFormSlider(body, "QUI Panel Transparency", 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
-            local mainFrame = GUI.MainFrame
-            if mainFrame then
-                local bgColor = GUI.Colors.bg
-                mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
+            local minimapBtnDB = db and db.minimapButton
+            if minimapBtnDB then
+                sy = P(GUI:CreateFormCheckbox(body, "Hide QUI Minimap Icon", "hide", minimapBtnDB, function(dbVal)
+                    local LibDBIcon = LibStub("LibDBIcon-1.0", true)
+                    if LibDBIcon then
+                        if dbVal then LibDBIcon:Hide("QUI") else LibDBIcon:Show("QUI") end
+                    end
+                    if _G.QUI_RefreshMinimapButtonDrawer then _G.QUI_RefreshMinimapButtonDrawer() end
+                end, { description = "Hide the QUI minimap button. You can still open the options panel via /qui." }), body, sy)
             end
-        end, nil, { description = "Background opacity of the QUI options panel itself. Lower values let you see the game world through the panel." }), body, sy)
 
-        local section = body:GetParent()
-        section._contentHeight = 2 * FORM_ROW + 8
-    end)
+            P(GUI:CreateFormSlider(body, "QUI Panel Transparency", 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
+                local mainFrame = GUI.MainFrame
+                if mainFrame then
+                    local bgColor = GUI.Colors.bg
+                    mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
+                end
+            end, nil, { description = "Background opacity of the QUI options panel itself. Lower values let you see the game world through the panel." }), body, sy)
+
+            local section = body:GetParent()
+            section._contentHeight = 2 * FORM_ROW + 8
+        end)
+    end
 
     -- ========== Reload Behavior ==========
-    CreateCollapsible("Reload Behavior", 2 * FORM_ROW + 8, function(body)
-        local sy = -4
-        local desc = GUI:CreateLabel(body,
-            "By default, QUI queues /reload until combat ends to prevent taint issues. Enable this to bypass the combat check and reload immediately.",
-            11, C.textMuted)
-        desc:SetPoint("TOPLEFT", 0, sy)
-        desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-        desc:SetJustifyH("LEFT")
-        desc:SetWordWrap(true)
-        desc:SetHeight(28)
-        sy = sy - 32
+    if ShouldBuildSection(selectedSectionKey, "reloadBehavior") then
+        CreateCollapsible("Reload Behavior", 2 * FORM_ROW + 8, function(body)
+            local sy = -4
+            local desc = GUI:CreateLabel(body,
+                "By default, QUI queues /reload until combat ends to prevent taint issues. Enable this to bypass the combat check and reload immediately.",
+                11, C.textMuted)
+            desc:SetPoint("TOPLEFT", 0, sy)
+            desc:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            desc:SetJustifyH("LEFT")
+            desc:SetWordWrap(true)
+            desc:SetHeight(28)
+            sy = sy - 32
 
-        if db.general then
-            P(GUI:CreateFormCheckbox(body, "Allow Reload During Combat", "allowReloadInCombat", db.general, nil,
-                { description = "Bypass QUI's usual combat-end queue and reload immediately when a reload is requested. Can re-introduce taint issues during combat." }), body, sy)
-        end
-    end)
+            if db.general then
+                P(GUI:CreateFormCheckbox(body, "Allow Reload During Combat", "allowReloadInCombat", db.general, nil,
+                    { description = "Bypass QUI's usual combat-end queue and reload immediately when a reload is requested. Can re-introduce taint issues during combat." }), body, sy)
+            end
+        end)
+    end
 
     relayout()
 end
@@ -908,3 +921,182 @@ end
 ns.QUI_QoLOptions = {
     BuildGeneralTab = BuildGeneralTab
 }
+
+local function GetGeneralDB(profile)
+    return profile and profile.general
+end
+
+local generalSectionFeatures = {
+    {
+        id = "fpsPreset",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 1 },
+        sectionKey = "fpsPreset",
+        sectionTitle = "Quazii Recommended FPS Settings",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 1,
+            subTabName = "FPS Preset",
+        },
+    },
+    {
+        id = "combatText",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 2 },
+        sectionKey = "combatText",
+        sectionTitle = "Combat Status Text Indicator",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 2,
+            subTabName = "Combat Text",
+        },
+    },
+    {
+        id = "automation",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 3 },
+        sectionKey = "automation",
+        sectionTitle = "Automation",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 3,
+            subTabName = "Automation",
+        },
+    },
+    {
+        id = "popupBlocker",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 4 },
+        sectionKey = "popupBlocker",
+        sectionTitle = "Popup & Toast Blocker",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 4,
+            subTabName = "Popups",
+        },
+    },
+    {
+        id = "quickSalvage",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 5 },
+        sectionKey = "quickSalvage",
+        sectionTitle = "Quick Salvage",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 5,
+            subTabName = "Salvage",
+        },
+    },
+    {
+        id = "consumableMacros",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 7 },
+        sectionKey = "consumableMacros",
+        sectionTitle = "Consumable Macros",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 7,
+            subTabName = "Macros",
+        },
+    },
+    {
+        id = "targetDistance",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 8 },
+        sectionKey = "targetDistance",
+        sectionTitle = "Target Distance Bracket Display",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 8,
+            subTabName = "Distance",
+        },
+    },
+    {
+        id = "quiPanel",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 9 },
+        sectionKey = "quiPanel",
+        sectionTitle = "QUI Panel Settings",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 9,
+            subTabName = "Panel",
+        },
+    },
+    {
+        id = "reloadBehavior",
+        category = "qol",
+        nav = { tileId = "qol", subPageIndex = 10 },
+        sectionKey = "reloadBehavior",
+        sectionTitle = "Reload Behavior",
+        searchContext = {
+            tabIndex = 17,
+            tabName = "Quality of Life",
+            subTabIndex = 10,
+            subTabName = "Reload",
+        },
+    },
+    {
+        id = "uiScale",
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 1 },
+        sectionKey = "uiScale",
+        sectionTitle = "UI Scale",
+        searchContext = {
+            tabIndex = 10,
+            tabName = "Appearance",
+            subTabIndex = 3,
+            subTabName = "UI Scale",
+        },
+    },
+    {
+        id = "defaultFonts",
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 2 },
+        sectionKey = "defaultFonts",
+        sectionTitle = "Default Font Settings",
+        searchContext = {
+            tabIndex = 10,
+            tabName = "Appearance",
+            subTabIndex = 4,
+            subTabName = "Fonts",
+        },
+    },
+}
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    for _, spec in ipairs(generalSectionFeatures) do
+        local featureSpec = spec
+        Registry:RegisterFeature(Schema.Feature({
+            id = featureSpec.id,
+            moverKey = featureSpec.moverKey or featureSpec.id,
+            category = featureSpec.category,
+            nav = featureSpec.nav,
+            getDB = GetGeneralDB,
+            searchContext = featureSpec.searchContext,
+            sectionTitle = featureSpec.sectionTitle,
+            sectionKey = featureSpec.sectionKey,
+            sections = {
+                Schema.Section({
+                    id = "settings",
+                    kind = "page",
+                    minHeight = 80,
+                    build = function(host)
+                        return BuildGeneralTab(host, featureSpec.searchContext, featureSpec.sectionKey)
+                    end,
+                }),
+            },
+        }))
+    end
+end

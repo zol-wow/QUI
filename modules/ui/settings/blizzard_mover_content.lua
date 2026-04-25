@@ -9,6 +9,9 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 local MOD_KEY_OPTIONS = {
     { value = "SHIFT", text = "Shift" },
@@ -192,3 +195,23 @@ end
 ns.QUI_BlizzardMoverOptions = {
     BuildBlizzardMoverTab = BuildBlizzardMoverTab,
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "blizzardMoverPage",
+        moverKey = "blizzardMover",
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 8 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildBlizzardMoverTab,
+            }),
+        },
+    }))
+end

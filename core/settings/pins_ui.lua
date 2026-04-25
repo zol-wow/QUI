@@ -1223,26 +1223,32 @@ local function BuildPinnedGlobalsRows(state)
     state.content:SetHeight(math.max(220, 132 + math_abs(y)))
 end
 
-local function BuildPinnedGlobalsPage(parent)
+local function BuildPinnedGlobalsContent(content, stateHost, scrollFrame)
     local gui = GetGUI()
-    if not parent or not gui or not ns.QUI_Options or not ns.QUI_Options.CreateScrollableContent then
+    if not content or not gui then
         return
     end
 
-    if parent._quiPinnedGlobalsState then
-        BuildPinnedGlobalsRows(parent._quiPinnedGlobalsState)
+    stateHost = stateHost or content
+
+    if stateHost._quiPinnedGlobalsState
+        and stateHost._quiPinnedGlobalsState.content == content
+        and stateHost._quiPinnedGlobalsState.rowsHost
+        and stateHost._quiPinnedGlobalsState.rowsHost.GetParent
+        and stateHost._quiPinnedGlobalsState.rowsHost:GetParent() then
+        BuildPinnedGlobalsRows(stateHost._quiPinnedGlobalsState)
         return
     end
 
-    local scroll, content = ns.QUI_Options.CreateScrollableContent(parent)
+    stateHost._quiPinnedGlobalsState = nil
     local state = {
-        parent = parent,
-        scroll = scroll,
+        parent = stateHost,
+        scroll = scrollFrame,
         content = content,
         search = "",
         sortMode = "recent",
     }
-    parent._quiPinnedGlobalsState = state
+    stateHost._quiPinnedGlobalsState = state
 
     local intro = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(intro, 11, GetMutedColor())
@@ -1329,18 +1335,57 @@ local function BuildPinnedGlobalsPage(parent)
 
     state.token = Pins:Subscribe("*", function()
         BuildPinnedGlobalsRows(state)
-    end, parent)
+    end, stateHost)
 
-    parent:SetScript("OnShow", function()
+    stateHost:SetScript("OnShow", function()
         BuildPinnedGlobalsRows(state)
     end)
-    scroll:SetScript("OnShow", function()
-        BuildPinnedGlobalsRows(state)
-    end)
+    if scrollFrame then
+        scrollFrame:SetScript("OnShow", function()
+            BuildPinnedGlobalsRows(state)
+        end)
+    end
 
     BuildPinnedGlobalsRows(state)
 end
 
+local function BuildPinnedGlobalsPage(parent)
+    if not parent or not ns.QUI_Options or not ns.QUI_Options.CreateScrollableContent then
+        return
+    end
+
+    local scroll, content = ns.QUI_Options.CreateScrollableContent(parent)
+    BuildPinnedGlobalsContent(content, parent, scroll)
+end
+
 ns.QUI_PinnedSettingsOptions = {
+    BuildPinnedGlobalsContent = BuildPinnedGlobalsContent,
     BuildPinnedGlobalsPage = BuildPinnedGlobalsPage,
 }
+
+do
+    local settings = ns.Settings
+    local registry = settings and settings.Registry
+    local schema = settings and settings.Schema
+    if registry and schema
+        and type(registry.RegisterFeature) == "function"
+        and type(schema.Feature) == "function"
+        and type(schema.Section) == "function" then
+        registry:RegisterFeature(schema.Feature({
+            id = "pinnedGlobalsPage",
+            moverKey = "pinnedGlobals",
+            category = "global",
+            nav = { tileId = "global", subPageIndex = 2 },
+            sections = {
+                schema.Section({
+                    id = "settings",
+                    kind = "page",
+                    minHeight = 80,
+                    build = function(host)
+                        return BuildPinnedGlobalsContent(host, host)
+                    end,
+                }),
+            },
+        }))
+    end
+end

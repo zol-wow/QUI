@@ -718,7 +718,7 @@ local function NotifyProviderChangedForWidget(widget, options)
     local context = widget._providerSyncContext or GetProviderSyncContext(widget)
     if not context or not context.providerKey then return end
 
-    local compat = ns.Settings and ns.Settings.CompatRender
+    local compat = ns.Settings and ns.Settings.RenderAdapters
     if not compat or type(compat.NotifyProviderChanged) ~= "function" then return end
 
     local providerOptions = widget._providerSyncOptions or {}
@@ -5738,7 +5738,7 @@ function GUI:HandleSearchDescriptorChange(descriptor)
         pcall(feature.apply)
     end
 
-    local compat = settings and settings.CompatRender
+    local compat = settings and settings.RenderAdapters
     if descriptor.providerKey
         and compat
         and type(compat.NotifyProviderChanged) == "function" then

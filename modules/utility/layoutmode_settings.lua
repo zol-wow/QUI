@@ -458,7 +458,7 @@ local function BuildContent(panel, key)
 
     local providerHeight = 0
     local Settings = ns.Settings
-    local CompatRender = Settings and Settings.CompatRender
+    local RenderAdapters = Settings and Settings.RenderAdapters
     local Renderer = Settings and Settings.Renderer
     local U = ns.QUI_LayoutMode_Utils
 
@@ -491,8 +491,8 @@ local function BuildContent(panel, key)
             return h
         end
 
-        if usePositionOnly and CompatRender and CompatRender.WithOnlyPosition then
-            totalHeight = CompatRender.WithOnlyPosition(renderSharedFeature)
+        if usePositionOnly and RenderAdapters and RenderAdapters.WithOnlyPosition then
+            totalHeight = RenderAdapters.WithOnlyPosition(renderSharedFeature)
         else
             totalHeight = renderSharedFeature()
         end
@@ -790,7 +790,7 @@ function QUI_LayoutMode_Settings:Show(key)
         end
     end
 
-    local compat = ns.Settings and ns.Settings.CompatRender
+    local compat = ns.Settings and ns.Settings.RenderAdapters
     if compat and compat.RegisterProviderSurface then
         compat.RegisterProviderSurface(key, "layoutmode-settings", function(meta)
             self:Refresh(meta)
@@ -815,7 +815,7 @@ function QUI_LayoutMode_Settings:Hide()
     if self._panel then
         self._panel:Hide()
     end
-    local compat = ns.Settings and ns.Settings.CompatRender
+    local compat = ns.Settings and ns.Settings.RenderAdapters
     if compat and compat.UnregisterProviderSurface then
         compat.UnregisterProviderSurface("layoutmode-settings")
     end

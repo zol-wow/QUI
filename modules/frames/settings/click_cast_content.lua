@@ -9,6 +9,9 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 local QUICore = ns.Addon
 
 -- Local references
@@ -1666,9 +1669,7 @@ local function PlaceClickCastSection(content, y, title, builder)
     return y - bodyH - SECTION_GAP
 end
 
-local function CreateClickCastPage(parent)
-    local scroll, content = CreateScrollableContent(parent)
-
+local function BuildClickCastContent(content)
     GUI:SetSearchContext({tabIndex = 7, tabName = "Click-Cast", subTabIndex = 1, subTabName = "Click-Cast"})
 
     local gfdb = GetGFDB()
@@ -1757,9 +1758,35 @@ local function CreateClickCastPage(parent)
     end)
 end
 
+local function CreateClickCastPage(parent)
+    local _, content = CreateScrollableContent(parent)
+    BuildClickCastContent(content)
+end
+
 ---------------------------------------------------------------------------
 -- EXPORT
 ---------------------------------------------------------------------------
 ns.QUI_GroupFramesOptions = {
+    BuildClickCastContent = BuildClickCastContent,
     CreateClickCastPage = CreateClickCastPage,
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "clickCastPage",
+        moverKey = "clickCast",
+        category = "global",
+        nav = { tileId = "global", subPageIndex = 5 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildClickCastContent,
+            }),
+        },
+    }))
+end

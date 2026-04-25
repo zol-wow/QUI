@@ -11,8 +11,6 @@
     <Script file="tooltip_provider.lua"/>
     <Script file="tooltip_inspect.lua"/>
     <Script file="tooltip.lua"/>
-    <Script file="settings/shared.lua"/>
-    <Script file="settings/legacy_general_sections.lua"/>
     <Script file="combattimer.lua"/>
     <Script file="settings/combat_timer.lua"/>
     <Script file="settings/tooltip_anchor.lua"/>

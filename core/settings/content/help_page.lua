@@ -13,8 +13,10 @@ local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
 local HelpContent = ns.QUI_HelpContent
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
-local CreateScrollableContent = Shared.CreateScrollableContent
 local CreateWrappedLabel = Shared.CreateWrappedLabel
 local CreateLinkItem = Shared.CreateLinkItem
 local PADDING = Shared.PADDING or 15
@@ -22,12 +24,11 @@ local PADDING = Shared.PADDING or 15
 local SECTION_LABEL_GAP = 30  -- matches CreateAccentDotLabel's 22px height + 8 breathing room
 
 --------------------------------------------------------------------------------
--- PAGE: Help (single scrollable page)
+-- CONTENT: Help
 --------------------------------------------------------------------------------
-local function CreateHelpPage(parent)
+local function BuildHelpContent(content)
     if not HelpContent then return end
 
-    local scroll, content = CreateScrollableContent(parent)
     local y = -10
     local contentWidth = 700
 
@@ -220,8 +221,38 @@ local function CreateHelpPage(parent)
 end
 
 --------------------------------------------------------------------------------
+-- PAGE: Help (legacy wrapper for callers that still need a full page)
+--------------------------------------------------------------------------------
+local function CreateHelpPage(parent)
+    local _, content = Shared.CreateScrollableContent(parent)
+    BuildHelpContent(content)
+end
+
+--------------------------------------------------------------------------------
 -- Export
 --------------------------------------------------------------------------------
 ns.QUI_HelpOptions = {
+    BuildHelpContent = BuildHelpContent,
     CreateHelpPage = CreateHelpPage,
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "helpPage",
+        moverKey = "help",
+        category = "help",
+        nav = { tileId = "help" },
+        noSearch = true,
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildHelpContent,
+            }),
+        },
+    }))
+end

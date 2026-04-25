@@ -106,7 +106,7 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     Utils:RefreshAccentColor()
     local ACCENT_R, ACCENT_G, ACCENT_B = Utils.ACCENT_R, Utils.ACCENT_G, Utils.ACCENT_B
     local baseHeaderHeight = Utils.HEADER_HEIGHT
-    -- Headerless mode: consume a one-shot flag set by WithOnlySections for
+    -- Headerless mode: consume a one-shot flag set by renderer section filters for
     -- single-entry whitelists (the tile tab already names the section).
     local headerless = Utils._nextHeaderless == true
     Utils._nextHeaderless = false
@@ -429,4 +429,38 @@ function Utils.BuildBackdropBorderSection(content, db, sections, relayout, Refre
         Utils.PlaceRow(GUI:CreateFormColorPicker(body, "Border Color", "borderColor", db, Refresh, nil,
             { description = "Fallback border color used when neither Class Color nor Accent Color is on." }), body, sy)
     end, sections, relayout)
+end
+
+do
+    local Settings = ns.Settings
+    local Registry = Settings and Settings.Registry
+    local Schema = Settings and Settings.Schema
+    local RenderAdapters = Settings and Settings.RenderAdapters
+
+    if Registry and Schema and RenderAdapters
+        and type(Registry.RegisterFeature) == "function"
+        and type(Schema.Feature) == "function" then
+        for _, frameKey in ipairs({
+            "topCenterWidgets",
+            "belowMinimapWidgets",
+            "rangeCheck",
+            "lootFrame",
+            "lootRollAnchor",
+            "alertAnchor",
+            "toastAnchor",
+            "bnetToastAnchor",
+            "powerBarAlt",
+        }) do
+            local key = frameKey
+            Registry:RegisterFeature(Schema.Feature({
+                id = key,
+                moverKey = key,
+                render = {
+                    layout = function(host, options)
+                        return RenderAdapters.RenderPositionOnly(host, options and options.providerKey or key)
+                    end,
+                },
+            }))
+        end
+    end
 end

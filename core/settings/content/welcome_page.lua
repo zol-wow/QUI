@@ -3,8 +3,10 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
-local CreateScrollableContent = Shared.CreateScrollableContent
 local CreateWrappedLabel = Shared.CreateWrappedLabel
 local CreateLinkItem = Shared.CreateLinkItem
 local PADDING = Shared.PADDING or 15
@@ -27,10 +29,9 @@ local function CreateQA(parent, question, answer, y, contentWidth)
 end
 
 --------------------------------------------------------------------------------
--- PAGE: Welcome (single scrollable page, no subtabs)
+-- CONTENT: Welcome
 --------------------------------------------------------------------------------
-local function CreateWelcomePage(parent)
-    local scroll, content = CreateScrollableContent(parent)
+local function BuildWelcomeContent(content)
     local y = -10
     local contentWidth = 700
 
@@ -141,8 +142,38 @@ local function CreateWelcomePage(parent)
 end
 
 --------------------------------------------------------------------------------
+-- PAGE: Welcome (legacy wrapper for callers that still need a full page)
+--------------------------------------------------------------------------------
+local function CreateWelcomePage(parent)
+    local _, content = Shared.CreateScrollableContent(parent)
+    BuildWelcomeContent(content)
+end
+
+--------------------------------------------------------------------------------
 -- Export
 --------------------------------------------------------------------------------
 ns.QUI_WelcomeOptions = {
+    BuildWelcomeContent = BuildWelcomeContent,
     CreateWelcomePage = CreateWelcomePage,
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "welcomePage",
+        moverKey = "welcome",
+        category = "global",
+        nav = { tileId = "welcome" },
+        noSearch = true,
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildWelcomeContent,
+            }),
+        },
+    }))
+end

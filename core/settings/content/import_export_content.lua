@@ -5,6 +5,9 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local QUICore = ns.Addon
 local UIKit = ns.UIKit
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 -- Local references for shared infrastructure
 local CreateScrollableContent = Shared.CreateScrollableContent
@@ -1066,3 +1069,23 @@ ns.QUI_ImportOptions = {
     CreateImportExportPage = CreateImportExportPage,
     BuildImportExportTab = BuildImportExportTab,
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "importExportPage",
+        moverKey = "importExport",
+        category = "global",
+        nav = { tileId = "global", subPageIndex = 3 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildImportExportTab,
+            }),
+        },
+    }))
+end

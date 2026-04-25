@@ -10,6 +10,10 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
 local P = Helpers.PlaceRow
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
+local RenderAdapters = Settings and Settings.RenderAdapters
 
 local PADDING = Shared.PADDING
 local FORM_ROW = 32
@@ -21,8 +25,7 @@ end
 
 ns.QUI_PreyTrackerOptions = {}
 
-function ns.QUI_PreyTrackerOptions.CreatePreyTrackerPage(parent)
-    local scroll, content = Shared.CreateScrollableContent(parent)
+function ns.QUI_PreyTrackerOptions.BuildPreyTrackerContent(content)
     local db = GetDB()
 
     GUI:SetSearchContext({ tabIndex = 9, tabName = "Prey Tracker" })
@@ -30,7 +33,8 @@ function ns.QUI_PreyTrackerOptions.CreatePreyTrackerPage(parent)
     if not db then
         local noData = GUI:CreateLabel(content, "Prey Tracker settings are not available. Please reload the UI.", 12, C.textMuted)
         noData:SetPoint("TOPLEFT", PADDING, -20)
-        return scroll
+        content:SetHeight(80)
+        return
     end
 
     local function Refresh()
@@ -299,5 +303,35 @@ function ns.QUI_PreyTrackerOptions.CreatePreyTrackerPage(parent)
     previewBtn:SetPoint("TOPLEFT", 0, -6)
 
     relayout()
-    return scroll
+end
+
+function ns.QUI_PreyTrackerOptions.CreatePreyTrackerPage(parent)
+    local _, content = Shared.CreateScrollableContent(parent)
+    ns.QUI_PreyTrackerOptions.BuildPreyTrackerContent(content)
+end
+
+if Registry and Schema and RenderAdapters
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "preyTrackerPage",
+        moverKey = "preyTracker",
+        lookupKeys = { "preyTracker" },
+        category = "gameplay",
+        nav = { tileId = "gameplay", subPageIndex = 8 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = ns.QUI_PreyTrackerOptions.BuildPreyTrackerContent,
+            }),
+        },
+        render = {
+            layout = function(host, options)
+                return RenderAdapters.RenderLayoutRoute(host, options and options.providerKey or "preyTracker")
+            end,
+        },
+    }))
 end

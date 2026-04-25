@@ -10,6 +10,9 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
 local P = Helpers.PlaceRow
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 local function BuildHUDVisibilityTab(tabContent)
     local FORM_ROW = 32
@@ -216,3 +219,23 @@ end
 ns.QUI_HUDVisibilityOptions = {
     BuildHUDVisibilityTab = BuildHUDVisibilityTab
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "hudVisibilityPage",
+        moverKey = "hudVisibility",
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 6 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildHUDVisibilityTab,
+            }),
+        },
+    }))
+end

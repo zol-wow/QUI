@@ -4,7 +4,7 @@ local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 local Fields = Settings and Settings.Fields
-local CompatRender = Settings and Settings.CompatRender
+local RenderAdapters = Settings and Settings.RenderAdapters
 if not Registry or type(Registry.RegisterFeature) ~= "function"
     or not Schema or type(Schema.Feature) ~= "function"
     or not Fields or type(Fields.Dropdown) ~= "function" then
@@ -242,18 +242,18 @@ local function RenderSettingsSection(sectionHost, ctx, includePosition)
     local render = function()
         return build(sectionHost, barKey, width)
     end
-    local renderWithTileLayout = function()
-        if CompatRender and type(CompatRender.WithTileLayout) == "function" then
-            return CompatRender.WithTileLayout(render) or 80
+    local renderWithTileChrome = function()
+        if RenderAdapters and type(RenderAdapters.RenderWithTileChrome) == "function" then
+            return RenderAdapters.RenderWithTileChrome(render) or 80
         end
         return render()
     end
 
-    if includePosition == false and CompatRender and type(CompatRender.WithSuppressedPosition) == "function" then
-        return CompatRender.WithSuppressedPosition(false, renderWithTileLayout) or 80
+    if includePosition == false and RenderAdapters and type(RenderAdapters.WithSuppressedPosition) == "function" then
+        return RenderAdapters.WithSuppressedPosition(false, renderWithTileChrome) or 80
     end
 
-    return renderWithTileLayout() or 80
+    return renderWithTileChrome() or 80
 end
 
 local function RenderLayout(host, options)

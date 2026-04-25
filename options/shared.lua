@@ -768,7 +768,7 @@ end
 ---------------------------------------------------------------------------
 -- TILE PAGE (dual-column ready)
 -- Drop-in replacement for CreateCollapsiblePage that delegates to
--- Utils.CreateCollapsible so SB.WithTileLayout's monkey-patch can apply
+-- Utils.CreateCollapsible so the renderer's tile chrome adapter can apply
 -- dual-column chrome. SectionRegistry wiring + GUI:SetSearchSection are
 -- preserved so jump-to-section search keeps working.
 ---------------------------------------------------------------------------
@@ -1572,8 +1572,6 @@ local function BuildFeatureTabPage(tabContent, featureId, searchContext, renderO
     tabContent:SetHeight((height or 80) + 20)
 end
 
-ns.QUI_Options.BuildFeatureTabPage = BuildFeatureTabPage
-
 local function BuildFeatureDirectPage(tabContent, featureId, searchContext, renderOptions)
     local GUI = QUI and QUI.GUI
     if not GUI then return end
@@ -1595,7 +1593,7 @@ local function BuildFeatureDirectPage(tabContent, featureId, searchContext, rend
     }, renderOptions))
 end
 
-ns.QUI_Options.BuildFeatureDirectPage = BuildFeatureDirectPage
+local BuildFeatureStackPage
 
 local function GetRegisteredFeature(featureId)
     local Settings = ns.Settings
@@ -1618,9 +1616,64 @@ local function ShowUnavailableFeaturePage(body, label)
     text:SetText((label or "Settings") .. " unavailable.")
 end
 
-local function TryBuildFeaturePage(body, renderHelper, featureId, searchContext, fallback, renderOptions)
-    local Opts = ns.QUI_Options
-    local render = Opts and Opts[renderHelper]
+local function ReportFeatureTileIssue(message)
+    if type(message) ~= "string" or message == "" then
+        return
+    end
+
+    local isDev = (_G and _G.QUI_DEV) or (QUI and QUI.dev)
+    if isDev then
+        error(message, 3)
+    end
+
+    local handler = geterrorhandler and geterrorhandler()
+    if type(handler) == "function" then
+        handler(message)
+    end
+end
+
+local function HasBuildFunc(value)
+    if type(value) ~= "table" then
+        return false
+    end
+    if value.buildFunc ~= nil then
+        return true
+    end
+    for _, item in ipairs(value.subPages or {}) do
+        if type(item) == "table" and item.buildFunc ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function ValidateFeatureReference(ownerLabel, featureId)
+    if type(featureId) ~= "string" or featureId == "" then
+        return false
+    end
+    if HasRegisteredFeature(featureId) then
+        return true
+    end
+    ReportFeatureTileIssue(ownerLabel .. ": feature '" .. featureId .. "' is not registered")
+    return false
+end
+
+local function ValidateFeatureReferences(ownerLabel, featureIds)
+    if type(featureIds) ~= "table" then
+        return false
+    end
+    local ok = #featureIds > 0
+    for _, item in ipairs(featureIds) do
+        local featureId = item
+        if type(item) == "table" then
+            featureId = item.key
+        end
+        ok = ValidateFeatureReference(ownerLabel, featureId) and ok
+    end
+    return ok
+end
+
+local function TryBuildFeaturePage(body, render, featureId, searchContext, fallback, renderOptions)
     if featureId and HasRegisteredFeature(featureId) and type(render) == "function" then
         render(body, featureId, searchContext, renderOptions)
         return true
@@ -1634,35 +1687,64 @@ local function TryBuildFeaturePage(body, renderHelper, featureId, searchContext,
     return false
 end
 
-local function MakeFeatureBuilder(renderHelper, featureId, searchContext, fallback, renderOptions, unavailableLabel)
-    return function(body)
-        if TryBuildFeaturePage(body, renderHelper, featureId, searchContext, fallback, renderOptions) then
-            return
+local function RegisterNavRoutes(GUI, tileId, routes, defaultSubPageIndex)
+    if not GUI or type(GUI.RegisterV2NavRoute) ~= "function" or type(routes) ~= "table" then
+        return
+    end
+
+    for _, route in ipairs(routes) do
+        if type(route) == "table" then
+            GUI:RegisterV2NavRoute(
+                route.tabIndex,
+                route.subTabIndex,
+                route.tileId or tileId,
+                route.subPageIndex ~= nil and route.subPageIndex or defaultSubPageIndex
+            )
         end
-        ShowUnavailableFeaturePage(body, unavailableLabel or featureId)
     end
 end
 
-function ns.QUI_Options.MakeFeatureTabBuilder(featureId, searchContext, fallback, renderOptions, unavailableLabel)
-    return MakeFeatureBuilder(
-        "BuildFeatureTabPage",
-        featureId,
-        searchContext,
-        fallback,
-        renderOptions,
-        unavailableLabel
-    )
+local function ResolvePageFeatureId(page)
+    if type(page) ~= "table" then
+        return nil
+    end
+    if type(page.featureId) == "string" and page.featureId ~= "" then
+        return page.featureId
+    end
+    if type(page.id) == "string" and page.id ~= "" and HasRegisteredFeature(page.id) then
+        return page.id
+    end
+    return nil
 end
 
-function ns.QUI_Options.MakeFeatureDirectBuilder(featureId, searchContext, fallback, renderOptions, unavailableLabel)
-    return MakeFeatureBuilder(
-        "BuildFeatureDirectPage",
+local function BuildFeaturePageBody(body, page, render)
+    if type(page) ~= "table" then
+        ShowUnavailableFeaturePage(body, "Settings")
+        return
+    end
+
+    if type(page.featureIds) == "table" then
+        if type(BuildFeatureStackPage) == "function" then
+            BuildFeatureStackPage(body, page.featureIds, page.searchContext, page.renderOptions)
+            return
+        end
+        ShowUnavailableFeaturePage(body, page.unavailableLabel or page.name or "Feature stack")
+        return
+    end
+
+    local featureId = ResolvePageFeatureId(page)
+    if featureId and TryBuildFeaturePage(
+        body,
+        render or BuildFeatureDirectPage,
         featureId,
-        searchContext,
-        fallback,
-        renderOptions,
-        unavailableLabel
-    )
+        page.searchContext,
+        nil,
+        page.renderOptions
+    ) then
+        return
+    end
+
+    ShowUnavailableFeaturePage(body, page.unavailableLabel or page.name or featureId or "Settings")
 end
 
 local function RegisterFeatureTile(frame, spec)
@@ -1671,46 +1753,111 @@ local function RegisterFeatureTile(frame, spec)
         return
     end
 
-    local feature = GetRegisteredFeature(spec.featureId)
-    local preview = feature and feature.preview
-
-    for _, route in ipairs(spec.navRoutes or {}) do
-        GUI:RegisterV2NavRoute(
-            route.tabIndex,
-            route.subTabIndex,
-            route.tileId or spec.id,
-            route.subPageIndex or 1
-        )
+    if HasBuildFunc(spec) then
+        ReportFeatureTileIssue("RegisterFeatureTile(" .. spec.id .. "): buildFunc is not accepted")
+        return
     end
 
+    local hasSingle = type(spec.featureId) == "string" and spec.featureId ~= ""
+    local hasSubPages = type(spec.subPages) == "table" and #spec.subPages > 0
+    if hasSingle == hasSubPages then
+        ReportFeatureTileIssue("RegisterFeatureTile(" .. spec.id .. "): provide exactly one of featureId or subPages")
+        return
+    end
+    if hasSingle and not ValidateFeatureReference("RegisterFeatureTile(" .. spec.id .. ")", spec.featureId) then
+        return
+    end
+
+    RegisterNavRoutes(GUI, spec.id, spec.navRoutes, hasSingle and 1 or nil)
+
+    local feature = hasSingle and GetRegisteredFeature(spec.featureId) or nil
+    local preview = feature and feature.preview
     local previewHeight = (preview and preview.height) or spec.previewHeight
     local previewBuild = (preview and preview.build) or spec.previewBuild or function() end
+    if type(spec.preview) == "table" then
+        previewHeight = spec.preview.height or previewHeight
+        previewBuild = spec.preview.build or previewBuild
+    end
 
-    GUI:AddFeatureTile(frame, {
+    local tileConfig = {
         id = spec.id,
         icon = spec.icon,
+        iconTexture = spec.iconTexture,
         name = spec.name,
+        subtitle = spec.subtitle,
+        isBottomItem = spec.isBottomItem,
         primaryCTA = spec.primaryCTA,
+        relatedSettings = spec.relatedSettings,
+        advancedDrawer = spec.advancedDrawer,
         preview = previewHeight and {
             height = previewHeight,
             build = previewBuild,
         } or nil,
-        noScroll = spec.noScroll ~= false,
-        buildFunc = function(body)
-            if TryBuildFeaturePage(
-                body,
-                "BuildFeatureDirectPage",
-                spec.featureId,
-                spec.searchContext,
-                nil,
-                spec.renderOptions
-            ) then
-                return
+    }
+
+    if hasSubPages then
+        tileConfig.subPages = {}
+        for index, subPage in ipairs(spec.subPages) do
+            if type(subPage) == "table" then
+                if subPage.buildFunc ~= nil then
+                    ReportFeatureTileIssue("RegisterFeatureTile(" .. spec.id .. "): subpage buildFunc is not accepted")
+                    return
+                end
+
+                local page = {
+                    id = subPage.id,
+                    name = subPage.name,
+                    featureId = subPage.featureId,
+                    featureIds = subPage.featureIds,
+                    searchContext = subPage.searchContext,
+                    renderOptions = subPage.renderOptions,
+                    unavailableLabel = subPage.unavailableLabel,
+                }
+                if not page.featureId and not page.featureIds then
+                    page.featureId = ResolvePageFeatureId(subPage)
+                end
+                if not page.featureId and not page.featureIds then
+                    ReportFeatureTileIssue("RegisterFeatureTile(" .. spec.id .. "): subpage " .. tostring(index) .. " has no featureId/featureIds")
+                    return
+                end
+                if page.featureId then
+                    if not ValidateFeatureReference(
+                        "RegisterFeatureTile(" .. spec.id .. ") subpage " .. tostring(index),
+                        page.featureId
+                    ) then
+                        return
+                    end
+                elseif page.featureIds and not ValidateFeatureReferences(
+                    "RegisterFeatureTile(" .. spec.id .. ") subpage " .. tostring(index),
+                    page.featureIds
+                ) then
+                    return
+                end
+
+                RegisterNavRoutes(GUI, spec.id, subPage.navRoutes, index)
+
+                local pageConfig = page
+                tileConfig.subPages[index] = {
+                    id = page.id,
+                    name = page.name,
+                    featureId = page.featureId,
+                    featureIds = page.featureIds,
+                    noScroll = subPage.noScroll,
+                    buildFunc = function(body)
+                        BuildFeaturePageBody(body, pageConfig, BuildFeatureTabPage)
+                    end,
+                }
             end
-            ShowUnavailableFeaturePage(body, spec.unavailableLabel or spec.name or "Settings")
-        end,
-        relatedSettings = spec.relatedSettings,
-    })
+        end
+    else
+        tileConfig.featureId = spec.featureId
+        tileConfig.noScroll = spec.noScroll ~= false
+        tileConfig.buildFunc = function(body)
+            BuildFeaturePageBody(body, spec, BuildFeatureDirectPage)
+        end
+    end
+
+    GUI:AddFeatureTile(frame, tileConfig)
 end
 
 ns.QUI_Options.RegisterFeatureTile = RegisterFeatureTile
@@ -1727,9 +1874,9 @@ local function ResolveFeatureStackLabel(featureId, explicitLabel)
     end
 
     local Settings = ns.Settings
-    local CompatRender = Settings and Settings.CompatRender
-    if CompatRender and type(CompatRender.GetProviderLabel) == "function" then
-        local label = CompatRender.GetProviderLabel(providerKey)
+    local RenderAdapters = Settings and Settings.RenderAdapters
+    if RenderAdapters and type(RenderAdapters.GetProviderLabel) == "function" then
+        local label = RenderAdapters.GetProviderLabel(providerKey)
         if type(label) == "string" and label ~= "" then
             return label
         end
@@ -1738,7 +1885,7 @@ local function ResolveFeatureStackLabel(featureId, explicitLabel)
     return providerKey
 end
 
-local function BuildFeatureStackPage(tabContent, featureIds, searchContext, options)
+BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
     local GUI = QUI and QUI.GUI
     if not GUI then return end
     if searchContext then GUI:SetSearchContext(searchContext) end
@@ -1822,21 +1969,4 @@ local function BuildFeatureStackPage(tabContent, featureIds, searchContext, opti
     end
 
     tabContent:SetHeight(math.max(80, math.abs(yOffset) + 10))
-end
-
-ns.QUI_Options.BuildFeatureStackPage = BuildFeatureStackPage
-
-function ns.QUI_Options.MakeFeatureStackBuilder(featureIds, searchContext, options, fallback, unavailableLabel)
-    return function(body)
-        local Opts = ns.QUI_Options
-        if Opts and Opts.BuildFeatureStackPage then
-            Opts.BuildFeatureStackPage(body, featureIds, searchContext, options)
-            return
-        end
-        if type(fallback) == "function" then
-            fallback(body)
-            return
-        end
-        ShowUnavailableFeaturePage(body, unavailableLabel or "Feature stack")
-    end
 end

@@ -61,9 +61,9 @@ Registry:RegisterFeature(Schema.Feature({
     sections = {
         Schema.Section({
             id = "settings",
-            kind = "custom",
+            kind = "page",
             minHeight = 80,
-            render = function(host)
+            build = function(host)
                 return RenderBuilder(host, "QUI_ActionBarsOptions", "BuildMasterSettingsTab")
             end,
         }),
@@ -87,9 +87,9 @@ Registry:RegisterFeature(Schema.Feature({
     sections = {
         Schema.Section({
             id = "settings",
-            kind = "custom",
+            kind = "page",
             minHeight = 80,
-            render = function(host)
+            build = function(host)
                 return RenderBuilder(host, "QUI_BuffDebuffOptions", "BuildBuffDebuffTab")
             end,
         }),

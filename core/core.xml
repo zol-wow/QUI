@@ -17,7 +17,7 @@
     <Script file="settings/providers.lua"/>
     <Script file="settings/provider_panels.lua"/>
     <Script file="settings_builders.lua"/>
-    <Script file="settings/compat_render.lua"/>
+    <Script file="settings/render_adapters.lua"/>
     <Script file="settings/registry.lua"/>
     <Script file="settings/fields.lua"/>
     <Script file="settings/schema.lua"/>
@@ -31,6 +31,5 @@
     <Script file="settings/pins_lifecycle.lua"/>
     <Script file="settings/renderer.lua"/>
     <Script file="settings/pins_ui.lua"/>
-    <Script file="settings/legacy_pages.lua"/>
     <Script file="rangeutils.lua"/>
 </Ui>

@@ -4,6 +4,9 @@ local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 -- Local references for shared infrastructure
 local PADDING = Shared.PADDING
@@ -16,8 +19,7 @@ local GetCore = Helpers.GetCore
 --------------------------------------------------------------------------------
 local CreateCollapsiblePage = Shared.CreateTilePage
 
-local function CreateHUDLayeringPage(parent)
-    local scroll, content = CreateScrollableContent(parent)
+local function BuildHUDLayeringContent(content)
     local PAD = PADDING
     local FORM_ROW = 32
     local P = Helpers.PlaceRow
@@ -61,7 +63,8 @@ local function CreateHUDLayeringPage(parent)
     if not layeringDB then
         local errorLabel = GUI:CreateLabel(content, "Database not loaded. Please reload UI.", 12, {1, 0.3, 0.3, 1})
         errorLabel:SetPoint("TOPLEFT", PAD, -15)
-        return scroll
+        content:SetHeight(80)
+        return
     end
 
     -- Description
@@ -137,13 +140,37 @@ local function CreateHUDLayeringPage(parent)
     end)
 
     relayout()
+end
 
-    return scroll
+local function CreateHUDLayeringPage(parent)
+    local _, content = CreateScrollableContent(parent)
+    BuildHUDLayeringContent(content)
 end
 
 --------------------------------------------------------------------------------
 -- Export
 --------------------------------------------------------------------------------
 ns.QUI_HUDLayeringOptions = {
+    BuildHUDLayeringContent = BuildHUDLayeringContent,
     CreateHUDLayeringPage = CreateHUDLayeringPage
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "frameLevelsPage",
+        moverKey = "hudLayering",
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 7 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildHUDLayeringContent,
+            }),
+        },
+    }))
+end

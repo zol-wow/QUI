@@ -230,13 +230,6 @@ local function WithOnlyPosition(fn)
     return result
 end
 
--- Generalized tab-content filter. `whitelist` is a map { [title] = true }
--- of Utils.CreateCollapsible titles that should render; all other
--- CreateCollapsible calls return nil inside `fn`. Position is ALSO
--- suppressed (Position has its own tab). BuildPositionCollapsible is
--- a no-op inside this wrapper. Used by the Cooldown Manager tile's
--- per-container tabs to render subsets of BuildTrackerSettings.
----------------------------------------------------------------------------
 -- Dual-column post-layout. The provider builders anchor widgets via
 -- Helpers.PlaceRow (TOPLEFT at (0, sy), RIGHT to body RIGHT → full width).
 -- After CreateCollapsible returns, we walk the body's direct children in
@@ -460,81 +453,14 @@ local function ApplyDualColumnLayoutWhenReady(section)
     end)
 end
 
-local function WithOnlySections(whitelist, fn)
-    local U = ns.QUI_LayoutMode_Utils
-    if not U or not U.CreateCollapsible then
-        return xpcall(fn, ErrorHandler)
-    end
-
-    local originalCreate = U.CreateCollapsible
-    local originalBuildPosition = U.BuildPositionCollapsible
-    local originalOpenLink = U.BuildOpenFullSettingsLink
-
-    -- Single-entry whitelists mean the tile tab label already names the
-    -- section — the collapsible's own accent-dot header becomes redundant.
-    -- Flag the next matching CreateCollapsible call as headerless.
-    local whitelistCount = 0
-    if whitelist then
-        for _ in pairs(whitelist) do whitelistCount = whitelistCount + 1 end
-    end
-    local singleEntry = whitelistCount == 1
-
-    U.CreateCollapsible = function(parent, title, contentHeight, buildFunc, sections, relayout)
-        if whitelist and whitelist[title] then
-            if singleEntry then
-                U._nextHeaderless = true
-            end
-            -- Tile tabs already frame the content; drop the outer card so it
-            -- matches the actionbars-tile flat style.
-            U._nextBorderless = true
-            local section = originalCreate(parent, title, contentHeight, buildFunc, sections, relayout)
-            -- Post-process: fold the provider's PlaceRow-anchored widgets
-            -- into dual-column card rows so sliced provider tabs match the
-            -- element tabs visually.
-            ApplyDualColumnLayoutWhenReady(section)
-            return section
-        end
-        return nil
-    end
-
-    if originalBuildPosition then
-        U.BuildPositionCollapsible = function() end
-    end
-
-    -- Tile tabs are already "inside" the settings surface; an "Open
-    -- full settings →" link is redundant (and misleading — it navigates
-    -- back to the page the user is already on). Suppress it here.
-    if originalOpenLink then
-        U.BuildOpenFullSettingsLink = function() end
-    end
-
-    local ok, result = xpcall(fn, ErrorHandler)
-
-    U.CreateCollapsible = originalCreate
-    if originalBuildPosition then
-        U.BuildPositionCollapsible = originalBuildPosition
-    end
-    if originalOpenLink then
-        U.BuildOpenFullSettingsLink = originalOpenLink
-    end
-
-    if not ok then
-        geterrorhandler()(result)
-        return nil
-    end
-    return result
-end
-
 ---------------------------------------------------------------------------
--- WithTileLayout
+-- RenderWithTileChrome
 -- Wraps `fn` so every U.CreateCollapsible call inside it renders as a
 -- borderless section and gets the dual-column post-process applied — the
 -- V2 tile look (accent-dot header, no card border, rows paired into 32 px
--- cells with a center divider and alternating bg). Use for tile tabs that
--- call BuildProvider / BuildProviderStack / BuildXSettings directly
--- (i.e. not via WithOnlySections, which already applies this chrome).
+-- cells with a center divider and alternating bg).
 ---------------------------------------------------------------------------
-local function WithTileLayout(fn)
+local function RenderWithTileChrome(fn)
     local U = ns.QUI_LayoutMode_Utils
     if not U or not U.CreateCollapsible then
         return xpcall(fn, ErrorHandler)
@@ -577,8 +503,7 @@ end
 
 SettingsBuilders.WithSuppressedPosition = WithSuppressedPosition
 SettingsBuilders.WithOnlyPosition = WithOnlyPosition
-SettingsBuilders.WithOnlySections = WithOnlySections
-SettingsBuilders.WithTileLayout = WithTileLayout
+SettingsBuilders.RenderWithTileChrome = RenderWithTileChrome
 
 local function BuildViaProvider(providerKey, parent, width, options)
     if not parent then return 80 end
@@ -645,7 +570,7 @@ local function BuildViaProvider(providerKey, parent, width, options)
 
     local height
     if options and options.tileLayout then
-        height = WithTileLayout(BuildSurfaceContent)
+        height = RenderWithTileChrome(BuildSurfaceContent)
     else
         height = BuildSurfaceContent()
     end

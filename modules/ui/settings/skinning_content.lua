@@ -13,6 +13,10 @@ local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
 
 local GetCore = Helpers.GetCore
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
+local RenderAdapters = Settings and Settings.RenderAdapters
 
 local function BuildSkinningTab(tabContent)
     local PAD = 10
@@ -409,3 +413,29 @@ end
 ns.QUI_SkinningOptions = {
     BuildSkinningTab = BuildSkinningTab
 }
+
+if Registry and Schema and RenderAdapters
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "skinningPage",
+        moverKey = "skinning",
+        lookupKeys = { "objectiveTracker" },
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 3 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildSkinningTab,
+            }),
+        },
+        render = {
+            layout = function(host, options)
+                return RenderAdapters.RenderLayoutRoute(host, options and options.providerKey or "skinning")
+            end,
+        },
+    }))
+end

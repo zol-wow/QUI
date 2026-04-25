@@ -10,6 +10,10 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
 local P = Helpers.PlaceRow
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
+local RenderAdapters = Settings and Settings.RenderAdapters
 
 local function BuildCrosshairTab(tabContent)
     local FORM_ROW = 32
@@ -202,3 +206,28 @@ end
 ns.QUI_CrosshairOptions = {
     BuildCrosshairTab = BuildCrosshairTab
 }
+
+if Registry and Schema and RenderAdapters
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "crosshair",
+        moverKey = "crosshair",
+        category = "gameplay",
+        nav = { tileId = "gameplay", subPageIndex = 4 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildCrosshairTab,
+            }),
+        },
+        render = {
+            layout = function(host, options)
+                return RenderAdapters.RenderLayoutRoute(host, options and options.providerKey or "crosshair")
+            end,
+        },
+    }))
+end

@@ -925,7 +925,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
 
         local function NotifyStructuralRefresh()
-            local compat = ns.Settings and ns.Settings.CompatRender
+            local compat = ns.Settings and ns.Settings.RenderAdapters
             if compat and compat.NotifyProviderChanged then
                 compat.NotifyProviderChanged("datatextPanel", { structural = true })
             end

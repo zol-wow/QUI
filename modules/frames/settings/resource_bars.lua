@@ -3,7 +3,6 @@ local ADDON_NAME, ns = ...
 local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
-local CompatRender = Settings and Settings.CompatRender
 if not Registry or type(Registry.RegisterFeature) ~= "function"
     or not Schema or type(Schema.Feature) ~= "function"
     or type(Schema.Section) ~= "function" then
@@ -37,15 +36,7 @@ local function RenderBuilder(host, builderName, routeKey)
     if type(render) ~= "function" then
         return 80
     end
-    local function renderBuilder()
-        return render(host, routeKey)
-    end
-    local height
-    if CompatRender and type(CompatRender.WithTileLayout) == "function" then
-        height = CompatRender.WithTileLayout(renderBuilder)
-    else
-        height = renderBuilder()
-    end
+    local height = render(host, routeKey)
     if type(height) == "number" then
         return height
     end
@@ -94,9 +85,9 @@ Registry:RegisterFeature(Schema.Feature({
     sections = {
         Schema.Section({
             id = "settings",
-            kind = "custom",
+            kind = "page",
             minHeight = 80,
-            render = function(host)
+            build = function(host)
                 return RenderBuilder(host, "BuildPrimaryPowerSettings", "primaryPower")
             end,
         }),
@@ -123,9 +114,9 @@ Registry:RegisterFeature(Schema.Feature({
     sections = {
         Schema.Section({
             id = "settings",
-            kind = "custom",
+            kind = "page",
             minHeight = 80,
-            render = function(host)
+            build = function(host)
                 return RenderBuilder(host, "BuildSecondaryPowerSettings", "secondaryPower")
             end,
         }),

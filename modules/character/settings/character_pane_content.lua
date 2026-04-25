@@ -10,6 +10,9 @@ local C = GUI.Colors
 local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
 local P = Helpers.PlaceRow
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
 
 local function BuildCharacterPaneTab(tabContent)
     local FORM_ROW = 32
@@ -105,3 +108,23 @@ end
 ns.QUI_CharacterOptions = {
     BuildCharacterPaneTab = BuildCharacterPaneTab
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "characterPane",
+        moverKey = "characterPane",
+        category = "gameplay",
+        nav = { tileId = "gameplay", subPageIndex = 5 },
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildCharacterPaneTab,
+            }),
+        },
+    }))
+end

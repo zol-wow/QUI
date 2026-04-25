@@ -5,7 +5,7 @@ ns.Settings = Settings
 
 local Schema = Settings.Schema or {}
 Settings.Schema = Schema
-local CompatRender = Settings.CompatRender
+local RenderAdapters = Settings.RenderAdapters
 
 local function CloneTable(source)
     local copy = {}
@@ -207,7 +207,7 @@ local function RenderControlsSection(sectionHost, ctx, section)
 end
 
 local function RenderProviderSection(sectionHost, ctx, section)
-    if not CompatRender or type(CompatRender.BuildProvider) ~= "function" then
+    if not RenderAdapters or type(RenderAdapters.BuildProvider) ~= "function" then
         return section.emptyHeight or 80
     end
 
@@ -226,45 +226,42 @@ local function RenderProviderSection(sectionHost, ctx, section)
     end
 
     local function RenderProvider()
-        return CompatRender.BuildProvider(providerKey, sectionHost, width, providerOptions)
-    end
-
-    local sectionTitles = ResolveValue(section.sectionTitles, ctx, section)
-    if type(sectionTitles) ~= "table" then
-        local sectionTitle = ResolveValue(section.sectionTitle, ctx, section)
-        if type(sectionTitle) == "string" and sectionTitle ~= "" then
-            sectionTitles = { sectionTitle }
-        end
-    end
-
-    if type(sectionTitles) == "table" and next(sectionTitles) ~= nil
-        and type(CompatRender.WithOnlySections) == "function" then
-        local whitelist = {}
-        local listLength = #sectionTitles
-        if listLength > 0 then
-            for _, sectionTitle in ipairs(sectionTitles) do
-                if type(sectionTitle) == "string" and sectionTitle ~= "" then
-                    whitelist[sectionTitle] = true
-                end
-            end
-        else
-            for sectionTitle, enabled in pairs(sectionTitles) do
-                if enabled == true and type(sectionTitle) == "string" and sectionTitle ~= "" then
-                    whitelist[sectionTitle] = true
-                end
-            end
-        end
-
-        if next(whitelist) ~= nil then
-            return CompatRender.WithOnlySections(whitelist, RenderProvider)
-        end
+        return RenderAdapters.BuildProvider(providerKey, sectionHost, width, providerOptions)
     end
 
     return RenderProvider()
 end
 
+local function RenderPageSection(sectionHost, ctx, section)
+    local build = section.build or section.render
+    if type(build) ~= "function" then
+        return section.height or section.minHeight or 80
+    end
+
+    local function RenderPage()
+        return build(sectionHost, ctx, section)
+    end
+
+    local height
+    local useTileChrome = not (section.tileChrome == false
+        or (ctx and ctx.options and ctx.options.tileLayout == false))
+
+    if useTileChrome and RenderAdapters and type(RenderAdapters.RenderWithTileChrome) == "function" then
+        height = RenderAdapters.RenderWithTileChrome(RenderPage)
+    else
+        local ok, result = xpcall(RenderPage, geterrorhandler())
+        if not ok then
+            return section.errorHeight or section.minHeight or 80
+        end
+        height = result
+    end
+
+    return height
+end
+
 local SECTION_RENDERERS = {
     controls = RenderControlsSection,
+    page = RenderPageSection,
     provider = RenderProviderSection,
     custom = function(sectionHost, ctx, section)
         if type(section.render) ~= "function" then
