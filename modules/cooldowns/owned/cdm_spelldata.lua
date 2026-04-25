@@ -217,33 +217,65 @@ local function IsUsableResolvedAuraData(auraUnit, auraData)
     return true
 end
 
-local function FindOwnedTargetAura(matchFn, filter)
-    if not matchFn then return nil end
-
-    if AuraUtil and AuraUtil.ForEachAura then
-        local found
-        AuraUtil.ForEachAura("target", filter or "HARMFUL", nil, function(auraData)
-            if auraData and matchFn(auraData) and IsAuraOwnedByPlayerOrPet(auraData, true) then
-                found = auraData
-                return true
-            end
-            return false
-        end, true)
-        if found then
-            return found
-        end
-    end
-
+local function ScanOwnedTargetAuraBySpellID(spellID, filter)
     if C_UnitAuras and C_UnitAuras.GetUnitAuras then
         local ok, auras = pcall(C_UnitAuras.GetUnitAuras, "target", filter or "HARMFUL", 40)
         if ok and auras then
             for i = 1, #auras do
                 local auraData = auras[i]
-                if auraData and matchFn(auraData) and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                if auraData
+                   and Helpers.SafeValue(auraData.spellId, nil) == spellID
+                   and IsAuraOwnedByPlayerOrPet(auraData, true) then
                     return auraData
                 end
             end
         end
+    end
+
+    if AuraUtil and AuraUtil.ForEachAura then
+        local found
+        AuraUtil.ForEachAura("target", filter or "HARMFUL", nil, function(auraData)
+            if auraData
+               and Helpers.SafeValue(auraData.spellId, nil) == spellID
+               and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                found = auraData
+                return true
+            end
+            return false
+        end, true)
+        if found then return found end
+    end
+
+    return nil
+end
+
+local function ScanOwnedTargetAuraByName(spellName, filter)
+    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+        local ok, auras = pcall(C_UnitAuras.GetUnitAuras, "target", filter or "HARMFUL", 40)
+        if ok and auras then
+            for i = 1, #auras do
+                local auraData = auras[i]
+                if auraData
+                   and Helpers.SafeValue(auraData.name, nil) == spellName
+                   and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                    return auraData
+                end
+            end
+        end
+    end
+
+    if AuraUtil and AuraUtil.ForEachAura then
+        local found
+        AuraUtil.ForEachAura("target", filter or "HARMFUL", nil, function(auraData)
+            if auraData
+               and Helpers.SafeValue(auraData.name, nil) == spellName
+               and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                found = auraData
+                return true
+            end
+            return false
+        end, true)
+        if found then return found end
     end
 
     return nil
@@ -251,16 +283,30 @@ end
 
 local function FindOwnedTargetAuraBySpellID(spellID, filter)
     if not spellID then return nil end
-    return FindOwnedTargetAura(function(auraData)
-        return Helpers.SafeValue(auraData.spellId, nil) == spellID
-    end, filter)
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
+        local directFilter = (not filter or filter == "HARMFUL") and "HARMFUL|PLAYER" or filter
+        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellID, "target", spellID, directFilter)
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
+            return ad
+        end
+    end
+
+    return ScanOwnedTargetAuraBySpellID(spellID, filter)
 end
 
 local function FindOwnedTargetAuraByName(spellName, filter)
     if not spellName or spellName == "" then return nil end
-    return FindOwnedTargetAura(function(auraData)
-        return Helpers.SafeValue(auraData.name, nil) == spellName
-    end, filter)
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+        local directFilter = (not filter or filter == "HARMFUL") and "HARMFUL|PLAYER" or filter
+        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", spellName, directFilter)
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
+            return ad
+        end
+    end
+
+    return ScanOwnedTargetAuraByName(spellName, filter)
 end
 
 local function FindOwnedAuraBySpellID(spellID)
@@ -274,11 +320,14 @@ local function FindOwnedAuraBySpellID(spellID)
     end
 
     if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
-        for _, unit in ipairs({ "player", "pet" }) do
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellID, unit, spellID)
-            if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
-                return ad
-            end
+        local okPlayer, playerAura = pcall(C_UnitAuras.GetAuraDataBySpellID, "player", spellID)
+        if okPlayer and playerAura and playerAura.auraInstanceID and IsAuraOwnedByPlayerOrPet(playerAura, true) then
+            return playerAura
+        end
+
+        local okPet, petAura = pcall(C_UnitAuras.GetAuraDataBySpellID, "pet", spellID)
+        if okPet and petAura and petAura.auraInstanceID and IsAuraOwnedByPlayerOrPet(petAura, true) then
+            return petAura
         end
 
         local targetAura = FindOwnedTargetAuraBySpellID(spellID, "HARMFUL")
@@ -985,6 +1034,116 @@ childTracksSpell = function(ch, spellID, altID1, altID2)
     return false
 end
 
+-----------------------------------------------------------------------
+-- Totem-slot scoring helpers, hoisted to file scope.
+-- Previously these were defined inside ResolveAuraState, allocating 5+
+-- closures per call. ResolveAuraState fires per CDM aura icon per
+-- UpdateAllCooldowns batch (~20×/sec in combat × ~30+ aura icons), so
+-- the per-call closures were a major source of garbage churn outside
+-- any probed table. None of these capture per-call state — they only
+-- reference module-scope upvalues — so they're safe to hoist.
+-----------------------------------------------------------------------
+local function scoreSlotChild(child, slot)
+    if not child or not slot then return -1 end
+    local childSlot = ResolveChildTotemSlot(child, nil)
+    if not childSlot or childSlot ~= slot then
+        return -1
+    end
+    local score = 0
+    if _isViewerPoolActive(child.viewerFrame, child) then
+        score = score + 4
+    end
+    if child.cooldownInfo then
+        score = score + 2
+    end
+    if child.auraInstanceID then
+        score = score + 1
+    end
+    if child._cachedCdInfo then
+        score = score + 1
+    end
+    local prefSlot = SafeMaybeNumber(rawget(child, "preferredTotemUpdateSlot"))
+    if prefSlot and prefSlot == slot then
+        score = score + 1
+    end
+    return score
+end
+
+local function childHasReadableTexture(child)
+    if not child then return false end
+    local iconRegion = child.Icon or child.icon
+    local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
+    if texRegion and texRegion.GetTexture then
+        local ok, tex = pcall(texRegion.GetTexture, texRegion)
+        return ok and tex ~= nil
+    end
+    return false
+end
+
+local function scoreDisplayChild(child, slot)
+    local score = scoreSlotChild(child, slot)
+    if score < 0 then return score end
+    if CDMSpellData.GetChildSpellName and CDMSpellData.GetChildSpellName(child) then
+        score = score + 3
+    end
+    if childHasReadableTexture(child) then
+        score = score + 3
+    end
+    if child.cooldownInfo then
+        score = score + 1
+    end
+    return score
+end
+
+local function scoreFillChild(child, slot)
+    local score = scoreSlotChild(child, slot)
+    if score < 0 then return score end
+    if child.Bar then
+        score = score + 3
+    end
+    if child.Cooldown then
+        score = score + 2
+    end
+    if child.auraInstanceID then
+        score = score + 2
+    end
+    return score
+end
+
+-- findViewerChildForSlot: hoisted alongside the score helpers. Uses a
+-- module-scope `seen` scratch table that is wiped on entry rather than
+-- allocated fresh per call, and a shared helper instead of a per-call closure.
+local _findViewerSeen = {}
+local function considerViewerSlotList(list, targetViewer, slot, bestChild, bestScore)
+    if not list then return bestChild, bestScore end
+    for i = 1, #list do
+        local ch = list[i]
+        if ch and not _findViewerSeen[ch] and _matchesViewer(ch, targetViewer, nil) then
+            _findViewerSeen[ch] = true
+            local score = scoreSlotChild(ch, slot)
+            if score > bestScore then
+                bestScore = score
+                bestChild = ch
+            end
+        end
+    end
+    return bestChild, bestScore
+end
+
+local function findViewerChildForSlot(targetViewer, slot, id1, id2, id3)
+    if not targetViewer or not slot then return nil end
+    RebuildChildMap()
+    wipe(_findViewerSeen)
+    local bestChild
+    local bestScore = -1
+
+    if id1 then bestChild, bestScore = considerViewerSlotList(_childBySpellID[id1], targetViewer, slot, bestChild, bestScore) end
+    if id2 then bestChild, bestScore = considerViewerSlotList(_childBySpellID[id2], targetViewer, slot, bestChild, bestScore) end
+    if id3 then bestChild, bestScore = considerViewerSlotList(_childBySpellID[id3], targetViewer, slot, bestChild, bestScore) end
+
+    return bestChild
+end
+
 function CDMSpellData:ResolveAuraState(params)
     WipeAuraResult()
     local r = _auraResult
@@ -1029,101 +1188,6 @@ function CDMSpellData:ResolveAuraState(params)
     local buffBarViewer  = _G["BuffBarCooldownViewer"]
     local explicitTotemSlot = params.totemSlot
     local disableLooseVisibilityFallback = params.disableLooseVisibilityFallback
-
-    local function scoreSlotChild(child, slot)
-        if not child or not slot then return -1 end
-        local childSlot = ResolveChildTotemSlot(child, nil)
-        if not childSlot or childSlot ~= slot then
-            return -1
-        end
-        local score = 0
-        if _isViewerPoolActive(child.viewerFrame, child) then
-            score = score + 4
-        end
-        if child.cooldownInfo then
-            score = score + 2
-        end
-        if child.auraInstanceID then
-            score = score + 1
-        end
-        if child._cachedCdInfo then
-            score = score + 1
-        end
-        local prefSlot = SafeMaybeNumber(rawget(child, "preferredTotemUpdateSlot"))
-        if prefSlot and prefSlot == slot then
-            score = score + 1
-        end
-        return score
-    end
-
-    local function childHasReadableTexture(child)
-        if not child then return false end
-        local iconRegion = child.Icon or child.icon
-        local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
-        if texRegion and texRegion.GetTexture then
-            local ok, tex = pcall(texRegion.GetTexture, texRegion)
-            return ok and tex ~= nil
-        end
-        return false
-    end
-
-    local function scoreDisplayChild(child, slot)
-        local score = scoreSlotChild(child, slot)
-        if score < 0 then return score end
-        if CDMSpellData.GetChildSpellName and CDMSpellData.GetChildSpellName(child) then
-            score = score + 3
-        end
-        if childHasReadableTexture(child) then
-            score = score + 3
-        end
-        if child.cooldownInfo then
-            score = score + 1
-        end
-        return score
-    end
-
-    local function scoreFillChild(child, slot)
-        local score = scoreSlotChild(child, slot)
-        if score < 0 then return score end
-        if child.Bar then
-            score = score + 3
-        end
-        if child.Cooldown then
-            score = score + 2
-        end
-        if child.auraInstanceID then
-            score = score + 2
-        end
-        return score
-    end
-
-    local function findViewerChildForSlot(targetViewer, slot, id1, id2, id3)
-        if not targetViewer or not slot then return nil end
-        RebuildChildMap()
-        local bestChild
-        local bestScore = -1
-        local seen = {}
-
-        local function considerList(list)
-            if not list then return end
-            for _, ch in ipairs(list) do
-                if ch and not seen[ch] and _matchesViewer(ch, targetViewer, nil) then
-                    seen[ch] = true
-                    local score = scoreSlotChild(ch, slot)
-                    if score > bestScore then
-                        bestScore = score
-                        bestChild = ch
-                    end
-                end
-            end
-        end
-
-        if id1 then considerList(_childBySpellID[id1]) end
-        if id2 then considerList(_childBySpellID[id2]) end
-        if id3 then considerList(_childBySpellID[id3]) end
-
-        return bestChild
-    end
 
     if blzChild then
         local idsMatch = false

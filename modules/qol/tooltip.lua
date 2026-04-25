@@ -12,6 +12,7 @@ local TooltipInspect
 -- Locals for performance
 local GameTooltip = GameTooltip
 local UIParent = UIParent
+local WorldFrame = WorldFrame
 local InCombatLockdown = InCombatLockdown
 
 ---------------------------------------------------------------------------
@@ -392,6 +393,15 @@ local function ShouldKeepTooltipVisible(tooltip)
     end
 
     if Provider.IsFrameBlockingMouse and Provider:IsFrameBlockingMouse() then
+        return true
+    end
+
+    -- World object tooltips (mining/herb nodes, summon stones, fishing schools,
+    -- ground loot) have a transient owner, no unit, and mouse focus on WorldFrame.
+    -- Trust Blizzard's native OnLeave to hide them; otherwise hideDelay=0 hides
+    -- them on the first frame and the user never sees the tooltip.
+    local focus = Provider.GetTopMouseFrame and Provider:GetTopMouseFrame()
+    if focus == WorldFrame then
         return true
     end
 

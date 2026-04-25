@@ -2996,7 +2996,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                         
                         -- Only show timer text if enabled
                         if cfg.showFragmentedPowerBarText ~= false then
-                            runeText:SetText(string_format("%.1f", math_max(0, cdInfo.remaining)))
+                            runeText:SetFormattedText("%.1f", math_max(0, cdInfo.remaining))
                         else
                             runeText:SetText("")
                         end
@@ -4046,10 +4046,12 @@ function QUICore:UpdateSecondaryPowerBar()
     end
 
 
-    -- Update text (safe: uses only displayValue)
+    -- Update text (safe: uses only displayValue). SetFormattedText is C-side
+    -- and skips the Lua-side string allocation that SetText(string_format(...))
+    -- would create per UNIT_POWER_UPDATE.
     if valueType == "shards" then
         -- Destruction Warlock: show decimal shards (e.g., 3.4)
-        bar.TextValue:SetText(string_format("%.1f", displayValue or 0))
+        bar.TextValue:SetFormattedText("%.1f", displayValue or 0)
     elseif valueType == "percent" and textCfg.showPercent then
         bar.TextValue:SetText(FormatPercentValue(displayValue, textCfg))
     elseif valueType == "percent" then

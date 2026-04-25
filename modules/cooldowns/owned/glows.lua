@@ -738,25 +738,36 @@ end
 -- TARGETED GLOW UPDATE FOR A SINGLE SPELL ID
 -- O(1) lookup via reverse map instead of scanning all icons.
 ---------------------------------------------------------------------------
+local _scanGlowCandidates = {}
+local _scanGlowVisited = {}
+
 local function ScanGlowsForSpell(spellID)
     if not spellID then ScanAllGlows(); return end
 
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
 
-    -- Collect all candidate spellIDs to look up
-    local candidates = { spellID }
+    -- Collect all candidate spellIDs to look up. Reuse scratch tables because
+    -- overlay events can fire in bursts during combat.
+    local candidates = _scanGlowCandidates
+    local visited = _scanGlowVisited
+    wipe(candidates)
+    wipe(visited)
+    candidates[1] = spellID
+
     if C_Spell and C_Spell.GetOverrideSpell then
-        local ov = C_Spell.GetOverrideSpell(spellID)
+        local ok, ov = pcall(C_Spell.GetOverrideSpell, spellID)
+        ov = ok and Helpers.SafeValue(ov, nil) or nil
         if ov and ov ~= spellID then candidates[#candidates + 1] = ov end
     end
 
     -- Deduplicate icons across candidates
-    local visited = {}
-    for _, id in ipairs(candidates) do
+    for ci = 1, #candidates do
+        local id = candidates[ci]
         local icons = spellIdToGlowIcons[id]
         if icons then
-            for _, icon in ipairs(icons) do
+            for i = 1, #icons do
+                local icon = icons[i]
                 if not visited[icon] then
                     visited[icon] = true
                     if icon:IsShown() and icon._spellEntry then
@@ -766,6 +777,9 @@ local function ScanGlowsForSpell(spellID)
             end
         end
     end
+
+    wipe(candidates)
+    wipe(visited)
 end
 
 ---------------------------------------------------------------------------
@@ -803,16 +817,26 @@ eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
--- Coalesced usability glow scan: 100ms delay lets CDM's 50ms update finish first
+-- Coalesced usability glow scan: a short delay lets CDM's update finish first
 -- so icon._hasCooldownActive is current when we check IsSpellCastable.
+local usabilityGlowFrame = CreateFrame("Frame")
 local _usabilityGlowPending = false
+local _usabilityGlowElapsed = 0
+local USABILITY_GLOW_DELAY = 0.1
+
+local function UsabilityGlowOnUpdate(self, elapsed)
+    _usabilityGlowElapsed = _usabilityGlowElapsed + elapsed
+    if _usabilityGlowElapsed < USABILITY_GLOW_DELAY then return end
+    self:SetScript("OnUpdate", nil)
+    _usabilityGlowPending = false
+    ScanAllGlows()
+end
+
 local function ScheduleUsabilityGlowScan()
     if _usabilityGlowPending then return end
     _usabilityGlowPending = true
-    C_Timer.After(0.1, function()
-        _usabilityGlowPending = false
-        ScanAllGlows()
-    end)
+    _usabilityGlowElapsed = 0
+    usabilityGlowFrame:SetScript("OnUpdate", UsabilityGlowOnUpdate)
 end
 
 eventFrame:SetScript("OnEvent", function(_, event, spellID)

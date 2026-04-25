@@ -66,6 +66,13 @@ local mirrorMap = Helpers.CreateStateTable()
 -- Track which Blizzard bar children have been hooked (weak-keyed)
 local hookedBars = Helpers.CreateStateTable()
 
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_barPool",      tbl = barPool }
+    mp[#mp + 1] = { name = "CDM_barRecycle",   tbl = recyclePool }
+    mp[#mp + 1] = { name = "CDM_barMirrorMap", tbl = mirrorMap }
+    mp[#mp + 1] = { name = "CDM_barHooked",    tbl = hookedBars }
+end
+
 -- Stored refs for periodic re-layout after ticker updates _active state
 local _lastContainer = nil
 local _lastSettings = nil
@@ -841,14 +848,14 @@ function CDMBars:BuildBars(container)
     local blizzViewer = _G["BuffBarCooldownViewer"]
     if not blizzViewer then return end
 
-    -- Collect Blizzard bar children
+    -- Collect Blizzard bar children. Walk via GetNumChildren+select to avoid
+    -- allocating an intermediate { viewer:GetChildren() } table per call.
     local blizzBars = {}
     local sel = blizzViewer.Selection
-    local okc, children = pcall(function()
-        return { blizzViewer:GetChildren() }
-    end)
-    if okc and children then
-        for _, child in ipairs(children) do
+    local okN, numChildren = pcall(blizzViewer.GetNumChildren, blizzViewer)
+    if okN and numChildren then
+        for ci = 1, numChildren do
+            local child = select(ci, blizzViewer:GetChildren())
             if child and child ~= sel and child:IsObjectType("Frame") then
                 -- Bar children have a .Bar StatusBar + cooldownID/layoutIndex
                 -- Skip Blizzard's empty pool frames (no cooldownID and no layoutIndex)
@@ -926,8 +933,10 @@ local function FindBlizzBarChild(spellID, entry)
     local viewer = _G["BuffBarCooldownViewer"]
     if not viewer then return nil end
     local sel = viewer.Selection
-    local okc, children = pcall(function() return { viewer:GetChildren() } end)
-    if not okc or not children then return nil end
+    -- Walk via GetNumChildren+select to avoid allocating a children table per
+    -- call. FindBlizzBarChild is invoked once per spell during BuildBarsFromOwned.
+    local okN, numChildren = pcall(viewer.GetNumChildren, viewer)
+    if not okN or not numChildren then return nil end
 
     local idsToMatch = { [spellID] = true }
     if entry then
@@ -935,12 +944,13 @@ local function FindBlizzBarChild(spellID, entry)
         if entry.id then idsToMatch[entry.id] = true end
     end
 
-    for _, child in ipairs(children) do
+    for ci = 1, numChildren do
+        local child = select(ci, viewer:GetChildren())
         if child and child ~= sel and child.Bar then
-            local ci = child.cooldownInfo
-            if ci then
-                local sid = Helpers.SafeValue(ci.overrideSpellID, nil)
-                local sid2 = Helpers.SafeValue(ci.spellID, nil)
+            local cinfo = child.cooldownInfo
+            if cinfo then
+                local sid = Helpers.SafeValue(cinfo.overrideSpellID, nil)
+                local sid2 = Helpers.SafeValue(cinfo.spellID, nil)
                 if (sid and idsToMatch[sid]) or (sid2 and idsToMatch[sid2]) then
                     return child
                 end
@@ -1344,15 +1354,17 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 name = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
             end
             if name ~= nil then
+                -- r.stacks comes from C_UnitAuras aura data and is secret in
+                -- combat. C_StringUtil.WrapString/TruncateWhenZero are C-side
+                -- but carry the secrecy through to the returned string, so
+                -- the wrapped result cannot be compared in Lua (== / ~= taint).
+                -- Always forward to C-side SetFormattedText: WrapString returns
+                -- "" for nil/empty/zero input, which collapses %s%s to just
+                -- the name when stacks is absent.
                 local stacks = r.stacks
                     and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
                     or ""
-                local catOk, display = pcall(function() return name .. stacks end)
-                if catOk then
-                    pcall(bar.NameText.SetText, bar.NameText, display)
-                else
-                    pcall(bar.NameText.SetText, bar.NameText, name)
-                end
+                pcall(bar.NameText.SetFormattedText, bar.NameText, "%s%s", name, stacks)
             end
         end
     else

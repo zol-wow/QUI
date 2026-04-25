@@ -1124,7 +1124,7 @@ UpdateDisplay = function()
                 local buffed, total = CountBuffedMembers(buff.spellId, buff.name, buff.buffIDs)
                 icon.buffCount = buffed
                 icon.buffTotal = total
-                icon.countText:SetText(string_format("%d/%d", buffed, total))
+                icon.countText:SetFormattedText("%d/%d", buffed, total)
 
                 -- Apply font settings
                 local countFontSize = countSettings.fontSize or 10

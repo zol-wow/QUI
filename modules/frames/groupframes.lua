@@ -162,6 +162,30 @@ local absorbThrottle = {}     -- unitToken → last update time
 local healPredThrottle = {}   -- unitToken → last update time
 local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
 
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GF_powerThrottle",    tbl = powerThrottle }
+    mp[#mp + 1] = { name = "GF_absorbThrottle",   tbl = absorbThrottle }
+    mp[#mp + 1] = { name = "GF_healPredThrottle", tbl = healPredThrottle }
+    -- Unit-keyed caches that grow as new units are observed across encounters.
+    mp[#mp + 1] = { name = "GF_unitGuidCache",  fn = function()
+        local n = 0; for _ in pairs(_state.unitGuidCache) do n = n + 1 end; return n, 0
+    end }
+    mp[#mp + 1] = { name = "GF_cachedMarkers",  fn = function()
+        local n = 0; for _ in pairs(_state.cachedMarkers) do n = n + 1 end; return n, 0
+    end }
+    mp[#mp + 1] = { name = "GF_unitFrameMap",   fn = function()
+        local count, deep = 0, 0
+        for _, list in pairs(QUI_GF.unitFrameMap) do
+            count = count + 1
+            if type(list) == "table" then deep = deep + #list end
+        end
+        return count, deep
+    end }
+    mp[#mp + 1] = { name = "GF_allFrames",      fn = function()
+        return #QUI_GF.allFrames, 0
+    end }
+end
+
 ---------------------------------------------------------------------------
 -- CACHED BACKDROP TABLES: Avoid allocating a new table every SetBackdrop
 -- call. SetBackdrop does field-by-field comparison, but reusing the same
@@ -207,6 +231,7 @@ gruCoalesceFrame:Hide()
 
 -- Font/texture caching
 local _fontCache = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "GF_fontCache", tbl = _fontCache } end
 
 -- Pre-allocated color tables for common colors
 local COLORS = {
