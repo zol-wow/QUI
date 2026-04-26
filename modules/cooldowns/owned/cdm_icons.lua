@@ -3082,26 +3082,32 @@ local function UpdateIconCooldown(icon)
         if ci and ci.maxCharges and ci.maxCharges > 1 then
             -- Read cooldownChargesCount from the correct viewer child.
             -- entry._blizzChild can get reassigned to the buff viewer
-            -- child (which lacks charge data), so we look up the child
-            -- on the matching viewer type directly from _spellIDToChild.
+            -- child (which lacks charge data), so we look up an alternate
+            -- child from any cooldown viewer in _spellIDToChild. The QUI
+            -- container the user picked (essential vs utility) is independent
+            -- of where Blizzard places the spell — accept a child from either
+            -- cooldown viewer so cross-category placement still mirrors charge
+            -- data.
             local ccc = entry._blizzChild.cooldownChargesCount
             local _dbgCccSource = ccc ~= nil and "direct" or nil
             if ccc == nil and ns.CDMSpellData then
-                local expectedViewer = _G[
-                    entry.viewerType == "essential" and "EssentialCooldownViewer"
-                    or entry.viewerType == "utility" and "UtilityCooldownViewer"
-                    or nil]
-                if expectedViewer then
-                    local childMap = ns.CDMSpellData._spellIDToChild
-                    local children = childMap and childMap[baseSid]
-                    if children then
-                        for _, altChild in ipairs(children) do
-                            local vf = altChild.viewerFrame
-                            if vf == expectedViewer and altChild.cooldownChargesCount ~= nil then
-                                ccc = altChild.cooldownChargesCount
-                                _dbgCccSource = "altChild"
-                                break
-                            end
+                local essentialViewer = _G["EssentialCooldownViewer"]
+                local utilityViewer = _G["UtilityCooldownViewer"]
+                local essentialContainer = essentialViewer and (essentialViewer.viewerFrame or essentialViewer)
+                local utilityContainer = utilityViewer and (utilityViewer.viewerFrame or utilityViewer)
+                local childMap = ns.CDMSpellData._spellIDToChild
+                local children = childMap and childMap[baseSid]
+                if children then
+                    for _, altChild in ipairs(children) do
+                        local vf = altChild.viewerFrame
+                        local isCooldownViewerChild = vf and (
+                            vf == essentialViewer or vf == utilityViewer
+                            or vf == essentialContainer or vf == utilityContainer
+                        )
+                        if isCooldownViewerChild and altChild.cooldownChargesCount ~= nil then
+                            ccc = altChild.cooldownChargesCount
+                            _dbgCccSource = "altChild"
+                            break
                         end
                     end
                 end
