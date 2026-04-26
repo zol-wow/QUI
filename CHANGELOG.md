@@ -9,6 +9,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.5.2 - 2026-04-26
+
+### Added
+- restored unit frames portrait settings
+- added boss frame (out of) range alpha settings
+- added group frames separate buff and debuff duration text settings
+
+### Fixed
+- fix(cdm, frames, layoutmode): taint & combat-edge regressions across mirror, stacks, action bars, layout proxy
+- fix(frames/groupframes): suppress stale player summon icon without active popup
+- fix(cdm/owned): thread safe-window flag through spell-data bootstrap
+- fix(ui/buffborders): create secure aura headers in ADDON_LOADED safe window
+- fix(frames/actionbars): cooldown swipes on owned flyout buttons + skin gate
+- fix(core/assets): derive asset paths from actual addon folder name
+- perf(cdm, frames): TTL query caches and per-unit event filtering
+- fix(qol/tooltip): don't fade-hide tooltips owned by another tooltip frame
+- perf(tooltips, frames): reduce update churn
+- perf(tooltip): coalesce restyles, trim QoL hot paths, add tooltipdebug sampler
+- perf(qol/tooltip): cut closure/timer churn and bound mount caches
+- feat(debug/editmode_diagnose): /qui diagnose for corrupt Edit Mode profiles
+- fix(character): widen Settings button so label fits across UI scales
+- perf(cdm, frames): cut closure/string/timer churn in hot paths
+- fix(cdm, frames): aura ownership filter for player/pet/vehicle
+- fix(frames/buffbar, cdm/containers): render initial layout during ADDON_LOADED safe window on combat /reload
+- feat(frames/gse_compat): GSE sequence override support on QUI action bars
+- fix(frames/cdm): private-aura churn, header attribute order, spell-map leak
 ## v3.5.1 - 2026-04-24
 
 ### Added
