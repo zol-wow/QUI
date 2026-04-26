@@ -7585,10 +7585,6 @@ function GUI:BuildTilePage(frame, tile)
 
     -- Anchor body/sub-tabs to the header's bottom so a taller header
     -- (subtitle present) pushes content down instead of overlapping.
-    -- When an Advanced drawer is declared, reserve 40px at the bottom for
-    -- its collapsed-state header row (expanded state grows upward and
-    -- overlays the scroll viewport without shifting the content).
-    local drawerReserve = tile.config.advancedDrawer and 40 or 0
 
     -- Persistent preview area (tile-level). If tile.config.preview is set,
     -- build a preview frame below the header. The sub-tab strip and all
@@ -7610,13 +7606,13 @@ function GUI:BuildTilePage(frame, tile)
     if tile.config.subPages and #tile.config.subPages > 0 then
         GUI:RenderSubPageTabs(tile, tile._pageFrame, tile.config.subPages, function(sp, body)
             if type(sp.buildFunc) == "function" then sp.buildFunc(body) end
-        end, anchorFrame, drawerReserve)
+        end, anchorFrame)
     elseif type(tile.config.buildFunc) == "function" then
         local container = CreateFrame("Frame", nil, tile._pageFrame)
         local footerReserve = tile.config.relatedSettings and 32 or 0
         container:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", -18, -10)
         container:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 18, -10)
-        container:SetPoint("BOTTOMRIGHT", tile._pageFrame, "BOTTOMRIGHT", 0, footerReserve + drawerReserve)
+        container:SetPoint("BOTTOMRIGHT", tile._pageFrame, "BOTTOMRIGHT", 0, footerReserve)
         if tile.config.noScroll then
             tile.config.buildFunc(container)
         elseif ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
@@ -7629,26 +7625,6 @@ function GUI:BuildTilePage(frame, tile)
 
     if tile.config.relatedSettings and ns.QUI_RenderRelatedFooter then
         ns.QUI_RenderRelatedFooter(tile._pageFrame, tile.config.relatedSettings, frame)
-    end
-
-    -- Bottom-docked Advanced drawer. Declared by the tile config as:
-    --   advancedDrawer = { build = function(body, setCount, relayout) ... end }
-    -- The builder receives the drawer body frame and populates it with
-    -- tier-3 widgets. The drawer's collapsed height (28px + 12px margin) is
-    -- reserved at the bottom of the content container above (see
-    -- drawerReserve). Expansion grows the drawer upward and overlays the
-    -- scroll viewport temporarily — acceptable because the viewport can
-    -- scroll its content out from under the drawer.
-    if tile.config.advancedDrawer and ns.QUI_Options and ns.QUI_Options.CreateTileAdvancedDrawer
-        and not tile._advancedDrawer then
-        local reserve = 0
-        if tile.config.relatedSettings then reserve = reserve + 32 end
-        local drawerBody, setCount, drawerRelayout =
-            ns.QUI_Options.CreateTileAdvancedDrawer(tile._pageFrame, reserve + 8)
-        tile._advancedDrawer = { body = drawerBody, setCount = setCount, relayout = drawerRelayout }
-        if type(tile.config.advancedDrawer.build) == "function" then
-            tile.config.advancedDrawer.build(drawerBody, setCount, drawerRelayout)
-        end
     end
 
     -- Per-tile primary CTA docked at the right edge of the footer bar.
@@ -7980,7 +7956,7 @@ end
     tabBody is the area below the tab bar into which subPage.buildFunc
     should render its widgets. Clears tabBody between switches.
 ]]
-function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFrame, drawerReserve)
+function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFrame)
     if not subPages or #subPages == 0 then return end
 
     -- Tab bar — anchor to header bottom when provided so a taller header
@@ -7994,7 +7970,6 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         bar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -18, -70)
     end
     bar:SetHeight(28)
-    drawerReserve = drawerReserve or 0
 
     -- Underline beneath the bar
     local underline = bar:CreateTexture(nil, "OVERLAY")
@@ -8008,7 +7983,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     local body = CreateFrame("Frame", nil, contentArea)
     local footerReserve = tile and tile.config and tile.config.relatedSettings and 32 or 0
     body:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
-    body:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", 0, footerReserve + drawerReserve)
+    body:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", 0, footerReserve)
 
     local tabs = {}
     local currentIndex = 1
@@ -8060,13 +8035,69 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
             container:SetAllPoints(body)
             container:Hide()
             tile._subPageBodies[i] = container
+
+            local function installRegisterSection(targetBody)
+                targetBody._sections = {}
+                function targetBody:RegisterSection(id, label, frame)
+                    if type(id) ~= "string" or id == "" or not frame then return end
+                    self._sections[#self._sections + 1] = {
+                        id = id,
+                        label = (type(label) == "string" and label ~= "") and label or id,
+                        frame = frame,
+                    }
+                end
+            end
+
+            -- installRegisterSection must run before onSelect in each branch:
+            -- onSelect triggers the page builder (e.g. BuildFeatureStackPage),
+            -- which calls RegisterSection, so the method must already exist on
+            -- contentBody by then. The guard in BuildFeatureStackPage drops
+            -- registrations silently if the method is missing.
+            local scrollFrame, contentBody
             if sp.noScroll then
-                onSelect(sp, container)
+                contentBody = container
+                installRegisterSection(contentBody)
+                onSelect(sp, contentBody)
             elseif ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-                local _, content = ns.QUI_Options.CreateScrollableContent(container)
-                onSelect(sp, content)
+                scrollFrame, contentBody = ns.QUI_Options.CreateScrollableContent(container)
+                installRegisterSection(contentBody)
+                onSelect(sp, contentBody)
             else
-                onSelect(sp, container)
+                contentBody = container
+                installRegisterSection(contentBody)
+                onSelect(sp, contentBody)
+            end
+
+            container._scrollFrame = scrollFrame
+            container._contentBody = contentBody
+
+            -- Section nav strip (opt-in). Requires a scroll frame, ≥2
+            -- registered sections, and content taller than the viewport.
+            -- The strip is built lazily because contentBody height isn't
+            -- known until the first layout pass settles.
+            if sp.sectionNav and scrollFrame and #contentBody._sections >= 2 then
+                local function tryBuildSectionNav()
+                    if container._sectionNav then return end
+                    local bodyH = contentBody:GetHeight() or 0
+                    local viewH = scrollFrame:GetHeight() or 0
+                    if bodyH > viewH and viewH > 0 then
+                        container._sectionNav = GUI:RenderSectionNav(scrollFrame, contentBody, contentBody._sections)
+                    end
+                end
+
+                -- Try immediately (covers the case where everything is
+                -- already laid out by the time onSelect returns), then
+                -- again after a frame so deferred layout settles.
+                tryBuildSectionNav()
+                C_Timer.After(0, tryBuildSectionNav)
+
+                -- And also when content height changes — newly arriving
+                -- content can flip the page from no-scroll to scroll.
+                contentBody:HookScript("OnSizeChanged", function()
+                    if not container._sectionNav then
+                        C_Timer.After(0, tryBuildSectionNav)
+                    end
+                end)
             end
         end
 
@@ -8132,6 +8163,241 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     select(1)
 
     return body, select
+end
+
+--[[
+    GUI:RenderSectionNav(scrollFrame, body, sections, options)
+
+    Builds a sticky chip strip pinned to the top of scrollFrame. Each chip
+    jumps the scroll to the corresponding section's anchor frame, with a
+    short ease-out tween. Scroll-spy updates the active chip as the user
+    scrolls. Chips wrap to multiple rows when they don't fit one row.
+
+    sections: array of { id, label, frame } registered via body:RegisterSection.
+    options: reserved for future use (currently unused).
+
+    The strip is parented to scrollFrame:GetParent() so it sits above the
+    viewport and never moves with content. The scrollFrame's TOPLEFT anchor
+    is shifted down by the strip's measured height to make room.
+]]
+function GUI:RenderSectionNav(scrollFrame, body, sections, options)
+    options = options or {}
+    if type(sections) ~= "table" or #sections < 2 then return nil end
+    if not scrollFrame or not body then return nil end
+
+    local C = self.Colors or {}
+    local accent = C.accent or { 0.204, 0.827, 0.6, 1 }
+    local CHIP_HEIGHT = 22
+    local CHIP_PAD_X = 10
+    local CHIP_GAP_X = 8
+    local CHIP_GAP_Y = 6
+    local STRIP_PAD_TOP = 4
+    local STRIP_PAD_BOTTOM = 4
+    local ACTIVE_THRESHOLD = 12
+    local TWEEN_DURATION = 0.12
+
+    -- Strip parented to the scroll frame's parent so it doesn't scroll.
+    -- Anchor to stripParent (not scrollFrame) so relayoutChips can push
+    -- scrollFrame down by stripH without dragging the strip with it.
+    -- The 5/-28/-5 insets mirror CreateScrollableContent's left/right margins
+    -- so the strip aligns horizontally with where the scroll viewport was.
+    local stripParent = scrollFrame:GetParent()
+    local strip = CreateFrame("Frame", nil, stripParent)
+    strip:SetPoint("TOPLEFT", stripParent, "TOPLEFT", 5, -5)
+    strip:SetPoint("TOPRIGHT", stripParent, "TOPRIGHT", -28, -5)
+    strip:SetFrameLevel((scrollFrame:GetFrameLevel() or 0) + 5)
+
+    local chips = {}
+    local activeIdx = nil
+
+    local function setActive(idx)
+        if idx == activeIdx then return end
+        if activeIdx and chips[activeIdx] then
+            chips[activeIdx].label:SetTextColor(0.7, 0.7, 0.7, 1)
+            chips[activeIdx].underline:Hide()
+        end
+        if idx and chips[idx] then
+            chips[idx].label:SetTextColor(accent[1], accent[2], accent[3], 1)
+            chips[idx].underline:Show()
+        end
+        activeIdx = idx
+    end
+
+    -- Build chip buttons.
+    for i, section in ipairs(sections) do
+        local chip = CreateFrame("Button", nil, strip)
+        chip:SetHeight(CHIP_HEIGHT)
+
+        local hover = chip:CreateTexture(nil, "BACKGROUND")
+        hover:SetAllPoints()
+        hover:SetColorTexture(1, 1, 1, 0.06)
+        hover:Hide()
+
+        local label = chip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetText(section.label or section.id or "?")
+        local f, _, fl = label:GetFont()
+        label:SetFont(f or (ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(self:GetFontPath())) or f, 11, fl or "")
+        label:SetPoint("LEFT", CHIP_PAD_X, 0)
+        label:SetTextColor(0.7, 0.7, 0.7, 1)
+        chip.label = label
+
+        local underline = chip:CreateTexture(nil, "OVERLAY")
+        underline:SetPoint("BOTTOMLEFT", CHIP_PAD_X, 1)
+        underline:SetPoint("BOTTOMRIGHT", -CHIP_PAD_X, 1)
+        underline:SetHeight(1)
+        underline:SetColorTexture(accent[1], accent[2], accent[3], 1)
+        underline:Hide()
+        chip.underline = underline
+
+        local labelW = label:GetStringWidth()
+        chip:SetWidth(labelW + CHIP_PAD_X * 2)
+
+        chip:SetScript("OnEnter", function() hover:Show() end)
+        chip:SetScript("OnLeave", function() hover:Hide() end)
+
+        chips[i] = chip
+    end
+
+    -- Wrap layout: flow chips left-to-right, wrap when they'd exceed strip width.
+    local function relayoutChips()
+        local stripWidth = strip:GetWidth() or 0
+        if stripWidth <= 0 then
+            stripWidth = scrollFrame:GetWidth() or 600
+        end
+
+        local x = 0
+        local row = 0
+        for _, chip in ipairs(chips) do
+            local w = chip:GetWidth()
+            if x > 0 and x + w > stripWidth then
+                row = row + 1
+                x = 0
+            end
+            chip:ClearAllPoints()
+            chip:SetPoint("TOPLEFT", strip, "TOPLEFT", x, -(STRIP_PAD_TOP + row * (CHIP_HEIGHT + CHIP_GAP_Y)))
+            x = x + w + CHIP_GAP_X
+        end
+        local rows = row + 1
+        local stripH = STRIP_PAD_TOP + rows * CHIP_HEIGHT + (rows - 1) * CHIP_GAP_Y + STRIP_PAD_BOTTOM
+        strip:SetHeight(stripH)
+
+        -- Push the scroll frame's top down by stripH. The 5/-28/5 inset
+        -- numbers mirror CreateScrollableContent's defaults — keep in sync
+        -- if those ever change.
+        scrollFrame:ClearAllPoints()
+        scrollFrame:SetPoint("TOPLEFT", stripParent, "TOPLEFT", 5, -5 - stripH)
+        scrollFrame:SetPoint("BOTTOMRIGHT", stripParent, "BOTTOMRIGHT", -28, 5)
+    end
+
+    strip:SetScript("OnSizeChanged", function() relayoutChips() end)
+
+    -- Anchor offset cache. Recomputed on body resize and after layout settles.
+    local anchors = {}
+    local function refreshOffsets()
+        wipe(anchors)
+        local bodyTop = body:GetTop() or 0
+        for i, section in ipairs(sections) do
+            if section.frame and section.frame:IsShown() then
+                local frameTop = section.frame:GetTop() or bodyTop
+                local offset = math.max(0, bodyTop - frameTop)
+                anchors[#anchors + 1] = { offset = offset, idx = i }
+            end
+        end
+        table.sort(anchors, function(a, b) return a.offset < b.offset end)
+    end
+
+    -- Smooth-scroll tween. Suppresses scroll-spy during the tween so the
+    -- active chip we set on click doesn't get overwritten by the spy.
+    local activeTicker = nil
+    local tweenSuppressionUntil = 0
+
+    local function smoothScrollTo(target)
+        local current = scrollFrame:GetVerticalScroll() or 0
+        local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
+        if target < 0 then target = 0 end
+        if target > maxScroll then target = maxScroll end
+        local distance = target - current
+        if math.abs(distance) < 1 then
+            scrollFrame:SetVerticalScroll(target)
+            return
+        end
+        if activeTicker then activeTicker:Cancel() end
+        local startTime = GetTime()
+        tweenSuppressionUntil = startTime + TWEEN_DURATION + 0.05
+        activeTicker = C_Timer.NewTicker(0.016, function(ticker)
+            local t = (GetTime() - startTime) / TWEEN_DURATION
+            if t >= 1 then
+                scrollFrame:SetVerticalScroll(target)
+                ticker:Cancel()
+                activeTicker = nil
+                return
+            end
+            -- Ease-out cubic.
+            local eased = 1 - (1 - t) ^ 3
+            scrollFrame:SetVerticalScroll(current + distance * eased)
+        end)
+    end
+
+    for i, chip in ipairs(chips) do
+        chip:SetScript("OnClick", function()
+            setActive(i)
+            refreshOffsets()
+            for _, a in ipairs(anchors) do
+                if a.idx == i then
+                    smoothScrollTo(a.offset - ACTIVE_THRESHOLD)
+                    return
+                end
+            end
+        end)
+    end
+
+    -- Scroll-spy: linear scan over the sorted anchor list (section count
+    -- is small in practice). Suppressed during the click-driven tween so
+    -- the click-flip wins over the spy.
+    scrollFrame:HookScript("OnVerticalScroll", function(_, scrollOffset)
+        if GetTime() < tweenSuppressionUntil then return end
+        if #anchors == 0 then return end
+        local foundIdx = nil
+        for _, a in ipairs(anchors) do
+            if a.offset <= scrollOffset + ACTIVE_THRESHOLD then
+                foundIdx = a.idx
+            else
+                break
+            end
+        end
+        if foundIdx then setActive(foundIdx) end
+    end)
+
+    body:HookScript("OnSizeChanged", function()
+        C_Timer.After(0, refreshOffsets)
+    end)
+
+    relayoutChips()
+
+    -- Defer initial offset compute and active-chip set so layout settles
+    -- before we measure.
+    C_Timer.After(0, function()
+        refreshOffsets()
+        setActive(1)
+    end)
+
+    return {
+        frame = strip,
+        setActive = setActive,
+        refreshOffsets = refreshOffsets,
+        relayoutChips = relayoutChips,
+        destroy = function()
+            if activeTicker then
+                activeTicker:Cancel()
+                activeTicker = nil
+            end
+            scrollFrame:ClearAllPoints()
+            scrollFrame:SetPoint("TOPLEFT", stripParent, "TOPLEFT", 5, -5)
+            scrollFrame:SetPoint("BOTTOMRIGHT", stripParent, "BOTTOMRIGHT", -28, 5)
+            strip:Hide()
+            strip:SetParent(nil)
+        end,
+    }
 end
 
 --[[

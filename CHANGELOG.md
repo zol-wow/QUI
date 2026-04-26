@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## Unreleased
+
+### Added
+- Section nav: long settings sub-pages can opt in to a sticky chip strip with scroll-spy and click-to-jump. Enabled on Gameplay → Combat. Tiles opt in via `sectionNav = true`; sections auto-register from `featureIds`, or manually via `body:RegisterSection(id, label, frame)` from buildFunc pages.
+
+### Changed
+- `RegisterFeatureTile` no longer honors `spec.advancedDrawer` (the build path was unused; no caller affected). The `Create*AdvancedDrawer` helpers in `options/shared.lua` have been removed.
 
 
 

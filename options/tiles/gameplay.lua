@@ -93,6 +93,7 @@ function V2.Register(frame)
             {
                 id = "combat",
                 name = "Combat",
+                sectionNav = true,
                 featureIds = {
                     "combatTimer", "brezCounter", "atonementCounter",
                     "rotationAssistIcon", "focusCastAlert", "petWarning",
