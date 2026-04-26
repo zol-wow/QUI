@@ -828,6 +828,10 @@ local function UpdateHealth(frame)
 
     if not UnitExists(unit) then
         if frame.healthBar then frame.healthBar:SetValue(0) end
+        local GFI = ns.QUI_GroupFrameIndicators
+        if GFI and GFI.SyncHealthBarTint then
+            GFI:SyncHealthBarTint(frame, 0, false)
+        end
         if frame.healthText then frame.healthText:SetText("") end
         return
     end
@@ -844,11 +848,12 @@ local function UpdateHealth(frame)
     -- UnitHealthPercent returns 0-100 via CurveConstants.ScaleTo100, C-side handles secrets
     -- SetMinMaxValues(0, 100) is set once at frame creation (DecorateGroupFrame) — never changes.
     if frame.healthBar then
+        local healthPct = 0
         if isDeadOrGhost then
             frame.healthBar:SetValue(0)
         else
-            local pct = GetHealthPct(unit)
-            frame.healthBar:SetValue(pct)
+            healthPct = GetHealthPct(unit)
+            frame.healthBar:SetValue(healthPct)
         end
 
         -- Color (dirty-checked: skip SetStatusBarColor when unchanged)
@@ -857,9 +862,6 @@ local function UpdateHealth(frame)
             r, g, b, a = COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3], COLORS.OFFLINE[4]
         elseif isDeadOrGhost then
             r, g, b, a = COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3], COLORS.DEAD[4]
-        elseif frame._auraIndicatorHealthColor then
-            local c = frame._auraIndicatorHealthColor
-            r, g, b, a = c[1] or 0.2, c[2] or 0.8, c[3] or 0.2, c[4] or 1
         else
             r, g, b, a = GetHealthBarColor(unit, frame._isRaid)
         end
@@ -873,6 +875,11 @@ local function UpdateHealth(frame)
             frame._lastHealthColorB = b
             frame._lastHealthColorA = a
             frame.healthBar:SetStatusBarColor(r, g, b, a)
+        end
+
+        local GFI = ns.QUI_GroupFrameIndicators
+        if GFI and GFI.SyncHealthBarTint then
+            GFI:SyncHealthBarTint(frame, healthPct, isConnected and not isDeadOrGhost)
         end
     end
 

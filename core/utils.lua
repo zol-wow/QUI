@@ -259,6 +259,7 @@ local function CreateDefaultAuraIndicatorRecord(indicatorType, index)
         record.lowTimeColor = { 1, 0.2, 0.2, 1 }
     elseif indicatorType == "healthBarColor" then
         record.color = { 0.2, 0.8, 0.2, 1 }
+        record.animation = "fill"
     end
 
     return record
@@ -315,6 +316,13 @@ local function NormalizeAuraIndicatorRecord(record, entryIndex, indicatorIndex)
     elseif indicatorType == "healthBarColor" then
         if type(record.color) ~= "table" then
             record.color = DeepCopyDefaults(defaults.color)
+        end
+        if record.animation ~= "instant"
+            and record.animation ~= "fill"
+            and record.animation ~= "fade"
+            and record.animation ~= "fillFade"
+            and record.animation ~= "pulse" then
+            record.animation = defaults.animation
         end
     end
 
