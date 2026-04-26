@@ -242,6 +242,19 @@ local defaults = {
             maxDungeonNameLength = 18,
         },
 
+        mplusProgress = {
+            enabled = true,
+            tooltipEnabled = true,
+            tooltipIncludeCount = true,
+            tooltipShowNoProgress = false,
+            nameplateEnabled = true,
+            nameplateTextFormat = "+$percent$%",
+            nameplateTextColor = { 1, 1, 1, 1 },
+            nameplateTextScale = 1.0,
+            nameplateOffsetX = 0,
+            nameplateOffsetY = 0,
+        },
+
         -- Character Pane Settings
         character = {
             enabled = true,

@@ -1017,6 +1017,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         recommended = true,
         topLevelKeys = {
             "mplusTimer",
+            "mplusProgress",
             "combatText",
             "brzCounter",
             "atonementCounter",

@@ -597,6 +597,7 @@ SettingsBuilders.PROVIDER_LABELS = {
     petWarning         = "Pet Warning",
     readyCheck         = "Ready Check",
     mplusTimer         = "Mythic+ Timer",
+    mplusProgress      = "Mythic+ Mob Progress",
     actionTracker      = "Action Tracker",
 
     -- Gameplay · Raid Buffs & Consumables

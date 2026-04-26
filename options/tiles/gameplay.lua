@@ -96,7 +96,7 @@ function V2.Register(frame)
                 featureIds = {
                     "combatTimer", "brezCounter", "atonementCounter",
                     "rotationAssistIcon", "focusCastAlert", "petWarning",
-                    "readyCheck", "mplusTimer", "actionTracker",
+                    "readyCheck", "mplusTimer", "mplusProgress", "actionTracker",
                 },
                 navRoutes = { { tabIndex = 2, subTabIndex = 13 } },
                 searchContext = {
