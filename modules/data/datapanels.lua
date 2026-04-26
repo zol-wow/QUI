@@ -9,6 +9,14 @@ local LSM = ns.LSM
 local Datapanels = {}
 QUICore.Datapanels = Datapanels
 
+local function Warn(message)
+    if QUICore and type(QUICore.Print) == "function" then
+        QUICore:Print(message)
+    elseif DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000QUI:|r " .. message)
+    end
+end
+
 -- Active panels storage
 Datapanels.activePanels = {}
 
@@ -22,7 +30,7 @@ Datapanels.activePanels = {}
 -- @return Frame The created panel frame
 function Datapanels:CreatePanel(panelID, config)
     if self.activePanels[panelID] then
-        print("|cffff0000QUI:|r Panel '" .. panelID .. "' already exists!")
+        Warn("Panel '" .. panelID .. "' already exists!")
         return self.activePanels[panelID]
     end
     

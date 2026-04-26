@@ -16,7 +16,9 @@
     <Script file="uikit.lua"/>
     <Script file="settings/providers.lua"/>
     <Script file="settings/provider_panels.lua"/>
+    <Script file="settings/util.lua"/>
     <Script file="settings_builders.lua"/>
+    <Script file="settings/model_kit.lua"/>
     <Script file="settings/render_adapters.lua"/>
     <Script file="settings/registry.lua"/>
     <Script file="settings/fields.lua"/>

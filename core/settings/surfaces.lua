@@ -32,11 +32,19 @@ local Surfaces = Settings.Surfaces or {
 }
 Settings.Surfaces = Surfaces
 
+local function CloneTable(source)
+    local util = Settings.Util
+    if util and type(util.ShallowCopy) == "function" then
+        return util.ShallowCopy(source)
+    end
+    return {}
+end
+
 function Surfaces:Get(surfaceName)
     if type(surfaceName) ~= "string" or surfaceName == "" then
         surfaceName = "tile"
     end
-    return self._definitions[surfaceName] or self._definitions.tile
+    return CloneTable(self._definitions[surfaceName] or self._definitions.tile)
 end
 
 function Surfaces:IsKnown(surfaceName)

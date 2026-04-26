@@ -7,14 +7,11 @@ local Fields = Settings.Fields or {}
 Settings.Fields = Fields
 
 local function CloneTable(source)
-    local copy = {}
-    if type(source) ~= "table" then
-        return copy
+    local util = Settings.Util
+    if util and type(util.ShallowCopy) == "function" then
+        return util.ShallowCopy(source)
     end
-    for key, value in pairs(source) do
-        copy[key] = value
-    end
-    return copy
+    return {}
 end
 
 function Fields.Define(kind, definition)

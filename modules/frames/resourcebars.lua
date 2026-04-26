@@ -4459,6 +4459,29 @@ do
     local PREVIEW_MIN_VERTICAL_LENGTH   = 20
     local PREVIEW_MIN_THICKNESS         = 8
     local PREVIEW_MAX_THICKNESS         = 22
+    local PREVIEW_POWER_MAX_FALLBACKS   = {
+        [Enum.PowerType.MaelstromWeapon] = 10,
+        [Enum.PowerType.VengSoulFragments] = 6,
+        [Enum.PowerType.Whirlwind] = 4,
+        [Enum.PowerType.TipOfTheSpear] = 3,
+    }
+
+    local function GetPreviewPowerMax(resource)
+        if type(resource) ~= "number" then return 0 end
+
+        -- QUI adds pseudo power IDs for aura/event tracked resources. Blizzard's
+        -- UnitPowerMax rejects those IDs, so preview rendering must not pass
+        -- them through the native API.
+        local fallback = PREVIEW_POWER_MAX_FALLBACKS[resource]
+        if fallback then return fallback end
+
+        local ok, maxValue = pcall(UnitPowerMax, "player", resource)
+        if not ok then return 0 end
+        if Helpers and Helpers.SafeToNumber then
+            return Helpers.SafeToNumber(maxValue, 0)
+        end
+        return tonumber(maxValue) or 0
+    end
 
     local function MapPreviewMetric(value, minValue, maxValue, minPixels, maxPixels)
         value = tonumber(value) or minValue
@@ -4521,7 +4544,7 @@ do
         if not cfg or not cfg.showTicks then return end
         if type(resource) ~= "number" or not tickedPowerTypes[resource] then return end
 
-        local max = UnitPowerMax("player", resource) or 0
+        local max = GetPreviewPowerMax(resource)
         if max < 2 then return end
 
         local bar = section.bar
@@ -4566,7 +4589,7 @@ do
             if cfg and cfg.showFragmentedPowerBarText == false then
                 return ""
             end
-            local maxValue = UnitPowerMax("player", resource) or 0
+            local maxValue = GetPreviewPowerMax(resource)
             if maxValue <= 0 then
                 maxValue = 5
             end

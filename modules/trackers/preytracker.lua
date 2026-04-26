@@ -107,6 +107,7 @@ local State = {
     -- Blizzard widget suppression
     widgetSuppressed = false,
 }
+local RefreshContinuousUpdateScript
 
 ---------------------------------------------------------------------------
 -- API GUARDS
@@ -125,6 +126,18 @@ local HasTaskAPI = C_TaskQuest and type(C_TaskQuest.GetQuestZoneID) == "function
 
 local SafeToNumber = Helpers.SafeToNumber
 local SafeValue = Helpers.SafeValue
+local widgetSideState = setmetatable({}, { __mode = "k" })
+local widgetAnimationState = setmetatable({}, { __mode = "k" })
+local pendingWidgetUpdate = false
+
+local function GetWidgetState(target)
+    local state = widgetSideState[target]
+    if not state then
+        state = {}
+        widgetSideState[target] = state
+    end
+    return state
+end
 
 local function SafeCall(func, ...)
     if not func then return nil end
@@ -894,16 +907,18 @@ local function ApplyWidgetFrameSuppression(frameRef, suppress)
         if not ShouldHardSuppress(target) then return end
 
         if suppress then
-            if target._quiWasShown == nil and target.IsShown then
-                target._quiWasShown = target:IsShown() and true or false
+            local targetState = GetWidgetState(target)
+            if targetState.wasShown == nil and target.IsShown then
+                targetState.wasShown = target:IsShown() and true or false
             end
             pcall(target.Hide, target)
         else
-            if target._quiWasShown then
-                target._quiWasShown = nil
+            local targetState = widgetSideState[target]
+            if targetState and targetState.wasShown then
+                targetState.wasShown = nil
                 if target.Show then pcall(target.Show, target) end
-            elseif target._quiWasShown ~= nil then
-                target._quiWasShown = nil
+            elseif targetState and targetState.wasShown ~= nil then
+                targetState.wasShown = nil
             end
         end
     end
@@ -921,10 +936,10 @@ local function ApplyWidgetFrameSuppression(frameRef, suppress)
                         local okP, playing = pcall(group.IsPlaying, group)
                         isPlaying = okP and playing and true or false
                     end
-                    group._quiWasPlaying = isPlaying and true or false
+                    widgetAnimationState[group] = isPlaying and true or false
                     if group.Stop then pcall(group.Stop, group) end
-                elseif group._quiWasPlaying then
-                    group._quiWasPlaying = nil
+                elseif widgetAnimationState[group] then
+                    widgetAnimationState[group] = nil
                     if group.Play then pcall(group.Play, group) end
                 end
             end
@@ -942,13 +957,17 @@ local function ApplyWidgetFrameSuppression(frameRef, suppress)
         -- Alpha suppression
         if node.SetAlpha then
             if suppress then
-                if node._quiOriginalAlpha == nil and node.GetAlpha then
-                    node._quiOriginalAlpha = node:GetAlpha()
+                local nodeState = GetWidgetState(node)
+                if nodeState.originalAlpha == nil and node.GetAlpha then
+                    nodeState.originalAlpha = node:GetAlpha()
                 end
                 node:SetAlpha(0)
-            elseif node._quiOriginalAlpha ~= nil then
-                node:SetAlpha(node._quiOriginalAlpha)
-                node._quiOriginalAlpha = nil
+            else
+                local nodeState = widgetSideState[node]
+                if nodeState and nodeState.originalAlpha ~= nil then
+                    node:SetAlpha(nodeState.originalAlpha)
+                    nodeState.originalAlpha = nil
+                end
             end
         end
 
@@ -960,13 +979,17 @@ local function ApplyWidgetFrameSuppression(frameRef, suppress)
                 applyHardVisibilitySuppression(region)
                 if region and region.SetAlpha then
                     if suppress then
-                        if region._quiOriginalAlpha == nil and region.GetAlpha then
-                            region._quiOriginalAlpha = region:GetAlpha()
+                        local regionState = GetWidgetState(region)
+                        if regionState.originalAlpha == nil and region.GetAlpha then
+                            regionState.originalAlpha = region:GetAlpha()
                         end
                         region:SetAlpha(0)
-                    elseif region._quiOriginalAlpha ~= nil then
-                        region:SetAlpha(region._quiOriginalAlpha)
-                        region._quiOriginalAlpha = nil
+                    else
+                        local regionState = widgetSideState[region]
+                        if regionState and regionState.originalAlpha ~= nil then
+                            region:SetAlpha(regionState.originalAlpha)
+                            regionState.originalAlpha = nil
+                        end
                     end
                 end
             end
@@ -1410,6 +1433,7 @@ local function UpdatePreyState()
         if State.activeQuestID and State.completionUntil == 0 then
             OnQuestCompleted(State.activeQuestID)
         end
+        if RefreshContinuousUpdateScript then RefreshContinuousUpdateScript() end
         return
     end
 
@@ -1495,6 +1519,8 @@ local function UpdatePreyState()
             UpdateVisibility()
         end
     end
+
+    if RefreshContinuousUpdateScript then RefreshContinuousUpdateScript() end
 end
 
 ---------------------------------------------------------------------------
@@ -1557,6 +1583,20 @@ end
 
 local eventFrame = CreateFrame("Frame")
 
+local function ScheduleWidgetUpdate(delay)
+    if pendingWidgetUpdate then
+        return
+    end
+    pendingWidgetUpdate = true
+    C_Timer.After(delay or 0, function()
+        pendingWidgetUpdate = false
+        UpdatePreyState()
+        if State.widgetSuppressed then
+            ApplyDefaultPreyIconVisibility()
+        end
+    end)
+end
+
 local function OnEvent(self, event, arg1, arg2)
     if event == "PLAYER_ENTERING_WORLD" then
         local settings = GetSettings()
@@ -1595,20 +1635,10 @@ local function OnEvent(self, event, arg1, arg2)
     elseif event == "UPDATE_UI_WIDGET" then
         -- Always update — internal scan determines if it's a prey widget.
         -- Also re-apply suppression in case Blizzard re-showed the widget frame.
-        C_Timer.After(0, function()
-            UpdatePreyState()
-            if State.widgetSuppressed then
-                ApplyDefaultPreyIconVisibility()
-            end
-        end)
+        ScheduleWidgetUpdate(0)
 
     elseif event == "UPDATE_ALL_UI_WIDGETS" then
-        C_Timer.After(0.1, function()
-            UpdatePreyState()
-            if State.widgetSuppressed then
-                ApplyDefaultPreyIconVisibility()
-            end
-        end)
+        ScheduleWidgetUpdate(0.1)
 
     elseif event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
         if State.activeQuestID then
@@ -1649,14 +1679,25 @@ end
 
 -- OnUpdate for continuous progress polling
 local function OnUpdate(self, elapsed)
-    if State.isPreviewMode then return end
-    if not State.activeQuestID then return end
+    if State.isPreviewMode or not State.activeQuestID then
+        self:SetScript("OnUpdate", nil)
+        return
+    end
 
     State.elapsed = State.elapsed + elapsed
     if State.elapsed < UPDATE_THROTTLE then return end
     State.elapsed = 0
 
     UpdatePreyState()
+end
+
+RefreshContinuousUpdateScript = function()
+    if not eventFrame then return end
+    if State.isPreviewMode or State.activeQuestID then
+        eventFrame:SetScript("OnUpdate", OnUpdate)
+    else
+        eventFrame:SetScript("OnUpdate", nil)
+    end
 end
 
 eventFrame:SetScript("OnEvent", OnEvent)
@@ -1678,7 +1719,7 @@ eventFrame:RegisterEvent("GOSSIP_CLOSED")
 eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
-eventFrame:SetScript("OnUpdate", OnUpdate)
+RefreshContinuousUpdateScript()
 
 ---------------------------------------------------------------------------
 -- NAMESPACE EXPORT

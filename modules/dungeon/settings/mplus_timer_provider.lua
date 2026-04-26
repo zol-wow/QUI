@@ -283,7 +283,18 @@ do
         settingsPanel:RegisterSharedProvider("mplusTimer", {
             build = BuildMPlusTimerSettings,
         })
+        local adapters = ns.Settings and ns.Settings.RenderAdapters
+        if adapters and type(adapters.NotifyProviderChanged) == "function" then
+            adapters.NotifyProviderChanged("mplusTimer", { structural = true })
+        end
     end
 
-    C_Timer.After(3, RegisterMPlusTimerProvider)
+    local ProviderPanels = ns.Settings and ns.Settings.ProviderPanels
+    if ProviderPanels and type(ProviderPanels.RegisterAfterLoad) == "function" then
+        ProviderPanels:RegisterAfterLoad(function()
+            RegisterMPlusTimerProvider()
+        end)
+    else
+        RegisterMPlusTimerProvider()
+    end
 end

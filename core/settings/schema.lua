@@ -8,14 +8,11 @@ Settings.Schema = Schema
 local RenderAdapters = Settings.RenderAdapters
 
 local function CloneTable(source)
-    local copy = {}
-    if type(source) ~= "table" then
-        return copy
+    local util = Settings.Util
+    if util and type(util.ShallowCopy) == "function" then
+        return util.ShallowCopy(source)
     end
-    for key, value in pairs(source) do
-        copy[key] = value
-    end
-    return copy
+    return {}
 end
 
 local function MergeOptions(base, extra)
@@ -42,6 +39,12 @@ end
 
 local function CleanupFrame(frame)
     if not frame then return end
+
+    local gui = _G.QUI and _G.QUI.GUI
+    if gui and type(gui.TeardownFrameTree) == "function" then
+        gui:TeardownFrameTree(frame)
+        return
+    end
 
     if frame.GetChildren then
         for _, child in ipairs({ frame:GetChildren() }) do

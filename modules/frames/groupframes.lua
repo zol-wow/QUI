@@ -394,6 +394,7 @@ local _pending = {
     registerClicks = false,
     groupReflow = false,
     anchorUpdate = false,
+    markerUpdate = false,
     initSafe = true,
 }
 
@@ -4962,10 +4963,19 @@ local function OnEvent(self, event, arg1, ...)
 
     elseif event == "RAID_TARGET_UPDATE" then
         local inCombat = InCombatLockdown()
-        for unit, list in pairs(QUI_GF.unitFrameMap) do
-            if inCombat then
-                for i = 1, #list do UpdateTargetMarker(list[i]) end
-            else
+        if inCombat then
+            if _pending.markerUpdate then
+                return
+            end
+            _pending.markerUpdate = true
+            C_Timer.After(0, function()
+                _pending.markerUpdate = false
+                for _, list in pairs(QUI_GF.unitFrameMap) do
+                    for i = 1, #list do UpdateTargetMarker(list[i]) end
+                end
+            end)
+        else
+            for unit, list in pairs(QUI_GF.unitFrameMap) do
                 local marker = GetRaidTargetIndex(unit)
                 local safeMarker = Helpers.SafeValue(marker, 0)
                 if safeMarker ~= _state.cachedMarkers[unit] then
@@ -5041,11 +5051,6 @@ local function OnEvent(self, event, arg1, ...)
             _pending.anchorUpdate = false
             UpdateAnchorFrames()
         end
-        if pendingAnchorUpdate then
-            pendingAnchorUpdate = false
-            UpdateAnchorFrames()
-        end
-
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(0.5, function()
             UpdateHeaderVisibility()

@@ -96,9 +96,8 @@ local function HideBlizzardElements(bar)
     -- Hide entire leave frame (we'll restyle the button)
     if bar.leaveFrame then
         bar.leaveFrame:SetAlpha(0)
-        -- But keep LeaveButton visible
+        -- But keep LeaveButton visible without reparenting protected hierarchy
         if bar.LeaveButton then
-            bar.LeaveButton:SetParent(bar)
             bar.LeaveButton:Show()
         end
     end

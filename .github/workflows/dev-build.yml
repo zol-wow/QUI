@@ -14,6 +14,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Validate generated search cache
+        run: |
+          lua5.1 tools/generate_search_cache.lua
+          if ! git diff --quiet -- options/search_cache.lua; then
+            echo "options/search_cache.lua is stale. Run: lua5.1 tools/generate_search_cache.lua"
+            git diff -- options/search_cache.lua
+            exit 1
+          fi
+
       - name: Get branch info
         id: info
         run: |

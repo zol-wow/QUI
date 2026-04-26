@@ -32,14 +32,16 @@ local function BuildGeneralTab(tabContent, searchContext, selectedSectionKey)
     local PAD = Shared.PADDING
     local db = Shared.GetDB()
 
-    -- Refresh callback for fonts/textures (refreshes everything that uses these defaults)
-    local function RefreshAll()
+    local function RefreshDefaultFonts()
         if QUICore and QUICore.RefreshAll then QUICore:RefreshAll() end
         if _G.QUI_RefreshUnitFrames then _G.QUI_RefreshUnitFrames() end
         if QUICore then
             if QUICore.UpdatePowerBar then QUICore:UpdatePowerBar() end
             if QUICore.UpdateSecondaryPowerBar then QUICore:UpdateSecondaryPowerBar() end
         end
+    end
+
+    local function RefreshDefaultTextures()
         if QUICore and QUICore.Minimap and QUICore.Minimap.Refresh then QUICore.Minimap:Refresh() end
         if _G.QUI_RefreshBuffBorders then _G.QUI_RefreshBuffBorders() end
         if ns and ns.NCDM and ns.NCDM.RefreshAll then ns.NCDM:RefreshAll() end
@@ -52,6 +54,11 @@ local function BuildGeneralTab(tabContent, searchContext, selectedSectionKey)
                 if utilV then QUICore:ApplyViewerLayout(utilV) end
             end
         end)
+    end
+
+    local function RefreshDefaultAppearance()
+        RefreshDefaultFonts()
+        RefreshDefaultTextures()
     end
 
     GUI:SetSearchContext(searchContext or {
@@ -195,7 +202,7 @@ local function BuildGeneralTab(tabContent, searchContext, selectedSectionKey)
                 fontList = {{value = "Friz Quadrata TT", text = "Friz Quadrata TT"}}
             end
 
-            sy = P(GUI:CreateFormDropdown(body, "Default Font", fontList, "font", db.general, RefreshAll,
+            sy = P(GUI:CreateFormDropdown(body, "Default Font", fontList, "font", db.general, RefreshDefaultFonts,
                 { description = "Font used as the default across QUI-managed text elements that don't have their own font override." }), body, sy)
 
             local outlineOptions = {
@@ -203,11 +210,11 @@ local function BuildGeneralTab(tabContent, searchContext, selectedSectionKey)
                 {value = "OUTLINE", text = "Outline"},
                 {value = "THICKOUTLINE", text = "Thick Outline"},
             }
-            sy = P(GUI:CreateFormDropdown(body, "Font Outline", outlineOptions, "fontOutline", db.general, RefreshAll,
+            sy = P(GUI:CreateFormDropdown(body, "Font Outline", outlineOptions, "fontOutline", db.general, RefreshDefaultFonts,
                 { description = "Default font outline applied to QUI-managed text. Outline helps readability against busy backgrounds." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Override Scrolling Combat Text Font", "overrideSCTFont", db.general, RefreshAll,
+            sy = P(GUI:CreateFormCheckbox(body, "Override Scrolling Combat Text Font", "overrideSCTFont", db.general, RefreshDefaultFonts,
                 { description = "Apply the QUI default font to Blizzard's floating combat text numbers." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Apply Font to Blizzard UI", "applyGlobalFontToBlizzard", db.general, RefreshAll,
+            P(GUI:CreateFormCheckbox(body, "Apply Font to Blizzard UI", "applyGlobalFontToBlizzard", db.general, RefreshDefaultAppearance,
                 { description = "Replace Blizzard's default UI fonts with the QUI default font so the whole client shares the same typography." }), body, sy)
         end)
     end

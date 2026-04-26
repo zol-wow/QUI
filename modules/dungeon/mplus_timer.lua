@@ -163,6 +163,30 @@ local defaultState = {
     paceOffset = 0,
 }
 
+local pendingObjectiveTrackerHide = false
+
+local function HideScenarioObjectiveTracker()
+    if not ScenarioObjectiveTracker then
+        return
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        if pendingObjectiveTrackerHide then
+            return
+        end
+        pendingObjectiveTrackerHide = true
+        local frame = CreateFrame("Frame")
+        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        frame:SetScript("OnEvent", function(self)
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            self:SetScript("OnEvent", nil)
+            pendingObjectiveTrackerHide = false
+            HideScenarioObjectiveTracker()
+        end)
+        return
+    end
+    ScenarioObjectiveTracker:Hide()
+end
+
 ---------------------------------------------------------------------------
 -- Settings Access
 ---------------------------------------------------------------------------
@@ -210,8 +234,8 @@ local function GetPosition()
             return {
                 point = pos.point or defaults.point,
                 relPoint = pos.relPoint or defaults.relPoint,
-                x = pos.x or defaults.x,
-                y = pos.y or defaults.y,
+                x = pos.x ~= nil and pos.x or defaults.x,
+                y = pos.y ~= nil and pos.y or defaults.y,
             }
         end
     end
@@ -1761,7 +1785,7 @@ local sinceLastUpdate = 0
 function MPlusTimer:OnTimerTick(elapsed)
     sinceLastUpdate = sinceLastUpdate + elapsed
     if sinceLastUpdate < UPDATE_INTERVAL then return end
-    sinceLastUpdate = 0
+    sinceLastUpdate = sinceLastUpdate - UPDATE_INTERVAL
 
     -- In demo mode, increment timer manually; otherwise read from game
     if self.state.demoModeActive then
@@ -1934,9 +1958,7 @@ function MPlusTimer:Show()
     end
 
     -- Hide Blizzard's timer
-    if ScenarioObjectiveTracker and not InCombatLockdown() then
-        ScenarioObjectiveTracker:Hide()
-    end
+    HideScenarioObjectiveTracker()
 end
 
 function MPlusTimer:Hide()

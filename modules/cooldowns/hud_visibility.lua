@@ -25,42 +25,28 @@ local UpdateUnitframesVisibility
 -- ALL health APIs return secret values from addon code in WoW 12.0+.
 -- Secret values can't be compared, even inside pcall.
 --
--- Solution: UNIT_HEALTH fires when health changes. When health is at 100%
--- and stable, UNIT_HEALTH stops firing. So:
--- 1. Every UNIT_HEALTH event → set _healthBelowMax = true (health changing)
--- 2. Start/reset a short timer on each event
--- 3. When timer expires (no more events) → health stabilized → assume 100%
---    (natural regen brings health back to max, then UNIT_HEALTH stops)
+-- UNIT_HEALTH can prove only that health changed, not that a quiet period
+-- means full health. Keep the "below max" override until a trusted reset
+-- point instead of hiding frames while the player may still be injured.
 ---------------------------------------------------------------------------
 local _healthBelowMax = false
-local _healthStableTimer = nil
-local _lastHealthEventTime = 0
-local HEALTH_STABLE_DURATION = 3.0
 
 local function UpdateHealthState()
     local wasBelowMax = _healthBelowMax
     _healthBelowMax = true
-    _lastHealthEventTime = GetTime()
 
     if not wasBelowMax and UpdateUnitframesVisibility then
         UpdateUnitframesVisibility()
     end
+end
 
-    -- Single ticker checks periodically instead of creating/cancelling timers per event
-    if not _healthStableTimer then
-        _healthStableTimer = C_Timer.NewTicker(1.0, function()
-            if GetTime() - _lastHealthEventTime >= HEALTH_STABLE_DURATION then
-                if InCombatLockdown and InCombatLockdown() then
-                    return
-                end
-                _healthStableTimer:Cancel()
-                _healthStableTimer = nil
-                _healthBelowMax = false
-                if UpdateUnitframesVisibility then
-                    UpdateUnitframesVisibility()
-                end
-            end
-        end)
+local function ResetHealthState()
+    if not _healthBelowMax then
+        return
+    end
+    _healthBelowMax = false
+    if UpdateUnitframesVisibility then
+        UpdateUnitframesVisibility()
     end
 end
 
@@ -120,18 +106,17 @@ local function GetCDMFrames()
             end
         end
     else
-        -- Fallback: hardcoded Blizzard viewer names
-        if _G.EssentialCooldownViewer then
-            _cdmFramesCache[#_cdmFramesCache + 1] = _G.EssentialCooldownViewer
-        end
-        if _G.UtilityCooldownViewer then
-            _cdmFramesCache[#_cdmFramesCache + 1] = _G.UtilityCooldownViewer
-        end
-        if _G.BuffIconCooldownViewer then
-            _cdmFramesCache[#_cdmFramesCache + 1] = _G.BuffIconCooldownViewer
-        end
-        if _G.BuffBarCooldownViewer then
-            _cdmFramesCache[#_cdmFramesCache + 1] = _G.BuffBarCooldownViewer
+        local frameNames = ns.CDMProvider and ns.CDMProvider.GetViewerFrameNames and ns.CDMProvider:GetViewerFrameNames()
+        frameNames = frameNames or {
+            essential = "EssentialCooldownViewer",
+            utility   = "UtilityCooldownViewer",
+            buffIcon  = "BuffIconCooldownViewer",
+            buffBar   = "BuffBarCooldownViewer",
+        }
+        for _, blizzName in pairs(frameNames) do
+            if _G[blizzName] then
+                _cdmFramesCache[#_cdmFramesCache + 1] = _G[blizzName]
+            end
         end
     end
 
@@ -142,14 +127,11 @@ end
 ---------------------------------------------------------------------------
 -- CDM VISIBILITY SETTINGS CACHE
 ---------------------------------------------------------------------------
-local _visSettingsCache = nil
 local QUICore = ns.Addon
 
 local function GetCDMVisibilitySettings()
-    if _visSettingsCache then return _visSettingsCache end
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility then
-        _visSettingsCache = QUICore.db.profile.cdmVisibility
-        return _visSettingsCache
+        return QUICore.db.profile.cdmVisibility
     end
     return nil
 end
@@ -320,10 +302,15 @@ end
 ---------------------------------------------------------------------------
 local _mouseoverHooked = Helpers.CreateStateTable()
 
+local function IsAddonOwnedCDMMouseoverFrame(frame)
+    return frame
+        and (frame._isQUICDMIcon or frame._quiCdmKey or frame._quiCDMMouseoverTarget)
+end
+
 -- Hook a single frame for mouseover detection
 -- Exported on ns so CDM engines can call it when skinning new icons
 local function HookFrameForMouseover(frame)
-    if not frame or _mouseoverHooked[frame] then return end
+    if not IsAddonOwnedCDMMouseoverFrame(frame) or _mouseoverHooked[frame] then return end
 
     _mouseoverHooked[frame] = true
 
@@ -388,21 +375,28 @@ local function SetupCDMMouseoverDetector()
         return
     end
 
-    -- Hook container frames
+    -- Hook addon-owned container frames
     local cdmFrames = GetCDMFrames()
     for _, frame in ipairs(cdmFrames) do
         HookFrameForMouseover(frame)
     end
 
-    -- Hook existing icons from each viewer
-    -- Use provider for viewer enumeration when available
+    -- Hook existing addon-owned icons from each viewer. Do not HookScript
+    -- arbitrary Blizzard viewer children; CDM icon creation calls the same
+    -- API for late-created addon-owned icons.
     local viewers
     if ns.CDMProvider and ns.CDMProvider.GetViewerFrames then
         viewers = ns.CDMProvider:GetViewerFrames()
     else
         viewers = {}
-        local names = {"EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer"}
-        for _, name in ipairs(names) do
+        local names = ns.CDMProvider and ns.CDMProvider.GetViewerFrameNames and ns.CDMProvider:GetViewerFrameNames()
+        names = names or {
+            essential = "EssentialCooldownViewer",
+            utility   = "UtilityCooldownViewer",
+            buffIcon  = "BuffIconCooldownViewer",
+            buffBar   = "BuffBarCooldownViewer",
+        }
+        for _, name in pairs(names) do
             if _G[name] then
                 viewers[#viewers + 1] = _G[name]
             end
@@ -414,7 +408,7 @@ local function SetupCDMMouseoverDetector()
             local numChildren = viewer:GetNumChildren()
             for i = 1, numChildren do
                 local child = select(i, viewer:GetChildren())
-                if child and child.IsShown and child:IsShown() then
+                if child and IsAddonOwnedCDMMouseoverFrame(child) then
                     HookFrameForMouseover(child)
                 end
             end
@@ -1010,10 +1004,16 @@ local function SetupActionBarsMouseoverDetector()
         pollInterval = 0
 
         if ActionBarsVisibility.mouseOver then return end
+        if not ActionBarsVisibility.currentlyHidden
+            and not (ActionBarsVisibility.isFading and ActionBarsVisibility.fadeTargetAlpha < 1) then
+            return
+        end
 
         local frames = GetActionBarFrames()
         for _, entry in ipairs(frames) do
-            if entry.container and entry.container:IsMouseOver() then
+            local container = entry.container
+            local alpha = container and container.GetAlpha and Helpers.SafeToNumber(container:GetAlpha(), 1) or 1
+            if container and alpha < 0.99 and container:IsMouseOver() then
                 if ActionBarsVisibility.leaveTimer then
                     ActionBarsVisibility.leaveTimer:Cancel()
                     ActionBarsVisibility.leaveTimer = nil
@@ -1310,14 +1310,11 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         self:UnregisterEvent("ADDON_LOADED")
     end
 
+    if event == "PLAYER_ENTERING_WORLD" then
+        ResetHealthState()
+    end
+
     if event == "ADDON_LOADED" or event == "PLAYER_ENTERING_WORLD" then
-        -- Skip UpdateHealthState on PEW when hidden — it can trigger
-        -- UpdateUnitframesVisibility directly, which would flash frames
-        -- before mount state has settled.  The 2s timer calls it later.
-        if not (event == "PLAYER_ENTERING_WORLD"
-            and UnitframesVisibility.currentlyHidden) then
-            UpdateHealthState()
-        end
         -- Schedule delayed setup so CDM/UF frames have time to render.
         -- Also runs on PLAYER_ENTERING_WORLD to cover zone transitions.
         if _pendingSetupTimer then
@@ -1365,7 +1362,6 @@ end)
 -- GLOBAL EXPORTS
 ---------------------------------------------------------------------------
 _G.QUI_RefreshCDMVisibility = function()
-    _visSettingsCache = nil
     _cdmFramesDirty = true
     UpdateCDMVisibility()
 end

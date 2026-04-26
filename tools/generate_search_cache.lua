@@ -1,6 +1,8 @@
 local ADDON_NAME = "QUI"
 local ROOT = "."
 local OUTPUT_PATH = "options/search_cache.lua"
+_G.unpack = _G.unpack or table.unpack
+local unpack = _G.unpack
 
 local function normalize_path(path)
     path = tostring(path or ""):gsub("\\", "/")

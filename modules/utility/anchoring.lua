@@ -213,20 +213,18 @@ end
 --   excludeSelf: optional anchor target name to exclude (prevents self-anchoring)
 -- Returns array of {value = name, text = displayName}
 function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
-    include = include or {}
     exclude = exclude or {}
     
     -- Convert include/exclude to lookup tables for faster checking
     local includeLookup = {}
     local excludeLookup = {}
     
-    if type(include) == "table" and #include > 0 then
+    if include == nil then
+        includeLookup = nil
+    elseif type(include) == "table" then
         for _, value in ipairs(include) do
             includeLookup[value] = true
         end
-    elseif type(include) == "table" then
-        -- Empty table means include all
-        includeLookup = nil
     end
     
     if type(exclude) == "table" then

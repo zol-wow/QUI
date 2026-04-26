@@ -37,6 +37,12 @@ function FullSurface.ClearFrame(frame)
         return
     end
 
+    local gui = _G.QUI and _G.QUI.GUI
+    if gui and type(gui.TeardownFrameTree) == "function" then
+        gui:TeardownFrameTree(frame)
+        return
+    end
+
     for _, child in pairs({ frame:GetChildren() }) do
         child:Hide()
         child:SetParent(nil)

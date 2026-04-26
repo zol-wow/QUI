@@ -91,10 +91,25 @@ local minimapDebugStats = {
 ---=================================================================================
 -- TAINT NOTE: Direct method override on Blizzard frame to suppress unwanted Layout calls.
 -- Minimap is reparented to UIParent by QUI and is not in the Edit Mode secure chain.
-if not InCombatLockdown() then
+local function InstallMinimapLayoutNoop()
     if Minimap and not Minimap.Layout then
         Minimap.Layout = function() end
+        return true
     end
+    return Minimap and Minimap.Layout ~= nil
+end
+
+if not InCombatLockdown() then
+    InstallMinimapLayoutNoop()
+else
+    local layoutRetryFrame = CreateFrame("Frame")
+    layoutRetryFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    layoutRetryFrame:SetScript("OnEvent", function(self)
+        if InstallMinimapLayoutNoop() then
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            self:SetScript("OnEvent", nil)
+        end
+    end)
 end
 
 ---=================================================================================

@@ -2,6 +2,7 @@ local ADDON_NAME, ns = ...
 
 local Model = ns.QUI_UnitFramesSettingsModel or {}
 ns.QUI_UnitFramesSettingsModel = Model
+local ModelKit = ns.Settings and ns.Settings.ModelKit
 
 local UNIT_ORDER = { "player", "target", "focus", "targettarget", "pet", "boss" }
 local UNIT_LABELS = {
@@ -45,22 +46,8 @@ function Model.IsPerUnitTab(tabKey)
     return PER_UNIT_TABS[tabKey] == true
 end
 
-local function RenderUnavailable(host, label)
-    local message = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    message:SetPoint("TOPLEFT", 20, -20)
-    message:SetText((label or "Settings") .. " unavailable.")
-    message:SetTextColor(0.6, 0.6, 0.6, 1)
-end
-
 local function RenderSchema(methodName, host, unitKey, label)
-    local schema = ns.QUI_UnitFramesSettingsSchema
-    local render = schema and schema[methodName]
-    if type(render) == "function" and render(host, unitKey) then
-        return true
-    end
-
-    RenderUnavailable(host, label)
-    return false
+    return ModelKit.RenderSchema(ns.QUI_UnitFramesSettingsSchema, methodName, host, unitKey, label)
 end
 
 local function RenderGeneral(host)
@@ -114,5 +101,5 @@ local TAB_DEFINITIONS = {
 }
 
 function Model.GetTabDefinitions()
-    return TAB_DEFINITIONS
+    return ModelKit.NormalizeTabDefinitions(TAB_DEFINITIONS)
 end

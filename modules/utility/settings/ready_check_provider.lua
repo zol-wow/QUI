@@ -106,7 +106,18 @@ do
         settingsPanel:RegisterSharedProvider("readyCheck", {
             build = BuildReadyCheckSettings,
         })
+        local adapters = ns.Settings and ns.Settings.RenderAdapters
+        if adapters and type(adapters.NotifyProviderChanged) == "function" then
+            adapters.NotifyProviderChanged("readyCheck", { structural = true })
+        end
     end
 
-    C_Timer.After(3, RegisterReadyCheckProvider)
+    local ProviderPanels = ns.Settings and ns.Settings.ProviderPanels
+    if ProviderPanels and type(ProviderPanels.RegisterAfterLoad) == "function" then
+        ProviderPanels:RegisterAfterLoad(function()
+            RegisterReadyCheckProvider()
+        end)
+    else
+        RegisterReadyCheckProvider()
+    end
 end

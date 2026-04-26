@@ -1830,6 +1830,20 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     local _powerThrottleElapsed = 0
     local _powerThrottleDirty = false
     local POWER_THROTTLE_INTERVAL = 0.2  -- 5 Hz max for frequent power updates
+    local function PowerThrottleOnUpdate(self, delta)
+        if not _powerThrottleDirty then
+            self:SetScript("OnUpdate", nil)
+            _powerThrottleElapsed = 0
+            return
+        end
+        _powerThrottleElapsed = _powerThrottleElapsed + delta
+        if _powerThrottleElapsed < POWER_THROTTLE_INTERVAL then return end
+        _powerThrottleElapsed = 0
+        _powerThrottleDirty = false
+        UpdatePower(self)
+        UpdatePowerText(self)
+        self:SetScript("OnUpdate", nil)
+    end
 
     frame:SetScript("OnEvent", function(self, event, ...)
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
@@ -1847,6 +1861,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
             local eventUnit = ...
             if eventUnit == self.unit then
                 _powerThrottleDirty = true
+                self:SetScript("OnUpdate", PowerThrottleOnUpdate)
             end
         elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" then
             local eventUnit = ...
@@ -1854,6 +1869,8 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
                 UpdatePower(self)
                 UpdatePowerText(self)
                 _powerThrottleDirty = false  -- just did a full update
+                _powerThrottleElapsed = 0
+                self:SetScript("OnUpdate", nil)
             end
         elseif event == "UNIT_NAME_UPDATE" then
             local eventUnit = ...
@@ -1868,17 +1885,6 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
                 UpdateClassificationIcon(self)
             end
         end
-    end)
-
-    -- Throttled power update via OnUpdate (only active when dirty)
-    frame:SetScript("OnUpdate", function(self, delta)
-        if not _powerThrottleDirty then return end
-        _powerThrottleElapsed = _powerThrottleElapsed + delta
-        if _powerThrottleElapsed < POWER_THROTTLE_INTERVAL then return end
-        _powerThrottleElapsed = 0
-        _powerThrottleDirty = false
-        UpdatePower(self)
-        UpdatePowerText(self)
     end)
 
     frame:RegisterUnitEvent("UNIT_HEALTH", unit)
