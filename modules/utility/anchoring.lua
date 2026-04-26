@@ -2219,6 +2219,19 @@ local CASTBAR_ANCHOR_KEYS = {
     totCastbar = true,
 }
 
+-- Frames whose own size mutates at runtime (icons appear/disappear, bars
+-- stack, totems drop/expire).  When one of these is the *child* being
+-- anchored, sizeStable is disabled so the explicit edge relation tracks
+-- the child's own growth.  When one of these is the *parent*, sizeStable
+-- is also disabled so the child tracks the parent's growth edge instead
+-- of being frozen at a CENTER↔CENTER offset baked from the initial size.
+local DYNAMIC_SIZE_ANCHOR_KEYS = {
+    buffBar = true,
+    buffFrame = true,
+    debuffFrame = true,
+    totemBar = true,
+}
+
 local function GetPointOffsetForRect(point, width, height)
     local halfW = (width or 0) * 0.5
     local halfH = (height or 0) * 0.5
@@ -2747,18 +2760,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         -- so they track parent edge movement automatically in combat.
         useSizeStable = false
     end
-    if key == "buffBar" or key == "buffFrame" or key == "debuffFrame" then
-        -- Buff/debuff containers change size dynamically as auras appear/disappear.
-        -- Raw point anchoring keeps the growth edge fixed.
-        useSizeStable = false
-    end
-    if key == "totemBar" then
-        -- Totem bar container resizes dynamically as totems drop/expire
-        -- (1x1 when empty → N icons wide when active). sizeStable caches
-        -- CENTER offsets from the width at apply time, so the frame visibly
-        -- jumps when the size changes later — especially in combat where
-        -- LayoutButtons defers the SetSize until PLAYER_REGEN_ENABLED.
-        -- Raw point anchoring keeps the growth edge fixed instead.
+    if DYNAMIC_SIZE_ANCHOR_KEYS[key] or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent] then
         useSizeStable = false
     end
 
@@ -2825,7 +2827,8 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         -- at 1x1 intentionally and grow as icons appear; converting to
         -- CENTER would break the growth-edge anchoring that LayoutIcons
         -- depends on.
-        local skipInflation = key == "buffFrame" or key == "debuffFrame" or key == "buffBar" or key == "totemBar"
+        local skipInflation = DYNAMIC_SIZE_ANCHOR_KEYS[key]
+            or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent]
         local needsInflation = false
         if not skipInflation and parentFrame and parentFrame ~= UIParent and parentFrame.GetSize then
             local ok, pw, ph = pcall(parentFrame.GetSize, parentFrame)
@@ -3078,7 +3081,8 @@ _G.QUI_ReanchorFramePositionOnly = function(key)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
-    if CASTBAR_ANCHOR_KEYS[key] or key == "buffBar" or key == "buffFrame" or key == "debuffFrame" or key == "totemBar" then
+    if CASTBAR_ANCHOR_KEYS[key] or DYNAMIC_SIZE_ANCHOR_KEYS[key]
+        or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent] then
         useSizeStable = false
     end
 
@@ -3117,7 +3121,8 @@ _G.QUI_AnchorOverlayToParent = function(overlayFrame, key, overlayW, overlayH)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
-    if CASTBAR_ANCHOR_KEYS[key] or key == "buffBar" or key == "buffFrame" or key == "debuffFrame" or key == "totemBar" then
+    if CASTBAR_ANCHOR_KEYS[key] or DYNAMIC_SIZE_ANCHOR_KEYS[key]
+        or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent] then
         useSizeStable = false
     end
 
