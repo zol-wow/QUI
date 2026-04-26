@@ -4,6 +4,33 @@ local UIKit = ns.UIKit
 local GetCore = Helpers.GetCore
 local issecretvalue = issecretvalue
 
+local function TooltipDebugCount(name, amount)
+    local dbg = ns.QUI_TooltipDebug
+    if dbg and dbg.enabled then
+        dbg:Count(name, amount)
+    end
+end
+
+local function TooltipDebugBypassSkin()
+    local dbg = ns.QUI_TooltipDebug
+    return dbg and dbg.bypassSkin == true
+end
+
+local function TooltipDebugBegin()
+    local dbg = ns.QUI_TooltipDebug
+    if dbg and dbg.enabled then
+        local startMS, startHeapKB = dbg:Begin()
+        return dbg, startMS, startHeapKB
+    end
+    return nil, nil, nil
+end
+
+local function TooltipDebugEnd(dbg, name, startMS, detail, startHeapKB)
+    if dbg and startMS then
+        dbg:End(name, startMS, detail, startHeapKB)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- TOOLTIP SKINNING
 -- Hides Blizzard's NineSlice via :Hide(), renders QUI-owned
@@ -20,6 +47,9 @@ local function GetSettings()
 end
 
 local function IsEnabled()
+    if TooltipDebugBypassSkin() then
+        return false
+    end
     local settings = GetSettings()
     return settings and settings.enabled and settings.skinTooltips
 end
@@ -206,7 +236,30 @@ local styleFrames = Helpers.CreateStateTable()   -- tooltip → chrome frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
 local hookedNineSlices = Helpers.CreateStateTable() -- NineSlice → true
 local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
+local gameTooltipRestyleFrame
+local gameTooltipRestyleOnUpdate
+local gameTooltipRestyleActive = false
+local gameTooltipShowToken = 0
+local gameTooltipFontToken = 0
 local suppressNSHook = false                      -- suppress NineSlice hook during intentional re-show
+
+local function QueueGameTooltipRestyle()
+    if pendingGameTooltipRestyle then
+        TooltipDebugCount("skin.restyleCoalesced")
+        if gameTooltipRestyleFrame and gameTooltipRestyleOnUpdate and not gameTooltipRestyleActive then
+            gameTooltipRestyleActive = true
+            gameTooltipRestyleFrame:SetScript("OnUpdate", gameTooltipRestyleOnUpdate)
+        end
+        return
+    end
+
+    TooltipDebugCount("skin.restyleQueued")
+    pendingGameTooltipRestyle = true
+    if gameTooltipRestyleFrame and gameTooltipRestyleOnUpdate and not gameTooltipRestyleActive then
+        gameTooltipRestyleActive = true
+        gameTooltipRestyleFrame:SetScript("OnUpdate", gameTooltipRestyleOnUpdate)
+    end
+end
 
 ---------------------------------------------------------------------------
 -- NineSlice Management
@@ -273,6 +326,49 @@ local function FallbackToNineSlice(tooltip)
     HideStyleFrame(tooltip)
 end
 
+local function IsChromeStable(tooltip)
+    local sf = styleFrames[tooltip]
+    if not (sf and sf.IsShown and sf:IsShown()) then
+        return false
+    end
+
+    local ns = tooltip and tooltip.NineSlice
+    if not ns then
+        return true
+    end
+    if ns.IsShown then
+        local okShown, shown = pcall(ns.IsShown, ns)
+        return okShown and not shown
+    end
+    return false
+end
+
+local function ShowExistingChrome(tooltip)
+    local sf = styleFrames[tooltip]
+    local sfShown = sf and sf.IsShown and sf:IsShown()
+    local ns = tooltip and tooltip.NineSlice
+    local nsShown = false
+    if ns and ns.IsShown then
+        local okShown, shown = pcall(ns.IsShown, ns)
+        nsShown = not okShown or shown
+    elseif ns then
+        nsShown = true
+    end
+
+    if sfShown and not nsShown then
+        TooltipDebugCount("skin.chromeSkip")
+        return false
+    end
+
+    if nsShown then
+        HideNineSlice(tooltip)
+    end
+    if sf and not sfShown then
+        sf:Show()
+    end
+    return true
+end
+
 local function HasAccessibleDimensions(tooltip)
     if not tooltip then return false end
     local okWidth, width = pcall(tooltip.GetWidth, tooltip)
@@ -317,6 +413,7 @@ end
 
 local function ApplyTooltipChrome(tooltip)
     if not tooltip then return end
+    TooltipDebugCount("skin.applyChrome")
 
     -- Embedded tooltips: strip border, no overlay (parent has one)
     if IsEmbedded(tooltip) then
@@ -373,9 +470,10 @@ local function StyleTooltip(tooltip)
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not IsEnabled() then return end
 
-    pcall(function()
-        ApplyTooltipChrome(tooltip)
-    end)
+    TooltipDebugCount("skin.style")
+    local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
+    pcall(ApplyTooltipChrome, tooltip)
+    TooltipDebugEnd(dbg, "skin.style", dbgStart, nil, dbgHeap)
 end
 
 -- Combat-safe: refresh addon-owned chrome without touching Blizzard's backdrop.
@@ -384,84 +482,102 @@ local function CombatRefreshTooltip(tooltip)
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not IsEnabled() then return end
 
-    pcall(function()
-        ApplyTooltipChrome(tooltip)
-    end)
+    TooltipDebugCount("skin.combatRefresh")
+    local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
+    pcall(ApplyTooltipChrome, tooltip)
+    TooltipDebugEnd(dbg, "skin.combatRefresh", dbgStart, nil, dbgHeap)
 end
 
 -- Quest/world map reward tooltips can attach Blizzard MoneyFrame children to
 -- GameTooltip. Mutating the tooltip frame while those children are active can
 -- taint MoneyFrame_Update width arithmetic.
 local function HasActiveMoneyFrame(tooltip)
-    if not tooltip or not tooltip.GetChildren then return false end
+    if not tooltip or not tooltip.GetChildren or not tooltip.GetNumChildren then return false end
+    TooltipDebugCount("skin.moneyScan")
 
-    local ok, result = pcall(function()
-        for i = 1, select("#", tooltip:GetChildren()) do
-            local child = select(i, tooltip:GetChildren())
-            if child then
-                local childName = child.GetName and child:GetName() or nil
-                if child.moneyType ~= nil or child.staticMoney ~= nil or child.lastArgMoney ~= nil or
-                    (type(childName) == "string" and childName:find("MoneyFrame")) then
-                    if child.IsShown then
-                        local okShown, shown = pcall(child.IsShown, child)
-                        if not okShown or shown then
-                            return true
-                        end
-                    else
+    local okCount, numChildren = pcall(tooltip.GetNumChildren, tooltip)
+    if not okCount or not numChildren then return false end
+
+    for i = 1, numChildren do
+        local child = select(i, tooltip:GetChildren())
+        if child then
+            local childName
+            if child.GetName then
+                local okName, name = pcall(child.GetName, child)
+                if okName then childName = name end
+            end
+            if child.moneyType ~= nil or child.staticMoney ~= nil or child.lastArgMoney ~= nil or
+                (type(childName) == "string" and childName:find("MoneyFrame")) then
+                if child.IsShown then
+                    local okShown, shown = pcall(child.IsShown, child)
+                    if not okShown or shown then
+                        TooltipDebugCount("skin.moneyHit")
                         return true
                     end
+                else
+                    TooltipDebugCount("skin.moneyHit")
+                    return true
                 end
             end
         end
-        return false
-    end)
+    end
 
-    return ok and result == true
+    return false
 end
 
 local function HasActiveWidgetContainer(tooltip)
-    if not tooltip or not tooltip.GetChildren then return false end
+    if not tooltip or not tooltip.GetChildren or not tooltip.GetNumChildren then return false end
+    TooltipDebugCount("skin.widgetScan")
 
-    local ok, result = pcall(function()
-        for i = 1, select("#", tooltip:GetChildren()) do
-            local child = select(i, tooltip:GetChildren())
-            if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
-                local widgetSetID = child.widgetSetID
-                if widgetSetID ~= nil then
+    local okCount, numChildren = pcall(tooltip.GetNumChildren, tooltip)
+    if not okCount or not numChildren then return false end
+
+    for i = 1, numChildren do
+        local child = select(i, tooltip:GetChildren())
+        if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
+            local widgetSetID = child.widgetSetID
+            if widgetSetID ~= nil then
+                TooltipDebugCount("skin.widgetHit")
+                return true
+            end
+
+            local shownWidgetCount = child.shownWidgetCount
+            if shownWidgetCount ~= nil then
+                if Helpers.IsSecretValue(shownWidgetCount) then
+                    TooltipDebugCount("skin.widgetHit")
                     return true
                 end
-
-                local shownWidgetCount = child.shownWidgetCount
-                if shownWidgetCount ~= nil then
-                    if Helpers.IsSecretValue(shownWidgetCount) then
-                        return true
-                    end
-                    shownWidgetCount = tonumber(shownWidgetCount)
-                    if shownWidgetCount and shownWidgetCount > 0 then
-                        return true
-                    end
+                shownWidgetCount = tonumber(shownWidgetCount)
+                if shownWidgetCount and shownWidgetCount > 0 then
+                    TooltipDebugCount("skin.widgetHit")
+                    return true
                 end
+            end
 
-                local numWidgetsShowing = child.numWidgetsShowing
-                if numWidgetsShowing ~= nil then
-                    if Helpers.IsSecretValue(numWidgetsShowing) then
-                        return true
-                    end
-                    numWidgetsShowing = tonumber(numWidgetsShowing)
-                    if numWidgetsShowing and numWidgetsShowing > 0 then
-                        return true
-                    end
+            local numWidgetsShowing = child.numWidgetsShowing
+            if numWidgetsShowing ~= nil then
+                if Helpers.IsSecretValue(numWidgetsShowing) then
+                    TooltipDebugCount("skin.widgetHit")
+                    return true
                 end
+                numWidgetsShowing = tonumber(numWidgetsShowing)
+                if numWidgetsShowing and numWidgetsShowing > 0 then
+                    TooltipDebugCount("skin.widgetHit")
+                    return true
+                end
+            end
 
-                if child.IsShown and child:IsShown() then
+            if child.IsShown then
+                local okShown, shown = pcall(child.IsShown, child)
+                if okShown and shown then
+                    TooltipDebugCount("skin.widgetHit")
                     return true
                 end
             end
         end
-        return false
-    end)
+    end
 
-    return ok and result == true
+    return false
 end
 
 local function RefreshTooltipLayout(tooltip)
@@ -485,11 +601,7 @@ local function OnTooltipShow(tooltip)
     -- MoneyFrame children can taint tooltip width arithmetic on some Blizzard
     -- GameTooltip update paths, so keep the conservative show-existing-chrome path.
     if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then
-        pcall(function()
-            HideNineSlice(tooltip)
-            local sf = styleFrames[tooltip]
-            if sf then sf:Show() end
-        end)
+        pcall(ShowExistingChrome, tooltip)
         return
     end
     if InCombatLockdown() then
@@ -567,7 +679,9 @@ local SafeHookTooltipOnShow, HookTooltipOnShow
 
 -- Pre-allocated callback tables to avoid closure allocation in C_Timer.After
 local _pendingHookQueue = {}
+local _pendingHookTimerActive = false
 local function _FlushHookQueue()
+    _pendingHookTimerActive = false
     for i = 1, #_pendingHookQueue do
         local tt = _pendingHookQueue[i]
         _pendingHookQueue[i] = nil
@@ -576,7 +690,10 @@ local function _FlushHookQueue()
 end
 
 local _pendingFontSet = {}
+local _pendingFontTimerActive = false
 local function _FlushPendingFonts()
+    TooltipDebugCount("skin.fontFlush")
+    _pendingFontTimerActive = false
     for tt in pairs(_pendingFontSet) do
         _pendingFontSet[tt] = nil
         if tt.IsShown and tt:IsShown() and not InCombatLockdown() then
@@ -586,11 +703,24 @@ local function _FlushPendingFonts()
     end
 end
 
+local function QueueFontUpdate(tooltip)
+    if not tooltip or not IsEnabled() then return end
+    TooltipDebugCount("skin.fontQueued")
+    _pendingFontSet[tooltip] = true
+    if not _pendingFontTimerActive then
+        _pendingFontTimerActive = true
+        C_Timer.After(0, _FlushPendingFonts)
+    end
+end
+
 SafeHookTooltipOnShow = function(tooltip)
     if hookedTooltips[tooltip] then return end
     if InCombatLockdown() then
         _pendingHookQueue[#_pendingHookQueue + 1] = tooltip
-        C_Timer.After(0, _FlushHookQueue)
+        if not _pendingHookTimerActive then
+            _pendingHookTimerActive = true
+            C_Timer.After(0, _FlushHookQueue)
+        end
     else
         HookTooltipOnShow(tooltip)
     end
@@ -636,20 +766,22 @@ HookTooltipOnShow = function(tooltip)
         -- propagate back, while still firing before the next rendered frame
         -- (no 1-frame NineSlice flash).
         hooksecurefunc(tooltip, "Show", function(self)
+            TooltipDebugCount("skin.gameTooltipShow")
+            gameTooltipShowToken = gameTooltipShowToken + 1
             if not IsEnabled() then
                 FallbackToNineSlice(self)
                 return
             end
-            HideNineSlice(self)
-            local sf = styleFrames[self]
-            if sf then pcall(sf.Show, sf) end
-            pendingGameTooltipRestyle = true
+            if ShowExistingChrome(self) then
+                QueueGameTooltipRestyle()
+            end
         end)
 
         return
     end
 
     hooksecurefunc(tooltip, "Show", function(self)
+        TooltipDebugCount("skin.tooltipShow")
         if not IsEnabled() then
             FallbackToNineSlice(self)
             return
@@ -673,8 +805,7 @@ HookTooltipOnShow = function(tooltip)
         StyleTooltip(self)
         -- Defer font sizing out of the securecall chain to avoid tainting
         -- tooltip width calculations
-        _pendingFontSet[self] = true
-        C_Timer.After(0, _FlushPendingFonts)
+        QueueFontUpdate(self)
     end)
 
     hookedTooltips[tooltip] = true
@@ -713,6 +844,7 @@ end
 local function SetupBackdropStyleHooks()
     if SharedTooltip_SetBackdropStyle then
         hooksecurefunc("SharedTooltip_SetBackdropStyle", function(tooltip, style, isEmbedded)
+            TooltipDebugCount("skin.sharedBackdrop")
             if not IsEnabled() or not tooltip then return end
             local ok, objType = pcall(tooltip.GetObjectType, tooltip)
             if not ok or objType ~= "GameTooltip" then return end
@@ -725,6 +857,10 @@ local function SetupBackdropStyleHooks()
             -- execution context, causing secret-value errors in the
             -- widget layout's GetExtents / GetScaledRect calls.
             if tooltip == GameTooltip then
+                if IsChromeStable(tooltip) then
+                    TooltipDebugCount("skin.backdropStableSkip")
+                    return
+                end
                 -- Quest-reward tooltips (TaskPOI_OnEnter → AddQuestRewardsToTooltip
                 -- → SetTooltipMoney → MoneyFrame_Update) are extremely sensitive
                 -- to any addon touching the tooltip mid-build.  When a MoneyFrame
@@ -734,10 +870,9 @@ local function SetupBackdropStyleHooks()
                 -- Immediately suppress NineSlice and show existing overlay
                 -- to prevent 1-frame flash.  These are C-side calls (no Lua
                 -- property writes) so they do not taint the caller's context.
-                HideNineSlice(tooltip)
-                local sf = styleFrames[tooltip]
-                if sf then sf:Show() end
-                pendingGameTooltipRestyle = true
+                if ShowExistingChrome(tooltip) then
+                    QueueGameTooltipRestyle()
+                end
                 return
             end
 
@@ -761,18 +896,22 @@ local function SetupBackdropStyleHooks()
     -- Blizzard can call this directly, bypassing SharedTooltip
     if GameTooltip_SetBackdropStyle then
         hooksecurefunc("GameTooltip_SetBackdropStyle", function(tooltip, style)
+            TooltipDebugCount("skin.gameBackdrop")
             if not IsEnabled() or not tooltip then return end
             local ok, objType = pcall(tooltip.GetObjectType, tooltip)
             if not ok or objType ~= "GameTooltip" then return end
             -- Defer GameTooltip — same taint safety concern as above.
             if tooltip == GameTooltip then
+                if IsChromeStable(tooltip) then
+                    TooltipDebugCount("skin.backdropStableSkip")
+                    return
+                end
                 -- Quest-reward MoneyFrame mid-build: bail to avoid tainting
                 -- MoneyFrame_Update's width arithmetic.
                 if HasActiveMoneyFrame(tooltip) then return end
-                HideNineSlice(tooltip)
-                local sf = styleFrames[tooltip]
-                if sf then sf:Show() end
-                pendingGameTooltipRestyle = true
+                if ShowExistingChrome(tooltip) then
+                    QueueGameTooltipRestyle()
+                end
                 return
             end
             local _ns3 = tooltip.NineSlice
@@ -828,23 +967,26 @@ local function SetupPostProcessor()
     if not TooltipDataProcessor or not TooltipDataProcessor.AddTooltipPostCall then return end
 
     local function DeferFont(tooltip)
-        if not IsEnabled() then return end
-        _pendingFontSet[tooltip] = true
-        C_Timer.After(0, _FlushPendingFonts)
+        QueueFontUpdate(tooltip)
     end
 
     local function HandlePostCall(tooltip)
+        TooltipDebugCount("skin.postCall")
         if not tooltip or tooltip == EmbeddedItemTooltip then return end
         SafeHookTooltipOnShow(tooltip)
         -- TAINT SAFETY: Defer GameTooltip to the watcher (same as backdrop hooks).
         if tooltip == GameTooltip then
+            if IsChromeStable(tooltip) then
+                TooltipDebugCount("skin.postStableSkip")
+                return
+            end
+            TooltipDebugCount("skin.postGameTooltip")
             -- Quest-reward MoneyFrame mid-build: bail to avoid tainting
             -- MoneyFrame_Update's width arithmetic.
             if HasActiveMoneyFrame(tooltip) then return end
-            HideNineSlice(tooltip)
-            local sf = styleFrames[tooltip]
-            if sf then sf:Show() end
-            pendingGameTooltipRestyle = true
+            if ShowExistingChrome(tooltip) then
+                QueueGameTooltipRestyle()
+            end
             return
         end
         if InCombatLockdown() then
@@ -855,10 +997,20 @@ local function SetupPostProcessor()
         end
     end
 
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, HandlePostCall)
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Spell, HandlePostCall)
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
+    local function RunHandlePostCall(tooltip)
+        if TooltipDebugBypassSkin() then
+            TooltipDebugCount("skin.bypassed")
+            return
+        end
+        local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
         HandlePostCall(tooltip)
+        TooltipDebugEnd(dbg, "skin.postCall", dbgStart, nil, dbgHeap)
+    end
+
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, RunHandlePostCall)
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Spell, RunHandlePostCall)
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
+        RunHandlePostCall(tooltip)
         -- Health bar hiding (independent of skinning)
         if ShouldHideHealthBar() and tooltip and not InCombatLockdown() then
             local bar = tooltip.StatusBar or (tooltip == GameTooltip and GameTooltipStatusBar)
@@ -916,6 +1068,27 @@ local function RefreshAllFonts()
     end
 end
 
+local pendingShoppingTooltipSync = false
+local function FlushShoppingTooltipSync()
+    TooltipDebugCount("skin.shoppingFlush")
+    pendingShoppingTooltipSync = false
+    if not GameTooltip:IsShown() then return end
+    for i = 1, 2 do
+        local st = _G["ShoppingTooltip" .. i]
+        if st and st:IsShown() then
+            SafeHookTooltipOnShow(st)
+            OnTooltipShow(st)
+        end
+    end
+end
+
+local function QueueShoppingTooltipSync()
+    if pendingShoppingTooltipSync then return end
+    TooltipDebugCount("skin.shoppingQueued")
+    pendingShoppingTooltipSync = true
+    C_Timer.After(0, FlushShoppingTooltipSync)
+end
+
 ---------------------------------------------------------------------------
 -- Initialization
 ---------------------------------------------------------------------------
@@ -934,6 +1107,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_REGEN_ENABLED" then
         _FlushHookQueue()
         pendingGameTooltipRestyle = false
+        gameTooltipRestyleActive = false
+        if gameTooltipRestyleFrame then
+            gameTooltipRestyleFrame:SetScript("OnUpdate", nil)
+        end
         if IsEnabled() then
             -- Full restyle of all visible tooltips (both named and dynamic)
             for _, name in ipairs(tooltipsToSkin) do
@@ -961,40 +1138,35 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 
     -------------------------------------------------------------------
     -- GameTooltip deferred-restyle handler.
-    -- The OnShow HookScript handles initial show styling.  This frame
-    -- processes pendingGameTooltipRestyle from SharedTooltip hooks
-    -- (backdrop restyles that fire AFTER our OnShow has already run).
+    -- The Show hook handles initial show styling. This frame processes
+    -- queued backdrop restyles outside the synchronous tooltip build.
     -------------------------------------------------------------------
     do
-        local fontsApplied = false
-        local wasShown = false
-        local deferFrame = CreateFrame("Frame")
-        deferFrame:SetScript("OnUpdate", function()
-            -- TAINT SAFETY: Detect GameTooltip hide via IsShown() polling
-            -- instead of HookScript("OnHide").  HookScript runs addon code
-            -- inside the secure execution context, tainting the caller
-            -- (e.g. QuestMapLogTitleButton_OnEnter → SetOwner → OnHide).
-            -- That taint makes GetStringWidth() return secret values,
-            -- breaking Blizzard's tooltip width arithmetic in combat.
-            local shown = GameTooltip:IsShown()
-            if wasShown and not shown then
-                fontsApplied = false
-                pendingGameTooltipRestyle = false
+        gameTooltipRestyleFrame = CreateFrame("Frame")
+        gameTooltipRestyleOnUpdate = function(self)
+            TooltipDebugCount("skin.restyleTick")
+            local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
+            gameTooltipRestyleActive = false
+            self:SetScript("OnUpdate", nil)
+
+            if not pendingGameTooltipRestyle then
+                TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "idle", dbgHeap)
+                return
             end
-            wasShown = shown
-
-            if not pendingGameTooltipRestyle then return end
             pendingGameTooltipRestyle = false
+            TooltipDebugCount("skin.restyleRun")
 
+            local shown = GameTooltip:IsShown()
             if not shown then
-                fontsApplied = false
+                pendingShoppingTooltipSync = false
+                TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "hidden", dbgHeap)
                 return
             end
 
             -- If skinning was disabled mid-show, restore NineSlice.
             if not IsEnabled() then
                 FallbackToNineSlice(GameTooltip)
-                fontsApplied = false
+                TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "disabled", dbgHeap)
                 return
             end
 
@@ -1010,25 +1182,20 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
 
             -- Font sizing: once per show cycle
-            if not fontsApplied then
-                fontsApplied = true
-                _pendingFontSet[GameTooltip] = true
-                C_Timer.After(0, function()
-                    _FlushPendingFonts()
-                    if not GameTooltip:IsShown() then return end
-                    for i = 1, 2 do
-                        local st = _G["ShoppingTooltip" .. i]
-                        if st and st:IsShown() then
-                            SafeHookTooltipOnShow(st)
-                            OnTooltipShow(st)
-                        end
-                    end
-                end)
+            if gameTooltipFontToken ~= gameTooltipShowToken then
+                gameTooltipFontToken = gameTooltipShowToken
+                QueueFontUpdate(GameTooltip)
+                QueueShoppingTooltipSync()
             end
-        end)
+            TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "run", dbgHeap)
+        end
+        gameTooltipRestyleFrame:SetScript("OnUpdate", nil)
+        if pendingGameTooltipRestyle then
+            gameTooltipRestyleActive = true
+            gameTooltipRestyleFrame:SetScript("OnUpdate", gameTooltipRestyleOnUpdate)
+        end
 
-        -- Hide-state reset is handled by the wasShown transition check
-        -- above.  Do NOT use HookScript("OnHide") — it taints the secure
+        -- Do NOT use HookScript("OnHide") here — it taints the secure
         -- execution context of callers like QuestMapLogTitleButton_OnEnter.
     end
 

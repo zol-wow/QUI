@@ -15,6 +15,7 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local GetTime = GetTime
 
 -- Enable CDM immediately when file loads (before any events fire)
 pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
@@ -65,6 +66,69 @@ local _blizzChildToTotemSlot = setmetatable({}, { __mode = "k" })
 
 -- DurationObject cache: Blizzard child → captured DurationObject/start/duration.
 local _spellIDToChild = {}  -- [spellID] = { child1, child2, ... } (built OOC during scan)
+local _spellMapState = Helpers.CreateStateTable()
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "CDM_spellIDToChild", tbl = _spellIDToChild } end
+
+local function RemoveSpellChildMapping(spellID, child)
+    local list = spellID and _spellIDToChild[spellID]
+    if not list then return end
+
+    for i = #list, 1, -1 do
+        if list[i] == child then
+            table.remove(list, i)
+        end
+    end
+
+    if #list == 0 then
+        _spellIDToChild[spellID] = nil
+    end
+end
+
+local function ClearChildSpellMappings(child)
+    if not child then return end
+
+    local state = _spellMapState[child]
+    local ids = state and state.ids
+    if not ids then return end
+
+    for i = 1, #ids do
+        local spellID = ids[i]
+        if spellID then
+            RemoveSpellChildMapping(spellID, child)
+            ids[i] = nil
+        end
+    end
+end
+
+local function MapSpellIDToChild(spellID, child)
+    if not spellID or not child then return end
+
+    local state = _spellMapState[child]
+    if not state then
+        state = {}
+        _spellMapState[child] = state
+    end
+
+    local ids = state.ids
+    if not ids then
+        ids = {}
+        state.ids = ids
+    end
+
+    for i = 1, #ids do
+        if ids[i] == spellID then
+            return
+        end
+    end
+
+    local list = _spellIDToChild[spellID]
+    if not list then
+        list = {}
+        _spellIDToChild[spellID] = list
+    end
+    list[#list + 1] = child
+    ids[#ids + 1] = spellID
+end
 
 -- Per-batch memo caches for ResolveOwnedEntry candidate scoring.
 -- Wiped at the start of each BuildSpellListFromOwned call so all owned
@@ -79,84 +143,165 @@ do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_resolveAuraMemo", tbl = _resolveAuraActiveMemo }
 end
 
--- Per-tick caches for Blizzard aura queries. Same aura instance is frequently
--- queried by multiple icons in one UpdateAllCooldowns batch (~100-150 icons).
--- GetAuraDataByAuraInstanceID allocates a fresh ~600-byte Blizzard table every
--- call; caching per batch cuts 12-30KB/tick of short-lived garbage. Wiped via
--- CDMSpellData:WipeTickAuraCache() at the start of each batch.
+-- Short-lived caches for Blizzard aura queries. Same aura instance is
+-- frequently queried by multiple icons across several UpdateAllCooldowns
+-- batches. GetAuraDataByAuraInstanceID allocates a fresh Blizzard table every
+-- call, so a tiny TTL cuts repeated short-lived garbage without letting stale
+-- aura state linger.
 -- auraInstanceID is globally unique across units, so the unit is not part of
 -- the cache key.
+local AURA_QUERY_CACHE_TTL = 0.25
+local AURA_QUERY_CACHE_PRUNE_INTERVAL = 1.0
 local _tickAuraDataCache = {}        -- [auraInstanceID] = data | false (false = negative)
 local _tickAuraDurationCache = {}    -- [auraInstanceID] = durObj | false
+local _tickAuraApplicationCache = {} -- [auraInstanceID] = display string
+local _tickAuraApplicationResolved = {}
+local _tickAuraDataCacheTime = {}    -- [auraInstanceID] = GetTime() cache stamp
+local _tickAuraDurationCacheTime = {}
+local _tickAuraApplicationCacheTime = {}
+local _tickAuraCacheNow = 0
+local _nextAuraCachePrune = 0
+local STACK_SEARCH_UNITS = { "player", "pet" }
+local _tickAuraStats = {
+    dataQueries = 0,
+    durationQueries = 0,
+    durationOnlyHits = 0,
+    applicationQueries = 0,
+    stackNameQueries = 0,
+}
 do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_tickAuraData",     tbl = _tickAuraDataCache }
     mp[#mp + 1] = { name = "CDM_tickAuraDuration", tbl = _tickAuraDurationCache }
+    mp[#mp + 1] = { name = "CDM_tickAuraApplications", fn = function()
+        local n = 0
+        for _ in pairs(_tickAuraApplicationResolved) do n = n + 1 end
+        return n, 0
+    end }
+    mp[#mp + 1] = { name = "CDM_tickAuraCacheMeta", fn = function()
+        local dataAge, durationAge = 0, 0
+        for _ in pairs(_tickAuraDataCacheTime) do dataAge = dataAge + 1 end
+        for _ in pairs(_tickAuraDurationCacheTime) do durationAge = durationAge + 1 end
+        return dataAge, durationAge
+    end }
+    mp[#mp + 1] = { name = "CDM_auraDataQueries", counter = true, fn = function()
+        return _tickAuraStats.dataQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_auraDurationQueries", counter = true, fn = function()
+        return _tickAuraStats.durationQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_auraDurationOnlyHits", counter = true, fn = function()
+        return _tickAuraStats.durationOnlyHits
+    end }
+    mp[#mp + 1] = { name = "CDM_auraApplicationQueries", counter = true, fn = function()
+        return _tickAuraStats.applicationQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_auraStackNameQueries", counter = true, fn = function()
+        return _tickAuraStats.stackNameQueries
+    end }
+end
+
+local function ClearTickAuraCache()
+    wipe(_tickAuraDataCache)
+    wipe(_tickAuraDurationCache)
+    wipe(_tickAuraApplicationCache)
+    wipe(_tickAuraApplicationResolved)
+    wipe(_tickAuraDataCacheTime)
+    wipe(_tickAuraDurationCacheTime)
+    wipe(_tickAuraApplicationCacheTime)
+    _tickAuraCacheNow = 0
+    _nextAuraCachePrune = 0
+end
+
+local function GetTickAuraCacheNow()
+    local now = _tickAuraCacheNow
+    if not now or now == 0 then
+        now = GetTime()
+        _tickAuraCacheNow = now
+    end
+    return now
+end
+
+local function PruneTickAuraCache(now)
+    local cutoff = now - AURA_QUERY_CACHE_TTL
+    for instanceID, stamp in pairs(_tickAuraDataCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickAuraDataCache[instanceID] = nil
+            _tickAuraDataCacheTime[instanceID] = nil
+        end
+    end
+    for instanceID, stamp in pairs(_tickAuraDurationCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickAuraDurationCache[instanceID] = nil
+            _tickAuraDurationCacheTime[instanceID] = nil
+        end
+    end
+    for instanceID, stamp in pairs(_tickAuraApplicationCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickAuraApplicationCache[instanceID] = nil
+            _tickAuraApplicationResolved[instanceID] = nil
+            _tickAuraApplicationCacheTime[instanceID] = nil
+        end
+    end
+end
+
+local function BeginTickAuraCache()
+    local now = GetTime()
+    _tickAuraCacheNow = now
+    if now >= _nextAuraCachePrune then
+        _nextAuraCachePrune = now + AURA_QUERY_CACHE_PRUNE_INTERVAL
+        PruneTickAuraCache(now)
+    end
 end
 
 local function TickCacheGetAuraData(unit, instanceID)
     if not instanceID then return nil end
+    local now = GetTickAuraCacheNow()
     local cached = _tickAuraDataCache[instanceID]
     if cached ~= nil then
-        return cached or nil
+        local stamp = _tickAuraDataCacheTime[instanceID]
+        if stamp and (now - stamp) <= AURA_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickAuraDataCache[instanceID] = nil
+        _tickAuraDataCacheTime[instanceID] = nil
     end
+    _tickAuraStats.dataQueries = _tickAuraStats.dataQueries + 1
     local ok, data = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, unit, instanceID)
     if ok and data then
         _tickAuraDataCache[instanceID] = data
+        _tickAuraDataCacheTime[instanceID] = now
         return data
     end
     _tickAuraDataCache[instanceID] = false
+    _tickAuraDataCacheTime[instanceID] = now
     return nil
 end
 
 local function TickCacheGetAuraDuration(unit, instanceID)
     if not instanceID or not C_UnitAuras.GetAuraDuration then return nil end
+    local now = GetTickAuraCacheNow()
     local cached = _tickAuraDurationCache[instanceID]
     if cached ~= nil then
-        return cached or nil
+        local stamp = _tickAuraDurationCacheTime[instanceID]
+        if stamp and (now - stamp) <= AURA_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickAuraDurationCache[instanceID] = nil
+        _tickAuraDurationCacheTime[instanceID] = nil
     end
+    _tickAuraStats.durationQueries = _tickAuraStats.durationQueries + 1
     local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, unit, instanceID)
     if ok and durObj then
         _tickAuraDurationCache[instanceID] = durObj
+        _tickAuraDurationCacheTime[instanceID] = now
         return durObj
     end
     _tickAuraDurationCache[instanceID] = false
+    _tickAuraDurationCacheTime[instanceID] = now
     return nil
 end
 
-local function IsAuraOwnedByPlayerOrPet(auraData, strictSource)
-    if not auraData then return false end
-
-    local ownedFlag = Helpers.SafeValue(auraData.isFromPlayerOrPlayerPet, nil)
-    if ownedFlag ~= nil and not strictSource then
-        return ownedFlag == true
-    end
-
-    local sourceUnit = Helpers.SafeValue(auraData.sourceUnit, nil)
-    if sourceUnit then
-        if sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle" then
-            return true
-        end
-        if UnitIsUnit then
-            if UnitExists("player") and UnitIsUnit(sourceUnit, "player") then return true end
-            if UnitExists("pet") and UnitIsUnit(sourceUnit, "pet") then return true end
-            if UnitExists("vehicle") and UnitIsUnit(sourceUnit, "vehicle") then return true end
-        end
-    end
-
-    local sourceGUID = Helpers.SafeValue(auraData.sourceGUID, nil)
-    if sourceGUID then
-        local playerGUID = UnitGUID and UnitGUID("player") or nil
-        local petGUID = UnitGUID and UnitGUID("pet") or nil
-        local vehicleGUID = UnitGUID and UnitGUID("vehicle") or nil
-        return sourceGUID == playerGUID or sourceGUID == petGUID or sourceGUID == vehicleGUID
-    end
-
-    if ownedFlag ~= nil then
-        return strictSource and false or ownedFlag == true
-    end
-
-    return false
-end
+local IsAuraOwnedByPlayerOrPet = Helpers.IsAuraOwnedByPlayerOrPet
 
 -- Units whose auras are inherently "ours" — buffs on player/pet/vehicle
 -- don't need a source check (other players' buffs on us are still ours to see).
@@ -187,33 +332,135 @@ local function IsUsableResolvedAuraData(auraUnit, auraData)
     return true
 end
 
-local function FindOwnedTargetAura(matchFn, filter)
-    if not matchFn then return nil end
-
-    if AuraUtil and AuraUtil.ForEachAura then
-        local found
-        AuraUtil.ForEachAura("target", filter or "HARMFUL", nil, function(auraData)
-            if auraData and matchFn(auraData) and IsAuraOwnedByPlayerOrPet(auraData, true) then
-                found = auraData
-                return true
+local function ChildLooksLive(child)
+    if not child then return false end
+    local viewer = child.viewerFrame
+    if viewer then
+        local itemPool = rawget(viewer, "itemFramePool")
+        if itemPool and itemPool.EnumerateActive then
+            for activeChild in itemPool:EnumerateActive() do
+                if activeChild == child then
+                    return true
+                end
             end
-            return false
-        end, true)
-        if found then
-            return found
+        end
+        local pandemicPool = rawget(viewer, "pandemicIconPool")
+        if pandemicPool and pandemicPool.EnumerateActive then
+            for activeChild in pandemicPool:EnumerateActive() do
+                if activeChild == child then
+                    return true
+                end
+            end
         end
     end
+    local ok, shown = pcall(child.IsShown, child)
+    return ok and shown or false
+end
 
+local function TryDurationOnlyAura(child, auraUnit, auraInstanceID)
+    if not child or not auraInstanceID or not C_UnitAuras.GetAuraDuration then
+        return nil
+    end
+    if not IsSelfUnit(auraUnit) then
+        return nil
+    end
+    if not ChildLooksLive(child) then
+        return nil
+    end
+    local durObj = TickCacheGetAuraDuration(auraUnit, auraInstanceID)
+    if durObj then
+        _tickAuraStats.durationOnlyHits = _tickAuraStats.durationOnlyHits + 1
+        return durObj
+    end
+    return nil
+end
+
+local function GetAuraApplications(unit, auraInstanceID)
+    if not unit or not auraInstanceID or not C_UnitAuras.GetAuraApplicationDisplayCount then
+        return false, nil
+    end
+    local now = GetTickAuraCacheNow()
+    if _tickAuraApplicationResolved[auraInstanceID] then
+        local stamp = _tickAuraApplicationCacheTime[auraInstanceID]
+        if stamp and (now - stamp) <= AURA_QUERY_CACHE_TTL then
+            return true, _tickAuraApplicationCache[auraInstanceID]
+        end
+        _tickAuraApplicationCache[auraInstanceID] = nil
+        _tickAuraApplicationResolved[auraInstanceID] = nil
+        _tickAuraApplicationCacheTime[auraInstanceID] = nil
+    end
+    _tickAuraStats.applicationQueries = _tickAuraStats.applicationQueries + 1
+    -- minDisplay=1 so single-stack stacking auras (e.g. Mana Tea on
+    -- Mistweaver) display their first stack instead of being clamped to nil.
+    local ok, stacks = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, auraInstanceID, 1, 99)
+    if ok then
+        _tickAuraApplicationCache[auraInstanceID] = stacks
+        _tickAuraApplicationResolved[auraInstanceID] = true
+        _tickAuraApplicationCacheTime[auraInstanceID] = now
+        return true, stacks
+    end
+    return false, nil
+end
+
+local function ScanOwnedTargetAuraBySpellID(spellID, filter)
     if C_UnitAuras and C_UnitAuras.GetUnitAuras then
         local ok, auras = pcall(C_UnitAuras.GetUnitAuras, "target", filter or "HARMFUL", 40)
         if ok and auras then
             for i = 1, #auras do
                 local auraData = auras[i]
-                if auraData and matchFn(auraData) and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                if auraData
+                   and Helpers.SafeValue(auraData.spellId, nil) == spellID
+                   and IsAuraOwnedByPlayerOrPet(auraData, true) then
                     return auraData
                 end
             end
         end
+    end
+
+    if AuraUtil and AuraUtil.ForEachAura then
+        local found
+        AuraUtil.ForEachAura("target", filter or "HARMFUL", nil, function(auraData)
+            if auraData
+               and Helpers.SafeValue(auraData.spellId, nil) == spellID
+               and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                found = auraData
+                return true
+            end
+            return false
+        end, true)
+        if found then return found end
+    end
+
+    return nil
+end
+
+local function ScanOwnedTargetAuraByName(spellName, filter)
+    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+        local ok, auras = pcall(C_UnitAuras.GetUnitAuras, "target", filter or "HARMFUL", 40)
+        if ok and auras then
+            for i = 1, #auras do
+                local auraData = auras[i]
+                if auraData
+                   and Helpers.SafeValue(auraData.name, nil) == spellName
+                   and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                    return auraData
+                end
+            end
+        end
+    end
+
+    if AuraUtil and AuraUtil.ForEachAura then
+        local found
+        AuraUtil.ForEachAura("target", filter or "HARMFUL", nil, function(auraData)
+            if auraData
+               and Helpers.SafeValue(auraData.name, nil) == spellName
+               and IsAuraOwnedByPlayerOrPet(auraData, true) then
+                found = auraData
+                return true
+            end
+            return false
+        end, true)
+        if found then return found end
     end
 
     return nil
@@ -221,16 +468,30 @@ end
 
 local function FindOwnedTargetAuraBySpellID(spellID, filter)
     if not spellID then return nil end
-    return FindOwnedTargetAura(function(auraData)
-        return Helpers.SafeValue(auraData.spellId, nil) == spellID
-    end, filter)
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
+        local directFilter = (not filter or filter == "HARMFUL") and "HARMFUL|PLAYER" or filter
+        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellID, "target", spellID, directFilter)
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
+            return ad
+        end
+    end
+
+    return ScanOwnedTargetAuraBySpellID(spellID, filter)
 end
 
 local function FindOwnedTargetAuraByName(spellName, filter)
     if not spellName or spellName == "" then return nil end
-    return FindOwnedTargetAura(function(auraData)
-        return Helpers.SafeValue(auraData.name, nil) == spellName
-    end, filter)
+
+    if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+        local directFilter = (not filter or filter == "HARMFUL") and "HARMFUL|PLAYER" or filter
+        local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "target", spellName, directFilter)
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
+            return ad
+        end
+    end
+
+    return ScanOwnedTargetAuraByName(spellName, filter)
 end
 
 local function FindOwnedAuraBySpellID(spellID)
@@ -238,17 +499,20 @@ local function FindOwnedAuraBySpellID(spellID)
 
     if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
         local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-        if ok and ad and ad.auraInstanceID then
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
             return ad
         end
     end
 
     if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID then
-        for _, unit in ipairs({ "player", "pet" }) do
-            local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellID, unit, spellID)
-            if ok and ad and ad.auraInstanceID then
-                return ad
+        local okPlayer, playerAura = pcall(C_UnitAuras.GetAuraDataBySpellID, "player", spellID)
+        if okPlayer and playerAura and playerAura.auraInstanceID and IsAuraOwnedByPlayerOrPet(playerAura, true) then
+            return playerAura
             end
+
+        local okPet, petAura = pcall(C_UnitAuras.GetAuraDataBySpellID, "pet", spellID)
+        if okPet and petAura and petAura.auraInstanceID and IsAuraOwnedByPlayerOrPet(petAura, true) then
+            return petAura
         end
 
         local targetAura = FindOwnedTargetAuraBySpellID(spellID, "HARMFUL")
@@ -752,13 +1016,7 @@ end
 
 local function ChildHasLiveState(ch, id1, id2, id3)
     if not ch then return false end
-    if ch.auraInstanceID and childTracksSpell(ch, id1, id2, id3) and C_UnitAuras.GetAuraDataByAuraInstanceID then
-        local unit = ch.auraDataUnit or "player"
-        local vdata = TickCacheGetAuraData(unit, ch.auraInstanceID)
-        if vdata then
-            return true
-        end
-    end
+
     local viewer = ch.viewerFrame
     local pool = viewer and rawget(viewer, "itemFramePool")
     if pool and pool.EnumerateActive then
@@ -771,7 +1029,24 @@ local function ChildHasLiveState(ch, id1, id2, id3)
     end
     local ok, shown = pcall(ch.IsShown, ch)
     _totemDbg("live: fallback shown=", tostring(ok and shown), "lidx=", SafeMaybeNumber(rawget(ch, "layoutIndex")) or "?")
-    return ok and shown or false
+    if ok and shown then
+        return true
+    end
+
+    if ch.auraInstanceID and childTracksSpell(ch, id1, id2, id3) then
+        local unit = ch.auraDataUnit or "player"
+        if C_UnitAuras.GetAuraDuration and TickCacheGetAuraDuration(unit, ch.auraInstanceID) then
+            return true
+        end
+        if C_UnitAuras.GetAuraDataByAuraInstanceID then
+            local vdata = TickCacheGetAuraData(unit, ch.auraInstanceID)
+            if vdata then
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
 function CDMSpellData:InvalidateChildMap()
@@ -779,8 +1054,7 @@ function CDMSpellData:InvalidateChildMap()
 end
 
 function CDMSpellData:WipeTickAuraCache()
-    wipe(_tickAuraDataCache)
-    wipe(_tickAuraDurationCache)
+    BeginTickAuraCache()
 end
 
 CDMSpellData.FindChildForSpell = FindChildForSpell
@@ -955,6 +1229,116 @@ childTracksSpell = function(ch, spellID, altID1, altID2)
     return false
 end
 
+-----------------------------------------------------------------------
+-- Totem-slot scoring helpers, hoisted to file scope.
+-- Previously these were defined inside ResolveAuraState, allocating 5+
+-- closures per call. ResolveAuraState fires per CDM aura icon per
+-- UpdateAllCooldowns batch (~20×/sec in combat × ~30+ aura icons), so
+-- the per-call closures were a major source of garbage churn outside
+-- any probed table. None of these capture per-call state — they only
+-- reference module-scope upvalues — so they're safe to hoist.
+-----------------------------------------------------------------------
+local function scoreSlotChild(child, slot)
+    if not child or not slot then return -1 end
+    local childSlot = ResolveChildTotemSlot(child, nil)
+    if not childSlot or childSlot ~= slot then
+        return -1
+    end
+    local score = 0
+    if _isViewerPoolActive(child.viewerFrame, child) then
+        score = score + 4
+    end
+    if child.cooldownInfo then
+        score = score + 2
+    end
+    if child.auraInstanceID then
+        score = score + 1
+    end
+    if child._cachedCdInfo then
+        score = score + 1
+    end
+    local prefSlot = SafeMaybeNumber(rawget(child, "preferredTotemUpdateSlot"))
+    if prefSlot and prefSlot == slot then
+        score = score + 1
+    end
+    return score
+end
+
+local function childHasReadableTexture(child)
+    if not child then return false end
+    local iconRegion = child.Icon or child.icon
+    local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
+    if texRegion and texRegion.GetTexture then
+        local ok, tex = pcall(texRegion.GetTexture, texRegion)
+        return ok and tex ~= nil
+    end
+    return false
+end
+
+local function scoreDisplayChild(child, slot)
+    local score = scoreSlotChild(child, slot)
+    if score < 0 then return score end
+    if CDMSpellData.GetChildSpellName and CDMSpellData.GetChildSpellName(child) then
+        score = score + 3
+    end
+    if childHasReadableTexture(child) then
+        score = score + 3
+    end
+    if child.cooldownInfo then
+        score = score + 1
+    end
+    return score
+end
+
+local function scoreFillChild(child, slot)
+    local score = scoreSlotChild(child, slot)
+    if score < 0 then return score end
+    if child.Bar then
+        score = score + 3
+    end
+    if child.Cooldown then
+        score = score + 2
+    end
+    if child.auraInstanceID then
+        score = score + 2
+    end
+    return score
+end
+
+-- findViewerChildForSlot: hoisted alongside the score helpers. Uses a
+-- module-scope `seen` scratch table that is wiped on entry rather than
+-- allocated fresh per call, and a shared helper instead of a per-call closure.
+local _findViewerSeen = {}
+local function considerViewerSlotList(list, targetViewer, slot, bestChild, bestScore)
+    if not list then return bestChild, bestScore end
+    for i = 1, #list do
+        local ch = list[i]
+        if ch and not _findViewerSeen[ch] and _matchesViewer(ch, targetViewer, nil) then
+            _findViewerSeen[ch] = true
+            local score = scoreSlotChild(ch, slot)
+            if score > bestScore then
+                bestScore = score
+                bestChild = ch
+            end
+        end
+    end
+    return bestChild, bestScore
+end
+
+local function findViewerChildForSlot(targetViewer, slot, id1, id2, id3)
+    if not targetViewer or not slot then return nil end
+    RebuildChildMap()
+    wipe(_findViewerSeen)
+    local bestChild
+    local bestScore = -1
+
+    if id1 then bestChild, bestScore = considerViewerSlotList(_childBySpellID[id1], targetViewer, slot, bestChild, bestScore) end
+    if id2 then bestChild, bestScore = considerViewerSlotList(_childBySpellID[id2], targetViewer, slot, bestChild, bestScore) end
+    if id3 then bestChild, bestScore = considerViewerSlotList(_childBySpellID[id3], targetViewer, slot, bestChild, bestScore) end
+
+    return bestChild
+end
+
 function CDMSpellData:ResolveAuraState(params)
     WipeAuraResult()
     local r = _auraResult
@@ -999,101 +1383,6 @@ function CDMSpellData:ResolveAuraState(params)
     local buffBarViewer  = _G["BuffBarCooldownViewer"]
     local explicitTotemSlot = params.totemSlot
     local disableLooseVisibilityFallback = params.disableLooseVisibilityFallback
-
-    local function scoreSlotChild(child, slot)
-        if not child or not slot then return -1 end
-        local childSlot = ResolveChildTotemSlot(child, nil)
-        if not childSlot or childSlot ~= slot then
-            return -1
-        end
-        local score = 0
-        if _isViewerPoolActive(child.viewerFrame, child) then
-            score = score + 4
-        end
-        if child.cooldownInfo then
-            score = score + 2
-        end
-        if child.auraInstanceID then
-            score = score + 1
-        end
-        if child._cachedCdInfo then
-            score = score + 1
-        end
-        local prefSlot = SafeMaybeNumber(rawget(child, "preferredTotemUpdateSlot"))
-        if prefSlot and prefSlot == slot then
-            score = score + 1
-        end
-        return score
-    end
-
-    local function childHasReadableTexture(child)
-        if not child then return false end
-        local iconRegion = child.Icon or child.icon
-        local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
-        if texRegion and texRegion.GetTexture then
-            local ok, tex = pcall(texRegion.GetTexture, texRegion)
-            return ok and tex ~= nil
-        end
-        return false
-    end
-
-    local function scoreDisplayChild(child, slot)
-        local score = scoreSlotChild(child, slot)
-        if score < 0 then return score end
-        if CDMSpellData.GetChildSpellName and CDMSpellData.GetChildSpellName(child) then
-            score = score + 3
-        end
-        if childHasReadableTexture(child) then
-            score = score + 3
-        end
-        if child.cooldownInfo then
-            score = score + 1
-        end
-        return score
-    end
-
-    local function scoreFillChild(child, slot)
-        local score = scoreSlotChild(child, slot)
-        if score < 0 then return score end
-        if child.Bar then
-            score = score + 3
-        end
-        if child.Cooldown then
-            score = score + 2
-        end
-        if child.auraInstanceID then
-            score = score + 2
-        end
-        return score
-    end
-
-    local function findViewerChildForSlot(targetViewer, slot, id1, id2, id3)
-        if not targetViewer or not slot then return nil end
-        RebuildChildMap()
-        local bestChild
-        local bestScore = -1
-        local seen = {}
-
-        local function considerList(list)
-            if not list then return end
-            for _, ch in ipairs(list) do
-                if ch and not seen[ch] and _matchesViewer(ch, targetViewer, nil) then
-                    seen[ch] = true
-                    local score = scoreSlotChild(ch, slot)
-                    if score > bestScore then
-                        bestScore = score
-                        bestChild = ch
-                    end
-                end
-            end
-        end
-
-        if id1 then considerList(_childBySpellID[id1]) end
-        if id2 then considerList(_childBySpellID[id2]) end
-        if id3 then considerList(_childBySpellID[id3]) end
-
-        return bestChild
-    end
 
     if blzChild then
         local idsMatch = false
@@ -1255,18 +1544,30 @@ function CDMSpellData:ResolveAuraState(params)
     -----------------------------------------------------------------------
     local isActive = false
     local childAuraInstID = nil
+    local childAuraSource = nil
     local auraUnit = "player"
 
     if blzChild then
         childAuraInstID = blzChild.auraInstanceID
+        childAuraSource = blzChild
         auraUnit = blzChild.auraDataUnit or "player"
     end
     if not childAuraInstID and blzBarChild then
         childAuraInstID = blzBarChild.auraInstanceID
+        childAuraSource = blzBarChild
         auraUnit = blzBarChild.auraDataUnit or "player"
     end
 
-    if childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
+    if childAuraInstID then
+        local durObj = TryDurationOnlyAura(childAuraSource, auraUnit, childAuraInstID)
+        if durObj then
+            AuraStateDebug(debugAura, "phase3-duration", "unit=", auraUnit, "inst=", childAuraInstID)
+            isActive = true
+            r.durObj = durObj
+        end
+    end
+
+    if not isActive and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
         local vdata = TickCacheGetAuraData(auraUnit, childAuraInstID)
         if IsUsableResolvedAuraData(auraUnit, vdata) then
             AuraStateDebug(debugAura, "phase3-inst", "unit=", auraUnit, "inst=", childAuraInstID)
@@ -1286,6 +1587,9 @@ function CDMSpellData:ResolveAuraState(params)
     -- Reject harmful passives (always-present talent auras like Perdition).
     -----------------------------------------------------------------------
     -- 1. Player aura by spell ID (helpful only)
+    -- GetPlayerAuraBySpellID returns ANY aura on the player with that spellID
+    -- regardless of caster, so a class-mate's buff on us would otherwise
+    -- mark our tracker active. Reject unless the source is the player/pet.
     if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
         for tryIdx = 1, 3 do
             if isActive then break end
@@ -1295,7 +1599,7 @@ function CDMSpellData:ResolveAuraState(params)
                 local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
                 if ok and ad and ad.auraInstanceID then
                     local helpful = Helpers.SafeValue(ad.isHelpful, nil)
-                    if helpful ~= false then
+                    if helpful ~= false and IsAuraOwnedByPlayerOrPet(ad, true) then
                         AuraStateDebug(debugAura, "phase4-player-id", "tryID=", tryID, "inst=", ad.auraInstanceID)
                         isActive = true
                         childAuraInstID = ad.auraInstanceID
@@ -1309,7 +1613,7 @@ function CDMSpellData:ResolveAuraState(params)
     -- 2. Player buff by name
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
-        if ok and ad and ad.auraInstanceID then
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
             AuraStateDebug(debugAura, "phase4-player-name", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
@@ -1320,7 +1624,7 @@ function CDMSpellData:ResolveAuraState(params)
     -- 3. Pet buff by name
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "pet", entryName, "HELPFUL")
-        if ok and ad and ad.auraInstanceID then
+        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
             AuraStateDebug(debugAura, "phase4-pet-name", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
@@ -1358,15 +1662,26 @@ function CDMSpellData:ResolveAuraState(params)
             local bok, bshown = pcall(blzChild.IsShown, blzChild)
             if bok and bshown then
                 local shownAuraUnit = blzChild.auraDataUnit or "player"
-                local shownAuraData = C_UnitAuras.GetAuraDataByAuraInstanceID
-                    and TickCacheGetAuraData(shownAuraUnit, blzChild.auraInstanceID)
-                    or nil
-                if IsUsableResolvedAuraData(shownAuraUnit, shownAuraData) then
-                    AuraStateDebug(debugAura, "phase5b-primary-shown", "unit=", shownAuraUnit, "inst=", blzChild.auraInstanceID)
+                local durObj = TryDurationOnlyAura(blzChild, shownAuraUnit, blzChild.auraInstanceID)
+                if durObj then
+                    AuraStateDebug(debugAura, "phase5b-primary-duration", "unit=", shownAuraUnit, "inst=", blzChild.auraInstanceID)
                     childAuraInstID = blzChild.auraInstanceID
+                    childAuraSource = blzChild
                     auraUnit = shownAuraUnit
-                    r.auraData = shownAuraData or r.auraData
+                    r.durObj = durObj
                     isActive = true
+                else
+                    local shownAuraData = C_UnitAuras.GetAuraDataByAuraInstanceID
+                        and TickCacheGetAuraData(shownAuraUnit, blzChild.auraInstanceID)
+                        or nil
+                    if IsUsableResolvedAuraData(shownAuraUnit, shownAuraData) then
+                        AuraStateDebug(debugAura, "phase5b-primary-shown", "unit=", shownAuraUnit, "inst=", blzChild.auraInstanceID)
+                        childAuraInstID = blzChild.auraInstanceID
+                        childAuraSource = blzChild
+                        auraUnit = shownAuraUnit
+                        r.auraData = shownAuraData or r.auraData
+                        isActive = true
+                    end
                 end
             end
         end
@@ -1384,15 +1699,26 @@ function CDMSpellData:ResolveAuraState(params)
             local bok, bshown = pcall(blzBarChild.IsShown, blzBarChild)
             if bok and bshown then
                 local shownAuraUnit = blzBarChild.auraDataUnit or "player"
-                local shownAuraData = C_UnitAuras.GetAuraDataByAuraInstanceID
-                    and TickCacheGetAuraData(shownAuraUnit, blzBarChild.auraInstanceID)
-                    or nil
-                if IsUsableResolvedAuraData(shownAuraUnit, shownAuraData) then
-                    AuraStateDebug(debugAura, "phase6-bar-shown", "unit=", shownAuraUnit, "inst=", blzBarChild.auraInstanceID)
+                local durObj = TryDurationOnlyAura(blzBarChild, shownAuraUnit, blzBarChild.auraInstanceID)
+                if durObj then
+                    AuraStateDebug(debugAura, "phase6-bar-duration", "unit=", shownAuraUnit, "inst=", blzBarChild.auraInstanceID)
                     childAuraInstID = blzBarChild.auraInstanceID
+                    childAuraSource = blzBarChild
                     auraUnit = shownAuraUnit
-                    r.auraData = shownAuraData or r.auraData
+                    r.durObj = durObj
                     isActive = true
+                else
+                    local shownAuraData = C_UnitAuras.GetAuraDataByAuraInstanceID
+                        and TickCacheGetAuraData(shownAuraUnit, blzBarChild.auraInstanceID)
+                        or nil
+                    if IsUsableResolvedAuraData(shownAuraUnit, shownAuraData) then
+                        AuraStateDebug(debugAura, "phase6-bar-shown", "unit=", shownAuraUnit, "inst=", blzBarChild.auraInstanceID)
+                        childAuraInstID = blzBarChild.auraInstanceID
+                        childAuraSource = blzBarChild
+                        auraUnit = shownAuraUnit
+                        r.auraData = shownAuraData or r.auraData
+                        isActive = true
+                    end
                 end
             end
         end
@@ -1455,7 +1781,9 @@ function CDMSpellData:ResolveAuraState(params)
     -----------------------------------------------------------------------
     -- Phase 6: Post-detection resolution
     -----------------------------------------------------------------------
-    -- If active but no auraInstanceID, try name-based lookups
+    -- If active but no auraInstanceID, try name-based lookups.
+    -- Reject foreign-source hits so we don't pull duration/stack info from
+    -- a class-mate's aura on us.
     if isActive and not childAuraInstID and entryName and entryName ~= "" then
         if C_UnitAuras.GetAuraDataBySpellName then
             local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
@@ -1465,7 +1793,7 @@ function CDMSpellData:ResolveAuraState(params)
             end
             if not childAuraInstID then
                 local pok, pad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
-                if pok and pad and pad.auraInstanceID then
+                if pok and pad and pad.auraInstanceID and IsAuraOwnedByPlayerOrPet(pad, true) then
                     childAuraInstID = pad.auraInstanceID
                     auraUnit = "player"
                 end
@@ -1477,7 +1805,7 @@ function CDMSpellData:ResolveAuraState(params)
                 local tryID = tryIdx == 1 and auraSpellID or tryIdx == 2 and entrySpellID or entryID
                 if tryID then
                     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
-                    if ok and ad and ad.auraInstanceID then
+                    if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
                         childAuraInstID = ad.auraInstanceID
                         auraUnit = "player"
                     end
@@ -1497,26 +1825,42 @@ function CDMSpellData:ResolveAuraState(params)
     -- Get stacks: name search (player → pet → target) → instID fallback
     if isActive then
         local apps
-        if entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
-            for _, stackUnit in ipairs({"player", "pet"}) do
-                if not apps then
+        local appsResolved = false
+        if childAuraInstID then
+            local gotApps, stackApps = GetAuraApplications(auraUnit, childAuraInstID)
+            if gotApps then
+                apps = stackApps
+                appsResolved = true
+            end
+        end
+        if not appsResolved and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
+            for i = 1, #STACK_SEARCH_UNITS do
+                local stackUnit = STACK_SEARCH_UNITS[i]
+                if not appsResolved then
+                    _tickAuraStats.stackNameQueries = _tickAuraStats.stackNameQueries + 1
                     local nok, nad = pcall(C_UnitAuras.GetAuraDataBySpellName, stackUnit, entryName, "HELPFUL")
-                    if nok and nad and nad.applications then
-                        apps = nad.applications
+                    local nadApps = nad and nad.applications
+                    if nok and nad and nadApps ~= nil and IsAuraOwnedByPlayerOrPet(nad, true) then
+                        apps = nadApps
+                        appsResolved = true
                     end
                 end
             end
-            if not apps then
+            if not appsResolved then
                 local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
-                if tad and tad.applications then
-                    apps = tad.applications
+                local tadApps = tad and tad.applications
+                if tadApps ~= nil then
+                    apps = tadApps
+                    appsResolved = true
                 end
             end
         end
-        if not apps and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
+        if not appsResolved and childAuraInstID and C_UnitAuras.GetAuraDataByAuraInstanceID then
             local instData = TickCacheGetAuraData(auraUnit, childAuraInstID)
-            if IsUsableResolvedAuraData(auraUnit, instData) and instData.applications then
-                apps = instData.applications
+            local instApps = instData and instData.applications
+            if IsUsableResolvedAuraData(auraUnit, instData) and instApps ~= nil then
+                apps = instApps
+                appsResolved = true
             end
         end
         r.stacks = apps
@@ -1601,7 +1945,7 @@ end
 -- ticker (0.5s) picks up children once they're ready.
 ---------------------------------------------------------------------------
 local function ForceLoadCDM()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return end
     -- Ensure the Blizzard addon is loaded (no-op if already loaded)
     if C_AddOns and C_AddOns.LoadAddOn then
         pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownManager")
@@ -1768,6 +2112,12 @@ local function ScanCooldownViewer(viewerType)
                 -- QUI mirrors Blizzard child alpha for visibility; pool size
                 -- and container dimensions are always based on all icons.
                 if hasTex or hasCDInfo then
+                    -- Replace this child's prior spell mappings before adding the
+                    -- current IDs. Buff aura rescans run frequently and only
+                    -- touch the buff viewer, so append-only mapping causes
+                    -- fight-long growth and stale spell→child candidates.
+                    ClearChildSpellMappings(child)
+
                     local spellID, overrideSpellID, name, isAura
                     local layoutIndex = child.layoutIndex or 9999
 
@@ -1826,12 +2176,10 @@ local function ScanCooldownViewer(viewerType)
                         -- Map by info struct IDs, corrected IDs, and aura-specific IDs
                         -- so tracked spells can find their Blizzard child in combat.
                         local mappedIDs = { [spellID] = true }
-                        if not _spellIDToChild[spellID] then _spellIDToChild[spellID] = {} end
-                        _spellIDToChild[spellID][#_spellIDToChild[spellID] + 1] = child
+                        MapSpellIDToChild(spellID, child)
                         if overrideSpellID and overrideSpellID ~= spellID then
                             mappedIDs[overrideSpellID] = true
-                            if not _spellIDToChild[overrideSpellID] then _spellIDToChild[overrideSpellID] = {} end
-                            _spellIDToChild[overrideSpellID][#_spellIDToChild[overrideSpellID] + 1] = child
+                            MapSpellIDToChild(overrideSpellID, child)
                         end
                         -- Also map by corrected aura ID (from _cdIDToCorrectSID)
                         -- and GetAuraSpellID — these are the IDs tracked spells use.
@@ -1840,8 +2188,7 @@ local function ScanCooldownViewer(viewerType)
                         if cdID and _cdIDToCorrectSID and _cdIDToCorrectSID[cdID] and not mappedIDs[_cdIDToCorrectSID[cdID]] then
                             local correctSid = _cdIDToCorrectSID[cdID]
                             mappedIDs[correctSid] = true
-                            if not _spellIDToChild[correctSid] then _spellIDToChild[correctSid] = {} end
-                            _spellIDToChild[correctSid][#_spellIDToChild[correctSid] + 1] = child
+                            MapSpellIDToChild(correctSid, child)
                         end
                         if child.GetAuraSpellID then
                             local aok, auraSid = pcall(child.GetAuraSpellID, child)
@@ -1849,8 +2196,7 @@ local function ScanCooldownViewer(viewerType)
                                 local safeAuraSid = Helpers.SafeValue(auraSid, nil)
                                 if safeAuraSid and safeAuraSid > 0 and not mappedIDs[safeAuraSid] then
                                     mappedIDs[safeAuraSid] = true
-                                    if not _spellIDToChild[safeAuraSid] then _spellIDToChild[safeAuraSid] = {} end
-                                    _spellIDToChild[safeAuraSid][#_spellIDToChild[safeAuraSid] + 1] = child
+                                    MapSpellIDToChild(safeAuraSid, child)
                                 end
                             end
                         end
@@ -1860,8 +2206,7 @@ local function ScanCooldownViewer(viewerType)
                                 local safeFrameSid = Helpers.SafeValue(frameSid, nil)
                                 if safeFrameSid and safeFrameSid > 0 and not mappedIDs[safeFrameSid] then
                                     mappedIDs[safeFrameSid] = true
-                                    if not _spellIDToChild[safeFrameSid] then _spellIDToChild[safeFrameSid] = {} end
-                                    _spellIDToChild[safeFrameSid][#_spellIDToChild[safeFrameSid] + 1] = child
+                                    MapSpellIDToChild(safeFrameSid, child)
                                 end
                             end
                         end
@@ -1874,8 +2219,7 @@ local function ScanCooldownViewer(viewerType)
                                     local safeLsid = Helpers.SafeValue(lsid, nil)
                                     if safeLsid and safeLsid > 0 and not mappedIDs[safeLsid] then
                                         mappedIDs[safeLsid] = true
-                                        if not _spellIDToChild[safeLsid] then _spellIDToChild[safeLsid] = {} end
-                                        _spellIDToChild[safeLsid][#_spellIDToChild[safeLsid] + 1] = child
+                                        MapSpellIDToChild(safeLsid, child)
                                     end
                                 end
                             end
@@ -2002,7 +2346,7 @@ local function ScanViewer(viewerType)
 end
 
 local function ScanAll()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return end
 
     -- Rebuild the spell→child map fresh each scan to prevent unbounded
     -- growth from duplicate entries.  Hooks on child Cooldown frames
@@ -2826,7 +3170,7 @@ end
 
 -- SnapshotBlizzardCDM: One-time capture of Blizzard viewer spells into ownedSpells
 function CDMSpellData:SnapshotBlizzardCDM(containerKey)
-    if InCombatLockdown() then
+    if InCombatLockdown() and not ns._inInitSafeWindow then
         return false
     end
 
@@ -4456,7 +4800,7 @@ function CDMSpellData:ForceScan()
     -- Scan all three viewers synchronously but do NOT fire QUI_OnSpellDataChanged.
     -- This prevents a feedback loop: RefreshAll → ForceScan → changed → callback → RefreshAll.
     -- Update fingerprints so the periodic ScanAll ticker won't re-detect the same change.
-    if InCombatLockdown() then
+    if InCombatLockdown() and not ns._inInitSafeWindow then
         return
     end
     ScanViewer("essential")
@@ -4517,8 +4861,8 @@ function CDMSpellData:Initialize()
     HideBlizzardViewers()
     ForceLoadCDM()
     -- Immediate scan: succeeds during /reload when viewers are already
-    -- populated.  At ADDON_LOADED the safe window allows this even on
-    -- combat reload (InCombatLockdown() returns false).
+    -- populated. At ADDON_LOADED the safe window allows this even on
+    -- combat reload while InCombatLockdown() still reports true.
     ScanAll()
     -- Deferred re-scan: handles first login where viewers populate after us.
     C_Timer.After(0.5, function()
@@ -4563,6 +4907,7 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("SPELLS_CHANGED")
     eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+    eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     -- 12.0.5: auraInstanceID values re-randomize on encounter/M+/PvP start,
     -- so the auraInstanceID-keyed tick caches must be evicted to avoid stale
     -- negative entries masking newly-applied auras.
@@ -4625,9 +4970,11 @@ function CDMSpellData:Initialize()
             -- (12.0.5+). Wipe the auraInstanceID-keyed tick caches so old
             -- negative entries (`false`) don't mask newly-applied auras that
             -- happen to land on a previously-seen ID.
-            wipe(_tickAuraDataCache)
-            wipe(_tickAuraDurationCache)
+            ClearTickAuraCache()
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            ClearTickAuraCache()
         elseif event == "PLAYER_ENTERING_WORLD" then
+            ClearTickAuraCache()
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.
             -- APIs are stale for ~1-2s after entering a new zone/instance.
             _inZoneTransition = true

@@ -662,6 +662,10 @@ function QUI_LayoutMode:Open()
                 print("|cff60A5FAQUI:|r Layout Mode closed (combat). Unsaved changes discarded.")
             elseif event == "PLAYER_REGEN_ENABLED" then
                 C_Timer.After(0.5, function()
+                    -- Combat may have re-entered during the deferred window
+                    -- (M+ trash chains).  Bail; _pendingCombatClose stays
+                    -- set so the next PLAYER_REGEN_ENABLED arms a fresh timer.
+                    if InCombatLockdown() then return end
                     if QUI_LayoutMode._pendingCombatClose then
                         QUI_LayoutMode._pendingCombatClose = nil
                         QUI_LayoutMode:DiscardAndClose()
@@ -874,7 +878,41 @@ function QUI_LayoutMode:_CombatSuspend()
     if not self.isActive then return end
     self._combatSuspended = true
 
-    -- Hide all handles and UI but preserve state
+    -- Proxy-mover handles parent the gameplay frame INTO the handle, so
+    -- hiding the handle would also hide the frame for the duration of the
+    -- encounter.  Mirror the Close() re-pin (~:712) before the Hide so the
+    -- frame stays attached to UIParent.  pcall'd: succeeds for unprotected
+    -- frames; silently fails under combat lockdown for protected ones
+    -- (objective tracker, boss frames) which remain invisible until
+    -- DiscardAndClose runs after combat — same as the prior behavior.
+    -- Child overlays are unaffected (handle is parented to the frame, not
+    -- the other way around) and skip this path.
+    for key, handle in pairs(self._handles) do
+        if not handle._isChildOverlay and handle._savedTargetParent then
+            local def = self._elements[key]
+            local targetFrame = def and def.getFrame and def.getFrame()
+            if targetFrame then
+                pcall(targetFrame.SetParent, targetFrame, handle._savedTargetParent)
+                if handle._savedTargetStrata then
+                    pcall(targetFrame.SetFrameStrata, targetFrame, handle._savedTargetStrata)
+                end
+                local cx, cy = handle:GetCenter()
+                if cx and cy then
+                    local hs = handle:GetEffectiveScale() or 1
+                    local us = UIParent:GetEffectiveScale() or 1
+                    local uw = UIParent:GetWidth() or 0
+                    local uh = UIParent:GetHeight() or 0
+                    local ox = (cx * hs / us) - (uw / 2)
+                    local oy = (cy * hs / us) - (uh / 2)
+                    pcall(targetFrame.ClearAllPoints, targetFrame)
+                    pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", ox, oy)
+                end
+            end
+        end
+    end
+
+    -- Hide all handles and UI but preserve state.  Frames re-pinned above
+    -- are no longer parented to handles and remain visible.
     for _, handle in pairs(self._handles) do
         handle:Hide()
     end

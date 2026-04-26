@@ -76,14 +76,35 @@ local framePrevBuffCount = Helpers.CreateStateTable()
 -- indicators, and pinned aura consumers. Full scans populate it, and set
 -- changes mutate it incrementally from UNIT_AURA updateInfo payloads.
 local unitAuraCache = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "GF_unitAuraCache", tbl = unitAuraCache } end
+local auraStats = {
+    fullScans = 0,
+    slotScans = 0,
+    legacyScans = 0,
+    deltaApplied = 0,
+    deltaFallback = 0,
+    fastUpdates = 0,
+    fullUpdateEvents = 0,
+}
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GF_unitAuraCache", tbl = unitAuraCache }
+    mp[#mp + 1] = { name = "GF_auraFullScans", fn = function() return auraStats.fullScans end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraSlotScans", fn = function() return auraStats.slotScans end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraLegacyScans", fn = function() return auraStats.legacyScans end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDeltaApplied", fn = function() return auraStats.deltaApplied end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDeltaFallback", fn = function() return auraStats.deltaFallback end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraFastUpdates", fn = function() return auraStats.fastUpdates end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraFullUpdateEvents", fn = function() return auraStats.fullUpdateEvents end, counter = true }
+end
 
 local DISPEL_FILTER = "HARMFUL|RAID_PLAYER_DISPELLABLE"
+local MAX_SCAN_AURAS = 40
 
 -- Classify a single harmful aura as dispellable by the current player.
 -- Returns true/false; returns nil when the API is unavailable.
 -- No pcall — IsAuraFilteredOutByInstanceID is C-side, returns nil on error.
 local IsAuraFilteredOut = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
+local GetAuraSlots = C_UnitAuras and C_UnitAuras.GetAuraSlots
+local GetAuraDataBySlot = C_UnitAuras and C_UnitAuras.GetAuraDataBySlot
 
 local function ClassifyDispellable(unit, instID)
     if not instID or IsSecretValue(instID) then return nil end
@@ -336,30 +357,62 @@ local function ReplaceAuraInBucket(cache, bucketName, instID, auraData)
     return true
 end
 
+local function AppendSlotAuras(unit, dst, ...)
+    local n = select("#", ...)
+    for i = 2, n do
+        local slot = select(i, ...)
+        if slot then
+            local auraData = GetAuraDataBySlot(unit, slot)
+            if auraData and auraData.auraInstanceID then
+                dst[#dst + 1] = auraData
+            end
+        end
+    end
+end
+
+local function ScanUnitAurasBySlot(unit, cache)
+    if not GetAuraSlots or not GetAuraDataBySlot then
+        return false
+    end
+
+    AppendSlotAuras(unit, cache.harmful, GetAuraSlots(unit, "HARMFUL", MAX_SCAN_AURAS))
+    AppendSlotAuras(unit, cache.helpful, GetAuraSlots(unit, "HELPFUL", MAX_SCAN_AURAS))
+    return true
+end
+
+local function ScanUnitAurasLegacy(unit, cache)
+    local GetUnitAuras = C_UnitAuras and C_UnitAuras.GetUnitAuras
+    if not GetUnitAuras then return false end
+
+    local harmful = GetUnitAuras(unit, "HARMFUL", MAX_SCAN_AURAS)
+    if harmful then
+        local dst = cache.harmful
+        for i = 1, #harmful do
+            dst[i] = harmful[i]
+        end
+    end
+
+    local helpful = GetUnitAuras(unit, "HELPFUL", MAX_SCAN_AURAS)
+    if helpful then
+        local dst = cache.helpful
+        for i = 1, #helpful do
+            dst[i] = helpful[i]
+        end
+    end
+    return true
+end
+
 local function ScanUnitAuras(unit)
     local cache = EnsureAuraCache(unit)
     ResetAuraCache(cache)
 
-    local GetUnitAuras = C_UnitAuras.GetUnitAuras
-    if not GetUnitAuras then return cache end
-
-    -- No pcall — GetUnitAuras is C-side, returns nil on invalid unit.
-    local harmful = GetUnitAuras(unit, "HARMFUL", 40)
-    if harmful then
-        local dst = cache.harmful
-        for i = 1, #harmful do
-            local ad = harmful[i]
-            dst[i] = ad
-        end
-    end
-
-    local helpful = GetUnitAuras(unit, "HELPFUL", 40)
-    if helpful then
-        local dst = cache.helpful
-        for i = 1, #helpful do
-            local ad = helpful[i]
-            dst[i] = ad
-        end
+    auraStats.fullScans = auraStats.fullScans + 1
+    if ScanUnitAurasBySlot(unit, cache) then
+        auraStats.slotScans = auraStats.slotScans + 1
+    elseif ScanUnitAurasLegacy(unit, cache) then
+        auraStats.legacyScans = auraStats.legacyScans + 1
+    else
+        return cache
     end
 
     RebuildHarmfulMaps(unit, cache)
@@ -464,6 +517,7 @@ end
 
 -- Expose cache for other modules (dispel overlay, defensive indicator)
 QUI_GFA.unitAuraCache = unitAuraCache
+QUI_GFA.auraStats = auraStats
 QUI_GFA.ScanUnitAuras = ScanUnitAuras
 QUI_GFA.ApplyAuraDelta = ApplyAuraDelta
 QUI_GFA.PruneAuraCache = PruneAuraCache
@@ -480,6 +534,7 @@ local timerIcons = {} -- Icons registered for duration updates
 local sharedTimerFrame = CreateFrame("Frame")
 local TIMER_INTERVAL = 0.2 -- Update duration text at 5 Hz (200ms)
 local floor = math.floor
+local timerIconCount = 0
 
 -- Compute the bucket for a remaining duration WITHOUT allocating a string.
 -- Only call FormatDuration when the bucket actually changed.
@@ -528,6 +583,66 @@ end
 
 local timerElapsed = 0
 local cachedShowDurationColor = true
+local GetFontPath
+
+local function IsDurationTextEnabled(auraSettings, settingKey)
+    if not auraSettings then return true end
+    local specific = auraSettings[settingKey]
+    if specific ~= nil then
+        return specific ~= false
+    end
+    -- Backward compatibility for profiles that still only have the legacy shared key.
+    return auraSettings.showDurationText ~= false
+end
+
+local function IsDurationTimeColorEnabled(auraSettings, settingKey)
+    if not auraSettings then return true end
+    local specific = auraSettings[settingKey]
+    if specific ~= nil then
+        return specific ~= false
+    end
+    return auraSettings.showDurationColor ~= false
+end
+
+local function GetDurationTextColor(auraSettings, colorKey)
+    if auraSettings then
+        local c = auraSettings[colorKey]
+        if c then
+            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+        end
+    end
+    return 1, 1, 1, 1
+end
+
+local function GetDurationFontPath(auraSettings, fontKey)
+    local fontName = auraSettings and auraSettings[fontKey]
+    if fontName and fontName ~= "" then
+        local fetched = LSM:Fetch("font", fontName)
+        if fetched then return fetched end
+    end
+    return GetFontPath()
+end
+
+local function ApplyDurationTextStyle(icon, auraSettings, prefix)
+    if not icon or not icon.durationText then return end
+
+    local durationText = icon.durationText
+    local fontPath = GetDurationFontPath(auraSettings, prefix .. "DurationFont")
+    local fontSize = auraSettings and (auraSettings[prefix .. "DurationFontSize"] or auraSettings.durationFontSize) or 9
+    local anchor = auraSettings and auraSettings[prefix .. "DurationAnchor"] or "BOTTOM"
+    local offsetX = auraSettings and auraSettings[prefix .. "DurationOffsetX"] or 0
+    local offsetY = auraSettings and auraSettings[prefix .. "DurationOffsetY"] or -6
+
+    durationText:SetFont(fontPath, fontSize or 9, "OUTLINE")
+    durationText:ClearAllPoints()
+    durationText:SetPoint(anchor or "BOTTOM", icon, anchor or "BOTTOM", offsetX or 0, offsetY or -6)
+
+    local state = icon._auraState
+    if state then
+        state._lastBucket = nil
+        state._lastColorBand = nil
+    end
+end
 
 local function SharedTimerOnUpdate(self, dt)
     timerElapsed = timerElapsed + dt
@@ -543,13 +658,12 @@ local function SharedTimerOnUpdate(self, dt)
     -- Pre-compute aura settings for both contexts (avoids per-icon table walks)
     local raidAuras = db and db.raid and db.raid.auras
     local partyAuras = db and db.party and db.party.auras
-    local hasAny = false
-
     for icon, state in pairs(timerIcons) do
-        hasAny = true
         if not icon:IsShown() then
-            -- Skip hidden icons entirely — overflow icons that exceed
-            -- maxDebuffs/maxBuffs limits in raids.
+            -- Hidden icons no longer need timer work; UpdateFrameAuras will
+            -- re-register them if they become visible again.
+            timerIcons[icon] = nil
+            timerIconCount = timerIconCount - 1
         elseif state.expirationTime then
             -- Values are guaranteed non-secret: UpdateAuraIcon only registers
             -- icons into timerIcons when duration passes IsSecretValue check.
@@ -561,7 +675,7 @@ local function SharedTimerOnUpdate(self, dt)
                 if icon.durationText then
                     local isRaid = icon.unitFrame and icon.unitFrame._isRaid
                     local auraSettings = isRaid and raidAuras or partyAuras
-                    local showDurationText = not auraSettings or auraSettings.showDurationText ~= false
+                    local showDurationText = IsDurationTextEnabled(auraSettings, icon._durationTextSettingKey)
                     if showDurationText then
                         -- PERF: Compute bucket (zero allocation) BEFORE formatting.
                         -- Only call FormatDuration (string.format) when display changes.
@@ -570,9 +684,9 @@ local function SharedTimerOnUpdate(self, dt)
                             icon.durationText:SetText(FormatDuration(remaining))
                             state._lastBucket = bucket
                         end
-                        -- Color: throttled to 1 Hz per icon (expensive in raids)
-                        local showDurationColor = not auraSettings or auraSettings.showDurationColor ~= false
-                        if showDurationColor then
+                        -- Color: throttled to 1 Hz per icon for dynamic duration bands.
+                        local useTimeColor = IsDurationTimeColorEnabled(auraSettings, icon._durationUseTimeColorKey)
+                        if useTimeColor then
                             local lastColorTime = state._lastColorTime or 0
                             if (now - lastColorTime) >= 1.0 then
                                 state._lastColorTime = now
@@ -583,9 +697,10 @@ local function SharedTimerOnUpdate(self, dt)
                                     state._lastColorBand = band
                                 end
                             end
-                        elseif state._lastColorBand ~= 0 then
-                            icon.durationText:SetTextColor(1, 1, 1, 1)
-                            state._lastColorBand = 0
+                        elseif state._lastColorBand ~= "static" then
+                            local r, g, b, a = GetDurationTextColor(auraSettings, icon._durationColorKey)
+                            icon.durationText:SetTextColor(r, g, b, a)
+                            state._lastColorBand = "static"
                         end
                     else
                         icon.durationText:SetText("")
@@ -595,14 +710,17 @@ local function SharedTimerOnUpdate(self, dt)
                 -- Expired
                 if icon.durationText then icon.durationText:SetText("") end
                 timerIcons[icon] = nil
+                timerIconCount = timerIconCount - 1
             end
         else
             timerIcons[icon] = nil
+            timerIconCount = timerIconCount - 1
         end
     end
 
     -- Auto-disable when no icons remain
-    if not hasAny then
+    if timerIconCount <= 0 then
+        timerIconCount = 0
         self:SetScript("OnUpdate", nil)
     end
 end
@@ -611,7 +729,10 @@ end
 sharedTimerFrame:SetScript("OnUpdate", nil)
 
 local function RegisterIconTimer(icon, state)
-    local wasEmpty = next(timerIcons) == nil
+    local wasEmpty = timerIconCount == 0
+    if not timerIcons[icon] then
+        timerIconCount = timerIconCount + 1
+    end
     timerIcons[icon] = state
     if wasEmpty then
         timerElapsed = 0
@@ -620,7 +741,11 @@ local function RegisterIconTimer(icon, state)
 end
 
 local function UnregisterIconTimer(icon)
-    timerIcons[icon] = nil
+    if timerIcons[icon] then
+        timerIcons[icon] = nil
+        timerIconCount = timerIconCount - 1
+        if timerIconCount < 0 then timerIconCount = 0 end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -644,6 +769,43 @@ local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCou
     return step, 0 -- fallback to RIGHT
 end
 
+local function ComposeAnchor(horizontal, vertical)
+    if vertical == "TOP" then
+        if horizontal == "LEFT" then return "TOPLEFT" end
+        if horizontal == "RIGHT" then return "TOPRIGHT" end
+        return "TOP"
+    elseif vertical == "BOTTOM" then
+        if horizontal == "LEFT" then return "BOTTOMLEFT" end
+        if horizontal == "RIGHT" then return "BOTTOMRIGHT" end
+        return "BOTTOM"
+    end
+
+    if horizontal == "LEFT" then return "LEFT" end
+    if horizontal == "RIGHT" then return "RIGHT" end
+    return "CENTER"
+end
+
+local function GetIconAnchorForGrow(frameAnchor, direction)
+    local horizontal = frameAnchor and frameAnchor:find("LEFT") and "LEFT"
+        or frameAnchor and frameAnchor:find("RIGHT") and "RIGHT"
+        or "CENTER"
+    local vertical = frameAnchor and frameAnchor:find("TOP") and "TOP"
+        or frameAnchor and frameAnchor:find("BOTTOM") and "BOTTOM"
+        or "CENTER"
+
+    if direction == "RIGHT" or direction == "CENTER" then
+        horizontal = "LEFT"
+    elseif direction == "LEFT" then
+        horizontal = "RIGHT"
+    elseif direction == "UP" then
+        vertical = "BOTTOM"
+    elseif direction == "DOWN" then
+        vertical = "TOP"
+    end
+
+    return ComposeAnchor(horizontal, vertical)
+end
+
 -- Track icons that need mouse setup deferred from combat
 local pendingMouseFix = false
 
@@ -653,7 +815,7 @@ local pendingMouseFix = false
 -- Cached font path: rebuilt on layout invalidation, avoids per-icon DB+LSM lookups.
 local _cachedFontPath = nil
 
-local function GetFontPath()
+function GetFontPath()
     if _cachedFontPath then return _cachedFontPath end
     local db = GetDB()
     local vdb = db and (db.party or db)
@@ -1180,6 +1342,7 @@ local function UpdateFrameAuras(frame)
         local dOffX = auraSettings.debuffOffsetX or -2
         local dOffY = auraSettings.debuffOffsetY or -18
         if sub(dAnchor, 1, 6) == "BOTTOM" then dOffY = dOffY + (frame._bottomPad or 0) end
+        local dIconAnchor = GetIconAnchorForGrow(dAnchor, dGrow)
         -- CENTER: only relayout when visible count actually changes (skip thrashing)
         local dVisibleCount = nil
         if dGrow == "CENTER" then
@@ -1189,8 +1352,6 @@ local function UpdateFrameAuras(frame)
                 framePrevDebuffCount[frame] = vc
             end
         end
-        local fontPath = GetFontPath()
-        local durationFontSize = auraSettings.durationFontSize or 9
         for i = 1, maxDebuffs do
             local auraData = sortedAuras[i]
             if not frame.debuffIcons[i] then
@@ -1201,14 +1362,14 @@ local function UpdateFrameAuras(frame)
             if needsLayout or dVisibleCount then
                 local offX, offY = CalculateSlotOffset(i, iconSize, dSpacing, dGrow, dVisibleCount)
                 frame.debuffIcons[i]:ClearAllPoints()
-                frame.debuffIcons[i]:SetPoint(dAnchor, frame, dAnchor, dOffX + offX, dOffY + offY)
+                frame.debuffIcons[i]:SetPoint(dIconAnchor, frame, dAnchor, dOffX + offX, dOffY + offY)
                 frame.debuffIcons[i]:SetSize(iconSize, iconSize)
-                -- Apply duration font size from settings
-                if frame.debuffIcons[i].durationText then
-                    frame.debuffIcons[i].durationText:SetFont(fontPath, durationFontSize, "OUTLINE")
-                end
             end
             local icon = frame.debuffIcons[i]
+            icon._durationTextSettingKey = "showDebuffDurationText"
+            icon._durationUseTimeColorKey = "debuffDurationUseTimeColor"
+            icon._durationColorKey = "debuffDurationColor"
+            ApplyDurationTextStyle(icon, auraSettings, "debuff")
             SafeSetDrawSwipe(icon and icon.cooldown, auraSettings.debuffHideSwipe ~= true)
             SafeSetReverse(icon and icon.cooldown, auraSettings.debuffReverseSwipe == true)
             if auraData then
@@ -1340,6 +1501,7 @@ local function UpdateFrameAuras(frame)
         local bOffX = auraSettings.buffOffsetX or 2
         local bOffY = auraSettings.buffOffsetY or 16
         if sub(bAnchor, 1, 6) == "BOTTOM" then bOffY = bOffY + (frame._bottomPad or 0) end
+        local bIconAnchor = GetIconAnchorForGrow(bAnchor, bGrow)
         -- CENTER: only relayout when visible count actually changes
         local bVisibleCount = nil
         if bGrow == "CENTER" then
@@ -1349,8 +1511,6 @@ local function UpdateFrameAuras(frame)
                 framePrevBuffCount[frame] = vc
             end
         end
-        local fontPath = GetFontPath()
-        local buffFontSize = auraSettings.durationFontSize or 9
         for i = 1, maxBuffs do
             local auraData = sortedAuras[i]
             if not frame.buffIcons[i] then
@@ -1361,14 +1521,14 @@ local function UpdateFrameAuras(frame)
             if needsLayout or bVisibleCount then
                 local offX, offY = CalculateSlotOffset(i, iconSize, bSpacing, bGrow, bVisibleCount)
                 frame.buffIcons[i]:ClearAllPoints()
-                frame.buffIcons[i]:SetPoint(bAnchor, frame, bAnchor, bOffX + offX, bOffY + offY)
+                frame.buffIcons[i]:SetPoint(bIconAnchor, frame, bAnchor, bOffX + offX, bOffY + offY)
                 frame.buffIcons[i]:SetSize(iconSize, iconSize)
-                -- Apply duration font size from settings
-                if frame.buffIcons[i].durationText then
-                    frame.buffIcons[i].durationText:SetFont(fontPath, buffFontSize, "OUTLINE")
-                end
             end
             local bIcon = frame.buffIcons[i]
+            bIcon._durationTextSettingKey = "showBuffDurationText"
+            bIcon._durationUseTimeColorKey = "buffDurationUseTimeColor"
+            bIcon._durationColorKey = "buffDurationColor"
+            ApplyDurationTextStyle(bIcon, auraSettings, "buff")
             SafeSetDrawSwipe(bIcon and bIcon.cooldown, auraSettings.buffHideSwipe ~= true)
             SafeSetReverse(bIcon and bIcon.cooldown, auraSettings.buffReverseSwipe == true)
             if auraData then
@@ -1471,6 +1631,7 @@ if ns.AuraEvents then
             local updated = updateInfo.updatedAuraInstanceIDs
             local nUpdated = #updated
             if nUpdated == 0 then return end
+            auraStats.fastUpdates = auraStats.fastUpdates + 1
 
             local GetDuration = C_UnitAuras.GetAuraDuration
             local GetDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
@@ -1518,10 +1679,19 @@ if ns.AuraEvents then
         -- Full scan on cold/full/fallback; otherwise patch the cache from the
         -- UNIT_AURA delta and let every consumer read that shared state.
         local cacheUpdated = false
+        local triedDelta = false
         if type(updateInfo) == "table" and not updateInfo.isFullUpdate then
+            triedDelta = true
             cacheUpdated = ApplyAuraDelta(unit, updateInfo)
+        elseif type(updateInfo) == "table" and updateInfo.isFullUpdate then
+            auraStats.fullUpdateEvents = auraStats.fullUpdateEvents + 1
         end
-        if not cacheUpdated then
+        if cacheUpdated then
+            auraStats.deltaApplied = auraStats.deltaApplied + 1
+        else
+            if triedDelta then
+                auraStats.deltaFallback = auraStats.deltaFallback + 1
+            end
             ScanUnitAuras(unit)
         end
         local GFI = ns.QUI_GroupFrameIndicators

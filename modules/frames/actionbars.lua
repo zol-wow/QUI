@@ -233,13 +233,17 @@ ActionBarsOwned._activeButtons = ActionBarsOwned._activeButtons
     or setmetatable({}, { __mode = "k" })
 
 local UpdateButtonProfessionQuality
+local SafeHasAction
+local HasButtonContent
 
 function ActionBarsOwned.SafeUpdate(self)
     local action = self.action
     if not action then return end
+    local hasAction = SafeHasAction(action)
+    local hasContent = hasAction or (self.GetAttribute and self:GetAttribute("gse-button"))
 
-    if HasAction(action) then
-        if not InCombatLockdown() then
+    if hasContent then
+        if not InCombatLockdown() and hasAction then
             local flyoutID
             local actionType, actionID, subType = GetActionInfo(action)
             if actionType == "flyout" then
@@ -263,18 +267,19 @@ function ActionBarsOwned.SafeUpdate(self)
         local gseSeq = self:GetAttribute("gse-button")
         local texture
         if gseSeq then
-            -- Prefer the compiled macro icon registered by GSE
-            if GetMacroIndexByName then
+            if _G.QUI_GetGSEButtonIcon then
+                texture = _G.QUI_GetGSEButtonIcon(self)
+            end
+            if not texture and GetMacroIndexByName then
                 local idx = GetMacroIndexByName(gseSeq)
                 if idx and idx > 0 then
                     local _, macTex = GetMacroInfo(idx)
-                    texture = macTex
+                    local logoIcon = _G.GSE and _G.GSE.Static
+                        and _G.GSE.Static.Icons and _G.GSE.Static.Icons.GSE_Logo_Dark
+                    if macTex and macTex ~= logoIcon then
+                        texture = macTex
+                    end
                 end
-            end
-            -- Fall back to the action slot texture (may be the original
-            -- spell icon, which is still a reasonable fallback)
-            if not texture then
-                texture = GetActionTexture(action)
             end
         else
             texture = GetActionTexture(action)
@@ -293,7 +298,7 @@ function ActionBarsOwned.SafeUpdate(self)
         self:SetAlpha(1.0)
 
         -- Checked state (autoattack, toggle abilities)
-        if IsCurrentAction(action) or IsAutoRepeatAction(action) then
+        if hasAction and (IsCurrentAction(action) or IsAutoRepeatAction(action)) then
             self:SetChecked(true)
         else
             self:SetChecked(false)
@@ -305,7 +310,7 @@ function ActionBarsOwned.SafeUpdate(self)
         self.icon:SetVertexColor(1, 1, 1)
 
         -- Equipped border
-        if IsEquippedAction(action) then
+        if hasAction and IsEquippedAction(action) then
             self.Border:SetVertexColor(0, 1, 0, 0.35)
             self.Border:Show()
         else
@@ -313,7 +318,11 @@ function ActionBarsOwned.SafeUpdate(self)
         end
 
         -- Action text (macro name)
-        self.Name:SetText(GetActionText(action) or "")
+        if hasAction then
+            self.Name:SetText(GetActionText(action) or "")
+        else
+            self.Name:SetText("")
+        end
 
         -- Delegated to shadowed methods
         self:UpdateCount()
@@ -331,14 +340,15 @@ function ActionBarsOwned.SafeUpdate(self)
         -- Set everActive flag here — SafeUpdate already confirmed
         -- IsAssistedCombatAction, so unblock the rotation frame's
         -- fast-path early return.
-        if C_ActionBar and C_ActionBar.IsAssistedCombatAction
+        if hasAction
+            and C_ActionBar and C_ActionBar.IsAssistedCombatAction
             and C_ActionBar.IsAssistedCombatAction(action) then
             ActionBarsOwned._assistedCombatEverActive = true
         end
         UpdateAssistedCombatRotationFrame(self)
 
         -- Level link lock
-        if self.LevelLinkLockIcon and C_LevelLink and C_LevelLink.IsActionLocked then
+        if hasAction and self.LevelLinkLockIcon and C_LevelLink and C_LevelLink.IsActionLocked then
             if C_LevelLink.IsActionLocked(action) then
                 self.icon:SetDesaturated(true)
                 self.LevelLinkLockIcon:SetShown(true)
@@ -349,8 +359,10 @@ function ActionBarsOwned.SafeUpdate(self)
         end
 
         -- Flash animation (auto-attack / auto-repeat)
-        local shouldFlash = (IsAttackAction(action) and IsCurrentAction(action))
+        local shouldFlash = hasAction and (
+            (IsAttackAction(action) and IsCurrentAction(action))
             or IsAutoRepeatAction(action)
+        )
         if shouldFlash then
             if not self.flashing then
                 if ActionButton_StartFlash then
@@ -614,8 +626,18 @@ end
 -- (==, ~=, >) — so secret booleans/numbers pass through without error.
 -- No pcall needed since truthiness evaluation never triggers the
 -- secret-value error (only comparisons and arithmetic do).
-local function SafeHasAction(action)
+SafeHasAction = function(action)
     if HasAction(action) then return true end
+    return false
+end
+
+HasButtonContent = function(button, action)
+    if button and button.GetAttribute and button:GetAttribute("gse-button") then
+        return true
+    end
+    if action then
+        return SafeHasAction(action)
+    end
     return false
 end
 
@@ -1256,7 +1278,23 @@ local function InstallSecureActionFlagRefresh(btn)
     btn._quiActionFlagRefreshInstalled = true
     btn:SetAttribute("QUI_UpdateActionFlags", [[
         local action = self:GetAttribute("action")
+        local gseButton = self:GetAttribute("gse-button")
         local pressAndHold = false
+
+        if gseButton then
+            -- When useOnKeyDown=true, the press fires the click → forwards to the
+            -- sequence frame and advances the step.  typerelease="click" would fire
+            -- a SECOND click on release, double-advancing the sequence.  Clear it
+            -- in that mode; keep it for useOnKeyDown=false so release-mode still
+            -- forwards reliably even when BAR_SWAP flips type to "action".
+            if self:GetAttribute("useOnKeyDown") then
+                self:SetAttribute("typerelease", nil)
+            else
+                self:SetAttribute("typerelease", "click")
+            end
+            self:SetAttribute("pressAndHoldAction", false)
+            return
+        end
 
         self:SetAttribute("typerelease", "actionrelease")
         if action and IsPressHoldReleaseSpell then
@@ -2171,7 +2209,8 @@ local function ApplyBarOverrideBindings(barKey)
                     -- whose OnClick handlers check for "LeftButton" specifically.  Standard
                     -- action bars (SecureActionButtonTemplate) fire via secure attributes
                     -- regardless of button string, so "Keybind" works for them.
-                    local vBtn = (barKey == "pet" or barKey == "stance") and "LeftButton" or "Keybind"
+                    local vBtn = ((barKey == "pet" or barKey == "stance") or btn:GetAttribute("gse-button"))
+                        and "LeftButton" or "Keybind"
                     SetOverrideBindingClick(container, false, key, btn:GetName(), vBtn)
                 end
             end
@@ -2329,6 +2368,7 @@ local function EnsureOwnedActionButton(container, barKey, btnName, index)
     else
         btn:SetParent(container)
     end
+    btn:SetAttribute("qui-button-index", index)
 
     btn:SetAttribute("qui-refresh-ref", "btn-refresh-" .. barKey .. "-" .. index)
     InstallSecureActionFlagRefresh(btn)
@@ -3766,21 +3806,16 @@ end
 
 local function ForEachSpellCandidate(spellId, callback)
     if not spellId or not callback then return end
+    spellId = Helpers.SafeValue(spellId, nil)
+    if not spellId then return end
 
-    local seen = {}
-    local function Visit(id)
-        if id and not seen[id] then
-            seen[id] = true
-            callback(id)
-        end
-    end
-
-    Visit(spellId)
+    callback(spellId)
 
     if C_Spell and C_Spell.GetOverrideSpell then
         local ok, overrideId = pcall(C_Spell.GetOverrideSpell, spellId)
+        overrideId = ok and Helpers.SafeValue(overrideId, nil) or nil
         if ok and overrideId and overrideId ~= spellId then
-            Visit(overrideId)
+            callback(overrideId)
         end
     end
 end
@@ -3806,9 +3841,29 @@ end
 -- content changes (visual update, slot change).
 local spellIdToButtons = {}
 local flyoutButtons = {}  -- buttons with flyout actions (checked as fallback)
+local spellIdButtonListPool = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "AB_spellIdToButtons", tbl = spellIdToButtons }
+    mp[#mp + 1] = { name = "AB_flyoutButtons",    tbl = flyoutButtons }
+    mp[#mp + 1] = { name = "AB_spellIdListPool",  tbl = spellIdButtonListPool }
+end
+
+local function AcquireSpellButtonList()
+    return table.remove(spellIdButtonListPool) or {}
+end
+
+local function ClearSpellIdMap()
+    for _, list in pairs(spellIdToButtons) do
+        wipe(list)
+        if #spellIdButtonListPool < 160 then
+            spellIdButtonListPool[#spellIdButtonListPool + 1] = list
+        end
+    end
+    wipe(spellIdToButtons)
+end
 
 local function RebuildSpellIdMap()
-    wipe(spellIdToButtons)
+    ClearSpellIdMap()
     wipe(flyoutButtons)
     for _, barKey in ipairs(STANDARD_BAR_KEYS) do
         local btns = ActionBarsOwned.nativeButtons[barKey]
@@ -3819,7 +3874,7 @@ local function RebuildSpellIdMap()
                     ForEachSpellCandidate(spellId, function(candidateId)
                         local list = spellIdToButtons[candidateId]
                         if not list then
-                            list = {}
+                            list = AcquireSpellButtonList()
                             spellIdToButtons[candidateId] = list
                         end
                         list[#list + 1] = btn
@@ -4111,11 +4166,13 @@ end
 
 -- Handle SPELL_ACTIVATION_OVERLAY_GLOW_SHOW: O(1) lookup via reverse map,
 -- flyout fallback for rare flyout-containing-spell case.
+local spellGlowVisited = {}
 local function ForEachButtonForSpellGlow(spellId, callback)
     if not spellId or not callback then return false end
 
     local matched = false
-    local visited = {}
+    local visited = spellGlowVisited
+    wipe(visited)
     local slotMap = ActionBarsOwned.slotMap
 
     local function VisitButton(button)
@@ -4153,6 +4210,7 @@ local function ForEachButtonForSpellGlow(spellId, callback)
         end
     end)
 
+    wipe(visited)
     return matched
 end
 
@@ -5729,7 +5787,7 @@ SkinButton = function(button, settings)
         local barKey = GetBarKeyFromButton(button)
         local action = GetSafeActionSlot(button)
         if action and barKey ~= "stance" and barKey ~= "pet" and not isSpellFlyoutButton
-            and not SafeHasAction(action) then
+            and not HasButtonContent(button, action) then
             icon:SetTexture(nil)
         end
         icon:SetAlpha(1)
@@ -5985,7 +6043,7 @@ UpdateKeybindText = function(button, settings)
     if shouldShow and settings.hideEmptyKeybinds then
         local action = GetSafeActionSlot(button)
         if action then
-            local hasAction = SafeHasAction(action)
+            local hasAction = HasButtonContent(button, action)
             if not hasAction then
                 shouldShow = false
             end
@@ -6238,7 +6296,7 @@ UpdateEmptySlotVisibility = function(button, settings)
     -- Only applies to action buttons with action property
     local action = GetSafeActionSlot(button)
     if action then
-        local hasAction = SafeHasAction(action)
+        local hasAction = HasButtonContent(button, action)
         if hasAction then
             button:SetAlpha(1)
             if state.hiddenEmpty then
@@ -7510,6 +7568,12 @@ end)
 
 -- Skin all buttons for a specific bar
 local function SkinBar(barKey)
+    -- Micro menu and bag bar buttons are not action buttons and must not
+    -- be skinned — see SKINNABLE_BAR_KEYS at the top of this file. The
+    -- initial skin pass iterates ALL_MANAGED_BAR_KEYS without a gate, so
+    -- the rule has to be enforced here.
+    if not SKINNABLE_BAR_KEYS[barKey] then return end
+
     local db = GetDB()
     if not db or not db.enabled then return end
 
@@ -7641,6 +7705,75 @@ local function ApplyOwnedFlyoutButtonVisuals(button, spellID)
     end
 end
 
+-- DurationObject-driven CD swipe for popup buttons (no `action` slot, so the
+-- ActionBarsOwned action-cooldown loop can't drive these — we mirror Blizzard
+-- spell cooldowns directly via the only remaining secret-safe setter).
+local function UpdateOwnedFlyoutButtonCooldown(button)
+    if not button then return end
+    local cooldown = button.cooldown or button.Cooldown
+    if not cooldown then return end
+
+    local spellID = button._quiFlyoutSpellID
+    if not spellID or not C_Spell or not C_Spell.GetSpellCooldownDuration then
+        cooldown:Clear()
+        if button.chargeCooldown then button.chargeCooldown:Clear() end
+        return
+    end
+
+    local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
+    local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+    local showCharge = chargeInfo and chargeInfo.currentCharges and chargeInfo.maxCharges
+        and chargeInfo.currentCharges < chargeInfo.maxCharges
+    local showNormal = cdInfo and cdInfo.isEnabled and cdInfo.duration and cdInfo.duration > 0
+
+    if showNormal then
+        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        if ok and durObj then
+            cooldown:SetCooldownFromDurationObject(durObj)
+        else
+            cooldown:Clear()
+        end
+    else
+        cooldown:Clear()
+    end
+
+    if showCharge and C_Spell.GetSpellChargeDuration then
+        if not button.chargeCooldown then
+            local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+            cd:SetHideCountdownNumbers(true)
+            cd:SetDrawSwipe(false)
+            cd:SetAllPoints(cooldown)
+            cd:SetFrameLevel(button:GetFrameLevel())
+            button.chargeCooldown = cd
+        end
+        local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
+        if ok and durObj then
+            button.chargeCooldown:SetCooldownFromDurationObject(durObj)
+        else
+            button.chargeCooldown:Clear()
+        end
+    elseif button.chargeCooldown then
+        button.chargeCooldown:Clear()
+    end
+end
+
+local function UpdateAllOwnedFlyoutButtonCooldowns()
+    if not ownedFlyout or not ownedFlyout:IsShown() then return end
+    for i = 1, (ownedFlyout:GetAttribute("numFlyoutButtons") or 0) do
+        local btn = ownedFlyoutButtons[i]
+        if btn and btn:IsShown() then
+            UpdateOwnedFlyoutButtonCooldown(btn)
+        end
+    end
+end
+
+local function ClearOwnedFlyoutButtonCooldown(button)
+    if not button then return end
+    local cooldown = button.cooldown or button.Cooldown
+    if cooldown then cooldown:Clear() end
+    if button.chargeCooldown then button.chargeCooldown:Clear() end
+end
+
 EnsureOwnedFlyoutFrame = function()
     if ownedFlyout or not USE_OWNED_FLYOUT then return ownedFlyout end
 
@@ -7658,6 +7791,7 @@ EnsureOwnedFlyoutFrame = function()
             local btn = ownedFlyoutButtons[i]
             if btn and btn:IsShown() then
                 ApplyOwnedFlyoutButtonVisuals(btn, btn:GetAttribute("qui-flyout-spell"))
+                UpdateOwnedFlyoutButtonCooldown(btn)
             end
         end
     end)
@@ -7666,6 +7800,7 @@ EnsureOwnedFlyoutFrame = function()
             local btn = ownedFlyoutButtons[i]
             if btn then
                 ApplyOwnedFlyoutButtonVisuals(btn, nil)
+                ClearOwnedFlyoutButtonCooldown(btn)
             end
         end
     end)
@@ -7705,9 +7840,8 @@ EnsureOwnedFlyoutFrame = function()
                 usedSlots = usedSlots + 1
                 local slotButton = self:GetFrameRef("flyoutButton" .. usedSlots)
                 if slotButton then
-                    local castSpellID = slotInfo.castSpellID or slotInfo.spellID
                     slotButton:SetAttribute("type", "spell")
-                    slotButton:SetAttribute("spell", castSpellID)
+                    slotButton:SetAttribute("spell", slotInfo.spellID)
                     slotButton:SetAttribute("qui-flyout-spell", slotInfo.spellID)
                     slotButton:CallMethod("QUI_UpdateOwnedFlyoutVisuals", slotInfo.spellID)
                     slotButton:SetWidth(width)
@@ -7817,9 +7951,11 @@ local function EnsureOwnedFlyoutButton(index)
     btn:SetScript("OnReceiveDrag", nil)
     btn.QUI_UpdateOwnedFlyoutVisuals = function(self, spellID)
         ApplyOwnedFlyoutButtonVisuals(self, spellID)
+        UpdateOwnedFlyoutButtonCooldown(self)
     end
     btn.QUI_ClearOwnedFlyoutVisuals = function(self)
         ApplyOwnedFlyoutButtonVisuals(self, nil)
+        ClearOwnedFlyoutButtonCooldown(self)
     end
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -7865,10 +8001,7 @@ local function PopulateOwnedFlyoutInfoEntry(info, flyoutID, numSlots, isKnown)
         end
 
         info.slots[slot] = info.slots[slot] or {}
-        local castSpellID = (overrideSpellID and overrideSpellID > 0) and overrideSpellID or spellID
         info.slots[slot].spellID = spellID
-        info.slots[slot].castSpellID = castSpellID
-        info.slots[slot].overrideSpellID = overrideSpellID
         info.slots[slot].isKnown = isKnownSlot and true or false
     end
 
@@ -7949,9 +8082,8 @@ SyncOwnedFlyoutInfoToHandler = function()
             data = data .. ("QUI_FlyoutInfo[%d] = newtable();QUI_FlyoutInfo[%d].slots = newtable();\n"):format(flyoutID, flyoutID)
             for slotID, slotInfo in ipairs(info.slots) do
                 local spellID = (slotInfo and type(slotInfo.spellID) == "number" and slotInfo.spellID > 0) and slotInfo.spellID or 0
-                local castSpellID = (slotInfo and type(slotInfo.castSpellID) == "number" and slotInfo.castSpellID > 0) and slotInfo.castSpellID or spellID
-                data = data .. ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].castSpellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
-                    :format(flyoutID, slotID, flyoutID, slotID, spellID, flyoutID, slotID, castSpellID, flyoutID, slotID, slotInfo and slotInfo.isKnown and "true" or "nil")
+                data = data .. ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
+                    :format(flyoutID, slotID, flyoutID, slotID, spellID, flyoutID, slotID, slotInfo and slotInfo.isKnown and "true" or "nil")
             end
         end
     end
@@ -7969,6 +8101,16 @@ SyncOwnedFlyoutInfoToHandler = function()
     end
 
     ActionBarsOwned.pendingOwnedFlyoutSync = false
+end
+
+do
+    -- Mirror SPELL_UPDATE_COOLDOWN/CHARGES into popup-button swipes while the
+    -- flyout is open. No-op when hidden — OnHide path already clears.
+    local cdEventFrame = CreateFrame("Frame")
+    cdEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+    cdEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
+    cdEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
+    cdEventFrame:SetScript("OnEvent", UpdateAllOwnedFlyoutButtonCooldowns)
 end
 
 ShowOwnedFlyoutForButton = function(parentButton)
@@ -8605,6 +8747,41 @@ function ActionBarsOwned:Initialize()
             end
         end
     end
+
+    -- Apply layout-mode hidden state during the addon-load safe window.
+    -- The bar containers use SecureHandlerStateTemplate + RegisterStateDriver,
+    -- which makes SetAttribute protected during combat. Layout Mode's
+    -- EnforceGameplayVisibility runs at PLAYER_ENTERING_WORLD+3s — past the
+    -- safe window — so applying hidden state from there triggers
+    -- ADDON_ACTION_BLOCKED on a combat /reload. Apply it here while the
+    -- safe window is open, and pre-mark _gameplayHidden so the later pass
+    -- treats the work as already done and skips the redundant SetAttribute.
+    local profile = Helpers.GetProfile()
+    local hiddenHandles = profile and profile.layoutMode and profile.layoutMode.hiddenHandles
+    if hiddenHandles then
+        local LAYOUT_TO_CONTAINER = {
+            bar1 = "bar1", bar2 = "bar2", bar3 = "bar3", bar4 = "bar4",
+            bar5 = "bar5", bar6 = "bar6", bar7 = "bar7", bar8 = "bar8",
+            petBar = "pet", stanceBar = "stance",
+            microMenu = "microbar", bagBar = "bags",
+        }
+        local lm = ns.QUI_LayoutMode
+        if lm then
+            lm._gameplayHidden = lm._gameplayHidden or {}
+        end
+        for layoutKey, containerKey in pairs(LAYOUT_TO_CONTAINER) do
+            if hiddenHandles[layoutKey] then
+                local container = self.containers[containerKey]
+                if container then
+                    container:SetAttribute("qui-user-shown", false)
+                    container:Hide()
+                    if lm then
+                        lm._gameplayHidden[layoutKey] = true
+                    end
+                end
+            end
+        end
+    end
 end
 
 function ActionBarsOwned:Refresh()
@@ -8714,6 +8891,9 @@ _G.QUI_ApplyUseOnKeyDown = function()
             local btn = _G["QUI_Bar" .. bar .. "Button" .. i]
             if btn then
                 btn:SetAttribute("useOnKeyDown", value)
+                if btn.RunAttribute then
+                    btn:RunAttribute("QUI_UpdateActionFlags")
+                end
             end
         end
     end
@@ -8727,6 +8907,14 @@ _G.QUI_ApplyUseOnKeyDown = function()
             end
         end
     end
+end
+
+_G.QUI_ReapplyActionBarBindings = function()
+    if InCombatLockdown() then
+        ActionBarsOwned.pendingBindings = true
+        return
+    end
+    RefreshNativeKeybinds()
 end
 
 -- Lightweight refresh: only re-evaluate mouseover fade state for all bars.

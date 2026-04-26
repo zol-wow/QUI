@@ -127,6 +127,23 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r CDM Spell Composer not available. Enable CDM first.")
         end
         return
+    elseif input and input:match("^gse") then
+        -- /qui gse          → dump current override state
+        -- /qui gse debug    → toggle click-event logging
+        -- /qui gse tail [N] → print last N events from the log
+        local sub, arg = input:match("^gse%s+(%S+)%s*(%S*)")
+        if sub == "debug" then
+            if _G.QUI_GSEToggleDebug then _G.QUI_GSEToggleDebug() end
+        elseif sub == "tail" then
+            if _G.QUI_GSETail then _G.QUI_GSETail(tonumber(arg) or 20) end
+        else
+            if _G.QUI_GSEDump then
+                _G.QUI_GSEDump()
+            else
+                print("|cff60A5FAQUI:|r GSE compat shim not loaded.")
+            end
+        end
+        return
     elseif input and input:match("^migration") then
         -- /qui migration             → status (current schema version + backup slots)
         -- /qui migration status      → same
@@ -257,6 +274,18 @@ function QUI:SlashCommandOpen(input)
         framePos("buffFrame", "buffFrame")
         framePos("minimap", "minimap")
         return
+    elseif input and input:match("^tooltipdebug") then
+        -- /qui tooltipdebug on [N]  -> print tooltip churn samples every N seconds
+        -- /qui tooltipdebug report  -> print the current sample without resetting
+        -- /qui tooltipdebug slow N  -> log functions slower than N ms in samples
+        -- /qui tooltipdebug bypass qol|skin|all|off -> isolate tooltip processors
+        local subcmd, arg = input:match("^tooltipdebug%s+(%S+)%s*(%S*)")
+        if _G.QUI_TooltipDebug then
+            _G.QUI_TooltipDebug(subcmd, arg)
+        else
+            print("|cff60A5FAQUI:|r Tooltip debug sampler not loaded yet.")
+        end
+        return
     elseif input and input == "tooltipdbg" then
         local isS = issecretvalue
         local count = 0
@@ -320,10 +349,23 @@ function QUI:SlashCommandOpen(input)
         return
     elseif input and input:match("^memaudit") then
         if _G.QUI_MemAudit then
-            local subcmd = input:match("^memaudit%s+(%S+)")
-            _G.QUI_MemAudit(subcmd)
+            local subcmd, arg = input:match("^memaudit%s+(%S+)%s+(%S+)")
+            if not subcmd then
+                subcmd = input:match("^memaudit%s+(%S+)")
+            end
+            _G.QUI_MemAudit(subcmd, arg)
         else
             print("|cff60A5FAQUI:|r Memory audit not loaded yet.")
+        end
+        return
+    elseif input and input:match("^diagnose") then
+        -- /qui diagnose        → report Edit Mode state + recent ADDON_ACTION_BLOCKED events
+        -- /qui diagnose clear  → clear the diagnostic ring buffer
+        if _G.QUI_DiagnoseEditMode then
+            local subcmd = input:match("^diagnose%s+(%S+)")
+            _G.QUI_DiagnoseEditMode(subcmd)
+        else
+            print("|cff60A5FAQUI:|r Edit Mode diagnostic not loaded yet.")
         end
         return
     elseif input and input == "perf" then

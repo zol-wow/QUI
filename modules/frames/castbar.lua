@@ -213,7 +213,11 @@ local function GetCastSettings(unitKey)
     return settings and settings.castbar or nil
 end
 
--- Text throttling helper (updates text at 10 FPS to reduce overhead)
+-- Text throttling helper (updates text at 10 FPS to reduce overhead).
+-- Uses SetFormattedText so the formatted string is built C-side without
+-- allocating a Lua-side string each tick. Combined with the bucketed
+-- _lastTextRounded check, the SetFormattedText call only fires when the
+-- displayed tenths-of-a-second value actually changed.
 local function UpdateThrottledText(castbar, elapsed, text, value)
     castbar.textThrottle = (castbar.textThrottle or 0) + elapsed
     if castbar.textThrottle >= 0.1 then
@@ -222,7 +226,7 @@ local function UpdateThrottledText(castbar, elapsed, text, value)
             local rounded = math_floor(value * 10)
             if rounded ~= castbar._lastTextRounded then
                 castbar._lastTextRounded = rounded
-                text:SetText(string_format("%.1f", value))
+                text:SetFormattedText("%.1f", value)
             end
         end
         return true
@@ -1570,7 +1574,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
     end
     
     if castbar.timeText then
-        castbar.timeText:SetText(string_format("%.1f", castTime))
+        castbar.timeText:SetFormattedText("%.1f", castTime)
         castbar.timeText:SetTextColor(1, 1, 1, 1)
         if castSettings.showTimeText ~= false then
             castbar.timeText:Show()
@@ -2152,7 +2156,7 @@ local function UpdateCastbarVisuals(castbar, castSettings, unitKey, texture, tex
         -- Set initial time text
         if castbar.timeText then
             local remaining = endTime - now
-            castbar.timeText:SetText(string_format("%.1f", math_max(0, remaining)))
+            castbar.timeText:SetFormattedText("%.1f", math_max(0, remaining))
         end
     end
 
@@ -3047,7 +3051,9 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
 
             local remaining = self.endTime - now
             if self.timeText then
-                self.timeText:SetText(string_format("%.1f", remaining))
+                -- Bucketed + C-side format: only writes when the 0.1s bucket
+                -- changes; SetFormattedText avoids allocating a Lua string.
+                UpdateThrottledText(self, elapsed, self.timeText, remaining)
                 UpdateTimeTextColor(self, self.unit)
             end
         elseif self.isPreviewSimulation then

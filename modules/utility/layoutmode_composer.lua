@@ -276,6 +276,13 @@ local function GetTextureList()
     return list
 end
 
+local function GetFontListWithDefault()
+    local U = ns.QUI_LayoutMode_Utils
+    local list = U and U.GetFontList and U.GetFontList() or {}
+    table.insert(list, 1, { value = "", text = "(Frame Font)" })
+    return list
+end
+
 ---------------------------------------------------------------------------
 -- VISUAL PROXY
 ---------------------------------------------------------------------------
@@ -1122,6 +1129,28 @@ local function BuildNameSettings(content, gfdb, onChange)
     relayout()
 end
 
+local function AddAuraDurationTextRows(body, layout, auras, prefix, labelPrefix, onChange, enabledCond)
+    local textCond = function()
+        return enabledCond() and auras["show" .. labelPrefix .. "DurationText"] ~= false
+    end
+    local staticColorCond = function()
+        local useTimeColor = auras[prefix .. "DurationUseTimeColor"]
+        if useTimeColor == nil then
+            useTimeColor = auras.showDurationColor ~= false
+        end
+        return textCond() and not useTimeColor
+    end
+
+    layout:Row(GUI:CreateFormCheckbox(body, "Show " .. labelPrefix .. " Duration Text", "show" .. labelPrefix .. "DurationText", auras, onChange), FORM_ROW, enabledCond)
+    layout:Row(GUI:CreateFormDropdown(body, "Duration Font", GetFontListWithDefault(), prefix .. "DurationFont", auras, onChange, nil, { searchable = true }), DROP_ROW, textCond)
+    layout:Row(GUI:CreateFormSlider(body, "Duration Font Size", 6, 24, 1, prefix .. "DurationFontSize", auras, onChange), SLIDER_HEIGHT, textCond)
+    layout:Row(GUI:CreateFormDropdown(body, "Duration Anchor", NINE_POINT_OPTIONS, prefix .. "DurationAnchor", auras, onChange), DROP_ROW, textCond)
+    layout:Row(GUI:CreateFormSlider(body, "Duration X Offset", -40, 40, 1, prefix .. "DurationOffsetX", auras, onChange), SLIDER_HEIGHT, textCond)
+    layout:Row(GUI:CreateFormSlider(body, "Duration Y Offset", -40, 40, 1, prefix .. "DurationOffsetY", auras, onChange), SLIDER_HEIGHT, textCond)
+    layout:Row(GUI:CreateFormCheckbox(body, "Use Time-Based Duration Color", prefix .. "DurationUseTimeColor", auras, onChange), FORM_ROW, textCond)
+    layout:Row(GUI:CreateFormColorPicker(body, "Duration Text Color", prefix .. "DurationColor", auras, onChange), FORM_ROW, staticColorCond)
+end
+
 local function BuildBuffsSettings(content, gfdb, onChange)
     local auras = gfdb.auras; if not auras then gfdb.auras = {} auras = gfdb.auras end
     local sections = {}
@@ -1140,8 +1169,9 @@ local function BuildBuffsSettings(content, gfdb, onChange)
         local L = CreateDynamicLayout(body, updateH)
         L:Row(GUI:CreateFormCheckbox(body, "Show Buffs", "showBuffs", auras, syncedOnChange), FORM_ROW)
         L:Row(GUI:CreateFormSlider(body, "Max Buffs", 0, 8, 1, "maxBuffs", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "buffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 64, 1, "buffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "buffHideSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        AddAuraDurationTextRows(body, L, auras, "buff", "Buff", syncedOnChange, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "buffReverseSwipe", auras, syncedOnChange), FORM_ROW, reverseCond)
         L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "buffAnchor", auras, syncedOnChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "buffGrowDirection", auras, syncedOnChange), DROP_ROW, cond)
@@ -1212,8 +1242,9 @@ local function BuildDebuffsSettings(content, gfdb, onChange)
         local L = CreateDynamicLayout(body, updateH)
         L:Row(GUI:CreateFormCheckbox(body, "Show Debuffs", "showDebuffs", auras, syncedOnChange), FORM_ROW)
         L:Row(GUI:CreateFormSlider(body, "Max Debuffs", 0, 8, 1, "maxDebuffs", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "debuffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 64, 1, "debuffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "debuffHideSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        AddAuraDurationTextRows(body, L, auras, "debuff", "Debuff", syncedOnChange, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "debuffReverseSwipe", auras, syncedOnChange), FORM_ROW, reverseCond)
         L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "debuffAnchor", auras, syncedOnChange), DROP_ROW, cond)
         L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "debuffGrowDirection", auras, syncedOnChange), DROP_ROW, cond)
@@ -2960,7 +2991,8 @@ local function GetOrCreateFrame()
     composerFrame:SetSize(620, 720)
     composerFrame:SetPoint("CENTER")
     composerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-    composerFrame:SetFrameLevel(300)
+    composerFrame:SetFrameLevel(900)
+    composerFrame:SetToplevel(true)
     composerFrame:SetMovable(true)
     composerFrame:SetClampedToScreen(true)
     composerFrame:EnableMouse(true)
@@ -3216,26 +3248,169 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         return offY
     end
 
+    local function CalculatePreviewSlotOffset(index, iconSize, spacing, direction, totalCount)
+        local step = (index - 1) * (iconSize + spacing)
+        if direction == "RIGHT" then
+            return step, 0
+        elseif direction == "LEFT" then
+            return -step, 0
+        elseif direction == "CENTER" then
+            local n = totalCount or 1
+            local totalSpan = n * iconSize + math.max(n - 1, 0) * spacing
+            return step - totalSpan / 2, 0
+        elseif direction == "UP" then
+            return 0, step
+        elseif direction == "DOWN" then
+            return 0, -step
+        end
+        return step, 0
+    end
+
+    local function ComposePreviewAnchor(horizontal, vertical)
+        if vertical == "TOP" then
+            if horizontal == "LEFT" then return "TOPLEFT" end
+            if horizontal == "RIGHT" then return "TOPRIGHT" end
+            return "TOP"
+        elseif vertical == "BOTTOM" then
+            if horizontal == "LEFT" then return "BOTTOMLEFT" end
+            if horizontal == "RIGHT" then return "BOTTOMRIGHT" end
+            return "BOTTOM"
+        end
+
+        if horizontal == "LEFT" then return "LEFT" end
+        if horizontal == "RIGHT" then return "RIGHT" end
+        return "CENTER"
+    end
+
+    local function GetPreviewIconAnchorForGrow(frameAnchor, direction)
+        local horizontal = frameAnchor and frameAnchor:find("LEFT") and "LEFT"
+            or frameAnchor and frameAnchor:find("RIGHT") and "RIGHT"
+            or "CENTER"
+        local vertical = frameAnchor and frameAnchor:find("TOP") and "TOP"
+            or frameAnchor and frameAnchor:find("BOTTOM") and "BOTTOM"
+            or "CENTER"
+
+        if direction == "RIGHT" or direction == "CENTER" then
+            horizontal = "LEFT"
+        elseif direction == "LEFT" then
+            horizontal = "RIGHT"
+        elseif direction == "UP" then
+            vertical = "BOTTOM"
+        elseif direction == "DOWN" then
+            vertical = "TOP"
+        end
+
+        return ComposePreviewAnchor(horizontal, vertical)
+    end
+
+    local function AccumulatePreviewIconBounds(iconAnchor, offX, offY, size, minX, maxX, minY, maxY)
+        local left, right, bottom, top
+        if iconAnchor:find("LEFT") then
+            left, right = offX, offX + size
+        elseif iconAnchor:find("RIGHT") then
+            left, right = offX - size, offX
+        else
+            left, right = offX - size / 2, offX + size / 2
+        end
+
+        if iconAnchor:find("TOP") then
+            top, bottom = offY, offY - size
+        elseif iconAnchor:find("BOTTOM") then
+            top, bottom = offY + size, offY
+        else
+            top, bottom = offY + size / 2, offY - size / 2
+        end
+
+        return math.min(minX or left, left),
+            math.max(maxX or right, right),
+            math.min(minY or bottom, bottom),
+            math.max(maxY or top, top)
+    end
+
+    local function CreatePreviewAuraBounds(parentFrame, anchor, baseOffX, baseOffY, minX, maxX, minY, maxY)
+        local bounds = CreateFrame("Frame", nil, parentFrame)
+        bounds:SetFrameLevel(parentFrame:GetFrameLevel() + 8)
+        bounds:SetSize(math.max(maxX - minX, 1), math.max(maxY - minY, 1))
+        bounds:SetPoint("CENTER", parentFrame, anchor, baseOffX + (minX + maxX) / 2, baseOffY + (minY + maxY) / 2)
+        return bounds
+    end
+
+    local function IsPreviewDurationTextEnabled(showKey)
+        local specific = auraDB[showKey]
+        if specific ~= nil then
+            return specific ~= false
+        end
+        return auraDB.showDurationText ~= false
+    end
+
+    local function GetPreviewDurationFontPath(prefix)
+        local fontName = auraDB[prefix .. "DurationFont"]
+        if fontName and fontName ~= "" and LSM then
+            local fetched = LSM:Fetch("font", fontName)
+            if fetched then return fetched end
+        end
+        return fontPath
+    end
+
+    local function GetPreviewDurationTextColor(prefix)
+        local useTimeColor = auraDB[prefix .. "DurationUseTimeColor"]
+        if useTimeColor == nil then
+            useTimeColor = auraDB.showDurationColor ~= false
+        end
+        if useTimeColor then
+            return 0.2, 1, 0.2, 1
+        end
+
+        local c = auraDB[prefix .. "DurationColor"]
+        if c then
+            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+        end
+        return 1, 1, 1, 1
+    end
+
+    local function AddPreviewDurationText(parentFrame, icon, prefix, text)
+        local duration = parentFrame:CreateFontString(nil, "OVERLAY")
+        local size = auraDB[prefix .. "DurationFontSize"] or auraDB.durationFontSize or 9
+        local anchor = auraDB[prefix .. "DurationAnchor"] or "BOTTOM"
+        local offX = (auraDB[prefix .. "DurationOffsetX"] or 0) * PREVIEW_SCALE
+        local offY = (auraDB[prefix .. "DurationOffsetY"] or -6) * PREVIEW_SCALE
+        duration:SetFont(GetPreviewDurationFontPath(prefix), size * PREVIEW_SCALE, "OUTLINE")
+        duration:SetPoint(anchor, icon, anchor, offX, offY)
+        duration:SetJustifyH("CENTER")
+        duration:SetText(text)
+        duration:SetTextColor(GetPreviewDurationTextColor(prefix))
+        return duration
+    end
+
     if auraDB.showBuffs then
         local buffSize = (auraDB.buffIconSize or 14) * PREVIEW_SCALE
         local maxBuffs = auraDB.maxBuffs or 3
         local buffCount = math.min(maxBuffs, #FAKE_BUFF_ICONS)
         if buffCount > 0 then
             local buffAnchor = auraDB.buffAnchor or "TOPLEFT"
+            local buffGrow = auraDB.buffGrowDirection or "RIGHT"
             local buffSpacing = (auraDB.buffSpacing or 2) * PREVIEW_SCALE
+            local buffOffX = (auraDB.buffOffsetX or 2) * PREVIEW_SCALE
+            local buffOffY = PreviewBottomPadY(buffAnchor, (auraDB.buffOffsetY or 16) * PREVIEW_SCALE)
+            local buffIconAnchor = GetPreviewIconAnchorForGrow(buffAnchor, buffGrow)
+            local minX, maxX, minY, maxY
             local buffContainer = CreateFrame("Frame", nil, frame)
             buffContainer:SetFrameLevel(frame:GetFrameLevel() + 8)
-            buffContainer:SetSize(buffCount * buffSize + math.max(buffCount - 1, 0) * buffSpacing, buffSize)
-            buffContainer:SetPoint(buffAnchor, frame, buffAnchor, (auraDB.buffOffsetX or 2) * PREVIEW_SCALE, PreviewBottomPadY(buffAnchor, (auraDB.buffOffsetY or 16) * PREVIEW_SCALE))
+            buffContainer:SetSize(1, 1)
+            buffContainer:SetPoint(buffAnchor, frame, buffAnchor, buffOffX, buffOffY)
             for i = 1, buffCount do
                 local icon = buffContainer:CreateTexture(nil, "OVERLAY")
                 icon:SetSize(buffSize, buffSize)
                 icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 icon:SetTexture(FAKE_BUFF_ICONS[i])
-                if i == 1 then icon:SetPoint("LEFT", buffContainer, "LEFT", 0, 0)
-                else icon:SetPoint("LEFT", buffContainer, "LEFT", (i - 1) * (buffSize + buffSpacing), 0) end
+                local offX, offY = CalculatePreviewSlotOffset(i, buffSize, buffSpacing, buffGrow, buffCount)
+                icon:SetPoint(buffIconAnchor, buffContainer, buffAnchor, offX, offY)
+                minX, maxX, minY, maxY = AccumulatePreviewIconBounds(buffIconAnchor, offX, offY, buffSize, minX, maxX, minY, maxY)
+                if IsPreviewDurationTextEnabled("showBuffDurationText") then
+                    AddPreviewDurationText(buffContainer, icon, "buff", i == 1 and "5m" or "45")
+                end
             end
-            childRefs.buffContainer = buffContainer
+            childRefs.buffContainer = CreatePreviewAuraBounds(frame, buffAnchor, buffOffX, buffOffY, minX, maxX, minY, maxY)
         end
     end
 
@@ -3248,23 +3423,27 @@ local function CreateDesignerPreview(container, previewType, childRefs)
             local debuffAnchor = auraDB.debuffAnchor or "BOTTOMRIGHT"
             local debuffGrow = auraDB.debuffGrowDirection or "LEFT"
             local debuffSpacing = (auraDB.debuffSpacing or 2) * PREVIEW_SCALE
+            local debuffOffX = (auraDB.debuffOffsetX or -2) * PREVIEW_SCALE
+            local debuffOffY = PreviewBottomPadY(debuffAnchor, (auraDB.debuffOffsetY or -18) * PREVIEW_SCALE)
+            local debuffIconAnchor = GetPreviewIconAnchorForGrow(debuffAnchor, debuffGrow)
+            local minX, maxX, minY, maxY
             local debuffContainer = CreateFrame("Frame", nil, frame)
             debuffContainer:SetFrameLevel(frame:GetFrameLevel() + 8)
-            debuffContainer:SetSize(debuffCount * debuffSize + math.max(debuffCount - 1, 0) * debuffSpacing, debuffSize)
-            debuffContainer:SetPoint(debuffAnchor, frame, debuffAnchor, (auraDB.debuffOffsetX or -2) * PREVIEW_SCALE, PreviewBottomPadY(debuffAnchor, (auraDB.debuffOffsetY or -18) * PREVIEW_SCALE))
+            debuffContainer:SetSize(1, 1)
+            debuffContainer:SetPoint(debuffAnchor, frame, debuffAnchor, debuffOffX, debuffOffY)
             for i = 1, debuffCount do
                 local icon = debuffContainer:CreateTexture(nil, "OVERLAY")
                 icon:SetSize(debuffSize, debuffSize)
                 icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 icon:SetTexture(FAKE_DEBUFF_ICONS[i])
-                local startAnchor = debuffGrow == "LEFT" and "RIGHT" or "LEFT"
-                if i == 1 then icon:SetPoint(startAnchor, debuffContainer, startAnchor, 0, 0)
-                else
-                    local offset = (i - 1) * (debuffSize + debuffSpacing)
-                    icon:SetPoint(startAnchor, debuffContainer, startAnchor, debuffGrow == "LEFT" and -offset or offset, 0)
+                local offX, offY = CalculatePreviewSlotOffset(i, debuffSize, debuffSpacing, debuffGrow, debuffCount)
+                icon:SetPoint(debuffIconAnchor, debuffContainer, debuffAnchor, offX, offY)
+                minX, maxX, minY, maxY = AccumulatePreviewIconBounds(debuffIconAnchor, offX, offY, debuffSize, minX, maxX, minY, maxY)
+                if IsPreviewDurationTextEnabled("showDebuffDurationText") then
+                    AddPreviewDurationText(debuffContainer, icon, "debuff", i == 1 and "12" or "45")
                 end
             end
-            childRefs.debuffContainer = debuffContainer
+            childRefs.debuffContainer = CreatePreviewAuraBounds(frame, debuffAnchor, debuffOffX, debuffOffY, minX, maxX, minY, maxY)
         end
     end
 
@@ -4064,6 +4243,9 @@ function QUI_LayoutMode_Composer:Open(contextMode)
     if layoutUI and layoutUI.ApplyConfigPanelScale then
         layoutUI:ApplyConfigPanelScale(frame)
     end
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(900)
+    frame:SetToplevel(true)
 
     -- Refresh border accent color
     if C.accent then
@@ -4082,6 +4264,14 @@ function QUI_LayoutMode_Composer:Open(contextMode)
 
     BuildComposerContent(contentArea, contextMode)
     frame:Show()
+    frame:Raise()
+    C_Timer.After(0, function()
+        if frame and frame:IsShown() then
+            frame:SetFrameStrata("FULLSCREEN_DIALOG")
+            frame:SetFrameLevel(900)
+            frame:Raise()
+        end
+    end)
 end
 
 function QUI_LayoutMode_Composer:Close()

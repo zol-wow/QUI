@@ -95,7 +95,21 @@ local iconPools = {
 }
 -- Phase G: Pools for custom containers are created dynamically via EnsurePool().
 local recyclePool = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "CDM_iconRecyclePool", tbl = recyclePool } end
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_iconRecyclePool", tbl = recyclePool }
+    -- iconPools is a multi-key map of arrays; count across every sub-pool
+    -- (incl. dynamically created Composer pools) so retention growth surfaces.
+    mp[#mp + 1] = { name = "CDM_iconPools", fn = function()
+        local count, deep = 0, 0
+        for _, pool in pairs(iconPools) do
+            count = count + 1
+            if type(pool) == "table" then
+                for _ in pairs(pool) do deep = deep + 1 end
+            end
+        end
+        return count, deep
+    end }
+end
 local iconCounter = 0
 local updateTicker = nil
 
@@ -160,6 +174,165 @@ end
 local _tickChargeCache = {}    -- [spellID] = chargeInfo or false
 local _tickCooldownCache = {}  -- [spellID] = cdInfo or false
 local _tickDurationCache = {}  -- [spellID] = DurationObject or false
+local _tickChargeDurationCache = {} -- [spellID] = DurationObject or false
+local _tickOverrideCache = {}  -- [spellID] = override spellID or false
+local _tickDisplayCountCache = {} -- [spellID] = display count or false
+local _tickChargeCacheTime = {}
+local _tickCooldownCacheTime = {}
+local _tickDurationCacheTime = {}
+local _tickChargeDurationCacheTime = {}
+local _tickOverrideCacheTime = {}
+local _tickDisplayCountCacheTime = {}
+local _tickCooldownCacheNow = 0
+local _nextCooldownCachePrune = 0
+local COOLDOWN_QUERY_CACHE_TTL = 0.20
+local COOLDOWN_QUERY_CACHE_PRUNE_INTERVAL = 1.0
+local _tickCooldownStats = {
+    chargeQueries = 0,
+    cooldownQueries = 0,
+    durationQueries = 0,
+    chargeDurationQueries = 0,
+    overrideQueries = 0,
+    displayCountQueries = 0,
+    updateBatches = 0,
+    fullUpdateBatches = 0,
+    cooldownOnlyBatches = 0,
+    iconsProcessed = 0,
+    updateRequests = 0,
+    updateFastRequests = 0,
+    updateCoalesced = 0,
+}
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_spellCooldownCacheMeta", fn = function()
+        local charges, cooldowns, durations, chargeDurations, overrides, displayCounts = 0, 0, 0, 0, 0, 0
+        for _ in pairs(_tickChargeCacheTime) do charges = charges + 1 end
+        for _ in pairs(_tickCooldownCacheTime) do cooldowns = cooldowns + 1 end
+        for _ in pairs(_tickDurationCacheTime) do durations = durations + 1 end
+        for _ in pairs(_tickChargeDurationCacheTime) do chargeDurations = chargeDurations + 1 end
+        for _ in pairs(_tickOverrideCacheTime) do overrides = overrides + 1 end
+        for _ in pairs(_tickDisplayCountCacheTime) do displayCounts = displayCounts + 1 end
+        return charges + cooldowns + durations + chargeDurations + overrides + displayCounts, 0
+    end }
+    mp[#mp + 1] = { name = "CDM_spellChargeQueries", counter = true, fn = function()
+        return _tickCooldownStats.chargeQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_spellCooldownQueries", counter = true, fn = function()
+        return _tickCooldownStats.cooldownQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_spellDurationQueries", counter = true, fn = function()
+        return _tickCooldownStats.durationQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_spellChargeDurationQueries", counter = true, fn = function()
+        return _tickCooldownStats.chargeDurationQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_spellOverrideQueries", counter = true, fn = function()
+        return _tickCooldownStats.overrideQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_spellDisplayCountQueries", counter = true, fn = function()
+        return _tickCooldownStats.displayCountQueries
+    end }
+    mp[#mp + 1] = { name = "CDM_updateBatches", counter = true, fn = function()
+        return _tickCooldownStats.updateBatches
+    end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateBatches", counter = true, fn = function()
+        return _tickCooldownStats.fullUpdateBatches
+    end }
+    mp[#mp + 1] = { name = "CDM_cooldownOnlyBatches", counter = true, fn = function()
+        return _tickCooldownStats.cooldownOnlyBatches
+    end }
+    mp[#mp + 1] = { name = "CDM_iconsProcessed", counter = true, fn = function()
+        return _tickCooldownStats.iconsProcessed
+    end }
+    mp[#mp + 1] = { name = "CDM_updateRequests", counter = true, fn = function()
+        return _tickCooldownStats.updateRequests
+    end }
+    mp[#mp + 1] = { name = "CDM_updateFastRequests", counter = true, fn = function()
+        return _tickCooldownStats.updateFastRequests
+    end }
+    mp[#mp + 1] = { name = "CDM_updateCoalesced", counter = true, fn = function()
+        return _tickCooldownStats.updateCoalesced
+    end }
+end
+
+local function ClearUpdateTickCaches()
+    wipe(_tickChargeCache)
+    wipe(_tickCooldownCache)
+    wipe(_tickDurationCache)
+    wipe(_tickChargeDurationCache)
+    wipe(_tickOverrideCache)
+    wipe(_tickDisplayCountCache)
+    wipe(_tickChargeCacheTime)
+    wipe(_tickCooldownCacheTime)
+    wipe(_tickDurationCacheTime)
+    wipe(_tickChargeDurationCacheTime)
+    wipe(_tickOverrideCacheTime)
+    wipe(_tickDisplayCountCacheTime)
+    _tickCooldownCacheNow = 0
+    _nextCooldownCachePrune = 0
+end
+
+local function GetCooldownCacheNow()
+    local now = _tickCooldownCacheNow
+    if not now or now == 0 then
+        now = GetTime()
+        _tickCooldownCacheNow = now
+    end
+    return now
+end
+
+local function PruneUpdateTickCaches(now)
+    local cutoff = now - COOLDOWN_QUERY_CACHE_TTL
+    for spellID, stamp in pairs(_tickChargeCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickChargeCache[spellID] = nil
+            _tickChargeCacheTime[spellID] = nil
+        end
+    end
+    for spellID, stamp in pairs(_tickCooldownCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickCooldownCache[spellID] = nil
+            _tickCooldownCacheTime[spellID] = nil
+        end
+    end
+    for spellID, stamp in pairs(_tickDurationCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickDurationCache[spellID] = nil
+            _tickDurationCacheTime[spellID] = nil
+        end
+    end
+    for spellID, stamp in pairs(_tickChargeDurationCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickChargeDurationCache[spellID] = nil
+            _tickChargeDurationCacheTime[spellID] = nil
+        end
+    end
+    for spellID, stamp in pairs(_tickOverrideCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickOverrideCache[spellID] = nil
+            _tickOverrideCacheTime[spellID] = nil
+        end
+    end
+    for spellID, stamp in pairs(_tickDisplayCountCacheTime) do
+        if not stamp or stamp < cutoff then
+            _tickDisplayCountCache[spellID] = nil
+            _tickDisplayCountCacheTime[spellID] = nil
+        end
+    end
+end
+
+local function BeginUpdateTickCaches(forceClear)
+    if forceClear or not InCombatLockdown() then
+        ClearUpdateTickCaches()
+        return
+    end
+
+    local now = GetTime()
+    _tickCooldownCacheNow = now
+    if now >= _nextCooldownCachePrune then
+        _nextCooldownCachePrune = now + COOLDOWN_QUERY_CACHE_PRUNE_INTERVAL
+        PruneUpdateTickCaches(now)
+    end
+end
 
 -- Persistent multi-charge spell cache (survives combat/reload via SavedVariables).
 -- Populated OOC when GetSpellCharges returns readable values; consulted in combat
@@ -173,10 +346,20 @@ end
 
 local function TickCacheGetCharges(spellID)
     if not spellID then return nil end
+    local now = GetCooldownCacheNow()
     local cached = _tickChargeCache[spellID]
-    if cached ~= nil then return cached or nil end
+    if cached ~= nil then
+        local stamp = _tickChargeCacheTime[spellID]
+        if stamp and (now - stamp) <= COOLDOWN_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickChargeCache[spellID] = nil
+        _tickChargeCacheTime[spellID] = nil
+    end
+    _tickCooldownStats.chargeQueries = _tickCooldownStats.chargeQueries + 1
     local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID) or nil
     _tickChargeCache[spellID] = chargeInfo or false
+    _tickChargeCacheTime[spellID] = now
     -- Persist multi-charge detection OOC for combat fallback.
     -- Also clean up stale cache entries when API returns no charges or <= 1.
     if not InCombatLockdown() then
@@ -201,20 +384,105 @@ end
 
 local function TickCacheGetCooldown(spellID)
     if not spellID then return nil end
+    local now = GetCooldownCacheNow()
     local cached = _tickCooldownCache[spellID]
-    if cached ~= nil then return cached or nil end
+    if cached ~= nil then
+        local stamp = _tickCooldownCacheTime[spellID]
+        if stamp and (now - stamp) <= COOLDOWN_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickCooldownCache[spellID] = nil
+        _tickCooldownCacheTime[spellID] = nil
+    end
+    _tickCooldownStats.cooldownQueries = _tickCooldownStats.cooldownQueries + 1
     local cdInfo = C_Spell.GetSpellCooldown(spellID)
     _tickCooldownCache[spellID] = cdInfo or false
+    _tickCooldownCacheTime[spellID] = now
     return cdInfo
 end
 
 local function TickCacheGetDuration(spellID)
     if not spellID then return nil end
+    local now = GetCooldownCacheNow()
     local cached = _tickDurationCache[spellID]
-    if cached ~= nil then return cached or nil end
+    if cached ~= nil then
+        local stamp = _tickDurationCacheTime[spellID]
+        if stamp and (now - stamp) <= COOLDOWN_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickDurationCache[spellID] = nil
+        _tickDurationCacheTime[spellID] = nil
+    end
+    _tickCooldownStats.durationQueries = _tickCooldownStats.durationQueries + 1
     local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
     local result = (ok and durObj) or nil
     _tickDurationCache[spellID] = result or false
+    _tickDurationCacheTime[spellID] = now
+    return result
+end
+
+local function TickCacheGetChargeDuration(spellID)
+    if not spellID or not C_Spell.GetSpellChargeDuration then return nil end
+    local now = GetCooldownCacheNow()
+    local cached = _tickChargeDurationCache[spellID]
+    if cached ~= nil then
+        local stamp = _tickChargeDurationCacheTime[spellID]
+        if stamp and (now - stamp) <= COOLDOWN_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickChargeDurationCache[spellID] = nil
+        _tickChargeDurationCacheTime[spellID] = nil
+    end
+    _tickCooldownStats.chargeDurationQueries = _tickCooldownStats.chargeDurationQueries + 1
+    local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
+    local result = (ok and durObj) or nil
+    _tickChargeDurationCache[spellID] = result or false
+    _tickChargeDurationCacheTime[spellID] = now
+    return result
+end
+
+local function TickCacheGetOverrideSpell(spellID)
+    if not spellID or not C_Spell.GetOverrideSpell then return nil end
+    local now = GetCooldownCacheNow()
+    local cached = _tickOverrideCache[spellID]
+    if cached ~= nil then
+        local stamp = _tickOverrideCacheTime[spellID]
+        if stamp and (now - stamp) <= COOLDOWN_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickOverrideCache[spellID] = nil
+        _tickOverrideCacheTime[spellID] = nil
+    end
+    _tickCooldownStats.overrideQueries = _tickCooldownStats.overrideQueries + 1
+    local overrideID = C_Spell.GetOverrideSpell(spellID)
+    if overrideID and IsSecretValue(overrideID) then
+        return overrideID
+    end
+    _tickOverrideCache[spellID] = overrideID or false
+    _tickOverrideCacheTime[spellID] = now
+    return overrideID
+end
+
+local function TickCacheGetDisplayCount(spellID)
+    if not spellID or not C_Spell.GetSpellDisplayCount then return nil end
+    local now = GetCooldownCacheNow()
+    local cached = _tickDisplayCountCache[spellID]
+    if cached ~= nil then
+        local stamp = _tickDisplayCountCacheTime[spellID]
+        if stamp and (now - stamp) <= COOLDOWN_QUERY_CACHE_TTL then
+            return cached or nil
+        end
+        _tickDisplayCountCache[spellID] = nil
+        _tickDisplayCountCacheTime[spellID] = nil
+    end
+    _tickCooldownStats.displayCountQueries = _tickCooldownStats.displayCountQueries + 1
+    local ok, val = pcall(C_Spell.GetSpellDisplayCount, spellID)
+    local result = (ok and val) or nil
+    if result and IsSecretValue(result) then
+        return result
+    end
+    _tickDisplayCountCache[spellID] = result or false
+    _tickDisplayCountCacheTime[spellID] = now
     return result
 end
 
@@ -450,7 +718,7 @@ local function GetBestSpellCooldown(spellID)
 
     -- Check override spell (no table allocation — just a second ID)
     if C_Spell.GetOverrideSpell then
-        local overrideID = C_Spell.GetOverrideSpell(spellID)
+        local overrideID = TickCacheGetOverrideSpell(spellID)
         -- overrideID may be secret in combat — guard the comparison.
         local isOverridden = false
         if overrideID and not IsSecretValue(overrideID) then
@@ -493,15 +761,11 @@ local function GetBestSpellCooldown(spellID)
         -- spell's own cooldown DurationObject (which may be a shorter
         -- per-use CD or GCD).  GetSpellChargeDuration returns the
         -- recharge timer DurationObject, secret-safe for combat.
-        if C_Spell.GetSpellChargeDuration then
-            local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
-            if ok and durObj then bestDurObj = durObj end
-        end
+        bestDurObj = TickCacheGetChargeDuration(spellID)
         if not bestDurObj and C_Spell.GetOverrideSpell and C_Spell.GetSpellChargeDuration then
-            local overrideID = C_Spell.GetOverrideSpell(spellID)
+            local overrideID = TickCacheGetOverrideSpell(spellID)
             if overrideID and not IsSecretValue(overrideID) and overrideID ~= spellID then
-                local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, overrideID)
-                if ok and durObj then bestDurObj = durObj end
+                bestDurObj = TickCacheGetChargeDuration(overrideID)
             end
         end
         -- Fall back to spell cooldown duration (non-charged spells, per-tick cached)
@@ -509,7 +773,7 @@ local function GetBestSpellCooldown(spellID)
             bestDurObj = TickCacheGetDuration(spellID)
         end
         if not bestDurObj and C_Spell.GetOverrideSpell then
-            local overrideID = C_Spell.GetOverrideSpell(spellID)
+            local overrideID = TickCacheGetOverrideSpell(spellID)
             if overrideID and not IsSecretValue(overrideID) and overrideID ~= spellID then
                 bestDurObj = TickCacheGetDuration(overrideID)
             end
@@ -645,8 +909,8 @@ local function GetIconCooldownIdentifier(icon)
     -- Resolve from BASE spell at runtime so dynamic transforms are current
     local base = entry.spellID or entry.id
     if base and C_Spell.GetOverrideSpell then
-        local ok, ovId = pcall(C_Spell.GetOverrideSpell, base)
-        if ok and ovId then return ovId end
+        local ovId = TickCacheGetOverrideSpell(base)
+        if ovId then return ovId end
     end
     return base
 end
@@ -714,14 +978,19 @@ local function MirrorCurrentBlizzCooldown(icon, blizzCD)
     if not addonCD or not blizzCD then return false end
 
     local synced = false
-    if blizzCD.GetCooldownDuration and addonCD.SetCooldownFromDurationObject then
-        local okDur, durObj = pcall(blizzCD.GetCooldownDuration, blizzCD)
-        -- Prefer Blizzard's live DurationObject when present. This remains
-        -- the only secret-safe way for addon code to mirror cooldown state in
-        -- combat, including rune/resource waits that do not classify cleanly
-        -- through the numeric GetCooldownTimes snapshot.
-        if okDur and durObj then
-            synced = pcall(addonCD.SetCooldownFromDurationObject, addonCD, durObj) and true or false
+    -- Pull the spell's DurationObject from C_Spell.GetSpellCooldownDuration —
+    -- the secret-safe authority. blizzCD:GetCooldownDuration returns a number
+    -- (secret in combat), not a DurationObject, so it cannot be forwarded to
+    -- SetCooldownFromDurationObject from tainted code.
+    if addonCD.SetCooldownFromDurationObject and C_Spell and C_Spell.GetSpellCooldownDuration then
+        local entry = icon and icon._spellEntry
+        local sid = icon and icon._runtimeSpellID
+            or (entry and (entry.spellID or entry.overrideSpellID or entry.id))
+        if sid then
+            local okDur, durObj = pcall(C_Spell.GetSpellCooldownDuration, sid)
+            if okDur and durObj then
+                synced = pcall(addonCD.SetCooldownFromDurationObject, addonCD, durObj) and true or false
+            end
         end
     end
 
@@ -771,13 +1040,10 @@ local function GetBlizzCooldownPayload(blizzCD)
         return nil, nil, nil
     end
 
-    if blizzCD.GetCooldownDuration then
-        local okDur, durObj = pcall(blizzCD.GetCooldownDuration, blizzCD)
-        if okDur and durObj and (IsSecretValue(durObj) or durObj ~= 0) then
-            return nil, nil, durObj
-        end
-    end
-
+    -- Cooldown:GetCooldownDuration returns a number (secret in combat), not a
+    -- DurationObject — passing it to SetCooldownFromDurationObject silently
+    -- no-ops. Use C_Spell.GetSpellCooldownDuration upstream for the
+    -- DurationObject; this helper now only surfaces the numeric snapshot.
     if blizzCD.GetCooldownTimes then
         local okTimes, rawStart, rawDuration = pcall(blizzCD.GetCooldownTimes, blizzCD)
         if okTimes and not IsSecretValue(rawStart) and not IsSecretValue(rawDuration) then
@@ -1085,6 +1351,17 @@ local function HookBlizzStackText(icon, blizzChild)
     if not blizzChild then return end
 
     local entry = icon._spellEntry
+
+    -- Buff viewer children: do NOT reparent Applications/ChargeCount.
+    -- Blizzard's buff-viewer display layer (e.g. Mana Tea on Mistweaver)
+    -- doesn't reliably drive these frames the way the cooldown viewer
+    -- templates do, so reparenting leaves the count permanently blank.
+    -- Leave the native frames on their original parent (hidden behind
+    -- the alpha=0 viewer) and let the API path drive icon.StackText.
+    if entry and entry.viewerType == "buff" then
+        return
+    end
+
     local chargeFrame = blizzChild.ChargeCount
     local appFrame = blizzChild.Applications
 
@@ -1921,6 +2198,13 @@ local _showGCDSwipe = false
 -- the icon shows the recharge/cooldown timer instead of the aura duration.
 local _showBuffSwipe = true
 
+local function WipeUpdateTickCaches()
+    BeginUpdateTickCaches()
+    if ns.CDMSpellData and ns.CDMSpellData.WipeTickAuraCache then
+        ns.CDMSpellData:WipeTickAuraCache()
+    end
+end
+
 local function GetChildIconTexture(child)
     if not child then return nil end
     local blzIcon = child.Icon or child.icon
@@ -1943,8 +2227,8 @@ local function UpdateIconCooldown(icon)
     -- are always current.  Shared across all paths in this function.
     local _runtimeSid = entry.spellID or entry.overrideSpellID or entry.id
     if _runtimeSid and C_Spell.GetOverrideSpell then
-        local ovOk, ovId = pcall(C_Spell.GetOverrideSpell, _runtimeSid)
-        if ovOk and ovId then _runtimeSid = ovId end
+        local ovId = TickCacheGetOverrideSpell(_runtimeSid)
+        if ovId then _runtimeSid = ovId end
     end
     -- Stash live override on icon so tooltip/display can pass it
     -- directly to C-side functions (handles secret values natively).
@@ -2002,30 +2286,25 @@ local function UpdateIconCooldown(icon)
                             pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
                         end
 
-                        -- Stacks: prefer hook-driven values (Applications.SetText
-                        -- hook fires immediately when Blizzard updates stacks).
-                        -- The API path (GetAuraDataBySpellName) lags behind the
-                        -- hook by 1+ frames and may return secret values in
-                        -- combat — only use it as a fallback when hooks aren't
-                        -- actively driving stack text for this icon.
+                        -- Stacks: forward r.stacks directly to C-side where
+                        -- possible. Blizzard aura APIs can return secret or
+                        -- otherwise non-finite values in combat, so keep stack
+                        -- formatting behind pcall and collapse invalid counts
+                        -- to empty text.
                         local _auraHookActive = (not r.isTotemInstance) and IsHookStackActive(entry, icon)
                         if not _auraHookActive then
                             if r.isTotemInstance then
                                 icon.StackText:SetText("")
                                 icon.StackText:Hide()
-                            elseif r.stacks then
-                                -- Charged abilities: "0" is meaningful (all
-                                -- charges depleted). Only truncate zero for
-                                -- non-charged resource stacks.
-                                if entry.hasCharges then
-                                    pcall(icon.StackText.SetText, icon.StackText, r.stacks)
-                                else
-                                    pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
+                            else
+                                local stacks = r.stacks or 0
+                                local text = stacks
+                                if not entry.hasCharges then
+                                    local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stacks)
+                                    text = truncOk and truncText or ""
                                 end
+                                pcall(icon.StackText.SetText, icon.StackText, text)
                                 icon.StackText:Show()
-                            elseif not InCombatLockdown() then
-                                icon.StackText:SetText("")
-                                icon.StackText:Hide()
                             end
                         end
 
@@ -2518,8 +2797,21 @@ local function UpdateIconCooldown(icon)
                 and apiIsActive == true
                 and spellUsable == true
             if realCooldownActive and not mirrorActive and not startTime and not duration and not durObj
-                and not entry.hasCharges and entry._blizzChild and entry._blizzChild.Cooldown then
-                startTime, duration, durObj = GetBlizzCooldownPayload(entry._blizzChild.Cooldown)
+                and not entry.hasCharges then
+                -- Prefer the spell's DurationObject (secret-safe primary API).
+                -- Covers the post-aura-phase case where the mirror hook may not
+                -- re-fire when a self-buff defensive transitions from aura to
+                -- pure-cooldown display (e.g. Divine Protection, Divine Shield).
+                if _runtimeSid and C_Spell and C_Spell.GetSpellCooldownDuration then
+                    local okDur, spellDurObj = pcall(C_Spell.GetSpellCooldownDuration, _runtimeSid)
+                    if okDur and spellDurObj then
+                        durObj = spellDurObj
+                    end
+                end
+                -- Numeric fallback (out of combat / non-secret payloads only).
+                if not durObj and entry._blizzChild and entry._blizzChild.Cooldown then
+                    startTime, duration, durObj = GetBlizzCooldownPayload(entry._blizzChild.Cooldown)
+                end
             end
             local expiredNow = CooldownHasExpiredNow(startTime, duration, durObj, _batchTime)
             local cooldownInactive = (apiIsActive == false)
@@ -2645,13 +2937,13 @@ local function UpdateIconCooldown(icon)
     local _chargeCountForwarded = false
     if entry._blizzChild and C_Spell.GetSpellCharges then
         local baseSid = entry.spellID or entry.id
-        local ci = baseSid and C_Spell.GetSpellCharges(baseSid)
+        local ci = baseSid and TickCacheGetCharges(baseSid)
         -- When the base spell transforms (e.g., Holy Bulwark → Sacred Weapon),
         -- GetSpellCharges on the base ID may return nil/<=1 even though the
         -- spell is still multi-charge.  Try the override spell ID as fallback.
         if (not ci or not ci.maxCharges or ci.maxCharges <= 1)
             and entry.overrideSpellID and entry.overrideSpellID ~= baseSid then
-            local oci = C_Spell.GetSpellCharges(entry.overrideSpellID)
+            local oci = TickCacheGetCharges(entry.overrideSpellID)
             if oci and oci.maxCharges and oci.maxCharges > 1 then
                 ci = oci
                 ChargeDebug(entry.name, "FWD override fallback: overrideSpellID=", entry.overrideSpellID,
@@ -2734,10 +3026,7 @@ local function UpdateIconCooldown(icon)
             if isMultiCharge then
                 -- GetSpellDisplayCount is the canonical charge display API.
                 if spellID and C_Spell.GetSpellDisplayCount then
-                    local ok, val = pcall(C_Spell.GetSpellDisplayCount, spellID)
-                    if ok and val then
-                        stackVal = val
-                    end
+                    stackVal = TickCacheGetDisplayCount(spellID)
                 end
                 -- Fallback: currentCharges directly
                 if not stackVal and _cachedChargeInfo.currentCharges then
@@ -3289,19 +3578,196 @@ end
 
 
 ---------------------------------------------------------------------------
--- UPDATE ALL COOLDOWNS
+-- VISIBILITY FILTERS (Phase B.3)
+-- Container-level filters that override display-mode visibility based on
+-- runtime state. Enabled per-container via settings; all default to off so
+-- existing containers behave identically to pre-filter builds.
 ---------------------------------------------------------------------------
-function CDMIcons:UpdateAllCooldowns()
-    -- Wipe per-tick caches: each batch starts fresh so every spellID
-    -- is queried at most once via TickCacheGetCharges/TickCacheGetCooldown.
-    wipe(_tickChargeCache)
-    wipe(_tickCooldownCache)
-    wipe(_tickDurationCache)
-    if ns.CDMSpellData and ns.CDMSpellData.WipeTickAuraCache then
-        ns.CDMSpellData:WipeTickAuraCache()
+
+-- Returns true if any visibility filter wants the icon hidden.
+local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
+    if not containerDB then return false end
+
+    if containerDB.showOnlyInCombat and not inCombat then
+        return true
     end
 
-    -- Child map is invalidated by aura/cooldown event subscribers via
+    if containerDB.showOnlyOnCooldown then
+        local effectiveOnCD = isOnCD
+        -- hideGCD: treat pure-GCD as not-on-cooldown for visibility purposes
+        if effectiveOnCD and containerDB.hideGCD and icon._isOnGCD
+           and not icon._auraActive then
+            local dur = icon._lastDuration or 0
+            if dur <= 1.5 then effectiveOnCD = false end
+        end
+        if not effectiveOnCD then return true end
+    end
+
+    if containerDB.showOnlyWhenOffCooldown and isOnCD then
+        return true
+    end
+
+    if containerDB.showOnlyWhenActive and not icon._auraActive then
+        return true
+    end
+
+    if containerDB.hideNonUsable then
+        if entry.type == "item" then
+            local ok, count = pcall(C_Item.GetItemCount, entry.id, false, false)
+            if ok and (not count or count <= 0) then return true end
+        elseif entry.type == "trinket" or entry.type == "slot" then
+            if not GetInventoryItemID("player", entry.id) then return true end
+        else
+            local sid = icon._runtimeSpellID or entry.spellID or entry.id
+            if sid and C_Spell and C_Spell.IsSpellUsable then
+                local ok, usable = pcall(C_Spell.IsSpellUsable, sid)
+                if ok and usable == false then return true end
+            end
+        end
+    end
+
+    return false
+end
+
+-- Exposed so LayoutContainer can drop filtered icons at layout time
+-- (dynamicLayout = true/nil), letting row width / centering math
+-- collapse around missing items instead of leaving a gap.
+CDMIcons.ComputeFilterHides = ComputeFilterHides
+
+-- Apply visibility state respecting dynamicLayout.
+-- dynamicLayout = true/nil (default): Hide/Show — bar collapses around hidden icons.
+-- dynamicLayout = false:              SetAlpha(0) — slot reserved, icon invisible.
+-- Note: static layout (dynamicLayout = false) should not coexist with
+-- clickableIcons on the same container — SecureActionButton children
+-- cannot be Show/Hide'd in combat. The composer enforces this coupling.
+local function ApplyIconVisibility(icon, shouldShow, dynamicLayout)
+    if dynamicLayout == false then
+        if not icon:IsShown() then icon:Show() end
+        icon:SetAlpha(shouldShow and 1 or 0)
+    else
+        if shouldShow then
+            if not icon:IsShown() then icon:Show() end
+            icon:SetAlpha(1)
+        else
+            if icon:IsShown() then icon:Hide() end
+        end
+    end
+end
+
+local function ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
+    if not entry then return nil, "cooldown" end
+
+    local containerDB = ncdm and (ncdm[entry.viewerType] or (ncdmContainers and ncdmContainers[entry.viewerType]))
+    local cType = containerDB and containerDB.containerType
+    if not cType then
+        local vt = entry.viewerType
+        cType = (vt == "buff" or vt == "trackedBar") and "aura" or "cooldown"
+    end
+
+    return containerDB, cType
+end
+
+local function PrepareCooldownUpdateBatch()
+    local editMode = Helpers.IsEditModeActive()
+        or Helpers.IsLayoutModeActive()
+        or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
+
+    local ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+    _hoistedNcdm = ncdm
+    _batchTime = GetTime()
+
+    local swipeMod = ns._OwnedSwipe
+    local swipeSettings = swipeMod and swipeMod.GetSettings and swipeMod.GetSettings()
+    _showGCDSwipe = swipeSettings and swipeSettings.showGCDSwipe or false
+    _showBuffSwipe = swipeSettings and (swipeSettings.showBuffSwipe ~= false) or false
+
+    return editMode, ncdm, ncdm and ncdm.containers, InCombatLockdown()
+end
+
+local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
+    local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
+    local isHiddenOverride = spellOvr and spellOvr.hidden
+
+    if isHiddenOverride then
+        if icon:IsShown() then icon:Hide() end
+        SyncCooldownBling(icon)
+        return
+    end
+
+    if editMode then
+        icon:SetAlpha(1)
+        icon:Show()
+        SyncCooldownBling(icon)
+        return
+    end
+
+    local isOnCD = icon._hasCooldownActive or false
+    if not isOnCD then
+        local dur = icon._lastDuration or 0
+        local start = icon._lastStart or 0
+        if dur > 1.5 and start > 0 then
+            local remaining = (start + dur) - _batchTime
+            if remaining > 0 then
+                isOnCD = true
+            end
+        end
+    end
+
+    if not isOnCD and entry.hasCharges then
+        local spellID = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
+        if spellID then
+            local ci = TickCacheGetCharges(spellID)
+            if ci then
+                local current = SafeToNumber(ci.currentCharges, nil)
+                local maxC = SafeToNumber(ci.maxCharges, nil)
+                if current and maxC and current < maxC then
+                    isOnCD = true
+                end
+            end
+        end
+    end
+
+    local effectiveMode = containerDB and containerDB.iconDisplayMode or "always"
+    if effectiveMode == "combat" then
+        effectiveMode = inCombat and "always" or "active"
+    end
+
+    local shouldShow
+    if effectiveMode == "always" then
+        shouldShow = true
+    elseif effectiveMode == "active" then
+        if isOnCD then
+            shouldShow = true
+        else
+            local keepForGlow = false
+            if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
+                keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
+            end
+            shouldShow = keepForGlow
+        end
+    else
+        shouldShow = false
+    end
+
+    if shouldShow and ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD) then
+        shouldShow = false
+    end
+
+    ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
+    SyncCooldownBling(icon)
+end
+
+---------------------------------------------------------------------------
+-- UPDATE ALL COOLDOWNS
+---------------------------------------------------------------------------
+function CDMIcons:UpdateAllCooldowns(keepTickCaches)
+    -- Wipe per-tick caches: each batch starts fresh so every spellID
+    -- is queried at most once via TickCacheGetCharges/TickCacheGetCooldown.
+    WipeUpdateTickCaches()
+    _tickCooldownStats.updateBatches = _tickCooldownStats.updateBatches + 1
+    _tickCooldownStats.fullUpdateBatches = _tickCooldownStats.fullUpdateBatches + 1
+
+    -- Child map is invalidated by aura/structural event subscribers via
     -- CDMSpellData:InvalidateChildMap(). RebuildChildMap is a no-op when clean.
 
     local editMode = Helpers.IsEditModeActive()
@@ -3324,6 +3790,7 @@ function CDMIcons:UpdateAllCooldowns()
 
     for _, pool in pairs(iconPools) do
         for _, icon in ipairs(pool) do
+            _tickCooldownStats.iconsProcessed = _tickCooldownStats.iconsProcessed + 1
             local entry = icon._spellEntry
             -- Update cooldown/aura state BEFORE visibility so _auraActive,
             -- _lastDuration, etc. are fresh for Show/Hide decisions.
@@ -3408,7 +3875,7 @@ function CDMIcons:UpdateAllCooldowns()
                     end
                     -- Also check charge-based cooldowns (per-tick cached)
                     if not isOnCD and entry.hasCharges then
-                        local spellID = _runtimeSid
+                        local spellID = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
                         if spellID then
                             local ci = TickCacheGetCharges(spellID)
                             if ci then
@@ -3473,7 +3940,7 @@ function CDMIcons:UpdateAllCooldowns()
                             -- Resolve spell name for aura lookups
                             local spellName = entry.name
                             if not spellName then
-                                local sid = _runtimeSid
+                                local sid = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
                                 if sid then
                                     local info = C_Spell.GetSpellInfo(sid)
                                     spellName = info and info.name
@@ -3556,6 +4023,39 @@ function CDMIcons:UpdateAllCooldowns()
         end
     end
 
+    if not keepTickCaches then
+        WipeUpdateTickCaches()
+    end
+end
+
+function CDMIcons:UpdateCooldownOnly(keepTickCaches)
+    WipeUpdateTickCaches()
+    _tickCooldownStats.updateBatches = _tickCooldownStats.updateBatches + 1
+    _tickCooldownStats.cooldownOnlyBatches = _tickCooldownStats.cooldownOnlyBatches + 1
+
+    local editMode, ncdm, ncdmContainers, inCombat = PrepareCooldownUpdateBatch()
+
+    for _, pool in pairs(iconPools) do
+        for _, icon in ipairs(pool) do
+            local entry = icon._spellEntry
+            if entry then
+                local containerDB, cType = ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
+                if cType ~= "aura" and cType ~= "auraBar" then
+                    _tickCooldownStats.iconsProcessed = _tickCooldownStats.iconsProcessed + 1
+                    if inCombat then
+                        pcall(UpdateIconCooldown, icon)
+                    else
+                        UpdateIconCooldown(icon)
+                    end
+                    UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
+                end
+            end
+        end
+    end
+
+    if not keepTickCaches then
+        WipeUpdateTickCaches()
+    end
 end
 
 function CDMIcons:UpdateCooldownsForType(viewerType)
@@ -3926,7 +4426,7 @@ local function UpdateIconVisualState(icon, cachedDB)
     if icon._cachedOverrideID then
         spellID = icon._cachedOverrideID
     elseif C_Spell and C_Spell.GetOverrideSpell then
-        local currentOverride = C_Spell.GetOverrideSpell(entry.spellID or entry.id)
+        local currentOverride = TickCacheGetOverrideSpell(entry.spellID or entry.id)
         if currentOverride then spellID = currentOverride end
     end
     if not spellID then return end
@@ -4067,45 +4567,98 @@ cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
 cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
 -- UNIT_AURA handled by centralized dispatcher subscription (below)
 
--- C_Timer coalescing for cooldown events: batches SPELL_UPDATE_COOLDOWN,
--- SPELL_UPDATE_CHARGES, BAG_UPDATE_COOLDOWN, and UNIT_AURA into a single
--- UpdateAllCooldowns after a short delay.
--- Throttled to max ~20 FPS (50ms) — raid combat fires SPELL_UPDATE_COOLDOWN
--- many times per second; 60 FPS updates are excessive for icon display.
-local CDM_MIN_UPDATE_INTERVAL = 0.05
+-- Frame-based coalescing for cooldown/aura events. Pure cooldown events use a
+-- lighter icon pass; aura and structural events upgrade the pending batch to a
+-- full refresh. Avoid C_Timer here: raid combat can schedule this path
+-- continuously, and timer objects become pure churn.
+local CDM_MIN_UPDATE_INTERVAL_IDLE = 0.05
+local CDM_MIN_UPDATE_INTERVAL_COMBAT = 0.20
+local CDM_MIN_UPDATE_INTERVAL_RAID_COMBAT = 0.30
 local _lastCDMUpdateTime = 0
+local CDM_UPDATE_COOLDOWN = "cooldown"
+local CDM_UPDATE_FULL = "full"
 
+local cdmUpdateFrame = CreateFrame("Frame")
 local _cdmUpdatePending = false
+local _cdmUpdateElapsed = 0
+local _cdmUpdateDelay = CDM_MIN_UPDATE_INTERVAL_IDLE
+local _cdmUpdateMode = CDM_UPDATE_COOLDOWN
 
 -- Bars are aura-state driven (active/inactive transitions). Gate UpdateOwnedBars
 -- behind a dirty flag so pure cooldown-event flurries (SPELL_UPDATE_COOLDOWN
 -- fires constantly in raid) don't walk the bar pool on every coalesce tick.
--- Flag is raised only by aura-related paths; cleared when UpdateOwnedBars runs.
--- Initialized true so the first scheduled update does a catch-up pass.
-local _barsDirty = true
+-- Flag is raised only by aura/full-refresh paths; cleared when UpdateOwnedBars
+-- runs.
+local _barsDirty = false
 
 local function _CDMUpdateCallback()
     _cdmUpdatePending = false
+    local mode = _cdmUpdateMode or CDM_UPDATE_COOLDOWN
+    _cdmUpdateMode = CDM_UPDATE_COOLDOWN
     _lastCDMUpdateTime = GetTime()
-    CDMIcons:UpdateAllCooldowns()
-    if _barsDirty and ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
-        _barsDirty = false
-        ns.CDMBars:UpdateOwnedBars()
+
+    if mode == CDM_UPDATE_FULL then
+        CDMIcons:UpdateAllCooldowns(true)
+        if _barsDirty and ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
+            _barsDirty = false
+            ns.CDMBars:UpdateOwnedBars()
+        end
+    else
+        CDMIcons:UpdateCooldownOnly(true)
     end
+
+    WipeUpdateTickCaches()
 end
 
-local function ScheduleCDMUpdate()
-    if _cdmUpdatePending then return end
+local function CDMUpdateOnUpdate(self, elapsed)
+    _cdmUpdateElapsed = _cdmUpdateElapsed + elapsed
+    if _cdmUpdateElapsed < _cdmUpdateDelay then return end
+    self:SetScript("OnUpdate", nil)
+    _CDMUpdateCallback()
+end
+
+local function GetCDMUpdateDelay(fast)
+    if not InCombatLockdown() then
+        return fast and CDM_MIN_UPDATE_INTERVAL_IDLE or CDM_MIN_UPDATE_INTERVAL_IDLE
+    end
+    if IsInRaid and IsInRaid() then
+        return CDM_MIN_UPDATE_INTERVAL_RAID_COMBAT
+    end
+    return CDM_MIN_UPDATE_INTERVAL_COMBAT
+end
+
+local function ScheduleCDMUpdate(fast, mode)
+    mode = (mode == CDM_UPDATE_FULL) and CDM_UPDATE_FULL or CDM_UPDATE_COOLDOWN
+    _tickCooldownStats.updateRequests = _tickCooldownStats.updateRequests + 1
+    if fast then
+        _tickCooldownStats.updateFastRequests = _tickCooldownStats.updateFastRequests + 1
+    end
+    local delay = GetCDMUpdateDelay(fast)
+
+    if _cdmUpdatePending then
+        if mode == CDM_UPDATE_FULL then
+            _cdmUpdateMode = CDM_UPDATE_FULL
+        end
+        _tickCooldownStats.updateCoalesced = _tickCooldownStats.updateCoalesced + 1
+        if delay < _cdmUpdateDelay then
+            _cdmUpdateDelay = delay
+        end
+        return
+end
+
     _cdmUpdatePending = true
-    C_Timer.After(CDM_MIN_UPDATE_INTERVAL, _CDMUpdateCallback)
+    _cdmUpdateElapsed = 0
+    _cdmUpdateDelay = delay
+    _cdmUpdateMode = mode
+    cdmUpdateFrame:SetScript("OnUpdate", CDMUpdateOnUpdate)
 end
 
--- Combat safety ticker: periodic UpdateAllCooldowns during combat.
+-- Combat safety ticker: periodic fallback update during combat.
 -- DurationObject sources may resolve late (viewer hook delays); a
 -- low-frequency ticker ensures icons recover even if the initial
 -- event-driven update failed due to secret values. Interval is 1s
--- because the event path (ScheduleCDMUpdate) already coalesces at
--- 50ms — this ticker is a fallback, not the primary update path.
+-- because the event path (ScheduleCDMUpdate) already coalesces quickly
+-- enough — this ticker is a fallback, not the primary update path.
 -- A shorter interval compounds with event-driven rebuilds and was
 -- measurably contributing to raid-combat stutters.
 local safetyTickFrame = CreateFrame("Frame")
@@ -4120,11 +4673,16 @@ local function SafetyTickOnUpdate(self, elapsed)
     -- Safety tick is a fallback for late-resolving DurationObjects, not a
     -- primary update path — skipping when recent is safe.
     if GetTime() - _lastCDMUpdateTime < SAFETY_TICK_INTERVAL then return end
-    CDMIcons:UpdateAllCooldowns()
+    if _barsDirty then
+        CDMIcons:UpdateAllCooldowns(true)
+    else
+        CDMIcons:UpdateCooldownOnly(true)
+    end
     if _barsDirty and ns.CDMBars and ns.CDMBars.UpdateOwnedBars then
         _barsDirty = false
         ns.CDMBars:UpdateOwnedBars()  -- safety ticker, don't clear oocInactive
     end
+    WipeUpdateTickCaches()
 end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
@@ -4132,23 +4690,26 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
         CDMIcons:UpdateAllIconRanges()
         -- Target debuffs (e.g. Reaper's Mark) need a CDM refresh when target changes
         ns.CDMSpellData:InvalidateChildMap()
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         return
     end
     if event == "PLAYER_SOFT_ENEMY_CHANGED" then
         CDMIcons:UpdateAllIconRanges()
-        ScheduleCDMUpdate()
+        ns.CDMSpellData:InvalidateChildMap()
+        ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         return
     end
     if event == "PLAYER_EQUIPMENT_CHANGED" then
         -- Trinket slots 13-14: refresh textures and cooldowns immediately
         if arg1 == 13 or arg1 == 14 then
+            ClearUpdateTickCaches()
             ns.CDMSpellData:InvalidateChildMap()
             CDMIcons:UpdateAllCooldowns()
         end
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then
+        ClearUpdateTickCaches()
         rangePollInCombat = true
         rangePollElapsed = 0  -- reset so combat interval kicks in immediately
         safetyTickElapsed = 0
@@ -4158,10 +4719,11 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_REGEN_ENABLED" then
         rangePollInCombat = false
         safetyTickFrame:SetScript("OnUpdate", nil)
+        ClearUpdateTickCaches()
         -- One-shot catch-up: refresh all cooldowns after combat ends
         ns.CDMSpellData:InvalidateChildMap()
         _barsDirty = true
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         return
     end
     if event == "UPDATE_MACROS" then
@@ -4170,13 +4732,14 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
     if event == "SPELLS_CHANGED" then
         -- Talent/spec change: spell icons may have changed.
+        ClearUpdateTickCaches()
+        ns.CDMSpellData:InvalidateChildMap()
         wipe(_textureCycleCache)
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         return
     end
-    -- Coalesce cooldown events via C_Timer
-    ns.CDMSpellData:InvalidateChildMap()  -- cooldown state changed, children may have shown/hidden
-    ScheduleCDMUpdate()
+    -- Coalesce cooldown events via the reusable update frame.
+    ScheduleCDMUpdate(nil, CDM_UPDATE_COOLDOWN)
 end)
 
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
@@ -4193,13 +4756,13 @@ if ns.AuraEvents then
     ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
         ns.CDMSpellData:InvalidateChildMap()
         _barsDirty = true
-        ScheduleCDMUpdate()
+        ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
     end)
     ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
         if unit == "target" then
             ns.CDMSpellData:InvalidateChildMap()
             _barsDirty = true
-            ScheduleCDMUpdate()
+            ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         end
     end)
 end

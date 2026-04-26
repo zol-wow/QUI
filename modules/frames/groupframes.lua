@@ -74,6 +74,43 @@ local _state = {
     rangeCheckTicker = nil,
     unitGuidCache = {},
     cachedMarkers = {},
+    unitEventRegistrationEnabled = false,
+    unitEventFrames = {},
+    unitEventActive = {
+        UNIT_HEALTH = true,
+        UNIT_MAXHEALTH = true,
+        UNIT_POWER_UPDATE = true,
+        UNIT_MAXPOWER = true,
+        UNIT_ABSORB_AMOUNT_CHANGED = true,
+        UNIT_HEAL_ABSORB_AMOUNT_CHANGED = true,
+        UNIT_HEAL_PREDICTION = true,
+        UNIT_NAME_UPDATE = true,
+        UNIT_CONNECTION = true,
+    },
+    unitEventList = {
+        "UNIT_HEALTH",
+        "UNIT_MAXHEALTH",
+        "UNIT_POWER_UPDATE",
+        "UNIT_POWER_FREQUENT",
+        "UNIT_MAXPOWER",
+        "UNIT_ABSORB_AMOUNT_CHANGED",
+        "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
+        "UNIT_HEAL_PREDICTION",
+        "UNIT_NAME_UPDATE",
+        "UNIT_CONNECTION",
+    },
+    defaultColors = {
+        darkHealth = { 0.15, 0.15, 0.15, 1 },
+        powerBar = { 0.2, 0.4, 0.8, 1 },
+        healAbsorb = { 0.5, 0.1, 0.1, 1 },
+        threat = { 1, 0, 0, 0.8 },
+        targetHighlight = { 1, 1, 1, 0.6 },
+        dispelFallback = { 0.2, 0.6, 1.0, 1 },
+        darkModeBg = { 0.25, 0.25, 0.25, 1 },
+        frameBg = { 0.1, 0.1, 0.1, 0.9 },
+        healPrediction = { 0.2, 1, 0.2, 1 },
+    },
+    backdropReapplyInterval = 0.5,
 }
 
 ---------------------------------------------------------------------------
@@ -113,6 +150,9 @@ local function AddFrameToMap(unit, frame)
         list[#list + 1] = frame
     else
         QUI_GF.unitFrameMap[unit] = { frame }
+        if _state.RegisterUnitEventsForUnit then
+            _state.RegisterUnitEventsForUnit(unit)
+        end
     end
 end
 
@@ -127,6 +167,9 @@ local function RemoveFrameFromMap(unit, frame)
     end
     if #list == 0 then
         QUI_GF.unitFrameMap[unit] = nil
+        if _state.UnregisterUnitEventsForUnit then
+            _state.UnregisterUnitEventsForUnit(unit)
+        end
     end
 end
 
@@ -161,6 +204,33 @@ local powerThrottle = {}      -- unitToken → last update time
 local absorbThrottle = {}     -- unitToken → last update time
 local healPredThrottle = {}   -- unitToken → last update time
 local THROTTLE_INTERVAL = 0.1 -- 100ms coalesce window
+
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GF_powerThrottle",    tbl = powerThrottle }
+    mp[#mp + 1] = { name = "GF_absorbThrottle",   tbl = absorbThrottle }
+    mp[#mp + 1] = { name = "GF_healPredThrottle", tbl = healPredThrottle }
+    -- Unit-keyed caches that grow as new units are observed across encounters.
+    mp[#mp + 1] = { name = "GF_unitGuidCache",  fn = function()
+        local n = 0; for _ in pairs(_state.unitGuidCache) do n = n + 1 end; return n, 0
+    end }
+    mp[#mp + 1] = { name = "GF_cachedMarkers",  fn = function()
+        local n = 0; for _ in pairs(_state.cachedMarkers) do n = n + 1 end; return n, 0
+    end }
+    mp[#mp + 1] = { name = "GF_unitFrameMap",   fn = function()
+        local count, deep = 0, 0
+        for _, list in pairs(QUI_GF.unitFrameMap) do
+            count = count + 1
+            if type(list) == "table" then deep = deep + #list end
+        end
+        return count, deep
+    end }
+    mp[#mp + 1] = { name = "GF_unitEventFrames",  fn = function()
+        local n = 0; for _ in pairs(_state.unitEventFrames) do n = n + 1 end; return n, 0
+    end }
+    mp[#mp + 1] = { name = "GF_allFrames",      fn = function()
+        return #QUI_GF.allFrames, 0
+    end }
+end
 
 ---------------------------------------------------------------------------
 -- CACHED BACKDROP TABLES: Avoid allocating a new table every SetBackdrop
@@ -207,6 +277,7 @@ gruCoalesceFrame:Hide()
 
 -- Font/texture caching
 local _fontCache = {}
+do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "GF_fontCache", tbl = _fontCache } end
 
 -- Pre-allocated color tables for common colors
 local COLORS = {
@@ -690,7 +761,7 @@ end
 local function GetHealthBarColor(unit, isRaid)
     local general = GetGeneralSettings(isRaid)
     if general and general.darkMode then
-        local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
+        local c = general.darkModeHealthColor or _state.defaultColors.darkHealth
         return c[1], c[2], c[3], c[4] or 1
     end
 
@@ -713,7 +784,7 @@ end
 local function GetPowerBarColor(unit, isRaid)
     local db = GetPowerSettings(isRaid)
     if db and not db.powerBarUsePowerColor then
-        local c = db.powerBarColor or { 0.2, 0.4, 0.8, 1 }
+        local c = db.powerBarColor or _state.defaultColors.powerBar
         return c[1], c[2], c[3], c[4] or 1
     end
 
@@ -1128,7 +1199,7 @@ local function UpdateHealAbsorb(frame, _unit, _maxHP)
 
     -- Color (dirty-checked: settings-driven, never changes during combat)
     local ha = vdb.healAbsorbs.opacity or 0.6
-    local hc = vdb.healAbsorbs.color or { 0.5, 0.1, 0.1 }
+    local hc = vdb.healAbsorbs.color or _state.defaultColors.healAbsorb
     if hc[1] ~= frame._lastHealAbsorbColorR or ha ~= frame._lastHealAbsorbColorA then
         frame._lastHealAbsorbColorR = hc[1]
         frame._lastHealAbsorbColorA = ha
@@ -1333,8 +1404,61 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Summon Pending
 ---------------------------------------------------------------------------
+_state.IsPlayerUnit = function(unit)
+    if unit == "player" then return true end
+    if UnitIsUnit then
+        local ok, isPlayer = pcall(UnitIsUnit, unit, "player")
+        return ok and not IsSecretValue(isPlayer) and isPlayer == true
+    end
+    return false
+end
+
+_state.GetActivePlayerSummonPopup = function()
+    if not StaticPopup_FindVisible then return nil, nil end
+
+    local checkedPopup = false
+    local ok, popup = pcall(StaticPopup_FindVisible, "CONFIRM_SUMMON")
+    if ok and not IsSecretValue(popup) then
+        if popup then return true, "CONFIRM_SUMMON" end
+        checkedPopup = true
+    end
+
+    ok, popup = pcall(StaticPopup_FindVisible, "CONFIRM_SUMMON_SCENARIO")
+    if ok and not IsSecretValue(popup) then
+        if popup then return true, "CONFIRM_SUMMON_SCENARIO" end
+        checkedPopup = true
+    end
+
+    ok, popup = pcall(StaticPopup_FindVisible, "CONFIRM_SUMMON_STARTING_AREA")
+    if ok and not IsSecretValue(popup) then
+        if popup then return true, "CONFIRM_SUMMON_STARTING_AREA" end
+        checkedPopup = true
+    end
+
+    if checkedPopup then return false, nil end
+    return nil, nil
+end
+
+_state.HasActivePlayerSummonConfirmation = function()
+    local popupVisible = _state.GetActivePlayerSummonPopup()
+    if popupVisible ~= nil then return popupVisible end
+
+    if C_SummonInfo and C_SummonInfo.GetSummonConfirmTimeLeft then
+        local ok, timeLeft = pcall(C_SummonInfo.GetSummonConfirmTimeLeft)
+        if ok and not IsSecretValue(timeLeft) then
+            return SafeToNumber(timeLeft, 0) > 0
+        end
+    end
+    return false
+end
+
 local function UpdateSummonPending(frame)
     if not frame or not frame.unit or not frame.summonIcon then return end
+    if not UnitExists(frame.unit) then
+        frame.summonIcon:Hide()
+        return
+    end
+
     local isRaid = frame._isRaid
     local indSettings = GetIndicatorSettings(isRaid)
     if not indSettings or indSettings.showSummonPending == false then
@@ -1342,8 +1466,26 @@ local function UpdateSummonPending(frame)
         return
     end
 
-    local hasSummon = C_IncomingSummon and C_IncomingSummon.HasIncomingSummon(frame.unit)
-    if hasSummon then
+    local showSummon = false
+    if C_IncomingSummon and C_IncomingSummon.HasIncomingSummon and C_IncomingSummon.IncomingSummonStatus then
+        local okHas, hasSummon = pcall(C_IncomingSummon.HasIncomingSummon, frame.unit)
+        local okStatus, status = pcall(C_IncomingSummon.IncomingSummonStatus, frame.unit)
+        if okHas and okStatus and not IsSecretValue(hasSummon) and not IsSecretValue(status) and hasSummon == true then
+            local pendingStatus = Enum and Enum.SummonStatus and Enum.SummonStatus.Pending or 1
+            showSummon = status == pendingStatus
+        end
+    elseif C_IncomingSummon and C_IncomingSummon.HasIncomingSummon then
+        local ok, hasSummon = pcall(C_IncomingSummon.HasIncomingSummon, frame.unit)
+        if ok and not IsSecretValue(hasSummon) then
+            showSummon = hasSummon == true
+        end
+    end
+
+    if showSummon and _state.IsPlayerUnit(frame.unit) then
+        showSummon = _state.HasActivePlayerSummonConfirmation()
+    end
+
+    if showSummon then
         frame.summonIcon:Show()
     else
         frame.summonIcon:Hide()
@@ -1364,7 +1506,7 @@ local function UpdateThreat(frame)
 
     local status = UnitThreatSituation(frame.unit)
     if status and status >= 2 then
-        local tc = indSettings.threatColor or { 1, 0, 0, 0.8 }
+        local tc = indSettings.threatColor or _state.defaultColors.threat
         frame.threatBorder:SetBackdropBorderColor(tc[1], tc[2], tc[3], tc[4] or 0.8)
         -- Keep threat border below icons/indicators — re-level in case frame
         -- base level shifted since decoration (secure header can re-level children)
@@ -1482,7 +1624,7 @@ local function UpdateTargetHighlight(frame)
     end
 
     if frame.unit and UnitIsUnit(frame.unit, "target") then
-        local c = healerSettings.targetHighlight.color or { 1, 1, 1, 0.6 }
+        local c = healerSettings.targetHighlight.color or _state.defaultColors.targetHighlight
         frame.targetHighlight:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.6)
         frame.targetHighlight:Show()
         -- Keep fast-path cache in sync (used by PLAYER_TARGET_CHANGED fast unhighlight)
@@ -1632,7 +1774,7 @@ local function UpdateDispelOverlay(frame)
     -- the overlay instead of silently dropping it.
     local fallback = fromPrivateSlots and colors and (colors.Magic or colors.Curse or colors.Disease or colors.Poison)
         or (colors and colors.Magic)
-    fallback = fallback or { 0.2, 0.6, 1.0, 1 }
+    fallback = fallback or _state.defaultColors.dispelFallback
     SetDispelBorderColor(overlay, fallback[1], fallback[2], fallback[3], fallbackOpacity)
     overlay:Show()
 end
@@ -1802,14 +1944,31 @@ local function UpdateDefensiveIndicator(frame)
     local reverseSwipe = defSettings.reverseSwipe ~= false
     local growFn = DEFENSIVE_GROWTH_OFFSETS[growDir] or DEFENSIVE_GROWTH_OFFSETS.RIGHT
     local stepX, stepY = growFn(iconSize, spacing)
+    local visibleCount = math_min(#foundAuras, #frame.defensiveIcons)
 
     -- CENTER: calculate centering offset based on visible count
     local centerOffX = 0
     if growDir == "CENTER" then
-        local visibleCount = math_min(#foundAuras, #frame.defensiveIcons)
         local totalSpan = visibleCount * iconSize + math_max(visibleCount - 1, 0) * spacing
         centerOffX = -totalSpan / 2
     end
+    local bottomPad = frame._bottomPad or 0
+    local layoutChanged = frame._defensiveIndicatorCount ~= visibleCount
+        or frame._defensiveIndicatorIconSize ~= iconSize
+        or frame._defensiveIndicatorPosition ~= position
+        or frame._defensiveIndicatorOffsetX ~= offsetX
+        or frame._defensiveIndicatorOffsetY ~= offsetY
+        or frame._defensiveIndicatorSpacing ~= spacing
+        or frame._defensiveIndicatorGrowDir ~= growDir
+        or frame._defensiveIndicatorBottomPad ~= bottomPad
+    frame._defensiveIndicatorCount = visibleCount
+    frame._defensiveIndicatorIconSize = iconSize
+    frame._defensiveIndicatorPosition = position
+    frame._defensiveIndicatorOffsetX = offsetX
+    frame._defensiveIndicatorOffsetY = offsetY
+    frame._defensiveIndicatorSpacing = spacing
+    frame._defensiveIndicatorGrowDir = growDir
+    frame._defensiveIndicatorBottomPad = bottomPad
 
     -- Expose active defensive auraInstanceIDs for buff deduplication
     if not frame._defensiveAuraIDs then frame._defensiveAuraIDs = {} end
@@ -1844,10 +2003,12 @@ local function UpdateDefensiveIndicator(frame)
             end
 
             -- Position: first icon at anchor, subsequent offset by growth direction
-            defIcon:SetSize(iconSize, iconSize)
-            defIcon:ClearAllPoints()
-            defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), offsetY + stepY * (i - 1))
-            defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
+            if layoutChanged then
+                defIcon:SetSize(iconSize, iconSize)
+                defIcon:ClearAllPoints()
+                defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), offsetY + stepY * (i - 1))
+                defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
+            end
             defIcon:Show()
         else
             defIcon:Hide()
@@ -1876,6 +2037,7 @@ local function UpdatePortrait(frame)
         return
     end
 
+
     -- Update texture
     pcall(SetPortraitTexture, frame.portraitTexture, unit, true)
     frame.portraitTexture:SetTexCoord(0.15, 0.85, 0.15, 0.85)
@@ -1892,24 +2054,41 @@ end
 ---------------------------------------------------------------------------
 -- UPDATE: Dark Mode Visuals (backdrop, health bar alpha)
 ---------------------------------------------------------------------------
-UpdateDarkModeVisuals = function(frame)
+UpdateDarkModeVisuals = function(frame, force)
     if not frame then return end
     local general = GetGeneralSettings(frame._isRaid)
     local bgColor, healthOpacity, bgOpacity
     if general and general.darkMode then
-        bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
+        bgColor = general.darkModeBgColor or _state.defaultColors.darkModeBg
         healthOpacity = general.darkModeHealthOpacity or 1.0
         bgOpacity = general.darkModeBgOpacity or 1.0
     else
-        bgColor = general and general.defaultBgColor or { 0.1, 0.1, 0.1, 0.9 }
+        bgColor = general and general.defaultBgColor or _state.defaultColors.frameBg
         healthOpacity = general and general.defaultHealthOpacity or 1.0
         bgOpacity = general and general.defaultBgOpacity or 1.0
     end
     local bgAlpha = (bgColor[4] or 1) * bgOpacity
-    -- Do not dirty-check the backdrop tint: BackdropTemplate can rebuild or
-    -- desync the visible backdrop without changing our configured RGBA, and we
-    -- want both live updates and settings changes to force the correct color.
-    frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
+    local now
+    if force
+        or bgColor[1] ~= frame._lastBackdropColorR
+        or bgColor[2] ~= frame._lastBackdropColorG
+        or bgColor[3] ~= frame._lastBackdropColorB
+        or bgAlpha ~= frame._lastBackdropColorA
+    then
+        frame._lastBackdropColorR = bgColor[1]
+        frame._lastBackdropColorG = bgColor[2]
+        frame._lastBackdropColorB = bgColor[3]
+        frame._lastBackdropColorA = bgAlpha
+        now = GetTime()
+        frame._lastBackdropReapplyTime = now
+        frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
+    else
+        now = GetTime()
+        if (now - (frame._lastBackdropReapplyTime or 0)) >= _state.backdropReapplyInterval then
+            frame._lastBackdropReapplyTime = now
+            frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
+        end
+    end
     if frame.healthBar then
         if healthOpacity ~= frame._lastHealthBarAlpha then
             frame._lastHealthBarAlpha = healthOpacity
@@ -1921,7 +2100,7 @@ end
 ---------------------------------------------------------------------------
 local function UpdateFrame(frame)
     if not frame or not frame.unit then return end
-    UpdateDarkModeVisuals(frame)
+    UpdateDarkModeVisuals(frame, true)
     UpdateHealth(frame)
     UpdatePower(frame)
     UpdateName(frame)
@@ -1981,15 +2160,20 @@ local function DecorateGroupFrame(frame)
 
     local bgColor, healthOpacity, bgOpacity
     if general and general.darkMode then
-        bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
+        bgColor = general.darkModeBgColor or _state.defaultColors.darkModeBg
         healthOpacity = general.darkModeHealthOpacity or 1.0
         bgOpacity = general.darkModeBgOpacity or 1.0
     else
-        bgColor = general and general.defaultBgColor or { 0.1, 0.1, 0.1, 0.9 }
+        bgColor = general and general.defaultBgColor or _state.defaultColors.frameBg
         healthOpacity = general and general.defaultHealthOpacity or 1.0
         bgOpacity = general and general.defaultBgOpacity or 1.0
     end
     local bgAlpha = (bgColor[4] or 1) * bgOpacity
+    frame._lastBackdropColorR = bgColor[1]
+    frame._lastBackdropColorG = bgColor[2]
+    frame._lastBackdropColorB = bgColor[3]
+    frame._lastBackdropColorA = bgAlpha
+    frame._lastBackdropReapplyTime = GetTime()
     frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
     if borderSize > 0 then
         frame:SetBackdropBorderColor(0, 0, 0, 1)
@@ -2033,7 +2217,7 @@ local function DecorateGroupFrame(frame)
     healPredictionBar:SetAllPoints(healthBar)
     healPredictionBar:SetMinMaxValues(0, 1)
     healPredictionBar:SetValue(0)
-    local pc = predSettings and predSettings.color or { 0.2, 1, 0.2 }
+    local pc = predSettings and predSettings.color or _state.defaultColors.healPrediction
     local pa = predSettings and predSettings.opacity or 0.5
     healPredictionBar:SetStatusBarColor(pc[1] or 0.2, pc[2] or 1, pc[3] or 0.2, pa)
     healPredictionBar:Hide()
@@ -2067,7 +2251,7 @@ local function DecorateGroupFrame(frame)
         healAbsorbBar = CreateFrame("StatusBar", nil, healthBar)
     end
     healAbsorbBar:SetStatusBarTexture("Interface\\RaidFrame\\Shield-Fill")
-    local hac = healAbsorbSettings and healAbsorbSettings.color or { 0.5, 0.1, 0.1 }
+    local hac = healAbsorbSettings and healAbsorbSettings.color or _state.defaultColors.healAbsorb
     local haa = healAbsorbSettings and healAbsorbSettings.opacity or 0.6
     healAbsorbBar:SetStatusBarColor(hac[1], hac[2], hac[3], haa)
     healAbsorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 3)
@@ -2460,6 +2644,7 @@ local function DecorateGroupFrame(frame)
             if not value then
                 -- Unit cleared (frame hidden by header)
                 _state.unitGuidCache[self] = nil
+                if self.summonIcon then self.summonIcon:Hide() end
                 return
             end
 
@@ -2548,6 +2733,9 @@ local function CollectHeaderUnits(header)
 end
 
 local function RebuildUnitFrameMap()
+    if _state.UnregisterAllUnitEventFrames then
+        _state.UnregisterAllUnitEventFrames()
+    end
     wipe(QUI_GF.unitFrameMap)
 
     CollectHeaderUnits(QUI_GF.headers.party)
@@ -2562,6 +2750,10 @@ local function RebuildUnitFrameMap()
     end
 
     CollectHeaderUnits(QUI_GF.spotlightHeader)
+
+    if _state.RefreshUnitEventRegistrations then
+        _state.RefreshUnitEventRegistrations()
+    end
 end
 
 local function EnsureAnchorFrame(key)
@@ -3111,12 +3303,17 @@ local function ConfigureRaidGroupHeaders()
                 local unitsPerColumn = math_max(1, math_min(section.memberCount, GetRaidSectionUnitsPerColumn(layout)))
                 header:SetAttribute("maxColumns", math_max(1, math.ceil(section.memberCount / unitsPerColumn)))
                 header:SetAttribute("unitsPerColumn", unitsPerColumn)
-                header:SetAttribute("groupBy", nil)
-                header:SetAttribute("groupFilter", nil)
-                header:SetAttribute("groupingOrder", nil)
+                -- Switching INTO nameList mode: set nameList/sortMethod BEFORE
+                -- clearing groupBy/groupFilter/groupingOrder. The reverse order
+                -- leaves the secure header in an invalid intermediate state
+                -- where Blizzard's private-aura anchor hook calls Hide on a
+                -- stale child frame, throwing "calling 'Hide' on bad self".
                 header:SetAttribute("nameList", section.nameList)
                 header:SetAttribute("sortMethod", "NAMELIST")
                 header:SetAttribute("sortDir", "ASC")
+                header:SetAttribute("groupBy", nil)
+                header:SetAttribute("groupFilter", nil)
+                header:SetAttribute("groupingOrder", nil)
             elseif raidSelfFirst then
                 header:SetAttribute("maxColumns", 1)
                 header:SetAttribute("unitsPerColumn", 1)
@@ -4839,6 +5036,74 @@ end
 
 eventFrame:SetScript("OnEvent", OnEvent)
 
+function _state.RegisterUnitEventsForUnit(unit)
+    if not _state.unitEventRegistrationEnabled or not unit or not QUI_GF.unitFrameMap[unit] then return end
+
+    local frame = _state.unitEventFrames[unit]
+    if not frame then
+        frame = CreateFrame("Frame")
+        frame:Hide()
+        frame:SetScript("OnEvent", OnEvent)
+        _state.unitEventFrames[unit] = frame
+    end
+
+    local active = _state.unitEventActive
+    for i = 1, #_state.unitEventList do
+        local event = _state.unitEventList[i]
+        if active[event] then
+            frame:RegisterUnitEvent(event, unit)
+        else
+            frame:UnregisterEvent(event)
+        end
+    end
+end
+
+function _state.UnregisterUnitEventsForUnit(unit)
+    local frame = unit and _state.unitEventFrames[unit]
+    if not frame then return end
+
+    for i = 1, #_state.unitEventList do
+        frame:UnregisterEvent(_state.unitEventList[i])
+    end
+end
+
+function _state.UnregisterAllUnitEventFrames()
+    for unit in pairs(_state.unitEventFrames) do
+        _state.UnregisterUnitEventsForUnit(unit)
+    end
+end
+
+function _state.RefreshUnitEventRegistrations()
+    if not _state.unitEventRegistrationEnabled then return end
+
+    for unit in pairs(_state.unitEventFrames) do
+        if not QUI_GF.unitFrameMap[unit] then
+            _state.UnregisterUnitEventsForUnit(unit)
+        end
+    end
+    for unit in pairs(QUI_GF.unitFrameMap) do
+        _state.RegisterUnitEventsForUnit(unit)
+    end
+end
+
+function _state.SetUnitEventActive(event, active)
+    local enabled = active and true or nil
+    if _state.unitEventActive[event] == enabled then return end
+
+    _state.unitEventActive[event] = enabled
+    if not _state.unitEventRegistrationEnabled then return end
+
+    if enabled then
+        for unit in pairs(QUI_GF.unitFrameMap) do
+            _state.RegisterUnitEventsForUnit(unit)
+        end
+    else
+        for _, frame in pairs(_state.unitEventFrames) do
+            frame:UnregisterEvent(event)
+        end
+    end
+end
+
 -- Perf profiler opt-in (no-op until /qui perf → Modules toggle)
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GroupFrames", frame = eventFrame }
@@ -4853,18 +5118,16 @@ local function RegisterEvents()
     eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
-    -- Unit events (will be routed via unitFrameMap)
-    eventFrame:RegisterEvent("UNIT_HEALTH")
-    eventFrame:RegisterEvent("UNIT_MAXHEALTH")
-    eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
-    eventFrame:RegisterEvent("UNIT_MAXPOWER")
-    eventFrame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
-    eventFrame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
-    eventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")
-    eventFrame:RegisterEvent("UNIT_NAME_UPDATE")
+    -- Noisy unit events are registered on per-unit hidden frames via
+    -- RegisterUnitEvent, so unrelated nameplate/target traffic never reaches
+    -- the group-frame dispatcher.
+    _state.unitEventRegistrationEnabled = true
+    _state.RefreshUnitEventRegistrations()
+
+    -- Lower-volume or compatibility-sensitive unit events stay on the central
+    -- frame and are still filtered through unitFrameMap in OnEvent.
     eventFrame:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
     -- UNIT_AURA handled by centralized dispatcher (core/aura_events.lua)
-    eventFrame:RegisterEvent("UNIT_CONNECTION")
     eventFrame:RegisterEvent("UNIT_FLAGS")
     eventFrame:RegisterEvent("UNIT_PHASE")
     eventFrame:RegisterEvent("INCOMING_RESURRECT_CHANGED")
@@ -4886,6 +5149,8 @@ end
 
 local function UnregisterEvents()
     eventFrame:UnregisterAllEvents()
+    _state.unitEventRegistrationEnabled = false
+    _state.UnregisterAllUnitEventFrames()
 end
 
 ---------------------------------------------------------------------------
@@ -4900,12 +5165,13 @@ UpdateSelectiveEvents = function()
     -- Power events: unregister in large raids when power bar hidden
     local powerSettings = GetPowerSettings(isRaid)
     if mode == "large" and (not powerSettings or powerSettings.showPowerBar == false) then
-        eventFrame:UnregisterEvent("UNIT_POWER_UPDATE")
-        eventFrame:UnregisterEvent("UNIT_POWER_FREQUENT")
-        eventFrame:UnregisterEvent("UNIT_MAXPOWER")
+        _state.SetUnitEventActive("UNIT_POWER_UPDATE", false)
+        _state.SetUnitEventActive("UNIT_POWER_FREQUENT", false)
+        _state.SetUnitEventActive("UNIT_MAXPOWER", false)
     else
-        eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
-        eventFrame:RegisterEvent("UNIT_MAXPOWER")
+        _state.SetUnitEventActive("UNIT_POWER_UPDATE", true)
+        _state.SetUnitEventActive("UNIT_POWER_FREQUENT", false)
+        _state.SetUnitEventActive("UNIT_MAXPOWER", true)
     end
 
     -- Absorb/heal-prediction events: unregister when their bars are disabled
@@ -4914,16 +5180,16 @@ UpdateSelectiveEvents = function()
     local absorbEnabled = vdb and vdb.absorbs and vdb.absorbs.enabled ~= false
     local healPredEnabled = vdb and vdb.healPrediction and vdb.healPrediction.enabled ~= false
     if absorbEnabled then
-        eventFrame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
-        eventFrame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
+        _state.SetUnitEventActive("UNIT_ABSORB_AMOUNT_CHANGED", true)
+        _state.SetUnitEventActive("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", true)
     else
-        eventFrame:UnregisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")
-        eventFrame:UnregisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
+        _state.SetUnitEventActive("UNIT_ABSORB_AMOUNT_CHANGED", false)
+        _state.SetUnitEventActive("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", false)
     end
     if healPredEnabled then
-        eventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")
+        _state.SetUnitEventActive("UNIT_HEAL_PREDICTION", true)
     else
-        eventFrame:UnregisterEvent("UNIT_HEAL_PREDICTION")
+        _state.SetUnitEventActive("UNIT_HEAL_PREDICTION", false)
     end
 
     -- Threat events: UNIT_THREAT_SITUATION_UPDATE fires for ALL units in the

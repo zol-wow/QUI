@@ -544,6 +544,9 @@ local function TooltipHelp(msg, color)
 end
 
 local function OnTooltipSetItem(tooltip, data)
+    -- Skip before DB/bag work on the overwhelmingly common no-modifier path.
+    if not IsModifierActive() then return end
+
     -- Skip if disabled or in combat
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
@@ -551,9 +554,6 @@ local function OnTooltipSetItem(tooltip, data)
 
     -- Skip our own tooltips
     if tooltip:GetOwner() == SalvageButton then return end
-
-    -- Skip if modifier not active
-    if not IsModifierActive() then return end
 
     -- Skip if in Auction House or vehicle
     if (AuctionFrame or AuctionHouseFrame) and (AuctionFrame or AuctionHouseFrame):IsVisible() then return end

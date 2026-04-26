@@ -25,23 +25,16 @@ local overlayedSourceMap = {}  -- [sourceSpellID] = { [candidateID] = true }
 
 local function ForEachSpellCandidate(spellID, callback)
     if not spellID or not callback then return end
+    spellID = Helpers.SafeValue(spellID, nil)
+    if not spellID then return end
 
-    local seen = {}
-    local function Visit(id)
-        if id and not seen[id] then
-            seen[id] = true
-            callback(id)
-        end
-    end
-
-    Visit(spellID)
+    callback(spellID)
 
     if C_Spell and C_Spell.GetOverrideSpell then
         local ok, overrideID = pcall(C_Spell.GetOverrideSpell, spellID)
+        overrideID = ok and Helpers.SafeValue(overrideID, nil) or nil
         if ok and overrideID and overrideID ~= spellID then
-            -- GetOverrideSpell can return secret values in combat; sanitize
-            -- before using as a Lua table key downstream.
-            Visit(Helpers.SafeValue(overrideID, nil))
+            callback(overrideID)
         end
     end
 end
@@ -124,13 +117,18 @@ local function MarkOverlaySource(sourceSpellID)
     overlayedSourceMap[sourceSpellID] = mapped
 end
 
+local _iconRawSeen = {}
+local _iconCandidateSeen = {}
+
 local function ForEachIconSpellID(icon, callback)
     if not icon or not icon._spellEntry or not callback then return end
 
     local entry = icon._spellEntry
     local child = entry._blizzChild
-    local rawSeen = {}
-    local candidateSeen = {}
+    local rawSeen = _iconRawSeen
+    local candidateSeen = _iconCandidateSeen
+    wipe(rawSeen)
+    wipe(candidateSeen)
 
     local function VisitRaw(id)
         if not id or rawSeen[id] then return end
@@ -177,6 +175,9 @@ local function ForEachIconSpellID(icon, callback)
             end
         end
     end
+
+    wipe(rawSeen)
+    wipe(candidateSeen)
 end
 
 -- Safe wrapper: C_Spell.IsSpellUsable can return secret values in Midnight.
@@ -251,6 +252,16 @@ do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_overlayedSpells", tbl = overlayedSpells }
     mp[#mp + 1] = { name = "CDM_glowSpellMap",    tbl = spellIdToGlowIcons }
     mp[#mp + 1] = { name = "CDM_activeGlows",     tbl = activeGlowIcons }
+end
+
+local function AddGlowMapID(spellID, icon)
+    if not spellID then return end
+    local list = spellIdToGlowIcons[spellID]
+    if not list then
+        list = {}
+        spellIdToGlowIcons[spellID] = list
+    end
+    list[#list + 1] = icon
 end
 
 local function RebuildGlowSpellMap()
@@ -741,20 +752,25 @@ end
 -- TARGETED GLOW UPDATE FOR A SINGLE SPELL ID
 -- O(1) lookup via reverse map instead of scanning all icons.
 ---------------------------------------------------------------------------
+local _scanGlowVisited = {}
+
 local function ScanGlowsForSpell(spellID)
     if not spellID then ScanAllGlows(); return end
 
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
 
-    -- Deduplicate icons across candidates
-    local visited = {}
+    -- Deduplicate icons across candidates. Reuse scratch table because
+    -- overlay events can fire in bursts during combat.
+    local visited = _scanGlowVisited
+    wipe(visited)
     local matched = false
     ForEachSpellCandidate(spellID, function(id)
         local icons = spellIdToGlowIcons[id]
         if icons then
             matched = true
-            for _, icon in ipairs(icons) do
+            for i = 1, #icons do
+                local icon = icons[i]
                 if not visited[icon] then
                     visited[icon] = true
                     if icon:IsShown() and icon._spellEntry then
@@ -771,20 +787,26 @@ local function ScanGlowsForSpell(spellID)
         -- rescan all visible icons immediately so short overlays are not lost.
         ScanAllGlows()
     end
+
+    wipe(visited)
 end
 
 ---------------------------------------------------------------------------
 -- REFRESH ALL GLOWS (called when settings change)
 ---------------------------------------------------------------------------
+local _refreshStopScratch = {}
+
 local function RefreshAllGlows()
     -- Stop all current glows
-    local toStop = {}
+    local toStop = _refreshStopScratch
+    wipe(toStop)
     for icon in pairs(activeGlowIcons) do
         toStop[#toStop + 1] = icon
     end
     for _, icon in ipairs(toStop) do
         StopGlow(icon)
     end
+    wipe(toStop)
     wipe(activeGlowIcons)
     wipe(_pandemicGlowIcons)
 
@@ -808,16 +830,26 @@ eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
--- Coalesced usability glow scan: 100ms delay lets CDM's 50ms update finish first
+-- Coalesced usability glow scan: a short delay lets CDM's update finish first
 -- so icon._hasCooldownActive is current when we check IsSpellCastable.
+local usabilityGlowFrame = CreateFrame("Frame")
 local _usabilityGlowPending = false
+local _usabilityGlowElapsed = 0
+local USABILITY_GLOW_DELAY = 0.1
+
+local function UsabilityGlowOnUpdate(self, elapsed)
+    _usabilityGlowElapsed = _usabilityGlowElapsed + elapsed
+    if _usabilityGlowElapsed < USABILITY_GLOW_DELAY then return end
+    self:SetScript("OnUpdate", nil)
+    _usabilityGlowPending = false
+    ScanAllGlows()
+end
+
 local function ScheduleUsabilityGlowScan()
     if _usabilityGlowPending then return end
     _usabilityGlowPending = true
-    C_Timer.After(0.1, function()
-        _usabilityGlowPending = false
-        ScanAllGlows()
-    end)
+    _usabilityGlowElapsed = 0
+    usabilityGlowFrame:SetScript("OnUpdate", UsabilityGlowOnUpdate)
 end
 
 eventFrame:SetScript("OnEvent", function(_, event, spellID)

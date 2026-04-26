@@ -40,15 +40,15 @@ local GCD_SPELL_ID = 61304
 -- Ring texture paths
 ---------------------------------------------------------------------------
 local RING_TEXTURES = {
-    thin     = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_ring_thin.png",
-    standard = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_ring_standard.png",
-    thick    = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_ring_thick.png",
-    solid    = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_ring_solid.png",
+    thin     = Helpers.AssetPath .. "cursor\\qui_ring_thin.png",
+    standard = Helpers.AssetPath .. "cursor\\qui_ring_standard.png",
+    thick    = Helpers.AssetPath .. "cursor\\qui_ring_thick.png",
+    solid    = Helpers.AssetPath .. "cursor\\qui_ring_solid.png",
 }
 
 -- Reticle options (mix of custom texture and Blizzard Atlas)
 local RETICLE_OPTIONS = {
-    dot     = { path = "Interface\\AddOns\\QUI\\assets\\cursor\\qui_reticle_dot.tga", isAtlas = false },
+    dot     = { path = Helpers.AssetPath .. "cursor\\qui_reticle_dot.tga", isAtlas = false },
     cross   = { path = "uitools-icon-plus", isAtlas = true },
     chevron = { path = "uitools-icon-chevron-down", isAtlas = true },
     diamond = { path = "UF-SoulShard-FX-FrameGlow", isAtlas = true },

@@ -97,11 +97,19 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        bypasses resourcebars.lua's swap / quick-position logic. Delete only
 --        entries that still match the seeded defaults so the power-bar module
 --        regains ownership; real user customizations stay intact.)
+-- v30 = SplitGroupAuraDurationText
+--       (3.1.6: replace the shared group-frame aura duration text toggle with
+--        separate buff/debuff toggles. Existing profiles inherit the old
+--        shared value into both new keys when it was explicitly saved.)
+-- v31 = EnsureGroupAuraDurationTextStyle
+--       (3.1.6: add per-kind group-frame aura duration text font, color,
+--        anchor, and offset settings. Existing profiles inherit the old shared
+--        duration font size and time-based color toggle.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 29
+local CURRENT_SCHEMA_VERSION = 31
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1903,6 +1911,74 @@ local function RestorePowerBarModulePositioning(profile)
     MigLog("RestorePowerBarModulePositioning done: removed=%d", removed)
 end
 
+local function SplitGroupAuraDurationText(profile)
+    if type(profile) ~= "table" or type(profile.quiGroupFrames) ~= "table" then
+        return
+    end
+
+    local function MigrateContext(contextKey)
+        local context = profile.quiGroupFrames[contextKey]
+        local auras = type(context) == "table" and context.auras or nil
+        if type(auras) ~= "table" then
+            return
+        end
+
+        local legacy = auras.showDurationText
+        if legacy == nil then
+            return
+        end
+
+        SetIfNil(auras, "showBuffDurationText", legacy)
+        SetIfNil(auras, "showDebuffDurationText", legacy)
+        MigLog("v30 SplitGroupAuraDurationText: %s shared=%s", tostring(contextKey), tostring(legacy))
+    end
+
+    MigrateContext("party")
+    MigrateContext("raid")
+end
+
+local function EnsureGroupAuraDurationTextStyle(profile)
+    if type(profile) ~= "table" or type(profile.quiGroupFrames) ~= "table" then
+        return
+    end
+
+    local function MigrateContext(contextKey)
+        local context = profile.quiGroupFrames[contextKey]
+        local auras = type(context) == "table" and context.auras or nil
+        if type(auras) ~= "table" then
+            return
+        end
+
+        local legacyShow = auras.showDurationText
+        if legacyShow ~= nil then
+            SetIfNil(auras, "showBuffDurationText", legacyShow)
+            SetIfNil(auras, "showDebuffDurationText", legacyShow)
+        end
+
+        local legacyFontSize = auras.durationFontSize or 9
+        local legacyUseTimeColor = auras.showDurationColor
+        if legacyUseTimeColor == nil then
+            legacyUseTimeColor = true
+        end
+
+        for _, prefix in ipairs({ "buff", "debuff" }) do
+            SetIfNil(auras, prefix .. "DurationFont", "")
+            SetIfNil(auras, prefix .. "DurationFontSize", legacyFontSize)
+            SetIfNil(auras, prefix .. "DurationAnchor", "BOTTOM")
+            SetIfNil(auras, prefix .. "DurationOffsetX", 0)
+            SetIfNil(auras, prefix .. "DurationOffsetY", -6)
+            SetIfNil(auras, prefix .. "DurationColor", { 1, 1, 1, 1 })
+            SetIfNil(auras, prefix .. "DurationUseTimeColor", legacyUseTimeColor)
+        end
+
+        MigLog("v31 EnsureGroupAuraDurationTextStyle: %s fontSize=%s timeColor=%s",
+            tostring(contextKey), tostring(legacyFontSize), tostring(legacyUseTimeColor))
+    end
+
+    MigrateContext("party")
+    MigrateContext("raid")
+end
+
 -- CORNER_POINTS used by both RepairDisabledStaleCornerEntries and
 -- BackfillGrowAnchor. Defined locally so the migration module is
 -- self-contained (anchoring.lua has its own copy).
@@ -2428,6 +2504,13 @@ function Migrations.RunOnProfile(profile)
     -- v29: remove seeded/default raw FA entries for primary/secondary power
     -- bars so resourcebars.lua regains control of swap/quick positioning.
     if stored < 29 then RestorePowerBarModulePositioning(profile) end
+
+    -- v30: split the shared group-frame aura duration text toggle into
+    -- separate buff/debuff settings while preserving old saved values.
+    if stored < 30 then SplitGroupAuraDurationText(profile) end
+
+    -- v31: add font, color, anchor, and offset controls for duration text.
+    if stored < 31 then EnsureGroupAuraDurationTextStyle(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

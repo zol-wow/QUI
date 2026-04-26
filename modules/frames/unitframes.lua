@@ -392,7 +392,7 @@ local function GetAbsorbTexturePath(textureName)
     if not name or name == "" then
         name = "QUI Stripes"
     end
-    return LSM:Fetch("statusbar", name) or "Interface\\AddOns\\QUI\\assets\\absorb_stripe"
+    return LSM:Fetch("statusbar", name) or (Helpers.AssetPath .. "absorb_stripe")
 end
 
 ---------------------------------------------------------------------------
@@ -1571,6 +1571,8 @@ QUI_UF._GetUnitSettings = GetUnitSettings
 QUI_UF._GetGeneralSettings = GetGeneralSettings
 QUI_UF._UpdateFrame = UpdateFrame
 
+local UpdateBossRangeAlpha
+
 ---------------------------------------------------------------------------
 -- CREATE: Boss Frame (special handling for boss1-boss5)
 ---------------------------------------------------------------------------
@@ -1626,6 +1628,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
         local bossKey = "boss" .. bossIndex
         if QUI_UF.previewMode[bossKey] then return end
         UpdateFrame(self)
+        UpdateBossRangeAlpha()
     end)
 
     -- Background
@@ -1962,6 +1965,227 @@ local function UpdateBossTargetHighlight()
             _bossTargetHighlightFrame = frame
             return
         end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Boss Range Alpha
+---------------------------------------------------------------------------
+local BOSS_RANGE_CHECK_INTERVAL = 0.2
+
+local BOSS_RANGE_SPELLS = {
+    specHostile = {
+        [250] = 47541, [251] = 47541, [252] = 47541,          -- Death Knight: Death Coil
+        [577] = 185123, [581] = 185123,                       -- Demon Hunter: Throw Glaive
+        [102] = 8921, [103] = 8921, [104] = 8921, [105] = 8921, -- Druid: Moonfire
+        [1467] = 361469, [1468] = 361469, [1473] = 361469,    -- Evoker: Living Flame
+        [253] = 193455, [254] = 19434, [255] = 259491,        -- Hunter
+        [62] = 30451, [63] = 133, [64] = 116,                 -- Mage
+        [268] = 115546, [269] = 115546, [270] = 115546,       -- Monk: Provoke
+        [65] = 62124, [66] = 62124, [70] = 62124,             -- Paladin: Hand of Reckoning
+        [256] = 585, [257] = 585, [258] = 585,                -- Priest: Smite
+        [259] = 36554, [260] = 185763, [261] = 36554,         -- Rogue
+        [262] = 188196, [263] = 188196, [264] = 188196,       -- Shaman: Lightning Bolt
+        [265] = 686, [266] = 686, [267] = 29722,              -- Warlock
+        [71] = 355, [72] = 355, [73] = 355,                   -- Warrior: Taunt
+    },
+    classHostile = {
+        DEATHKNIGHT = 47541,
+        DEMONHUNTER = 185123,
+        DRUID = 8921,
+        EVOKER = 361469,
+        HUNTER = 75,
+        MAGE = 116,
+        MONK = 115546,
+        PALADIN = 62124,
+        PRIEST = 585,
+        ROGUE = 36554,
+        SHAMAN = 188196,
+        WARLOCK = 686,
+        WARRIOR = 355,
+    },
+}
+
+local bossRange = {
+    playerClass = nil,
+    hostileSpell = nil,
+    ticker = nil,
+    eventFrame = nil,
+}
+
+local function ResolveBossRangeSpell()
+    bossRange.playerClass = select(2, UnitClass("player"))
+    bossRange.hostileSpell = nil
+
+    local specIndex = GetSpecialization and GetSpecialization()
+    local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex)
+    local specSpell = specID and BOSS_RANGE_SPELLS.specHostile[specID]
+    if specSpell and IsPlayerSpell and IsPlayerSpell(specSpell) then
+        bossRange.hostileSpell = specSpell
+        return
+    end
+
+    local classSpell = bossRange.playerClass and BOSS_RANGE_SPELLS.classHostile[bossRange.playerClass]
+    if classSpell and IsPlayerSpell and IsPlayerSpell(classSpell) then
+        bossRange.hostileSpell = classSpell
+    end
+end
+
+local function GetBossRangeSettings()
+    local settings = GetUnitSettings("boss")
+    local range = settings and settings.range
+    if range == nil then
+        return { enabled = true, outOfRangeAlpha = 0.4 }
+    end
+    return range
+end
+
+local function ShouldApplyBossRangeAlpha()
+    if (_G.QUI_IsUnitFrameEditModeActive and _G.QUI_IsUnitFrameEditModeActive())
+        or Helpers.IsLayoutModeActive() then
+        return false
+    end
+
+    if _G.QUI_ShouldUnitframesBeVisible and not _G.QUI_ShouldUnitframesBeVisible() then
+        return false
+    end
+
+    return true
+end
+
+local function ApplyBossRangeAlpha(frame, inRange, outAlpha)
+    if not frame then return end
+
+    if frame.SetAlphaFromBoolean then
+        frame:SetAlphaFromBoolean(inRange, 1, outAlpha)
+    else
+        frame:SetAlpha(inRange and 1 or outAlpha)
+    end
+end
+
+local function ResetBossRangeAlpha()
+    if not ShouldApplyBossRangeAlpha() then return end
+
+    for i = 1, 5 do
+        local frame = QUI_UF.frames and QUI_UF.frames["boss" .. i]
+        if frame then
+            frame:SetAlpha(1)
+        end
+    end
+end
+
+local function CheckBossUnitRange(unit)
+    if not unit or not UnitExists(unit) then return true end
+    local isDead = UnitIsDeadOrGhost(unit)
+    if IsSecretValue(isDead) then isDead = false end
+    if isDead then return true end
+
+    if UnitCanAttack("player", unit) then
+        if bossRange.hostileSpell and C_Spell and C_Spell.IsSpellInRange then
+            local inRange = C_Spell.IsSpellInRange(bossRange.hostileSpell, unit)
+            if inRange ~= nil then
+                return inRange
+            end
+        end
+
+        if not InCombatLockdown() and CheckInteractDistance then
+            local ok, inRange = pcall(CheckInteractDistance, unit, 4)
+            if ok and inRange ~= nil then
+                return inRange and true or false
+            end
+        end
+
+        return true
+    end
+
+    if UnitInRange then
+        local inRange = UnitInRange(unit)
+        if IsSecretValue(inRange) then return inRange end
+        if inRange ~= nil then return inRange end
+    end
+
+    return true
+end
+
+UpdateBossRangeAlpha = function()
+    local range = GetBossRangeSettings()
+    if not range or range.enabled == false then
+        ResetBossRangeAlpha()
+        return
+    end
+
+    if not bossRange.hostileSpell then
+        ResolveBossRangeSpell()
+    end
+
+    if not ShouldApplyBossRangeAlpha() then
+        return
+    end
+
+    local outAlpha = range.outOfRangeAlpha or 0.4
+    for i = 1, 5 do
+        local frame = QUI_UF.frames and QUI_UF.frames["boss" .. i]
+        if frame and frame.unit and UnitExists(frame.unit) then
+            ApplyBossRangeAlpha(frame, CheckBossUnitRange(frame.unit), outAlpha)
+        elseif frame then
+            frame:SetAlpha(1)
+        end
+    end
+end
+
+local function EnsureBossRangeEventFrame()
+    if bossRange.eventFrame then return end
+
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    eventFrame:RegisterEvent("SPELLS_CHANGED")
+    eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    eventFrame:RegisterEvent("UNIT_IN_RANGE_UPDATE")
+    eventFrame:SetScript("OnEvent", function(_, event, unit)
+        if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "SPELLS_CHANGED" then
+            ResolveBossRangeSpell()
+        elseif event == "UNIT_IN_RANGE_UPDATE" and (type(unit) ~= "string" or not unit:match("^boss%d+$")) then
+            return
+        end
+
+        UpdateBossRangeAlpha()
+    end)
+    bossRange.eventFrame = eventFrame
+end
+
+local function StartBossRangeCheck()
+    local range = GetBossRangeSettings()
+    if range and range.enabled == false then
+        ResetBossRangeAlpha()
+        return
+    end
+
+    ResolveBossRangeSpell()
+    EnsureBossRangeEventFrame()
+
+    if not bossRange.ticker then
+        bossRange.ticker = C_Timer.NewTicker(BOSS_RANGE_CHECK_INTERVAL, UpdateBossRangeAlpha)
+    end
+
+    UpdateBossRangeAlpha()
+end
+
+local function StopBossRangeCheck()
+    if bossRange.ticker then
+        bossRange.ticker:Cancel()
+        bossRange.ticker = nil
+    end
+    ResetBossRangeAlpha()
+end
+
+local function RefreshBossRangeCheck()
+    local range = GetBossRangeSettings()
+    if range and range.enabled == false then
+        StopBossRangeCheck()
+    else
+        StartBossRangeCheck()
     end
 end
 
@@ -2918,6 +3142,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 local frame = self.frames["boss" .. i]
                 if frame then UpdateFrame(frame) end
             end
+            RefreshBossRangeCheck()
             return
         end
         
@@ -3187,6 +3412,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 end
             end
         end
+        RefreshBossRangeCheck()
         return
     end
     
@@ -3793,6 +4019,8 @@ function QUI_UF:Initialize()
         bossTargetEventFrame:SetScript("OnEvent", function()
             UpdateBossTargetHighlight()
         end)
+
+        RefreshBossRangeCheck()
     end
 
     -- Single delayed refresh to catch health values once available
@@ -4467,6 +4695,85 @@ do
                 end
                 P(GUI:CreateFormColorPicker(body, "Custom Health Color", "customHealthColor", unitDB, RefreshUF), body, sy)
             end, sections, relayout)
+
+            -- Range Alpha (boss frames only)
+            if unitKey == "boss" then
+                if unitDB.range == nil then unitDB.range = {} end
+                Helpers.EnsureDefaults(unitDB.range, {
+                    enabled = true,
+                    outOfRangeAlpha = 0.4,
+                })
+
+                CreateCollapsible(content, "Range Alpha", 2 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    local range = unitDB.range
+                    local alphaSlider
+                    local rangeCheck = GUI:CreateFormCheckbox(body, "Dim When Out of Range", "enabled", range, function()
+                        RefreshUF()
+                        if alphaSlider and alphaSlider.SetEnabled then
+                            alphaSlider:SetEnabled(range.enabled ~= false)
+                        end
+                    end)
+                    sy = P(rangeCheck, body, sy)
+
+                    alphaSlider = GUI:CreateFormSlider(body, "Out of Range Alpha", 0.1, 1.0, 0.05, "outOfRangeAlpha", range, RefreshUF, DEFER)
+                    if alphaSlider.SetEnabled then
+                        alphaSlider:SetEnabled(range.enabled ~= false)
+                    end
+                    P(alphaSlider, body, sy)
+                end, sections, relayout)
+            end
+
+            -- Portrait (player, target, focus)
+            if unitKey == "player" or unitKey == "target" or unitKey == "focus" then
+                if unitDB.showPortrait == nil then unitDB.showPortrait = false end
+                if unitDB.portraitSide == nil then
+                    unitDB.portraitSide = (unitKey == "player") and "LEFT" or "RIGHT"
+                end
+                if unitDB.portraitSize == nil then
+                    if unitDB.portraitScale then
+                        unitDB.portraitSize = math_floor((unitDB.height or 40) * unitDB.portraitScale)
+                    else
+                        unitDB.portraitSize = (unitKey == "focus") and 30 or 40
+                    end
+                end
+                if unitDB.portraitBorderSize == nil then unitDB.portraitBorderSize = 1 end
+                if unitDB.portraitGap == nil then unitDB.portraitGap = 0 end
+                if unitDB.portraitOffsetX == nil then unitDB.portraitOffsetX = 0 end
+                if unitDB.portraitOffsetY == nil then unitDB.portraitOffsetY = 0 end
+                if unitDB.portraitBorderUseClassColor == nil then unitDB.portraitBorderUseClassColor = false end
+                if unitDB.portraitBorderColor == nil then unitDB.portraitBorderColor = { 0, 0, 0, 1 } end
+
+                local sideOptions = {
+                    {value = "LEFT", text = "Left"},
+                    {value = "RIGHT", text = "Right"},
+                }
+
+                CreateCollapsible(content, "Portrait", 9 * FORM_ROW + 8, function(body)
+                    local sy = -4
+                    local borderColorPicker
+
+                    sy = P(GUI:CreateFormCheckbox(body, "Show Portrait", "showPortrait", unitDB, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormDropdown(body, "Portrait Side", sideOptions, "portraitSide", unitDB, RefreshUF), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Portrait Size", 20, 150, 1, "portraitSize", unitDB, RefreshUF, DEFER), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Portrait Border", 0, 5, 1, "portraitBorderSize", unitDB, RefreshUF, DEFER), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Portrait Gap", 0, 10, 1, "portraitGap", unitDB, RefreshUF, DEFER), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Portrait Offset X", -500, 500, 1, "portraitOffsetX", unitDB, RefreshUF, DEFER), body, sy)
+                    sy = P(GUI:CreateFormSlider(body, "Portrait Offset Y", -500, 500, 1, "portraitOffsetY", unitDB, RefreshUF, DEFER), body, sy)
+                    sy = P(GUI:CreateFormCheckbox(body, "Use Class Color for Border", "portraitBorderUseClassColor", unitDB, function(val)
+                        RefreshUF()
+                        if borderColorPicker and borderColorPicker.SetEnabled then
+                            borderColorPicker:SetEnabled(not val)
+                        end
+                    end), body, sy)
+
+                    borderColorPicker = GUI:CreateFormColorPicker(body, "Border Color", "portraitBorderColor", unitDB, RefreshUF)
+                    if borderColorPicker.SetEnabled then
+                        borderColorPicker:SetEnabled(not unitDB.portraitBorderUseClassColor)
+                    end
+                    P(borderColorPicker, body, sy)
+                end, sections, relayout)
+            end
 
             -- Absorb Indicator
             if unitDB.absorbs == nil then unitDB.absorbs = {} end

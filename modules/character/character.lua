@@ -3432,8 +3432,11 @@ local function HookCharacterFrame()
     -- Create gear icon (more prominent position in title bar)
     if not (frameState[CharacterFrame] or EMPTY).gearBtn then
         gearBtn = CreateFrame("Button", "QUI_CharacterSettingsBtn", CharacterFrame, "BackdropTemplate")
-        QUICore:SetPixelPerfectSize(gearBtn, 70, 20)
-        QUICore:SetPixelPerfectPoint(gearBtn, "TOPRIGHT", CharacterFrame, "TOPRIGHT", 20, -6)
+        -- Width 118 keeps the icon and label inside one bordered button across UI scales.
+        -- Do NOT call gearLabel:GetStringWidth() to drive this — it returns 0 before
+        -- the FontString has been laid out, which collapses the button to icon-only width).
+        QUICore:SetPixelPerfectSize(gearBtn, 118, 20)
+        QUICore:SetPixelPerfectPoint(gearBtn, "TOPRIGHT", CharacterFrame, "TOPRIGHT", 6, -6)
         local br, bg, bb = GetCharacterBorderColor()
         ApplyOnePixelBorder(gearBtn, true)
         Helpers.SetFrameBackdropColor(gearBtn, 0.1, 0.1, 0.1, 0.8)
@@ -3450,6 +3453,8 @@ local function HookCharacterFrame()
         -- "Settings" label
         local gearLabel = gearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
+        gearLabel:SetPoint("RIGHT", gearBtn, "RIGHT", -6, 0)
+        gearLabel:SetJustifyH("LEFT")
         gearLabel:SetText("Settings")
         gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 

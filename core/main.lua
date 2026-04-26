@@ -3,7 +3,6 @@
 
 local ADDON_NAME, ns = ...
 local QUI = QUI
-local ADDON_NAME = "QUI"
 
 -- Upvalue frequently-used globals (core/main.lua is ~3000 lines)
 local type = type
@@ -606,6 +605,14 @@ function QUICore:OnEnable()
         end
     end
 
+    -- Create secure player buff/debuff headers while the addon-load safe
+    -- window is still open. A delayed timer misses this window on combat
+    -- reloads, and SecureAuraHeaderTemplate cannot be safely bootstrapped
+    -- from addon code once combat lockdown is active.
+    if QUI.BuffBorders and QUI.BuffBorders.Init then
+        QUI.BuffBorders.Init()
+    end
+
     -- IMMEDIATE: Apply frame anchoring synchronously during ADDON_LOADED
     -- safe window. Protected calls work here even during combat reloads.
     ApplyFrameOverrides()
@@ -696,7 +703,7 @@ function QUICore:CreateMinimapButton()
     -- Create DataBroker object
     local dataObj = LDB:NewDataObject(ADDON_NAME, {
         type = "launcher",
-        icon = "Interface\\AddOns\\QUI\\assets\\QUI.tga",
+        icon = ns.Helpers.AssetPath .. "QUI.tga",
         label = "QUI",
         OnClick = function(clickedframe, button)
             if button == "LeftButton" then

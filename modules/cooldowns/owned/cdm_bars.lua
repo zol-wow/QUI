@@ -43,6 +43,8 @@ local string_format = string.format
 local math_floor = math.floor
 local hooksecurefunc = hooksecurefunc
 local CreateFrame = CreateFrame
+local select = select
+local wipe = wipe
 
 ---------------------------------------------------------------------------
 -- CONSTANTS
@@ -54,6 +56,8 @@ local MAX_RECYCLE_POOL_SIZE = 20
 ---------------------------------------------------------------------------
 local barPool = {}       -- active bars (array)
 local recyclePool = {}   -- recycled bars (array, max MAX_RECYCLE_POOL_SIZE)
+local buildBarsScratch = {}
+local resyncFramesScratch = {}
 local barTimerFrame = CreateFrame("Frame")
 local barTimerGroup = barTimerFrame:CreateAnimationGroup()
 local barTimerAnim = barTimerGroup:CreateAnimation()
@@ -65,6 +69,13 @@ local mirrorMap = Helpers.CreateStateTable()
 
 -- Track which Blizzard bar children have been hooked (weak-keyed)
 local hookedBars = Helpers.CreateStateTable()
+
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_barPool",      tbl = barPool }
+    mp[#mp + 1] = { name = "CDM_barRecycle",   tbl = recyclePool }
+    mp[#mp + 1] = { name = "CDM_barMirrorMap", tbl = mirrorMap }
+    mp[#mp + 1] = { name = "CDM_barHooked",    tbl = hookedBars }
+end
 
 -- Stored refs for periodic re-layout after ticker updates _active state
 local _lastContainer = nil
@@ -155,8 +166,11 @@ end
 ---------------------------------------------------------------------------
 
 local function GetBarDisplayName(frame)
-    if not frame or not frame.GetRegions then return nil end
-    for _, region in ipairs({ frame:GetRegions() }) do
+    if not frame or not frame.GetRegions or not frame.GetNumRegions then return nil end
+    local okN, numRegions = pcall(frame.GetNumRegions, frame)
+    if not okN or not numRegions then return nil end
+    for ri = 1, numRegions do
+        local region = select(ri, frame:GetRegions())
         if region and region.GetObjectType and region:GetObjectType() == "FontString" then
             local okText, rawText = pcall(region.GetText, region)
             local text = okText and Helpers.SafeValue(rawText, nil) or nil
@@ -495,6 +509,30 @@ local function CheckBarActive(blizzBarChild)
     return ok and shown or false
 end
 
+local function ForEachChildFrame(frame, callback)
+    if not frame or not frame.GetChildren or not frame.GetNumChildren then return end
+    local okN, numChildren = pcall(frame.GetNumChildren, frame)
+    if not okN or not numChildren then return end
+    for ci = 1, numChildren do
+        local child = select(ci, frame:GetChildren())
+        if child then
+            callback(child)
+        end
+    end
+end
+
+local function ForEachFrameRegion(frame, callback)
+    if not frame or not frame.GetRegions or not frame.GetNumRegions then return end
+    local okN, numRegions = pcall(frame.GetNumRegions, frame)
+    if not okN or not numRegions then return end
+    for ri = 1, numRegions do
+        local region = select(ri, frame:GetRegions())
+        if region then
+            callback(region)
+        end
+    end
+end
+
 -- When an owned bar is rebuilt from the pool, the Blizzard child may already
 -- be hooked and actively updating, but the new owned bar starts with blank
 -- text. Resync the current name/duration strings immediately.
@@ -504,13 +542,21 @@ local function ResyncBlizzBarTexts(ownedBar, blizzBarChild, blizzStatusBar)
 
     local knownNameFS = {}
     local knownDurationFS = {}
-    local frames = { blizzBarChild }
+    local frames = resyncFramesScratch
+    wipe(frames)
+    frames[#frames + 1] = blizzBarChild
     if blizzStatusBar then
         frames[#frames + 1] = blizzStatusBar
     end
-    if blizzBarChild.GetChildren then
-        for _, subChild in ipairs({ blizzBarChild:GetChildren() }) do
-            frames[#frames + 1] = subChild
+    if blizzBarChild.GetChildren and blizzBarChild.GetNumChildren then
+        local okN, numChildren = pcall(blizzBarChild.GetNumChildren, blizzBarChild)
+        if okN and numChildren then
+            for ci = 1, numChildren do
+                local subChild = select(ci, blizzBarChild:GetChildren())
+                if subChild then
+                    frames[#frames + 1] = subChild
+                end
+            end
         end
     end
 
@@ -547,16 +593,17 @@ local function ResyncBlizzBarTexts(ownedBar, blizzBarChild, blizzStatusBar)
 
     for _, frame in ipairs(frames) do
         if frame and frame.GetRegions then
-            for _, region in ipairs({ frame:GetRegions() }) do
+            ForEachFrameRegion(frame, function(region)
                 if region and region:GetObjectType() == "FontString" then
                     local okText, text = pcall(region.GetText, region)
                     if okText then
                         ForwardCurrentText(region, text)
                     end
                 end
-            end
+            end)
         end
     end
+    wipe(frames)
 end
 
 ---------------------------------------------------------------------------
@@ -695,9 +742,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
         DiscoverNamedFontStrings(blizzStatusBar)
     end
     if blizzBarChild.GetChildren then
-        for _, subChild in ipairs({ blizzBarChild:GetChildren() }) do
-            DiscoverNamedFontStrings(subChild)
-        end
+        ForEachChildFrame(blizzBarChild, DiscoverNamedFontStrings)
     end
 
         local function ForwardText(fs, text)
@@ -744,11 +789,11 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
     -- Hook all FontString regions on a frame
     local function HookFrameRegions(frame)
         if not frame or not frame.GetRegions then return end
-        for _, region in ipairs({ frame:GetRegions() }) do
+        ForEachFrameRegion(frame, function(region)
             if region and region:GetObjectType() == "FontString" then
                 HookFontString(region)
             end
-        end
+        end)
     end
 
     -- Hook bar child, .Bar, and all sub-children
@@ -757,9 +802,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
         HookFrameRegions(blizzStatusBar)
     end
     if blizzBarChild.GetChildren then
-        for _, subChild in ipairs({ blizzBarChild:GetChildren() }) do
-            HookFrameRegions(subChild)
-        end
+        ForEachChildFrame(blizzBarChild, HookFrameRegions)
     end
 
     -- Initial value sync (C-side forwarding, handles secret values)
@@ -841,14 +884,15 @@ function CDMBars:BuildBars(container)
     local blizzViewer = _G["BuffBarCooldownViewer"]
     if not blizzViewer then return end
 
-    -- Collect Blizzard bar children
-    local blizzBars = {}
+    -- Collect Blizzard bar children. Walk via GetNumChildren+select to avoid
+    -- allocating an intermediate { viewer:GetChildren() } table per call.
+    local blizzBars = buildBarsScratch
+    wipe(blizzBars)
     local sel = blizzViewer.Selection
-    local okc, children = pcall(function()
-        return { blizzViewer:GetChildren() }
-    end)
-    if okc and children then
-        for _, child in ipairs(children) do
+    local okN, numChildren = pcall(blizzViewer.GetNumChildren, blizzViewer)
+    if okN and numChildren then
+        for ci = 1, numChildren do
+            local child = select(ci, blizzViewer:GetChildren())
             if child and child ~= sel and child:IsObjectType("Frame") then
                 -- Bar children have a .Bar StatusBar + cooldownID/layoutIndex
                 -- Skip Blizzard's empty pool frames (no cooldownID and no layoutIndex)
@@ -892,6 +936,7 @@ function CDMBars:BuildBars(container)
                 bar._active = CheckBarActive(bar._blizzBar)
             end
         end
+        wipe(blizzBars)
         return
     end
 
@@ -912,6 +957,7 @@ function CDMBars:BuildBars(container)
         -- Set up data mirroring hooks
         MirrorBlizzBar(bar, blizzChild)
     end
+    wipe(blizzBars)
 end
 
 ---------------------------------------------------------------------------
@@ -926,22 +972,23 @@ local function FindBlizzBarChild(spellID, entry)
     local viewer = _G["BuffBarCooldownViewer"]
     if not viewer then return nil end
     local sel = viewer.Selection
-    local okc, children = pcall(function() return { viewer:GetChildren() } end)
-    if not okc or not children then return nil end
+    -- Walk via GetNumChildren+select to avoid allocating a children table per
+    -- call. FindBlizzBarChild is invoked once per spell during BuildBarsFromOwned.
+    local okN, numChildren = pcall(viewer.GetNumChildren, viewer)
+    if not okN or not numChildren then return nil end
 
-    local idsToMatch = { [spellID] = true }
-    if entry then
-        if entry.spellID then idsToMatch[entry.spellID] = true end
-        if entry.id then idsToMatch[entry.id] = true end
-    end
+    local entrySpellID = entry and entry.spellID
+    local entryID = entry and entry.id
 
-    for _, child in ipairs(children) do
+    for ci = 1, numChildren do
+        local child = select(ci, viewer:GetChildren())
         if child and child ~= sel and child.Bar then
-            local ci = child.cooldownInfo
-            if ci then
-                local sid = Helpers.SafeValue(ci.overrideSpellID, nil)
-                local sid2 = Helpers.SafeValue(ci.spellID, nil)
-                if (sid and idsToMatch[sid]) or (sid2 and idsToMatch[sid2]) then
+            local cinfo = child.cooldownInfo
+            if cinfo then
+                local sid = Helpers.SafeValue(cinfo.overrideSpellID, nil)
+                local sid2 = Helpers.SafeValue(cinfo.spellID, nil)
+                if (sid and (sid == spellID or sid == entrySpellID or sid == entryID))
+                    or (sid2 and (sid2 == spellID or sid2 == entrySpellID or sid2 == entryID)) then
                     return child
                 end
             end
@@ -1308,17 +1355,14 @@ function CDMBars:UpdateOwnedBarAura(bar)
                     pcall(bar.IconTexture.SetTexture, bar.IconTexture, bar._totemIconCache)
                 end
             else
-                local displayChildren = { bar._blizzIconChild }
-                for _, blzIcon in ipairs(displayChildren) do
-                    if blzIcon then
-                        local iconRegion = blzIcon.Icon or blzIcon.icon
-                        local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
-                        if texRegion and texRegion.GetTexture then
-                            local tok, tex = pcall(texRegion.GetTexture, texRegion)
-                            if tok and tex then
-                                pcall(bar.IconTexture.SetTexture, bar.IconTexture, tex)
-                                break
-                            end
+                local blzIcon = bar._blizzIconChild
+                if blzIcon then
+                    local iconRegion = blzIcon.Icon or blzIcon.icon
+                    local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
+                    if texRegion and texRegion.GetTexture then
+                        local tok, tex = pcall(texRegion.GetTexture, texRegion)
+                        if tok and tex then
+                            pcall(bar.IconTexture.SetTexture, bar.IconTexture, tex)
                         end
                     end
                 end
@@ -1338,15 +1382,21 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 name = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
             end
             if name ~= nil then
-                local stacks = r.stacks
-                    and C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
-                    or ""
-                local catOk, display = pcall(function() return name .. stacks end)
-                if catOk then
-                    pcall(bar.NameText.SetText, bar.NameText, display)
-                else
-                    pcall(bar.NameText.SetText, bar.NameText, name)
+                -- r.stacks comes from C_UnitAuras aura data and is secret in
+                -- combat. C_StringUtil.WrapString/TruncateWhenZero are C-side
+                -- but carry the secrecy through to the returned string, so
+                -- the wrapped result cannot be compared in Lua (== / ~= taint).
+                -- Always forward to C-side SetFormattedText when formatting
+                -- succeeds; invalid combat stack counts collapse to empty.
+                local stacks = ""
+                if r.stacks ~= nil then
+                    local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, r.stacks)
+                    if truncOk then
+                        local wrapOk, wrapped = pcall(C_StringUtil.WrapString, truncText, " (", ")")
+                        stacks = wrapOk and wrapped or ""
+                    end
                 end
+                pcall(bar.NameText.SetFormattedText, bar.NameText, "%s%s", name, stacks)
             end
         end
     else

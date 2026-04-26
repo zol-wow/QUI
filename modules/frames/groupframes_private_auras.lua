@@ -46,7 +46,6 @@ local pcall = pcall
 local wipe = wipe
 local CreateFrame = CreateFrame
 local C_Timer = C_Timer
-local GetTime = GetTime
 local UnitExists = UnitExists
 local table_insert = table.insert
 local table_remove = table.remove
@@ -640,12 +639,14 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+-- Wipe the dispel cache on these events: auraInstanceID values re-randomize
+-- when an encounter/M+/PvP match starts, so any cached IDs become stale and
+-- would produce phantom matches on the next UNIT_AURA.
+eventFrame:RegisterEvent("ENCOUNTER_START")
+eventFrame:RegisterEvent("CHALLENGE_MODE_START")
+eventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
 -- UNIT_AURA: use centralized dispatcher instead of a duplicate global registration
 -- (eliminates a second handler that fired for every unit in the game)
-
--- Rate-limited per-frame refresh to clean up stale private aura renders
-local PA_REFRESH_CD = 1.0
-local paRefreshTimes = setmetatable({}, { __mode = "k" })
 
 -- Subscribe to centralized aura dispatcher for private aura refresh
 if ns.AuraEvents then
@@ -673,22 +674,15 @@ if ns.AuraEvents then
             return
         end
 
+        -- Refresh only the dispel classification cache. DO NOT tear down /
+        -- rebuild Blizzard private-aura anchors here: doing so races with
+        -- Blizzard's concurrent HandleUpdateInfo pass and triggers a nil
+        -- dereference in their PrivateAurasUI when it tries to index a
+        -- just-invalidated aura entry. Anchor lifetime is now driven only
+        -- by unit-token changes (roster update / reanchor) and settings
+        -- changes; Blizzard handles per-aura updates internally once an
+        -- anchor is registered.
         RefreshPrivateDispelState(unit)
-
-        -- Per-frame: rate-limited reanchor for any frame showing this unit.
-        local now = GetTime()
-        for f = 1, nFrames do
-            local frame = frames[f]
-            local state = frameState[frame]
-            if state and #state.anchorIDs > 0 then
-                if not (paRefreshTimes[frame] and now - paRefreshTimes[frame] < PA_REFRESH_CD) then
-                    paRefreshTimes[frame] = now
-                    RemoveAllAnchors(state)
-                    state.unit = ""
-                    SetupPrivateAuras(frame)
-                end
-            end
-        end
     end)
 end
 
@@ -708,6 +702,15 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         C_Timer.After(1.5, function()
             QUI_GFPA:SetupAll()
         end)
+
+    elseif event == "ENCOUNTER_START"
+        or event == "CHALLENGE_MODE_START"
+        or event == "PVP_MATCH_ACTIVE"
+    then
+        -- auraInstanceID values re-randomize at encounter/M+/PvP start, so
+        -- any cached IDs are now stale. The cache repopulates on the next
+        -- UNIT_AURA for each unit — no anchor churn needed.
+        wipe(unitPrivateDispelState)
     end
 end)
 

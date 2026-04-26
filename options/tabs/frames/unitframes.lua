@@ -485,6 +485,36 @@ local function CreateUnitFramesPage(parent)
         end
         y = y - FORM_ROW
 
+        -- RANGE ALPHA section (boss frames only)
+        if unitKey == "boss" then
+            if not unitDB.range then
+                unitDB.range = { enabled = true, outOfRangeAlpha = 0.4 }
+            end
+            if unitDB.range.enabled == nil then unitDB.range.enabled = true end
+            if unitDB.range.outOfRangeAlpha == nil then unitDB.range.outOfRangeAlpha = 0.4 end
+
+            local rangeHeader = GUI:CreateSectionHeader(tabContent, "Range Alpha")
+            rangeHeader:SetPoint("TOPLEFT", PAD, y)
+            y = y - rangeHeader.gap
+
+            local rangeAlphaSlider
+            local rangeCheck = GUI:CreateFormCheckbox(tabContent, "Dim When Out of Range", "enabled", unitDB.range, function()
+                RefreshUnit()
+                if rangeAlphaSlider then
+                    rangeAlphaSlider:SetEnabled(unitDB.range.enabled ~= false)
+                end
+            end)
+            rangeCheck:SetPoint("TOPLEFT", PAD, y)
+            rangeCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            rangeAlphaSlider = GUI:CreateFormSlider(tabContent, "Out of Range Alpha", 0.1, 1.0, 0.05, "outOfRangeAlpha", unitDB.range, RefreshUnit)
+            rangeAlphaSlider:SetPoint("TOPLEFT", PAD, y)
+            rangeAlphaSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            rangeAlphaSlider:SetEnabled(unitDB.range.enabled ~= false)
+            y = y - FORM_ROW
+        end
+
         -- ABSORB INDICATOR section
         local absorbHeader = GUI:CreateSectionHeader(tabContent, "Absorb Indicator")
         absorbHeader:SetPoint("TOPLEFT", PAD, y)
