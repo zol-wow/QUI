@@ -208,7 +208,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- Hidden Buttons
         local buttonNames = _G.QUI_GetDrawerButtonNames and _G.QUI_GetDrawerButtonNames() or {}
         local hiddenCount = #buttonNames > 0 and #buttonNames or 1
-        U.CreateCollapsible(content, "Hidden Buttons", hiddenCount * FORM_ROW + 8, function(body)
+        U.CreateCollapsible(content, "Hidden Buttons in Drawer", hiddenCount * FORM_ROW + 8, function(body)
             local sy = -4
             if #buttonNames > 0 then
                 for _, bName in ipairs(buttonNames) do

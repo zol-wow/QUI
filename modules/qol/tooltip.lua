@@ -250,6 +250,13 @@ if not TooltipDebug then
         AppendCounter(parts, "skin.backdropStableSkip", "backdropStable")
         AppendCounter(parts, "skin.moneyScan", "moneyScan")
         AppendCounter(parts, "skin.widgetScan", "widgetScan")
+        AppendCounter(parts, "skin.refit", "refit")
+        AppendCounter(parts, "skin.refitApplied", "refitApply")
+        AppendCounter(parts, "skin.refitCacheSkip", "refitCache")
+        AppendCounter(parts, "skin.refitNoOverflow", "refitOK")
+        AppendCounter(parts, "skin.refitTinyOverflow", "refitTiny")
+        AppendCounter(parts, "skin.refitVisibleExtend", "refitBIG")
+        AppendCounter(parts, "skin.refitNoExtents", "refitNoExt")
 
         print(string.format(
             "|cff60A5FA[tooltipdebug]|r %.1fs heap %s (delta %s, %.1f KB/s) QUI %s%s | %s%s",
@@ -1060,12 +1067,11 @@ local function EnsureTooltipUnitInfoState(tooltip, guid)
     if not state or state.guid ~= guid then
         state = {
             guid = guid,
-            targetAdded = false,
-            targetName = nil,
+            lastTargetName = nil,
             mountResolved = false,
             mountName = nil,
             mountNextAuraIndex = 1,
-            mountAdded = false,
+            lastMountName = nil,
             ratingResolved = false,
             ratingAdded = false,
             itemLevelAttempted = false,
@@ -1119,14 +1125,20 @@ end
 
 local function AddTooltipTargetInfo(tooltip, unit, state)
     if not tooltip or not unit or not state then return false end
-    if state.targetAdded then return false end
 
     local targetInfo = ResolveTooltipTargetInfo(unit)
     if not targetInfo then return false end
 
+    -- Dedupe by name: skip if the same target name was already appended
+    -- to this tooltip's state. Blizzard's tooltip API has no way to remove
+    -- or edit lines, so re-adding on every aura/target tick stacks visibly.
+    -- Re-adding only on actual change limits worst case to one duplicate
+    -- per real target swap (acceptable; better than the indefinite stack).
+    if state.lastTargetName == targetInfo.name then return false end
+
     EnsureTooltipInfoSpacer(tooltip, state)
     tooltip:AddDoubleLine("Target:", targetInfo.name, 0.7, 0.82, 1, targetInfo.valueR, targetInfo.valueG, targetInfo.valueB)
-    state.targetAdded = true
+    state.lastTargetName = targetInfo.name
     TooltipDebugCount("qol.targetAdded")
     return true
 end
@@ -1319,7 +1331,6 @@ end
 
 local function AddTooltipMountInfo(tooltip, unit, state)
     if not tooltip or not unit or not state then return false end
-    if state.mountAdded then return false end
     if state.mountResolved and not state.mountName then return false end
 
     local mountName, resolved = GetMountedPlayerMountName(unit, state)
@@ -1329,9 +1340,17 @@ local function AddTooltipMountInfo(tooltip, unit, state)
     end
     if not mountName then return resolved and false or nil end
 
+    -- Dedupe by name: skip if the same mount was already appended.
+    -- Aura ticks (HoTs, raid buffs) fire OnUnitAuraChanged constantly while
+    -- the tooltip is shown, and that handler clears mountResolved/mountName
+    -- to force a re-scan. Without this guard each tick re-appended a fresh
+    -- "Mount: X" line because Blizzard's tooltip API has no way to remove
+    -- or edit existing lines.
+    if state.lastMountName == mountName then return false end
+
     EnsureTooltipInfoSpacer(tooltip, state)
     tooltip:AddDoubleLine("Mount:", mountName, 0.65, 1, 0.65, 1, 1, 1)
-    state.mountAdded = true
+    state.lastMountName = mountName
     TooltipDebugCount("qol.mountAdded")
     return true
 end
@@ -2191,8 +2210,8 @@ local function OnUnitTargetChanged(changedUnit)
     local state = tooltipUnitInfoState[GameTooltip]
     if not state then return end
 
-    -- Mark target as needing refresh
-    state.targetAdded = false
+    -- Re-resolve target on next pass; AddTooltipTargetInfo dedupes by name,
+    -- so a re-run only appends a new line when the target actually changed.
     RefreshTooltipLayout(GameTooltip)
 end
 
@@ -2213,9 +2232,10 @@ local function OnUnitAuraChanged(changedUnit)
     local state = tooltipUnitInfoState[GameTooltip]
     if not state then return end
 
-    -- Mark mount as needing refresh
+    -- Mark mount as needing re-resolve. AddTooltipMountInfo dedupes by name
+    -- (state.lastMountName), so a re-scan only appends a new line when the
+    -- mount actually changed — aura ticks no longer stack duplicate lines.
     state.mountResolved = false
-    state.mountAdded = false
     state.mountName = nil
     state.mountNextAuraIndex = 1
     ScheduleDeferredUnitInfo(GameTooltip, unit)

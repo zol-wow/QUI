@@ -23,10 +23,4 @@ ProviderFeatures:Register({
         end
     end,
     providerKey = "combatTimer",
-    sections = {
-        { id = "general", title = "General" },
-        { id = "text", title = "Text" },
-        { id = "backdrop", title = "Backdrop & Border" },
-        { id = "position", title = "Position" },
-    },
 })

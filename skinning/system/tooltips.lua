@@ -1261,35 +1261,129 @@ end)
 -- the chrome's bottom anchor below the tooltip's reported bottom by the
 -- overflow delta. Called by qol/tooltip after deferred line additions.
 
--- Walks the tooltip's FontString regions and returns:
---   lowestBottom  — lowest visible FontString bottom edge (smallest screen Y)
---   rightmostRight — rightmost visible FontString right edge (largest screen X)
---   ttBottom, ttRight — tooltip's reported bottom/right for delta calc
--- Used to compute how far content overflows the tooltip's reported rect.
+-- Walks the tooltip's active line FontStrings and returns:
+--   lowestBottom    — lowest visible FontString bottom edge (smallest screen Y)
+--   rightmostRight  — rightmost edge of any visible RIGHT-side double-line FontString
+--   ttBottom, ttRight
+--
+-- DIRECTIONAL MEASUREMENT (the result of two false starts):
+--
+--   Vertical: any visible FontString counts. AddLine on a shown Midnight
+--   tooltip doesn't grow GetHeight, so chrome must extend past stale
+--   ttBottom to cover appended FontStrings.
+--
+--   Horizontal: only RIGHT-side FontStrings of double-lines (those with
+--   non-empty text) count. LEFT-side FontStrings of wrapping description
+--   text return their *natural unwrapped* width (a trinket "Use:" line
+--   reports GetRight=2344 while tooltip is rendered at 1317), which once
+--   inflated chrome by 1000+px to the right. Right-side FontStrings of
+--   double-lines are short non-wrapping text anchored TOPRIGHT to the
+--   tooltip — their GetRight is reliable. Empty/hidden right FontStrings
+--   on description lines naturally filter out via the IsShown+text check.
+--   This catches the QoL case: AddDoubleLine("Mount:", longMountName)
+--   appended after Show, where tooltip:GetWidth() doesn't grow on
+--   Midnight and the right text spills past the tooltip's reported
+--   right edge.
+--
+-- STALE-STATE SAFETY: Iterate via NumLines+GetLeftLine/GetRightLine
+-- (or the named global FontString fallback) instead of GetRegions().
+-- GameTooltip pre-allocates FontStrings and reuses them across hovers;
+-- a raw GetRegions walk picks up stale FontStrings from previous
+-- (taller / wider) tooltips that Blizzard cleared but left IsShown=true.
+
+-- Per-call diagnostics: which line contributed the lowest / rightmost edge.
+local _diagWorstBottom, _diagWorstBottomLine, _diagWorstBottomSide, _diagWorstBottomText
+local _diagWorstRight, _diagWorstRightLine, _diagWorstRightText
+
+local function MeasureBottom(fs, lowest, lineIndex, side)
+    if not fs then return lowest end
+    local okShown, shown = pcall(fs.IsShown, fs)
+    if not okShown or not shown then return lowest end
+    local okB, b = pcall(fs.GetBottom, fs)
+    if okB and b and b < lowest then
+        lowest = b
+        if lineIndex then
+            _diagWorstBottom = b
+            _diagWorstBottomLine = lineIndex
+            _diagWorstBottomSide = side
+            local okT, t = pcall(fs.GetText, fs)
+            _diagWorstBottomText = (okT and t) or nil
+        end
+    end
+    return lowest
+end
+
+-- Right-side measurement: only counts FontStrings with non-empty visible text.
+-- This filters out the stale/empty right FontStrings on description-only
+-- lines, where Blizzard's NumLines includes the line but the right slot is
+-- unused. Their phantom widths would otherwise inflate the chrome.
+local function MeasureRightOfDoubleLine(rightFS, rightmost, lineIndex)
+    if not rightFS then return rightmost end
+    local okShown, shown = pcall(rightFS.IsShown, rightFS)
+    if not okShown or not shown then return rightmost end
+    local okT, text = pcall(rightFS.GetText, rightFS)
+    if not okT or not text or text == "" then return rightmost end
+    local okR, rx = pcall(rightFS.GetRight, rightFS)
+    if okR and rx and rx > rightmost then
+        rightmost = rx
+        if lineIndex then
+            _diagWorstRight = rx
+            _diagWorstRightLine = lineIndex
+            _diagWorstRightText = text
+        end
+    end
+    return rightmost
+end
+
 local function FindContentExtents(tooltip)
-    if not tooltip or not tooltip.GetNumRegions then return nil end
+    if not tooltip then return nil end
     local okBottom, ttBottom = pcall(tooltip.GetBottom, tooltip)
     if not okBottom or not ttBottom then return nil end
     local okRight, ttRight = pcall(tooltip.GetRight, tooltip)
     if not okRight or not ttRight then return nil end
     local lowestBottom = ttBottom
     local rightmostRight = ttRight
-    local okCount, count = pcall(tooltip.GetNumRegions, tooltip)
-    if not okCount or not count then return nil end
-    for i = 1, count do
+
+    _diagWorstBottom, _diagWorstBottomLine, _diagWorstBottomSide, _diagWorstBottomText = nil, nil, nil, nil
+    _diagWorstRight, _diagWorstRightLine, _diagWorstRightText = nil, nil, nil
+
+    if tooltip.NumLines then
+        local okCount, count = pcall(tooltip.NumLines, tooltip)
+        if okCount and count and count > 0 then
+            local hasGetters = tooltip.GetLeftLine and tooltip.GetRightLine
+            local name
+            if not hasGetters and tooltip.GetName then
+                local okName, n = pcall(tooltip.GetName, tooltip)
+                if okName then name = n end
+            end
+            for i = 1, count do
+                local left, right
+                if hasGetters then
+                    left = tooltip:GetLeftLine(i)
+                    right = tooltip:GetRightLine(i)
+                elseif name then
+                    left = _G[name .. "TextLeft" .. i]
+                    right = _G[name .. "TextRight" .. i]
+                end
+                lowestBottom = MeasureBottom(left, lowestBottom, i, "L")
+                lowestBottom = MeasureBottom(right, lowestBottom, i, "R")
+                rightmostRight = MeasureRightOfDoubleLine(right, rightmostRight, i)
+            end
+            return lowestBottom, rightmostRight, ttBottom, ttRight
+        end
+    end
+
+    -- Fallback for specialized tooltips without a NumLines API.  These are
+    -- not GameTooltip-style reused frames, so stale FontString carryover is
+    -- not a concern. Bottom only — without NumLines we can't reliably
+    -- distinguish left from right FontStrings.
+    if not tooltip.GetNumRegions then return nil end
+    local okCount2, count2 = pcall(tooltip.GetNumRegions, tooltip)
+    if not okCount2 or not count2 then return nil end
+    for i = 1, count2 do
         local r = select(i, tooltip:GetRegions())
         if r and r.IsObjectType and r:IsObjectType("FontString") then
-            local okShown, shown = pcall(r.IsShown, r)
-            if okShown and shown then
-                local okB, b = pcall(r.GetBottom, r)
-                if okB and b and b < lowestBottom then
-                    lowestBottom = b
-                end
-                local okR, rx = pcall(r.GetRight, r)
-                if okR and rx and rx > rightmostRight then
-                    rightmostRight = rx
-                end
-            end
+            lowestBottom = MeasureBottom(r, lowestBottom, i, "?")
         end
     end
     return lowestBottom, rightmostRight, ttBottom, ttRight
@@ -1303,30 +1397,73 @@ local function RefitChromeToContent(tooltip)
     if not frame then return end
     if not (frame.IsShown and frame:IsShown()) then return end
 
-    local lowest, rightmost, ttBottom, ttRight = FindContentExtents(tooltip)
-    if not lowest or not ttBottom then return end
+    TooltipDebugCount("skin.refit")
 
-    -- Vertical overflow: screen Y decreases downward, so a FontString below
-    -- the frame has bottom < ttBottom and yields a positive overflow.
+    local lowest, rightmost, ttBottom, ttRight = FindContentExtents(tooltip)
+    if not lowest or not ttBottom then
+        TooltipDebugCount("skin.refitNoExtents")
+        return
+    end
+
     local yOverflow = ttBottom - lowest
     if yOverflow < 0 then yOverflow = 0 end
-    -- Horizontal overflow: screen X increases rightward, so a FontString
-    -- past the frame's right edge has right > ttRight and yields a positive
-    -- overflow.
     local xOverflow = (rightmost or ttRight) - ttRight
     if xOverflow < 0 then xOverflow = 0 end
 
-    -- Add a small inset so the chrome's borders match the visual padding
-    -- Blizzard uses around the last line / longest line.
+    -- Add a small inset so the chrome's borders match Blizzard's visual
+    -- padding around the last line / right column.
     local extendY = yOverflow > 0 and (yOverflow + 4) or 0
     local extendX = xOverflow > 0 and (xOverflow + 4) or 0
 
-    -- Re-anchor chrome with explicit 4-point anchoring so we can offset the
-    -- bottom and right independently of the tooltip's reported rect. Tracked
-    -- via frame.qExtendY/X so repeat calls with the same offsets no-op.
-    if frame.qExtendY == extendY and frame.qExtendX == extendX then return end
+    local dbg = ns.QUI_TooltipDebug
+    if dbg and dbg.enabled and (extendY > 6 or extendX > 6) then
+        local ttName = "?"
+        if tooltip.GetName then
+            local okName, n = pcall(tooltip.GetName, tooltip)
+            if okName and n then ttName = n end
+        end
+        local nLines
+        if tooltip.NumLines then
+            local okN, n = pcall(tooltip.NumLines, tooltip)
+            if okN then nLines = n end
+        end
+        print(string.format(
+            "|cff60A5FA[refit]|r %s lines=%s extendY=%.0f extendX=%.0f (ttBottom=%.1f lowest=%.1f ttRight=%.1f rightmost=%.1f)",
+            ttName, tostring(nLines), extendY, extendX, ttBottom, lowest, ttRight, rightmost or ttRight))
+        if extendY > 6 and _diagWorstBottomLine then
+            local txt = _diagWorstBottomText
+            if txt and #txt > 40 then txt = txt:sub(1, 40) .. "..." end
+            print(string.format(
+                "  |cffFF8844worstBottom:|r line %d %s bottom=%.1f text=%q",
+                _diagWorstBottomLine,
+                tostring(_diagWorstBottomSide or "?"),
+                _diagWorstBottom or -1,
+                tostring(txt or "")))
+        end
+        if extendX > 6 and _diagWorstRightLine then
+            local txt = _diagWorstRightText
+            if txt and #txt > 40 then txt = txt:sub(1, 40) .. "..." end
+            print(string.format(
+                "  |cffFF8844worstRight:|r line %d R right=%.1f text=%q",
+                _diagWorstRightLine,
+                _diagWorstRight or -1,
+                tostring(txt or "")))
+        end
+        TooltipDebugCount("skin.refitVisibleExtend")
+    elseif extendY == 0 and extendX == 0 then
+        TooltipDebugCount("skin.refitNoOverflow")
+    else
+        TooltipDebugCount("skin.refitTinyOverflow")
+    end
+
+    -- Cache so repeat refits with the same extents no-op.
+    if frame.qExtendY == extendY and frame.qExtendX == extendX then
+        TooltipDebugCount("skin.refitCacheSkip")
+        return
+    end
     frame.qExtendY = extendY
     frame.qExtendX = extendX
+    TooltipDebugCount("skin.refitApplied")
 
     pcall(frame.ClearAllPoints, frame)
     pcall(frame.SetPoint, frame, "TOPLEFT", tooltip, "TOPLEFT", 0, 0)
