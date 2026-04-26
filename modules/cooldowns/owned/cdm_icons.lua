@@ -62,6 +62,27 @@ local function IsSafeNumeric(val)
     return type(val) == "number"
 end
 
+local function GetContainerTypeForViewer(viewerType)
+    if not viewerType then return nil end
+    local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
+    local containerDB = ncdm and (ncdm[viewerType] or (ncdm.containers and ncdm.containers[viewerType]))
+    local cType = containerDB and containerDB.containerType
+    if not cType then
+        cType = (viewerType == "buff" or viewerType == "trackedBar") and "aura" or "cooldown"
+    end
+    return cType
+end
+
+local function IsAuraContainerViewer(viewerType)
+    local cType = GetContainerTypeForViewer(viewerType)
+    return cType == "aura" or cType == "auraBar"
+end
+
+local function UsesAPIAuraStackText(entry)
+    if not entry then return false end
+    return IsAuraContainerViewer(entry.viewerType)
+end
+
 
 -- Per-spell override lookup helper.  Returns the cached override table
 -- for the icon's spell/container, or nil.  Cheap (two table lookups).
@@ -1328,15 +1349,52 @@ end
 ---------------------------------------------------------------------------
 
 
---- Check whether Blizzard's native stack frames are actively displaying
---- on this icon.  When true, API-based stack writes in UpdateIconCooldown
---- should yield — the reparented native frames are the source of truth.
---- Check whether Blizzard's native stack frames have been reparented onto
---- our icon.  We test whether the reparent happened (parent == TextOverlay),
---- NOT IsShown() — IsShown() returns secret booleans on tainted frames in
---- combat and cannot be boolean-tested in Lua.
+local function HookTextHasDisplay(text)
+    if text == nil then return false end
+    local ok, isEmpty = pcall(function() return text == "" end)
+    return (not ok) or (not isEmpty)
+end
+
+local function ClearAuraHookStackText(entry, icon)
+    local child = entry and entry._blizzChild
+    local state = child and blizzStackState[child]
+    if state and (not icon or state.icon == icon) then
+        state.auraText = nil
+    end
+end
+
+local function ForwardAuraHookStackText(blizzChild, text, source)
+    local state = blizzStackState[blizzChild]
+    if not state or not state.icon then return end
+    if not HookTextHasDisplay(text) then
+        if not InCombatLockdown() then
+            state.auraText = nil
+        end
+        return
+    end
+    local icon = state.icon
+    local entry = icon._spellEntry
+    if not entry or entry._blizzChild ~= blizzChild then return end
+    if not UsesAPIAuraStackText(entry) then return end
+    if not icon.StackText then return end
+
+    if pcall(icon.StackText.SetText, icon.StackText, text) then
+        state.auraText = text
+        state.lastHookTime = GetTime()
+        pcall(icon.StackText.Show, icon.StackText)
+        ChargeDebug(entry.name, "AURA HOOK", source or "text", "text=", text)
+    end
+end
+
+--- Check whether Blizzard/native hook text is actively displaying on this
+--- icon.  When true, API-based stack writes in UpdateIconCooldown should
+--- yield so they do not overwrite clean hook arguments in the same frame.
 local function IsHookStackActive(entry, icon)
     if not entry or not entry._blizzChild then return false end
+    if UsesAPIAuraStackText(entry) then
+        local state = blizzStackState[entry._blizzChild]
+        return icon and icon._auraActive and state and state.icon == icon and state.auraText ~= nil
+    end
     local child = entry._blizzChild
     local textOverlay = icon.TextOverlay
     if not textOverlay then return false end
@@ -1353,6 +1411,47 @@ local function HookBlizzStackText(icon, blizzChild)
     local entry = icon._spellEntry
     local chargeFrame = blizzChild.ChargeCount
     local appFrame = blizzChild.Applications
+
+    -- Aura containers: do NOT reparent Applications/ChargeCount. Blizzard's
+    -- buff-viewer display layer doesn't reliably drive these frames the way
+    -- cooldown viewer templates do, so reparenting can leave counts blank.
+    -- Leave the native frames on their original parent, but hook their SetText
+    -- calls so clean Blizzard arguments can override secret API values when
+    -- the viewer does emit stack text.
+    if UsesAPIAuraStackText(entry) then
+        local state = blizzStackState[blizzChild]
+        if not state then
+            state = {}
+            blizzStackState[blizzChild] = state
+        end
+        if state.icon ~= icon then
+            state.auraText = nil
+        end
+        state.icon = icon
+        state.blizzChild = blizzChild
+
+        if not state.auraHooked then
+            state.auraHooked = true
+            if entry and entry.hasCharges and chargeFrame and chargeFrame.Current then
+                hooksecurefunc(chargeFrame.Current, "SetText", function(_, text)
+                    ForwardAuraHookStackText(blizzChild, text, "ChargeCount")
+                end)
+            end
+            if appFrame and appFrame.Applications then
+                hooksecurefunc(appFrame.Applications, "SetText", function(_, text)
+                    ForwardAuraHookStackText(blizzChild, text, "Applications")
+                end)
+            end
+        end
+
+        ChargeDebug(entry and entry.name, "HookBlizzStackText AURA ASSIGN",
+            "spellID=", entry and entry.spellID, "overrideSpellID=", entry and entry.overrideSpellID,
+            "hasCharges=", entry and entry.hasCharges,
+            "child.cooldownChargesCount=", blizzChild.cooldownChargesCount,
+            "ChargeCount=", chargeFrame and "exists" or "nil",
+            "Applications=", appFrame and "exists" or "nil")
+        return
+    end
 
     -- Reparent and style Blizzard's native ChargeCount and Applications
     -- frames onto our CDM icon.  Blizzard manages SetText/Show/Hide
@@ -1415,6 +1514,59 @@ local function HookBlizzStackText(icon, blizzChild)
         "child.cooldownChargesCount=", blizzChild.cooldownChargesCount,
         "ChargeCount=", chargeFrame and "exists" or "nil",
         "Applications=", appFrame and "exists" or "nil")
+end
+
+local function ClearIconStackText(icon)
+    if not icon or not icon.StackText then return end
+    pcall(icon.StackText.SetText, icon.StackText, "")
+    pcall(icon.StackText.Hide, icon.StackText)
+end
+
+local function ApplyAuraStackText(icon, stackValue, showZero, preserveWhenMissing)
+    if not icon or not icon.StackText then return end
+
+    if stackValue == nil then
+        if not preserveWhenMissing then
+            ClearIconStackText(icon)
+        end
+        return
+    end
+
+    if IsSecretValue(stackValue) then
+        local text = stackValue
+        if not showZero then
+            local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackValue)
+            if not truncOk then
+                ClearIconStackText(icon)
+                return
+            end
+            text = truncText
+        end
+        if pcall(icon.StackText.SetText, icon.StackText, text) then
+            pcall(icon.StackText.Show, icon.StackText)
+        end
+        return
+    end
+
+    if showZero then
+        if pcall(icon.StackText.SetText, icon.StackText, stackValue) then
+            pcall(icon.StackText.Show, icon.StackText)
+        end
+        return
+    end
+
+    local truncOk, displayText = pcall(C_StringUtil.TruncateWhenZero, stackValue)
+    if not truncOk then
+        displayText = nil
+    end
+
+    if displayText and displayText ~= "" then
+        if pcall(icon.StackText.SetText, icon.StackText, displayText) then
+            pcall(icon.StackText.Show, icon.StackText)
+        end
+    else
+        ClearIconStackText(icon)
+    end
 end
 
 --- Style the reparented Blizzard ChargeCount/Applications FontStrings
@@ -2226,12 +2378,7 @@ local function UpdateIconCooldown(icon)
         -- Aura-driven update: delegates to shared CDMSpellData:ResolveAuraState().
         -- Icons apply result to swipe/stacks display on CooldownFrame.
         do
-            local ownedDB = _hoistedNcdm and _hoistedNcdm[entry.viewerType]
-            local cType = ownedDB and ownedDB.containerType
-            if not cType then
-                local vt = entry.viewerType
-                cType = (vt == "buff" or vt == "trackedBar") and "aura" or "cooldown"
-            end
+            local cType = GetContainerTypeForViewer(entry.viewerType)
             if cType == "aura" or cType == "auraBar" then
                 local auraSpellID = _runtimeSid
                 if auraSpellID and ns.CDMSpellData then
@@ -2283,21 +2430,10 @@ local function UpdateIconCooldown(icon)
                         local _auraHookActive = (not r.isTotemInstance) and IsHookStackActive(entry, icon)
                         if not _auraHookActive then
                             if r.isTotemInstance then
-                                icon.StackText:SetText("")
-                                icon.StackText:Hide()
-                            elseif r.stacks then
-                                -- Charged abilities: "0" is meaningful (all
-                                -- charges depleted). Only truncate zero for
-                                -- non-charged resource stacks.
-                                if entry.hasCharges then
-                                    pcall(icon.StackText.SetText, icon.StackText, r.stacks)
-                                else
-                                    pcall(icon.StackText.SetText, icon.StackText, C_StringUtil.TruncateWhenZero(r.stacks))
-                                end
-                                icon.StackText:Show()
-                            elseif not InCombatLockdown() then
-                                icon.StackText:SetText("")
-                                icon.StackText:Hide()
+                                ClearIconStackText(icon)
+                                ClearAuraHookStackText(entry, icon)
+                            else
+                                ApplyAuraStackText(icon, r.stacks, entry.hasCharges, InCombatLockdown())
                             end
                         end
 
@@ -2355,9 +2491,9 @@ local function UpdateIconCooldown(icon)
                         -- Only clear our StackText overlay if Blizzard's
                         -- native stack frames aren't actively displaying.
                         if r.isTotemInstance or not IsHookStackActive(entry, icon) then
-                            icon.StackText:SetText("")
-                            icon.StackText:Hide()
+                            ClearIconStackText(icon)
                         end
+                        ClearAuraHookStackText(entry, icon)
                         return  -- Aura path complete
                     end
                 end
@@ -3465,14 +3601,7 @@ function CDMIcons:BuildIcons(viewerType, container)
                 addonCD:Show()
             end
             -- Mark aura containers so visibility handling works correctly
-            local QUICore = ns.Addon
-            local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
-            local containerDB = ncdm and ncdm[entry.viewerType]
-            local cType = containerDB and containerDB.containerType
-            if not cType then
-                local vt = entry.viewerType
-                cType = (vt == "buff" or vt == "trackedBar") and "aura" or "cooldown"
-            end
+            local cType = GetContainerTypeForViewer(entry.viewerType)
             if cType == "aura" or cType == "auraBar" then
                 icon._auraActive = false  -- will be set true by UpdateIconCooldown when aura present
                 icon._auraUnit = nil
@@ -3483,13 +3612,17 @@ function CDMIcons:BuildIcons(viewerType, container)
     -- Fallback _blizzChild resolution: if ResolveOwnedEntry couldn't find
     -- a viewer child (e.g., _spellIDToChild wasn't populated yet), retry
     -- now.  Also handles custom entries from GetCustomData which skip
-    -- ResolveOwnedEntry entirely.
+    -- ResolveOwnedEntry entirely. The QUI container the user picked
+    -- (essential vs utility) is independent of where Blizzard places the
+    -- spell — accept a child from either cooldown viewer so cross-category
+    -- placement still mirrors cooldown data.
     if (viewerType == "essential" or viewerType == "utility") and ns.CDMSpellData then
         local spellMap = ns.CDMSpellData._spellIDToChild
-        local viewerGlobal = _G[viewerType == "essential"
-            and "EssentialCooldownViewer" or "UtilityCooldownViewer"]
-        if spellMap and viewerGlobal then
-            local viewerContainer = viewerGlobal.viewerFrame or viewerGlobal
+        local essentialViewer = _G["EssentialCooldownViewer"]
+        local utilityViewer = _G["UtilityCooldownViewer"]
+        local essentialContainer = essentialViewer and (essentialViewer.viewerFrame or essentialViewer)
+        local utilityContainer = utilityViewer and (utilityViewer.viewerFrame or utilityViewer)
+        if spellMap and (essentialViewer or utilityViewer) then
             for _, icon in ipairs(pool) do
                 local entry = icon._spellEntry
                 if entry and not entry._blizzChild
@@ -3504,7 +3637,8 @@ function CDMIcons:BuildIcons(viewerType, container)
                         if children then
                             for _, child in ipairs(children) do
                                 local vf = child.viewerFrame
-                                if vf and (vf == viewerGlobal or vf == viewerContainer) then
+                                if vf and (vf == essentialViewer or vf == utilityViewer
+                                    or vf == essentialContainer or vf == utilityContainer) then
                                     entry._blizzChild = child
                                     break
                                 end

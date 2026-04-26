@@ -53,7 +53,6 @@ local pendingMinimapRefresh = false
 local pendingDrawerSetup = false
 local middleClickMenuHooked = false
 -- (micro/bag visibility now managed by action bars module)
-local minimapOriginalOnMouseUp = nil
 
 -- External HUD overlay detection
 local externalHudActive = false
@@ -2094,29 +2093,14 @@ local function SetupMiddleClickMenu()
     if middleClickMenuHooked then return end
     middleClickMenuHooked = true
 
-    -- TAINT SAFETY: Avoid SetPassThroughButtons/SetPropagateMouseClicks here.
-    -- Those protected mouse-pass-through APIs can taint Blizzard map pin code
-    -- later in the session, producing ADDON_ACTION_BLOCKED on WorldMap pins.
-    -- Wrapping Minimap's existing OnMouseUp keeps the middle-click feature local
-    -- to the minimap without touching protected pass-through state.
-    local currentOnMouseUp = Minimap:GetScript("OnMouseUp")
-    if currentOnMouseUp and currentOnMouseUp ~= minimapOriginalOnMouseUp then
-        minimapOriginalOnMouseUp = currentOnMouseUp
-    end
-
-    Minimap:SetScript("OnMouseUp", function(self, button, ...)
+    -- TAINT SAFETY: HookScript only. SetScript-then-recall taints Blizzard's
+    -- OnMouseUp, which is XML-bound to MinimapMixin:OnClick → PingLocation
+    -- (protected). HookScript lets the original run untainted, so middle-click
+    -- ping continues to work; our menu opens additively on top.
+    Minimap:HookScript("OnMouseUp", function(_, button)
         local settings = GetSettings()
         if settings and settings.enabled and settings.middleClickMenuEnabled and button == "MiddleButton" then
             ShowMiddleClickMenu()
-            return
-        end
-
-        if minimapOriginalOnMouseUp then
-            return minimapOriginalOnMouseUp(self, button, ...)
-        end
-
-        if Minimap_OnClick then
-            return Minimap_OnClick(self)
         end
     end)
 

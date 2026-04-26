@@ -9248,7 +9248,7 @@ do
 
             -- Lightweight preview: recompute container size from layout params
             local function PreviewBarSize()
-                local container = ActionBarsOwned.containers and ActionBarsOwned.containers[DB_KEY_MAP[barKey] or barKey]
+                local container = ActionBarsOwned.containers and ActionBarsOwned.containers[dbKey]
                 if not container or not layout then return end
                 local btnSize = layout.buttonSize or 36
                 local spacing = layout.buttonSpacing or 2

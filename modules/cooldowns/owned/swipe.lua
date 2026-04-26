@@ -105,11 +105,11 @@ local function ApplySwipeToIcon(icon, settings)
                 -- Aura API fallback (out of combat only)
                 if not mode and not InCombatLockdown() then
                     local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, sid)
-                    if ok and auraData then
+                    if ok and auraData and Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
                         mode = "aura"
                     elseif entry.name and entry.name ~= "" then
-                        local ok2, auraName = pcall(AuraUtil.FindAuraByName, entry.name, "player", "HELPFUL")
-                        if ok2 and auraName then
+                        local ok2, auraNameData = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entry.name, "HELPFUL")
+                        if ok2 and auraNameData and Helpers.IsAuraOwnedByPlayerOrPet(auraNameData, true) then
                             mode = "aura"
                         end
                     end

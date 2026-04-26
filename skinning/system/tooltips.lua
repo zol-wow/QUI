@@ -463,6 +463,18 @@ local function ApplyTooltipChrome(tooltip)
         if h.SetBackdrop then pcall(h.SetBackdrop, h, nil) end
         if h.NineSlice then pcall(h.NineSlice.Hide, h.NineSlice) end
     end
+
+    -- Re-fit chrome to actual content extents on every show. GameTooltip is
+    -- a single Lua object reused across player/NPC/object hovers, so any
+    -- extend offsets cached from a prior show (e.g. player Target/M+ Rating
+    -- pushing the chrome 61px down) must be re-evaluated for the new content,
+    -- otherwise NPC/object tooltips display chrome much larger than needed.
+    -- For tooltips that fit inside their reported rect, this resolves to
+    -- extend = 0 and re-anchors the chrome flush with the tooltip.
+    local refit = ns.QUI_RefitTooltipChromeToContent
+    if refit then
+        pcall(refit, tooltip)
+    end
 end
 
 local function StyleTooltip(tooltip)
@@ -772,9 +784,15 @@ HookTooltipOnShow = function(tooltip)
                 FallbackToNineSlice(self)
                 return
             end
-            if ShowExistingChrome(self) then
-                QueueGameTooltipRestyle()
-            end
+            ShowExistingChrome(self)
+            -- Always queue a restyle, even when ShowExistingChrome found the
+            -- chrome already stable. The restyle OnUpdate is the path that
+            -- runs RefitChromeToContent once per show cycle, and without it
+            -- chrome offsets (extendY/X) cached from the prior tooltip stay
+            -- on the new tooltip — making NPC/object tooltips render with
+            -- chrome much larger than needed after a player tooltip extended
+            -- it for Target/M+ Rating.
+            QueueGameTooltipRestyle()
         end)
 
         return
@@ -1187,6 +1205,18 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 QueueFontUpdate(GameTooltip)
                 QueueShoppingTooltipSync()
             end
+
+            -- Re-fit chrome to the actual rendered FontString extents on every
+            -- show cycle. ApplyTooltipChrome only runs when chrome is hidden
+            -- (avoiding flicker), so the chrome's extendY/X anchors carried
+            -- over from the prior tooltip stay until something explicitly
+            -- recomputes them. Running the refit here covers every show,
+            -- including the player → NPC transition where chrome was previously
+            -- extended for Target/M+ Rating overflow.
+            local refit = ns.QUI_RefitTooltipChromeToContent
+            if refit then
+                pcall(refit, GameTooltip)
+            end
             TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "run", dbgHeap)
         end
         gameTooltipRestyleFrame:SetScript("OnUpdate", nil)
@@ -1218,9 +1248,98 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 ---------------------------------------------------------------------------
+-- Chrome Refit (post-AddLine extent recovery)
+---------------------------------------------------------------------------
+-- Midnight's GameTooltip stopped exposing Lua-callable Layout/MarkDirty/
+-- UpdateTooltipSize. After AddLine/AddDoubleLine on a shown tooltip, the
+-- C-side renders the new FontStrings but the Lua-facing :GetHeight() does
+-- not grow. Our chrome (anchored via SetAllPoints) tracks :GetHeight(), so
+-- it ends up shorter than the actual rendered extent — exposing Blizzard's
+-- backdrop on the appended lines (Target / M+ Rating).
+--
+-- RefitChromeToContent measures the lowest visible FontString and extends
+-- the chrome's bottom anchor below the tooltip's reported bottom by the
+-- overflow delta. Called by qol/tooltip after deferred line additions.
+
+-- Walks the tooltip's FontString regions and returns:
+--   lowestBottom  — lowest visible FontString bottom edge (smallest screen Y)
+--   rightmostRight — rightmost visible FontString right edge (largest screen X)
+--   ttBottom, ttRight — tooltip's reported bottom/right for delta calc
+-- Used to compute how far content overflows the tooltip's reported rect.
+local function FindContentExtents(tooltip)
+    if not tooltip or not tooltip.GetNumRegions then return nil end
+    local okBottom, ttBottom = pcall(tooltip.GetBottom, tooltip)
+    if not okBottom or not ttBottom then return nil end
+    local okRight, ttRight = pcall(tooltip.GetRight, tooltip)
+    if not okRight or not ttRight then return nil end
+    local lowestBottom = ttBottom
+    local rightmostRight = ttRight
+    local okCount, count = pcall(tooltip.GetNumRegions, tooltip)
+    if not okCount or not count then return nil end
+    for i = 1, count do
+        local r = select(i, tooltip:GetRegions())
+        if r and r.IsObjectType and r:IsObjectType("FontString") then
+            local okShown, shown = pcall(r.IsShown, r)
+            if okShown and shown then
+                local okB, b = pcall(r.GetBottom, r)
+                if okB and b and b < lowestBottom then
+                    lowestBottom = b
+                end
+                local okR, rx = pcall(r.GetRight, r)
+                if okR and rx and rx > rightmostRight then
+                    rightmostRight = rx
+                end
+            end
+        end
+    end
+    return lowestBottom, rightmostRight, ttBottom, ttRight
+end
+
+local function RefitChromeToContent(tooltip)
+    if not tooltip or not IsEnabled() then return end
+    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+
+    local frame = styleFrames[tooltip]
+    if not frame then return end
+    if not (frame.IsShown and frame:IsShown()) then return end
+
+    local lowest, rightmost, ttBottom, ttRight = FindContentExtents(tooltip)
+    if not lowest or not ttBottom then return end
+
+    -- Vertical overflow: screen Y decreases downward, so a FontString below
+    -- the frame has bottom < ttBottom and yields a positive overflow.
+    local yOverflow = ttBottom - lowest
+    if yOverflow < 0 then yOverflow = 0 end
+    -- Horizontal overflow: screen X increases rightward, so a FontString
+    -- past the frame's right edge has right > ttRight and yields a positive
+    -- overflow.
+    local xOverflow = (rightmost or ttRight) - ttRight
+    if xOverflow < 0 then xOverflow = 0 end
+
+    -- Add a small inset so the chrome's borders match the visual padding
+    -- Blizzard uses around the last line / longest line.
+    local extendY = yOverflow > 0 and (yOverflow + 4) or 0
+    local extendX = xOverflow > 0 and (xOverflow + 4) or 0
+
+    -- Re-anchor chrome with explicit 4-point anchoring so we can offset the
+    -- bottom and right independently of the tooltip's reported rect. Tracked
+    -- via frame.qExtendY/X so repeat calls with the same offsets no-op.
+    if frame.qExtendY == extendY and frame.qExtendX == extendX then return end
+    frame.qExtendY = extendY
+    frame.qExtendX = extendX
+
+    pcall(frame.ClearAllPoints, frame)
+    pcall(frame.SetPoint, frame, "TOPLEFT", tooltip, "TOPLEFT", 0, 0)
+    pcall(frame.SetPoint, frame, "TOPRIGHT", tooltip, "TOPRIGHT", extendX, 0)
+    pcall(frame.SetPoint, frame, "BOTTOMLEFT", tooltip, "BOTTOMLEFT", 0, -extendY)
+    pcall(frame.SetPoint, frame, "BOTTOMRIGHT", tooltip, "BOTTOMRIGHT", extendX, -extendY)
+end
+
+---------------------------------------------------------------------------
 -- Public API
 ---------------------------------------------------------------------------
 
 ns.QUI_RefreshTooltipSkinColors = RefreshAllColors
 ns.QUI_RefreshTooltipFontSize = RefreshAllFonts
+ns.QUI_RefitTooltipChromeToContent = RefitChromeToContent
 

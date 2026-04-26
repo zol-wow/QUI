@@ -657,16 +657,30 @@ local function RefreshTooltipLayout(tooltip)
         end
     end
 
+    -- Try the legacy resize hook (still present on some tooltip variants).
+    -- Midnight's GameTooltip dropped Layout/MarkDirty/UpdateTooltipSize from
+    -- the Lua API entirely, so for that path the chrome refit below is what
+    -- actually fixes the short-chrome artifact.
     if type(tooltip.UpdateTooltipSize) == "function" then
         pcall(tooltip.UpdateTooltipSize, tooltip)
     end
-    -- Only call Show() on hidden tooltips.  On already-visible tooltips
-    -- UpdateTooltipSize handles relayout.  Show() triggers Blizzard's
-    -- internal NineSlice restyle which the skinning watcher can only
-    -- catch one frame later, causing a visible flicker.
+    -- Only call Show() on hidden tooltips. Show() triggers Blizzard's internal
+    -- NineSlice restyle which the skinning watcher can only catch one frame
+    -- later, causing a visible flicker.
     local alreadyShown = tooltip.IsShown and tooltip:IsShown()
     if not alreadyShown then
         pcall(tooltip.Show, tooltip)
+    end
+
+    -- After AddLine/AddDoubleLine on a shown Midnight tooltip, the C-side
+    -- renders the new FontStrings but tooltip:GetHeight() does not grow.
+    -- The QUI chrome anchored via SetAllPoints tracks the stale height,
+    -- exposing Blizzard's backdrop on the appended lines (Target / M+ Rating).
+    -- The skinning module owns the chrome and re-anchors its bottom past
+    -- the tooltip's reported bottom by the actual FontString overflow.
+    local refit = ns.QUI_RefitTooltipChromeToContent
+    if refit then
+        pcall(refit, tooltip)
     end
 end
 
@@ -754,6 +768,15 @@ local function ShouldHideOwnedTooltip(tooltip, fallbackContext)
 
     return false
 end
+
+-- Sticky flag for the current GameTooltip show cycle: did this tooltip ever
+-- carry a unit token (player, NPC, nameplate, mouseover) since it was last
+-- shown? Set true the first tick we observe GetUnit returning a unit, reset
+-- to false on the show→hide transition. Used to distinguish "world unit
+-- tooltip whose mouseover just cleared" (where unit is now nil but we want to
+-- hide) from "true world object tooltip" (mining node, etc., where unit was
+-- always nil and we must keep the WorldFrame safety net).
+local gtTooltipHadUnit = false
 
 local tooltipHideFadeState = {
     active = false,
@@ -909,12 +932,20 @@ local function ShouldKeepTooltipVisible(tooltip)
     end
 
     -- World object tooltips (mining/herb nodes, summon stones, fishing schools,
-    -- ground loot) have a transient owner, no unit, and mouse focus on WorldFrame.
-    -- Trust Blizzard's native OnLeave to hide them; otherwise hideDelay=0 hides
-    -- them on the first frame and the user never sees the tooltip.
-    local focus = Provider.GetTopMouseFrame and Provider:GetTopMouseFrame()
-    if focus == WorldFrame then
-        return true
+    -- ground loot) have no unit slot and mouse focus on WorldFrame. The throttle
+    -- can fire on the very first frame they show; without this safety net the
+    -- check returns false and the tooltip is hidden before the user sees it.
+    -- Gate on the "had a unit this cycle" flag: if the tooltip ever carried
+    -- a unit during this show cycle (player, NPC, nameplate, mouseover), then
+    -- a current `unit == nil` means mouseover just cleared and we should fall
+    -- through to the hide path so hideDelay=0 actually takes effect.
+    -- Only true world *objects* (unit was never set this cycle) get the
+    -- WorldFrame safety net.
+    if not gtTooltipHadUnit then
+        local focus = Provider.GetTopMouseFrame and Provider:GetTopMouseFrame()
+        if focus == WorldFrame then
+            return true
+        end
     end
 
     return false
@@ -1812,7 +1843,10 @@ local function SetupTooltipHook()
     local gtSpellIDWatcher = CreateFrame("Frame")
     local gtSpellIDWasShown = false
     local gtVisibilityElapsed = 0
-    local TOOLTIP_VISIBILITY_CHECK_INTERVAL = 0.08
+    -- Polled detection latency for "should this tooltip hide now?". Kept tight
+    -- so hideDelay=0 reads as instant — total perceived hide latency is bounded
+    -- by this interval plus the mouse-focus cache TTL.
+    local TOOLTIP_VISIBILITY_CHECK_INTERVAL = 0.05
     gtSpellIDWatcher:SetScript("OnUpdate", function(_, elapsed)
         local shown = GameTooltip:IsShown()
         if shown then
@@ -1820,10 +1854,12 @@ local function SetupTooltipHook()
         end
         if shown and not gtSpellIDWasShown then
             gtVisibilityElapsed = TOOLTIP_VISIBILITY_CHECK_INTERVAL
+            gtTooltipHadUnit = false
             ResetTooltipHideFade()
         end
         if gtSpellIDWasShown and not shown then
             gtVisibilityElapsed = 0
+            gtTooltipHadUnit = false
             ResetTooltipHideFade()
             InvalidatePendingSetUnit()
             tooltipSpellIDAdded[GameTooltip] = nil
@@ -1834,6 +1870,16 @@ local function SetupTooltipHook()
             if gtVisibilityElapsed >= TOOLTIP_VISIBILITY_CHECK_INTERVAL then
                 gtVisibilityElapsed = 0
                 TooltipDebugCount("qol.visibilityCheck")
+                -- Latch the "had a unit this cycle" flag before evaluating
+                -- visibility, so ShouldKeepTooltipVisible can distinguish a
+                -- post-mouseoff unit tooltip (hide it) from a true world
+                -- object tooltip (keep the WorldFrame safety net).
+                if not gtTooltipHadUnit then
+                    local gtUnit = ResolveTooltipUnit(GameTooltip)
+                    if gtUnit then
+                        gtTooltipHadUnit = true
+                    end
+                end
                 local settings = Provider:GetSettings()
                 if not settings or not settings.enabled then
                     ResetTooltipHideFade()

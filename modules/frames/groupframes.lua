@@ -4176,8 +4176,27 @@ local function HideRaidGroupHeaders()
     end
 end
 
+_state.EnsureCombatVisibleRoots = function()
+    local layoutMode = ns.QUI_LayoutMode
+    local hidden = layoutMode and layoutMode._gameplayHidden
+    local partyRoot = QUI_GF.anchorFrames and QUI_GF.anchorFrames.party
+    if partyRoot and not (hidden and hidden.partyFrames) then
+        partyRoot:SetAlpha(1)
+    end
+
+    local raidRoot = QUI_GF.anchorFrames and QUI_GF.anchorFrames.raid
+    if raidRoot and not (hidden and hidden.raidFrames) then
+        raidRoot:SetAlpha(1)
+    end
+
+    if QUI_GF.spotlightContainer and not (hidden and hidden.spotlightFrames) then
+        QUI_GF.spotlightContainer:SetAlpha(1)
+    end
+end
+
 local function UpdateHeaderVisibility()
     if InCombatLockdown() and not _state.inInitSafeWindow then
+        _state.EnsureCombatVisibleRoots()
         _pending.visibilityUpdate = true
         return
     end
@@ -5031,6 +5050,7 @@ local function OnEvent(self, event, arg1, ...)
         -- Combat started: clear range cache so stale OOC values
         -- (CheckInteractDistance) don't persist into combat where
         -- that API is unavailable.
+        _state.EnsureCombatVisibleRoots()
         wipe(_range.cache)
         wipe(_range.cacheTime)
 
